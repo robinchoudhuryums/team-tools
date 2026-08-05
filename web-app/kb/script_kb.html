@@ -1960,7 +1960,13 @@ function kbDrawerOpenItem_(id, anchor) {
       }
     })
     .withFailureHandler(function (err) {
-      if (KB_DRAWER.open) body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load');   // A12
+      // C17 batch-2 — the failure path now carries the SAME stale-response
+      // guards as the success path (the L-18 asymmetry): without them, a
+      // slow FAILING load for item A clobbered item B's rendered article
+      // (or the results/home view after Back) with A's error card.
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item') return;
+      if (KB_DRAWER.itemId !== id) return;
+      body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load');   // A12
     })
     .getReferenceItem(id);
 }

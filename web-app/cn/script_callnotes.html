@@ -6300,13 +6300,23 @@ function cnFireSearch_() {
       // but the state holds the raw input, so a query with surrounding
       // whitespace (a pasted TRX/phone) fetched results and discarded them.
       if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
-      if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.searchResults = []; }
-      else CN_STATE.searchResults = res.results || [];
+      if (res.error) {
+        // C17 batch-2 - a failed search must not leave (or render) results
+        // labeled with a query that never ran (the stale-label class).
+        CN_STATE.searchResults = [];
+        var eh = document.getElementById('cn-search-results');
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        return;
+      }
+      CN_STATE.searchResults = res.results || [];
       cnRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      showToast('Search failed: ' + err.message, 'toast-error');
+      if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
+      CN_STATE.searchResults = [];
+      var fh = document.getElementById('cn-search-results');
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
     })
     .searchMyCallNotes(q, CN_STATE.searchField,
       (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
@@ -6364,10 +6374,15 @@ function cnRenderManageView(area) {
     .withSuccessHandler(function (res) {
       var el = document.getElementById('cn-mgr-action-badge');
       if (!el || !res || res.error) return;
-      if (res.count > 0) {
+      // C17 batch-2 (INV-187): a partial round (an unreadable rep Sheet) is a
+      // LOWER BOUND - say so instead of rendering the undercount as exact
+      // (or, at 0, rendering nothing at all).
+      if (res.count > 0 || res.partial) {
+        var pfx = res.partial ? '\u2265 ' : '';
+        var sfx = res.partial ? ' \u00b7 some rep Sheets unreadable' : '';
         el.innerHTML = '<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;' +
           'background:var(--warn-soft);color:var(--warning-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">' +
-          icon('flag', 12) + ' ' + res.count + ' unresolved action flag' + (res.count === 1 ? '' : 's') + ' across all reps</div>';
+          icon('flag', 12) + ' ' + pfx + res.count + ' unresolved action flag' + (res.count === 1 ? '' : 's') + ' across all reps' + sfx + '</div>';
       }
     })
     // Cycle-9 L-28: the badge is ambient — no toast on failure (a landing
@@ -6417,6 +6432,17 @@ function cnOpenExportModal_() {
   document.getElementById('cn-export-overlay').classList.add('open');
 }
 
+// C17 batch-2 (INV-187) - shared warn line for cross-rep aggregates whose
+// walk skipped unreadable rep Sheets. Empty list renders nothing. role=status
+// (not alert): it repeats on every render of a degraded aggregate.
+function cnSkippedRepsNoteHtml_(skippedReps) {
+  var list = Array.isArray(skippedReps) ? skippedReps : [];
+  if (list.length === 0) return '';
+  return '<div class="cn-partial-note" role="status" style="margin:0 0 10px;padding:7px 12px;border:1px solid var(--warn-soft);border-radius:8px;background:var(--warn-soft);color:var(--warning-deep);font-size:12px;">' +
+    icon('warning', 13) + ' ' + list.length + ' rep Sheet(s) could not be read (' + esc(list.join(', ')) +
+    ') - this list may be incomplete.</div>';
+}
+
 function cnMgrLoadQueue_(kind) {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
     const on = b.dataset.mqueue === kind;
@@ -6441,6 +6467,7 @@ function cnMgrLoadQueue_(kind) {
       if (!liveHost) return;
       if (res.error) { liveHost.innerHTML = errorStateHtml_(res.error); return; }
       cnMgrRenderQueue_(liveHost, res.results || []);
+      liveHost.insertAdjacentHTML('afterbegin', cnSkippedRepsNoteHtml_(res.skippedReps));
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
@@ -7031,13 +7058,22 @@ function cnMgrFireSearch_() {
       if (currentView !== requestedView) return;
       // F(M-5): trimmed-to-trimmed — same whitespace-guard fix as cnFireSearch_.
       if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
-      if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.mgrSearchResults = []; }
-      else CN_STATE.mgrSearchResults = res.results || [];
+      if (res.error) {
+        CN_STATE.mgrSearchResults = [];
+        var eh = document.getElementById('cn-mgr-search-results');
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        return;
+      }
+      CN_STATE.mgrSearchResults = res.results || [];
+      CN_STATE.mgrSearchSkipped = res.skippedReps || [];   // C17 batch-2 (INV-187)
       cnMgrRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      showToast('Search failed: ' + err.message, 'toast-error');
+      if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
+      CN_STATE.mgrSearchResults = [];
+      var fh = document.getElementById('cn-mgr-search-results');
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
     })
     .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
       (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null,
@@ -7052,12 +7088,13 @@ function cnMgrRenderSearchResults_() {
     return;
   }
   const results = CN_STATE.mgrSearchResults || [];
+  const skipNote = cnSkippedRepsNoteHtml_(CN_STATE.mgrSearchSkipped);
   if (results.length === 0) {
-    host.innerHTML = '<div class="cn-stack-empty">No matches.</div>';
+    host.innerHTML = skipNote + '<div class="cn-stack-empty">No matches.</div>';
     return;
   }
   const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
-  host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
+  host.innerHTML = skipNote + count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
   if (typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.mgrSearchQuery);
 }
 
@@ -7732,12 +7769,17 @@ function enterCallNotesAdminView(area) {
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
-      if (cfg.error) { area.innerHTML = errorStateHtml_(cfg.error); return; }   // A12/INV-175
+      // C17 batch-2 — contain a config failure to the CONFIG pane's own slot
+      // (A12/INV-175): errorStateHtml_ into `area` destroyed all five panes
+      // and the slots the other five in-flight loaders target, so one failed
+      // fetch made Compliance/health/Sheets unreachable though each loaded.
+      if (cfg.error) { var b1 = document.getElementById('cn-admin-body'); if (b1) b1.innerHTML = errorStateHtml_(cfg.error); return; }
       cnRenderAdminBody_(cfg);
     })
     .withFailureHandler(function (err) {
       if (currentView !== 'callNotesAdmin') return;
-      area.innerHTML = errorStateHtml_(err.message || 'Failed to load config');   // A12/INV-175
+      var b2 = document.getElementById('cn-admin-body');
+      if (b2) b2.innerHTML = errorStateHtml_(err.message || 'Failed to load config');   // A12/INV-175
     })
     .getAdminConfig();
   // Round 2 · 8h — load KPI strip + tag taxonomy into the augment slot
@@ -8077,7 +8119,13 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
 
   // §7c — return the two pieces separately so the tabbed Admin can place the
   // KPI strip in Overview and the tag taxonomy in Tags.
-  return { kpiHtml: kpiHtml, taxHtml: taxHtml };
+  // C17 batch-2 (INV-187): surface reps whose Sheets the taxonomy/trends
+  // walks could not read - the merged table may be incomplete.
+  var skipSet = {};
+  ((tax && tax.skippedReps) || []).forEach(function (n) { skipSet[n] = true; });
+  ((trends && trends.skippedReps) || []).forEach(function (n) { skipSet[n] = true; });
+  var skipNote = cnSkippedRepsNoteHtml_(Object.keys(skipSet));
+  return { kpiHtml: kpiHtml, taxHtml: skipNote + taxHtml };
 }
 
 /** Round 2 follow-on — one tag-table row with usage bar + Rename / Merge

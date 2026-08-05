@@ -3490,6 +3490,7 @@ function getCallNotesTagTaxonomy() {
     const counts = {};       // tag → { tag, count, lastSeen, archived }
     let totalNotes = 0;
     let repsScanned = 0;
+    const skippedReps = [];
     for (let i = 1; i < roster.length; i++) {
       const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -3525,7 +3526,10 @@ function getCallNotesTagTaxonomy() {
             });
           }
         }
-      } catch (e) { /* skip unreachable rep sheet */ }
+      } catch (e) {
+        // C17 batch-2 (INV-187): the skipped rep rides the result.
+        skippedReps.push(String(roster[i][EMP.NAME]).trim() || String(roster[i][EMP.ID]).trim());
+      }
     }
     // Archived-but-unused tags — admins may want to keep them visible to
     // restore later, so emit them as a separate list.
@@ -3536,10 +3540,13 @@ function getCallNotesTagTaxonomy() {
     archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
     const tags = Object.keys(counts).map(function (k) { return counts[k]; });
     tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
-    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned, skippedReps: skippedReps };
     try {
+      // C17 batch-2 — cache only fully-successful rounds (the INV-129 rule):
+      // a partial aggregate must not be pinned as fresh for the full TTL.
       const payload = JSON.stringify(taxResult);
-      if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
+      if (skippedReps.length > 0) { /* partial — do not cache */ }
+      else if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
       else console.warn('Tag taxonomy too large to cache (' + payload.length + ' bytes)');
     } catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
     return taxResult;
@@ -3647,6 +3654,7 @@ function getCallNotesTagTrends() {
     const archivedSet = getArchivedTagsSet_();
     const roster = getEmployeeRosterRows_();
     const events = [];
+    const skippedReps = [];
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
       const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
@@ -3677,14 +3685,19 @@ function getCallNotesTagTrends() {
             });
           }
         }
-      } catch (e) { /* skip unreachable rep sheet */ }
+      } catch (e) {
+        // C17 batch-2 (INV-187): the skipped rep rides the result.
+        skippedReps.push(String(roster[i][EMP.NAME]).trim() || String(roster[i][EMP.ID]).trim());
+      }
     }
     const out = cnTagTrendsFromEvents_(events, refIso, weeks, CN_TAG_TRENDS_TOPK);
     out.weeks = weeks;
     out.repsScanned = repsScanned;
+    out.skippedReps = skippedReps;
     try {
+      // C17 batch-2 — cache only fully-successful rounds (INV-129).
       const payload = JSON.stringify(out);
-      if (payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
+      if (skippedReps.length === 0 && payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
     } catch (e) { /* return uncached */ }
     return out;
   } catch (err) { return { error: err.message }; }
@@ -4002,6 +4015,7 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
 
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const skippedReps = [];
     const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
@@ -4049,13 +4063,16 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
           if (archive) matchInto(readCallNoteRowsInRange_(archive, dr.start, dr.end), true);
         }
       } catch (e) {
-        // A broken per-rep Sheet shouldn't break the cross-rep search
+        // A broken per-rep Sheet shouldn't break the cross-rep search — but
+        // it must RIDE the result (C17 batch-2, INV-187): a silently-missing
+        // rep made the search read as complete.
         console.warn('managerSearchCallNotes skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push(String(roster[r][EMP.NAME]).trim() || repId);
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 500) results.length = 500;
-    return { results };
+    return { results, skippedReps };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4212,6 +4229,7 @@ function managerGetUnresolvedActionCount() {
     if (uCached) { try { return JSON.parse(uCached); } catch (e) { /* recompute */ } }
     const roster = getEmployeeRosterRows_();
     let total = 0;
+    let skippedCount = 0;
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -4227,11 +4245,17 @@ function managerGetUnresolvedActionCount() {
           const res = String(flagCol[i][1] || '').trim().toLowerCase();
           if (ft === 'action' && res !== 'true' && res !== 'yes' && res !== '1') total++;
         }
-      } catch (_) {}
+      } catch (_) { skippedCount++; }
     }
-    const uResult = { count: total };
-    try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
-    catch (e) { /* best-effort */ }
+    // C17 batch-2 (INV-187): an unreadable rep Sheet makes this a LOWER
+    // BOUND — the flag rides the result, and a partial round is never
+    // cached (INV-129; the old shape CACHED the undercount for the full
+    // 2-minute TTL).
+    const uResult = { count: total, partial: skippedCount > 0 };
+    if (skippedCount === 0) {
+      try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
+      catch (e) { /* best-effort */ }
+    }
     return uResult;
   } catch (err) { return { error: err.message }; }
 }
@@ -6174,6 +6198,7 @@ function managerAggregateFlagged_(flagType, dateRange) {
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const skippedReps = [];
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -6196,10 +6221,14 @@ function managerAggregateFlagged_(flagType, dateRange) {
         }
       } catch (e) {
         console.warn('managerAggregateFlagged_ skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push(repName || repId);
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return { flagType, results };
+    // C17 batch-2 (INV-187) — an unreadable rep Sheet must ride the result:
+    // the training/review queues and the weekly digests read this, and a
+    // silently-missing rep made both read as complete. Additive field.
+    return { flagType, results, skippedReps };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -6212,6 +6241,7 @@ function managerAggregateFlagged_(flagType, dateRange) {
 function managerAggregateUrgent_(dateRange) {
   const roster = getEmployeeRosterRows_();
   const results = [];
+  const skippedReps = [];
   for (let r = 1; r < roster.length; r++) {
     const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
     if (!sheetId) continue;
@@ -6232,10 +6262,12 @@ function managerAggregateUrgent_(dateRange) {
       }
     } catch (e) {
       console.warn('managerAggregateUrgent_ skipped rep ' + repId + ': ' + e.message);
+      skippedReps.push(repName || repId);
     }
   }
   results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  return { results };
+  // C17 batch-2 (INV-187) — same outcome contract as managerAggregateFlagged_.
+  return { results, skippedReps };
 }
 
 
@@ -9989,11 +10021,14 @@ function sendCallNotesWeeklyDigests() {
 
     const training = managerAggregateFlagged_('training', dateRange);
     const review = managerAggregateFlagged_('review', dateRange);
-    if (training.results && training.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results, dateRange);
+    // C17 batch-2: a queue with unreadable rep Sheets is not a silently-
+    // skippable empty queue — send (with the warning) whenever there are
+    // results OR skipped reps; genuinely-empty-and-clean stays silent (S24).
+    if ((training.results && training.results.length > 0) || (training.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
     }
-    if (review.results && review.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results, dateRange);
+    if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
     }
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
@@ -10036,8 +10071,8 @@ function sendCallNotesUrgentDigest() {
     const dateRange = { start, end };
 
     const urgent = managerAggregateUrgent_(dateRange);
-    if (urgent.results && urgent.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results, dateRange);
+    if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
     }
     stampDigestLastRun_('urgent');
     Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
@@ -10457,8 +10492,19 @@ function sendManagerDailyBrief() {
   }
 }
 
-function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
+function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) {
   const P = CN_EMAIL_PALETTE;
+  // C17 batch-2 (INV-187) — reps whose Sheets could not be read ride the
+  // digest as an explicit warning; an empty-but-unreadable queue sends a
+  // warning-only digest instead of silence (a failed read is not an empty
+  // queue). Additive optional arg — 4-arg callers behave exactly as before.
+  const skipped = Array.isArray(skippedReps) ? skippedReps : [];
+  const skipHtml = skipped.length
+    ? `<p style="color:${P.warnDeep || P.muted};font-size:12px;margin:10px 0 0;">&#9888; ${skipped.length} rep Sheet(s) could not be read (${esc_(skipped.join(', '))}) — this digest may be incomplete.</p>`
+    : '';
+  const skipText = skipped.length
+    ? `\n\n! ${skipped.length} rep Sheet(s) could not be read (${skipped.join(', ')}) — this digest may be incomplete.`
+    : '';
   // Training-flagged notes may carry a free-text question in subformData.trainingQuestion
   // (set client-side when the rep picks the training flag). Surface it inline so the
   // manager sees the actual question instead of having to open each note.
@@ -10505,11 +10551,12 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
         `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
         `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
         `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+        skipHtml +
       `</div>` +
       `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
     `</div>`
   );
-  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}\n\n— UMS Team Tools`;
+  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
     MailApp.sendEmail({
       to: toEmails.join(','),
@@ -13860,7 +13907,14 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     Object.keys(perRepDaily[d]).forEach(function (ag) {
       var p = perRepDaily[d][ag];
       p.pctAnswered = p.rung > 0 ? Math.round((p.answered / p.rung) * 1000) / 10 : 0;
-      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : 0;
+      // C17-4 (cycle 17) — a rep-day with zero answered calls has NO average
+      // talk time, not an average of 0 (the INV-180 zero-is-absence rule).
+      // The literal 0 here fed metricsTeamAvgSeries_ (`v != null` — 0 passes),
+      // dragging the anonymized team Avg-Talk benchmark toward 0 on any day a
+      // rep answered nothing, while every sibling aggregate already treats
+      // att<=0 as absence (`if (att > 0)`). null is skipped by both the team
+      // mean and the own-point builder (`raw != null && isFinite(raw)`).
+      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : null;
       delete p._attSum; delete p._attCount;
     });
   });
@@ -14997,6 +15051,12 @@ function getMetricsAmbient() {
     var roster = getEmployeeRosterRows_();
     var names = [];
     for (var r = 1; r < roster.length; r++) {
+      // C17-3 (cycle 17) — INV-183: this was the fifteenth roster walk, and
+      // the one with NO inclusion guard at all (a shape the F3 tripwire's
+      // banned-pattern scan can't see). An offboarded row (name kept, email
+      // cleared) whose name still matches DQE history contaminated the team
+      // answer rate behind the manager alert badge.
+      if (!empRosterEmail_(roster[r])) continue;
       var n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }
@@ -15013,7 +15073,15 @@ function getMetricsAmbient() {
     var out = { badge: badge, pctAnswered: pct, date: yIso, threshold: ambientThreshold };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     return out;
-  } catch (_) { return { badge: null }; }
+  } catch (err) {
+    // C17-3 — a permanently failing CDR read makes the badge's ABSENCE
+    // indistinguishable from a healthy team (INV-187's reassuring-degradation
+    // test). The badge surface has no error affordance, so the DESIGNATED
+    // detector for a broken CDR read stays the Automation Health CDR card +
+    // failure digest; this catch now at least logs instead of `catch (_)`.
+    try { console.warn('getMetricsAmbient failed: ' + err.message); } catch (_) {}
+    return { badge: null };
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -18627,7 +18695,13 @@ function saveTrainingAssignment(payload) {
       const rows = getEmployeeRosterRows_();
       const valid = {};
       for (let i = 1; i < rows.length; i++) {
-        if (rows[i][EMP.EMAIL]) valid[String(rows[i][EMP.ID]).trim()] = true;
+        // C17-3 sibling (cycle 17) — raw positive truthiness was the third
+        // divergent predicate on this column (INV-183): a whitespace-only
+        // email made an employee a VALID assignment target here while the
+        // dashboard/digest walks (empRosterEmail_) excluded them — an
+        // assignment that exists but is invisible in the matrix and never
+        // nags. The predicate can only narrow, the correct direction.
+        if (empRosterEmail_(rows[i])) valid[String(rows[i][EMP.ID]).trim()] = true;
       }
       const seen = {};
       payload.empIds.forEach(function (id) {

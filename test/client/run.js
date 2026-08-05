@@ -4594,12 +4594,20 @@ test('F3: roster inclusion goes through ONE predicate (INV-124 cohort + F3)', ()
   const raw = stripped.match(/if \(![^)\n]*\[EMP\.EMAIL\][^)\n]*\)\s*continue/g) || [];
   assert.deepStrictEqual(raw, [],
     'no roster walk may hand-roll the no-email skip — route it through empRosterEmail_');
+  // C17-3 sibling (cycle 17): ALSO ban the POSITIVE bare-truthiness form
+  // (`if (rows[i][EMP.EMAIL]) …`) — the saveTrainingAssignment shape, which
+  // the negative-continue ban above cannot see. Comparison reads (=== email,
+  // identification sites) deliberately do not match.
+  const rawPos = stripped.match(/if \(\s*[a-zA-Z_$]+\[[a-zA-Z_$]+\]\[EMP\.EMAIL\]\s*\)/g) || [];
+  assert.deepStrictEqual(rawPos, [],
+    'no roster walk may bare-truthiness-test EMP.EMAIL — route it through empRosterEmail_');
 
   // (c) The two regressions this family exists for stay fixed by NAME, since
   // those are the walks where being wrong is expensive: the Metrics cohort
   // (cycle-12 F4 — a stale row un-hides the N=3 anonymized team line) and the
   // manager team table (cycle-15 F3 — a departed rep in the table and totals).
-  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan']
+  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan',
+   'getMetricsAmbient', 'saveTrainingAssignment']   // C17-3 (cycle 17)
     .forEach((fn) => {
       assert.ok(/empRosterEmail_\(/.test(extractRawFunction('Code.js', fn)),
         fn + ' routes roster inclusion through empRosterEmail_');
@@ -6453,6 +6461,107 @@ test('C17-7: manager lazy cards render an error state on both failure shapes', (
     assert.ok(/res && res\.error/.test(body),
       fn + ' must split res.error from the genuinely-empty render');
   });
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-2 pins — the INV-187 silent-degradation stragglers. All
+// source scans strip comments first (INV-188): the fixes' comments quote the
+// shapes they removed.
+console.log('\ncycle 17 — batch-2 (silent degradation) pins');
+
+// C17-4: a rep-day with zero answered calls has NO average talk time, not an
+// average of 0 — the per-rep-daily finalize must yield null, which both the
+// team mean (v != null) and the own-point builder skip.
+test('C17-4: perRepDaily attSeconds is null (absence), never 0, for an answered-nothing day', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'getCdrDailyBreakdown_'));
+  assert.ok(/p\.attSeconds = p\._attCount > 0 \? Math\.round\(p\._attSum \/ p\._attCount\) : null/.test(body),
+    'the per-rep-daily finalize must use null for absence (the pre-C17-4 literal 0 dragged the team benchmark toward 0)');
+});
+
+// C17 batch-2: every remaining cross-rep walk carries its outcome —
+// skippedReps on the aggregates, partial on the badge count — and no partial
+// round is ever cached (INV-129).
+test('batch-2: cross-rep walks carry skippedReps and never cache a partial round', () => {
+  // Per-function return-shape expectations (a generic "last return mentions
+  // it" check was wrong on first write — taxonomy/trends attach the field to
+  // a result object built lines above the return).
+  [['managerAggregateFlagged_', /return \{ flagType, results, skippedReps \};/],
+   ['managerAggregateUrgent_', /return \{ results, skippedReps \};/],
+   ['managerSearchCallNotes', /return \{ results, skippedReps \};/],
+   ['getCallNotesTagTaxonomy', /skippedReps: skippedReps/],
+   ['getCallNotesTagTrends', /out\.skippedReps = skippedReps;/]].forEach(([fn, re]) => {
+    const body = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/skippedReps\.push\(/.test(body), fn + ' collects the skipped rep in its catch');
+    assert.ok(re.test(body), fn + ' carries skippedReps on its result');
+  });
+  const tax = c17strip(extractRawFunction('Code.js', 'getCallNotesTagTaxonomy'));
+  assert.ok(/skippedReps\.length > 0/.test(tax), 'taxonomy skips the cache put on a partial round');
+  const trends = c17strip(extractRawFunction('Code.js', 'getCallNotesTagTrends'));
+  assert.ok(/skippedReps\.length === 0 &&/.test(trends), 'trends caches only a fully-successful round');
+  const unres = c17strip(extractRawFunction('Code.js', 'managerGetUnresolvedActionCount'));
+  assert.ok(/partial: skippedCount > 0/.test(unres), 'the badge count carries partial (a lower bound)');
+  assert.ok(/if \(skippedCount === 0\)/.test(unres), 'a partial badge count is never cached');
+  // The digests SEND on skipped-but-empty (a failed read is not an empty
+  // queue) and the sender takes + renders the skipped list.
+  const weekly = c17strip(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'));
+  assert.ok((weekly.match(/skippedReps/g) || []).length >= 4, 'both weekly queues gate + pass skippedReps');
+  const urgent = c17strip(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'));
+  assert.ok(/skippedReps/.test(urgent), 'the urgent digest gates + passes skippedReps');
+  const sender = c17strip(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+  assert.ok(/skippedReps\)/.test(sender.slice(0, 200)) || /function sendManagerFlagDigest_\(toEmails, label, notes, dateRange, skippedReps\)/.test('function sendManagerFlagDigest_' + sender.slice(0, 80)),
+    'sendManagerFlagDigest_ accepts the skippedReps arg');
+  assert.ok(/may be incomplete/.test(sender), 'the digest body names the incompleteness');
+});
+
+// C17 batch-2 client half: the shared partial-note helper exists and the
+// queue/search/admin surfaces consume it; the badge renders the lower bound;
+// a failed search renders an error state (query-guarded), never stale results
+// under a new label.
+test('batch-2: CN client surfaces partial walks and failed searches', () => {
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/function cnSkippedRepsNoteHtml_\(/.test(cn), 'shared helper exists');
+  assert.ok((cn.match(/cnSkippedRepsNoteHtml_\(/g) || []).length >= 4,
+    'queue + mgr search render + admin augment consume the helper');
+  assert.ok(/res\.count > 0 \|\| res\.partial/.test(cn), 'the unresolved badge renders the partial lower bound');
+  ['cnFireSearch_', 'cnMgrFireSearch_'].forEach((fn) => {
+    const body = c17fnBody(cn, fn);
+    assert.ok((body.match(/errorStateHtml_\(/g) || []).length >= 2,
+      fn + ' renders an error state on BOTH the {error} and transport paths');
+    assert.ok((body.match(/!== requestedQuery\) return;/g) || []).length >= 2,
+      fn + ' guards both handlers on the query still being current');
+  });
+});
+
+// C17-14 / C17-15 / side rail / kbDrawer: the four sibling-branch stragglers.
+test('batch-2: the four sibling-branch stragglers are closed', () => {
+  const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  const noCdr = m.slice(m.indexOf('No call data found for'), m.indexOf('No call data found for') + 900);
+  assert.ok(/noteCountUnavailable/.test(noCdr), 'C17-14: the no-CDR fallback checks noteCountUnavailable');
+  const clk = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const extras = c17fnBody(clk, 'clkLoadDashboardExtras_');
+  assert.strictEqual((extras.match(/extraAt = Date\.now\(\)/g) || []).length, 1,
+    'C17-15: exactly ONE freshness stamp site');
+  assert.ok(/!anyFail\) CLK_DASH\.extraAt = Date\.now\(\)/.test(extras),
+    'C17-15: the stamp fires only when the WHOLE round succeeded');
+  const to = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  const rail = c17fnBody(to, 'loadTimesheetSideRail_');
+  assert.ok(/errorStateHtml_\(/.test(rail) && !/withFailureHandler\(\(\) => \{\}\)/.test(rail),
+    'side rail: failure renders an error state, never a perpetual skeleton');
+  const kb = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
+  const drawerItem = c17fnBody(kb, 'kbDrawerOpenItem_');
+  const failIdx = drawerItem.indexOf('withFailureHandler');
+  const failPart = drawerItem.slice(failIdx);
+  assert.ok(/KB_DRAWER\.itemId !== id\) return;/.test(failPart) && /KB_DRAWER\.view !== 'item'\) return;/.test(failPart),
+    'kbDrawerOpenItem_: the failure handler carries the L-18 stale-response guards');
+  // getAdminConfig containment: the error renders into the config pane slot,
+  // never the whole admin area.
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const adm = c17fnBody(cn, 'enterCallNotesAdminView');
+  assert.ok(!/area\.innerHTML = errorStateHtml_/.test(adm),
+    'a getAdminConfig failure must not wipe the whole admin area');
+  assert.ok(/cn-admin-body'\);\s*if \(b\d\) b\d\.innerHTML = errorStateHtml_/.test(adm.replace(/\n\s*/g, ' ')) ||
+    /getElementById\('cn-admin-body'\)/.test(adm),
+    'the config failure renders into #cn-admin-body');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

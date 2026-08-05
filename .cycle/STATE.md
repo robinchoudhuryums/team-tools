@@ -2,11 +2,12 @@
 
 ## Current
 Cycle: 17
-Phase: implement — the broad scan is COMPLETE (report in chat, 2026-08-05) and
-  the operator-selected TOP 5 findings are IMPLEMENTED
-  (`.cycle/blocks/17-top5-broad-implement.md`). The remaining ~30 findings from
-  the scan are unimplemented — they live in the scan report (chat) and the
-  follow-on list below.
+Phase: implement — the broad scan is COMPLETE; the TOP 5 are implemented +
+  doc-synced (blocks: `17-top5-broad-implement.md`), and BATCH ② (the nine
+  INV-187 silent-degradation stragglers) is implemented
+  (`.cycle/blocks/17-batch2-broad-implement.md`, net 9−1=8; pure 415, DOM 69,
+  all pins bite-checked). Batch ②'s /sync-docs is OWED (six items in its
+  block). Remaining: batches ③–⑦ (see the batch list in chat / below).
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
@@ -37,6 +38,16 @@ Updated: 2026-08-05
   (.actions is now 2-col at ≤540px with the prime spanning).
 
 ## Completed this cycle
+- BATCH ② (9 items) | Code.js, cn/metrics/tc-clock/tc-timeoff/kb partials,
+  run.js | C17-3 (ambient walk guard + logged catch + saveTrainingAssignment
+  predicate + F3 widened with the bare-truthiness ban), C17-4 (per-rep-daily
+  attSeconds null-for-absence), C17-14 (no-CDR noteCountUnavailable branch),
+  C17-15 (extras SWR stamps only a fully-successful round), side-rail error
+  state, kbDrawer failure guards, admin-config containment, five cross-rep
+  walks outcome-carrying (skippedReps/partial + partial-rounds-uncached +
+  digest warning line + client notes/badge), search error-states with dual
+  query guards. 4 new pins + F3 widening, all bite-checked; one pin rewritten
+  after being wrong about the code on first write (documented in the block).
 - C17-2 | web-app/Code.js | updateTimeOffStatus normalizes TO.STATUS once
   (lowercase comparisons; raw kept for the compensating revert + audit note;
   notify no-op check compares both sides normalized).

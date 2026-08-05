@@ -645,9 +645,14 @@ function mRenderMyStats_(data) {
   if (!c) {
     html += '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
       '. This may be a non-working day/range, or the CDR spreadsheet is not yet configured.</div>';
+    // C17-14 (cycle 17) — the cycle-16 F5 sweep fixed the CDR branch below
+    // but missed this sibling: a failed note read rendered a confident
+    // "Notes Filed: 0" here (the server passes count 0 + unavailable:true).
     html += '<div class="m-row" style="margin-top:var(--space-sm)">' +
       '<span class="m-row-label">Notes Filed</span>' +
-      '<span class="m-row-value">' + esc(data.noteCount) + '</span></div>';
+      (data.noteCountUnavailable
+        ? '<span class="m-row-value" style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>'
+        : '<span class="m-row-value">' + esc(data.noteCount) + '</span>') + '</div>';
     el.innerHTML = html;
     return;
   }
