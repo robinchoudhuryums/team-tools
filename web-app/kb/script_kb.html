@@ -728,7 +728,7 @@ function kbRenderLanding_() {
 function kbGroupResults_(results) {
   var groups = [], byId = {};
   (results || []).forEach(function (r) {
-    if (!byId[r.id]) { byId[r.id] = { id: r.id, title: r.title, department: r.department, type: r.type, chunks: [] }; groups.push(byId[r.id]); }
+    if (!byId[r.id]) { byId[r.id] = { id: r.id, title: r.title, department: r.department, type: r.type, status: r.status, chunks: [] }; groups.push(byId[r.id]); }   // C17 batch-5: carry status for the Draft pill
     if (r.chunkMd || r.heading) byId[r.id].chunks.push(r);
   });
   return groups;
@@ -862,6 +862,11 @@ function kbChunkGroupsHtml_(results, openFn) {
     html += '<div class="kb-chunk-doc">' +
       '<button class="kb-chunk-doc-h" onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'))" data-kb-id="' + esc(g.id) + '">' +
       icon(kbItemIcon_(g), 13) + ' <span class="kb-chunk-doc-t">' + esc(g.title) + '</span>' +
+      // C17 batch-5: an admin's search showed a DRAFT chunk identically to a
+      // published one — the doc header now carries the same Draft pill as
+      // the tree/reader (reps never receive draft hits, so this renders
+      // only for admins).
+      (g.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') +
       '<span class="kb-snip">' + esc(g.department) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
     g.chunks.forEach(function (c) {
       html += '<div class="kb-chunk">' +

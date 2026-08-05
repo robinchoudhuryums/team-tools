@@ -5804,7 +5804,10 @@ function cnComposerSend_() {
       cnCloseComposerModal_();
       cnReRenderActiveView_();
       cnRenderFilterBar_();
-      showToast('Email sent', 'toast-success');
+      // C17-11: a partial split-send reports success WITH a warning naming
+      // what failed — surface it instead of an unqualified success.
+      if (res.warning) showToast(res.warning, 'toast-warn');
+      else showToast('Email sent', 'toast-success');
       // Win-back nudge: a Close-Order email sent because the customer is
       // switching suppliers → offer to send a (PHI-free) win-back survey.
       // Self-gated inside cnMaybeWinbackNudge_ (no configured win-back template

@@ -2,15 +2,14 @@
 
 ## Current
 Cycle: 17
-Phase: implement — the broad scan is COMPLETE; the TOP 5 are implemented +
-  doc-synced (blocks: `17-top5-broad-implement.md`), and BATCH ② (the nine
-  INV-187 silent-degradation stragglers) is implemented
-  (`.cycle/blocks/17-batch2-broad-implement.md`, net 9−1=8; pure 415, DOM 69,
-  all pins bite-checked). Batch ②'s /sync-docs is OWED (six items in its
-  block). BATCH ③+④ (tripwire-integrity sweep + interface set) are
-  IMPLEMENTED (`.cycle/blocks/17-batch3-batch4-broad-implement.md`, net 8−0=8;
-  pure 419, DOM 69, bite-checks pass). /sync-docs is OWED for batches ②+③+④
-  together (items listed in both blocks). Remaining: batches ⑤–⑦.
+Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
+  TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,
+  net 8), BATCH ③+④ (`17-batch3-batch4-broad-implement.md`, net 8) — the
+  consolidated ②③④ /sync-docs is DONE (commit 9098206). BATCH ⑤
+  (server-hardening stragglers) is IMPLEMENTED
+  (`.cycle/blocks/17-batch5-broad-implement.md`, net 10−1=9; pure 425, DOM 69,
+  bite-checks pass, no stylesheet changes so no re-shoot owed). Batch ⑤'s
+  /sync-docs is OWED (nine items in its block). Remaining: batches ⑥–⑦.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
@@ -41,6 +40,24 @@ Updated: 2026-08-05
   (.actions is now 2-col at ≤540px with the prime spanning).
 
 ## Completed this cycle
+- BATCH ⑤ (10 items) | Code.js, form_public.html, intake/kb/cn partials,
+  run.js | C17-12 (form_public conditional sections CLEAR on re-hide — stale
+  hidden values no longer enter the hashed immutable record), C17-11
+  (mixed dept+'Other' split-send: internal-half bookkeeping preserved on
+  external failure — EmailedAt for internal depts, audit row +
+  `externalCopyFailed`, DR row live; success-with-warning return + client
+  warn toast), C17-13 (Q43 custom-add blocks LEADING negation tokens —
+  none/nothing/denies/denied/negative/neg), createFormToken prefill caps
+  (recipientName ≤200, prefillData object-only ≤50 keys ≤20k JSON),
+  submitFormByToken signature must be `data:image/` (blocks the
+  reviewer-browser/PDF-conversion URL-fetch leak), getDepartmentEmails_
+  whitelist-rebuild on read + saveDepartmentEmails comma/semicolon-free +
+  1–60 char dept names (protects drSplitDepts_/INV-131), time-off notes
+  capped 1000 chars on both submit paths, intakeListMySubmissions returns
+  total+cap (INV-169) + client cap note, searchReference hits carry status
+  (admin sees the Draft pill on draft chunks), intakeRecListHtml_
+  cache-buster respects an existing query string. 6 new comment-stripped
+  pins, bite-checked. Pure 425.
 - BATCH ③+④ | tour/styles/training/empdocs/coaching/kb/cn partials, Code.js,
   mock.js, run.js | ④: tour-primary + instance-banner color rule, .tr-head
   real viewport wrap (C17-10), review-due row wrap, .tr-section-h defined +
@@ -115,12 +132,15 @@ Updated: 2026-08-05
   (C17-1), the bases remain.
 - cnLoadDate_ is dead code (zero callers) yet CLAUDE.md's loader gotcha lists
   it — remove function + doc mention together (the A4 precedent).
-- The scan's full Low list (see report): notably createFormToken prefillData
-  uncapped (PHI), getDepartmentEmails_ no sanitize-on-read, signature
-  data:image validation, Spanish 200-thread cap, intake Sent INV-169 total,
-  fixture field-name drifts (patientTrx/views/contentRequests), A12
-  line-scope + A13 first-attr regex, A11 state-class vocabulary, -deep set
-  derivation, manager fan-in seq tokens (train/empdocs/coaching).
+- Scan Lows still open after batch ⑤: Spanish 200-thread cap, manager fan-in
+  seq tokens (train/empdocs/coaching), C17-9 SaveDayRange lock amplification,
+  unknown-punch-type lockout — the batch-⑥ set.
+- acknowledgeDoc's EmpDocs signature is size-bounded but not
+  data:image-validated (authenticated signers — lower stakes; same one-line
+  shape as the public-form fix if wanted).
+- The three raw DR.STATUS readers (INV-183) — the drStatus_ predicate batch.
+- form_public accordions toggle 'open' with no aria; outside
+  A11Y_SCAN_PARTIALS (standalone page) — genuine gap, out of batch scope.
 - Visual matrix: still no Admin panel scenario (needs a getAutomationHealth
   fixture) and no dark Reference/Training/Coaching; error states unshot.
 - INV-187 candidates the top-5 batch did NOT close: managerAggregateFlagged_,
@@ -154,9 +174,8 @@ Updated: 2026-08-05
   follow-on to write AND run at next deploy.
 
 ## Where I left off
-Top-5 batch complete and green (pure 411 / DOM 69 / bite-checks pass /
-`node --check` clean). At checkpoint the post-styles-change visual re-shoot
-was finishing — confirm 29/29 + 0 overflow + eyeball clock mobile, then
-commit + push to `claude/broad-scan-up98b9` — DONE (fbde621), and /sync-docs
-is DONE (d81bb01). Next: pick the next batch (② silent-degradation stragglers or
-③ tripwire-integrity sweep).
+Batch ⑤ complete and green (pure 425 / DOM 69 / bite-checks pass /
+`node --check` clean; no stylesheet changes, no re-shoot owed), committed +
+pushed to `claude/broad-scan-up98b9`. Next: `/sync-docs` for batch ⑤ (nine
+items in its block), then batch ⑥ (structural/growth) or ⑦ (visual-lens
+expansion). Deploy of all cycle-17 batches remains an operator action.

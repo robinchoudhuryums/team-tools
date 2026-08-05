@@ -828,12 +828,29 @@ function wireMoneyTotals() {
     });
   });
 
+// C17-12 (cycle 17) — values typed into a conditional section SURVIVED
+// re-hiding it and rode into the hashed, consent-stamped, immutable
+// FormSubmissions row while the signer's screen showed them hidden (the
+// attested record disagreed with what was shown). Clear on hide, the same
+// pattern the intake reveal controls follow (intakePpdApplyReveals_).
+function clearHiddenSection(wrap) {
+  if (!wrap) return;
+  wrap.querySelectorAll('input, textarea, select').forEach(function (el) {
+    if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+    else el.value = '';
+  });
+}
+
   // Wire isPatient radio toggle
   var radios = document.querySelectorAll('input[name="isPatient"]');
   radios.forEach(function(r) {
     r.addEventListener('change', function() {
       var signerFields = document.getElementById('signer-fields');
-      if (signerFields) signerFields.style.display = r.value === 'no' ? '' : 'none';
+      if (signerFields) {
+        var showSigner = r.value === 'no';
+        signerFields.style.display = showSigner ? '' : 'none';
+        if (!showSigner) clearHiddenSection(signerFields);   // C17-12
+      }
     });
   });
 
@@ -842,7 +859,11 @@ function wireMoneyTotals() {
   govRadios.forEach(function(r) {
     r.addEventListener('change', function() {
       var wrap = document.getElementById('govAssist-desc-wrap');
-      if (wrap) wrap.style.display = r.value === 'yes' ? '' : 'none';
+      if (wrap) {
+        var showGov = r.value === 'yes';
+        wrap.style.display = showGov ? '' : 'none';
+        if (!showGov) clearHiddenSection(wrap);   // C17-12
+      }
     });
   });
 
@@ -851,7 +872,11 @@ function wireMoneyTotals() {
   guardianRadios.forEach(function(r) {
     r.addEventListener('change', function() {
       var wrap = document.getElementById('guardian-fields');
-      if (wrap) wrap.style.display = r.value === 'yes' ? '' : 'none';
+      if (wrap) {
+        var showGuardian = r.value === 'yes';
+        wrap.style.display = showGuardian ? '' : 'none';
+        if (!showGuardian) clearHiddenSection(wrap);   // C17-12
+      }
     });
   });
 }

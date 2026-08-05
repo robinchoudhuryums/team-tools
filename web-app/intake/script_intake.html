@@ -1216,7 +1216,16 @@ function intakeCondAddCustom_(btn) {
   // lowercases into the engine's exclude list and silently reads as NO
   // diagnosis while the UI shows a selected chip. (Meaningless as a selected
   // condition on the display-only pickers too — leave the picker empty instead.)
-  if (['no', 'n/a', 'na', 'none', 'no.'].indexOf(val.toLowerCase()) >= 0) {
+  // C17-13 (cycle 17): the exact-match block missed negation PHRASES — a rep
+  // typing "None diagnosed" / "Nothing neurological" produced a truthy Q43
+  // value, and the engine reads ANY non-empty Q43 as a valid neuro Dx
+  // (Group-3/solid-seat upgrades fire) while the lit chip READS as a
+  // negation. Block on the LEADING TOKEN; the list is deliberately
+  // conservative ("normal…"/"non-epileptic…" are real conditions and must
+  // not be blocked).
+  var negTok = val.toLowerCase().split(/[\s.,:;\/-]+/)[0];
+  if (['no', 'n/a', 'na', 'none', 'nothing', 'denies', 'denied', 'negative', 'neg'].indexOf(negTok) >= 0
+      || ['no.', 'n/a'].indexOf(val.toLowerCase()) >= 0) {
     if (typeof showToast === 'function') showToast('Leave the picker empty for "none" — a selected chip means a condition IS present.', 'toast-warn');
     return;
   }
@@ -2065,6 +2074,10 @@ function enterIntakeSentView(area) {
       }
       INTAKE_STATE.sent = res.submissions || [];
       INTAKE_STATE.sentIsManager = !!res.isManager;
+      // C17 batch-5 (INV-169): the server caps the list — keep the pre-slice
+      // total so the render can say "showing N of M" (absent on an older
+      // server -> renders nothing, as before).
+      INTAKE_STATE.sentTotal = (typeof res.total === 'number') ? res.total : null;
       INTAKE_STATE.sentEntry = { at: Date.now() };
       intakeRenderSentHost_();
       done();
@@ -2124,7 +2137,14 @@ function intakeRenderSentList_(subs, isManager) {
       (isManager ? '.' : ' — your sent PPD / PMD / PAP forms will appear here.') + '</div>';
   }
   return '<div class="intk-grid">' +
-    '<div class="intk-head">' + (isManager ? 'All reps · ' : 'Your submissions · ') + subs.length + ' shown (newest first, max 100)</div>' +
+    // C17 batch-5 (INV-169): "showing N of M" when the server capped the list
+    // — a silent cap read as "exactly 100 submissions exist". Older servers
+    // send no total -> the parenthetical simply doesn't render.
+    '<div class="intk-head">' + (isManager ? 'All reps · ' : 'Your submissions · ') + subs.length + ' shown' +
+      ((typeof INTAKE_STATE !== 'undefined' && INTAKE_STATE.sentTotal != null &&
+        INTAKE_STATE.sentTotal > (INTAKE_STATE.sent || []).length)
+        ? ' · server holds ' + INTAKE_STATE.sentTotal + ' total (list capped)' : '') +
+      ' (newest first, max 100)</div>' +
     subs.map(function (s, i) {
       return '<div class="intk-sent-row">' +
         intakeFormPill_(s.formType) +

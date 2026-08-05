@@ -6698,5 +6698,74 @@ test('batch-3: visual-fixture payload shapes match the server field names', () =
     'kbGetContentRequests fixture uses the real {open, resolved, openCount} shape');
 });
 
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-5 pins — server-hardening stragglers (consistency of
+// established patterns). Comment-stripped per INV-188.
+console.log('\ncycle 17 — batch-5 pins');
+
+test('C17-12: form_public conditional sections clear on hide (attested-record hygiene)', () => {
+  const fp = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/form_public.html'), 'utf8'));
+  assert.ok(/function clearHiddenSection\(/.test(fp), 'the clear helper exists');
+  assert.ok((fp.match(/clearHiddenSection\(/g) || []).length >= 4,
+    'all three conditional toggles (signer / govAssist / guardian) clear on hide');
+});
+
+test('C17-11: a mixed split-send that half-fails still books the delivered half', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/internalSent = true;/.test(body), 'the internal copy send is tracked');
+  assert.ok(/if \(!internalSent\)/.test(body) && /externalSendFailed = sendErr\.message/.test(body),
+    'a failure AFTER the internal copy falls through to the bookkeeping instead of returning');
+  assert.ok(/externalCopyFailed/.test(body), 'the CallNoteEmail audit row marks the partial send');
+  assert.ok(/warning:/.test(body) && /do NOT re-send the whole email/.test(body),
+    'the partial return warns the rep against duplicating the dept copy');
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/res\.warning\) showToast\(res\.warning, 'toast-warn'\)/.test(cn),
+    'the client surfaces the partial-send warning');
+});
+
+test('C17-13: intake condition custom-add blocks LEADING negation tokens', () => {
+  const ik = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
+  assert.ok(/negTok = val\.toLowerCase\(\)\.split\(/.test(ik), 'the check keys off the first token');
+  ['none', 'nothing', 'denies', 'negative'].forEach((w) => {
+    assert.ok(new RegExp("'" + w + "'").test(ik), 'negation vocabulary includes ' + w);
+  });
+});
+
+test('batch-5: the last uncapped client-writable cells are bounded + validated', () => {
+  const tok = c17strip(extractRawFunction('Code.js', 'createFormToken'));
+  assert.ok(/slice\(0, 200\)/.test(tok), 'recipientName capped');
+  assert.ok(/prefillJson\.length > 20000/.test(tok) && /Object\.keys\(prefillData\)\.length > 50/.test(tok),
+    'prefillData bounded BEFORE the append (INV-96 spirit)');
+  const sub = c17strip(extractRawFunction('Code.js', 'submitFormByToken'));
+  assert.ok(/signatureData && !\/\^data:image/.test(sub),
+    'the signature must be validated as a data:image URL (closes the remote-fetch channel)');
+  const to1 = c17strip(extractRawFunction('Code.js', 'submitTimeOffRequest'));
+  const to2 = c17strip(extractRawFunction('Code.js', 'managerSubmitTimeOff'));
+  assert.ok(/slice\(0, 1000\)/.test(to1) && /slice\(0, 1000\)/.test(to2), 'time-off notes capped on both paths');
+});
+
+test('batch-5: dept-email config is sanitized on read and comma-safe on write', () => {
+  const get = c17strip(extractRawFunction('Code.js', 'getDepartmentEmails_'));
+  assert.ok(/clean\[name\] = email/.test(get) && /indexOf\('@'\) > 0/.test(get),
+    'getDepartmentEmails_ whitelist-rebuilds on read (the L-12 rule)');
+  const save = c17strip(extractRawFunction('Code.js', 'saveDepartmentEmails'));
+  assert.ok(/\[,;\]/.test(save), 'saveDepartmentEmails rejects comma/semicolon dept names (the join-on-comma shape)');
+});
+
+test('batch-5: capped/annotated list contracts (INV-169) + search hit status + cache-buster', () => {
+  const il = c17strip(extractRawFunction('Code.js', 'intakeListMySubmissions'));
+  assert.ok(/total: total, cap: INTAKE_LIST_CAP_/.test(il), 'the intake Sent list returns its pre-slice total');
+  const ik = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
+  assert.ok(/sentTotal/.test(ik) && /list capped/.test(ik), 'the client renders the cap note');
+  const sr = c17strip(extractRawFunction('Code.js', 'searchReference'));
+  assert.strictEqual((sr.match(/status: status,/g) || []).length, 3,
+    'all three hit pushes carry the item status (draft legibility for admins)');
+  const kb = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
+  assert.ok(/g\.status === 'draft'/.test(kb), 'the chunk-group header renders the Draft pill');
+  const code = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(/indexOf\('\?'\) >= 0 \? '&v=' : '\?v='/.test(code),
+    'the intake image cache-buster respects an existing query string');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

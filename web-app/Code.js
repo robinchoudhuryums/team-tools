@@ -981,6 +981,13 @@ function submitTimeOffRequest(date, type, notes) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
+    // C17 batch-5 — `notes` was the module's only unbounded client free text
+    // (every sibling caps: INV-96 forms, INV-143 subformData, COACH_TEXT_MAX):
+    // >50k threw mid-lock; ~45k wrote fine and was echoed whole into the
+    // dashboard, calendar, decision email, and — on cancel — the shared
+    // AuditLog row that every bounded tail scan reads. 1000 chars is generous
+    // for a request note.
+    notes = String(notes || '').slice(0, 1000);
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
     // Cycle-11 L-11 — sanity horizon. The time-off date was the module's only
@@ -1602,6 +1609,7 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
     if (!isValidTimeOffType_(type)) return { success: false, error: 'Invalid leave type.' };
+    notes = String(notes || '').slice(0, 1000);   // C17 batch-5 — same cap as submitTimeOffRequest
 
     const targetEmp = lookupEmployeeById_(empId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
@@ -4525,6 +4533,15 @@ function saveDepartmentEmails(deptJson) {
     if (!deptJson || typeof deptJson !== 'object') return { success: false, error: 'Invalid department map.' };
     var keys = Object.keys(deptJson);
     for (var i = 0; i < keys.length; i++) {
+      // C17 batch-5 — a dept name containing a comma (or semicolon) silently
+      // corrupts the DeptRequests round-trip: emailFromCallNote stores
+      // `departments.join(', ')` in ToDept and every per-dept consumer
+      // (drSplitDepts_, the Incoming inbox, SLA-min, deptStats) splits that
+      // on ','. "Billing, West" round-trips as two phantom departments.
+      // Nothing enforced the comma-free rule the INTAKE_CONDITION_LISTS
+      // already documents for the same join-on-comma shape.
+      if (/[,;]/.test(keys[i])) return { success: false, error: 'Department name "' + keys[i] + '" cannot contain a comma or semicolon — it would split into two departments everywhere the joined list is parsed.' };
+      if (String(keys[i]).trim().length === 0 || keys[i].length > 60) return { success: false, error: 'Department name must be 1–60 characters.' };
       var email = String(deptJson[keys[i]] || '').trim();
       if (!email || email.indexOf('@') < 1) return { success: false, error: 'Invalid email for ' + keys[i] + ': ' + email };
     }
@@ -6770,6 +6787,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // copy then fails, a rep re-send duplicates a dept email (annoying),
     // never the customer's.
     const splitCta = drTrackable && recipientList.externalTo;
+    let internalSent = false;        // C17-11
+    let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
         MailApp.sendEmail({
@@ -6779,6 +6798,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
           htmlBody: sentHtml,
         });
+        internalSent = true;
         MailApp.sendEmail({
           to: recipientList.externalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
@@ -6796,7 +6816,19 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         });
       }
     } catch (sendErr) {
-      return { success: false, error: 'Email send failed' + (splitCta ? ' (one of the two copies may have gone out — check before re-sending)' : '') + ': ' + sendErr.message };
+      // C17-11 (cycle 17): if the INTERNAL dept copy already went out, it is
+      // carrying a live resolve CTA — returning failure here skipped ALL the
+      // bookkeeping below, so a DELIVERED cross-rep department email left no
+      // CallNoteEmail audit row (INV-32 calls the AuditLog "the only
+      // cross-rep trail"), no EmailedAt stamp, and a resolve token that
+      // dead-ended at "Request not found"; the rep then re-sent, and the
+      // dedup lookup (which finds only OPEN rows) minted a SECOND token.
+      // Fall through to the bookkeeping for the delivered half and report
+      // the partial outcome instead.
+      if (!internalSent) {
+        return { success: false, error: 'Email send failed: ' + sendErr.message };
+      }
+      externalSendFailed = sendErr.message;
     }
 
     // Email is OUT. Past this point we never return failure — a partial stamp
@@ -6804,7 +6836,12 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // adjacent column writes via setValues to shrink the partial-write window.
     const empTz = empTz_(emp);
     const emailedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
-    const deptLabel = selections.departments.join(', ');
+    // C17-11: on a partial send the stamp/audit label reflects what was
+    // DELIVERED — the internal departments only ('Other' carried the failed
+    // external copy).
+    const deptLabel = externalSendFailed
+      ? selections.departments.filter(function (d) { return d !== 'Other'; }).join(', ')
+      : selections.departments.join(', ');
     try {
       sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1, 1, 2)
         .setValues([[emailedAt, deptLabel]]);
@@ -6836,7 +6873,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // the noteId (an investigator can open the note for full detail), the
     // department label, and the recipient count instead.
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
-      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
+      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
+      (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).
     // PHI-free: the row carries the dept label + the update CATEGORY + the source
@@ -6863,6 +6901,14 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         noteId + '): ' + drErr.message);
     }
 
+    // C17-11: a partial send reports success (the dept copy is out — a retry
+    // would DUPLICATE it) with an explicit warning naming what failed. The
+    // client surfaces `warning` as a warn toast.
+    if (externalSendFailed) {
+      return { success: true, emailedAt, recipients: recipientList.internalTo, subject,
+        warning: 'The department copy was sent, but the external/Other copy failed (' +
+          externalSendFailed + '). Send to the external recipient separately — do NOT re-send the whole email (the department already has it).' };
+    }
     return { success: true, emailedAt, recipients: recipientList.to, subject };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -7888,13 +7934,28 @@ function createFormToken(payload) {
   const p = payload || {};
   const formType      = String(p.formType || '').trim();
   const recipientEmail = String(p.recipientEmail || '').trim();
-  const recipientName = String(p.recipientName || '').trim();
-  const prefillData   = p.prefillData || {};
+  // C17 batch-5 — the LAST uncapped client-writable cell family (every
+  // sibling was bounded across cycles: subformData M-15, email details L-1,
+  // form payloads INV-96, feedback appends F11): an oversized prefill threw
+  // mid-appendRow inside the flow, and PrefillData is PHI stored on a tab
+  // whose purge is opt-in-off. Same 45k cell posture as INV-96; the name
+  // gets a display-plausible cap.
+  const recipientName = String(p.recipientName || '').trim().slice(0, 200);
+  const prefillData   = (p.prefillData && typeof p.prefillData === 'object' && !Array.isArray(p.prefillData))
+    ? p.prefillData : {};
   const noteId        = p.noteId || null;
 
   // Validate form type
   if (INTERACTIVE_FORM_TYPES.indexOf(formType) < 0) {
     return { success: false, error: 'Unknown interactive form type: ' + formType };
+  }
+  // C17 batch-5: bound the prefill BEFORE the append (INV-96 spirit —
+  // reject with a clean error, never throw mid-write).
+  {
+    const prefillJson = JSON.stringify(prefillData);
+    if (Object.keys(prefillData).length > 50 || prefillJson.length > 20000) {
+      return { success: false, error: 'Prefill data is too large for a form link — trim the prefilled fields and try again.' };
+    }
   }
   // Validate recipient email
   if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
@@ -8097,6 +8158,16 @@ function submitFormByToken(token, formData) {
       sanitizedData[k] = data[k];
     });
     const signatureData = String(data.signature || '');
+    // C17 batch-5 — the signature must BE a signature: it is later embedded
+    // as an <img src> in the in-app submission viewer (rep AND manager
+    // innerHTML it) and fetched server-side by the HTML→PDF conversion, so
+    // an anonymous submitter could plant an https:// URL that fires a
+    // tracking-pixel fetch (IP/UA leak) from whoever reviews the PHI
+    // submission. esc_ already prevents attribute breakout; this closes the
+    // remote-fetch channel. Empty stays allowed (fields-only forms).
+    if (signatureData && !/^data:image\//.test(signatureData)) {
+      return { success: false, error: 'The signature could not be read — please clear the signature pad and sign again.' };
+    }
 
     // Consent is server-enforced, not just client-gated: the payload MUST
     // affirmatively report consentAgreed === true. The original deploy
@@ -11063,9 +11134,28 @@ function invalidateRosterCache_() {
 }
 
 function getDepartmentEmails_() {
+  // C17 batch-5 — sanitize-on-read (the cycle-9 L-12 rule this one getter
+  // skipped): a hand-edited Script Property holding an array / non-string
+  // values previously fed Object.keys() surfaces unfiltered — the composer
+  // dept list, drParseDepartments_ validKeys, empDepartments_, and
+  // resolveEmailRecipients_, where a non-string value rode raw into the
+  // MailApp `to`. Whitelist-rebuild: keep only non-empty string keys mapping
+  // to plausible email strings; anything else degrades to the CONFIG
+  // fallback entry-wise (an empty rebuilt map falls back whole).
   const prop = PropertiesService.getScriptProperties().getProperty('CN_DEPARTMENT_EMAILS');
   if (prop) {
-    try { return JSON.parse(prop); } catch (_) {}
+    try {
+      const raw = JSON.parse(prop);
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const clean = {};
+        Object.keys(raw).forEach(function (k) {
+          const name = String(k || '').trim();
+          const email = (typeof raw[k] === 'string') ? raw[k].trim() : '';
+          if (name && email && email.indexOf('@') > 0) clean[name] = email;
+        });
+        if (Object.keys(clean).length > 0) return clean;
+      }
+    } catch (_) {}
   }
   return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
 }
@@ -15813,7 +15903,7 @@ function intakeRecListHtml_(items, selections) {
       : esc_(product.hcpcs);
 
     const imgCell = product.imageUrl
-      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + '?v=' + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
+      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + (String(product.imageUrl).indexOf('?') >= 0 ? '&v=' : '?v=') + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
       : '<td style="width:1px;padding:0;border-bottom:1px solid ' + P.line + ';background:' + rowBg + ';"></td>';
 
     // justification is server-generated (trusted) + carries inline markup, so
@@ -16157,8 +16247,12 @@ function intakeListMySubmissions() {
       }
     });
     out.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    // C17 batch-5 (INV-169): a payload-capped reader returns its PRE-SLICE
+    // total — for a manager this list spans ALL reps × 3 form types, so a
+    // silent 100-cap read as "exactly 100 submissions exist".
+    const total = out.length;
     if (out.length > INTAKE_LIST_CAP_) out.length = INTAKE_LIST_CAP_;
-    return { submissions: out, isManager: !!emp.isManager };
+    return { submissions: out, isManager: !!emp.isManager, total: total, cap: INTAKE_LIST_CAP_ };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -16558,7 +16652,12 @@ function searchReference(query, opts) {
       if (!rows[i][KB.ID]) continue;
       // #4 — drafts never surface in search to non-admins (nor to ANY caller
       // when publishedOnly is forced — the org-wide-cached AI retrieval path).
-      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
+      // C17 batch-5: hits now CARRY the status — an admin's search showed a
+      // draft chunk identically to a published one, inviting share/assign of
+      // unpublished content believed live (rep responses only ever contain
+      // 'published', so the field leaks nothing).
+      const status = kbRowStatus_(rows[i][KB.STATUS]);
+      if (status === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
       const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
       const dept = String(rows[i][KB.DEPARTMENT] || '');
@@ -16569,7 +16668,7 @@ function searchReference(query, opts) {
       if (type === 'embed') {
         // No stored content to chunk — title-only hit.
         if (titleScore > 0) {
-          hits.push({ id: id, title: title, department: dept, type: 'embed',
+          hits.push({ id: id, title: title, department: dept, type: 'embed', status: status,
             heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
         }
         continue;
@@ -16582,7 +16681,7 @@ function searchReference(query, opts) {
       });
       if (!secHits.length) {
         if (titleScore > 0) {
-          hits.push({ id: id, title: title, department: dept, type: 'article',
+          hits.push({ id: id, title: title, department: dept, type: 'article', status: status,
             heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
         }
         continue;
@@ -16590,7 +16689,7 @@ function searchReference(query, opts) {
       secHits.sort(function (a, b) { return b.score - a.score; });
       secHits.slice(0, KB_SEARCH_MAX_PER_ITEM).forEach(function (sh) {
         const cut = kbChunkTruncate_(sh.section.md, KB_CHUNK_MAX_CHARS);
-        hits.push({ id: id, title: title, department: dept, type: 'article',
+        hits.push({ id: id, title: title, department: dept, type: 'article', status: status,
           heading: sh.section.heading, anchor: sh.section.anchor,
           chunkMd: cut.md, truncated: cut.truncated, score: sh.score,
           snippet: snippetOf(cut.md) });
