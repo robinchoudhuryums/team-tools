@@ -2259,12 +2259,26 @@ function cnLoadToday_(then) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (res.error) {
-        if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
-        else if (currentView === requestedView) showToast(res.error, 'toast-error');
-        CN_STATE.rollingNotes = [];
-        CN_STATE.autoCopyFormat = '';
+        if (/not configured/i.test(res.error)) {
+          CN_STATE.enrolled = false;
+          CN_STATE.rollingNotes = [];
+          CN_STATE.autoCopyFormat = '';
+        } else {
+          // Cycle-17 C17-5 — PRESERVE last-good on a structured {error}
+          // (a lock timeout / transient Sheets throw caught server-side).
+          // This branch used to clear rollingNotes unconditionally, so after
+          // the toast faded the stack rendered the real empty state — a
+          // transient failure indistinguishable from a genuinely empty day
+          // (the INV-187 class, invisible to the A12 scan because the class
+          // rendered IS the empty state). The transport-failure handler
+          // below always preserved last-good; the two shapes now agree.
+          if (currentView === requestedView) showToast(res.error, 'toast-error');
+          CN_STATE.rollingLoadFailed = true;
+          CN_STATE.rollingEntry = null;   // never serve a failed round as fresh (INV-129 rule)
+        }
       } else {
         CN_STATE.enrolled = true;
+        CN_STATE.rollingLoadFailed = false;
         CN_STATE.rollingNotes = res.notes || [];
         CN_STATE.autoCopyFormat = res.autoCopyFormat || '';
         CN_STATE.empTz = res.timezone || '';
@@ -2275,6 +2289,11 @@ function cnLoadToday_(then) {
       if (then) then();
     })
     .withFailureHandler(function (err) {
+      // C17-5 — state updates run unconditionally (the file's own rule);
+      // last-good notes are preserved, but the round is marked failed +
+      // un-fresh so a re-enter refetches instead of instant-painting.
+      CN_STATE.rollingLoadFailed = true;
+      CN_STATE.rollingEntry = null;
       if (currentView !== requestedView) return;
       showToast('Load failed: ' + err.message, 'toast-error');
       if (then) then();
@@ -2314,11 +2333,18 @@ function cnLoadDateRange_(startDate, endDate, then) {
       const curEnd = CN_STATE.historyEndDate || CN_STATE.historyDate;
       if (curStart !== startDate || curEnd !== endDate) return;   // stale range — drop entirely
       if (res.error) {
-        if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
-        else if (currentView === requestedView) showToast(res.error, 'toast-error');
-        CN_STATE.historyNotes = [];
+        if (/not configured/i.test(res.error)) {
+          CN_STATE.enrolled = false;
+          CN_STATE.historyNotes = [];
+        } else {
+          // C17-5 — same preserve-last-good + mark-failed as cnLoadToday_.
+          if (currentView === requestedView) showToast(res.error, 'toast-error');
+          CN_STATE.historyLoadFailed = true;
+          CN_STATE.historyEntry = null;
+        }
       } else {
         CN_STATE.enrolled = true;
+        CN_STATE.historyLoadFailed = false;
         CN_STATE.historyNotes = res.notes || [];
         // Stamp freshness + the exact range for History's instant-paint fast path.
         CN_STATE.historyEntry = { at: Date.now(), key: startDate + ':' + endDate };
@@ -2327,6 +2353,9 @@ function cnLoadDateRange_(startDate, endDate, then) {
       if (then) then();
     },
     function (err) {
+      // C17-5 — mirror of cnLoadToday_'s failure posture.
+      CN_STATE.historyLoadFailed = true;
+      CN_STATE.historyEntry = null;
       if (currentView !== requestedView) return;
       showToast('Load failed: ' + err.message, 'toast-error');
       if (then) then();
@@ -3771,6 +3800,12 @@ function cnRenderStack_() {
     return cnNoteMatchesFilter_(n, CN_STATE.filter);
   });
   if (filtered.length === 0) {
+    // C17-5 — a failed load with NO last-good must not read as an empty day
+    // (INV-175/187). With preserved notes the filter-empty message stands.
+    if (CN_STATE.rollingLoadFailed && (CN_STATE.rollingNotes || []).length === 0) {
+      stack.innerHTML = errorStateHtml_("Today's notes could not be loaded — this is a load failure, not an empty day. Re-open the Log tab to retry.");
+      return;
+    }
     stack.innerHTML = `<div class="cn-stack-empty">No notes match this filter for today.</div>`;
     return;
   }
@@ -5980,6 +6015,11 @@ function cnRenderHistoryStack_() {
 
   if (notes.length === 0) {
     if (summary) summary.innerHTML = fltPill;
+    // C17-5 — same failed-load-vs-empty split as cnRenderStack_.
+    if (CN_STATE.historyLoadFailed && allNotes.length === 0) {
+      stack.innerHTML = errorStateHtml_('These notes could not be loaded — this is a load failure, not an empty range. Change the date range to retry.');
+      return;
+    }
     stack.innerHTML = '<div class="cn-stack-empty">No ' + (flt === 'all' ? '' : esc(flt) + '-filtered ') +
       'notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
     return;
@@ -7586,7 +7626,15 @@ function cnReplaceNoteInState_(updated) {
           return;
         }
         overlay.classList.remove('open');
-        showToast(`Exported ${res.noteCount} notes — opening sheet`, 'toast-success');
+        // C17-6 — an export missing reps must never read as complete: the
+        // server now reports Sheets it could not read (additive field — an
+        // older server simply never sets it).
+        if (res.skippedReps && res.skippedReps.length > 0) {
+          showToast('Exported ' + res.noteCount + ' notes — INCOMPLETE: could not read ' +
+            res.skippedReps.length + ' rep Sheet(s): ' + res.skippedReps.join(', '), 'toast-warn');
+        } else {
+          showToast(`Exported ${res.noteCount} notes — opening sheet`, 'toast-success');
+        }
         window.open(res.url, '_blank');
       })
       .withFailureHandler(function (err) {

@@ -2457,7 +2457,10 @@
   }
   :root[data-compact="1"] .metric-value { font-size: 22px; }
   /* .pto-rings / .pto-svg compact overrides removed in Round 2 · 8d. */
-  :root[data-compact="1"] .actions-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* C17-1: the dead .actions-grid compact override was removed — no markup
+     emits .actions-grid (the pre-redesign action tiles; INV-184 class), and
+     the fixed A2 scan would otherwise demand a viewport breakpoint for a
+     grid that never renders. The rest of the dead cluster is a follow-on. */
   :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
   :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
   /* Console-redesign components — compact reflow (V1·E4) */
@@ -2473,13 +2476,10 @@
     grid-template-columns: 1fr 1fr; gap: 8px;
   }
   :root[data-compact="1"] .actions .prime { grid-column: span 2; }
-  :root[data-compact="1"] .ledger {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  /* Drop the 4th (pay-period) ledger cell in compact — keep the 3 most
-     glanceable: Annual / Sick / Hours Today. */
-  :root[data-compact="1"] .ledger .cell:nth-child(4) { display: none; }
-  :root[data-compact="1"] .ledger .cell { padding: 10px 12px; }
+  /* C17-1: the dead .ledger compact overrides were removed — no render emits
+     .ledger markup since the Round 2 · 8b Time/PTO merge retired the Clock
+     ledger strip (INV-184 class; the fixed A2 scan surfaced them). The dead
+     base .ledger rules are a follow-on with the rest of the cluster. */
   :root[data-compact="1"] .ledger .cell-value { font-size: 18px; }
   :root[data-compact="1"] .telemetry {
     grid-template-columns: 1fr 1fr;
@@ -2508,11 +2508,16 @@
   }
   :root[data-compact="1"] .overlay { padding: 10px; }
   :root[data-compact="1"] .field-row { grid-template-columns: 1fr; gap: 8px; }
-  :root[data-compact="1"] .preset-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  /* C17-1: dropped the redundant `grid-template-columns: 1fr 1fr` — it
+     re-stated the base's identical tracks (gap-only change), which read to
+     the fixed A2 scan as a re-columning that owed a breakpoint. */
+  :root[data-compact="1"] .preset-grid { gap: 6px; }
   :root[data-compact="1"] .emp-grid { grid-template-columns: repeat(2, 1fr); }
   :root[data-compact="1"] .cal-grid { gap: 2px; }
-  :root[data-compact="1"] .ts-summary { grid-template-columns: 1fr; gap: 6px; }
-  :root[data-compact="1"] .leave-balance-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* C17-1: dead .ts-summary / .leave-balance-row compact overrides removed —
+     zero markup emits either class (the pre-8b timesheet summary + balance
+     row; INV-184 class, surfaced by the fixed A2 scan). Base rules are a
+     follow-on with the rest of the dead cluster. */
   :root[data-compact="1"] .timeoff-layout { grid-template-columns: 1fr; }
   /* Make audit timestamps wrap below the body in compact mode */
   :root[data-compact="1"] .audit-row { flex-wrap: wrap; }
@@ -2554,6 +2559,16 @@
        cell wide enough for its label + tabular value. The compact rule below
        is unchanged and still wins inside the pop-out. */
     .telemetry { grid-template-columns: repeat(2, 1fr); }
+    /* C17-1 (cycle 17): the fixed A2 scan finally reached styles.html (its
+       `[data-compact="1"]` form was invisible to the old regex) and these two
+       LIVE grids had only pop-out overrides. .actions kept four fixed tracks
+       at every real viewport — an empty 4th track + wrapping labels once the
+       dash stacks (~358px column); 2×2 with the prime spanning mirrors the
+       compact treatment. .field-row stacks modal field pairs (~170px each at
+       390px) the same way the pop-out always has. */
+    .actions { grid-template-columns: 1fr 1fr; }
+    .actions .prime { grid-column: span 2; }
+    .field-row { grid-template-columns: 1fr; }
     .telemetry .tel-cell:nth-child(2) { border-right: none; }
     .telemetry .tel-cell:nth-child(1),
     .telemetry .tel-cell:nth-child(2) { border-bottom: 1px solid var(--line); }

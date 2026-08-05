@@ -1488,7 +1488,17 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
       if (String(rows[i][TO.EMP_ID]).trim() === empId
           && normalizeDate_(rows[i][TO.DATE]) === date
           && normalizeAuditTs_(rows[i][TO.SUBMITTED_AT]) === submittedAt) {
-        const oldStatus = String(rows[i][TO.STATUS]).trim();
+        // Cycle-17 C17-2 — normalize the stored status ONCE (the F8 /
+        // INV-183 pattern). Every sibling TO.STATUS reader lowercases, but
+        // this — the ONE function that mutates balances — compared the raw
+        // trimmed cell, so a hand-edited 'approved'/'APPROVED' row read as
+        // approved everywhere else yet NOT-approved here (re-deduct on
+        // approve, skipped restore on deny), and a lowercased 'reconciled'
+        // defeated the S1.3 terminal guard. oldStatusRaw survives ONLY for
+        // the compensating revert + the audit note, so the cell is written
+        // back / recorded exactly as found.
+        const oldStatusRaw = String(rows[i][TO.STATUS]).trim();
+        const oldStatus = oldStatusRaw.toLowerCase();
         const type    = String(rows[i][TO.TYPE]);
         const notes   = String(rows[i][TO.NOTES]);
         const empName = String(rows[i][TO.EMP_NAME]);
@@ -1498,7 +1508,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // RE-DEDUCT via the transition below (oldStatus !== 'Approved' &&
         // newStatus === 'Approved'), undoing the credit. Treat Reconciled as
         // terminal — refuse any status change on it.
-        if (oldStatus === 'Reconciled') {
+        if (oldStatus === 'reconciled') {
           return { success: false, error: 'This request was reconciled (a duplicate already credited back) and can no longer change status.' };
         }
 
@@ -1509,7 +1519,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // date) that getPtoReconciliation exists to detect after the fact.
         // The submit paths already carry this guard; this row's own index is
         // excluded so approving a lone Pending row is unaffected.
-        if (oldStatus !== 'Approved' && newStatus === 'Approved'
+        if (oldStatus !== 'approved' && newStatus === 'Approved'
             && hasActiveTimeOffOnDate_(sheet, empId, date, i)) {
           return { success: false, error:
             'This employee already has another Pending or Approved request for ' + date +
@@ -1533,13 +1543,13 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
           const dedu = getLeaveDeduction_(type);
           if (dedu.bucket) {
             try {
-              if (oldStatus !== 'Approved' && newStatus === 'Approved') {
+              if (oldStatus !== 'approved' && newStatus === 'Approved') {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
-              } else if (oldStatus === 'Approved' && newStatus !== 'Approved') {
+              } else if (oldStatus === 'approved' && newStatus !== 'Approved') {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
               }
             } catch (balErr) {
-              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatus); } catch (revertErr) {
+              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatusRaw); } catch (revertErr) {
                 Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
                   revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
               }
@@ -1553,11 +1563,11 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         const targetForAudit = targetEmp || { id: empId, name: empName, email: '' };
 
         writeAuditLog_(targetForAudit, 'TimeOffStatusChange', date, '', false, 0,
-          `${oldStatus}→${newStatus} (${type})`, callerEmp.email);
+          `${oldStatusRaw}→${newStatus} (${type})`, callerEmp.email);
 
         // Email the employee (best-effort — cycle-9 M-7: fires post-lock in
         // the finally so the send never holds the global ScriptLock).
-        if (oldStatus !== newStatus && targetEmp && targetEmp.email) {
+        if (oldStatus !== newStatus.toLowerCase() && targetEmp && targetEmp.email) {
           notifyAfter = function () { notifyEmployeeOfDecision_(targetEmp, date, type, notes, newStatus); };
         }
 
@@ -5850,6 +5860,13 @@ function exportCallNotesRange(startDate, endDate) {
 
     const roster = getEmployeeRosterRows_();
     const allNotes = [];
+    // Cycle-17 C17-6 — a PHI export presented as complete while silently
+    // missing a rep is the INV-187 shape cycle-16 F1 fixed in
+    // managerGetShiftStats (INV-52's old "skips that rep" clause described
+    // the defect). Unreadable rep Sheets are now COLLECTED and carried on
+    // the response + the audit row, so the export can never read as
+    // complete when it isn't.
+    const skippedReps = [];
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -5882,10 +5899,19 @@ function exportCallNotesRange(startDate, endDate) {
         }
       } catch (e) {
         console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push({ repId: repId, repName: repName });
       }
     }
 
     if (allNotes.length === 0) {
+      // C17-6 — "no notes" and "no readable notes" are different answers:
+      // if reps were skipped, say the export FAILED to read them rather
+      // than implying the range was genuinely empty.
+      if (skippedReps.length > 0) {
+        return { error: 'Export could not read ' + skippedReps.length + ' rep Sheet(s) (' +
+          skippedReps.map(function (s) { return s.repName; }).join(', ') +
+          ') and found no other notes between ' + startDate + ' and ' + endDate + '.' };
+      }
       return { error: `No notes found between ${startDate} and ${endDate}.` };
     }
     allNotes.sort((a, b) => {
@@ -5925,14 +5951,22 @@ function exportCallNotesRange(startDate, endDate) {
       if (callerEmp.email && String(callerEmp.email).toLowerCase() !== owner) newSs.addEditor(callerEmp.email);
     } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
 
+    // C17-6 — the audit row is the durable record of this PHI export: a
+    // count with silently-missing reps read as complete. Rep names/ids are
+    // roster data (PHI-free — the row already carries the manager + range).
+    const skipNote = skippedReps.length > 0
+      ? '; skippedReps=' + skippedReps.length + ' (' +
+        skippedReps.map(function (s) { return s.repId; }).join(',') + ') — INCOMPLETE'
+      : '';
     writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
-      `${allNotes.length} notes → ${newSs.getId()}`);
+      `${allNotes.length} notes → ${newSs.getId()}` + skipNote);
 
     return {
       success: true,
       url: newSs.getUrl(),
       fileName: name,
       noteCount: allNotes.length,
+      skippedReps: skippedReps.map(function (s) { return s.repName; }),
     };
   } catch (err) { return { error: err.message }; }
 }

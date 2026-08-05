@@ -5902,6 +5902,11 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
 const A2_INVERSE_OK = {
   // selector → why a viewport breakpoint is not required
   'rail-flags': 'compact widens 2-up → 4-up (icon-only rail); the inverse of stacking',
+  // C17-1 (cycle 17) — surfaced when the fixed regex reached styles.html:
+  'ts-recent-row': 'base is auto 1fr auto (content-sized tracks, one flexible middle) — ' +
+    'nothing fixed-width to overflow; the compact override only drops the leading icon column for density',
+  'hero': 'the only live consumer is the Clock dashboard, whose .dash-hero (tc/script_clock.html) ' +
+    'sets display:block — the base 2-col grid never applies; verified by the 390px clock scenario in the visual matrix',
 };
 // A grid whose BASE track function is intrinsically responsive (auto-fill /
 // auto-fit / min() / clamp()) already reflows with the viewport — it needs no
@@ -5922,8 +5927,17 @@ test('A2: EVERY compact-mode grid override has a matching viewport breakpoint', 
     if (!fs.existsSync(p)) return;
     const src = decomment(fs.readFileSync(p, 'utf8'));
     // Selectors re-columned under :root[data-compact].
+    // Cycle-17 C17-1 — the attribute selector must match BOTH written forms:
+    // the partials write the bare `:root[data-compact]` but every one of
+    // styles.html's ~67 compact overrides writes `:root[data-compact="1"]`,
+    // which the old literal `\[data-compact\]` never matched — so the shared
+    // stylesheet contributed ZERO selectors and the scan that claims to
+    // cover it ("A11Y_SCAN_PARTIALS + styles.html") guarded nothing there
+    // (the checked >= 8 floor was satisfied by the partials alone). The
+    // INV-179/188 failure shape: a derived scan silently narrower than the
+    // thing it derives from.
     const compactSels = new Set();
-    const re = /:root\[data-compact\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
+    const re = /:root\[data-compact[^\]]*\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
     let m;
     while ((m = re.exec(src))) compactSels.add(m[1]);
     if (!compactSels.size) return;
@@ -6339,6 +6353,106 @@ test('F1: every CONFIG key has a reader (dead declarations are defects)', () => 
   }
   assert.deepStrictEqual(dead, [],
     'CONFIG keys declared but never read — wire them, remove them, or allowlist with a reason');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 — top-5 fix pins (C17-2 / C17-5 / C17-6 / C17-7). C17-1 is pinned
+// by the fixed A2 scan itself (the regex now matches both attribute forms and
+// styles.html contributes real obligations). All scans strip comments first
+// (INV-188) — the fixes' own comments quote the code they removed.
+console.log('\ncycle 17 — top-5 fix pins');
+
+const c17strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+// Balanced-brace body of `function name(` inside an HTML partial's source.
+function c17fnBody(src, name) {
+  const at = src.indexOf('function ' + name + '(');
+  assert.ok(at >= 0, name + ' not found');
+  const open = src.indexOf('{', at);
+  let d = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') d++;
+    else if (src[i] === '}') { d--; if (d === 0) return src.slice(open, i + 1); }
+  }
+  throw new Error('unbalanced ' + name);
+}
+
+// C17-2: updateTimeOffStatus — the ONE balance-mutating STATUS reader —
+// normalizes TO.STATUS once (F8/INV-183 pattern) and compares lowercase;
+// the raw cell survives only for the compensating revert + audit note.
+test('C17-2: updateTimeOffStatus reads TO.STATUS once and compares lowercase', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'updateTimeOffStatus'));
+  const rawReads = (body.match(/\[TO\.STATUS\]/g) || []).length;
+  assert.strictEqual(rawReads, 1, 'TO.STATUS indexed-read must appear exactly once (normalize-once), got ' + rawReads);
+  assert.ok(/oldStatusRaw\.toLowerCase\(\)/.test(body), 'the read lowercases into the comparison local');
+  assert.ok(/oldStatus === 'reconciled'/.test(body), 'the S1.3 terminal guard compares lowercase');
+  assert.ok(!/oldStatus\s*(?:!==|===)\s*'(?:Approved|Reconciled|Pending|Denied)'/.test(body),
+    'a capitalized comparison against the normalized local remains — the pre-C17-2 shape');
+  assert.ok(/setValue\(oldStatusRaw\)/.test(body), 'the compensating revert writes the RAW cell back');
+  assert.ok(/oldStatus !== newStatus\.toLowerCase\(\)/.test(body),
+    'the notify no-op check compares both sides normalized');
+});
+
+// C17-5: a structured {error} from the CN loaders preserves last-good notes,
+// marks the round failed + un-fresh (INV-129 rule), and a failed load with NO
+// last-good renders an error state — never the empty-day state (INV-175/187).
+test('C17-5: CN loaders preserve last-good on {error} and mark the round failed', () => {
+  const src = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const today = c17fnBody(src, 'cnLoadToday_');
+  const range = c17fnBody(src, 'cnLoadDateRange_');
+  // The wipe may survive ONLY inside the not-configured (enrollment) branch.
+  assert.strictEqual((today.match(/rollingNotes = \[\]/g) || []).length, 1,
+    'cnLoadToday_ clears rollingNotes exactly once (the enrollment branch)');
+  assert.strictEqual((range.match(/historyNotes = \[\]/g) || []).length, 1,
+    'cnLoadDateRange_ clears historyNotes exactly once (the enrollment branch)');
+  // Both handlers of each loader mark the failed round; success clears it.
+  assert.ok((today.match(/rollingLoadFailed = true/g) || []).length >= 2,
+    'cnLoadToday_ marks failure in BOTH the {error} and transport handlers');
+  assert.ok(/rollingLoadFailed = false/.test(today), 'success clears the flag');
+  assert.ok((today.match(/rollingEntry = null/g) || []).length >= 2,
+    'a failed round is never served as fresh (both handlers null the SWR stamp)');
+  assert.ok((range.match(/historyLoadFailed = true/g) || []).length >= 2,
+    'cnLoadDateRange_ marks failure in BOTH handlers');
+  assert.ok(/historyLoadFailed = false/.test(range), 'success clears the flag');
+  assert.ok((range.match(/historyEntry = null/g) || []).length >= 2,
+    'a failed range round is never served as fresh');
+  // Cold-failure renders an error state, not the empty-day state.
+  const stack = c17fnBody(src, 'cnRenderStack_');
+  const hist = c17fnBody(src, 'cnRenderHistoryStack_');
+  assert.ok(/rollingLoadFailed && \(CN_STATE\.rollingNotes \|\| \[\]\)\.length === 0/.test(stack) &&
+    /errorStateHtml_/.test(stack), 'Log stack: failed-load-with-no-last-good renders errorStateHtml_');
+  assert.ok(/historyLoadFailed && allNotes\.length === 0/.test(hist) &&
+    /errorStateHtml_/.test(hist), 'History stack: failed-load-with-no-last-good renders errorStateHtml_');
+});
+
+// C17-6: a PHI export can never read as complete when reps were unreadable —
+// the skipped set rides the response, the audit row, and the client toast.
+test('C17-6: exportCallNotesRange carries skippedReps on response + audit row + toast', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'exportCallNotesRange'));
+  assert.ok(/skippedReps\.push\(/.test(body), 'the per-rep catch collects the skipped rep');
+  assert.ok(/skippedReps:\s*skippedReps\.map/.test(body), 'the success response carries skippedReps');
+  assert.ok(/skippedReps=/.test(body) && /INCOMPLETE/.test(body),
+    'the CallNotesExport audit note records skippedReps= and marks the export INCOMPLETE');
+  assert.ok(/skippedReps\.length > 0/.test(body) && /could not read/.test(body),
+    'all-skipped-no-notes returns a read-failure error, not "no notes found"');
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/res\.skippedReps && res\.skippedReps\.length > 0/.test(cn),
+    'the export client surfaces the skipped list (warn toast)');
+});
+
+// C17-7: the three manager lazy cards distinguish a FAILED read from a clean/
+// empty result on BOTH failure shapes (structured {error} + transport throw).
+// A blank slot may mean only "genuinely nothing to show" (INV-187).
+test('C17-7: manager lazy cards render an error state on both failure shapes', () => {
+  const src = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  ['loadPendingAdjustments_', 'loadPtoReconciliation_', 'loadSheetDoctor_'].forEach((fn) => {
+    const body = c17fnBody(src, fn);
+    assert.ok((body.match(/errorStateHtml_\(/g) || []).length >= 2,
+      fn + ' must render errorStateHtml_ on BOTH the {error} and transport paths');
+    assert.ok(!/withFailureHandler\(function\s*\(\s*\)\s*\{\s*\}\)/.test(body),
+      fn + ' still has an empty failure handler');
+    assert.ok(/res && res\.error/.test(body),
+      fn + ' must split res.error from the genuinely-empty render');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

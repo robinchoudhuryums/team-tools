@@ -102,10 +102,17 @@ function loadPtoReconciliation_() {
     .withSuccessHandler(function (res) {
       const s = document.getElementById('mgr-pto-recon');
       if (!s || currentView !== 'manage') return;
-      if (!res || res.error || !res.reps || res.reps.length === 0) { s.innerHTML = ''; return; }
+      // C17-7 — a FAILED check is not a CLEAN check (INV-187): only a
+      // genuinely drift-free result may stay invisible.
+      if (res && res.error) { s.innerHTML = errorStateHtml_('PTO reconciliation check could not run — this is a failed check, not a clean result. (' + res.error + ')'); return; }
+      if (!res || !res.reps || res.reps.length === 0) { s.innerHTML = ''; return; }
       s.innerHTML = renderPtoReconCard_(res);
     })
-    .withFailureHandler(function () { /* best-effort — stay silent on failure */ })
+    .withFailureHandler(function (err) {
+      const s = document.getElementById('mgr-pto-recon');
+      if (!s || currentView !== 'manage') return;
+      s.innerHTML = errorStateHtml_('PTO reconciliation check could not run — this is a failed check, not a clean result. (' + ((err && err.message) || 'load failed') + ')');
+    })
     .getPtoReconciliation();
 }
 
@@ -186,13 +193,19 @@ function loadSheetDoctor_() {
     .withSuccessHandler(function (res) {
       const s = document.getElementById('mgr-sheet-doctor');
       if (!s || currentView !== 'manage') return;
-      if (!res || res.error ||
+      // C17-7 — same failed-vs-clean split as loadPtoReconciliation_.
+      if (res && res.error) { s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + res.error + ')'); return; }
+      if (!res ||
           ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length))) {
         s.innerHTML = ''; return;
       }
       s.innerHTML = renderSheetDoctorCard_(res);
     })
-    .withFailureHandler(function () { /* best-effort — stay silent on failure */ })
+    .withFailureHandler(function (err) {
+      const s = document.getElementById('mgr-sheet-doctor');
+      if (!s || currentView !== 'manage') return;
+      s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + ((err && err.message) || 'load failed') + ')');
+    })
     .getTimesheetDoctor();
 }
 
@@ -289,10 +302,20 @@ function loadPendingAdjustments_() {
     .withSuccessHandler(function (res) {
       const s = document.getElementById('mgr-adjust-queue');
       if (!s || currentView !== 'manage') return;
-      if (!res || res.error || !res.requests || res.requests.length === 0) { s.innerHTML = ''; return; }
+      // C17-7 — this is an OPERATIONAL queue, not a diagnostic: a failed
+      // read rendering '' was byte-identical to "no requests pending", so
+      // employee-submitted adjustments silently never surfaced (INV-187 —
+      // the degraded output was MORE reassuring than the healthy one).
+      // Only a genuinely empty result may render nothing.
+      if (res && res.error) { s.innerHTML = errorStateHtml_('Couldn\'t load pending punch-adjustment requests — the queue may NOT be empty. Refresh to retry. (' + res.error + ')'); return; }
+      if (!res || !res.requests || res.requests.length === 0) { s.innerHTML = ''; return; }
       s.innerHTML = renderAdjustQueueCard_(res.requests);
     })
-    .withFailureHandler(function () { /* best-effort */ })
+    .withFailureHandler(function (err) {
+      const s = document.getElementById('mgr-adjust-queue');
+      if (!s || currentView !== 'manage') return;
+      s.innerHTML = errorStateHtml_('Couldn\'t load pending punch-adjustment requests — the queue may NOT be empty. Refresh to retry. (' + ((err && err.message) || 'load failed') + ')');
+    })
     .managerGetPendingAdjustments();
 }
 
