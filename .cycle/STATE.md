@@ -67,9 +67,12 @@ Updated: 2026-08-05
 - **DEPLOY of the top-5 batch**: `cd web-app && clasp push -f` → New version →
   run `runAllTests()` from the editor (cannot run in the container). Expect
   S4-relevant behavior unchanged for canonical-case rows.
-- **`/sync-docs` for this batch is NOT yet run.** Owed items are listed in the
-  implement block's DOCUMENTATION UPDATES section (INV-52/46 clause, INV-183
-  fourth column, A2 gotcha text, the four doc-drift items from the scan).
+- ~~`/sync-docs` for this batch~~ — **DONE** (commit d81bb01): A2 gotcha
+  (C17-1 blind spot + resolutions + three-entry allowlist), INV-183 fourth
+  column CLOSED (TO.STATUS), INV-46 outcome-carrying export clause, loader
+  gotcha (cnLoadDate_ dropped + C17-5 posture), ledger KDD retired,
+  trigger-installer gate list corrected, stale Code.js ambient comment fixed,
+  test count 407→411.
 - The rest of the cycle-17 findings (1 High none — done; the other Mediums:
   C17-3 ambient walk, C17-4 ATT-zero, C17-8 tour contrast, C17-9
   SaveDayRange lock amplification, C17-10 training clip, C17-11 split-send,
@@ -130,6 +133,6 @@ Updated: 2026-08-05
 Top-5 batch complete and green (pure 411 / DOM 69 / bite-checks pass /
 `node --check` clean). At checkpoint the post-styles-change visual re-shoot
 was finishing — confirm 29/29 + 0 overflow + eyeball clock mobile, then
-commit + push to `claude/broad-scan-up98b9`. After that: `/sync-docs` for
-this batch, then pick the next batch (② silent-degradation stragglers or
+commit + push to `claude/broad-scan-up98b9` — DONE (fbde621), and /sync-docs
+is DONE (d81bb01). Next: pick the next batch (② silent-degradation stragglers or
 ③ tripwire-integrity sweep).
