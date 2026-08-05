@@ -1,6 +1,67 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 16 (broad scan) CLOSED 2026-08-03 — reflected net +7 (8 prod fixes − 1
+new failure mode; 1 capability; 5 defensive).** 0 Critical / 0 High / 6 Medium /
+5 Low across 11 findings, ALL implemented across three sessions, each followed by
+`/sync-docs`, **merged as PR #152 and deployed** — `runAllTests()` on the
+deployed project returned **286 passed / 0 failed / 0 skipped**, the first cycle
+since 10 to reach `main` and production inside its own cycle rather than adding
+to a deploy backlog. **Axis-B lowest: Test Coverage Quality.**
+
+**The theme is the finding: three separate tripwires each named the right rule
+and then scanned a FIXED LIST of past fixes.** Deriving A12's file and class sets
+surfaced **28 violations across six partials** that had sat behind a green CI
+since cycle 13 — including `train/script_coaching.html`, which renders a load
+failure into `.tr-empty`, a class the tripwire already *knew*, in a file it did
+not scan. Deriving A2's scan surfaced a fifth candidate (verified NOT a defect
+and resolved as a rule refinement rather than an allowlist entry). Deriving the
+cycle-15 fixture-mirror pin from its DO-NOT-EDIT region caught `cnNoteCoverage_`,
+three tokens of paraphrase that had already diverged where it matters. That is
+INV-179 three times in one cycle, and it argues for sweeping the remaining
+hand-listed scans proactively rather than one per audit.
+
+**The production fixes cluster into one shape.** F1/F4/F5/F10 are all *a failure
+rendered as a confident, complete-looking answer*: a rep whose Sheet could not be
+opened appeared on the manager's end-of-shift **performance** table with
+`totalNotes:0` and a CRIT-toned 0% badge; a swallowed PTO read made **every rep
+count as working**, so the one tool whose purpose is understaffing detection
+returned a green all-clear on a day half the team is off; and 28 load-failure
+sites read as "there is nothing here", including the Reference tree and the
+Ctrl/⌘+K drawer *during a call*. **F9** was the clinical one — `parseInt('')` is
+`NaN` and every `NaN` comparison is false, so an unreadable weight capacity read
+as **unlimited**. Interface fixes: the Reference reader measured **70px** at
+390px (that file carried zero media queries, on the mid-call lookup tool), and
+`uiPrompt`'s input had no accessible name while its validator error had no live
+region.
+
+**Two honest corrections, both applied at reflection.** (1) The Batch-4/F9 block
+reported **0 new failure modes**; a chair silently vanishing from recommendations
+behind a **pull-based** detector is one (Low, fail-safe), so the cycle's net went
+8 → **7** — a correction that LOWERED the score. (2) The F9 operator check came
+back *after* the reflection and changed the finding's **reason**: exactly one
+catalog row had an unreadable capacity, and the operator identifies it as a
+scratch entry, not a real product. So no genuine chair was recommended above its
+capacity, and F9's clinical severity is much lower than first written — but the
+fail-open was still reached, by a row that should not have been in the pool at
+all. That surfaced a structural gap now documented: **the Offerings catalog has
+no concept of a disabled row** (the only inert state is an empty HCPCS), and the
+engine's `hcpcsNum >= 848` Group-3 ladder silently classifies any **E-code** as
+Group 3 by arithmetic accident. Both logged as follow-ons rather than fixed —
+the right shape is a clinical decision.
+
+**Adopted INV-187** (a surface that judges from a best-effort read must carry the
+outcome and suppress the judgement when degraded — the class three cycles fixed
+one instance at a time) **and INV-188** (a source-scanning tripwire must strip
+comments before matching; it has now bitten twice). Tests: pure **391→407**, DOM
+69, visual matrix **22→29** scenarios with 0 missing fixtures and 0 horizontal
+overflow. Every fix pin bite-checked; four failed their first write and in every
+case the *pin* was wrong about the code, twice by tripping on the code's own
+explanatory comments. **Estimates were lost again** — given in chat, never
+appended when given, the session compacted before reflection; the identical
+process failure cycle 13 recorded.
+
+## Prior standing (Cycle 15 close, 2026-07-31)
 **Cycle 15 (Seams & Invariants — the cadence audit) CLOSED 2026-07-31 —
 reflected net +1 (2 prod fixes − 1 new failure mode; 4 defensive).** The audit
 found 0 Critical / 0 High / 2 Medium / 3 Low, and that thin profile is the
@@ -364,3 +425,4 @@ backlog was implemented):
 | 2026-07-29 | 13 | net +8 (9 prod fixes − 1 fail-safe new failure mode; 12 defensive) | *(backfilled.)* The interface lens produced the top four findings for the SECOND consecutive cycle: six click-only `span`/`div` controls keyboard-unreachable (A1), compact-mode grids with no viewport breakpoint on a rep-facing tab (A2), nav state carried by CSS class alone so a screen-reader user was never told where they were (A11), 16 load-failure sites rendering into the EMPTY-state container (A12), and ~30 surfaces with no heading outline below the `h1` (A13). `timeToMins_` returned NaN, scoring corrupt rows ON TIME (A3). |
 | 2026-07-31 | 14 | net 0 (0 prod fixes − 0 new failure modes; 4 capabilities; 3 defensive) | *(backfilled.)* Operator-requested FEATURE work, not an audit — net 0 is by design. **The headline is a NEGATIVE result:** Phase 0 was a cheap read-only gate built to test whether the approved design was buildable, and it was not (DQE carries one row per (agent, date)), invalidating the original scope before any of it was written. Re-scoped to transfer-only and shipped: queue inventory, per-queue transfer reader, Combined/By-department/By-queue UI, operator-supplied grouping. |
 | 2026-07-31 | 15 | net +1 (2 prod fixes − 1 new failure mode; 4 defensive) | **Seams & Invariants** (cadence 4 of 4). 0 Critical / 0 High / 2 Medium / 3 Low. Fixes: the CDR health card toned off a count that can never reach zero (permanently amber → now tones off the actionable pairing and names the alias to add); and `getTeamMetrics` counted offboarded name-only roster rows into the manager's team table and totals (F3 → one `empRosterEmail_` predicate across 14 walks). Also removed 4 declared-but-unread CONFIG keys — two were knobs against a hardcoded FRIDAY, i.e. a silent no-op for an operator moving the weekly digest. Adopted INV-181–186, clearing a two-cycle backlog. Pure 394→396, DOM 69. |
+| 2026-08-03 | 16 | net +7 (8 prod fixes − 1 new failure mode; 1 capability; 5 defensive) | Broad scan (0 Critical / 0 High / 6 Medium / 5 Low), entire backlog across three sessions, **merged PR #152 and DEPLOYED** (`runAllTests()` 286/0/0 — first cycle since 10 to ship inside its own cycle). Theme: three tripwires each named the right rule then scanned a FIXED LIST of past fixes — deriving A12's sets surfaced **28 violations across six partials** behind a green CI, one of them using a class the tripwire already knew in a file it did not scan. Fixes cluster as *a failure rendered as a confident answer* (F1 unreadable Sheet → 0 notes + CRIT 0% on the manager performance table; F4 a swallowed PTO read made every rep count as working, so an understaffing planner gave a green all-clear; F5 a confident team judgement from a contaminated numerator; F10 the 28 sites) plus the clinical F9 (`parseInt('')` → NaN → an unreadable weight capacity read as UNLIMITED) and two interface fixes (Reference reader 70px at 390px; `uiPrompt` unnamed input + unannounced validator error). Reflection corrected the batch self-report DOWNWARD (8→7). Post-reflection the operator check changed F9's *reason*: the one malformed row is a scratch entry, so no real chair was mis-recommended — but it exposed that the catalog has no disabled-row concept and the Group-3 ladder misclassifies E-codes (both logged, not fixed). Adopted INV-187/188. Pure 391→407, DOM 69, visual 22→29. |
