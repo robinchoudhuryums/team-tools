@@ -592,9 +592,13 @@ const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
 // staleActionCount, todayTotal} aggregate so the 60s sidebar polling doesn't
-// re-scan the full per-rep sheet on every tick. TTL matches the polling
-// interval; mutating endpoints (submit/setFlag/setResolved/delete) invalidate
-// to keep the badge fresh after user action.
+// re-scan the full per-rep sheet on every tick. TTL-ONLY freshness (INV-43):
+// the TTL matches the 60s polling interval, so the badge can be at most 60s
+// stale — the same ceiling eager invalidation would give. Mutating endpoints
+// deliberately do NOT invalidate (invalidateCnAmbientCache_ is retained for
+// manual operator use only; a cycle-17 doc fix — an earlier copy of this
+// comment claimed the mutation hot path invalidates, which stopped being
+// true when INV-43 landed).
 const CN_AMBIENT_CACHE_PREFIX = 'cn_ambient_v1_';
 const CN_AMBIENT_CACHE_TTL = 60;
 
