@@ -70,3 +70,8 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-31,15,F2 - CDR col-4 read,S,1.0,0.7,"Under, but only because half was REVERTED. Shipping the header entry would have needed operator data I do not have"
 2026-07-31,15,F4 - visual fixture mirror,M,4.0,1.2,"3.3x UNDER: mechanical once the decision was ""copy verbatim + pin"" rather than ""make the fixture derive at build time"""
 2026-07-31,15,F5 - INV-169 correction,S,0.5,0.2,"Under; a doc edit once the drift was located"
+2026-08-05,17,Batch 2 - silent-degradation stragglers (9 items),M-L,10,3,~3x over: nine INV-187 sites landed in one session; the walk pins cost more than the fixes
+2026-08-05,17,Batch 3+4 - tripwire sweep + interface set,L,14,4,~3.5x over: derivations are mechanical once the rule is named; the interface fixes were small CSS/markup
+2026-08-05,17,Batch 5 - server hardening stragglers (10 items),M-L,8,3,"~2.5x over: established patterns (caps, sanitize-on-read) copy quickly; pins dominated"
+2026-08-05,17,"Batch 6 - structural/growth (C17-9, lockout, caps, seq, dead CSS)",M-L,10,4,~2.5x over incl. one full re-apply after the git-checkout wipe; C17-9 itself was ~1h
+2026-08-05,17,Batch 7 - visual-lens expansion,M-L,8,4,"~2x over: fixture-shape mirroring against server return sites was the real cost, as predicted"

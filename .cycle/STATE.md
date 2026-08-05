@@ -20,9 +20,11 @@ Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
   close the cycle, and the ONE operator deploy action.
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
-  16 and 17-so-far have completed since. Cadence is every 4, so the next Seams
-  audit is due after cycle 18)
+Subsystem cycles since last Seams audit: 4 (cycle 15 was the seams audit;
+  16 and 17 have completed since, and cycle 17's reflection closes the fourth
+  subsystem cycle. Cadence is every 4 — the NEXT audit should be a Seams &
+  Invariants audit, which also owes the library its 3 pending candidates:
+  INV-189/190/191 from cycle 17's reflection)
 Updated: 2026-08-05
 
 ## In progress (facts to carry forward — NOT judgments)
