@@ -8,8 +8,15 @@ Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
   consolidated ②③④ /sync-docs is DONE (commit 9098206). BATCH ⑤
   (server-hardening stragglers) is IMPLEMENTED
   (`.cycle/blocks/17-batch5-broad-implement.md`, net 10−1=9; pure 425, DOM 69,
-  bite-checks pass, no stylesheet changes so no re-shoot owed). Batch ⑤'s
-  /sync-docs is OWED (nine items in its block). Remaining: batches ⑥–⑦.
+  bite-checks pass, no stylesheet changes so no re-shoot owed) and its
+  /sync-docs is DONE (commit 922a360). BATCHES ⑥+⑦ (structural/growth +
+  visual-lens expansion) are IMPLEMENTED
+  (`.cycle/blocks/17-batch6-batch7-broad-implement.md`, net 4−0=4 + 1
+  structural + 3 harness-capability; pure 433, DOM 69, 7 bite-checks pass,
+  FULL 37-scenario matrix re-shot: 0 missing / 0 overflow). Batches ⑥+⑦'s
+  /sync-docs is OWED (items in the block). ALL SEVEN cycle-17 batches are
+  now implemented — the cycle is ready for /reflect after the last
+  /sync-docs.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
@@ -40,6 +47,22 @@ Updated: 2026-08-05
   (.actions is now 2-col at ≤540px with the prime spanning).
 
 ## Completed this cycle
+- BATCH ⑥+⑦ | Code.js, styles.html, metrics/train/cn partials, CLAUDE.md
+  (paired loader-gotcha edit), test/visual/{mock,shoot,README}, run.js |
+  ⑥: C17-9 one-read-indexed range edit + memoized personal-sheet handle
+  (was ~124 full reads + ~124 openById inside the global lock);
+  getNextActions_ skips unrecognized punch types (the hand-edit lockout);
+  Spanish readers report the 200-thread scan cap (INV-169) + client warning;
+  trainLoadMgr_/edLoadMgr_/coachLoadMgr_ INV-156 seq tokens guarding every
+  state write; ~240 lines of INV-184 dead CSS deleted (incl. four compact
+  halves C17-1's grid-only scan couldn't see) + cnLoadDate_ removed with its
+  doc mention. ⑦: mock ?failrpc= forced-failure hook; first Admin scenarios
+  (light+dark, full INV-185 fixture set incl. the derived getAutomationHealth
+  key pin); dark parity for Reference/Training/Coaching; first three
+  error-state shots (A12/INV-175 on camera). Matrix 29→37. 8 new pins, 7
+  bite-checks. Pure 433. NOTE: a `git checkout` bite-reversal wiped
+  uncommitted Code.js once (the batch-3/4 accident repeated) — re-applied;
+  bites now revert via python only, and batches commit before the next starts.
 - BATCH ⑤ (10 items) | Code.js, form_public.html, intake/kb/cn partials,
   run.js | C17-12 (form_public conditional sections CLEAR on re-hide — stale
   hidden values no longer enter the hashed immutable record), C17-11
@@ -126,12 +149,10 @@ Updated: 2026-08-05
 - CARRIED (cycle-13 A5), DEV PROJECT ONLY: set `INSTANCE_IS_PROD=false`.
 
 ## Open follow-on items
-- Dead CSS cluster in styles.html (base rules for .ledger/.ledger-3,
-  .hero-clock*, .actions-grid/.action-btn, .ts-summary, .leave-balance-row) +
-  the stale "ledger" KDD paragraph in CLAUDE.md — the compact halves are gone
-  (C17-1), the bases remain.
-- cnLoadDate_ is dead code (zero callers) yet CLAUDE.md's loader gotcha lists
-  it — remove function + doc mention together (the A4 precedent).
+- NEW (batch ⑦ error scenario surfaced it): when getReferenceTree fails, the
+  Reference LANDING pane renders an indefinite loSweep loader below the
+  tree's error card (no failure branch of its own) — Low, photographed in
+  reference-error-light-mobile.png.
 - Scan Lows still open after batch ⑤: Spanish 200-thread cap, manager fan-in
   seq tokens (train/empdocs/coaching), C17-9 SaveDayRange lock amplification,
   unknown-punch-type lockout — the batch-⑥ set.
@@ -141,8 +162,9 @@ Updated: 2026-08-05
 - The three raw DR.STATUS readers (INV-183) — the drStatus_ predicate batch.
 - form_public accordions toggle 'open' with no aria; outside
   A11Y_SCAN_PARTIALS (standalone page) — genuine gap, out of batch scope.
-- Visual matrix: still no Admin panel scenario (needs a getAutomationHealth
-  fixture) and no dark Reference/Training/Coaching; error states unshot.
+- Visual matrix (updated post-⑦): Admin, dark Reference/Training/Coaching,
+  and error states are now COVERED; still unshot — Coverage/Punctuality tabs,
+  Sent Forms, EmpDocs My Docs, and modal/overlay states.
 - INV-187 candidates the top-5 batch did NOT close: managerAggregateFlagged_,
   managerSearchCallNotes, taxonomy/trends, managerGetUnresolvedActionCount
   (cached undercount), getMetricsAmbient blanket catch, My Stats no-CDR
@@ -174,8 +196,9 @@ Updated: 2026-08-05
   follow-on to write AND run at next deploy.
 
 ## Where I left off
-Batch ⑤ complete and green (pure 425 / DOM 69 / bite-checks pass /
-`node --check` clean; no stylesheet changes, no re-shoot owed), committed +
-pushed to `claude/broad-scan-up98b9`. Next: `/sync-docs` for batch ⑤ (nine
-items in its block), then batch ⑥ (structural/growth) or ⑦ (visual-lens
-expansion). Deploy of all cycle-17 batches remains an operator action.
+Batches ⑥+⑦ complete and green (pure 433 / DOM 69 / 7 bite-checks / full
+37-scenario matrix 0-missing 0-overflow), committed + pushed to
+`claude/broad-scan-up98b9`. ALL cycle-17 batches are implemented. Next:
+`/sync-docs` for batches ⑥+⑦ (items in the block), then `/reflect` to close
+the cycle. Deploy of all cycle-17 batches remains ONE operator action
+(`clasp push -f` → New version → `runAllTests()`).

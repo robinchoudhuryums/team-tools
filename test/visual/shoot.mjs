@@ -73,6 +73,22 @@ const SCENARIOS = [
   ['metrics-light-mobile',    { tool: 'metrics',   tab: null },              MOBILE,  'light', ''],
   ['metrics-team-light-mobile', { tool: 'metrics', tab: 'metricsTeam' },     MOBILE,  'light', ''],
   ['training-light-mobile',   { tool: 'develop',   tab: null },              MOBILE,  'light', ''],
+  // Cycle-17 Batch 7 — three coverage gaps the Visual Audit Stage had been
+  // carrying as known-uncovered: (a) dark parity for Reference / Training /
+  // Coaching (light-only until now — a theme defect there was unshootable);
+  // (b) the Admin panel at ANY viewport (needed the getAutomationHealth-family
+  // fixtures); (c) the first ERROR-STATE shots — `?failrpc=<name>` makes the
+  // mock invoke the FAILURE handler for the named RPCs, so the
+  // errorStateHtml_ paths (A12/INV-175: warn card + glyph, never an
+  // empty-state) render on camera instead of only in source pins.
+  ['reference-dark-wide',     { tool: 'reference', tab: null },              WIDE, 'dark',  ''],
+  ['training-dark-wide',      { tool: 'develop',   tab: null },              WIDE, 'dark',  ''],
+  ['coaching-dark-wide',      { tool: 'develop',   tab: 'coaching' },        WIDE, 'dark',  ''],
+  ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
+  ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
+  ['metrics-error-light-wide',    { tool: 'metrics',   tab: null },          WIDE,   'light', '?failrpc=getMyMetrics'],
+  ['cn-log-error-light-wide',     { tool: 'callNotes', tab: 'callNotes' },   WIDE,   'light', '?failrpc=getMyCallNotes'],
+  ['reference-error-light-mobile', { tool: 'reference', tab: null },         MOBILE, 'light', '?failrpc=getReferenceTree'],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

@@ -286,6 +286,155 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           { empId: 'E-1088', empName: 'Sam Ortiz', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 },
           { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1 }] } },
     getMyCoaching: { items: [] },
+    // ── Batch-7 (cycle 17): the Admin panel scenario. Field names mirror the
+    // server return sites (INV-185): getAdminConfig's config bag, the
+    // computeAutomationHealth_ report (syncFails/automationLastRuns/digests/
+    // cdr/detectors/clientErrors/witnessFails/selfTest/intakeCatalog), the
+    // getStorageHealth probe rows, deployReadinessItems_'s {items, summary},
+    // getRetentionConfig's {value, source} pairs, and the taxonomy/trends/
+    // audit-log walk outcomes (skippedReps — cycle-17 batch 2).
+    getAdminConfig: {
+      departmentEmails: { Billing: 'billing@umsupply.com', Shipping: 'shipping@umsupply.com', Resupply: 'resupply@umsupply.com' },
+      stateTaxRates: { TX: 0.0825, OK: 0.045 },
+      updateSuggestions: { Billing: ['Close Order', 'OOP Order'] },
+      defaultSuggestions: ['Close Order', 'Verified Shipping', 'Repeat Resupply'],
+      emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
+      externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
+      deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      featureFlags: {
+        registry: [
+          { key: 'showTeammateStatus', label: 'Teammate status card', description: 'Show the teammate status card on the Clock page.', default: true, scope: 'both' },
+          { key: 'voiceInput', label: 'Voice dictation (Call Notes)', description: 'Mic-to-text on the Issue / Resolution fields.', default: false, scope: 'client', danger: 'Routes audio outside the BAA boundary.' },
+          { key: 'managerDailyBrief', label: 'Manager daily brief', description: 'One consolidated morning email per manager.', default: false, scope: 'server' }],
+        values: { showTeammateStatus: true, voiceInput: false, managerDailyBrief: false },
+      },
+      kbAi: { dailyCap: 3, model: 'claude-haiku-4-5', models: ['claude-haiku-4-5', 'claude-sonnet-5'], hasKey: false, spend: { date: todayIso, usd: 0, calls: 0 } },
+    },
+    getEnrolledCallNotesReps: { reps: [
+      { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] },
+    getCallNotesTagTaxonomy: {
+      tags: [
+        { tag: 'resupply', count: 41, lastSeen: daysAgo(0), archived: false },
+        { tag: 'billing', count: 26, lastSeen: daysAgo(1), archived: false },
+        { tag: 'mask-fit', count: 12, lastSeen: daysAgo(4), archived: false }],
+      archivedOnlyTags: [{ tag: 'legacy-tag', count: 0, lastSeen: '', archived: true }],
+      repsScanned: 3, skippedReps: [],
+    },
+    getCallNotesTagTrends: (function () {
+      var mk = function (tag, base) {
+        var c = []; for (var i = 0; i < 12; i++) c.push((i * base + tag.length) % 7);
+        var total = 0; c.forEach(function (x) { total += x; });
+        return { tag: tag, counts: c, total: total, delta: c[11] - c[10] };
+      };
+      return { weekStarts: [], series: [mk('resupply', 3), mk('billing', 2), mk('mask-fit', 1)], weeks: 12, skippedReps: [] };
+    })(),
+    getCallNotesAuditLog: {
+      rows: [
+        { timestamp: daysAgo(0) + ' 10:44:12', timestampMgr: daysAgo(0) + ' 00:14:12', repId: 'E-1042', repName: 'Avery Blake', actorEmail: 'avery@umsupply.com', action: 'CallNoteEmail', noteId: 'note-2', dateLocal: daysAgo(0) },
+        { timestamp: daysAgo(1) + ' 16:02:40', timestampMgr: daysAgo(1) + ' 05:32:40', repId: 'E-1088', repName: 'Sam Ortiz', actorEmail: 'mgr@umsupply.com', action: 'CallNoteTrainingReply', noteId: 'note-9', dateLocal: daysAgo(1) }],
+      truncated: false,
+    },
+    getRetentionConfig: {
+      archiveDays: { value: 0, source: 'default' },
+      retentionDays: { value: 0, source: 'default' },
+      archiveRetentionDays: { value: 0, source: 'default' },
+      warnings: [], archiveTab: 'NotesArchive',
+    },
+    getCallNotesEnrollment: { enrolled: [
+      { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }],
+      unenrolled: [{ id: 'E-1090', name: 'Leo Kim' }] },
+    managerGetUnresolvedActionCount: { count: 1, partial: false },
+    getDeployReadiness: {
+      items: [
+        { key: 'managers', label: 'Manager emails configured', status: 'ok', detail: '2 configured' },
+        { key: 'ADP_SS_ID', label: 'Time Clock / ADP', status: 'ok', detail: 'Reachable · tz matches' },
+        { key: 'KB_SS_ID', label: 'Knowledge Base + Training', status: 'ok', detail: 'Reachable · tz matches' },
+        { key: 'INTAKE_SS_ID', label: 'Intake (PHI)', status: 'ok', detail: 'Reachable · tz matches' },
+        { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
+        { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
+      summary: { ok: 4, warn: 2, fail: 0 },
+      configTimezone: 'Asia/Kolkata',
+    },
+    getAutomationHealth: {
+      syncFails: { count: 0, recent: [], windowDays: 30 },
+      automationLastRuns: [
+        { action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } },
+        { action: 'AdpExportAuto', last: null },
+        { action: 'FormDataPurge', last: null },
+        { action: 'CallNotesPurge', last: null },
+        { action: 'CallNotesArchive', last: null },
+        { action: 'CallNotesArchivePurge', last: null },
+        { action: 'TimesheetArchive', last: null }],
+      digests: [
+        { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
+        { key: 'urgent', last: daysAgo(0) + ' 08:00:11', stale: false },
+        { key: 'weekly', last: daysAgo(3) + ' 08:00:09', stale: false },
+        { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
+        { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
+        { key: 'managerBrief', last: null, stale: false },
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false }],
+      cdr: {
+        ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
+        transferColumnWarning: null,
+        unmatchedAgents: ['Ada Tran', 'Casey Lund', 'Smith, Bob'],
+        rosterWithNoCdr: ['Bob Smith', 'Robin Choudhury'],
+        likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
+        queueInventory: {
+          ok: true, from: daysAgo(7), to: todayIso,
+          queues: [{ queue: '103,108', rows: 44, agents: 6 }, { queue: '108,103', rows: 31, agents: 5 }],
+          sentinels: [{ name: 'A_Q_Sales', rows: 6 }, { name: 'Backup CSR', rows: 2 }],
+          transferCols: [{ name: 'A_Q_Sales', nonEmpty: 34 }, { name: 'A_Q_PAP', nonEmpty: 18 }],
+          rowsScanned: 900, rowsInWindow: 120,
+          agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] },
+          truncated: false, error: null,
+        },
+      },
+      detectors: [
+        { key: 'coachingOverdue', label: 'Coaching overdue stamp round-trip', ok: true, detail: '' },
+        { key: 'auditStaleness', label: 'Audit staleness stamp round-trip', ok: true, detail: '' },
+        { key: 'drSla', label: 'DeptRequests SLA stamp round-trip', ok: true, detail: '' },
+        { key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' },
+        { key: 'formTokenCells', label: 'Form-token cell shapes', ok: true, detail: '' },
+        { key: 'briefConfig', label: 'Manager-brief config coherence', ok: true, detail: '' },
+        { key: 'managerSource', label: 'MANAGER_EMAILS ↔ roster drift', ok: true, detail: '' },
+        { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
+      clientErrors: { count: 0, recent: [], windowDays: 7, url: '' },
+      witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
+      intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
+      auditScanComplete: true,
+      managerTzAbbr: 'CST',
+      auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+    },
+    getStorageHealth: (function () {
+      var store = function (label, role, cls, retention, prop, over) {
+        return Object.assign({
+          label: label, role: role, cls: cls, retention: retention, prop: prop,
+          source: 'Script Property', note: '', configured: true, reachable: true,
+          name: label + ' (live)', tz: 'Asia/Kolkata', tzMatch: true,
+          locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example',
+        }, over || {});
+      };
+      return {
+        configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
+        stores: [
+          store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept', 'ADP_SS_ID'),
+          store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID'),
+          store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
+          store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
+            { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
+              note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
+          store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
+          store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
+          {
+            label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge',
+            prop: 'Employees col L (CallNotesSheetId)', source: 'roster', note: '', configured: true, reachable: true,
+            name: '', tz: '', tzMatch: null, url: '',
+            perRep: { enrolled: 2, reachable: 2, tzMismatch: 0, problems: [] },
+          }],
+        kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
+      };
+    })(),
     getEmployeesList: { employees: [
       { id: 'E-1042', name: 'Avery Blake', timezone: 'Asia/Kolkata', tzAbbr: 'IST' },
       { id: 'E-1088', name: 'Sam Ortiz', timezone: 'Asia/Manila', tzAbbr: 'PHT' },
@@ -294,6 +443,16 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
 
   window.__MISSING__ = [];
   window.__RPC_LOG__ = [];
+  // Batch-7 (cycle 17) — forced-failure hook for ERROR-STATE scenarios:
+  // `?failrpc=name1,name2` makes those RPCs invoke the FAILURE handler
+  // instead of resolving, so the errorStateHtml_ paths (A12/INV-175) become
+  // shootable. A forced-fail RPC is NOT a missing fixture.
+  var FAIL_RPCS = (function () {
+    try {
+      var m = /[?&]failrpc=([^&]+)/.exec(window.location.search);
+      return m ? decodeURIComponent(m[1]).split(',') : [];
+    } catch (e) { return []; }
+  })();
   function makeChain(succ, fail) {
     return new Proxy(function () {}, {
       get: function (_t, prop) {
@@ -305,6 +464,10 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           var name = String(prop);
           window.__RPC_LOG__.push(name);
           setTimeout(function () {
+            if (FAIL_RPCS.indexOf(name) >= 0) {
+              if (fail) { try { fail(new Error('[visual-mock] forced failure: ' + name)); } catch (e) {} }
+              return;
+            }
             var fx = FIXTURES[name];
             if (fx === undefined) {
               window.__MISSING__.push(name);

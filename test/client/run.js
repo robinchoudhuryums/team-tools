@@ -6858,5 +6858,60 @@ test('batch-6: the dead pre-Dashboard CSS clusters stay deleted (INV-184)', () =
   assert.ok(cn.indexOf('cnLoadDate_') < 0, 'cnLoadDate_ stays removed');
 });
 
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-7 pins — visual-lens expansion. The harness is not in CI, but
+// its SCAFFOLDING is pinnable: the forced-failure hook, the scenario coverage
+// the Visual Audit Stage now claims, and the Admin fixture's top-level shape
+// DERIVED from the server's own return site (INV-185/179 — a fixture key list
+// hand-copied here would drift exactly like the fixtures it checks).
+console.log('\ncycle 17 — batch-7 pins');
+
+test('batch-7: the visual mock has the forced-failure hook and it precedes fixture lookup', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const m = c17strip(mock);
+  assert.ok(/failrpc=/.test(m), 'mock parses ?failrpc= from the page query');
+  const failAt = m.indexOf('FAIL_RPCS.indexOf(name) >= 0');
+  const fxAt = m.indexOf('var fx = FIXTURES[name]');
+  assert.ok(failAt >= 0 && fxAt >= 0 && failAt < fxAt,
+    'the forced failure fires BEFORE fixture lookup (a failed RPC is not a missing fixture)');
+});
+
+test('batch-7: the scenario matrix covers admin + dark parity + error states', () => {
+  const shoot = c17strip(fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8'));
+  assert.ok(/'admin-light-wide'/.test(shoot) && /'admin-dark-wide'/.test(shoot),
+    'the Admin panel is in the matrix at both themes');
+  ['reference-dark-wide', 'training-dark-wide', 'coaching-dark-wide'].forEach((n) => {
+    assert.ok(shoot.indexOf("'" + n + "'") >= 0, n + ' dark-parity scenario present');
+  });
+  assert.ok((shoot.match(/\?failrpc=/g) || []).length >= 3, 'at least three error-state scenarios');
+});
+
+test('batch-7: the getAutomationHealth fixture mirrors the server return keys (INV-185, derived)', () => {
+  // Derive the server's top-level return keys from computeAutomationHealth_'s
+  // final return block — never a hand list (INV-179).
+  const body = c17strip(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  const retAt = body.lastIndexOf('return {');
+  assert.ok(retAt >= 0, 'server return block found');
+  const open = body.indexOf('{', retAt);
+  let d = 0, end = open;
+  for (let i = open; i < body.length; i++) {
+    if (body[i] === '{') d++;
+    else if (body[i] === '}') { d--; if (d === 0) { end = i; break; } }
+  }
+  const retBlock = body.slice(open, end + 1);
+  const keys = [];
+  retBlock.replace(/^\s*([A-Za-z_][A-Za-z0-9_]*):/gm, (all, k) => { keys.push(k); return all; });
+  assert.ok(keys.length >= 8, 'derived a real key set (got ' + keys.length + ')');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fxAt = mock.indexOf('getAutomationHealth: {');
+  assert.ok(fxAt >= 0, 'mock has the getAutomationHealth fixture');
+  const fxRegion = mock.slice(fxAt, mock.indexOf('getStorageHealth:', fxAt));
+  keys.forEach((k) => {
+    assert.ok(new RegExp('(^|[\\s{,])' + k + ':').test(fxRegion),
+      'fixture carries the server key `' + k + '` — the Admin scenario cannot render a shape the server does not ship');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

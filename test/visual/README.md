@@ -19,7 +19,7 @@ npm ci                 # playwright package only (browser download is skipped
                        #   when PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 is set and a
                        #   system Chromium is provided — see below)
 node build.mjs         # composes web-app/ partials -> page.html (generated)
-node shoot.mjs         # all 20 scenarios -> shots/*.png + report.json
+node shoot.mjs         # all 37 scenarios -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 ```
@@ -47,6 +47,15 @@ Claude Code remote-env pre-install) → Playwright's own managed download.
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)
   into the image — those read as bugs but are capture artifacts.
+- **Error-state scenarios** (cycle-17 batch ⑦): a scenario whose query is
+  `?failrpc=name1,name2` makes the mock invoke the FAILURE handler for those
+  RPCs instead of resolving, so the `errorStateHtml_` paths (A12/INV-175 —
+  warn card + glyph, never an empty state) render on camera. A forced-fail RPC
+  is NOT counted in `__MISSING__`. The Admin panel scenarios ride the
+  `getAutomationHealth`-family fixtures whose top-level keys are pinned
+  against the server's return site (run.js batch-7 pin — the INV-185 rule).
+  Every scenario also reports the pre-existing Google-Fonts
+  `ERR_CONNECTION_RESET` console line (no network in the sandbox) — ignore it.
 
 ## Anatomy
 
