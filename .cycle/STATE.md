@@ -168,19 +168,26 @@ All green and bite-checked: pure **407**, DOM 69, visual 29/29 (0 missing
 fixtures, 0 horizontal overflow), `node --check` clean. Nothing is half-finished.
 
 **Next, in value order:**
-1. **Operator, 5 minutes:** open the Offerings sheet and check column C for
-   blank/non-numeric cells. That answers whether F9 was LIVE or latent — the one
-   thing the net scores are honestly uncertain about. After deploying, the new
-   Admin → Automation Health card answers it automatically.
-2. **Deploy** (`clasp push -f` + New version), then `runAllTests()` from the
-   editor — the Apps Script suite cannot run in the container, so S1/S2 and
-   F11's corrected assertion have never actually executed.
+1. ~~Operator: check Offerings column C~~ — **DONE.** One malformed row (23 /
+   `E1161`, capacity blank), which the operator identifies as a scratch entry.
+   F9's REASON changed (no real chair was mis-recommended); its score did not.
+   Two follow-ons logged below. **Operator still to do: delete row 23 or clear
+   B23** — until then a non-product stays eligible for blank-weight intakes.
+2. ~~Deploy~~ — **DONE.** Merged as PR #152 (squash `17c8d6e`), deployed, and
+   `runAllTests()` returned **286 passed / 0 failed / 0 skipped** — so S1/S2 and
+   F11's corrected assertion have now genuinely executed. This also cleared the
+   cycles-11–15 deploy backlog that had gated the previous three cycles.
 3. ~~`/sync-docs`~~ — **DONE for all three sessions.** Nothing owed.
 4. ~~`/reflect`~~ — **DONE.** Net 7 (8 production fixes − 1 new failure mode);
    it CORRECTED the Batch-4/F9 self-report DOWNWARD (that block claimed 0 new
    failure modes for the fail-closed weight filter; a chair silently vanishing
    behind a pull-based detector is one, Low/fail-safe). INV-187/188 proposed.
    The next cycle opens by moving this whole block into `HISTORY.md`.
+   **INV-187/188 are now ADOPTED into the library** (a `/sync-docs` pass caught
+   that they had been proposed and not written — the exact accumulation failure
+   cycle 15 cleared for INV-181/182; do not let a cycle close on "proposed"),
+   and INV-179 gained the coverage limit amendment. `PROJECT_HEALTH.md` Current
+   Standing + Score History now carry cycle 16.
 5. **Everything below this line is the residue cycle 16 deliberately left.** It should decide the invariant the F1–F5 block
    proposed (a surface aggregating a best-effort read must carry the outcome,
    and any judgement drawn from it suppressed when degraded) — three cycles have
