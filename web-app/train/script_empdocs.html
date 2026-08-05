@@ -417,22 +417,25 @@ function enterDocsManageView() {
 
 function edLoadMgr_() {
   var requestedView = currentView;
+  // Batch-6 (cycle 17, INV-156) — same-view seq token; see trainLoadMgr_.
+  ED_STATE.mgrSeq = (ED_STATE.mgrSeq || 0) + 1;
+  var seq = ED_STATE.mgrSeq;
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 3 || failed || currentView !== requestedView) return;
+    if (got < 3 || failed || currentView !== requestedView || seq !== ED_STATE.mgrSeq) return;
     edRenderMgr_();
   }
   function onFail(err) {
-    if (failed) return;
+    if (failed || seq !== ED_STATE.mgrSeq) return;
     failed = true;
     if (currentView !== requestedView) return;
     var el = document.getElementById('ed-mgr-content');
     if (el) el.innerHTML = errorStateHtml_('Could not load: ' + ((err && err.message) || err));   // A12
   }
-  google.script.run.withSuccessHandler(function (d) { ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
-  google.script.run.withSuccessHandler(function (d) { ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
-  google.script.run.withSuccessHandler(function (d) { ED_STATE.templates = d; done(); }).withFailureHandler(onFail).getEmpDocTemplates();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.templates = d; done(); }).withFailureHandler(onFail).getEmpDocTemplates();
 }
 
 function edRenderMgr_() {
@@ -496,7 +499,7 @@ function edRenderMgr_() {
     var byEmp = {};
     docs.forEach(function (d) { (byEmp[d.empId] = byEmp[d.empId] || { name: d.empName, rows: [] }).rows.push(d); });
     var empIds = Object.keys(byEmp).sort(function (a, b) { return byEmp[a].name.localeCompare(byEmp[b].name); });
-    h += '<div class="tr-section-h">Documents (your team)</div>';
+    h += '<h2 class="tr-section-h">Documents (your team)</h2>';
     empIds.forEach(function (id) {
       var g = byEmp[id];
       h += '<div class="ed-emp-group"><div class="ed-emp-name">' + icon('user', 13) + ' ' + esc(g.name) + '</div>' +

@@ -735,8 +735,19 @@ function clkLoadDashboardExtras_() {
   CLK_DASH.extraDay = today;
   var requestedView = currentView;
   var render = function () { if (currentView === requestedView) clkRenderDashboardExtras_(); };
-  var fresh = function () { CLK_DASH.extraAt = Date.now(); };
+  // C17-15 (cycle 17) — freshness is stamped ONLY when the WHOLE round
+  // succeeded (INV-156/129: an SWR cache never stamps a failed round fresh).
+  // The old per-RPC fresh() stamped on EACH success, so a mixed round (dept
+  // requests ok, training failed on a cold miss) cached the error placeholder
+  // as fresh for the full 60s window and the next enter early-returned
+  // without a retry — the D2a comment's claim held only when ALL fetches
+  // failed. Same shape as the metrics loader's anyFail -> loadedAt=0.
+  var expected = canSp ? 3 : 2;
+  var anyFail = false;
+  var settle = function () { if (--expected === 0 && !anyFail) CLK_DASH.extraAt = Date.now(); };
+  var fresh = function () { settle(); };
   var failSet = function (key, val) {   // keep last-good; placeholder only on a cold miss
+    anyFail = true; settle();
     if (CLK_DASH.extra[key] === undefined) CLK_DASH.extra[key] = val;
   };
   if (!hasCache) render();   // loading shell on first load; refresh swaps silently

@@ -592,9 +592,13 @@ const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
 // staleActionCount, todayTotal} aggregate so the 60s sidebar polling doesn't
-// re-scan the full per-rep sheet on every tick. TTL matches the polling
-// interval; mutating endpoints (submit/setFlag/setResolved/delete) invalidate
-// to keep the badge fresh after user action.
+// re-scan the full per-rep sheet on every tick. TTL-ONLY freshness (INV-43):
+// the TTL matches the 60s polling interval, so the badge can be at most 60s
+// stale — the same ceiling eager invalidation would give. Mutating endpoints
+// deliberately do NOT invalidate (invalidateCnAmbientCache_ is retained for
+// manual operator use only; a cycle-17 doc fix — an earlier copy of this
+// comment claimed the mutation hot path invalidates, which stopped being
+// true when INV-43 landed).
 const CN_AMBIENT_CACHE_PREFIX = 'cn_ambient_v1_';
 const CN_AMBIENT_CACHE_TTL = 60;
 
@@ -977,6 +981,13 @@ function submitTimeOffRequest(date, type, notes) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
+    // C17 batch-5 — `notes` was the module's only unbounded client free text
+    // (every sibling caps: INV-96 forms, INV-143 subformData, COACH_TEXT_MAX):
+    // >50k threw mid-lock; ~45k wrote fine and was echoed whole into the
+    // dashboard, calendar, decision email, and — on cancel — the shared
+    // AuditLog row that every bounded tail scan reads. 1000 chars is generous
+    // for a request note.
+    notes = String(notes || '').slice(0, 1000);
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
     // Cycle-11 L-11 — sanity horizon. The time-off date was the module's only
@@ -1488,7 +1499,17 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
       if (String(rows[i][TO.EMP_ID]).trim() === empId
           && normalizeDate_(rows[i][TO.DATE]) === date
           && normalizeAuditTs_(rows[i][TO.SUBMITTED_AT]) === submittedAt) {
-        const oldStatus = String(rows[i][TO.STATUS]).trim();
+        // Cycle-17 C17-2 — normalize the stored status ONCE (the F8 /
+        // INV-183 pattern). Every sibling TO.STATUS reader lowercases, but
+        // this — the ONE function that mutates balances — compared the raw
+        // trimmed cell, so a hand-edited 'approved'/'APPROVED' row read as
+        // approved everywhere else yet NOT-approved here (re-deduct on
+        // approve, skipped restore on deny), and a lowercased 'reconciled'
+        // defeated the S1.3 terminal guard. oldStatusRaw survives ONLY for
+        // the compensating revert + the audit note, so the cell is written
+        // back / recorded exactly as found.
+        const oldStatusRaw = String(rows[i][TO.STATUS]).trim();
+        const oldStatus = oldStatusRaw.toLowerCase();
         const type    = String(rows[i][TO.TYPE]);
         const notes   = String(rows[i][TO.NOTES]);
         const empName = String(rows[i][TO.EMP_NAME]);
@@ -1498,7 +1519,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // RE-DEDUCT via the transition below (oldStatus !== 'Approved' &&
         // newStatus === 'Approved'), undoing the credit. Treat Reconciled as
         // terminal — refuse any status change on it.
-        if (oldStatus === 'Reconciled') {
+        if (oldStatus === 'reconciled') {
           return { success: false, error: 'This request was reconciled (a duplicate already credited back) and can no longer change status.' };
         }
 
@@ -1509,7 +1530,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // date) that getPtoReconciliation exists to detect after the fact.
         // The submit paths already carry this guard; this row's own index is
         // excluded so approving a lone Pending row is unaffected.
-        if (oldStatus !== 'Approved' && newStatus === 'Approved'
+        if (oldStatus !== 'approved' && newStatus === 'Approved'
             && hasActiveTimeOffOnDate_(sheet, empId, date, i)) {
           return { success: false, error:
             'This employee already has another Pending or Approved request for ' + date +
@@ -1533,13 +1554,13 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
           const dedu = getLeaveDeduction_(type);
           if (dedu.bucket) {
             try {
-              if (oldStatus !== 'Approved' && newStatus === 'Approved') {
+              if (oldStatus !== 'approved' && newStatus === 'Approved') {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
-              } else if (oldStatus === 'Approved' && newStatus !== 'Approved') {
+              } else if (oldStatus === 'approved' && newStatus !== 'Approved') {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
               }
             } catch (balErr) {
-              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatus); } catch (revertErr) {
+              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatusRaw); } catch (revertErr) {
                 Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
                   revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
               }
@@ -1553,11 +1574,11 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         const targetForAudit = targetEmp || { id: empId, name: empName, email: '' };
 
         writeAuditLog_(targetForAudit, 'TimeOffStatusChange', date, '', false, 0,
-          `${oldStatus}→${newStatus} (${type})`, callerEmp.email);
+          `${oldStatusRaw}→${newStatus} (${type})`, callerEmp.email);
 
         // Email the employee (best-effort — cycle-9 M-7: fires post-lock in
         // the finally so the send never holds the global ScriptLock).
-        if (oldStatus !== newStatus && targetEmp && targetEmp.email) {
+        if (oldStatus !== newStatus.toLowerCase() && targetEmp && targetEmp.email) {
           notifyAfter = function () { notifyEmployeeOfDecision_(targetEmp, date, type, notes, newStatus); };
         }
 
@@ -1588,6 +1609,7 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
     if (!isValidTimeOffType_(type)) return { success: false, error: 'Invalid leave type.' };
+    notes = String(notes || '').slice(0, 1000);   // C17 batch-5 — same cap as submitTimeOffRequest
 
     const targetEmp = lookupEmployeeById_(empId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
@@ -3476,6 +3498,7 @@ function getCallNotesTagTaxonomy() {
     const counts = {};       // tag → { tag, count, lastSeen, archived }
     let totalNotes = 0;
     let repsScanned = 0;
+    const skippedReps = [];
     for (let i = 1; i < roster.length; i++) {
       const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -3511,7 +3534,10 @@ function getCallNotesTagTaxonomy() {
             });
           }
         }
-      } catch (e) { /* skip unreachable rep sheet */ }
+      } catch (e) {
+        // C17 batch-2 (INV-187): the skipped rep rides the result.
+        skippedReps.push(String(roster[i][EMP.NAME]).trim() || String(roster[i][EMP.ID]).trim());
+      }
     }
     // Archived-but-unused tags — admins may want to keep them visible to
     // restore later, so emit them as a separate list.
@@ -3522,10 +3548,13 @@ function getCallNotesTagTaxonomy() {
     archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
     const tags = Object.keys(counts).map(function (k) { return counts[k]; });
     tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
-    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned, skippedReps: skippedReps };
     try {
+      // C17 batch-2 — cache only fully-successful rounds (the INV-129 rule):
+      // a partial aggregate must not be pinned as fresh for the full TTL.
       const payload = JSON.stringify(taxResult);
-      if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
+      if (skippedReps.length > 0) { /* partial — do not cache */ }
+      else if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
       else console.warn('Tag taxonomy too large to cache (' + payload.length + ' bytes)');
     } catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
     return taxResult;
@@ -3633,6 +3662,7 @@ function getCallNotesTagTrends() {
     const archivedSet = getArchivedTagsSet_();
     const roster = getEmployeeRosterRows_();
     const events = [];
+    const skippedReps = [];
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
       const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
@@ -3663,14 +3693,19 @@ function getCallNotesTagTrends() {
             });
           }
         }
-      } catch (e) { /* skip unreachable rep sheet */ }
+      } catch (e) {
+        // C17 batch-2 (INV-187): the skipped rep rides the result.
+        skippedReps.push(String(roster[i][EMP.NAME]).trim() || String(roster[i][EMP.ID]).trim());
+      }
     }
     const out = cnTagTrendsFromEvents_(events, refIso, weeks, CN_TAG_TRENDS_TOPK);
     out.weeks = weeks;
     out.repsScanned = repsScanned;
+    out.skippedReps = skippedReps;
     try {
+      // C17 batch-2 — cache only fully-successful rounds (INV-129).
       const payload = JSON.stringify(out);
-      if (payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
+      if (skippedReps.length === 0 && payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
     } catch (e) { /* return uncached */ }
     return out;
   } catch (err) { return { error: err.message }; }
@@ -3988,6 +4023,7 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
 
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const skippedReps = [];
     const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
@@ -4035,13 +4071,16 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
           if (archive) matchInto(readCallNoteRowsInRange_(archive, dr.start, dr.end), true);
         }
       } catch (e) {
-        // A broken per-rep Sheet shouldn't break the cross-rep search
+        // A broken per-rep Sheet shouldn't break the cross-rep search — but
+        // it must RIDE the result (C17 batch-2, INV-187): a silently-missing
+        // rep made the search read as complete.
         console.warn('managerSearchCallNotes skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push(String(roster[r][EMP.NAME]).trim() || repId);
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 500) results.length = 500;
-    return { results };
+    return { results, skippedReps };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4198,6 +4237,7 @@ function managerGetUnresolvedActionCount() {
     if (uCached) { try { return JSON.parse(uCached); } catch (e) { /* recompute */ } }
     const roster = getEmployeeRosterRows_();
     let total = 0;
+    let skippedCount = 0;
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -4213,11 +4253,17 @@ function managerGetUnresolvedActionCount() {
           const res = String(flagCol[i][1] || '').trim().toLowerCase();
           if (ft === 'action' && res !== 'true' && res !== 'yes' && res !== '1') total++;
         }
-      } catch (_) {}
+      } catch (_) { skippedCount++; }
     }
-    const uResult = { count: total };
-    try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
-    catch (e) { /* best-effort */ }
+    // C17 batch-2 (INV-187): an unreadable rep Sheet makes this a LOWER
+    // BOUND — the flag rides the result, and a partial round is never
+    // cached (INV-129; the old shape CACHED the undercount for the full
+    // 2-minute TTL).
+    const uResult = { count: total, partial: skippedCount > 0 };
+    if (skippedCount === 0) {
+      try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
+      catch (e) { /* best-effort */ }
+    }
     return uResult;
   } catch (err) { return { error: err.message }; }
 }
@@ -4487,6 +4533,15 @@ function saveDepartmentEmails(deptJson) {
     if (!deptJson || typeof deptJson !== 'object') return { success: false, error: 'Invalid department map.' };
     var keys = Object.keys(deptJson);
     for (var i = 0; i < keys.length; i++) {
+      // C17 batch-5 — a dept name containing a comma (or semicolon) silently
+      // corrupts the DeptRequests round-trip: emailFromCallNote stores
+      // `departments.join(', ')` in ToDept and every per-dept consumer
+      // (drSplitDepts_, the Incoming inbox, SLA-min, deptStats) splits that
+      // on ','. "Billing, West" round-trips as two phantom departments.
+      // Nothing enforced the comma-free rule the INTAKE_CONDITION_LISTS
+      // already documents for the same join-on-comma shape.
+      if (/[,;]/.test(keys[i])) return { success: false, error: 'Department name "' + keys[i] + '" cannot contain a comma or semicolon — it would split into two departments everywhere the joined list is parsed.' };
+      if (String(keys[i]).trim().length === 0 || keys[i].length > 60) return { success: false, error: 'Department name must be 1–60 characters.' };
       var email = String(deptJson[keys[i]] || '').trim();
       if (!email || email.indexOf('@') < 1) return { success: false, error: 'Invalid email for ' + keys[i] + ': ' + email };
     }
@@ -5850,6 +5905,13 @@ function exportCallNotesRange(startDate, endDate) {
 
     const roster = getEmployeeRosterRows_();
     const allNotes = [];
+    // Cycle-17 C17-6 — a PHI export presented as complete while silently
+    // missing a rep is the INV-187 shape cycle-16 F1 fixed in
+    // managerGetShiftStats (INV-52's old "skips that rep" clause described
+    // the defect). Unreadable rep Sheets are now COLLECTED and carried on
+    // the response + the audit row, so the export can never read as
+    // complete when it isn't.
+    const skippedReps = [];
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -5882,10 +5944,19 @@ function exportCallNotesRange(startDate, endDate) {
         }
       } catch (e) {
         console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push({ repId: repId, repName: repName });
       }
     }
 
     if (allNotes.length === 0) {
+      // C17-6 — "no notes" and "no readable notes" are different answers:
+      // if reps were skipped, say the export FAILED to read them rather
+      // than implying the range was genuinely empty.
+      if (skippedReps.length > 0) {
+        return { error: 'Export could not read ' + skippedReps.length + ' rep Sheet(s) (' +
+          skippedReps.map(function (s) { return s.repName; }).join(', ') +
+          ') and found no other notes between ' + startDate + ' and ' + endDate + '.' };
+      }
       return { error: `No notes found between ${startDate} and ${endDate}.` };
     }
     allNotes.sort((a, b) => {
@@ -5925,14 +5996,22 @@ function exportCallNotesRange(startDate, endDate) {
       if (callerEmp.email && String(callerEmp.email).toLowerCase() !== owner) newSs.addEditor(callerEmp.email);
     } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
 
+    // C17-6 — the audit row is the durable record of this PHI export: a
+    // count with silently-missing reps read as complete. Rep names/ids are
+    // roster data (PHI-free — the row already carries the manager + range).
+    const skipNote = skippedReps.length > 0
+      ? '; skippedReps=' + skippedReps.length + ' (' +
+        skippedReps.map(function (s) { return s.repId; }).join(',') + ') — INCOMPLETE'
+      : '';
     writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
-      `${allNotes.length} notes → ${newSs.getId()}`);
+      `${allNotes.length} notes → ${newSs.getId()}` + skipNote);
 
     return {
       success: true,
       url: newSs.getUrl(),
       fileName: name,
       noteCount: allNotes.length,
+      skippedReps: skippedReps.map(function (s) { return s.repName; }),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -6136,6 +6215,7 @@ function managerAggregateFlagged_(flagType, dateRange) {
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const skippedReps = [];
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
@@ -6158,10 +6238,14 @@ function managerAggregateFlagged_(flagType, dateRange) {
         }
       } catch (e) {
         console.warn('managerAggregateFlagged_ skipped rep ' + repId + ': ' + e.message);
+        skippedReps.push(repName || repId);
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return { flagType, results };
+    // C17 batch-2 (INV-187) — an unreadable rep Sheet must ride the result:
+    // the training/review queues and the weekly digests read this, and a
+    // silently-missing rep made both read as complete. Additive field.
+    return { flagType, results, skippedReps };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -6174,6 +6258,7 @@ function managerAggregateFlagged_(flagType, dateRange) {
 function managerAggregateUrgent_(dateRange) {
   const roster = getEmployeeRosterRows_();
   const results = [];
+  const skippedReps = [];
   for (let r = 1; r < roster.length; r++) {
     const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
     if (!sheetId) continue;
@@ -6194,10 +6279,12 @@ function managerAggregateUrgent_(dateRange) {
       }
     } catch (e) {
       console.warn('managerAggregateUrgent_ skipped rep ' + repId + ': ' + e.message);
+      skippedReps.push(repName || repId);
     }
   }
   results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  return { results };
+  // C17 batch-2 (INV-187) — same outcome contract as managerAggregateFlagged_.
+  return { results, skippedReps };
 }
 
 
@@ -6700,6 +6787,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // copy then fails, a rep re-send duplicates a dept email (annoying),
     // never the customer's.
     const splitCta = drTrackable && recipientList.externalTo;
+    let internalSent = false;        // C17-11
+    let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
         MailApp.sendEmail({
@@ -6709,6 +6798,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
           htmlBody: sentHtml,
         });
+        internalSent = true;
         MailApp.sendEmail({
           to: recipientList.externalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
@@ -6726,7 +6816,19 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         });
       }
     } catch (sendErr) {
-      return { success: false, error: 'Email send failed' + (splitCta ? ' (one of the two copies may have gone out — check before re-sending)' : '') + ': ' + sendErr.message };
+      // C17-11 (cycle 17): if the INTERNAL dept copy already went out, it is
+      // carrying a live resolve CTA — returning failure here skipped ALL the
+      // bookkeeping below, so a DELIVERED cross-rep department email left no
+      // CallNoteEmail audit row (INV-32 calls the AuditLog "the only
+      // cross-rep trail"), no EmailedAt stamp, and a resolve token that
+      // dead-ended at "Request not found"; the rep then re-sent, and the
+      // dedup lookup (which finds only OPEN rows) minted a SECOND token.
+      // Fall through to the bookkeeping for the delivered half and report
+      // the partial outcome instead.
+      if (!internalSent) {
+        return { success: false, error: 'Email send failed: ' + sendErr.message };
+      }
+      externalSendFailed = sendErr.message;
     }
 
     // Email is OUT. Past this point we never return failure — a partial stamp
@@ -6734,7 +6836,12 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // adjacent column writes via setValues to shrink the partial-write window.
     const empTz = empTz_(emp);
     const emailedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
-    const deptLabel = selections.departments.join(', ');
+    // C17-11: on a partial send the stamp/audit label reflects what was
+    // DELIVERED — the internal departments only ('Other' carried the failed
+    // external copy).
+    const deptLabel = externalSendFailed
+      ? selections.departments.filter(function (d) { return d !== 'Other'; }).join(', ')
+      : selections.departments.join(', ');
     try {
       sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1, 1, 2)
         .setValues([[emailedAt, deptLabel]]);
@@ -6766,7 +6873,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // the noteId (an investigator can open the note for full detail), the
     // department label, and the recipient count instead.
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
-      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
+      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
+      (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).
     // PHI-free: the row carries the dept label + the update CATEGORY + the source
@@ -6793,6 +6901,14 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         noteId + '): ' + drErr.message);
     }
 
+    // C17-11: a partial send reports success (the dept copy is out — a retry
+    // would DUPLICATE it) with an explicit warning naming what failed. The
+    // client surfaces `warning` as a warn toast.
+    if (externalSendFailed) {
+      return { success: true, emailedAt, recipients: recipientList.internalTo, subject,
+        warning: 'The department copy was sent, but the external/Other copy failed (' +
+          externalSendFailed + '). Send to the external recipient separately — do NOT re-send the whole email (the department already has it).' };
+    }
     return { success: true, emailedAt, recipients: recipientList.to, subject };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -7818,13 +7934,28 @@ function createFormToken(payload) {
   const p = payload || {};
   const formType      = String(p.formType || '').trim();
   const recipientEmail = String(p.recipientEmail || '').trim();
-  const recipientName = String(p.recipientName || '').trim();
-  const prefillData   = p.prefillData || {};
+  // C17 batch-5 — the LAST uncapped client-writable cell family (every
+  // sibling was bounded across cycles: subformData M-15, email details L-1,
+  // form payloads INV-96, feedback appends F11): an oversized prefill threw
+  // mid-appendRow inside the flow, and PrefillData is PHI stored on a tab
+  // whose purge is opt-in-off. Same 45k cell posture as INV-96; the name
+  // gets a display-plausible cap.
+  const recipientName = String(p.recipientName || '').trim().slice(0, 200);
+  const prefillData   = (p.prefillData && typeof p.prefillData === 'object' && !Array.isArray(p.prefillData))
+    ? p.prefillData : {};
   const noteId        = p.noteId || null;
 
   // Validate form type
   if (INTERACTIVE_FORM_TYPES.indexOf(formType) < 0) {
     return { success: false, error: 'Unknown interactive form type: ' + formType };
+  }
+  // C17 batch-5: bound the prefill BEFORE the append (INV-96 spirit —
+  // reject with a clean error, never throw mid-write).
+  {
+    const prefillJson = JSON.stringify(prefillData);
+    if (Object.keys(prefillData).length > 50 || prefillJson.length > 20000) {
+      return { success: false, error: 'Prefill data is too large for a form link — trim the prefilled fields and try again.' };
+    }
   }
   // Validate recipient email
   if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
@@ -8027,6 +8158,16 @@ function submitFormByToken(token, formData) {
       sanitizedData[k] = data[k];
     });
     const signatureData = String(data.signature || '');
+    // C17 batch-5 — the signature must BE a signature: it is later embedded
+    // as an <img src> in the in-app submission viewer (rep AND manager
+    // innerHTML it) and fetched server-side by the HTML→PDF conversion, so
+    // an anonymous submitter could plant an https:// URL that fires a
+    // tracking-pixel fetch (IP/UA leak) from whoever reviews the PHI
+    // submission. esc_ already prevents attribute breakout; this closes the
+    // remote-fetch channel. Empty stays allowed (fields-only forms).
+    if (signatureData && !/^data:image\//.test(signatureData)) {
+      return { success: false, error: 'The signature could not be read — please clear the signature pad and sign again.' };
+    }
 
     // Consent is server-enforced, not just client-gated: the payload MUST
     // affirmatively report consentAgreed === true. The original deploy
@@ -9951,11 +10092,14 @@ function sendCallNotesWeeklyDigests() {
 
     const training = managerAggregateFlagged_('training', dateRange);
     const review = managerAggregateFlagged_('review', dateRange);
-    if (training.results && training.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results, dateRange);
+    // C17 batch-2: a queue with unreadable rep Sheets is not a silently-
+    // skippable empty queue — send (with the warning) whenever there are
+    // results OR skipped reps; genuinely-empty-and-clean stays silent (S24).
+    if ((training.results && training.results.length > 0) || (training.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
     }
-    if (review.results && review.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results, dateRange);
+    if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
     }
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
@@ -9998,8 +10142,8 @@ function sendCallNotesUrgentDigest() {
     const dateRange = { start, end };
 
     const urgent = managerAggregateUrgent_(dateRange);
-    if (urgent.results && urgent.results.length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results, dateRange);
+    if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
     }
     stampDigestLastRun_('urgent');
     Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
@@ -10419,8 +10563,19 @@ function sendManagerDailyBrief() {
   }
 }
 
-function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
+function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) {
   const P = CN_EMAIL_PALETTE;
+  // C17 batch-2 (INV-187) — reps whose Sheets could not be read ride the
+  // digest as an explicit warning; an empty-but-unreadable queue sends a
+  // warning-only digest instead of silence (a failed read is not an empty
+  // queue). Additive optional arg — 4-arg callers behave exactly as before.
+  const skipped = Array.isArray(skippedReps) ? skippedReps : [];
+  const skipHtml = skipped.length
+    ? `<p style="color:${P.warnDeep || P.muted};font-size:12px;margin:10px 0 0;">&#9888; ${skipped.length} rep Sheet(s) could not be read (${esc_(skipped.join(', '))}) — this digest may be incomplete.</p>`
+    : '';
+  const skipText = skipped.length
+    ? `\n\n! ${skipped.length} rep Sheet(s) could not be read (${skipped.join(', ')}) — this digest may be incomplete.`
+    : '';
   // Training-flagged notes may carry a free-text question in subformData.trainingQuestion
   // (set client-side when the rep picks the training flag). Surface it inline so the
   // manager sees the actual question instead of having to open each note.
@@ -10467,11 +10622,12 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
         `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
         `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
         `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+        skipHtml +
       `</div>` +
       `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
     `</div>`
   );
-  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}\n\n— UMS Team Tools`;
+  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
     MailApp.sendEmail({
       to: toEmails.join(','),
@@ -10978,9 +11134,28 @@ function invalidateRosterCache_() {
 }
 
 function getDepartmentEmails_() {
+  // C17 batch-5 — sanitize-on-read (the cycle-9 L-12 rule this one getter
+  // skipped): a hand-edited Script Property holding an array / non-string
+  // values previously fed Object.keys() surfaces unfiltered — the composer
+  // dept list, drParseDepartments_ validKeys, empDepartments_, and
+  // resolveEmailRecipients_, where a non-string value rode raw into the
+  // MailApp `to`. Whitelist-rebuild: keep only non-empty string keys mapping
+  // to plausible email strings; anything else degrades to the CONFIG
+  // fallback entry-wise (an empty rebuilt map falls back whole).
   const prop = PropertiesService.getScriptProperties().getProperty('CN_DEPARTMENT_EMAILS');
   if (prop) {
-    try { return JSON.parse(prop); } catch (_) {}
+    try {
+      const raw = JSON.parse(prop);
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const clean = {};
+        Object.keys(raw).forEach(function (k) {
+          const name = String(k || '').trim();
+          const email = (typeof raw[k] === 'string') ? raw[k].trim() : '';
+          if (name && email && email.indexOf('@') > 0) clean[name] = email;
+        });
+        if (Object.keys(clean).length > 0) return clean;
+      }
+    } catch (_) {}
   }
   return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
 }
@@ -11670,6 +11845,13 @@ function authorizeGmailScope() {
   return { ok: true, threads: n };
 }
 
+// Batch-6 (cycle 17): the three Spanish-inbox readers share ONE scan cap —
+// GmailApp.search silently returns at most this many threads, so a window
+// busier than the cap under-reported with no signal (the INV-169 class). Each
+// reader now returns `truncated` (threads.length >= the cap ⇒ possibly more)
+// and the Spanish tab renders a "narrow the window" warning.
+const SPANISH_THREAD_SCAN_MAX = 200;
+
 /** Spanish-inbox resolution stats (canSeeSpanishInbox_-gated — manager OR SPANISH_INBOX_MEMBERS, INV-31 amendment; read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
@@ -11695,7 +11877,7 @@ function getSpanishInboxStats(days) {
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const durations = [], pending = [];
     let resolvedCount = 0;
@@ -11745,6 +11927,7 @@ function getSpanishInboxStats(days) {
       // authoritative.
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
     };
     cache.put(ckey, JSON.stringify(result), 300);
     return result;
@@ -11767,7 +11950,7 @@ function getSpanishInboxPending(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const out = [];
     const nowMs = Date.now();
@@ -11795,7 +11978,7 @@ function getSpanishInboxPending(days) {
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
-    return { address: addr, days: d, pending: out };
+    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -11814,7 +11997,7 @@ function getSpanishInboxResolved(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const out = [];
     threads.forEach(function (th) {
@@ -11849,7 +12032,7 @@ function getSpanishInboxResolved(days) {
       });
     });
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
-    return { address: addr, days: d, resolved: out };
+    return { address: addr, days: d, resolved: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -12658,7 +12841,14 @@ function getTodayPunches_(empId, empTz) {
 }
 
 function getNextActions_(punches) {
-  const last = punches.length ? punches[punches.length - 1].type : null;
+  // C17 batch-6: derive the state from the last RECOGNIZED punch type. A
+  // hand-edited/garbage COMMENTS value is not a state — treating it as one
+  // fell through to ['Adjust'] and, via the INV-155 live sequence guard,
+  // locked the rep out of live punching for the rest of the day.
+  let last = null;
+  for (let i = punches.length - 1; i >= 0; i--) {
+    if (PUNCH_LABELS_.indexOf(punches[i].type) >= 0) { last = punches[i].type; break; }
+  }
   if (!last) return ['ClockIn','Adjust'];
   if (last === 'ClockOut') return ['Adjust'];
   if (last === 'ClockIn' || last === 'LunchIn') return ['LunchOut','ClockOut','Adjust'];
@@ -12671,10 +12861,22 @@ function appendToAdpSheet_(emp, date, time, dir, commentValue) {
     .appendRow([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]);
 }
 
+// C17-9 — per-execution personal-spreadsheet handle memo (the L-3 getAdpSS_
+// pattern): a 31-day range edit mirrored up to 124 punches, each re-opening
+// the SAME per-rep spreadsheet by id inside the global lock. A handle is
+// stable within one execution; the month-sheet DATA is still re-read per
+// write (a personal month grid is tiny — the openById round-trip was the
+// cost). An openById throw is never cached.
+let _personalSsCache = Object.create(null);
+function openPersonalSs_(sheetId) {
+  if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
+  return _personalSsCache[sheetId];
+}
+
 function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
   const ROW_LABEL_MAP = { ClockIn:'Clock In', LunchOut:'Lunch Out', LunchIn:'Lunch Return', ClockOut:'Clock Out' };
   try {
-    const ss        = SpreadsheetApp.openById(emp.sheetId);
+    const ss        = openPersonalSs_(emp.sheetId);
     const empTz     = empTz_(emp);
     const dateObj   = Utilities.parseDate(date + 'T12:00:00', empTz, "yyyy-MM-dd'T'HH:mm:ss");
     const monthName = Utilities.formatDate(dateObj, empTz, 'MMMM yyyy');
@@ -12696,7 +12898,7 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
   if (!emp || !emp.sheetId) return;
   const ROW_LABEL_MAP = { ClockIn:'Clock In', LunchOut:'Lunch Out', LunchIn:'Lunch Return', ClockOut:'Clock Out' };
   try {
-    const ss        = SpreadsheetApp.openById(emp.sheetId);
+    const ss        = openPersonalSs_(emp.sheetId);
     const empTz     = empTz_(emp);
     const dateObj   = Utilities.parseDate(date + 'T12:00:00', empTz, "yyyy-MM-dd'T'HH:mm:ss");
     const monthName = Utilities.formatDate(dateObj, empTz, 'MMMM yyyy');
@@ -12926,11 +13128,18 @@ function updatePunchAdjustStatus(reqId, newStatus) {
  *  recordPunch's adjustment write + the personal-sheet mirror (INV-09/26/59).
  *  Touches ONLY that punch type — unlike managerSaveDay's full-day reconcile.
  *  Writes the `ADJ-` audit row with the approving manager as actor. */
-function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason) {
+function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason, ctx) {
   const timeFull = time + ':00';
   const dir = ['ClockIn', 'LunchIn'].indexOf(punchType) >= 0 ? 'IN' : 'OUT';
   const commentLabel = 'ADJ-' + punchType;
-  const existing = findExistingPunch_(targetEmp.id, date, punchType);
+  // C17-9 (batch 6): the range caller passes a prebuilt ctx — ONE Timesheet
+  // read for the whole range. Without it a 31-day × 4-slot range ran up to
+  // 124 findExistingPunch_ FULL-sheet reads inside the ONE project ScriptLock
+  // (every rep's punch waits out the 15s waitLock meanwhile — the INV-153
+  // starvation reasoning). Single-punch callers keep findExistingPunch_.
+  const existing = ctx
+    ? (ctx.idx[date + '|' + punchType] ? { sheet: ctx.sheet, rowIndex: ctx.idx[date + '|' + punchType] } : null)
+    : findExistingPunch_(targetEmp.id, date, punchType);
   if (existing) {
     existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
     existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
@@ -12943,6 +13152,25 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
   writeAuditLog_(targetEmp, punchType, date, timeFull, true, daysBack,
     'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
+}
+
+/** C17-9 — one Timesheet read for a whole managerSaveDayRange run. Builds
+ *  {date|type: rowIndex} for the target emp over the range's dates. The LAST
+ *  matching row wins — agreeing with findExistingPunch_ and managerSaveDay's
+ *  snapshot (INV-155). Each (date, type) is written at most once per run, so
+ *  the index never needs updating mid-run (an append can't collide with a
+ *  later lookup). */
+function buildAdjustPunchIndex_(empId, dateSet) {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+  const rows = sheet.getDataRange().getValues();
+  const idx = {};
+  for (let i = 2; i < rows.length; i++) {
+    if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
+    const d = normalizeDate_(rows[i][ADP.DATE]);
+    if (!dateSet[d]) continue;
+    idx[d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]))] = i + 1;
+  }
+  return { sheet: sheet, idx: idx };
 }
 
 /** #4b — manager multi-day adjust. Applies the given punch times to EVERY date
@@ -13004,12 +13232,15 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
       return { success: false, error: `A reason is required when the range goes more than ${CONFIG.OLD_ADJUST_ALERT_DAYS} days back.` };
     }
 
+    const dateSet = {};
+    dates.forEach(function (dd) { dateSet[dd] = true; });
+    const ctx = buildAdjustPunchIndex_(targetEmp.id, dateSet);
     let punchesWritten = 0;
     dates.forEach(function (date) {
       PUNCH_LABELS_.forEach(function (type) {
         const t = cleanSlots[type];
         if (!t) return;
-        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit');
+        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit', ctx);
         punchesWritten++;
       });
     });
@@ -13822,7 +14053,14 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     Object.keys(perRepDaily[d]).forEach(function (ag) {
       var p = perRepDaily[d][ag];
       p.pctAnswered = p.rung > 0 ? Math.round((p.answered / p.rung) * 1000) / 10 : 0;
-      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : 0;
+      // C17-4 (cycle 17) — a rep-day with zero answered calls has NO average
+      // talk time, not an average of 0 (the INV-180 zero-is-absence rule).
+      // The literal 0 here fed metricsTeamAvgSeries_ (`v != null` — 0 passes),
+      // dragging the anonymized team Avg-Talk benchmark toward 0 on any day a
+      // rep answered nothing, while every sibling aggregate already treats
+      // att<=0 as absence (`if (att > 0)`). null is skipped by both the team
+      // mean and the own-point builder (`raw != null && isFinite(raw)`).
+      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : null;
       delete p._attSum; delete p._attCount;
     });
   });
@@ -14228,7 +14466,12 @@ function cdrQueueInventory_(from, to) {
           const trVals = trSheet.getRange(trStart, 1, trCap, CSR_TRANSFER_NUM_COLS).getDisplayValues();
           // Columns H..R are 0-indexed 7..17 — everything between the counts
           // CSRT reads and the trailing Comments column.
-          for (let c = 7; c <= 17; c++) {
+          // C17 batch-3: derived from the CSRT constants — this scan
+          // re-hardcoded 7..17 thirty lines below a comment calling bare
+          // positional offsets the F1 class (INV-184); a block move updated
+          // via the constants would have silently split the two halves of
+          // the same Automation Health card.
+          for (let c = CSRT_QUEUE_COL_FIRST; c <= CSRT_QUEUE_COL_LAST; c++) {
             let populated = 0;
             for (let r = 0; r < trVals.length; r++) {
               const cell = String(trVals[r][c] == null ? '' : trVals[r][c]).trim();
@@ -14959,6 +15202,12 @@ function getMetricsAmbient() {
     var roster = getEmployeeRosterRows_();
     var names = [];
     for (var r = 1; r < roster.length; r++) {
+      // C17-3 (cycle 17) — INV-183: this was the fifteenth roster walk, and
+      // the one with NO inclusion guard at all (a shape the F3 tripwire's
+      // banned-pattern scan can't see). An offboarded row (name kept, email
+      // cleared) whose name still matches DQE history contaminated the team
+      // answer rate behind the manager alert badge.
+      if (!empRosterEmail_(roster[r])) continue;
       var n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }
@@ -14975,7 +15224,15 @@ function getMetricsAmbient() {
     var out = { badge: badge, pctAnswered: pct, date: yIso, threshold: ambientThreshold };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     return out;
-  } catch (_) { return { badge: null }; }
+  } catch (err) {
+    // C17-3 — a permanently failing CDR read makes the badge's ABSENCE
+    // indistinguishable from a healthy team (INV-187's reassuring-degradation
+    // test). The badge surface has no error affordance, so the DESIGNATED
+    // detector for a broken CDR read stays the Automation Health CDR card +
+    // failure digest; this catch now at least logs instead of `catch (_)`.
+    try { console.warn('getMetricsAmbient failed: ' + err.message); } catch (_) {}
+    return { badge: null };
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -15702,7 +15959,7 @@ function intakeRecListHtml_(items, selections) {
       : esc_(product.hcpcs);
 
     const imgCell = product.imageUrl
-      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + '?v=' + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
+      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + (String(product.imageUrl).indexOf('?') >= 0 ? '&v=' : '?v=') + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
       : '<td style="width:1px;padding:0;border-bottom:1px solid ' + P.line + ';background:' + rowBg + ';"></td>';
 
     // justification is server-generated (trusted) + carries inline markup, so
@@ -16046,8 +16303,12 @@ function intakeListMySubmissions() {
       }
     });
     out.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    // C17 batch-5 (INV-169): a payload-capped reader returns its PRE-SLICE
+    // total — for a manager this list spans ALL reps × 3 form types, so a
+    // silent 100-cap read as "exactly 100 submissions exist".
+    const total = out.length;
     if (out.length > INTAKE_LIST_CAP_) out.length = INTAKE_LIST_CAP_;
-    return { submissions: out, isManager: !!emp.isManager };
+    return { submissions: out, isManager: !!emp.isManager, total: total, cap: INTAKE_LIST_CAP_ };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -16447,7 +16708,12 @@ function searchReference(query, opts) {
       if (!rows[i][KB.ID]) continue;
       // #4 — drafts never surface in search to non-admins (nor to ANY caller
       // when publishedOnly is forced — the org-wide-cached AI retrieval path).
-      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
+      // C17 batch-5: hits now CARRY the status — an admin's search showed a
+      // draft chunk identically to a published one, inviting share/assign of
+      // unpublished content believed live (rep responses only ever contain
+      // 'published', so the field leaks nothing).
+      const status = kbRowStatus_(rows[i][KB.STATUS]);
+      if (status === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
       const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
       const dept = String(rows[i][KB.DEPARTMENT] || '');
@@ -16458,7 +16724,7 @@ function searchReference(query, opts) {
       if (type === 'embed') {
         // No stored content to chunk — title-only hit.
         if (titleScore > 0) {
-          hits.push({ id: id, title: title, department: dept, type: 'embed',
+          hits.push({ id: id, title: title, department: dept, type: 'embed', status: status,
             heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
         }
         continue;
@@ -16471,7 +16737,7 @@ function searchReference(query, opts) {
       });
       if (!secHits.length) {
         if (titleScore > 0) {
-          hits.push({ id: id, title: title, department: dept, type: 'article',
+          hits.push({ id: id, title: title, department: dept, type: 'article', status: status,
             heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
         }
         continue;
@@ -16479,7 +16745,7 @@ function searchReference(query, opts) {
       secHits.sort(function (a, b) { return b.score - a.score; });
       secHits.slice(0, KB_SEARCH_MAX_PER_ITEM).forEach(function (sh) {
         const cut = kbChunkTruncate_(sh.section.md, KB_CHUNK_MAX_CHARS);
-        hits.push({ id: id, title: title, department: dept, type: 'article',
+        hits.push({ id: id, title: title, department: dept, type: 'article', status: status,
           heading: sh.section.heading, anchor: sh.section.anchor,
           chunkMd: cut.md, truncated: cut.truncated, score: sh.score,
           snippet: snippetOf(cut.md) });
@@ -18589,7 +18855,13 @@ function saveTrainingAssignment(payload) {
       const rows = getEmployeeRosterRows_();
       const valid = {};
       for (let i = 1; i < rows.length; i++) {
-        if (rows[i][EMP.EMAIL]) valid[String(rows[i][EMP.ID]).trim()] = true;
+        // C17-3 sibling (cycle 17) — raw positive truthiness was the third
+        // divergent predicate on this column (INV-183): a whitespace-only
+        // email made an employee a VALID assignment target here while the
+        // dashboard/digest walks (empRosterEmail_) excluded them — an
+        // assignment that exists but is invisible in the matrix and never
+        // nags. The predicate can only narrow, the correct direction.
+        if (empRosterEmail_(rows[i])) valid[String(rows[i][EMP.ID]).trim()] = true;
       }
       const seen = {};
       payload.empIds.forEach(function (id) {

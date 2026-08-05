@@ -411,15 +411,25 @@ function loadTimesheetSideRail_() {
   // existing tsViewMode + computeRange so cached tsData (if present from
   // a previous load) reflects the rep's payCycle.
   const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
+  // C17 batch-2 — the slot is pre-filled with a LOADING placeholder, so a
+  // silently-swallowed failure left a PERPETUAL skeleton (no error, no
+  // retry path — the L-6 perpetual-loader class). Both failure shapes now
+  // render an error state into the slot instead.
+  const railFail = function (msg) {
+    if (currentView !== 'timeoff') return;
+    const slot = document.getElementById('ts-side-rail');
+    if (slot) slot.innerHTML = errorStateHtml_('Pay-period summary could not load — ' + msg + ' Switch modes or re-open the tab to retry.');
+  };
   google.script.run
     .withSuccessHandler(data => {
-      if (!data || data.error) return;
+      if (!data) { railFail('empty response.'); return; }
+      if (data.error) { railFail(data.error); return; }
       tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
       if (currentView !== 'timeoff') return;
       const slot = document.getElementById('ts-side-rail');
       if (slot) slot.innerHTML = renderTimesheetSideRail_(data);
     })
-    .withFailureHandler(() => {})
+    .withFailureHandler((err) => railFail((err && err.message) || 'load failed.'))
     .getTimesheetData(range.start, range.end);
 }
 

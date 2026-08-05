@@ -213,10 +213,18 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
     ['success-deep', 'good'], ['warning-deep', 'warn'],
     ['danger-deep', 'destructive'], ['info-deep', 'info'],
   ];
+  // C17 batch-3 (INV-179): the alias set is DERIVED from the token file, not
+  // the hand-typed name group the regex used to carry — a NEW -deep alias is
+  // swept into (a) automatically, and the coverage assert below fails until
+  // it also gets a behavioural hue-pair entry in DEEP.
+  const declaredDeep = new Set((toks.match(/--([a-z0-9-]+-deep):/g) || []).map((x) => x.slice(2, -1)));
+  const covered = new Set(DEEP.map((p) => p[0]));
+  declaredDeep.forEach((n) => assert.ok(covered.has(n),
+    'new -deep alias --' + n + ' is not covered — add a behavioural hue-pair entry to DEEP'));
   // (a) source-level: every color-mix'd -deep declaration uses `in oklab`.
-  const mixes = toks.match(/--(?:success|warning|danger|info)-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
-  assert.strictEqual(mixes.length, 8,
-    'expected 8 color-mix -deep declarations (4 aliases x light/dark @supports blocks), found ' + mixes.length);
+  const mixes = toks.match(/--[a-z0-9-]+-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
+  assert.strictEqual(mixes.length, declaredDeep.size * 2,
+    'expected ' + (declaredDeep.size * 2) + ' color-mix -deep declarations (each alias x light/dark @supports blocks), found ' + mixes.length);
   mixes.forEach((d) => {
     assert.ok(/color-mix\(in oklab,/.test(d),
       'polar hue interpolation is a colour-family bug, not a nuance — use `in oklab`: ' + d.trim());
@@ -2544,6 +2552,21 @@ test('#6 — a ```snippet fence renders a copyable card; other fences stay <pre>
   // the snippet body is still HTML-escaped (the escape boundary is not re-opened)
   const xss = kbMd_('```snippet\n<img src=x onerror=alert(1)>\n```');
   assert.ok(xss.indexOf('<img src=x') < 0 && xss.indexOf('&lt;img') >= 0, 'snippet body escaped');
+  // C17 batch-4: a MID-LINE backtick pair is NOT a block fence — the old
+  // any-occurrence regex stashed its content into a block whose sentinel
+  // token was never re-expanded (only whole-line tokens are), so the content
+  // vanished and a stray "C0" glyph rendered. Inline pairs stay literal.
+  const inline = kbMd_('Use ```x``` here');
+  // The inline-code pass may legitimately render the middle as a code span —
+  // the pin is CONTENT PRESERVATION (the old regex made `x` vanish entirely
+  // and left a stray sentinel glyph), not literal backtick fidelity.
+  assert.ok(/x/.test(inline) && /Use/.test(inline) && /here/.test(inline),
+    'inline backtick pair content is preserved');
+  assert.ok(inline.indexOf('\u0000') < 0, 'no unexpanded sentinel leaks into the render');
+  // A block fence with text trailing the closing ``` on the SAME line is not
+  // a closed block either — nothing may vanish.
+  const trailing = kbMd_('```js\nvar a=1;``` and more');
+  assert.ok(trailing.indexOf('var a=1;') >= 0, 'unclosed-block content is preserved');
 });
 
 console.log('\nkb — bookmarks (kbBookmarksToggle_ pure list op, #5)');
@@ -4594,12 +4617,20 @@ test('F3: roster inclusion goes through ONE predicate (INV-124 cohort + F3)', ()
   const raw = stripped.match(/if \(![^)\n]*\[EMP\.EMAIL\][^)\n]*\)\s*continue/g) || [];
   assert.deepStrictEqual(raw, [],
     'no roster walk may hand-roll the no-email skip — route it through empRosterEmail_');
+  // C17-3 sibling (cycle 17): ALSO ban the POSITIVE bare-truthiness form
+  // (`if (rows[i][EMP.EMAIL]) …`) — the saveTrainingAssignment shape, which
+  // the negative-continue ban above cannot see. Comparison reads (=== email,
+  // identification sites) deliberately do not match.
+  const rawPos = stripped.match(/if \(\s*[a-zA-Z_$]+\[[a-zA-Z_$]+\]\[EMP\.EMAIL\]\s*\)/g) || [];
+  assert.deepStrictEqual(rawPos, [],
+    'no roster walk may bare-truthiness-test EMP.EMAIL — route it through empRosterEmail_');
 
   // (c) The two regressions this family exists for stay fixed by NAME, since
   // those are the walks where being wrong is expensive: the Metrics cohort
   // (cycle-12 F4 — a stale row un-hides the N=3 anonymized team line) and the
   // manager team table (cycle-15 F3 — a departed rep in the table and totals).
-  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan']
+  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan',
+   'getMetricsAmbient', 'saveTrainingAssignment']   // C17-3 (cycle 17)
     .forEach((fn) => {
       assert.ok(/empRosterEmail_\(/.test(extractRawFunction('Code.js', fn)),
         fn + ' routes roster inclusion through empRosterEmail_');
@@ -5320,12 +5351,25 @@ test('A12: load failures never render into an empty-state container', () => {
     if (!fs.existsSync(p)) return;
     scanned++;
     const src = fs.readFileSync(p, 'utf8');
-    src.split('\n').forEach((line, i) => {
+    // C17 batch-3: STATEMENT-scoped, not line-scoped — a failure handler that
+    // assembles its empty-state HTML across concatenation lines used to exit
+    // the net entirely (marker and class had to share ONE source line; the 28
+    // F10 fixes were single-line, so the gap was latent, not empty). The
+    // window extends while the statement visibly continues (a line not ending
+    // in ; { or }), capped at 8 lines.
+    const lines = src.split('\n');
+    const seenAt = new Set();
+    lines.forEach((line, i) => {
       if (!FAILURE_LINE.test(line)) return;
-      if (line.indexOf('errorStateHtml_') >= 0) return;   // already correct
+      let win = line, j = i;
+      while (j + 1 < lines.length && (j - i) < 8 && !/[;{}]\s*$/.test(lines[j].trim())) { j++; win += '\n' + lines[j]; }
+      if (win.indexOf('errorStateHtml_') >= 0) return;   // already correct
       EMPTY_CLASS.lastIndex = 0;
       let m;
-      while ((m = EMPTY_CLASS.exec(line))) {
+      while ((m = EMPTY_CLASS.exec(win))) {
+        const key = rel + ':' + (i + 1) + ':' + m[1];
+        if (seenAt.has(key)) continue;
+        seenAt.add(key);
         violations.push(rel + ':' + (i + 1) + '  [.' + m[1] + ']  ' + line.trim().slice(0, 110));
       }
     });
@@ -5456,13 +5500,24 @@ test('A1: no interactive element is a bare span/div with an inline onclick', () 
 // six the scan found by hand (the CN flag toolbar, both CN sub-tab strips, the
 // KB tree item and the KB editor type toggle), which is the whole point of
 // promoting a convention to a tripwire.
-const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current'];
+// C17 batch-3: vocabulary widened with the DISCLOSURE-state classes
+// ('collapsed'/'expanded'). Deliberately NOT widened with 'open'/'show': a
+// dry-run found 17 of 19 such hits are the dialog-visibility idiom
+// (`.overlay.open` / tour + hover popovers), whose state is conveyed by the
+// ensureOverlay focus lifecycle (INV-83) and pinned by the DOM harness — a
+// class-toggle scan is the wrong net for dialogs, and admitting them would
+// bury the real signal in reasoned exemptions.
+const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current', 'collapsed', 'expanded'];
 // Decorative-only toggles: no state a user could act on, nothing to announce.
 // Keep this list tiny and reasoned — each entry is a claim that the class is
 // pure presentation.
 const A11Y_DECORATIVE = {
   'kb/script_kb.html:kbDrawerSetSearching_': 'a loading spinner — the search status is conveyed by the results region',
   'tc/script_clock.html:clkApplySky_': 'the two cross-fading sky gradient LAYERS behind the clock card',
+  // C17 batch-3: sidebar collapse is a CONTINUOUS-WIDTH consequence (labels
+  // hide below the snap threshold), not a binary control state — the nav
+  // links stay in the tree, named by their sb-lbl text carried as titles.
+  'script_core.html:applySidebarWidth_': 'width-driven label hiding on the resizable sidebar — no toggle control carries this state',
 };
 test('A11 (rule): every state-class toggle also sets an ARIA attribute', () => {
   const offenders = [];
@@ -5849,14 +5904,30 @@ test('Phase 4: the resolver sanitizes on read and the UI offers the mode only wi
 // — works below the view's <h1>. They were <div>/<span>, so every view had a
 // heading outline exactly one level deep. Scanning by CLASS (not by counting
 // tags) means a NEW card added as a div fails, which is the drift that matters.
-const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel'];
+// C17 batch-3 (INV-179): the class set is now DERIVED from the markup by this
+// codebase's own heading-class naming convention (…card-label / …card-title /
+// …seclabel / …section-h) — the hand list above missed .tr-section-h, a live
+// div-heading on two manager surfaces (used but DEFINED nowhere). The list
+// below is the floor; the derivation can only add to it.
+const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel', 'tr-section-h'];
 test('A13: section-heading classes render as <h2>, not div/span', () => {
   const offenders = [];
   let seen = 0;
+  // Derive convention-named heading classes from the markup itself.
+  const derived = new Set(A13_HEADING_CLASSES);
   A11Y_SCAN_PARTIALS.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
-    A13_HEADING_CLASSES.forEach((cls) => {
-      const re = new RegExp('<([a-z0-9]+)\\s+class="' + cls + '\\b', 'g');
+    let dm;
+    const dre = /class="([a-z0-9-]*(?:card-label|card-title|seclabel|section-h))[" ]/g;
+    while ((dm = dre.exec(src)) !== null) derived.add(dm[1]);
+  });
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    derived.forEach((cls) => {
+      // C17 batch-3: `class` need not be the FIRST attribute — the old
+      // `<tag\s+class="` anchor let `<div id="x" class="card-label">` escape
+      // the scan entirely.
+      const re = new RegExp('<([a-z0-9]+)\\b[^>]*?class="' + cls + '\\b', 'g');
       let m;
       while ((m = re.exec(src)) !== null) {
         seen++;
@@ -5868,6 +5939,16 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
   assert.deepStrictEqual(offenders, [],
     'a card section heading must be an <h2> so it joins the document outline:\n  ' +
     offenders.join('\n  '));
+  // C17 batch-3: a heading class must also be DEFINED — .tr-section-h was
+  // used on two manager surfaces with no CSS rule anywhere (headings rendered
+  // as unstyled body text; INV-184 in reverse: read-but-never-declared).
+  const cssHay = A11Y_SCAN_PARTIALS.concat(['styles.html', 'styles_design_tokens.html'])
+    .map((f) => { const p = path.join(__dirname, '../../web-app', f); return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''; })
+    .join('\n');
+  derived.forEach((cls) => {
+    assert.ok(new RegExp('\\.' + cls + '\\s*[{,:]').test(cssHay),
+      'heading class .' + cls + ' is used in markup but defined in no stylesheet');
+  });
   // Guard the guard: if a rename silently emptied the scan it would pass vacuously.
   assert.ok(seen >= 27, 'expected the 27 known heading sites, found ' + seen);
   // The UA h2 margin must be zeroed or every card grows a gap above its label.
@@ -5902,6 +5983,11 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
 const A2_INVERSE_OK = {
   // selector → why a viewport breakpoint is not required
   'rail-flags': 'compact widens 2-up → 4-up (icon-only rail); the inverse of stacking',
+  // C17-1 (cycle 17) — surfaced when the fixed regex reached styles.html:
+  'ts-recent-row': 'base is auto 1fr auto (content-sized tracks, one flexible middle) — ' +
+    'nothing fixed-width to overflow; the compact override only drops the leading icon column for density',
+  'hero': 'the only live consumer is the Clock dashboard, whose .dash-hero (tc/script_clock.html) ' +
+    'sets display:block — the base 2-col grid never applies; verified by the 390px clock scenario in the visual matrix',
 };
 // A grid whose BASE track function is intrinsically responsive (auto-fill /
 // auto-fit / min() / clamp()) already reflows with the viewport — it needs no
@@ -5922,8 +6008,17 @@ test('A2: EVERY compact-mode grid override has a matching viewport breakpoint', 
     if (!fs.existsSync(p)) return;
     const src = decomment(fs.readFileSync(p, 'utf8'));
     // Selectors re-columned under :root[data-compact].
+    // Cycle-17 C17-1 — the attribute selector must match BOTH written forms:
+    // the partials write the bare `:root[data-compact]` but every one of
+    // styles.html's ~67 compact overrides writes `:root[data-compact="1"]`,
+    // which the old literal `\[data-compact\]` never matched — so the shared
+    // stylesheet contributed ZERO selectors and the scan that claims to
+    // cover it ("A11Y_SCAN_PARTIALS + styles.html") guarded nothing there
+    // (the checked >= 8 floor was satisfied by the partials alone). The
+    // INV-179/188 failure shape: a derived scan silently narrower than the
+    // thing it derives from.
     const compactSels = new Set();
-    const re = /:root\[data-compact\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
+    const re = /:root\[data-compact[^\]]*\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
     let m;
     while ((m = re.exec(src))) compactSels.add(m[1]);
     if (!compactSels.size) return;
@@ -6339,6 +6434,483 @@ test('F1: every CONFIG key has a reader (dead declarations are defects)', () => 
   }
   assert.deepStrictEqual(dead, [],
     'CONFIG keys declared but never read — wire them, remove them, or allowlist with a reason');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 — top-5 fix pins (C17-2 / C17-5 / C17-6 / C17-7). C17-1 is pinned
+// by the fixed A2 scan itself (the regex now matches both attribute forms and
+// styles.html contributes real obligations). All scans strip comments first
+// (INV-188) — the fixes' own comments quote the code they removed.
+console.log('\ncycle 17 — top-5 fix pins');
+
+const c17strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+// Balanced-brace body of `function name(` inside an HTML partial's source.
+function c17fnBody(src, name) {
+  const at = src.indexOf('function ' + name + '(');
+  assert.ok(at >= 0, name + ' not found');
+  const open = src.indexOf('{', at);
+  let d = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') d++;
+    else if (src[i] === '}') { d--; if (d === 0) return src.slice(open, i + 1); }
+  }
+  throw new Error('unbalanced ' + name);
+}
+
+// C17-2: updateTimeOffStatus — the ONE balance-mutating STATUS reader —
+// normalizes TO.STATUS once (F8/INV-183 pattern) and compares lowercase;
+// the raw cell survives only for the compensating revert + audit note.
+test('C17-2: updateTimeOffStatus reads TO.STATUS once and compares lowercase', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'updateTimeOffStatus'));
+  const rawReads = (body.match(/\[TO\.STATUS\]/g) || []).length;
+  assert.strictEqual(rawReads, 1, 'TO.STATUS indexed-read must appear exactly once (normalize-once), got ' + rawReads);
+  assert.ok(/oldStatusRaw\.toLowerCase\(\)/.test(body), 'the read lowercases into the comparison local');
+  assert.ok(/oldStatus === 'reconciled'/.test(body), 'the S1.3 terminal guard compares lowercase');
+  assert.ok(!/oldStatus\s*(?:!==|===)\s*'(?:Approved|Reconciled|Pending|Denied)'/.test(body),
+    'a capitalized comparison against the normalized local remains — the pre-C17-2 shape');
+  assert.ok(/setValue\(oldStatusRaw\)/.test(body), 'the compensating revert writes the RAW cell back');
+  assert.ok(/oldStatus !== newStatus\.toLowerCase\(\)/.test(body),
+    'the notify no-op check compares both sides normalized');
+});
+
+// C17-5: a structured {error} from the CN loaders preserves last-good notes,
+// marks the round failed + un-fresh (INV-129 rule), and a failed load with NO
+// last-good renders an error state — never the empty-day state (INV-175/187).
+test('C17-5: CN loaders preserve last-good on {error} and mark the round failed', () => {
+  const src = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const today = c17fnBody(src, 'cnLoadToday_');
+  const range = c17fnBody(src, 'cnLoadDateRange_');
+  // The wipe may survive ONLY inside the not-configured (enrollment) branch.
+  assert.strictEqual((today.match(/rollingNotes = \[\]/g) || []).length, 1,
+    'cnLoadToday_ clears rollingNotes exactly once (the enrollment branch)');
+  assert.strictEqual((range.match(/historyNotes = \[\]/g) || []).length, 1,
+    'cnLoadDateRange_ clears historyNotes exactly once (the enrollment branch)');
+  // Both handlers of each loader mark the failed round; success clears it.
+  assert.ok((today.match(/rollingLoadFailed = true/g) || []).length >= 2,
+    'cnLoadToday_ marks failure in BOTH the {error} and transport handlers');
+  assert.ok(/rollingLoadFailed = false/.test(today), 'success clears the flag');
+  assert.ok((today.match(/rollingEntry = null/g) || []).length >= 2,
+    'a failed round is never served as fresh (both handlers null the SWR stamp)');
+  assert.ok((range.match(/historyLoadFailed = true/g) || []).length >= 2,
+    'cnLoadDateRange_ marks failure in BOTH handlers');
+  assert.ok(/historyLoadFailed = false/.test(range), 'success clears the flag');
+  assert.ok((range.match(/historyEntry = null/g) || []).length >= 2,
+    'a failed range round is never served as fresh');
+  // Cold-failure renders an error state, not the empty-day state.
+  const stack = c17fnBody(src, 'cnRenderStack_');
+  const hist = c17fnBody(src, 'cnRenderHistoryStack_');
+  assert.ok(/rollingLoadFailed && \(CN_STATE\.rollingNotes \|\| \[\]\)\.length === 0/.test(stack) &&
+    /errorStateHtml_/.test(stack), 'Log stack: failed-load-with-no-last-good renders errorStateHtml_');
+  assert.ok(/historyLoadFailed && allNotes\.length === 0/.test(hist) &&
+    /errorStateHtml_/.test(hist), 'History stack: failed-load-with-no-last-good renders errorStateHtml_');
+});
+
+// C17-6: a PHI export can never read as complete when reps were unreadable —
+// the skipped set rides the response, the audit row, and the client toast.
+test('C17-6: exportCallNotesRange carries skippedReps on response + audit row + toast', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'exportCallNotesRange'));
+  assert.ok(/skippedReps\.push\(/.test(body), 'the per-rep catch collects the skipped rep');
+  assert.ok(/skippedReps:\s*skippedReps\.map/.test(body), 'the success response carries skippedReps');
+  assert.ok(/skippedReps=/.test(body) && /INCOMPLETE/.test(body),
+    'the CallNotesExport audit note records skippedReps= and marks the export INCOMPLETE');
+  assert.ok(/skippedReps\.length > 0/.test(body) && /could not read/.test(body),
+    'all-skipped-no-notes returns a read-failure error, not "no notes found"');
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/res\.skippedReps && res\.skippedReps\.length > 0/.test(cn),
+    'the export client surfaces the skipped list (warn toast)');
+});
+
+// C17-7: the three manager lazy cards distinguish a FAILED read from a clean/
+// empty result on BOTH failure shapes (structured {error} + transport throw).
+// A blank slot may mean only "genuinely nothing to show" (INV-187).
+test('C17-7: manager lazy cards render an error state on both failure shapes', () => {
+  const src = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  ['loadPendingAdjustments_', 'loadPtoReconciliation_', 'loadSheetDoctor_'].forEach((fn) => {
+    const body = c17fnBody(src, fn);
+    assert.ok((body.match(/errorStateHtml_\(/g) || []).length >= 2,
+      fn + ' must render errorStateHtml_ on BOTH the {error} and transport paths');
+    assert.ok(!/withFailureHandler\(function\s*\(\s*\)\s*\{\s*\}\)/.test(body),
+      fn + ' still has an empty failure handler');
+    assert.ok(/res && res\.error/.test(body),
+      fn + ' must split res.error from the genuinely-empty render');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-2 pins — the INV-187 silent-degradation stragglers. All
+// source scans strip comments first (INV-188): the fixes' comments quote the
+// shapes they removed.
+console.log('\ncycle 17 — batch-2 (silent degradation) pins');
+
+// C17-4: a rep-day with zero answered calls has NO average talk time, not an
+// average of 0 — the per-rep-daily finalize must yield null, which both the
+// team mean (v != null) and the own-point builder skip.
+test('C17-4: perRepDaily attSeconds is null (absence), never 0, for an answered-nothing day', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'getCdrDailyBreakdown_'));
+  assert.ok(/p\.attSeconds = p\._attCount > 0 \? Math\.round\(p\._attSum \/ p\._attCount\) : null/.test(body),
+    'the per-rep-daily finalize must use null for absence (the pre-C17-4 literal 0 dragged the team benchmark toward 0)');
+});
+
+// C17 batch-2: every remaining cross-rep walk carries its outcome —
+// skippedReps on the aggregates, partial on the badge count — and no partial
+// round is ever cached (INV-129).
+test('batch-2: cross-rep walks carry skippedReps and never cache a partial round', () => {
+  // Per-function return-shape expectations (a generic "last return mentions
+  // it" check was wrong on first write — taxonomy/trends attach the field to
+  // a result object built lines above the return).
+  [['managerAggregateFlagged_', /return \{ flagType, results, skippedReps \};/],
+   ['managerAggregateUrgent_', /return \{ results, skippedReps \};/],
+   ['managerSearchCallNotes', /return \{ results, skippedReps \};/],
+   ['getCallNotesTagTaxonomy', /skippedReps: skippedReps/],
+   ['getCallNotesTagTrends', /out\.skippedReps = skippedReps;/]].forEach(([fn, re]) => {
+    const body = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/skippedReps\.push\(/.test(body), fn + ' collects the skipped rep in its catch');
+    assert.ok(re.test(body), fn + ' carries skippedReps on its result');
+  });
+  const tax = c17strip(extractRawFunction('Code.js', 'getCallNotesTagTaxonomy'));
+  assert.ok(/skippedReps\.length > 0/.test(tax), 'taxonomy skips the cache put on a partial round');
+  const trends = c17strip(extractRawFunction('Code.js', 'getCallNotesTagTrends'));
+  assert.ok(/skippedReps\.length === 0 &&/.test(trends), 'trends caches only a fully-successful round');
+  const unres = c17strip(extractRawFunction('Code.js', 'managerGetUnresolvedActionCount'));
+  assert.ok(/partial: skippedCount > 0/.test(unres), 'the badge count carries partial (a lower bound)');
+  assert.ok(/if \(skippedCount === 0\)/.test(unres), 'a partial badge count is never cached');
+  // The digests SEND on skipped-but-empty (a failed read is not an empty
+  // queue) and the sender takes + renders the skipped list.
+  const weekly = c17strip(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'));
+  assert.ok((weekly.match(/skippedReps/g) || []).length >= 4, 'both weekly queues gate + pass skippedReps');
+  const urgent = c17strip(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'));
+  assert.ok(/skippedReps/.test(urgent), 'the urgent digest gates + passes skippedReps');
+  const sender = c17strip(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+  assert.ok(/skippedReps\)/.test(sender.slice(0, 200)) || /function sendManagerFlagDigest_\(toEmails, label, notes, dateRange, skippedReps\)/.test('function sendManagerFlagDigest_' + sender.slice(0, 80)),
+    'sendManagerFlagDigest_ accepts the skippedReps arg');
+  assert.ok(/may be incomplete/.test(sender), 'the digest body names the incompleteness');
+});
+
+// C17 batch-2 client half: the shared partial-note helper exists and the
+// queue/search/admin surfaces consume it; the badge renders the lower bound;
+// a failed search renders an error state (query-guarded), never stale results
+// under a new label.
+test('batch-2: CN client surfaces partial walks and failed searches', () => {
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/function cnSkippedRepsNoteHtml_\(/.test(cn), 'shared helper exists');
+  assert.ok((cn.match(/cnSkippedRepsNoteHtml_\(/g) || []).length >= 4,
+    'queue + mgr search render + admin augment consume the helper');
+  assert.ok(/res\.count > 0 \|\| res\.partial/.test(cn), 'the unresolved badge renders the partial lower bound');
+  ['cnFireSearch_', 'cnMgrFireSearch_'].forEach((fn) => {
+    const body = c17fnBody(cn, fn);
+    assert.ok((body.match(/errorStateHtml_\(/g) || []).length >= 2,
+      fn + ' renders an error state on BOTH the {error} and transport paths');
+    assert.ok((body.match(/!== requestedQuery\) return;/g) || []).length >= 2,
+      fn + ' guards both handlers on the query still being current');
+  });
+});
+
+// C17-14 / C17-15 / side rail / kbDrawer: the four sibling-branch stragglers.
+test('batch-2: the four sibling-branch stragglers are closed', () => {
+  const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  const noCdr = m.slice(m.indexOf('No call data found for'), m.indexOf('No call data found for') + 900);
+  assert.ok(/noteCountUnavailable/.test(noCdr), 'C17-14: the no-CDR fallback checks noteCountUnavailable');
+  const clk = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const extras = c17fnBody(clk, 'clkLoadDashboardExtras_');
+  assert.strictEqual((extras.match(/extraAt = Date\.now\(\)/g) || []).length, 1,
+    'C17-15: exactly ONE freshness stamp site');
+  assert.ok(/!anyFail\) CLK_DASH\.extraAt = Date\.now\(\)/.test(extras),
+    'C17-15: the stamp fires only when the WHOLE round succeeded');
+  const to = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  const rail = c17fnBody(to, 'loadTimesheetSideRail_');
+  assert.ok(/errorStateHtml_\(/.test(rail) && !/withFailureHandler\(\(\) => \{\}\)/.test(rail),
+    'side rail: failure renders an error state, never a perpetual skeleton');
+  const kb = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
+  const drawerItem = c17fnBody(kb, 'kbDrawerOpenItem_');
+  const failIdx = drawerItem.indexOf('withFailureHandler');
+  const failPart = drawerItem.slice(failIdx);
+  assert.ok(/KB_DRAWER\.itemId !== id\) return;/.test(failPart) && /KB_DRAWER\.view !== 'item'\) return;/.test(failPart),
+    'kbDrawerOpenItem_: the failure handler carries the L-18 stale-response guards');
+  // getAdminConfig containment: the error renders into the config pane slot,
+  // never the whole admin area.
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const adm = c17fnBody(cn, 'enterCallNotesAdminView');
+  assert.ok(!/area\.innerHTML = errorStateHtml_/.test(adm),
+    'a getAdminConfig failure must not wipe the whole admin area');
+  assert.ok(/cn-admin-body'\);\s*if \(b\d\) b\d\.innerHTML = errorStateHtml_/.test(adm.replace(/\n\s*/g, ' ')) ||
+    /getElementById\('cn-admin-body'\)/.test(adm),
+    'the config failure renders into #cn-admin-body');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-3/4 pins — interface fixes + fixture-shape drifts. Source
+// scans strip comments where the fix's own comment quotes removed code
+// (INV-188).
+console.log('\ncycle 17 — batch-3/4 pins');
+
+// C17-8 + banner: fixed color on a theme-flipping token is the inverse of the
+// V-2/INV-166 rule. The tour's only advance button was #fff on dark --accent
+// (~1.4:1); the instance banner was #fff on dark-flipped --warning-deep.
+test('batch-4: tour primary + instance banner obey the fixed-vs-token color rule', () => {
+  const tour = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8'));
+  const prim = /\.tour-btn\.primary\s*\{[^}]*\}/.exec(tour);
+  assert.ok(prim && /color:\s*var\(--paper-card\)/.test(prim[0]) && !/color:\s*#fff/.test(prim[0]),
+    '.tour-btn.primary must use var(--paper-card), the accent-filled-primary convention');
+  const styles = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  const banner = /\.instance-banner\s*\{[^}]*\}/.exec(styles);
+  assert.ok(banner && !/background:\s*var\(--warning-deep\)/.test(banner[0]),
+    '.instance-banner takes a FIXED background — the -deep token flips light in dark mode under its white text');
+});
+
+// C17-10: the training checklist header wraps at narrow viewports (the
+// A2-family flex variant no grid scan can reach — this was the file's first
+// media query).
+test('C17-10: .tr-head has a real viewport wrap, not only the pop-out one', () => {
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  const media = /@media[^{]*\{[\s\S]*?\n  \}/.exec(tr);
+  assert.ok(media && /\.tr-head\s*\{[^}]*flex-wrap:\s*wrap/.test(media[0]),
+    '.tr-head must flex-wrap inside a real @media block (the compact-only wrap left "My Training" clipped at 390px)');
+});
+
+// batch-4 a11y: the PDF⇄Fillable switch is a real button with switch
+// semantics (it was a listener-bound <div> — keyboard-dead with NO other path
+// to the fillable-form flow, invisible to A1 which only sees inline onclick),
+// and the two CN disclosures expose aria-expanded.
+test('batch-4: fillable switch + CN disclosures expose real semantics', () => {
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/<button type="button" class="cn-ext-form-mode-switch/.test(cn), 'the mode switch is a <button>');
+  assert.ok(/cn-ext-form-mode-switch[\s\S]{0,400}?role="switch"/.test(cn) &&
+            /cn-ext-form-mode-switch[\s\S]{0,400}?aria-checked=/.test(cn),
+    'the mode switch carries role=switch + aria-checked');
+  assert.ok(/data-cn-action="more" aria-expanded=/.test(cn), 'the more-menu toggle exposes aria-expanded');
+  const closeFn = c17fnBody(cn, 'cnCloseMoreMenus_');
+  assert.ok(/aria-expanded/.test(closeFn), 'closing the menus resets aria-expanded');
+  const histFn = c17fnBody(cn, 'cnToggleAuditHistory_');
+  assert.ok((histFn.match(/setAttribute\('aria-expanded'/g) || []).length >= 2,
+    'the audit-history expander sets aria-expanded on both transitions');
+});
+
+// batch-3 fixture-shape pins (INV-185): the three field-name drifts the scan
+// found — each meant a screenshot state the server cannot produce.
+test('batch-3: visual-fixture payload shapes match the server field names', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/patientTRX: 'TRX-/.test(mock) && !/patientTrx:/.test(mock),
+    'coaching fixture rows carry patientTRX (server casing) — the lowercase drift hid the TRX chip from every shot');
+  const rd = /kbGetReviewDue:\s*\{[^\n]*\}/.exec(mock);
+  assert.ok(rd && /views:/.test(rd[0]) && !/usage30/.test(rd[0]) && /total:/.test(rd[0]),
+    'kbGetReviewDue fixture uses `views` + carries total (the F18 cap-note path is renderable)');
+  assert.ok(/kbGetContentRequests:\s*\{ open: \[/.test(mock),
+    'kbGetContentRequests fixture uses the real {open, resolved, openCount} shape');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-5 pins — server-hardening stragglers (consistency of
+// established patterns). Comment-stripped per INV-188.
+console.log('\ncycle 17 — batch-5 pins');
+
+test('C17-12: form_public conditional sections clear on hide (attested-record hygiene)', () => {
+  const fp = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/form_public.html'), 'utf8'));
+  assert.ok(/function clearHiddenSection\(/.test(fp), 'the clear helper exists');
+  assert.ok((fp.match(/clearHiddenSection\(/g) || []).length >= 4,
+    'all three conditional toggles (signer / govAssist / guardian) clear on hide');
+});
+
+test('C17-11: a mixed split-send that half-fails still books the delivered half', () => {
+  const body = c17strip(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/internalSent = true;/.test(body), 'the internal copy send is tracked');
+  assert.ok(/if \(!internalSent\)/.test(body) && /externalSendFailed = sendErr\.message/.test(body),
+    'a failure AFTER the internal copy falls through to the bookkeeping instead of returning');
+  assert.ok(/externalCopyFailed/.test(body), 'the CallNoteEmail audit row marks the partial send');
+  assert.ok(/warning:/.test(body) && /do NOT re-send the whole email/.test(body),
+    'the partial return warns the rep against duplicating the dept copy');
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/res\.warning\) showToast\(res\.warning, 'toast-warn'\)/.test(cn),
+    'the client surfaces the partial-send warning');
+});
+
+test('C17-13: intake condition custom-add blocks LEADING negation tokens', () => {
+  const ik = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
+  assert.ok(/negTok = val\.toLowerCase\(\)\.split\(/.test(ik), 'the check keys off the first token');
+  ['none', 'nothing', 'denies', 'negative'].forEach((w) => {
+    assert.ok(new RegExp("'" + w + "'").test(ik), 'negation vocabulary includes ' + w);
+  });
+});
+
+test('batch-5: the last uncapped client-writable cells are bounded + validated', () => {
+  const tok = c17strip(extractRawFunction('Code.js', 'createFormToken'));
+  assert.ok(/slice\(0, 200\)/.test(tok), 'recipientName capped');
+  assert.ok(/prefillJson\.length > 20000/.test(tok) && /Object\.keys\(prefillData\)\.length > 50/.test(tok),
+    'prefillData bounded BEFORE the append (INV-96 spirit)');
+  const sub = c17strip(extractRawFunction('Code.js', 'submitFormByToken'));
+  assert.ok(/signatureData && !\/\^data:image/.test(sub),
+    'the signature must be validated as a data:image URL (closes the remote-fetch channel)');
+  const to1 = c17strip(extractRawFunction('Code.js', 'submitTimeOffRequest'));
+  const to2 = c17strip(extractRawFunction('Code.js', 'managerSubmitTimeOff'));
+  assert.ok(/slice\(0, 1000\)/.test(to1) && /slice\(0, 1000\)/.test(to2), 'time-off notes capped on both paths');
+});
+
+test('batch-5: dept-email config is sanitized on read and comma-safe on write', () => {
+  const get = c17strip(extractRawFunction('Code.js', 'getDepartmentEmails_'));
+  assert.ok(/clean\[name\] = email/.test(get) && /indexOf\('@'\) > 0/.test(get),
+    'getDepartmentEmails_ whitelist-rebuilds on read (the L-12 rule)');
+  const save = c17strip(extractRawFunction('Code.js', 'saveDepartmentEmails'));
+  assert.ok(/\[,;\]/.test(save), 'saveDepartmentEmails rejects comma/semicolon dept names (the join-on-comma shape)');
+});
+
+test('batch-5: capped/annotated list contracts (INV-169) + search hit status + cache-buster', () => {
+  const il = c17strip(extractRawFunction('Code.js', 'intakeListMySubmissions'));
+  assert.ok(/total: total, cap: INTAKE_LIST_CAP_/.test(il), 'the intake Sent list returns its pre-slice total');
+  const ik = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
+  assert.ok(/sentTotal/.test(ik) && /list capped/.test(ik), 'the client renders the cap note');
+  const sr = c17strip(extractRawFunction('Code.js', 'searchReference'));
+  assert.strictEqual((sr.match(/status: status,/g) || []).length, 3,
+    'all three hit pushes carry the item status (draft legibility for admins)');
+  const kb = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
+  assert.ok(/g\.status === 'draft'/.test(kb), 'the chunk-group header renders the Draft pill');
+  const code = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(/indexOf\('\?'\) >= 0 \? '&v=' : '\?v='/.test(code),
+    'the intake image cache-buster respects an existing query string');
+});
+
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-6 pins — structural/growth: lock amplification, the
+// unknown-punch-type lockout, the Spanish scan cap, the manager fan-in seq
+// tokens, and the dead-CSS cluster staying deleted. All scans strip comments
+// first (INV-188).
+console.log('\ncycle 17 — batch-6 pins');
+
+test('C17-9: managerSaveDayRange is one-read indexed; the mirror memoizes its handle', () => {
+  const range = c17strip(extractRawFunction('Code.js', 'managerSaveDayRange'));
+  assert.ok(/buildAdjustPunchIndex_\(/.test(range), 'the range edit builds ONE Timesheet index for the whole run');
+  assert.ok(/'multi-day edit', ctx\)/.test(range), 'the range edit passes the ctx into every punch write');
+  const wr = c17strip(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'));
+  assert.ok(/actorEmail, reason, ctx\)/.test(wr), 'writeAdjustPunchForEmployee_ takes the optional ctx');
+  assert.strictEqual((wr.match(/findExistingPunch_\(/g) || []).length, 1,
+    'exactly one findExistingPunch_ call — the no-ctx single-punch path');
+  assert.ok(/: findExistingPunch_\(/.test(wr), 'findExistingPunch_ is the ctx-absent branch of the ternary');
+  const idx = c17strip(extractRawFunction('Code.js', 'buildAdjustPunchIndex_'));
+  assert.ok(/idx\[d \+ '\|' \+ normalizeType_\(String\(rows\[i\]\[ADP\.COMMENTS\]\)\)\] = i \+ 1/.test(idx),
+    'index assignment is unconditional — LAST match wins (the findExistingPunch_/INV-155 agreement)');
+  assert.ok(!/break/.test(idx), 'the index scan never breaks on first match');
+  // The personal-sheet mirror opened the SAME spreadsheet by id once per punch
+  // (~124 openById round-trips inside the global lock on a full range edit).
+  ['writeToEmployeeSheet_', 'clearFromEmployeeSheet_'].forEach((fn) => {
+    const b = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/openPersonalSs_\(/.test(b), fn + ' routes through the per-execution handle memo');
+    assert.ok(!/SpreadsheetApp\.openById\(/.test(b), fn + ' has no bare openById');
+  });
+});
+
+test('batch-6: an unknown punch type is not a state — getNextActions_ skips it (behavioral)', () => {
+  const src = extractRawFunction('Code.js', 'getNextActions_');
+  const nctx = vm.createContext({ PUNCH_LABELS_: ['ClockIn', 'LunchOut', 'LunchIn', 'ClockOut'] });
+  vm.runInContext(src, nctx, { filename: 'Code.js#getNextActions_' });
+  // A hand-edited/garbage COMMENTS row appended AFTER a real punch used to
+  // become the "state": next actions collapsed to ['Adjust'] and the INV-155
+  // live sequence guard then rejected every legitimate punch all day.
+  // JSON-compare: the vm context's arrays are cross-realm, and deepStrictEqual
+  // compares prototype IDENTITY — a realm mismatch fails on identical values.
+  const na = (p) => JSON.stringify(nctx.getNextActions_(p));
+  assert.strictEqual(na([{ type: 'ClockIn' }, { type: 'Garbage' }]),
+    '["LunchOut","ClockOut","Adjust"]', 'a garbage row after ClockIn no longer locks the rep out');
+  assert.strictEqual(na([{ type: 'Garbage' }]),
+    '["ClockIn","Adjust"]', 'a garbage-only day reads as not-clocked-in');
+  assert.strictEqual(na([{ type: 'ClockOut' }]), '["Adjust"]', 'done-state unchanged');
+  assert.strictEqual(na([]), '["ClockIn","Adjust"]', 'fresh-day unchanged');
+});
+
+test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab renders it', () => {
+  ['getSpanishInboxStats', 'getSpanishInboxPending', 'getSpanishInboxResolved'].forEach((fn) => {
+    const b = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/GmailApp\.search\([\s\S]*?SPANISH_THREAD_SCAN_MAX\)/.test(b), fn + ' searches via the named cap');
+    assert.ok(!/, 0, 200\)/.test(b), fn + ' has no bare 200 literal');
+    assert.ok(/truncated: threads\.length >= SPANISH_THREAD_SCAN_MAX/.test(b), fn + ' reports truncation');
+  });
+  const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  assert.ok(/function spanishTruncNote_\(/.test(m), 'the client has the shared truncation note');
+  assert.ok((m.match(/spanishTruncNote_\(d\)/g) || []).length >= 4,
+    'stats + pending + resolved renders all consume it');
+});
+
+test('batch-6: the three manager fan-ins carry same-view seq tokens (INV-156)', () => {
+  [['train/script_training.html', 'trainLoadMgr_', 'TRAIN_STATE.mgrSeq', 5],
+   ['train/script_empdocs.html', 'edLoadMgr_', 'ED_STATE.mgrSeq', 3],
+   ['train/script_coaching.html', 'coachLoadMgr_', 'COACH_STATE.mgrSeq', 2]].forEach(([file, fn, tok, rpcs]) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + file), 'utf8');
+    const body = c17strip(c17fnBody(src, fn));
+    assert.ok(body.indexOf(tok + ' = (' + tok + ' || 0) + 1') >= 0, fn + ' bumps ' + tok);
+    const handlers = (body.match(/\.withSuccessHandler\(/g) || []).length;
+    assert.ok(handlers >= rpcs, fn + ' fires its ' + rpcs + ' RPCs');
+    // Every success handler guards the STATE WRITE (not just the render) —
+    // a stale round-1 response must not overwrite a field after round 2
+    // rendered; the view guard alone can't stop it (same view key).
+    const checks = (body.match(new RegExp('seq !== ' + tok.replace('.', '\\.'), 'g')) || []).length;
+    assert.ok(checks >= rpcs + 2, fn + ' guards every handler + done + onFail (got ' + checks + ')');
+  });
+});
+
+test('batch-6: the dead pre-Dashboard CSS clusters stay deleted (INV-184)', () => {
+  const css = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  ['hero-clock', 'actions-grid', 'action-btn', 'ledger', 'ts-summary', 'leave-balance-row',
+   'lb-card', 'lb-val', 'lb-unit', 'ts-stat', 'day-card', 'day-list', 'pt-chip',
+   'btn-clockin', 'btn-lunchout', 'btn-lunchin', 'btn-clockout', 'btn-adjust'].forEach((cls) => {
+    const re = new RegExp('(?<![\\w-])\\.' + cls + '(?![\\w-])');
+    assert.ok(!re.test(css), '.' + cls + ' selector reappeared in styles.html — zero markup emits it');
+  });
+  // The dead thin wrapper (A4 precedent: dead function + its doc mention go together).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(cn.indexOf('cnLoadDate_') < 0, 'cnLoadDate_ stays removed');
+});
+
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-7 pins — visual-lens expansion. The harness is not in CI, but
+// its SCAFFOLDING is pinnable: the forced-failure hook, the scenario coverage
+// the Visual Audit Stage now claims, and the Admin fixture's top-level shape
+// DERIVED from the server's own return site (INV-185/179 — a fixture key list
+// hand-copied here would drift exactly like the fixtures it checks).
+console.log('\ncycle 17 — batch-7 pins');
+
+test('batch-7: the visual mock has the forced-failure hook and it precedes fixture lookup', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const m = c17strip(mock);
+  assert.ok(/failrpc=/.test(m), 'mock parses ?failrpc= from the page query');
+  const failAt = m.indexOf('FAIL_RPCS.indexOf(name) >= 0');
+  const fxAt = m.indexOf('var fx = FIXTURES[name]');
+  assert.ok(failAt >= 0 && fxAt >= 0 && failAt < fxAt,
+    'the forced failure fires BEFORE fixture lookup (a failed RPC is not a missing fixture)');
+});
+
+test('batch-7: the scenario matrix covers admin + dark parity + error states', () => {
+  const shoot = c17strip(fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8'));
+  assert.ok(/'admin-light-wide'/.test(shoot) && /'admin-dark-wide'/.test(shoot),
+    'the Admin panel is in the matrix at both themes');
+  ['reference-dark-wide', 'training-dark-wide', 'coaching-dark-wide'].forEach((n) => {
+    assert.ok(shoot.indexOf("'" + n + "'") >= 0, n + ' dark-parity scenario present');
+  });
+  assert.ok((shoot.match(/\?failrpc=/g) || []).length >= 3, 'at least three error-state scenarios');
+});
+
+test('batch-7: the getAutomationHealth fixture mirrors the server return keys (INV-185, derived)', () => {
+  // Derive the server's top-level return keys from computeAutomationHealth_'s
+  // final return block — never a hand list (INV-179).
+  const body = c17strip(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  const retAt = body.lastIndexOf('return {');
+  assert.ok(retAt >= 0, 'server return block found');
+  const open = body.indexOf('{', retAt);
+  let d = 0, end = open;
+  for (let i = open; i < body.length; i++) {
+    if (body[i] === '{') d++;
+    else if (body[i] === '}') { d--; if (d === 0) { end = i; break; } }
+  }
+  const retBlock = body.slice(open, end + 1);
+  const keys = [];
+  retBlock.replace(/^\s*([A-Za-z_][A-Za-z0-9_]*):/gm, (all, k) => { keys.push(k); return all; });
+  assert.ok(keys.length >= 8, 'derived a real key set (got ' + keys.length + ')');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fxAt = mock.indexOf('getAutomationHealth: {');
+  assert.ok(fxAt >= 0, 'mock has the getAutomationHealth fixture');
+  const fxRegion = mock.slice(fxAt, mock.indexOf('getStorageHealth:', fxAt));
+  keys.forEach((k) => {
+    assert.ok(new RegExp('(^|[\\s{,])' + k + ':').test(fxRegion),
+      'fixture carries the server key `' + k + '` — the Admin scenario cannot render a shape the server does not ship');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -168,21 +168,24 @@ function coachLoadMgr_() {
   var c = document.getElementById('coach-content');
   if (c) c.innerHTML = '<div class="m-loading"><span class="lo-glyph">' + icon('manage', 26) + '</span> Loading&hellip;</div>';
   var requestedView = currentView;
+  // Batch-6 (cycle 17, INV-156) — same-view seq token; see trainLoadMgr_.
+  COACH_STATE.mgrSeq = (COACH_STATE.mgrSeq || 0) + 1;
+  var seq = COACH_STATE.mgrSeq;
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 2 || failed || currentView !== requestedView || COACH_MODE !== 'team') return;
+    if (got < 2 || failed || currentView !== requestedView || COACH_MODE !== 'team' || seq !== COACH_STATE.mgrSeq) return;
     coachRenderMgr_();
   }
   function onFail(err) {
-    if (failed) return;
+    if (failed || seq !== COACH_STATE.mgrSeq) return;
     failed = true;
     if (currentView !== requestedView || COACH_MODE !== 'team') return;
     var el = document.getElementById('coach-content');
     if (el) el.innerHTML = errorStateHtml_('Could not load coaching: ' + ((err && err.message) || err));   // A12
   }
-  google.script.run.withSuccessHandler(function (d) { COACH_STATE.dash = d; done(); }).withFailureHandler(onFail).getCoachingDashboard();
-  google.script.run.withSuccessHandler(function (d) { COACH_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== COACH_STATE.mgrSeq) return; COACH_STATE.dash = d; done(); }).withFailureHandler(onFail).getCoachingDashboard();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== COACH_STATE.mgrSeq) return; COACH_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
 }
 
 function coachRenderMgr_() {
@@ -286,7 +289,7 @@ function coachAnalyticsHtml_(a, counts) {
     // Routed onto mtRenderTable_: same columns, same numbers, and the overdue
     // cell keeps its danger tone via a per-row class (opts.rowClass) plus the
     // existing .tr-cell-overdue span.
-    h += '<div class="tr-section-h">By employee</div>' +
+    h += '<h2 class="tr-section-h">By employee</h2>' +
       mtRenderTable_({
         columns: [
           { key: 'empName', label: 'Employee', name: true,

@@ -38,7 +38,12 @@
   .tour-dot.on { background: var(--accent); }
   .tour-btn { font: inherit; font-size: .82rem; padding: 6px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink); }
   .tour-btn:hover { border-color: var(--border-strong); }
-  .tour-btn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  /* C17-8 (cycle 17): color was #fff — a FIXED color on a THEME-FLIPPING
+     token (the inverse of the V-2/INV-166 rule). Dark-mode --accent is a
+     LIGHT green (#7af2a1), so the tour's only advance button measured
+     ~1.4:1. var(--paper-card) is what every other accent-filled primary
+     uses — near-white in light mode, near-black in dark. */
+  .tour-btn.primary { background: var(--accent); border-color: transparent; color: var(--paper-card); font-weight: 600; }
   .tour-btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 8px; }
   .tour-btn.ghost:hover { color: var(--ink); }
   .tour-skip { position: absolute; top: 10px; right: 12px; font-size: .74rem; }
