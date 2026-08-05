@@ -213,10 +213,18 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
     ['success-deep', 'good'], ['warning-deep', 'warn'],
     ['danger-deep', 'destructive'], ['info-deep', 'info'],
   ];
+  // C17 batch-3 (INV-179): the alias set is DERIVED from the token file, not
+  // the hand-typed name group the regex used to carry — a NEW -deep alias is
+  // swept into (a) automatically, and the coverage assert below fails until
+  // it also gets a behavioural hue-pair entry in DEEP.
+  const declaredDeep = new Set((toks.match(/--([a-z0-9-]+-deep):/g) || []).map((x) => x.slice(2, -1)));
+  const covered = new Set(DEEP.map((p) => p[0]));
+  declaredDeep.forEach((n) => assert.ok(covered.has(n),
+    'new -deep alias --' + n + ' is not covered — add a behavioural hue-pair entry to DEEP'));
   // (a) source-level: every color-mix'd -deep declaration uses `in oklab`.
-  const mixes = toks.match(/--(?:success|warning|danger|info)-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
-  assert.strictEqual(mixes.length, 8,
-    'expected 8 color-mix -deep declarations (4 aliases x light/dark @supports blocks), found ' + mixes.length);
+  const mixes = toks.match(/--[a-z0-9-]+-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
+  assert.strictEqual(mixes.length, declaredDeep.size * 2,
+    'expected ' + (declaredDeep.size * 2) + ' color-mix -deep declarations (each alias x light/dark @supports blocks), found ' + mixes.length);
   mixes.forEach((d) => {
     assert.ok(/color-mix\(in oklab,/.test(d),
       'polar hue interpolation is a colour-family bug, not a nuance — use `in oklab`: ' + d.trim());
@@ -2544,6 +2552,21 @@ test('#6 — a ```snippet fence renders a copyable card; other fences stay <pre>
   // the snippet body is still HTML-escaped (the escape boundary is not re-opened)
   const xss = kbMd_('```snippet\n<img src=x onerror=alert(1)>\n```');
   assert.ok(xss.indexOf('<img src=x') < 0 && xss.indexOf('&lt;img') >= 0, 'snippet body escaped');
+  // C17 batch-4: a MID-LINE backtick pair is NOT a block fence — the old
+  // any-occurrence regex stashed its content into a block whose sentinel
+  // token was never re-expanded (only whole-line tokens are), so the content
+  // vanished and a stray "C0" glyph rendered. Inline pairs stay literal.
+  const inline = kbMd_('Use ```x``` here');
+  // The inline-code pass may legitimately render the middle as a code span —
+  // the pin is CONTENT PRESERVATION (the old regex made `x` vanish entirely
+  // and left a stray sentinel glyph), not literal backtick fidelity.
+  assert.ok(/x/.test(inline) && /Use/.test(inline) && /here/.test(inline),
+    'inline backtick pair content is preserved');
+  assert.ok(inline.indexOf('\u0000') < 0, 'no unexpanded sentinel leaks into the render');
+  // A block fence with text trailing the closing ``` on the SAME line is not
+  // a closed block either — nothing may vanish.
+  const trailing = kbMd_('```js\nvar a=1;``` and more');
+  assert.ok(trailing.indexOf('var a=1;') >= 0, 'unclosed-block content is preserved');
 });
 
 console.log('\nkb — bookmarks (kbBookmarksToggle_ pure list op, #5)');
@@ -5328,12 +5351,25 @@ test('A12: load failures never render into an empty-state container', () => {
     if (!fs.existsSync(p)) return;
     scanned++;
     const src = fs.readFileSync(p, 'utf8');
-    src.split('\n').forEach((line, i) => {
+    // C17 batch-3: STATEMENT-scoped, not line-scoped — a failure handler that
+    // assembles its empty-state HTML across concatenation lines used to exit
+    // the net entirely (marker and class had to share ONE source line; the 28
+    // F10 fixes were single-line, so the gap was latent, not empty). The
+    // window extends while the statement visibly continues (a line not ending
+    // in ; { or }), capped at 8 lines.
+    const lines = src.split('\n');
+    const seenAt = new Set();
+    lines.forEach((line, i) => {
       if (!FAILURE_LINE.test(line)) return;
-      if (line.indexOf('errorStateHtml_') >= 0) return;   // already correct
+      let win = line, j = i;
+      while (j + 1 < lines.length && (j - i) < 8 && !/[;{}]\s*$/.test(lines[j].trim())) { j++; win += '\n' + lines[j]; }
+      if (win.indexOf('errorStateHtml_') >= 0) return;   // already correct
       EMPTY_CLASS.lastIndex = 0;
       let m;
-      while ((m = EMPTY_CLASS.exec(line))) {
+      while ((m = EMPTY_CLASS.exec(win))) {
+        const key = rel + ':' + (i + 1) + ':' + m[1];
+        if (seenAt.has(key)) continue;
+        seenAt.add(key);
         violations.push(rel + ':' + (i + 1) + '  [.' + m[1] + ']  ' + line.trim().slice(0, 110));
       }
     });
@@ -5464,13 +5500,24 @@ test('A1: no interactive element is a bare span/div with an inline onclick', () 
 // six the scan found by hand (the CN flag toolbar, both CN sub-tab strips, the
 // KB tree item and the KB editor type toggle), which is the whole point of
 // promoting a convention to a tripwire.
-const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current'];
+// C17 batch-3: vocabulary widened with the DISCLOSURE-state classes
+// ('collapsed'/'expanded'). Deliberately NOT widened with 'open'/'show': a
+// dry-run found 17 of 19 such hits are the dialog-visibility idiom
+// (`.overlay.open` / tour + hover popovers), whose state is conveyed by the
+// ensureOverlay focus lifecycle (INV-83) and pinned by the DOM harness — a
+// class-toggle scan is the wrong net for dialogs, and admitting them would
+// bury the real signal in reasoned exemptions.
+const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current', 'collapsed', 'expanded'];
 // Decorative-only toggles: no state a user could act on, nothing to announce.
 // Keep this list tiny and reasoned — each entry is a claim that the class is
 // pure presentation.
 const A11Y_DECORATIVE = {
   'kb/script_kb.html:kbDrawerSetSearching_': 'a loading spinner — the search status is conveyed by the results region',
   'tc/script_clock.html:clkApplySky_': 'the two cross-fading sky gradient LAYERS behind the clock card',
+  // C17 batch-3: sidebar collapse is a CONTINUOUS-WIDTH consequence (labels
+  // hide below the snap threshold), not a binary control state — the nav
+  // links stay in the tree, named by their sb-lbl text carried as titles.
+  'script_core.html:applySidebarWidth_': 'width-driven label hiding on the resizable sidebar — no toggle control carries this state',
 };
 test('A11 (rule): every state-class toggle also sets an ARIA attribute', () => {
   const offenders = [];
@@ -5857,14 +5904,30 @@ test('Phase 4: the resolver sanitizes on read and the UI offers the mode only wi
 // — works below the view's <h1>. They were <div>/<span>, so every view had a
 // heading outline exactly one level deep. Scanning by CLASS (not by counting
 // tags) means a NEW card added as a div fails, which is the drift that matters.
-const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel'];
+// C17 batch-3 (INV-179): the class set is now DERIVED from the markup by this
+// codebase's own heading-class naming convention (…card-label / …card-title /
+// …seclabel / …section-h) — the hand list above missed .tr-section-h, a live
+// div-heading on two manager surfaces (used but DEFINED nowhere). The list
+// below is the floor; the derivation can only add to it.
+const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel', 'tr-section-h'];
 test('A13: section-heading classes render as <h2>, not div/span', () => {
   const offenders = [];
   let seen = 0;
+  // Derive convention-named heading classes from the markup itself.
+  const derived = new Set(A13_HEADING_CLASSES);
   A11Y_SCAN_PARTIALS.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
-    A13_HEADING_CLASSES.forEach((cls) => {
-      const re = new RegExp('<([a-z0-9]+)\\s+class="' + cls + '\\b', 'g');
+    let dm;
+    const dre = /class="([a-z0-9-]*(?:card-label|card-title|seclabel|section-h))[" ]/g;
+    while ((dm = dre.exec(src)) !== null) derived.add(dm[1]);
+  });
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    derived.forEach((cls) => {
+      // C17 batch-3: `class` need not be the FIRST attribute — the old
+      // `<tag\s+class="` anchor let `<div id="x" class="card-label">` escape
+      // the scan entirely.
+      const re = new RegExp('<([a-z0-9]+)\\b[^>]*?class="' + cls + '\\b', 'g');
       let m;
       while ((m = re.exec(src)) !== null) {
         seen++;
@@ -5876,6 +5939,16 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
   assert.deepStrictEqual(offenders, [],
     'a card section heading must be an <h2> so it joins the document outline:\n  ' +
     offenders.join('\n  '));
+  // C17 batch-3: a heading class must also be DEFINED — .tr-section-h was
+  // used on two manager surfaces with no CSS rule anywhere (headings rendered
+  // as unstyled body text; INV-184 in reverse: read-but-never-declared).
+  const cssHay = A11Y_SCAN_PARTIALS.concat(['styles.html', 'styles_design_tokens.html'])
+    .map((f) => { const p = path.join(__dirname, '../../web-app', f); return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''; })
+    .join('\n');
+  derived.forEach((cls) => {
+    assert.ok(new RegExp('\\.' + cls + '\\s*[{,:]').test(cssHay),
+      'heading class .' + cls + ' is used in markup but defined in no stylesheet');
+  });
   // Guard the guard: if a rename silently emptied the scan it would pass vacuously.
   assert.ok(seen >= 27, 'expected the 27 known heading sites, found ' + seen);
   // The UA h2 margin must be zeroed or every card grows a gap above its label.
@@ -6562,6 +6635,67 @@ test('batch-2: the four sibling-branch stragglers are closed', () => {
   assert.ok(/cn-admin-body'\);\s*if \(b\d\) b\d\.innerHTML = errorStateHtml_/.test(adm.replace(/\n\s*/g, ' ')) ||
     /getElementById\('cn-admin-body'\)/.test(adm),
     'the config failure renders into #cn-admin-body');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-3/4 pins — interface fixes + fixture-shape drifts. Source
+// scans strip comments where the fix's own comment quotes removed code
+// (INV-188).
+console.log('\ncycle 17 — batch-3/4 pins');
+
+// C17-8 + banner: fixed color on a theme-flipping token is the inverse of the
+// V-2/INV-166 rule. The tour's only advance button was #fff on dark --accent
+// (~1.4:1); the instance banner was #fff on dark-flipped --warning-deep.
+test('batch-4: tour primary + instance banner obey the fixed-vs-token color rule', () => {
+  const tour = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8'));
+  const prim = /\.tour-btn\.primary\s*\{[^}]*\}/.exec(tour);
+  assert.ok(prim && /color:\s*var\(--paper-card\)/.test(prim[0]) && !/color:\s*#fff/.test(prim[0]),
+    '.tour-btn.primary must use var(--paper-card), the accent-filled-primary convention');
+  const styles = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  const banner = /\.instance-banner\s*\{[^}]*\}/.exec(styles);
+  assert.ok(banner && !/background:\s*var\(--warning-deep\)/.test(banner[0]),
+    '.instance-banner takes a FIXED background — the -deep token flips light in dark mode under its white text');
+});
+
+// C17-10: the training checklist header wraps at narrow viewports (the
+// A2-family flex variant no grid scan can reach — this was the file's first
+// media query).
+test('C17-10: .tr-head has a real viewport wrap, not only the pop-out one', () => {
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  const media = /@media[^{]*\{[\s\S]*?\n  \}/.exec(tr);
+  assert.ok(media && /\.tr-head\s*\{[^}]*flex-wrap:\s*wrap/.test(media[0]),
+    '.tr-head must flex-wrap inside a real @media block (the compact-only wrap left "My Training" clipped at 390px)');
+});
+
+// batch-4 a11y: the PDF⇄Fillable switch is a real button with switch
+// semantics (it was a listener-bound <div> — keyboard-dead with NO other path
+// to the fillable-form flow, invisible to A1 which only sees inline onclick),
+// and the two CN disclosures expose aria-expanded.
+test('batch-4: fillable switch + CN disclosures expose real semantics', () => {
+  const cn = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/<button type="button" class="cn-ext-form-mode-switch/.test(cn), 'the mode switch is a <button>');
+  assert.ok(/cn-ext-form-mode-switch[\s\S]{0,400}?role="switch"/.test(cn) &&
+            /cn-ext-form-mode-switch[\s\S]{0,400}?aria-checked=/.test(cn),
+    'the mode switch carries role=switch + aria-checked');
+  assert.ok(/data-cn-action="more" aria-expanded=/.test(cn), 'the more-menu toggle exposes aria-expanded');
+  const closeFn = c17fnBody(cn, 'cnCloseMoreMenus_');
+  assert.ok(/aria-expanded/.test(closeFn), 'closing the menus resets aria-expanded');
+  const histFn = c17fnBody(cn, 'cnToggleAuditHistory_');
+  assert.ok((histFn.match(/setAttribute\('aria-expanded'/g) || []).length >= 2,
+    'the audit-history expander sets aria-expanded on both transitions');
+});
+
+// batch-3 fixture-shape pins (INV-185): the three field-name drifts the scan
+// found — each meant a screenshot state the server cannot produce.
+test('batch-3: visual-fixture payload shapes match the server field names', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/patientTRX: 'TRX-/.test(mock) && !/patientTrx:/.test(mock),
+    'coaching fixture rows carry patientTRX (server casing) — the lowercase drift hid the TRX chip from every shot');
+  const rd = /kbGetReviewDue:\s*\{[^\n]*\}/.exec(mock);
+  assert.ok(rd && /views:/.test(rd[0]) && !/usage30/.test(rd[0]) && /total:/.test(rd[0]),
+    'kbGetReviewDue fixture uses `views` + carries total (the F18 cap-note path is renderable)');
+  assert.ok(/kbGetContentRequests:\s*\{ open: \[/.test(mock),
+    'kbGetContentRequests fixture uses the real {open, resolved, openCount} shape');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

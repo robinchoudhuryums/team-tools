@@ -7,7 +7,10 @@ Phase: implement — the broad scan is COMPLETE; the TOP 5 are implemented +
   INV-187 silent-degradation stragglers) is implemented
   (`.cycle/blocks/17-batch2-broad-implement.md`, net 9−1=8; pure 415, DOM 69,
   all pins bite-checked). Batch ②'s /sync-docs is OWED (six items in its
-  block). Remaining: batches ③–⑦ (see the batch list in chat / below).
+  block). BATCH ③+④ (tripwire-integrity sweep + interface set) are
+  IMPLEMENTED (`.cycle/blocks/17-batch3-batch4-broad-implement.md`, net 8−0=8;
+  pure 419, DOM 69, bite-checks pass). /sync-docs is OWED for batches ②+③+④
+  together (items listed in both blocks). Remaining: batches ⑤–⑦.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
@@ -38,6 +41,16 @@ Updated: 2026-08-05
   (.actions is now 2-col at ≤540px with the prime spanning).
 
 ## Completed this cycle
+- BATCH ③+④ | tour/styles/training/empdocs/coaching/kb/cn partials, Code.js,
+  mock.js, run.js | ④: tour-primary + instance-banner color rule, .tr-head
+  real viewport wrap (C17-10), review-due row wrap, .tr-section-h defined +
+  <h2>, PDF⇄Fillable switch → role=switch button, more-menu + audit-history
+  aria-expanded, kbMd_ block-only fence extraction (inline pairs preserved).
+  ③: A13 derived class set + first-attr regex + CSS-definition check, A12
+  statement-scope, A11 + 'collapsed'/'expanded' (open/show reasoned OUT),
+  V-1 derived -deep set, three mock.js payload-shape fixes + shape pin,
+  cdrQueueInventory_ on the CSRT constants. 4 new pin tests + 3 extended;
+  bite-checked. Pure 419.
 - BATCH ② (9 items) | Code.js, cn/metrics/tc-clock/tc-timeoff/kb partials,
   run.js | C17-3 (ambient walk guard + logged catch + saveTrainingAssignment
   predicate + F3 widened with the bare-truthiness ban), C17-4 (per-rep-daily

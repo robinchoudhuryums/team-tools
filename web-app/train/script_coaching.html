@@ -286,7 +286,7 @@ function coachAnalyticsHtml_(a, counts) {
     // Routed onto mtRenderTable_: same columns, same numbers, and the overdue
     // cell keeps its danger tone via a per-row class (opts.rowClass) plus the
     // existing .tr-cell-overdue span.
-    h += '<div class="tr-section-h">By employee</div>' +
+    h += '<h2 class="tr-section-h">By employee</h2>' +
       mtRenderTable_({
         columns: [
           { key: 'empName', label: 'Employee', name: true,

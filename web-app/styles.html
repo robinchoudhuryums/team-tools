@@ -71,7 +71,11 @@
     position: sticky; top: 0; z-index: 70;
     display: flex; align-items: center; justify-content: center; gap: 8px;
     padding: 5px 14px;
-    background: var(--warning-deep); color: #fff;
+    /* C17 batch-4: was `var(--warning-deep); color:#fff` — the deep token
+       flips LIGHT in dark mode (~1.5–2.6:1 under white text) on the one
+       banner whose whole job is being unmistakable. A fixed-palette surface
+       takes fixed colors (INV-166): amber that reads in BOTH themes. */
+    background: #8a4500; color: #fff;
     border-bottom: 1px solid rgba(0,0,0,.28);
     font-family: var(--mono); font-size: 11px; font-weight: 700;
     letter-spacing: .09em; text-transform: uppercase; line-height: 1.3;

@@ -261,16 +261,22 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       { id: 'kb-2', department: 'Billing', title: 'OOP payment policy', type: 'article', status: 'published', sortOrder: 2 },
       { id: 'kb-3', department: 'Shipping', title: 'Carrier escalation matrix', type: 'embed', driveKind: 'doc', status: 'published', sortOrder: 1 },
       { id: 'kb-4', department: 'Resupply', title: 'CPAP mask sizing guide', type: 'article', status: 'draft', sortOrder: 1 }] },
-    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, usage30: 14, staleFlags: 1, staleNote: 'Rates changed in July' }] },
+    // C17 batch-3 (INV-185): FIELD NAMES mirror the server return sites —
+    // `views` (a prior fixture key had drifted to a name the client never
+    // reads), plus total/cap/dueDays so the F18 cap-note path is renderable;
+    // contentRequests uses the real {open, resolved, openCount} shape; the
+    // coaching rows carry the server's exact TRX field casing (the drifted
+    // lowercase form meant no screenshot could ever render the TRX chip).
+    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July' }], total: 1, cap: 40, dueDays: 90 },
     kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0 }], windowDays: 30 },
-    kbGetContentRequests: { requests: [] },
+    kbGetContentRequests: { open: [], resolved: [], openCount: 0 },
     kbGetRelated: { items: [] },
     kbRecordView: { ok: true },
     getCoachingDashboard: { items: [
-      { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTrx: 'TRX-208', severity: 'minor', status: 'open',
+      { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',
         createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '' },
-      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTrx: 'TRX-311', severity: 'praise', status: 'acknowledged',
+      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'acknowledged',
         whatHappened: 'Great de-escalation on a billing dispute.', whatShould: '', createdBy: 'avery@umsupply.com',
         createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: daysAgo(5) + ' 09:00:00', ackBy: 'leo@umsupply.com' }],
       counts: { open: 1, acknowledged: 1, overdueUnacked: 0, praise: 1 },

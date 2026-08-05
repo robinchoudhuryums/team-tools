@@ -14320,7 +14320,12 @@ function cdrQueueInventory_(from, to) {
           const trVals = trSheet.getRange(trStart, 1, trCap, CSR_TRANSFER_NUM_COLS).getDisplayValues();
           // Columns H..R are 0-indexed 7..17 — everything between the counts
           // CSRT reads and the trailing Comments column.
-          for (let c = 7; c <= 17; c++) {
+          // C17 batch-3: derived from the CSRT constants — this scan
+          // re-hardcoded 7..17 thirty lines below a comment calling bare
+          // positional offsets the F1 class (INV-184); a block move updated
+          // via the constants would have silently split the two halves of
+          // the same Automation Health card.
+          for (let c = CSRT_QUEUE_COL_FIRST; c <= CSRT_QUEUE_COL_LAST; c++) {
             let populated = 0;
             for (let r = 0; r < trVals.length; r++) {
               const cell = String(trVals[r][c] == null ? '' : trVals[r][c]).trim();

@@ -96,6 +96,16 @@
   .tr-ring svg { transform: rotate(-90deg); display: block; }
   .tr-ring .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: .95rem; color: var(--ink); }
   :root[data-compact] .tr-head { flex-wrap: wrap; }
+  /* C17-10 (cycle 17): the checklist header had ONLY the pop-out wrap above —
+     the A2-family trap in flex form, and this file's first media query. At
+     390px the 72px ring + two min-width:96px tiles squeezed .tr-head-main
+     to ~18px, clipping "My Training" (measured by cycle-16 Batch 4, left
+     unfixed). Wrap at narrow viewports: ring + title row, tiles below. */
+  @media (max-width: 560px) {
+    .tr-head { flex-wrap: wrap; }
+    .tr-head .tr-sum { width: 100%; }
+    .tr-head-main { min-width: 55%; }
+  }
   /* overdue checklist row gets the panel[data-tone] accent rail */
   .tr-row.overdue { box-shadow: inset 3px 0 0 var(--destructive); }
   /* quiz action = primary; article action stays accent-soft */
@@ -132,6 +142,15 @@
      the flex head row is pixel-identical. */
   .tr-card-title { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .1em;
     text-transform: uppercase; color: var(--muted); margin: 0; }
+  /* C17 batch-3/4: .tr-section-h was used on two manager surfaces (EmpDocs
+     team dashboard, Coaching "By employee") but DEFINED NOWHERE — the
+     headings rendered as unstyled body text, and as <div>s they were
+     invisible to heading navigation (INV-178). Now real <h2>s with a
+     defined style; shared here because both consumers already use this
+     partial's .tr-* vocabulary (like .tr-empty). Sentence-case per the
+     batch-J register rule. */
+  .tr-section-h { font-family: var(--ui); font-size: .95rem; font-weight: 600;
+    color: var(--ink); margin: 18px 0 8px; }
   .tr-card-badge { font-family: var(--mono); font-size: 11px; color: var(--muted);
     background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
   .tr-empty-well { border: 1px dashed var(--line); border-radius: 10px; padding: 18px 16px;

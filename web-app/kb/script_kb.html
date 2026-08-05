@@ -105,7 +105,12 @@
   /* #2 — stale-flag marker (rep "out of date") sits red vs the neutral age dot. */
   .kb-land-dot.stale { background: var(--danger); }
   .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft, var(--warn-soft)); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
-  .kb-land-note { display: block; font-size: .78rem; color: var(--muted); font-style: italic; margin-top: 2px; }
+  /* C17 batch-4: the note is a flex CHILD of the .kb-land-rd-open row, so its
+     display:block never gave it its own line — at 390px the quote overlapped
+     the Reviewed button (screenshot-verified in the cycle-17 scan). Wrap the
+     row and give the note the full width the block display always intended. */
+  .kb-land-rd-open { flex-wrap: wrap; }
+  .kb-land-note { display: block; flex-basis: 100%; font-size: .78rem; color: var(--muted); font-style: italic; margin-top: 2px; }
   /* #1 — content-request row: two actions (resolve / dismiss). */
   .kb-land-req { align-items: flex-start; cursor: default; }
   .kb-land-req:hover { background: none; }
@@ -290,17 +295,25 @@ function kbMd_(src) {
   src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   var blocks = [];
   var hSeen = {};   // duplicate-heading id dedup - same -2/-3 walk as kbSplitSections_
-  src = src.replace(/```([\s\S]*?)```/g, function (_, code) {
+  // C17 batch-4: BLOCK fences only — the opening ``` must start a line and
+  // the closing ``` must sit alone on its line. The old any-occurrence regex
+  // also matched a MID-LINE pair of triple-backticks, stashing its content
+  // into a block whose sentinel token then sat mid-paragraph — and only
+  // WHOLE-LINE tokens are re-expanded below, so the content silently vanished
+  // and the paragraph rendered a stray "C0" glyph. An inline pair now stays
+  // literal (escaped) text: content preserved, nothing to re-expand.
+  src = src.replace(/(^|\n)[ \t]*```([^\n]*)\n([\s\S]*?)\n[ \t]*```(?=[ \t]*(?:\n|$))/g, function (_, lead, infoLine, code) {
     // A `snippet` info-string (```snippet  or  ```snippet: Label) renders a
     // copy-to-clipboard "canned response" card (#6); any other fence stays a
-    // <pre><code> block (unchanged). The captured content is already HTML-escaped
-    // (the top-level escape ran first), so both paths are inert.
-    var parts = code.match(/^([^\n]*)\n([\s\S]*)$/);
-    var info = parts ? parts[1].trim() : '';
+    // <pre><code> block (unchanged, incl. the LEGACY body shape — info line +
+    // trailing newline — so existing articles render byte-identically). The
+    // captured content is already HTML-escaped (the top-level escape ran
+    // first), so both paths are inert.
+    var info = infoLine.trim();
     var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
-    if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: (parts ? parts[2] : '').replace(/\n$/, '') });
-    else blocks.push({ snippet: false, body: code });
-    return '\u0000C' + (blocks.length - 1) + '\u0000'; });
+    if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
+    else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
+    return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
     // Emphasis / inline-code, factored out so it can run on link TEXT at
     // generation time (below) while the generated <a>/<img> MARKUP is stashed

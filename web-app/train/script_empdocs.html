@@ -496,7 +496,7 @@ function edRenderMgr_() {
     var byEmp = {};
     docs.forEach(function (d) { (byEmp[d.empId] = byEmp[d.empId] || { name: d.empName, rows: [] }).rows.push(d); });
     var empIds = Object.keys(byEmp).sort(function (a, b) { return byEmp[a].name.localeCompare(byEmp[b].name); });
-    h += '<div class="tr-section-h">Documents (your team)</div>';
+    h += '<h2 class="tr-section-h">Documents (your team)</h2>';
     empIds.forEach(function (id) {
       var g = byEmp[id];
       h += '<div class="ed-emp-group"><div class="ed-emp-name">' + icon('user', 13) + ' ' + esc(g.name) + '</div>' +

@@ -1944,6 +1944,8 @@
     position: relative; width: 32px; height: 18px;
     background: var(--line); border-radius: 9px; cursor: pointer;
     transition: background .2s;
+    /* C17 batch-4: now a real <button> - reset the UA chrome, keep the track. */
+    border: 0; padding: 0; flex: 0 0 auto; appearance: none;
   }
   .cn-ext-form-mode-switch.on { background: var(--accent); }
   .cn-ext-form-mode-switch::after {
@@ -3965,6 +3967,8 @@ function cnReRenderActiveView_() {
 var _cnMoreMenuCloser = null;
 function cnCloseMoreMenus_() {
   document.querySelectorAll('.cn-more-menu').forEach(function (m) { m.style.display = 'none'; });
+  // C17 batch-4 (INV-174): the popover state must be EXPOSED, not just painted.
+  document.querySelectorAll('[data-cn-action="more"][aria-expanded="true"]').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
   if (_cnMoreMenuCloser) {
     document.removeEventListener('mousedown', _cnMoreMenuCloser, true);
     document.removeEventListener('keydown', _cnMoreMenuCloser, true);
@@ -3980,6 +3984,7 @@ function cnToggleMoreMenu_(btn) {
   cnCloseMoreMenus_();          // close any other open menu + detach its closer
   if (!willOpen) return;        // it was open → this click toggles it closed
   menu.style.display = 'inline-flex';
+  btn.setAttribute('aria-expanded', 'true');   // C17 batch-4 (INV-174)
   _cnMoreMenuCloser = function (e) {
     if (e.type === 'keydown') { if (e.key === 'Escape' || e.key === 'Esc') cnCloseMoreMenus_(); return; }
     if (menu.contains(e.target) || btn.contains(e.target)) return;   // click inside the menu / on the toggle
@@ -4161,7 +4166,7 @@ function cnRenderCardCore_(note, expandable) {
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
                 var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn;
                 if (!sec) return '';
-                return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
+                return '<button class="cn-act-btn" title="More actions" data-cn-action="more" aria-expanded="false" aria-haspopup="true">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
               })()
           }
@@ -8450,7 +8455,7 @@ function cnRenderAuditResults_(res) {
   var body = rows.map(function (r) {
     var noteId = r.noteId || '';
     var expandBtn = noteId
-      ? '<button class="cn-act-btn" title="Show this note’s full history" data-note-id="' + esc(noteId) + '" onclick="cnToggleAuditHistory_(this, this.dataset.noteId)">' + icon('chevronDown', 13) + '</button>'
+      ? '<button class="cn-act-btn" title="Show this note’s full history" data-note-id="' + esc(noteId) + '" aria-expanded="false" onclick="cnToggleAuditHistory_(this, this.dataset.noteId)">' + icon('chevronDown', 13) + '</button>'
       : '';
     var viewBtn = noteId
       ? '<button class="cn-act-btn" title="Open the note in Team Notes" data-rep-id="' + esc(r.repId) + '" data-date="' + esc(r.dateLocal) + '" data-note-id="' + esc(noteId) + '" onclick="cnAuditDrillToNote_(this.dataset.repId, this.dataset.date, this.dataset.noteId)">' + icon('manage', 13) + '</button>'
@@ -8475,8 +8480,10 @@ function cnToggleAuditHistory_(btn, noteId) {
   if (!row) return;
   var hist = row.querySelector('.cn-audit-history');
   if (!hist) return;
-  if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
+  // C17 batch-4 (INV-174): expose the disclosure state, don't just paint it.
+  if (hist.style.display !== 'none') { hist.style.display = 'none'; btn.setAttribute('aria-expanded', 'false'); return; }
   hist.style.display = 'block';
+  btn.setAttribute('aria-expanded', 'true');
   hist.innerHTML = loSweep();
   var requestedView = currentView;   // F1 — drop late callbacks after nav-away
   google.script.run
@@ -9991,7 +9998,14 @@ function cnBuildExternalEmailHtml_() {
       modeToggle =
         '<div class="cn-ext-form-mode-toggle" data-mode-form-id="' + esc(f.id) + '">' +
           '<span class="toggle-label ' + (!isFillable ? 'active' : '') + '" data-mode-val="pdf">PDF</span>' +
-          '<div class="cn-ext-form-mode-switch' + (isFillable ? ' on' : '') + '" data-mode-switch="' + esc(f.id) + '"></div>' +
+          // C17 batch-4 (INV-173): this was a <div> with a click listener -
+          // keyboard-dead with NO alternative path to the fillable-form flow,
+          // and invisible to the A1 scan (listener-bound, not inline onclick).
+          // A real button with role=switch; the re-render keeps aria-checked
+          // in step (INV-174).
+          '<button type="button" class="cn-ext-form-mode-switch' + (isFillable ? ' on' : '') + '" data-mode-switch="' + esc(f.id) + '"' +
+            ' role="switch" aria-checked="' + (isFillable ? 'true' : 'false') + '"' +
+            ' aria-label="Send ' + esc(f.name) + ' as a fillable form instead of a PDF"></button>' +
           '<span class="toggle-label ' + (isFillable ? 'active' : '') + '" data-mode-val="fillable">Fillable</span>' +
         '</div>';
     }
