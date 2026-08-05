@@ -14,9 +14,10 @@ Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
   (`.cycle/blocks/17-batch6-batch7-broad-implement.md`, net 4−0=4 + 1
   structural + 3 harness-capability; pure 433, DOM 69, 7 bite-checks pass,
   FULL 37-scenario matrix re-shot: 0 missing / 0 overflow). Batches ⑥+⑦'s
-  /sync-docs is OWED (items in the block). ALL SEVEN cycle-17 batches are
-  now implemented — the cycle is ready for /reflect after the last
-  /sync-docs.
+  /sync-docs is DONE (commit 64007ca). ALL SEVEN cycle-17 batches are
+  implemented + doc-synced, and the whole cycle is MERGED to main as
+  **PR #154** (merge commit 13eeed2, CI green). Remaining: /reflect to
+  close the cycle, and the ONE operator deploy action.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
@@ -196,9 +197,8 @@ Updated: 2026-08-05
   follow-on to write AND run at next deploy.
 
 ## Where I left off
-Batches ⑥+⑦ complete and green (pure 433 / DOM 69 / 7 bite-checks / full
-37-scenario matrix 0-missing 0-overflow), committed + pushed to
-`claude/broad-scan-up98b9`. ALL cycle-17 batches are implemented. Next:
-`/sync-docs` for batches ⑥+⑦ (items in the block), then `/reflect` to close
-the cycle. Deploy of all cycle-17 batches remains ONE operator action
-(`clasp push -f` → New version → `runAllTests()`).
+Cycle 17 is fully implemented, doc-synced, and MERGED to main (PR #154,
+merge 13eeed2; the branch was restarted from main afterward per the
+merged-PR rule). Next: `/reflect` to close the cycle. Deploy remains ONE
+operator action (`cd web-app && clasp push -f` → New version →
+`runAllTests()` in the editor).
