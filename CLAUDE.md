@@ -1334,10 +1334,9 @@ this section before touching the relevant area.
   `cnLoadDateRange_`, `cnFireSearch_`, `cnMgrLoadQueue_`,
   `cnMgrLoadRepNotes_`) captures `const requestedView = currentView;`
   and skips the render branch on success/failure when
-  `currentView !== requestedView`. (An earlier copy of this list named
-  `cnLoadDate_` — a thin wrapper with ZERO callers today; removing the
-  dead function + this mention together is an open follow-on, the A4
-  precedent.) Without this guard, a slow-network
+  `currentView !== requestedView`. (The dead `cnLoadDate_` wrapper was
+  REMOVED in cycle-17 batch ⑥ together with this list's mention of it —
+  the A4 precedent.) Without this guard, a slow-network
   nav-away clobbers the new view's innerHTML because every view writes
   into the same `#view-area` node. State updates (CN_STATE.*) still
   happen unconditionally so the cache stays warm for when the rep

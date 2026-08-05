@@ -11845,6 +11845,13 @@ function authorizeGmailScope() {
   return { ok: true, threads: n };
 }
 
+// Batch-6 (cycle 17): the three Spanish-inbox readers share ONE scan cap —
+// GmailApp.search silently returns at most this many threads, so a window
+// busier than the cap under-reported with no signal (the INV-169 class). Each
+// reader now returns `truncated` (threads.length >= the cap ⇒ possibly more)
+// and the Spanish tab renders a "narrow the window" warning.
+const SPANISH_THREAD_SCAN_MAX = 200;
+
 /** Spanish-inbox resolution stats (canSeeSpanishInbox_-gated — manager OR SPANISH_INBOX_MEMBERS, INV-31 amendment; read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
@@ -11870,7 +11877,7 @@ function getSpanishInboxStats(days) {
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const durations = [], pending = [];
     let resolvedCount = 0;
@@ -11920,6 +11927,7 @@ function getSpanishInboxStats(days) {
       // authoritative.
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
     };
     cache.put(ckey, JSON.stringify(result), 300);
     return result;
@@ -11942,7 +11950,7 @@ function getSpanishInboxPending(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const out = [];
     const nowMs = Date.now();
@@ -11970,7 +11978,7 @@ function getSpanishInboxPending(days) {
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
-    return { address: addr, days: d, pending: out };
+    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -11989,7 +11997,7 @@ function getSpanishInboxResolved(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const out = [];
     threads.forEach(function (th) {
@@ -12024,7 +12032,7 @@ function getSpanishInboxResolved(days) {
       });
     });
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
-    return { address: addr, days: d, resolved: out };
+    return { address: addr, days: d, resolved: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -12833,7 +12841,14 @@ function getTodayPunches_(empId, empTz) {
 }
 
 function getNextActions_(punches) {
-  const last = punches.length ? punches[punches.length - 1].type : null;
+  // C17 batch-6: derive the state from the last RECOGNIZED punch type. A
+  // hand-edited/garbage COMMENTS value is not a state — treating it as one
+  // fell through to ['Adjust'] and, via the INV-155 live sequence guard,
+  // locked the rep out of live punching for the rest of the day.
+  let last = null;
+  for (let i = punches.length - 1; i >= 0; i--) {
+    if (PUNCH_LABELS_.indexOf(punches[i].type) >= 0) { last = punches[i].type; break; }
+  }
   if (!last) return ['ClockIn','Adjust'];
   if (last === 'ClockOut') return ['Adjust'];
   if (last === 'ClockIn' || last === 'LunchIn') return ['LunchOut','ClockOut','Adjust'];
@@ -12846,10 +12861,22 @@ function appendToAdpSheet_(emp, date, time, dir, commentValue) {
     .appendRow([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]);
 }
 
+// C17-9 — per-execution personal-spreadsheet handle memo (the L-3 getAdpSS_
+// pattern): a 31-day range edit mirrored up to 124 punches, each re-opening
+// the SAME per-rep spreadsheet by id inside the global lock. A handle is
+// stable within one execution; the month-sheet DATA is still re-read per
+// write (a personal month grid is tiny — the openById round-trip was the
+// cost). An openById throw is never cached.
+let _personalSsCache = Object.create(null);
+function openPersonalSs_(sheetId) {
+  if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
+  return _personalSsCache[sheetId];
+}
+
 function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
   const ROW_LABEL_MAP = { ClockIn:'Clock In', LunchOut:'Lunch Out', LunchIn:'Lunch Return', ClockOut:'Clock Out' };
   try {
-    const ss        = SpreadsheetApp.openById(emp.sheetId);
+    const ss        = openPersonalSs_(emp.sheetId);
     const empTz     = empTz_(emp);
     const dateObj   = Utilities.parseDate(date + 'T12:00:00', empTz, "yyyy-MM-dd'T'HH:mm:ss");
     const monthName = Utilities.formatDate(dateObj, empTz, 'MMMM yyyy');
@@ -12871,7 +12898,7 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
   if (!emp || !emp.sheetId) return;
   const ROW_LABEL_MAP = { ClockIn:'Clock In', LunchOut:'Lunch Out', LunchIn:'Lunch Return', ClockOut:'Clock Out' };
   try {
-    const ss        = SpreadsheetApp.openById(emp.sheetId);
+    const ss        = openPersonalSs_(emp.sheetId);
     const empTz     = empTz_(emp);
     const dateObj   = Utilities.parseDate(date + 'T12:00:00', empTz, "yyyy-MM-dd'T'HH:mm:ss");
     const monthName = Utilities.formatDate(dateObj, empTz, 'MMMM yyyy');
@@ -13101,11 +13128,18 @@ function updatePunchAdjustStatus(reqId, newStatus) {
  *  recordPunch's adjustment write + the personal-sheet mirror (INV-09/26/59).
  *  Touches ONLY that punch type — unlike managerSaveDay's full-day reconcile.
  *  Writes the `ADJ-` audit row with the approving manager as actor. */
-function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason) {
+function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason, ctx) {
   const timeFull = time + ':00';
   const dir = ['ClockIn', 'LunchIn'].indexOf(punchType) >= 0 ? 'IN' : 'OUT';
   const commentLabel = 'ADJ-' + punchType;
-  const existing = findExistingPunch_(targetEmp.id, date, punchType);
+  // C17-9 (batch 6): the range caller passes a prebuilt ctx — ONE Timesheet
+  // read for the whole range. Without it a 31-day × 4-slot range ran up to
+  // 124 findExistingPunch_ FULL-sheet reads inside the ONE project ScriptLock
+  // (every rep's punch waits out the 15s waitLock meanwhile — the INV-153
+  // starvation reasoning). Single-punch callers keep findExistingPunch_.
+  const existing = ctx
+    ? (ctx.idx[date + '|' + punchType] ? { sheet: ctx.sheet, rowIndex: ctx.idx[date + '|' + punchType] } : null)
+    : findExistingPunch_(targetEmp.id, date, punchType);
   if (existing) {
     existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
     existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
@@ -13118,6 +13152,25 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
   writeAuditLog_(targetEmp, punchType, date, timeFull, true, daysBack,
     'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
+}
+
+/** C17-9 — one Timesheet read for a whole managerSaveDayRange run. Builds
+ *  {date|type: rowIndex} for the target emp over the range's dates. The LAST
+ *  matching row wins — agreeing with findExistingPunch_ and managerSaveDay's
+ *  snapshot (INV-155). Each (date, type) is written at most once per run, so
+ *  the index never needs updating mid-run (an append can't collide with a
+ *  later lookup). */
+function buildAdjustPunchIndex_(empId, dateSet) {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+  const rows = sheet.getDataRange().getValues();
+  const idx = {};
+  for (let i = 2; i < rows.length; i++) {
+    if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
+    const d = normalizeDate_(rows[i][ADP.DATE]);
+    if (!dateSet[d]) continue;
+    idx[d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]))] = i + 1;
+  }
+  return { sheet: sheet, idx: idx };
 }
 
 /** #4b — manager multi-day adjust. Applies the given punch times to EVERY date
@@ -13179,12 +13232,15 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
       return { success: false, error: `A reason is required when the range goes more than ${CONFIG.OLD_ADJUST_ALERT_DAYS} days back.` };
     }
 
+    const dateSet = {};
+    dates.forEach(function (dd) { dateSet[dd] = true; });
+    const ctx = buildAdjustPunchIndex_(targetEmp.id, dateSet);
     let punchesWritten = 0;
     dates.forEach(function (date) {
       PUNCH_LABELS_.forEach(function (type) {
         const t = cleanSlots[type];
         if (!t) return;
-        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit');
+        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit', ctx);
         punchesWritten++;
       });
     });

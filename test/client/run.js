@@ -6767,5 +6767,96 @@ test('batch-5: capped/annotated list contracts (INV-169) + search hit status + c
     'the intake image cache-buster respects an existing query string');
 });
 
+
+// ---------------------------------------------------------------------------
+// Cycle 17 batch-6 pins — structural/growth: lock amplification, the
+// unknown-punch-type lockout, the Spanish scan cap, the manager fan-in seq
+// tokens, and the dead-CSS cluster staying deleted. All scans strip comments
+// first (INV-188).
+console.log('\ncycle 17 — batch-6 pins');
+
+test('C17-9: managerSaveDayRange is one-read indexed; the mirror memoizes its handle', () => {
+  const range = c17strip(extractRawFunction('Code.js', 'managerSaveDayRange'));
+  assert.ok(/buildAdjustPunchIndex_\(/.test(range), 'the range edit builds ONE Timesheet index for the whole run');
+  assert.ok(/'multi-day edit', ctx\)/.test(range), 'the range edit passes the ctx into every punch write');
+  const wr = c17strip(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'));
+  assert.ok(/actorEmail, reason, ctx\)/.test(wr), 'writeAdjustPunchForEmployee_ takes the optional ctx');
+  assert.strictEqual((wr.match(/findExistingPunch_\(/g) || []).length, 1,
+    'exactly one findExistingPunch_ call — the no-ctx single-punch path');
+  assert.ok(/: findExistingPunch_\(/.test(wr), 'findExistingPunch_ is the ctx-absent branch of the ternary');
+  const idx = c17strip(extractRawFunction('Code.js', 'buildAdjustPunchIndex_'));
+  assert.ok(/idx\[d \+ '\|' \+ normalizeType_\(String\(rows\[i\]\[ADP\.COMMENTS\]\)\)\] = i \+ 1/.test(idx),
+    'index assignment is unconditional — LAST match wins (the findExistingPunch_/INV-155 agreement)');
+  assert.ok(!/break/.test(idx), 'the index scan never breaks on first match');
+  // The personal-sheet mirror opened the SAME spreadsheet by id once per punch
+  // (~124 openById round-trips inside the global lock on a full range edit).
+  ['writeToEmployeeSheet_', 'clearFromEmployeeSheet_'].forEach((fn) => {
+    const b = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/openPersonalSs_\(/.test(b), fn + ' routes through the per-execution handle memo');
+    assert.ok(!/SpreadsheetApp\.openById\(/.test(b), fn + ' has no bare openById');
+  });
+});
+
+test('batch-6: an unknown punch type is not a state — getNextActions_ skips it (behavioral)', () => {
+  const src = extractRawFunction('Code.js', 'getNextActions_');
+  const nctx = vm.createContext({ PUNCH_LABELS_: ['ClockIn', 'LunchOut', 'LunchIn', 'ClockOut'] });
+  vm.runInContext(src, nctx, { filename: 'Code.js#getNextActions_' });
+  // A hand-edited/garbage COMMENTS row appended AFTER a real punch used to
+  // become the "state": next actions collapsed to ['Adjust'] and the INV-155
+  // live sequence guard then rejected every legitimate punch all day.
+  // JSON-compare: the vm context's arrays are cross-realm, and deepStrictEqual
+  // compares prototype IDENTITY — a realm mismatch fails on identical values.
+  const na = (p) => JSON.stringify(nctx.getNextActions_(p));
+  assert.strictEqual(na([{ type: 'ClockIn' }, { type: 'Garbage' }]),
+    '["LunchOut","ClockOut","Adjust"]', 'a garbage row after ClockIn no longer locks the rep out');
+  assert.strictEqual(na([{ type: 'Garbage' }]),
+    '["ClockIn","Adjust"]', 'a garbage-only day reads as not-clocked-in');
+  assert.strictEqual(na([{ type: 'ClockOut' }]), '["Adjust"]', 'done-state unchanged');
+  assert.strictEqual(na([]), '["ClockIn","Adjust"]', 'fresh-day unchanged');
+});
+
+test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab renders it', () => {
+  ['getSpanishInboxStats', 'getSpanishInboxPending', 'getSpanishInboxResolved'].forEach((fn) => {
+    const b = c17strip(extractRawFunction('Code.js', fn));
+    assert.ok(/GmailApp\.search\([\s\S]*?SPANISH_THREAD_SCAN_MAX\)/.test(b), fn + ' searches via the named cap');
+    assert.ok(!/, 0, 200\)/.test(b), fn + ' has no bare 200 literal');
+    assert.ok(/truncated: threads\.length >= SPANISH_THREAD_SCAN_MAX/.test(b), fn + ' reports truncation');
+  });
+  const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  assert.ok(/function spanishTruncNote_\(/.test(m), 'the client has the shared truncation note');
+  assert.ok((m.match(/spanishTruncNote_\(d\)/g) || []).length >= 4,
+    'stats + pending + resolved renders all consume it');
+});
+
+test('batch-6: the three manager fan-ins carry same-view seq tokens (INV-156)', () => {
+  [['train/script_training.html', 'trainLoadMgr_', 'TRAIN_STATE.mgrSeq', 5],
+   ['train/script_empdocs.html', 'edLoadMgr_', 'ED_STATE.mgrSeq', 3],
+   ['train/script_coaching.html', 'coachLoadMgr_', 'COACH_STATE.mgrSeq', 2]].forEach(([file, fn, tok, rpcs]) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + file), 'utf8');
+    const body = c17strip(c17fnBody(src, fn));
+    assert.ok(body.indexOf(tok + ' = (' + tok + ' || 0) + 1') >= 0, fn + ' bumps ' + tok);
+    const handlers = (body.match(/\.withSuccessHandler\(/g) || []).length;
+    assert.ok(handlers >= rpcs, fn + ' fires its ' + rpcs + ' RPCs');
+    // Every success handler guards the STATE WRITE (not just the render) —
+    // a stale round-1 response must not overwrite a field after round 2
+    // rendered; the view guard alone can't stop it (same view key).
+    const checks = (body.match(new RegExp('seq !== ' + tok.replace('.', '\\.'), 'g')) || []).length;
+    assert.ok(checks >= rpcs + 2, fn + ' guards every handler + done + onFail (got ' + checks + ')');
+  });
+});
+
+test('batch-6: the dead pre-Dashboard CSS clusters stay deleted (INV-184)', () => {
+  const css = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  ['hero-clock', 'actions-grid', 'action-btn', 'ledger', 'ts-summary', 'leave-balance-row',
+   'lb-card', 'lb-val', 'lb-unit', 'ts-stat', 'day-card', 'day-list', 'pt-chip',
+   'btn-clockin', 'btn-lunchout', 'btn-lunchin', 'btn-clockout', 'btn-adjust'].forEach((cls) => {
+    const re = new RegExp('(?<![\\w-])\\.' + cls + '(?![\\w-])');
+    assert.ok(!re.test(css), '.' + cls + ' selector reappeared in styles.html — zero markup emits it');
+  });
+  // The dead thin wrapper (A4 precedent: dead function + its doc mention go together).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(cn.indexOf('cnLoadDate_') < 0, 'cnLoadDate_ stays removed');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -446,81 +446,13 @@
   .refresh-btn:hover { border-color: var(--border-strong); color: var(--ink); background: var(--paper-2); }
   .refresh-btn svg { width: 14px; height: 14px; }
 
-  /* ─── HERO CLOCK — warm-paper document hero ─────────────────────
-     Replaces the prior gradient-indigo glass panel with a flat
-     paper-card. Mono kicker over big tabular time, with date + tz +
-     status pill in a meta row underneath. Time stays mono (Plex) —
-     a clock display is a timestamp, and mono is the right register. */
-  .hero-clock {
-    background: var(--paper-card);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    border-radius: var(--radius-md);
-    padding: 28px 28px 24px;
-    margin-bottom: 16px;
-    box-shadow: var(--shadow-sm);
-  }
-  .hero-clock-content { position: relative; }
-  .hero-clock-kicker {
-    font-family: var(--mono); font-size: 11px; font-weight: 600;
-    color: var(--muted); letter-spacing: .16em; text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-  /* The pre-Stage-2 class name; retained for back-compat callsites */
-  .hero-clock-date {
-    font-family: var(--mono); font-size: 11px; font-weight: 600;
-    color: var(--muted); letter-spacing: .16em; text-transform: uppercase;
-    margin-bottom: 10px;
-    display: flex; align-items: center; gap: 10px;
-  }
-  .hero-clock-time {
-    font-family: var(--mono);
-    font-size: 64px; font-weight: 500;
-    line-height: 1; letter-spacing: -.02em;
-    color: var(--ink); margin-bottom: 14px;
-    font-variant-numeric: tabular-nums;
-  }
-  .hero-clock-time .hc-ampm {
-    font-size: 22px; font-weight: 400;
-    color: var(--muted);
-    margin-left: 8px; letter-spacing: 0;
-  }
-  /* Meta row beneath the time — display-font date, mono tz, status pill */
-  .hero-clock-meta {
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  }
-  .hero-clock-datestr {
-    font-family: var(--display); font-size: 16px; font-weight: 500;
-    color: var(--ink); letter-spacing: -.01em;
-  }
-  .hero-clock-sep {
-    color: var(--muted); opacity: .5; font-size: 14px;
-  }
-  .hero-clock-tz {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    letter-spacing: .14em; color: var(--muted);
-    text-transform: uppercase;
-    padding: 2px 7px; border-radius: 3px;
-    background: var(--paper-2); border: 1px solid var(--line);
-  }
-  /* Inline status pill — the hero now reuses the shared .status-pill
-     vocabulary below instead of a hero-specific dark variant. The .dot
-     animations and tones flow through the semantic tokens. */
-  .hero-clock-status {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-radius: var(--radius-pill);
-    font-size: 12px; font-weight: 600;
-    letter-spacing: .02em;
-  }
-  .hero-clock-status .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .hero-clock-status.s-idle   { background: var(--paper-2);        color: var(--muted); }
-  .hero-clock-status.s-active { background: var(--good-soft);      color: var(--success-deep); }
-  .hero-clock-status.s-lunch  { background: var(--warn-soft);      color: var(--warning-deep); }
-  .hero-clock-status.s-done   { background: var(--accent-soft);    color: var(--info-deep); }
-  .hero-clock-status.s-idle   .dot { background: var(--muted); }
-  .hero-clock-status.s-active .dot { background: var(--good); animation: pulse 2s infinite; }
-  .hero-clock-status.s-lunch  .dot { background: var(--warn); }
-  .hero-clock-status.s-done   .dot { background: var(--accent); }
+  /* Batch-6 (cycle 17): the .hero-clock* cluster (the pre-Dashboard hero),
+     .actions-grid/.action-btn (+ .btn-* tones), the .ledger strip, the
+     .leave-balance-row/.lb-* cards, and the .ts-summary/.ts-stat/.day-card
+     timesheet-render cluster were REMOVED — no markup has emitted any of
+     them since the Round 2 · 8b Time/PTO merge + the Dashboard redesign
+     (INV-184: their compact halves went in C17-1; these were the bases).
+     @keyframes pulse stays — four live rules animate with it. */
   @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.85); } }
 
   /* ─── TZ TAGS / STATUS PILLS ─────────────────────────────────── */
@@ -630,46 +562,6 @@
     font-size: 13px; padding: 14px 0 4px;
   }
 
-  .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .actions-grid.fw .action-btn { grid-column: span 2; }
-  /* Action tiles — keep the 2x2 grid, retone to hairline-bordered
-     tonal soft-bg buttons. Hover is a subtle lift; no glossy shadow
-     growth, no transform on press beyond a fine scale tuck. */
-  .action-btn {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 18px 14px; cursor: pointer;
-    display: flex; flex-direction: column;
-    align-items: center; gap: 6px;
-    font-family: var(--ui); font-weight: 500; font-size: 14px;
-    transition: transform var(--t) var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
-    width: 100%; position: relative;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .action-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow-sm);
-  }
-  .action-btn:active:not(:disabled){ transform: translateY(0) scale(.985); }
-  .action-btn:disabled { opacity: .35; cursor: not-allowed; }
-  .action-btn .be {
-    display: inline-flex; align-items: center; justify-content: center;
-    line-height: 1;
-  }
-  .action-btn .be svg { width: 22px; height: 22px; }
-  .btn-clockin  { background: var(--good-soft);        color: var(--success-deep); }
-  .btn-lunchout { background: var(--warn-soft);        color: var(--warning-deep); }
-  .btn-lunchin  { background: var(--accent-soft);      color: var(--info-deep);    }
-  .btn-clockout { background: var(--destructive-soft); color: var(--danger-deep);  }
-  .btn-adjust {
-    background: var(--paper-2); color: var(--muted);
-    grid-column: span 2; flex-direction: row;
-    padding: 12px 18px; justify-content: center; gap: 8px;
-    font-weight: 500;
-  }
-  .btn-adjust:hover:not(:disabled) { color: var(--ink); }
-  .btn-adjust .be svg { width: 16px; height: 16px; }
   .shift-done-msg {
     text-align: center; color: var(--info-deep);
     font-family: var(--ui); font-weight: 500; font-size: 13px;
@@ -885,48 +777,6 @@
   .r-leg-item .swatch.sched { background: transparent; border: 1px dashed var(--muted-3); height: 8px; }
   .r-leg-item .swatch.now {
     width: 2px; height: 10px; background: var(--accent);
-  }
-
-  /* ─── LEDGER STRIP (V1·E1) ────────────────────────────────────────
-     4-cell stat row beneath the action area. Single bordered container
-     with cell separators rather than gutters between separate tiles —
-     the lower visual noise lets the rep absorb 4 numbers at once. Pay-
-     period cell is populated lazily from tsData (the combined view's
-     timesheet section) once it arrives. */
-  .ledger {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    background: var(--paper-card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    margin-bottom: 16px;
-    overflow: hidden;
-  }
-  /* Round 2 · 8b — Clock view dropped the pay-period cell; renderLedger_
-     emits .ledger.ledger-3 for the 3-cell variant. */
-  .ledger.ledger-3 { grid-template-columns: repeat(3, 1fr); }
-  .ledger .cell {
-    padding: 14px 16px;
-    border-right: 1px solid var(--line);
-    min-width: 0;
-  }
-  .ledger .cell:last-child { border-right: none; }
-  .ledger .cell-label {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-  .ledger .cell-value {
-    font-family: var(--mono); font-size: 24px; font-weight: 500;
-    color: var(--ink); line-height: 1;
-    font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum', 'ss01';
-    letter-spacing: -.01em;
-  }
-  .ledger .cell-value.muted { color: var(--muted); }
-  .ledger .cell-value.warn  { color: var(--warning-deep); }
-  .ledger .cell-sub {
-    font-family: var(--mono); font-size: 10px; color: var(--muted);
-    margin-top: 4px; letter-spacing: .04em;
   }
 
   /* ─── ROUND 2 · 8b TIME / PTO MERGE ───────────────────────────
@@ -1360,30 +1210,7 @@
   }
   .pb-deny:hover:not(:disabled) { background: var(--destructive-soft); }
 
-  /* ─── EMPLOYEE TIME-OFF (cards + lb fallback) ────────────────── */
-  .leave-balance-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  .lb-card {
-    background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius-md); padding: 14px 16px; text-align: center;
-  }
-  .lb-label {
-    font-family: var(--mono);
-    font-size: 10px; font-weight: 600;
-    letter-spacing: .12em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 6px;
-  }
-  .lb-val {
-    font-family: var(--display);
-    font-size: 28px; font-weight: 500; line-height: 1;
-    color: var(--ink); letter-spacing: -.02em;
-    font-variant-numeric: tabular-nums;
-  }
-  .lb-unit {
-    font-family: var(--mono);
-    font-size: 10px; color: var(--muted); margin-top: 4px;
-    letter-spacing: .08em;
-  }
-
+  /* ─── EMPLOYEE TIME-OFF ──────────────────────────────────────── */
   .req-list { display: flex; flex-direction: column; gap: 8px; }
   .req-card {
     display: flex; align-items: flex-start; gap: 12px;
@@ -1495,74 +1322,6 @@
     color: var(--muted);
     letter-spacing: .12em; text-transform: uppercase; margin-top: 4px;
   }
-
-  /* Summary stats — paper-card tiles with display-font numbers + mono
-     uppercase label. The "warn" variant flips the value tone to amber. */
-  .ts-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-  .ts-stat {
-    background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius-md); padding: 16px 14px; text-align: center;
-    position: relative; overflow: hidden;
-  }
-  .ts-stat-val {
-    font-family: var(--display);
-    font-size: 26px; font-weight: 500; line-height: 1;
-    letter-spacing: -.02em; color: var(--ink);
-    font-variant-numeric: tabular-nums;
-  }
-  .ts-stat-lbl {
-    font-family: var(--mono);
-    font-size: 10px; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .12em; margin-top: 6px;
-  }
-  .ts-stat.warn { box-shadow: inset 3px 0 0 var(--warn); }
-  .ts-stat.warn .ts-stat-val { color: var(--warn); }
-
-  /* Day cards — hairline document rows. Weekend gets a paper-2 tint,
-     today gets an accent ring, incomplete days an amber left-stripe. */
-  .day-list { display: flex; flex-direction: column; gap: 8px; }
-  .day-card {
-    background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 12px 16px;
-    transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
-  }
-  .day-card:hover { border-color: var(--border-strong); }
-  .day-card.weekend { background: var(--paper-2); }
-  .day-card.today {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
-  }
-  .day-card.incomplete { box-shadow: inset 3px 0 0 var(--warn); }
-  .day-card.today.incomplete { box-shadow: 0 0 0 1px var(--accent), inset 3px 0 0 var(--warn); }
-  .day-card.no-data { opacity: .55; }
-  .day-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .day-name { font-family: var(--ui); font-size: 13px; font-weight: 500; color: var(--ink); }
-  .day-hours {
-    font-family: var(--mono);
-    font-size: 13px; font-weight: 500; color: var(--good);
-    font-variant-numeric: tabular-nums;
-  }
-  .day-hours.incomplete { color: var(--warn); display: inline-flex; align-items: center; gap: 5px; }
-  .day-hours.incomplete svg { width: 13px; height: 13px; }
-  .day-hours.progress   { color: var(--accent); }
-  .punch-times { display: flex; flex-wrap: wrap; gap: 6px; }
-  .pt-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--paper-2); border-radius: var(--radius-sm);
-    padding: 3px 9px; font-size: 11px;
-    color: var(--muted); font-weight: 500;
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-  }
-  .pt-chip.adj { background: var(--warn-soft); color: var(--warning-deep); }
-  .pt-chip .pt-lbl {
-    font-family: var(--mono);
-    font-size: 9px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .12em;
-    color: var(--muted);
-  }
-  .pt-chip.adj .pt-lbl { color: var(--warn); }
-  .pt-chip .adj-mark { display: inline-flex; align-items: center; line-height: 1; color: var(--warn); }
 
   /* ─── CALENDAR ───────────────────────────────────────────────── */
   .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
@@ -2439,8 +2198,6 @@
   /* ─── COMPACT-MODE TUNING FOR TIME CLOCK VIEWS ───────────────────
      Existing Time Clock views are width-tuned for desktop + mobile-540
      breakpoints; in the ~360–440px compact pop-out, we also want to:
-     ─ shrink hero-clock typography one more notch
-     ─ stack the 2-col actions grid to single column when very narrow
      ─ collapse PTO rings to inline 2-col but smaller
      ─ collapse manager dashboard's 4-col metric grid to 2-col
      ─ make modals near-full-window so they fit
@@ -2451,22 +2208,14 @@
   :root[data-compact="1"] .view-subtitle { font-size: 12px; margin-bottom: 16px; }
   :root[data-compact="1"] .view-title-row { margin-bottom: 14px; }
   :root[data-compact="1"] .card    { padding: 14px 16px; margin-bottom: 12px; }
-  :root[data-compact="1"] .hero-clock { padding: 18px 18px 16px; margin-bottom: 12px; }
-  :root[data-compact="1"] .hero-clock-time { font-size: 36px; }
-  :root[data-compact="1"] .hero-clock-time .hc-ampm { font-size: 14px; }
-  :root[data-compact="1"] .hero-clock-datestr { font-size: 14px; }
   :root[data-compact="1"] .metric-grid {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
   :root[data-compact="1"] .metric-value { font-size: 22px; }
   /* .pto-rings / .pto-svg compact overrides removed in Round 2 · 8d. */
-  /* C17-1: the dead .actions-grid compact override was removed — no markup
-     emits .actions-grid (the pre-redesign action tiles; INV-184 class), and
-     the fixed A2 scan would otherwise demand a viewport breakpoint for a
-     grid that never renders. The rest of the dead cluster is a follow-on. */
-  :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
-  :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
+  /* C17-1 removed the dead .actions-grid compact override; batch-6 removed
+     the .hero-clock/.action-btn compact stragglers with their bases. */
   /* Console-redesign components — compact reflow (V1·E4) */
   :root[data-compact="1"] .hero {
     grid-template-columns: 1fr; gap: 14px; padding: 18px 18px 16px; margin-bottom: 12px;
@@ -2480,11 +2229,8 @@
     grid-template-columns: 1fr 1fr; gap: 8px;
   }
   :root[data-compact="1"] .actions .prime { grid-column: span 2; }
-  /* C17-1: the dead .ledger compact overrides were removed — no render emits
-     .ledger markup since the Round 2 · 8b Time/PTO merge retired the Clock
-     ledger strip (INV-184 class; the fixed A2 scan surfaced them). The dead
-     base .ledger rules are a follow-on with the rest of the cluster. */
-  :root[data-compact="1"] .ledger .cell-value { font-size: 18px; }
+  /* C17-1 removed the dead .ledger compact overrides; batch-6 removed the
+     bases (and this block's last straggler) with the rest of the cluster. */
   :root[data-compact="1"] .telemetry {
     grid-template-columns: 1fr 1fr;
   }
@@ -2544,9 +2290,6 @@
     .mobile-nav { display: block; }
     .view-area { padding: 16px 16px calc(var(--mobile-nav-h) + 20px); max-width: 600px; }
     .metric-grid { grid-template-columns: repeat(2, 1fr); }
-    .hero-clock { padding: 28px 22px; border-radius: var(--radius-md); }
-    .hero-clock-time { font-size: 48px; }
-    .hero-clock-time .hc-ampm { font-size: 18px; }
     .audit-ts { min-width: 90px; }
     /* .pto-rings / .pto-svg media-query overrides removed in Round 2 · 8d. */
   }
@@ -2555,7 +2298,6 @@
     .metric-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
     .metric-value { font-size: 28px; }
     .emp-grid { grid-template-columns: repeat(2, 1fr); }
-    .hero-clock-time { font-size: 40px; }
     .view-title { font-size: 22px; }
     /* A2 (cycle 13): the shared 4-up telemetry strip had ONLY a
        `:root[data-compact]` override — that is the POP-OUT, not a viewport

@@ -538,30 +538,39 @@ function enterTrainingManageView() {
 
 function trainLoadMgr_() {
   var requestedView = currentView;
+  // Batch-6 (cycle 17, INV-156): a same-view seq token. Two overlapping runs
+  // for the SAME view (a post-mutation refresh while the first load is still
+  // in flight) share these TRAIN_STATE fields — without the token a stale
+  // round-1 response lands AFTER round 2 rendered and overwrites one field
+  // (last-writer-wins mixture), and the view guard alone can't stop it
+  // because currentView never changed. The STATE WRITE itself is guarded,
+  // not just the render.
+  TRAIN_STATE.mgrSeq = (TRAIN_STATE.mgrSeq || 0) + 1;
+  var seq = TRAIN_STATE.mgrSeq;
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 5 || failed || currentView !== requestedView) return;
+    if (got < 5 || failed || currentView !== requestedView || seq !== TRAIN_STATE.mgrSeq) return;
     trainRenderMgr_();
   }
   function onFail(err) {
-    if (failed) return;
+    if (failed || seq !== TRAIN_STATE.mgrSeq) return;
     failed = true;
     if (currentView !== requestedView) return;
     var el = document.getElementById('tr-mgr-content');
     if (el) el.innerHTML = errorStateHtml_('Could not load: ' + ((err && err.message) || err));   // A12
   }
-  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
-  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
-  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
-  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizzes = d; done(); }).withFailureHandler(onFail).getQuizzes();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+  google.script.run.withSuccessHandler(function (d) { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.quizzes = d; done(); }).withFailureHandler(onFail).getQuizzes();
   // E12 (cycle 10): the analytics aggregate is DECORATIVE (a panel), but it
   // shared the fatal onFail — its failure (the most plausible of the five: a
   // bounded-tail scan) took down assignment, the completion matrix, and quiz
   // authoring with it. Degrade to a panel-level "unavailable" instead.
   google.script.run
-    .withSuccessHandler(function (d) { TRAIN_STATE.quizAnalytics = d; done(); })
-    .withFailureHandler(function () { TRAIN_STATE.quizAnalytics = { error: 'Analytics unavailable' }; done(); })
+    .withSuccessHandler(function (d) { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.quizAnalytics = d; done(); })
+    .withFailureHandler(function () { if (seq !== TRAIN_STATE.mgrSeq) return; TRAIN_STATE.quizAnalytics = { error: 'Analytics unavailable' }; done(); })
     .getQuizAnalytics();
 }
 

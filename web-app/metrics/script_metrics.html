@@ -1484,13 +1484,23 @@ function spanishFmtDur_(mins) {
   return dys + 'd' + (hr ? (' ' + hr + 'h') : '');
 }
 
+/** Batch-6 (cycle 17): the server scan is capped at 200 threads (silent
+ *  Gmail-search bound); a busier window under-reported with no signal. Each
+ *  reader now ships `truncated` — render it as an explicit warning so a
+ *  capped figure never reads as complete (INV-169/187). */
+function spanishTruncNote_(d) {
+  if (!d || !d.truncated) return '';
+  return ' · <span style="color:var(--warning-deep)">scan capped at 200 threads — figures may be incomplete; narrow the window</span>';
+}
+
 function spanishRender_(d) {
   var body = document.getElementById('spanish-body'); if (!body) return;
   if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
   var total = d.resolved + d.pending;
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Inbox <b>' + esc(d.address) + '</b> · ' +
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
-    (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') + '</div>';
+    (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') +
+    spanishTruncNote_(d) + '</div>';
   var strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + esc(String(d.resolved)) + '</div><div class="tel-sub">of ' + esc(String(total)) + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + esc(String(d.pending)) + '</div><div class="tel-sub">awaiting reply</div></div>' +
@@ -1540,8 +1550,8 @@ function spanishLoadPending_() {
       var s = document.getElementById('spanish-list'); if (!s) return;
       if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load tasks'); return; }   // A12
       var list = d.pending || [];
-      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.</div>'; return; }
-      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Pending tasks · ' + list.length + '</div>' +
+      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.' + spanishTruncNote_(d) + '</div>'; return; }
+      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Pending tasks · ' + list.length + spanishTruncNote_(d) + '</div>' +
         '<div class="sp-tasks">' + list.map(spanishTaskCard_).join('') + '</div>';
     })
     .withFailureHandler(function (e) {
@@ -1564,8 +1574,8 @@ function spanishLoadResolved_() {
       var s = document.getElementById('spanish-list'); if (!s) return;
       if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load resolved'); return; }   // A12
       var list = d.resolved || [];
-      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div><div style="font-size:13px;color:var(--muted)">No resolved requests in this period.</div>'; return; }
-      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + list.length + '</div>' +
+      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div><div style="font-size:13px;color:var(--muted)">No resolved requests in this period.' + spanishTruncNote_(d) + '</div>'; return; }
+      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + list.length + spanishTruncNote_(d) + '</div>' +
         '<div class="sp-tasks">' + list.map(spanishResolvedCard_).join('') + '</div>';
     })
     .withFailureHandler(function (e) {

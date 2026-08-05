@@ -2303,10 +2303,6 @@ function cnLoadToday_(then) {
     .getMyCallNotes({ filter: 'all' });
 }
 
-function cnLoadDate_(date, then) {
-  cnLoadDateRange_(date, date, then);
-}
-
 function cnLoadDateRange_(startDate, endDate, then) {
   const requestedView = currentView;
   const isSingleDate = startDate === endDate;
