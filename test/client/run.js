@@ -6824,8 +6824,8 @@ test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab r
   });
   const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
   assert.ok(/function spanishTruncNote_\(/.test(m), 'the client has the shared truncation note');
-  assert.ok((m.match(/spanishTruncNote_\(d\)/g) || []).length >= 4,
-    'stats + pending + resolved renders all consume it');
+  assert.ok((m.match(/spanishTruncNote_\((d|pd|rd)\)/g) || []).length >= 5,
+    'the stats note + both combined-list sections consume it');
 });
 
 test('batch-6: the three manager fan-ins carry same-view seq tokens (INV-156)', () => {
@@ -6911,6 +6911,62 @@ test('batch-7: the getAutomationHealth fixture mirrors the server return keys (I
     assert.ok(new RegExp('(^|[\\s{,])' + k + ':').test(fxRegion),
       'fixture carries the server key `' + k + '` — the Admin scenario cannot render a shape the server does not ship');
   });
+});
+
+
+// ---------------------------------------------------------------------------
+// Operator-feedback 2026-08-06 pins — the pop-out fit-to-template pass and the
+// combined color-coded Spanish / Dept Requests status views.
+console.log('\noperator feedback 2026-08-06 pins');
+
+test('pop-out fit: compact-only, popup-only, once, clamped, wired into the Log render', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const body = c17strip(c17fnBody(cn, 'cnPopoutFitToTemplate_'));
+  assert.ok(/COMPACT_MODE/.test(body), 'fit runs only in compact mode');
+  assert.ok(/umsTeamToolsCompact_/.test(body), 'fit runs only in the named pop-out window (resizeTo is popup-only)');
+  assert.ok(/__cnPopoutFitDone/.test(body), 'fit runs once per window session');
+  assert.ok(/screen\.availHeight/.test(body) && /screen\.availWidth/.test(body), 'target size is clamped to the screen');
+  assert.ok(/resizeTo\(/.test(body), 'the pass actually resizes');
+  assert.ok(/\.cnv-layout/.test(body), 'the fit measures the TEMPLATE block (form + rail), not the whole page');
+  const stripped = c17strip(cn);
+  assert.ok(/cnRenderStack_\(\);\s*cnPopoutFitToTemplate_\(\);/.test(stripped),
+    'the Log render path invokes the fit after the frame is built');
+});
+
+test('Spanish combined view: fan-in with guarded state writes, tones defined + wired', () => {
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const loader = c17strip(c17fnBody(m, 'spanishLoadList_'));
+  assert.ok(/getSpanishInboxPending/.test(loader) && /getSpanishInboxResolved/.test(loader),
+    'the combined loader fetches BOTH lists');
+  assert.ok((loader.match(/seq !== SPANISH_STATE\.listSeq/g) || []).length >= 4,
+    'every handler guards the STATE WRITE with the seq token (INV-156 fan-in)');
+  const ms = c17strip(m);
+  assert.ok(/SPANISH_OVERDUE_HOURS = 24/.test(ms), 'the overdue threshold is a named constant');
+  const tone = c17strip(c17fnBody(m, 'spanishPendingToneCls_'));
+  assert.ok(/>= SPANISH_OVERDUE_HOURS/.test(tone) && /st-overdue/.test(tone) && /st-pending/.test(tone),
+    'pending tone flips to overdue at the threshold');
+  assert.ok(/st-resolved/.test(c17strip(c17fnBody(m, 'spanishResolvedCard_'))), 'resolved cards carry the green tone');
+  // The INV-178-reverse check: a tone class USED must also be DEFINED.
+  ['st-resolved', 'st-pending', 'st-overdue'].forEach((cls) => {
+    assert.ok(new RegExp('\\.sp-task\\.' + cls + '\\s*\\{').test(m), '.sp-task.' + cls + ' is defined in CSS');
+  });
+});
+
+test('Dept Requests: SLA-driven row tones defined + wired, filter chips refetch-free', () => {
+  const d = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const tone = c17strip(c17fnBody(d, 'drRowToneCls_'));
+  assert.ok(/st-resolved/.test(tone) && /st-overdue/.test(tone) && /st-atrisk/.test(tone) && /st-pending/.test(tone),
+    'the tone map covers resolved / overdue / at-risk / open');
+  assert.ok(/slaStatus/.test(tone), 'open tones ride the existing per-dept SLA machinery, not a new constant');
+  assert.ok(/drRowToneCls_\(item\)/.test(c17strip(c17fnBody(d, 'drRequestRowHtml_'))),
+    'every request row carries its tone class');
+  ['st-resolved', 'st-pending', 'st-atrisk', 'st-overdue'].forEach((cls) => {
+    assert.ok(new RegExp('\\.dr-row\\.' + cls + '\\s*\\{').test(d), '.dr-row.' + cls + ' is defined in CSS');
+  });
+  const setF = c17strip(c17fnBody(d, 'drSetFilter_'));
+  assert.ok(/DR_LAST_DATA/.test(setF) && !/google\.script\.run/.test(setF),
+    'a filter chip re-renders from the cached payload — never a refetch');
+  assert.ok(/data-dr-filter/.test(d) && /aria-pressed/.test(d), 'the chips carry pressed state (A11)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

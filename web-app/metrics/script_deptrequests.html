@@ -30,7 +30,31 @@ function enterDeptRequestsView(area) {
     .getDeptRequests();
 }
 
+// Operator feedback 2026-08-06 — "My requests" status filter (All default;
+// chips filter the already-fetched combined list client-side, no refetch).
+var DR_FILTER = 'all';
+var DR_LAST_DATA = null;
+
+function drSetFilter_(f) {
+  DR_FILTER = (f === 'open' || f === 'resolved') ? f : 'all';
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
+
+/** Row tone from status + the existing per-dept SLA machinery (operator
+ *  feedback 2026-08-06): green resolved; amber open on-time; deeper amber
+ *  at-risk (>=75% of SLA); destructive overdue (past SLA — the per-dept
+ *  DR_SLA_TARGETS / 48h default the Admin editor already tunes, so "red after
+ *  X days" is per-department config, not a new constant). */
+function drRowToneCls_(item) {
+  if (item.status === 'resolved') return 'st-resolved';
+  if (item.slaStatus === 'overdue') return 'st-overdue';
+  if (item.slaStatus === 'atrisk') return 'st-atrisk';
+  return 'st-pending';
+}
+
 function drRender_(area, data, errorMsg) {
+  if (data) DR_LAST_DATA = data;
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
   const head = compact
     ? cnCompactHeader_('Dept Requests', 'outbox')
@@ -55,13 +79,29 @@ function drRender_(area, data, errorMsg) {
       ' Showing the most recent requests only — older entries aren’t listed.</div>'
     : '';
 
-  const mine = (data && data.mine) || [];
+  const mineAll = (data && data.mine) || [];
+  const mine = mineAll.filter(function (r) {
+    if (DR_FILTER === 'open') return r.status !== 'resolved';
+    if (DR_FILTER === 'resolved') return r.status === 'resolved';
+    return true;
+  });
+  const mkChip = function (key, label) {
+    return '<button type="button" class="toolbar-tab" data-dr-filter="' + key + '" aria-pressed="' + (DR_FILTER === key) +
+      '" onclick="drSetFilter_(\'' + key + '\')">' + label + '</button>';
+  };
+  const filterBar = mineAll.length
+    ? '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:0 0 10px">' +
+        mkChip('all', 'All') + mkChip('open', 'Open') + mkChip('resolved', 'Resolved') +
+      '</div>'
+    : '';
   const mineHtml = mine.length
     ? '<div class="dr-list">' + mine.map(drRequestRowHtml_).join('') + '</div>'
-    : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>';
+    : (mineAll.length
+        ? '<div class="dr-empty">No ' + (DR_FILTER === 'open' ? 'open' : 'resolved') + ' requests in this list.</div>'
+        : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
   const mineSection =
     '<div class="dr-section"><div class="dr-section-title">My requests' +
-    drCapNoteHtml_(mine.length, data && data.mineTotal) + '</div>' + mineHtml + '</div>';
+    drCapNoteHtml_(mineAll.length, data && data.mineTotal) + '</div>' + filterBar + mineHtml + '</div>';
 
   // v2 Incoming inbox — open requests addressed to a department the rep staffs
   // (roster column N → data.myDepts). Members can resolve in-app here.
@@ -124,7 +164,7 @@ function drRequestRowHtml_(item) {
     ? '<button type="button" class="dr-resolve-btn" data-req="' + esc(item.requestId) +
         '" onclick="drResolveClick_(this)">' + icon('check', 12) + ' Mark resolved</button>'
     : '';
-  return '<div class="dr-row js-anim">' +
+  return '<div class="dr-row js-anim ' + drRowToneCls_(item) + '">' +
     '<div class="dr-row-main">' +
       '<div class="dr-row-dept">' + esc(item.toDept || '—') + label + '</div>' +
       '<div class="dr-row-meta">' + esc(item.createdAt || '') +
@@ -226,6 +266,14 @@ function drFmtMin_(min) {
     background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md);
     padding: 10px 12px; margin-bottom: 14px; }
   .dr-list { display: flex; flex-direction: column; gap: 8px; }
+  /* Operator feedback 2026-08-06 — request-row status tones (left stripe +
+     soft tint, the .day-card vocabulary): green resolved / amber open /
+     deeper amber at-risk / destructive overdue (SLA-driven — drRowToneCls_).
+     The stripe rides box-shadow so it composes with the base border. */
+  .dr-row.st-resolved { box-shadow: inset 3px 0 0 var(--good); background: var(--good-soft); }
+  .dr-row.st-pending  { box-shadow: inset 3px 0 0 var(--warn); background: var(--warn-soft); }
+  .dr-row.st-atrisk   { box-shadow: inset 3px 0 0 var(--warning-deep); background: var(--warn-soft); }
+  .dr-row.st-overdue  { box-shadow: inset 3px 0 0 var(--destructive); background: var(--destructive-soft); }
   .dr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
     background: var(--paper-card); }

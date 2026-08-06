@@ -2,6 +2,12 @@
 /* Spanish-inbox pending task cards (Part A) */
 .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: 920px; }
 .sp-task { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 12px 14px; }
+/* Operator feedback 2026-08-06 — combined-list status tones (left stripe +
+   soft tint, the .day-card inset-stripe vocabulary): green resolved, amber
+   pending, destructive pending past SPANISH_OVERDUE_HOURS. */
+.sp-task.st-resolved { box-shadow: inset 3px 0 0 var(--good), var(--shadow-sm); background: var(--good-soft); }
+.sp-task.st-pending  { box-shadow: inset 3px 0 0 var(--warn), var(--shadow-sm); background: var(--warn-soft); }
+.sp-task.st-overdue  { box-shadow: inset 3px 0 0 var(--destructive), var(--shadow-sm); background: var(--destructive-soft); }
 .sp-task-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
 .sp-task-from { font-size: 12px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
@@ -1434,7 +1440,15 @@ function mClearBadge_() {
 // ════════════════════════════════════════════════════════════════════════════
 //  SPANISH INBOX — bilingual-assistance resolution time (managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var SPANISH_STATE = { days: 30, tab: 'pending' };
+var SPANISH_STATE = { days: 30, tab: 'all' };
+// Operator feedback 2026-08-06 — the combined Pending+Resolved list's RED
+// band: a pending request older than this many hours renders destructive-toned
+// ("overdue"), vs warn-toned pending and good-toned resolved. Client-side
+// display threshold only (the server ships ageHours); tune here + redeploy.
+// 24h chosen against the observed ~45m median — a same-day inbox where a
+// day-old request is unambiguously stuck. (DR requests use the per-dept SLA
+// machinery instead — see drRowToneCls_.)
+var SPANISH_OVERDUE_HOURS = 24;
 
 function enterSpanishInboxView(area) {
   if (typeof stopClock === 'function') stopClock();
@@ -1507,89 +1521,135 @@ function spanishRender_(d) {
     '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '</div>';
+  // Operator feedback 2026-08-06 — ONE combined list, color-coded by status,
+  // with filter chips instead of separate Pending/Resolved sub-tabs. The chips
+  // FILTER the already-fetched lists client-side (no refetch).
+  var mkTab = function (key, label) {
+    return '<button class="toolbar-tab" data-sp-tab="' + key + '" aria-pressed="' + (SPANISH_STATE.tab === key) +
+      '" onclick="spanishSetTab_(\'' + key + '\')">' + label + '</button>';
+  };
   var toggle =
-    '<div class="toolbar-tabs" role="group" aria-label="Pending or resolved" style="margin:2px 0 10px">' +
-      '<button class="toolbar-tab" data-sp-tab="pending" aria-pressed="' + (SPANISH_STATE.tab !== 'resolved') + '" onclick="spanishSetTab_(\'pending\')">Pending</button>' +
-      '<button class="toolbar-tab" data-sp-tab="resolved" aria-pressed="' + (SPANISH_STATE.tab === 'resolved') + '" onclick="spanishSetTab_(\'resolved\')">Resolved</button>' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:2px 0 10px">' +
+      mkTab('all', 'All') + mkTab('pending', 'Pending') + mkTab('resolved', 'Resolved') +
     '</div>';
   var list = '<div id="spanish-list" style="margin-top:2px">' + loSweep() + '</div>';
   body.innerHTML = note + strip + toggle + list;
   spanishLoadList_();
 }
 
-/** Switch the Pending/Resolved sub-tab and reload just the list (the stats strip
- *  + days select stay put). */
+/** Filter the combined list in place (both lists are already fetched — a chip
+ *  click never refetches; the stats strip + days select stay put). */
 function spanishSetTab_(tab) {
-  SPANISH_STATE.tab = (tab === 'resolved') ? 'resolved' : 'pending';
+  SPANISH_STATE.tab = (tab === 'pending' || tab === 'resolved') ? tab : 'all';
   document.querySelectorAll('.toolbar-tab[data-sp-tab]').forEach(function (b) {
     b.setAttribute('aria-pressed', b.getAttribute('data-sp-tab') === SPANISH_STATE.tab);
   });
-  spanishLoadList_();
+  spanishRenderList_();
 }
 
-/** Dispatch the active sub-tab's loader into #spanish-list. */
+/** Fetch BOTH lists for the combined view. An INV-156 FAN-IN (the batch-6
+ *  trainLoadMgr_ shape): two RPCs write into shared SPANISH_STATE fields, so
+ *  the seq token guards every STATE WRITE, not just the render — a stale
+ *  round-1 response landing after round 2 rendered must not overwrite one
+ *  list. Each half degrades independently: a failed half renders its own
+ *  error card inside the combined view while the other half still shows. */
 function spanishLoadList_() {
-  if (SPANISH_STATE.tab === 'resolved') spanishLoadResolved_();
-  else spanishLoadPending_();
-}
-
-/** Part A — live-read pending requests as task cards (subject + snippet +
- *  Open-in-Gmail + expand-to-full-body). Loaded separately from the cached
- *  aggregate so the bodies are never cached/stored. */
-function spanishLoadPending_() {
   var slot = document.getElementById('spanish-list'); if (!slot) return;
   slot.innerHTML = loSweep();
-  // L-8 (cycle 11): the INV-156 seq token the stats fetch got in M-6 — a
-  // quick 7d→30d double-change re-runs this loader for the SAME tab, and an
-  // inverted response order rendered the wrong window's list.
   SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;
   var seq = SPANISH_STATE.listSeq;
+  SPANISH_STATE.pendingRes = null; SPANISH_STATE.resolvedRes = null;
+  SPANISH_STATE.pendingErr = null; SPANISH_STATE.resolvedErr = null;
+  var got = 0;
+  var done = function () {
+    got++;
+    if (got < 2 || currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.listSeq) return;
+    spanishRenderList_();
+  };
   google.script.run
     .withSuccessHandler(function (d) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (!s) return;
-      if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load tasks'); return; }   // A12
-      var list = d.pending || [];
-      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.' + spanishTruncNote_(d) + '</div>'; return; }
-      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Pending tasks · ' + list.length + spanishTruncNote_(d) + '</div>' +
-        '<div class="sp-tasks">' + list.map(spanishTaskCard_).join('') + '</div>';
+      if (seq !== SPANISH_STATE.listSeq) return;
+      if (!d || d.error) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
+      else SPANISH_STATE.pendingRes = d;
+      done();
     })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = errorStateHtml_((e && e.message) || 'Could not load tasks');   // A12
+      if (seq !== SPANISH_STATE.listSeq) return;
+      SPANISH_STATE.pendingErr = (e && e.message) || 'Could not load pending';
+      done();
     })
     .getSpanishInboxPending(SPANISH_STATE.days);
-}
-
-/** Resolved sub-tab: who resolved each request + how long it took, over the
- *  selected window. Read-only; "Open in Gmail" is the primary action. */
-function spanishLoadResolved_() {
-  var slot = document.getElementById('spanish-list'); if (!slot) return;
-  slot.innerHTML = loSweep();
-  SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;   // L-8 — see spanishLoadPending_
-  var seq = SPANISH_STATE.listSeq;
   google.script.run
     .withSuccessHandler(function (d) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (!s) return;
-      if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load resolved'); return; }   // A12
-      var list = d.resolved || [];
-      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div><div style="font-size:13px;color:var(--muted)">No resolved requests in this period.' + spanishTruncNote_(d) + '</div>'; return; }
-      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + list.length + spanishTruncNote_(d) + '</div>' +
-        '<div class="sp-tasks">' + list.map(spanishResolvedCard_).join('') + '</div>';
+      if (seq !== SPANISH_STATE.listSeq) return;
+      if (!d || d.error) SPANISH_STATE.resolvedErr = (d && d.error) || 'Could not load resolved';
+      else SPANISH_STATE.resolvedRes = d;
+      done();
     })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = errorStateHtml_((e && e.message) || 'Could not load resolved');   // A12
+      if (seq !== SPANISH_STATE.listSeq) return;
+      SPANISH_STATE.resolvedErr = (e && e.message) || 'Could not load resolved';
+      done();
     })
     .getSpanishInboxResolved(SPANISH_STATE.days);
+}
+
+/** The combined, color-coded list: pending first (oldest at the top — the most
+ *  overdue is the most actionable), then resolved (newest first, the server
+ *  order). Row tones: st-overdue (pending >= SPANISH_OVERDUE_HOURS) /
+ *  st-pending / st-resolved. A failed HALF renders as an error card in place
+ *  of its section — never as "nothing pending" (A12/INV-175/187). */
+function spanishRenderList_() {
+  var s = document.getElementById('spanish-list'); if (!s) return;
+  var tab = SPANISH_STATE.tab;
+  var html = '';
+  if (tab !== 'resolved') {
+    if (SPANISH_STATE.pendingErr) {
+      html += errorStateHtml_(SPANISH_STATE.pendingErr);
+    } else {
+      var pd = SPANISH_STATE.pendingRes || {};
+      var pending = (pd.pending || []).slice().sort(function (a, b) { return b.ageHours - a.ageHours; });
+      if (!pending.length) {
+        html += '<div class="day-section-label" style="margin:6px 0 8px">Pending</div>' +
+          '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">' + icon('checkCircle', 14) +
+          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + '</div>';
+      } else {
+        html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
+          spanishTruncNote_(pd) + '</div>' +
+          '<div class="sp-tasks" style="margin-bottom:16px">' + pending.map(spanishTaskCard_).join('') + '</div>';
+      }
+    }
+  }
+  if (tab !== 'pending') {
+    if (SPANISH_STATE.resolvedErr) {
+      html += errorStateHtml_(SPANISH_STATE.resolvedErr);
+    } else {
+      var rd = SPANISH_STATE.resolvedRes || {};
+      var resolved = rd.resolved || [];
+      if (!resolved.length) {
+        html += '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div>' +
+          '<div style="font-size:13px;color:var(--muted)">No resolved requests in this period.' + spanishTruncNote_(rd) + '</div>';
+      } else {
+        html += '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + resolved.length +
+          spanishTruncNote_(rd) + '</div>' +
+          '<div class="sp-tasks">' + resolved.map(spanishResolvedCard_).join('') + '</div>';
+      }
+    }
+  }
+  s.innerHTML = html;
+}
+
+/** Row tone for a PENDING card — warn until SPANISH_OVERDUE_HOURS, then
+ *  destructive. (Resolved cards are always st-resolved.) */
+function spanishPendingToneCls_(ageHours) {
+  return (Number(ageHours) >= SPANISH_OVERDUE_HOURS) ? 'st-overdue' : 'st-pending';
 }
 
 function spanishResolvedCard_(t) {
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   var took = spanishFmtDur_(t.resolveMinutes);
   var when = spanishFmtDateTime_(t.resolvedAtMs);
-  return '<div class="sp-task">' +
+  return '<div class="sp-task st-resolved">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
       '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
@@ -1688,7 +1748,7 @@ function spanishTaskCard_(t) {
   // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
   // pending forever. uiConfirm-guarded: there is no un-resolve.
   var resolve = '<button class="sp-more sp-resolve" data-thread="' + esc(t.threadId) + '" onclick="spanishResolve_(this)">' + icon('check', 12) + ' Mark resolved</button>';
-  return '<div class="sp-task">' +
+  return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +

@@ -201,13 +201,28 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false },
       { name: 'Nina Patel', status: 'clocked_in', isSelf: false },
       { name: 'Leo Kim', status: 'not_in', isSelf: false }] },
-    getDeptRequests: { isManager: true, myDepts: ['Billing'], mine: { open: [], resolved: [] }, incoming: [], allOpen: [], truncated: false,
-      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 0, slaHours: 48, avgMinutes: 340, medianMinutes: 220 }] },
+    getDeptRequests: { isManager: true, myDepts: ['Billing'],
+      mine: [
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 190, slaStatus: 'ontime', slaHours: 48 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 2900, slaStatus: 'overdue', slaHours: 24 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 1450, slaStatus: 'atrisk', slaHours: 48 },
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 220, resolvedBy: 'sam@umsupply.com' }],
+      incoming: [
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 320, slaStatus: 'ontime', slaHours: 24 }],
+      allOpen: [], truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 0, listCap: 100,
+      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
-    getSpanishInboxPending: { pending: [{ threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1' }], medianMinutes: 45 },
-    getSpanishInboxStats: { pending: 1, resolved: 12, medianMinutes: 45 },
+    getSpanishInboxPending: { pending: [
+      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1' },
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2' }],
+      medianMinutes: 45, truncated: false },
+    getSpanishInboxResolved: { resolved: [
+      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
+      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      truncated: false },
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 2, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 14, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {

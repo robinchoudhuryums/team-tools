@@ -89,6 +89,11 @@ const SCENARIOS = [
   ['metrics-error-light-wide',    { tool: 'metrics',   tab: null },          WIDE,   'light', '?failrpc=getMyMetrics'],
   ['cn-log-error-light-wide',     { tool: 'callNotes', tab: 'callNotes' },   WIDE,   'light', '?failrpc=getMyCallNotes'],
   ['reference-error-light-mobile', { tool: 'reference', tab: null },         MOBILE, 'light', '?failrpc=getReferenceTree'],
+  // Operator feedback 2026-08-06 — the two redesigned status views (combined
+  // color-coded lists): fixtures cover all four DR tones + an overdue Spanish
+  // pending card, so the tone vocabulary itself is on camera.
+  ['spanish-light-wide',   { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', ''],
+  ['deptreq-light-wide',   { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
