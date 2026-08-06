@@ -6946,23 +6946,30 @@ test('Spanish combined view: fan-in with guarded state writes, tones defined + w
   assert.ok(/>= SPANISH_OVERDUE_HOURS/.test(tone) && /st-overdue/.test(tone) && /st-pending/.test(tone),
     'pending tone flips to overdue at the threshold');
   assert.ok(/st-resolved/.test(c17strip(c17fnBody(m, 'spanishResolvedCard_'))), 'resolved cards carry the green tone');
-  // The INV-178-reverse check: a tone class USED must also be DEFINED.
-  ['st-resolved', 'st-pending', 'st-overdue'].forEach((cls) => {
-    assert.ok(new RegExp('\\.sp-task\\.' + cls + '\\s*\\{').test(m), '.sp-task.' + cls + ' is defined in CSS');
+  // The INV-178-reverse check: a tone class USED must also be DEFINED — in
+  // styles.html since the vocabulary became SHARED with Dept Requests.
+  const sharedCss = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  ['st-resolved', 'st-pending', 'st-atrisk', 'st-overdue'].forEach((cls) => {
+    assert.ok(new RegExp('\\.sp-task\\.' + cls + '\\s*\\{').test(sharedCss),
+      '.sp-task.' + cls + ' is defined in the SHARED stylesheet');
   });
 });
 
-test('Dept Requests: SLA-driven row tones defined + wired, filter chips refetch-free', () => {
+test('Dept Requests: Spanish-vocabulary cards, SLA-driven tones, filter chips refetch-free', () => {
   const d = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
   const tone = c17strip(c17fnBody(d, 'drRowToneCls_'));
   assert.ok(/st-resolved/.test(tone) && /st-overdue/.test(tone) && /st-atrisk/.test(tone) && /st-pending/.test(tone),
     'the tone map covers resolved / overdue / at-risk / open');
   assert.ok(/slaStatus/.test(tone), 'open tones ride the existing per-dept SLA machinery, not a new constant');
-  assert.ok(/drRowToneCls_\(item\)/.test(c17strip(c17fnBody(d, 'drRequestRowHtml_'))),
-    'every request row carries its tone class');
-  ['st-resolved', 'st-pending', 'st-atrisk', 'st-overdue'].forEach((cls) => {
-    assert.ok(new RegExp('\\.dr-row\\.' + cls + '\\s*\\{').test(d), '.dr-row.' + cls + ' is defined in CSS');
-  });
+  // Operator feedback 2026-08-06 round 2 — the view renders the SHARED
+  // .sp-task status cards (the Spanish Inbox vocabulary), not bespoke rows.
+  const card = c17strip(c17fnBody(d, 'drRequestCardHtml_'));
+  assert.ok(/sp-task /.test(card) && /drRowToneCls_\(item\)/.test(card),
+    'every request renders as a shared status card carrying its tone class');
+  assert.ok(/sp-task-head/.test(card) && /sp-task-subj/.test(card) && /sp-task-actions|resolveBtn/.test(card),
+    'the card uses the shared head/subject/actions slots');
+  assert.ok(!/dr-row/.test(c17strip(d)), 'the bespoke .dr-row shape stays retired (INV-184)');
+  assert.ok(/class="telemetry"/.test(d), 'the view carries the Spanish-style KPI telemetry strip');
   const setF = c17strip(c17fnBody(d, 'drSetFilter_'));
   assert.ok(/DR_LAST_DATA/.test(setF) && !/google\.script\.run/.test(setF),
     'a filter chip re-renders from the cached payload — never a refetch');

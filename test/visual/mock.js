@@ -209,7 +209,9 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 220, resolvedBy: 'sam@umsupply.com' }],
       incoming: [
         { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 320, slaStatus: 'ontime', slaHours: 24 }],
-      allOpen: [], truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 0, listCap: 100,
+      allOpen: [
+        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 5800, slaStatus: 'overdue', slaHours: 48 }],
+      truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
