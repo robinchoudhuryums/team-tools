@@ -17,8 +17,11 @@ Phase: idle (post-reflect) + operator-requested feature work:
   best/worst chips, multi-day team trend (INV-66 amendment), rep
   drill-through, copy-table TSV. Pure 446, DOM 69, 8 bite-checks, full
   39-scenario matrix 0/0, banding + [hidden] fix verified by MEASUREMENT.
-  /sync-docs OWED for BOTH the feedback rounds and this batch (see the
-  block's DOCUMENTATION UPDATES).
+  /sync-docs for BOTH the feedback rounds and this batch is **DONE**
+  (INV-66/129/180 amendments, Phase-1 opt-out caller note, metrics KDD +
+  pop-out KDD + DR KDD + Spanish Part-A additions, S25/S41/S42/S74 updates,
+  Visual Audit Stage 37→39, test narrative →446, the new [hidden]-vs-display
+  gotcha, the no-new-operator-state entry, visual README count).
 (Cycle-17 history below is retained until the close-out move.)
 Phase (cycle-17 record): implement — the broad scan is COMPLETE. Implemented + doc-synced:
   TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,
@@ -217,11 +220,10 @@ Updated: 2026-08-05
   follow-on to write AND run at next deploy.
 
 ## Where I left off
-Cycle 17 is closed (reflected). On the branch, unmerged: the three
-operator-feedback commits (pop-out fit / Spanish combined / Dept Requests
-rebuild + dept filter) AND the metrics-improvements #1–#10 batch (this
-checkpoint's commit). Next: offer the operator a PR+merge of the branch;
-`/sync-docs` is owed for both work items (the metrics block lists every
-doc edit); deploy remains ONE operator action (`cd web-app &&
-clasp push -f` → New version → `runAllTests()` in the editor). Cycle 18,
-when opened, is the due Seams & Invariants audit.
+Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
+improvements #1–#10 are implemented AND doc-synced; the operator authorized
+PR + merge of the branch (in progress at this checkpoint). Deploy remains
+ONE operator action (`cd web-app && clasp push -f` → New version →
+`runAllTests()` in the editor). Cycle 18, when opened, is the due Seams &
+Invariants audit (write INV-189/190/191; move the cycle-17 block to
+HISTORY.md then).
