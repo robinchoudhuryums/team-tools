@@ -696,7 +696,9 @@ function clkDashOwnCard_(res) {
 }
 function clkDashTeamCard_(res) {
   if (!res) return clkDashEmpty_(res);
-  if (!res.team) return '<div class="dash-empty">Team data hidden — fewer than ' + (res.kpiMinCohort || 3) + ' reps reported this period.</div>';
+  // Operator 2026-08-06: the cohort hide was dropped for this card (server
+  // MIN_COHORT=1) — team:null now only means nobody reported at all.
+  if (!res.team) return '<div class="dash-empty">No team call data for this period.</div>';
   var t = res.team;
   var kpis = '<div class="dash-kpis">' +
     clkDashKpi_('Transfer %', t.transferPct != null ? t.transferPct + '%' : '—', true) +

@@ -21,7 +21,20 @@ Phase: idle (post-reflect) + operator-requested feature work:
   (INV-66/129/180 amendments, Phase-1 opt-out caller note, metrics KDD +
   pop-out KDD + DR KDD + Spanish Part-A additions, S25/S41/S42/S74 updates,
   Visual Audit Stage 37→39, test narrative →446, the new [hidden]-vs-display
-  gotcha, the no-new-operator-state entry, visual README count).
+  gotcha, the no-new-operator-state entry, visual README count). Merged as
+  **PR #155** (be53a61); branch restarted from main.
+- Operator round-2 follow-ups (2026-08-06, post-#155): (a) the Dashboard
+  Team/Department card shows the team aggregate at ANY cohort — operator
+  decision; `getDashboardMetrics` MIN_COHORT 3→1, cache `dash_metrics_v2`,
+  client null-team message now reads "no data"; INV-124's My Stats per-day
+  series guard UNCHANGED and pinned to stay 3 (scope amendment written into
+  INV-124 + the Dashboard KDD). (b) List-swap motion: `animateListSwap_`
+  (script_core) + `.swap-in`/`listSwapIn` (styles.html, opacity/transform
+  only, reduced-motion-neutralized) wired at the DR status + dept chips,
+  Spanish tabs, and the Team Metrics scope switcher; keyframes property
+  whitelist pinned. Pure 448 (2 new pins, 3 bite-checks), DOM 69, full
+  39-matrix 0/0; animation + hidden-message verified by MEASUREMENT
+  (computed animationName + stagger). Docs synced in the same commit.
 (Cycle-17 history below is retained until the close-out move.)
 Phase (cycle-17 record): implement — the broad scan is COMPLETE. Implemented + doc-synced:
   TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,

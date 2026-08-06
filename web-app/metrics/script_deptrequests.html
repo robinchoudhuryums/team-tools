@@ -45,7 +45,12 @@ var DR_DEPT_FILTER = [];
 function drSetFilter_(f) {
   DR_FILTER = (f === 'open' || f === 'resolved') ? f : 'all';
   var area = getDeptRequestsArea_();
-  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+  if (area && DR_LAST_DATA) {
+    drRender_(area, DR_LAST_DATA, null);
+    // Operator 2026-08-06 — staggered fade+rise on the re-rendered cards so
+    // the filter swap is legible (decoration; reduced-motion-safe).
+    if (typeof animateListSwap_ === 'function') animateListSwap_(area);
+  }
 }
 
 function drToggleDeptFilter_(dept) {
@@ -55,7 +60,10 @@ function drToggleDeptFilter_(dept) {
     if (i >= 0) DR_DEPT_FILTER.splice(i, 1); else DR_DEPT_FILTER.push(dept);
   }
   var area = getDeptRequestsArea_();
-  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+  if (area && DR_LAST_DATA) {
+    drRender_(area, DR_LAST_DATA, null);
+    if (typeof animateListSwap_ === 'function') animateListSwap_(area);   // see drSetFilter_
+  }
 }
 
 /** A request's department COMPONENTS. A multi-dept send stores the JOINED

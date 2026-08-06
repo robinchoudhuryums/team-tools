@@ -1073,6 +1073,26 @@ function observeReveals(container) {
   }
 }
 
+/** List-swap motion (operator 2026-08-06) — a filter/tab switch re-renders a
+ *  card list IN PLACE, which reads as an instant repaint; this stamps a brief
+ *  staggered fade+rise (`.swap-in` + a per-item `--d` delay, the §5 heatmap
+ *  stagger pattern) on the freshly rendered items so the swap is legible.
+ *  Call AFTER the container's innerHTML is replaced. Transform/opacity only
+ *  (the motion-system rule) and neutralized wholesale by the global
+ *  prefers-reduced-motion block. Decoration only — it must never break a
+ *  render, hence the blanket try/catch. Stagger caps at 12 items so a long
+ *  list doesn't tail out. */
+function animateListSwap_(container, selector) {
+  try {
+    if (!container || !container.querySelectorAll) return;
+    var items = container.querySelectorAll(selector || '.sp-task');
+    for (var i = 0; i < items.length; i++) {
+      items[i].style.setProperty('--d', (Math.min(i, 12) * 28) + 'ms');
+      items[i].classList.add('swap-in');
+    }
+  } catch (_) { /* decoration only */ }
+}
+
 /** 2nd-pass motion §6 — settle a row in place on a mutation (mark-complete /
  *  resolve / accept): dim + tint, strike the label, draw a check. Keeps the row
  *  (good for context / undo affordance). Options:

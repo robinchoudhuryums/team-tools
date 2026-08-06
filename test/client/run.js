@@ -7170,5 +7170,51 @@ test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavior
   assert.ok(noQ.split('\n')[0].indexOf('Transfers') === -1, 'Transfers column only when transfer data exists');
 });
 
+// ── Operator follow-ups (2026-08-06, round 2) ───────────────────────────────
+console.log('\noperator follow-ups: dashboard cohort + list-swap motion');
+
+test('Dashboard team card shows the aggregate at any cohort; the My Stats series guard stays 3', () => {
+  const strip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const dash = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/var MIN_COHORT = 1;/.test(dash),
+    'the operator decision: the Dashboard card renders team data whenever anyone reported');
+  assert.ok(/dash_metrics_v2:/.test(dash) && !/dash_metrics_v1:/.test(dash),
+    'the cache key bumped with the payload semantics (stale v1 must not serve hidden-team rounds)');
+  // The decision is SCOPED: the per-day anonymized series (the back-solvable
+  // peer-benchmark surface) keeps its N=3 guard — INV-124 proper.
+  const my = strip(extractRawFunction('Code.js', 'getMyMetrics'));
+  assert.ok(/var MIN_COHORT = 3;/.test(my), 'getMyMetrics keeps the INV-124 N=3 series guard');
+  // Client: the hidden-below-N message is gone (team:null now means no data).
+  const clock = strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.ok(!/Team data hidden/.test(clock), 'the cohort-hide message no longer renders');
+  assert.ok(/No team call data for this period/.test(clock), 'team:null reads as no-data, not as hidden');
+});
+
+test('list-swap motion: shared helper, transform/opacity-only keyframes, wired at the four switch sites', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const helper = core.slice(core.indexOf('function animateListSwap_'), core.indexOf('function animateListSwap_') + 900);
+  assert.ok(/try \{/.test(helper) && /catch \(_\)/.test(helper),
+    'decoration only — the helper can never break a render');
+  assert.ok(/--d/.test(helper) && /swap-in/.test(helper) && /Math\.min\(i, 12\)/.test(helper),
+    'per-item stagger via --d, capped so a long list does not tail out');
+  // The keyframes animate ONLY opacity/transform (the motion-system rule —
+  // anything else forces layout/paint per frame).
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const kfAt = styles.indexOf('@keyframes listSwapIn');
+  assert.ok(kfAt >= 0, 'the keyframes exist in the shared stylesheet');
+  const kf = styles.slice(kfAt, styles.indexOf('}', styles.indexOf('to {', kfAt)) + 1);
+  const props = [...kf.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
+  props.forEach((p) => assert.ok(p === 'opacity' || p === 'transform',
+    'listSwapIn animates only opacity/transform (found: ' + p + ')'));
+  assert.ok(/\.swap-in \{ animation: listSwapIn [^;]*both; animation-delay: var\(--d, 0s\); \}/.test(styles),
+    'one-shot (both) + the --d stagger hook');
+  // Wired at the four switch sites: DR status chips, DR dept chips, the
+  // Spanish tab chips, and the Team Metrics scope switcher.
+  const dr = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const met = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const calls = ((dr.match(/animateListSwap_\(/g) || []).length) + ((met.match(/animateListSwap_\(/g) || []).length);
+  assert.ok(calls >= 4, 'all four switch sites animate the swap (found ' + calls + ')');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
