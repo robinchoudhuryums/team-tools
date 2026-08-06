@@ -1,8 +1,29 @@
 # Cycle State
 
 ## Current
-Cycle: 17
-Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
+Cycle: 17 — CLOSED (reflected, `.cycle/blocks/17-a-reflect.md`; metrics row
+appended). Between-cycles OPERATOR WORK is in progress on the branch (see
+below); cycle 18 has not opened. When it does, it should be the DUE Seams &
+Invariants audit (counter 4/4) and should write INV-189/190/191 into the
+library; move this cycle's block to HISTORY.md at that point.
+Phase: idle (post-reflect) + operator-requested feature work:
+- Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
+  combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
+  vocabulary + dept filter (commits 3215f45, ebd1cab, 395c554). Pure 436.
+- Metrics improvements #1–#10 (operator-approved, ALL TEN implemented —
+  `.cycle/blocks/18pre-metrics-improvements-broad-implement.md`): range-mode
+  trend fill, unified preset+Custom controls, diagnostics disclosure, target
+  line + threshold-aligned banding, transfer rail rows, coverage CTA,
+  best/worst chips, multi-day team trend (INV-66 amendment), rep
+  drill-through, copy-table TSV. Pure 446, DOM 69, 8 bite-checks, full
+  39-scenario matrix 0/0, banding + [hidden] fix verified by MEASUREMENT.
+  /sync-docs for BOTH the feedback rounds and this batch is **DONE**
+  (INV-66/129/180 amendments, Phase-1 opt-out caller note, metrics KDD +
+  pop-out KDD + DR KDD + Spanish Part-A additions, S25/S41/S42/S74 updates,
+  Visual Audit Stage 37→39, test narrative →446, the new [hidden]-vs-display
+  gotcha, the no-new-operator-state entry, visual README count).
+(Cycle-17 history below is retained until the close-out move.)
+Phase (cycle-17 record): implement — the broad scan is COMPLETE. Implemented + doc-synced:
   TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,
   net 8), BATCH ③+④ (`17-batch3-batch4-broad-implement.md`, net 8) — the
   consolidated ②③④ /sync-docs is DONE (commit 9098206). BATCH ⑤
@@ -14,14 +35,17 @@ Phase: implement — the broad scan is COMPLETE. Implemented + doc-synced:
   (`.cycle/blocks/17-batch6-batch7-broad-implement.md`, net 4−0=4 + 1
   structural + 3 harness-capability; pure 433, DOM 69, 7 bite-checks pass,
   FULL 37-scenario matrix re-shot: 0 missing / 0 overflow). Batches ⑥+⑦'s
-  /sync-docs is OWED (items in the block). ALL SEVEN cycle-17 batches are
-  now implemented — the cycle is ready for /reflect after the last
-  /sync-docs.
+  /sync-docs is DONE (commit 64007ca). ALL SEVEN cycle-17 batches are
+  implemented + doc-synced, and the whole cycle is MERGED to main as
+  **PR #154** (merge commit 13eeed2, CI green). Remaining: /reflect to
+  close the cycle, and the ONE operator deploy action.
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 3 (cycle 15 was the seams audit;
-  16 and 17-so-far have completed since. Cadence is every 4, so the next Seams
-  audit is due after cycle 18)
+Subsystem cycles since last Seams audit: 4 (cycle 15 was the seams audit;
+  16 and 17 have completed since, and cycle 17's reflection closes the fourth
+  subsystem cycle. Cadence is every 4 — the NEXT audit should be a Seams &
+  Invariants audit, which also owes the library its 3 pending candidates:
+  INV-189/190/191 from cycle 17's reflection)
 Updated: 2026-08-05
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -196,9 +220,10 @@ Updated: 2026-08-05
   follow-on to write AND run at next deploy.
 
 ## Where I left off
-Batches ⑥+⑦ complete and green (pure 433 / DOM 69 / 7 bite-checks / full
-37-scenario matrix 0-missing 0-overflow), committed + pushed to
-`claude/broad-scan-up98b9`. ALL cycle-17 batches are implemented. Next:
-`/sync-docs` for batches ⑥+⑦ (items in the block), then `/reflect` to close
-the cycle. Deploy of all cycle-17 batches remains ONE operator action
-(`clasp push -f` → New version → `runAllTests()`).
+Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
+improvements #1–#10 are implemented AND doc-synced; the operator authorized
+PR + merge of the branch (in progress at this checkpoint). Deploy remains
+ONE operator action (`cd web-app && clasp push -f` → New version →
+`runAllTests()` in the editor). Cycle 18, when opened, is the due Seams &
+Invariants audit (write INV-189/190/191; move the cycle-17 block to
+HISTORY.md then).

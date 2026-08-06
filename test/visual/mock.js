@@ -116,7 +116,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     // server cannot produce. The harness README's first rule is that fixtures
     // mirror the real server contract; two prior violations produced convincing
     // FAKE defects, so this is a correctness issue for the harness itself.
-    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6 },
+    // Operator #4/#5 (2026-08-06): alertThreshold mirrors the server's
+    // CONFIG.CDR_ALERT_THRESHOLD ship; `transfer` is the own-day scalar
+    // ({transferred, transferPct}, null = absent — INV-180 zero-vs-absence).
+    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
+      transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 },
     // V-14: the range endpoint returns its OWN cdr totals for the span, so the
     // fixture needs weekly-scale numbers — reusing the single-day `kpis` made
     // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the
@@ -124,7 +128,8 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
-      noteCount: 218, noteCoverage: 86, trend: trend30() },
+      noteCount: 218, noteCoverage: 86, trend: trend30(),
+      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
     // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
@@ -154,15 +159,22 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           tq[q].transferred += r.queues[q]; tq[q].reps[r.repName] = true;
         });
       });
-      var totals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0, transferred: 0, queueTotal: 0 };
+      var totals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0, transferred: 0, queueTotal: 0, transferCalls: 0 };
       reps.forEach(function (r) {
         totals.rung += r.totalRung; totals.answered += r.totalAnswered; totals.missed += r.totalMissed;
         totals.tttSeconds += r.tttSeconds; totals.noteCount += r.noteCount;
         totals.transferred += r.transferred; totals.queueTotal += r.queueTotal;
+        // #5 — the Transfer sheet's own Total Calls denominator (the fixture
+        // approximates it with answered, which is what the mk() pct used).
+        totals.transferCalls += r.totalAnswered;
       });
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
+      // #5 — mirrors the server: null unless the Transfer read succeeded AND
+      // its own denominator is positive.
+      totals.transferPct = totals.transferCalls > 0
+        ? Math.round((totals.transferred / totals.transferCalls) * 1000) / 10 : null;
       var qRows = Object.keys(tq).map(function (q) {
         return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
       }).sort(function (a, b) { return b.transferred - a.transferred; });
@@ -181,6 +193,7 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
         queueRows: qRows,
+        alertThreshold: 85,   // #4 — mirrors CONFIG.CDR_ALERT_THRESHOLD
         // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
         // hand, and had already drifted — it omitted the per-group queues.sort()
         // the server does, so the screenshot showed a group's queues in the
@@ -201,13 +214,30 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false },
       { name: 'Nina Patel', status: 'clocked_in', isSelf: false },
       { name: 'Leo Kim', status: 'not_in', isSelf: false }] },
-    getDeptRequests: { isManager: true, myDepts: ['Billing'], mine: { open: [], resolved: [] }, incoming: [], allOpen: [], truncated: false,
-      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 0, slaHours: 48, avgMinutes: 340, medianMinutes: 220 }] },
+    getDeptRequests: { isManager: true, myDepts: ['Billing'],
+      mine: [
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 190, slaStatus: 'ontime', slaHours: 48 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 2900, slaStatus: 'overdue', slaHours: 24 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 1450, slaStatus: 'atrisk', slaHours: 48 },
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 220, resolvedBy: 'sam@umsupply.com' }],
+      incoming: [
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 320, slaStatus: 'ontime', slaHours: 24 }],
+      allOpen: [
+        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 5800, slaStatus: 'overdue', slaHours: 48 }],
+      truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
+      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
-    getSpanishInboxPending: { pending: [{ threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1' }], medianMinutes: 45 },
-    getSpanishInboxStats: { pending: 1, resolved: 12, medianMinutes: 45 },
+    getSpanishInboxPending: { pending: [
+      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1' },
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2' }],
+      medianMinutes: 45, truncated: false },
+    getSpanishInboxResolved: { resolved: [
+      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
+      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      truncated: false },
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 2, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 14, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {

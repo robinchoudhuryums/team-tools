@@ -1210,6 +1210,32 @@
   }
   .pb-deny:hover:not(:disabled) { background: var(--destructive-soft); }
 
+  /* ─── STATUS-CARD VOCABULARY (shared: Spanish Inbox + Dept Requests) ──
+     Operator feedback 2026-08-06 — the two request-tracking views render ONE
+     combined pending+resolved list of these cards, color-coded by status
+     (left stripe + soft tint, the .day-card vocabulary): green resolved /
+     amber pending / deeper amber at-risk (DR only) / destructive overdue.
+     Spanish tones ride SPANISH_OVERDUE_HOURS; DR tones ride the per-dept SLA
+     machinery (drRowToneCls_). Moved here from the metrics partial when Dept
+     Requests adopted the vocabulary. */
+  .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: 920px; }
+  .sp-task { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 12px 14px; }
+  .sp-task.st-resolved { box-shadow: inset 3px 0 0 var(--good), var(--shadow-sm); background: var(--good-soft); }
+  .sp-task.st-pending  { box-shadow: inset 3px 0 0 var(--warn), var(--shadow-sm); background: var(--warn-soft); }
+  .sp-task.st-atrisk   { box-shadow: inset 3px 0 0 var(--warning-deep), var(--shadow-sm); background: var(--warn-soft); }
+  .sp-task.st-overdue  { box-shadow: inset 3px 0 0 var(--destructive), var(--shadow-sm); background: var(--destructive-soft); }
+  .sp-task-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .sp-task-from { font-size: 12px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .sp-task-subj { font-weight: 600; font-size: 14px; color: var(--ink); margin-bottom: 4px; }
+  .sp-task-body { font-size: 13px; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
+  .sp-task-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+  .sp-open { font-size: 12px; color: var(--info); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .sp-open:hover { text-decoration: underline; }
+  .sp-more { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+  .sp-more:hover { text-decoration: underline; }
+  .sp-more.is-busy { opacity: .6; cursor: default; }
+
   /* ─── EMPLOYEE TIME-OFF ──────────────────────────────────────── */
   .req-list { display: flex; flex-direction: column; gap: 8px; }
   .req-card {

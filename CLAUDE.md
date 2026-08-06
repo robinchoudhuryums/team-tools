@@ -1223,6 +1223,18 @@ this section before touching the relevant area.
   underline on hover, and a label naming the destination); the filter row keeps
   the pill because it genuinely carries toggle state. Rule: reserve the pill for
   stateful toggles, use link treatment for navigation.
+- **The `hidden` attribute LOSES to any class rule that sets `display`
+  (operator #2 batch, 2026-08-06 — MEASURED).** The UA stylesheet's
+  `[hidden] { display: none }` is ordinary specificity, so
+  `.m-controls { display: flex }` beats it and the element renders visible
+  with `hidden` set — the Metrics Custom… date rows shipped visible on the
+  first shoot exactly this way. Any element that BOTH carries a
+  display-setting class AND is toggled via the `hidden` attribute needs an
+  explicit `.the-class[hidden] { display: none; }` companion rule
+  (`.m-custom-row[hidden]` is the in-tree example, pinned by the #2 pin).
+  The alternative idiom — toggling a `.collapsed`/`.open` class — avoids the
+  trap but then owes the A11 tripwire its aria-expanded bookkeeping; either
+  is fine, half-and-half is not.
 - **`Notes` tab provisions on first touch.** `getCallNotesSheet_`
   creates the tab + header row if it doesn't exist, so a freshly
   enrolled rep's first `submitCallNote` "just works." The header row
@@ -2922,7 +2934,36 @@ this section before touching the relevant area.
   Avg Talk / Total Talk) with optional tonal value variants
   (`good` / `warn` / `crit`). Per-rep table preserved at the
   bottom of Team Metrics. Shared helpers: `mTrendAvg_`,
-  `mBuildHeroSparkSvg_`, `mRailRow_`. **`.m-layout` is
+  `mBuildHeroSparkSvg_`, `mRailRow_`.
+  **Operator improvements #1–#10 (2026-08-06) extended both pages:** all
+  three metrics endpoints ship `alertThreshold` (=`CDR_ALERT_THRESHOLD`) and
+  the client draws a dashed TARGET line on both hero sparklines
+  (`mBuildHeroSparkSvg_`'s optional 4th arg — the y-domain EXTENDS to
+  include the target so an above-all-data target renders instead of
+  vanishing off-canvas), appends "· target N%" to the delta, and
+  `mPctClass_(p, thr)` starts the table's GREEN band at the shipped
+  threshold (absent field — a ≤5-min stale cached payload or the CN Stats
+  caller, whose endpoint doesn't ship it — keeps the legacy 80 band; NO
+  client mirror of 85 exists). Both rails gained a **Transfers** row
+  (null-guarded — absence ≠ 0, INV-180; Team additionally gated on
+  `transferMeta.available`, INV-175). Both tabs share ONE control
+  vocabulary: pressed-state preset chips + a **Custom…** disclosure chip
+  hiding the raw date inputs (`mCustomChip_`/`mToggleCustom_`; state in
+  `M_STATE.customOpen`; NOTE `.m-custom-row[hidden]{display:none}` is
+  load-bearing — see the [hidden] gotcha). My Stats range mode (#1) renders
+  the you-vs-team trend section from the cached / background-fetched TODAY
+  payload (seq-guarded, INV-156) instead of silently dropping it, plus
+  best/worst-day chips (#7, pure `mBestWorstDays_`, Node-pinned) and a
+  coverage-hint CTA (#6, `mCoverageCta_` → `fileMissingCalls_`/CLK_NAV_HINT,
+  gated to single-day today). Team adds rep drill-through (#9 —
+  `.m-rep-link` buttons riding data-* into `cnAuditDrillToNote_`), a
+  scope-aware **Copy table** TSV (#10, pure `mTeamTableTsv_` — plain values,
+  an unreadable notes Sheet exports blank, never 0), and the two
+  permanently-non-empty CDR reference lists folded behind a
+  "Match diagnostics (N)" disclosure (#3 — the INV-186 signal,
+  `likelyMismatches`, stays always-visible; state in `M_STATE.diagOpen`
+  survives sort re-renders). Pinned by the `metrics — operator improvements
+  #1–#10` Node block (8 mutations bite-checked). **`.m-layout` is
   `align-items: start`** (V-8, cycle-11 visual batch — the `.dash-trk`
   natural-heights precedent): the hero card hugs its content instead of
   stretching to the 5-row rail's height with a dead band above the
@@ -2942,10 +2983,11 @@ this section before touching the relevant area.
   `queues {name: count}` to both the range aggregate and the per-day shape.
   Four rules, each load-bearing:
    - **The opt-in default is the compatibility contract, not tidiness.** The
-     three pre-Phase-1 callers (`getDashboardMetrics` ×2, `getMyMetrics`'s
-     trend) CACHE their assembled results, so a flipped default would change
-     those payloads with no INV-85 cache bump. Pinned by a test that counts
-     3-arg vs opted-in call sites.
+     opt-out callers (`getDashboardMetrics` ×2, `getMyMetrics`'s trend, and —
+     since the 2026-08-06 operator #5 batch — `getMyMetricsRange`'s
+     own-transfer aggregate) CACHE their assembled results, so a flipped
+     default would change those payloads with no INV-85 cache bump. Pinned by
+     a test that counts 3-arg vs opted-in call sites (currently 4 vs 2).
    - **Columns are discovered BY HEADER NAME** (`csrTransferQueueColumns_`,
      bounded to `CSRT_QUEUE_COL_FIRST/LAST` = 0-indexed 7..17; 18 is Comments,
      6 is the grand total). The headers are written by the operator-owned
@@ -3095,7 +3137,16 @@ this section before touching the relevant area.
   compact-only collapse chevron (`.cn-save-collapse` → toggles `.collapsed`)
   so Save & Copy / Compose stay reachable without a manual resize. All
   compact rules are additive and gated to `data-compact`; wide mode is
-  untouched.
+  untouched. **Fit-to-template on launch (operator feedback 2026-08-06):**
+  the Call Notes pop-out SELF-SIZES once per window via
+  `cnPopoutFitToTemplate_` — gated to COMPACT_MODE + a
+  `umsTeamToolsCompact_*` window name (never the main window), double-rAF
+  after the Log render, measures the `.cnv-layout` bottom + the window's
+  chrome delta (outer−inner), clamps to `screen.avail*`, skips within 8px,
+  and `window.resizeTo`s so the whole note template is visible without a
+  manual resize regardless of the machine's display scaling / remembered
+  geometry. Later manual resizes are still captured + remembered per tool
+  (the fit runs once per launch, before any persisted-geometry write).
 - **Resizable sidebar with snap (Round 2 · 8a).** The sidebar's
   width is rep-adjustable: drag the right-edge `.sidebar-grip`,
   double-click to snap between icon-only (~56px) and labeled
@@ -4261,6 +4312,22 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **The 2026-08-06 operator rounds (pop-out fit, Spanish combined view, Dept
+  Requests rebuild + dept filter) AND the metrics improvements #1–#10 add NO
+  new operator state** — no Script Properties, triggers, migrations, or new
+  CONFIG constants (`SPANISH_OVERDUE_HOURS`=24 is a client-code constant);
+  every new server field is ADDITIVE and client-guarded, so deploy skew in
+  either direction renders as before. Behaviour changes to expect post-deploy:
+  (a) the Team Metrics green band now starts at `CDR_ALERT_THRESHOLD` (85) —
+  reps at 80–84.9% turn AMBER; that is the #4 alignment with the sidebar
+  alert, not a data change; (b) multi-day team ranges show a per-day
+  sparkline; (c) the raw date inputs on both Metrics tabs live behind a
+  "Custom…" chip; (d) the two CDR reference lists are folded behind "Match
+  diagnostics (N)"; (e) the Spanish Inbox and Dept Requests tabs render ONE
+  combined color-coded status list each (green resolved / amber pending /
+  red overdue) instead of separate sections; (f) the Call Notes pop-out
+  self-sizes on launch so the whole template is visible. **Post-deploy: run
+  `runAllTests()`** as usual.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
@@ -4572,8 +4639,13 @@ manually for a fresh deploy or environment:
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
-  yesterday's team answer rate. Tunable without a redeploy by
-  editing CONFIG (no Script Property equivalent yet).
+  yesterday's team answer rate. **Since the 2026-08-06 operator #4 batch it
+  is ALSO shipped to the Metrics clients** (`alertThreshold` on
+  `getMyMetrics`/`getMyMetricsRange`/`getTeamMetrics`): it draws the dashed
+  target line on both hero sparklines and starts the team table's GREEN
+  band — so changing it moves the in-page target AND the banding, not just
+  the badge. CONFIG-only (no Script Property equivalent yet); changing it
+  requires a redeploy.
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
@@ -4646,7 +4718,17 @@ manually for a fresh deploy or environment:
   before returning a body slice) backs the per-card "Show full request" expand.
   The body surfaces request content in-app (it may reference a patient/call), so
   it is deliberately manager-gated + live-read-only + "Open in Gmail" as the
-  primary action — bodies are never written to a sheet or cache.
+  primary action — bodies are never written to a sheet or cache. **Combined
+  view (operator feedback 2026-08-06):** the Spanish tab's separate
+  Pending/Resolved sub-tabs were replaced by ONE color-coded list — All /
+  Pending / Resolved filter chips over `.sp-task` status cards (pending
+  oldest-first, then resolved), toned `st-pending` (amber) /
+  `st-overdue` (red, pending > `SPANISH_OVERDUE_HOURS`=24 — a client
+  constant) / `st-resolved` (green). The two RPCs fan in with seq-guarded
+  state writes (INV-156); a failed half renders `errorStateHtml_` for that
+  half only. The `.sp-task` card CSS is SHARED in `styles.html` (the Dept
+  Requests page consumes the same vocabulary — INV-185-adjacent: one
+  component, two views, no drift). Endpoints/gates unchanged.
 - **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
   **AUTOMATIC**: every department email an agent sends from Call Notes
   (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
@@ -4673,7 +4755,19 @@ manually for a fresh deploy or environment:
   `enterDeptRequestsView`, read-only list + resolve buttons): `getDeptRequests`
   (rep-callable) returns the caller's own requests (open/resolved + elapsed);
   managers ALSO get a per-department resolution-time aggregate (`deptStats`
-  open/resolved/avg/median) + oldest-open team list. (The legacy standalone
+  open/resolved/avg/median) + oldest-open team list. **Redesigned onto the
+  Spanish Inbox vocabulary (operator feedback rounds 2–3, 2026-08-06):** a
+  `.telemetry` KPI strip (Open / Overdue / Resolved / Median), All/Open/
+  Resolved status chips + a MULTI-SELECT department chip bar (renders only
+  when >1 dept in the data; empty selection = ALL departments — the default
+  view; matching is per `drDeptsOf_` component so a multi-dept send matches
+  ANY of its departments, the INV-138 `drSplitDepts_` shape; chips re-render
+  from the cached payload — never a refetch), and combined color-coded
+  `.sp-task` status cards (shared component in `styles.html`) toned by the
+  existing per-dept SLA machinery: `st-resolved` green / `st-pending` amber /
+  `st-atrisk` amber-deep / `st-overdue` red. Section counts read "N of M"
+  when a dept filter is active; the INV-169 cap notes stay keyed to the
+  UNFILTERED lengths (a filtered-out item is not a server-capped one). (The legacy standalone
   `sendDeptRequest` composer endpoint was REMOVED — it had no caller; auto-tracking
   replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
@@ -5588,7 +5682,19 @@ garbage-row cases, the Spanish named-cap + truncated ×3 + client note, the
 three fan-ins' per-handler seq-guard counts, the dead-selector ban incl.
 cnLoadDate_; ⑦: failrpc-before-fixture-lookup, scenario coverage for
 admin/dark/error, and the getAutomationHealth fixture keys DERIVED from
-computeAutomationHealth_'s return block — INV-185/179).
+computeAutomationHealth_'s return block — INV-185/179). The operator-feedback
+rounds (2026-08-06) added three more → **436** (pop-out fit wiring; the
+Spanish combined-view fan-in + tones; the Dept Requests rebuild — Spanish
+vocabulary, `.dr-row` retirement ban, refetch-free dept filter), and the
+metrics-improvements batch added ten more → **446** (`metrics — operator
+improvements #1–#10`: range-trend fill seq/cache, control unification + the
+`.m-preset-chip` ban + the `[hidden]` specificity fix, diagnostics
+disclosure, threshold ships-×3 + behavioral banding + behavioral
+spark-domain, transfer null-guards + `transferThrew`, CTA gating, behavioral
+best/worst, span-cap + best-effort range trend, drill button + data-*,
+behavioral TSV — 8 mutations bite-checked; the F5 range-cache pin and the
+Phase-1 opt-out caller count (3→4) were updated for the deliberate contract
+changes).
 Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
@@ -5635,7 +5741,7 @@ every prior cycle shipped blind. The CI workflow runs it as a second step
 
 A third, **static-render VISUAL harness** lives in `test/visual/` (adopted from
 the cycle-11 visual audit): `node build.mjs` inlines the production partials
-into a standalone `page.html`, and `node shoot.mjs` renders a 37-scenario
+into a standalone `page.html`, and `node shoot.mjs` renders a 39-scenario
 matrix (tool × wide/compact/mobile × light/dark) in headless Chromium with a
 fixture-backed `google.script.run` mock, writing `shots/*.png` + `report.json`.
 It is **manual / on-demand like the editor suite — NOT in CI** (needs a
@@ -5765,7 +5871,7 @@ INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`,
 INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
 INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_`. Pinned by the CDR test fixture, which stores TTT/ATT as coerced time values (Date via `getValues()`, H:MM:SS via `getDisplayValues()`) so a `getValues()` regression fails `test_metrics_cdrFixture_durationsUseDisplayValues` + the `attSeconds` integration assertion | Subsystem: Server
 INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-only. Returns the rep's own CDR metrics for the given date + a 30-day trend array + note-to-call coverage ratio. CDR data is fetched via `getCdrDailyBreakdown_()` (single-agent filter). The trend window is the 30 days ending on the given date. Returns `cdr: null` if the agent has no DQE data (not an error) | Subsystem: Server
-INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Returns a 30-day team trend in single-day mode only (`trend` field is null for multi-day ranges). `unmatchedAgents` lists CDR agent names not on the team-tools roster (cycle 7 M-11: sourced from `getCdrAgentMetrics_`'s `meta.offRosterAgents`, recorded BEFORE its roster filter — the old loop over the roster-filtered result could never find one) | Subsystem: Server
+INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Single-day mode returns the 30-day team trend; **multi-day mode returns a per-day TEAM trend over the SELECTED range since the operator #8 batch (2026-08-06)** — span-capped 2–92 days (getTeamMetrics has no overall span cap, so an unbounded manual range must not trigger the extra per-day scan) and BEST-EFFORT (the INV-67 posture: a thrown range-trend read leaves `trend` null, the pre-#8 shape — a missing sparkline is not a reassuring degradation). The client delta line names its comparison ("vs period daily average" multi-day / "vs 30-day team average" single-day). Also ships `alertThreshold` (#4) and `teamTotals.transferPct` with its OWN Transfer-sheet denominator (`transferCalls`, never `rung`; null without it — INV-129). `unmatchedAgents` lists CDR agent names not on the team-tools roster (cycle 7 M-11: sourced from `getCdrAgentMetrics_`'s `meta.offRosterAgents`, recorded BEFORE its roster filter — the old loop over the roster-filtered result could never find one) | Subsystem: Server
 INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server
 INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated CDR data layer. Both open the CDR Report spreadsheet via `getCdrSS_()`, read `DQE Historical Data`, filter by date range + optional roster names, skip queue-sentinel rows via `isCdrQueueSentinel_()`. Both call `validateCdrColumns_()` on first access to check header positions against `CDR_EXPECTED_HEADERS` and `getCdrNameMap_()` to resolve Agent Alias Overrides before roster matching. Designed as the Option A (direct spreadsheet read) implementation — a future swap to Neon Postgres (Option C) replaces only these two functions + `getCdrSS_()` | Subsystem: Server
 INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending submissions per day, INCLUDES today) + `missedTrend` (14 days, missed-clockout instances per day, EXCLUDES today since reps still mid-shift would always register as missed). Both computed in-memory from already-loaded `toRows` / `adpRows` (INV-13 honored — no extra Sheet reads). Used by the V4·E2 telemetry-strip sparklines on Missed + Pending cells | Subsystem: Server
@@ -5832,7 +5938,7 @@ INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gat
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's shift via `empShiftSchedule_` (roster column-O per-rep override wins, else the per-tz schedule — the v1 per-tz-only limitation was removed in Turn D, INV-149) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Since cycle 9 (L-2) the roster walk skips rows with no EMAIL (sibling parity with `getManagerDashboard`/`getTeammateStatus`/`getEmployeesList`) — a name-only offboarded/placeholder row used to count as a full working shift every day, inflating the confirmed band. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped), and a rep row whose shift STARTS on the previous manager-tz day carries `startsPrevDay` → the client renders "(from prev. day)" (cycle-8 — a bare "9:30 PM – 6:30 AM" on an IST rep's card read as THIS day's evening coverage). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab in the **Manage** module (moved from Time Clock; `enterCoverageView` in `tc/script_manager.html`, tab key unchanged); every server string `esc()`'d. **The PTO overlay read is best-effort, and since cycle-16 F4 its failure is REPORTED: the response carries `ptoUnavailable` (additive), the client renders a `role="alert"` banner naming the bands as an upper bound, and the green all-clear is downgraded — with the overlay empty every rep counts as working, so silence made the planner report full staffing on a day half the team is off.** Pinned by the `coverageBucketHours_` Node tests + the F4 pin + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). SCOPE precision (cycle-10 audit note): the implementation builds its defined-token set from ALL shared HTML files, not the token partial alone — so a token declared only in a tool partial passes (behaviorally-correct CSS; weaker than the single-source rule this entry implies — e.g. the two `--lo-*` loader aliases live in `styles.html`). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
-INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
+INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). **Operator #5 (2026-08-06) added the transfer read to the same set:** a THROWN `getCsrTransferPerRepDaily_` read in `getMyMetricsRange` degrades to `transfer: null` and skips the put (`!transferThrew` joins the guard); a reader-returned `meta.error` (Transfer tab absent — a steady CONFIG state, not transient) also yields null but stays cacheable, per the documented "Transfer trend simply absent" posture. Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
 INV-131 | The `emailFromCallNote` dept-request auto-log is IDEMPOTENT per open `(noteId, deptLabel)` request (A5): before send, `drFindOpenRequest_(noteId, deptLabel)` (bounded tail of `DR_MAX_SCAN` rows, newest-first) reuses an existing OPEN row's `ReqId` as the resolve token and the post-send block SKIPS the append (auditing `resend`), so re-sending the same note to the same dept re-notifies without opening a second request. The lookup is best-effort (any throw → fresh token, never fails the send) and hash-safe (the token rides the CTA appended AFTER the INV-41 check; only the token VALUE changes). The `DR.NOTE_ID` column (col 11) is a back-compat trailing add (`DR_HEADERS` 11→12, the `CN_HEADERS`/`FS_HEADERS` posture — legacy rows read `''` and never dedupe). The resolve-by-token scans (`resolveDeptRequest`/`markDeptRequestResolved_`) stay FULL and don't read `NOTE_ID`. Pinned by `test_deptReq_resendDedupLookup` | Subsystem: Server + Client (Call Notes views)
 
@@ -5899,7 +6005,7 @@ INV-177 | **Dev-ness requires BOTH instance markers — `INSTANCE_LABEL` set AND
 INV-178 | **A section heading is an `<h2>`, not a styled `<div>`.** Heading navigation is the primary way a screen-reader user moves through a dense page; every view rendered exactly ONE heading (its `<h1>`) and used `<div>`/`<span>` for every card label below it, so that navigation stopped at the page title on ~30 surfaces. The three section-heading classes (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) render as `<h2>`. Each class already fully specified its own typography, so the conversion is a UA-margin reset and nothing else (`margin-top: 0` on `.card-label`, which already set `margin-bottom`; `margin: 0` on the other two, which sit in flex head rows). `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not itself one) and `.rail-card` was already `<h4>`. **VERIFY BY MEASURING INSIDE THE REAL PARENT** — a plain-div fixture reports `display: inline -> block` for the two span cases, which is pure artifact, since both live in `display: flex` heads that blockify any child. **Cycle-17 batch ③/④ found a FOURTH class and generalized the scan:** `.tr-section-h` was used on two manager surfaces (EmpDocs team dashboard, Coaching "By employee") as a `<div>` and DEFINED IN NO STYLESHEET — the headings rendered as unstyled body text (INV-184 in reverse: read-but-never-declared). Both are `<h2>`s now with a defined style in the shared training partial. The A13 class set is DERIVED from the markup by naming convention (…card-label/…card-title/…seclabel/…section-h), the regex no longer requires `class` to be the FIRST attribute, and a NEW check requires every derived heading class to be DEFINED in some stylesheet. Verify: the A13 class-scan tripwire + the definition check + `test/visual/a13-measure.mjs` | Subsystem: Client (all view partials)
 INV-179 | **When a convention is worth a tripwire, scan a DERIVED file list (`PARSE_GUARD_PARTIALS`), never a hand-copied one.** Hand-listed scan sets have been found short three times — cycle-9 M-10 (a newly-included JS partial outside every harness list), cycle-11 M-4 (four hand copies of the registry/DOM coverage lists), cycle-13 B5-1 (the a11y pins named six files by hand). The last is the clearest evidence: the moment the list was derived, the SAME rule surfaced eight live defects the human audit had missed. A hand-copied list silently narrows as the codebase grows, and CI stays green while it does. **Cycle 16 made it FOUR and FIVE** (A12's file+class sets, the visual fixture's copied-function set) — and added the limit worth knowing before the next promotion: **a derived scan is only as wide as the thing it derives from.** The clipped Training heading cycle-16's new mobile scenarios found is A2-FAMILY, but no derivation from `:root[data-compact]` will ever reach it, because that file has no compact override to derive from (FIXED in cycle-17 batch ④ by review + its own pin — the lesson stands). Deriving the set removes the *hand-copy* failure, not the *coverage* question. Verify: the `A11Y_SCAN_PARTIALS` derivation plus the existing `PARSE_GUARD_PARTIALS` ↔ `index.html` `include()` coupling check | Subsystem: Test Suite
 
-INV-180 | **Per-queue transfer counts are a COMPONENT of `transferred`, never a partition of it.** The `CSR Transfer Historical Data` H:R block attributes some transfers to a named queue, but a real sheet routes others to destinations with no `A_Q_` column — so summing the queues UNDER-REPORTS the total. `getCsrTransferPerRepDaily_(…, {withQueues:true})` therefore reports `queueTotal` (the attributed subtotal) and `queueUnattributed` (the remainder) alongside the untouched `transferred`, so a consumer can say "9 of 14 attributed" instead of implying the breakdown is complete; `transferred` is NEVER derived from the queue sum. Related: a ZERO or BLANK queue cell is ABSENCE, not a queue with zero traffic (recording it would make every rep appear to staff every queue), and per-queue reading is opt-in because the three pre-Phase-1 callers cache their assembled payloads (INV-85). Verify: the Phase-1 pins (attributed-subtotal-not-substitute, zero/blank skipped, opt-in call-site count — all bite-checked) + `test_metrics_csrTransferQueues_optInAndTransparent` | Subsystem: Server
+INV-180 | **Per-queue transfer counts are a COMPONENT of `transferred`, never a partition of it.** The `CSR Transfer Historical Data` H:R block attributes some transfers to a named queue, but a real sheet routes others to destinations with no `A_Q_` column — so summing the queues UNDER-REPORTS the total. `getCsrTransferPerRepDaily_(…, {withQueues:true})` therefore reports `queueTotal` (the attributed subtotal) and `queueUnattributed` (the remainder) alongside the untouched `transferred`, so a consumer can say "9 of 14 attributed" instead of implying the breakdown is complete; `transferred` is NEVER derived from the queue sum. Related: a ZERO or BLANK queue cell is ABSENCE, not a queue with zero traffic (recording it would make every rep appear to staff every queue), and per-queue reading is opt-in because the opt-out callers cache their assembled payloads (INV-85) — FOUR since the 2026-08-06 operator #5 batch: the three pre-Phase-1 sites (getDashboardMetrics ×2, getMyMetrics's trend) plus getMyMetricsRange's own-transfer aggregate, which is also cached and also wants no queue payload. Verify: the Phase-1 pins (attributed-subtotal-not-substitute, zero/blank skipped, opt-in call-site count — all bite-checked) + `test_metrics_csrTransferQueues_optInAndTransparent` | Subsystem: Server
 
 INV-181 | **A queue→department mapping is a PARTITION, and a group total is a plain SUM only because sub-queues are disjoint from parents.** A queue claimed by two groups is kept only in the FIRST — in both the resolver (`getCdrQueueGroups_`) and the fold (`groupQueueRows_`) — so a queue is counted exactly once. The plain sum is correct ONLY under the operator-confirmed fact (2026-07-31) that sub-queue traffic is NOT already rolled into the parent column; if 8x8 ever changes that, summing reports a group at roughly 1.5× its real volume and `groupQueueRows_` must change with it. A queue in no group lands in a trailing **`Ungrouped`** row that always sorts LAST regardless of volume — it is a gap to close, not a department to compare against. The group `reps` figure is `max()` across members, a deliberate **LOWER BOUND**: the per-queue figure is a COUNT, not a roster, so a true union is not recoverable, which is why the column is labelled "Reps (min)" rather than presented as a total. **The `Ungrouped` row is the operator's ONLY signal that a queue is unmapped, so the two things that surface it are load-bearing (cycle-16 F7/F11).** The client found the bucket by comparing against a bare `'Ungrouped'` literal, so a server-side rename of `CDR_QUEUE_UNGROUPED` would have silently stopped the "N queue(s) are not mapped to a department yet" hint from rendering while the row itself still appeared — the gap would have looked closed. It is now the named `M_QUEUE_UNGROUPED`, pinned against the server constant and listed in `MIRROR_INDEX`; note the shape of that miss, since cycle-15 F4 had pinned this very sentinel in the visual FIXTURE while leaving the shipping client on a literal. And the editor suite's ordering assertion was `_assertTrue(true, 'Ungrouped sorted last')` — a placeholder that cannot fail — beside a department-mapping assertion guarded by `if (salesGroup)`, i.e. skipped in exactly the case where the fold had dropped the group; both are real assertions now. Verify: the four Phase-4 pins (sum-not-max, Ungrouped-last, count-once, sanitize-on-read + mode-only-with-data), the F7 client-mirror pin, plus `test_metrics_getTeamMetrics_queueGrouping`, which asserts group totals sum EXACTLY to queue totals — nothing dropped, nothing double-counted | Subsystem: Server + Client (Metrics views)
 INV-182 | **A shared component gains capability through OPTIONAL, GUARDED hooks — a caller passing none renders byte-identically.** That property is what makes it safe to extend a component with several live callers: `mtRenderTable_` took `rowClass` (cycle 12) and `detailRow`/`rowId` (cycle 14) without touching its existing three callers. The division of ownership is deliberate: the CALLER owns the disclosure `<button>` (so it can sit in whichever column suits that table), while the COMPONENT owns the row id's charset restriction — for the same reason the sort handler does (cycle-11 L-15: entity-escaping is the wrong neutralizer in an attribute the browser decodes before use). Verify: the Phase-2 additive-guard pin (the other callers' rendered output is unchanged) + the DOM disclosure test | Subsystem: Client (shell)
@@ -5938,7 +6044,7 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
-3. Actually OPEN the 37 PNGs. Compare light vs dark and wide vs compact vs
+3. Actually OPEN the 39 PNGs. Compare light vs dark and wide vs compact vs
    mobile for the same scenario; that pairing is what surfaces theme and
    breakpoint defects. **Every rep-facing tool has a mobile scenario since
    cycle-16 Batch 4** — before that the matrix shot five of nine tools at ONE
@@ -5954,6 +6060,9 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    `errorStateHtml_` paths (A12/INV-175) render on camera; a forced-fail RPC
    is NOT a missing fixture. Its first run immediately surfaced a live Low
    (the Reference LANDING pane hangs on a loader when the tree fetch fails).
+   The operator-feedback round (2026-08-06) added the two redesigned status
+   views — `spanish-light-wide` + `deptreq-light-wide` (fixtures cover all
+   four DR tones + an overdue Spanish card) — taking the matrix to **39**.
    **Still uncovered: Manage → Coverage/Punctuality, Sent Forms, EmpDocs
    My Docs, and modal/overlay states** (the matrix shoots tab landings only).
    Every scenario also logs the pre-existing Google-Fonts
@@ -6156,7 +6265,7 @@ S25 | Compact mode + per-tool pop-out (cross-tool) | Subsystem: Client (shell)
     - From the main window on Call Notes, click pop-out again → confirm it FOCUSES the existing Call Notes pop-out (no duplicate); same for Time Clock
     - Resize each pop-out, close + reopen each → confirm each restores its OWN size/position
     - In a pop-out, navigate between views (Call Notes ↔ Time Clock ↔ Manage) and resize → confirm the geometry stays under the tool the window was opened for
-  Expected: Window name is `umsTeamToolsCompact_<tool>` and geometry key `umsPopoutGeom_<tool>`, so one window per tool — Call Notes + Time Clock pop-outs coexist; a repeat click on a tool focuses that tool's window. A legacy `umsPopoutGeom` seeds size only. All tool views render without horizontal overflow; the compact Time Clock hides the world-clock strip + greeting kicker and tightens paddings; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
+  Expected: Window name is `umsTeamToolsCompact_<tool>` and geometry key `umsPopoutGeom_<tool>`, so one window per tool — Call Notes + Time Clock pop-outs coexist; a repeat click on a tool focuses that tool's window. A legacy `umsPopoutGeom` seeds size only. **The Call Notes pop-out additionally SELF-SIZES once on launch** (`cnPopoutFitToTemplate_`, operator feedback 2026-08-06): after the Log view renders, the window resizes so the whole note template (`.cnv-layout`) is visible — verify the save card isn't cut off on first open, on any display scaling; a later manual resize still persists and is restored. All tool views render without horizontal overflow; the compact Time Clock hides the world-clock strip + greeting kicker and tightens paddings; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
 
 S26 | Manager per-rep Call Notes view | Subsystem: Server, Client (Call Notes)
   Steps:
@@ -6302,20 +6411,25 @@ S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem
 S41 | Metrics — My Stats self-view with sparkline | Subsystem: Server, Client (Metrics views)
   Steps:
     - As an enrolled rep, open Metrics → My Stats
-    - Confirm the default date is today; KPI tiles render if CDR data exists for today
-    - Change the date to a prior working day with known CDR activity
-    - Inspect the 30-day trend sparkline below the notes correlation section
-  Expected: KPI tiles show Rung, Answered, Missed, % Answered, Total Talk, Avg Talk for the selected date. Notes Correlation section shows Notes Filed, Calls Answered, Note Coverage with a color-coded badge (green ≥80%, yellow ≥50%, red <50%). Sparkline renders a 30-day % Answered polyline with the most recent data point highlighted. If CDR_SS_ID is not configured, shows a friendly "No call data found" message + notes count.
+    - Confirm the default is the Today preset; the hero + rail render if CDR data exists for today
+    - Click **Custom…** → the Day + Range inputs reveal; change the Day to a prior working day with known CDR activity
+    - Click the 7D preset → confirm the aggregate hero AND that the "Trends · you vs team avg" section STAYS rendered (headed "trailing 30 days ending today") plus Best/Worst day chips under the delta
+    - Inspect the hero sparkline (dashed avg baseline + dashed warn-toned target line) and the delta line's "· target 85%"
+    - Check the rail's **Transfers** row (count + % of calls + sparkline in Today mode)
+    - If coverage < 80% today, click "File them in Call Notes →" in the hint
+  Expected: Hero shows % Answered + delta vs the period daily average + target; rail shows Notes Filed / Answered / Missed / Avg Talk / Transfers / Total Talk. The Custom row is HIDDEN while a preset is active (the [hidden] gotcha) and auto-opens when the selection matches no preset. The trend section renders in EVERY mode (#1 — in range mode it is filled from the Today payload, best-effort). The coverage CTA appears only for TODAY in single-day mode and lands on the Call Notes Log with a toast (the CLK_NAV_HINT mechanism). If CDR_SS_ID is not configured, shows a friendly "No call data found" message + notes count (an unreadable notes Sheet shows an em dash, never 0 — C17-14).
 
 S42 | Metrics — Team Metrics date-range + presets | Subsystem: Server, Client (Metrics views)
   Steps:
     - As a manager, open Metrics → Team Metrics
     - Confirm default is today with From=To; KPI tiles + per-rep table render
-    - Click the "Last 7 Days" preset chip
-    - Confirm From/To inputs update and the table re-fetches with aggregated data
-    - Click "Last 30 Days"; confirm the table includes more data
-    - Set From > To manually in the inputs
-  Expected: Preset chips set both date inputs and trigger a fresh load. Per-rep table shows aggregate totals for the range: Rung, Answered, Missed, % Answered, ATT, Notes, Coverage. Single-day view also shows the 30-day team trend sparkline; multi-day range hides the sparkline. From > To auto-corrects (the input that changed drags the other to match). Non-manager calling `getTeamMetrics` directly gets "Manager access required."
+    - Click the "7D" preset chip; confirm it shows PRESSED and the hidden From/To (behind **Custom…**) update; the table re-fetches with aggregated data
+    - Click "30D"; confirm the table includes more data AND the hero shows a per-day sparkline over the SELECTED range with "vs period daily average" (#8)
+    - Click Custom… and set From > To manually in the inputs
+    - Click a rep's NAME in the table → confirm it opens Team Notes → Per-Rep View for that rep at the range's end date (#9)
+    - Click **Copy table** and paste into a spreadsheet (#10); switch to By queue / By department and copy again
+    - Click "Match diagnostics (N)" below the table (#3)
+  Expected: Preset chips carry aria-pressed state; a manual range un-presses them (Custom shows pressed). Per-rep table shows Rung, Answered, Missed, % Answered (green band starts at the shipped 85 target — a rep at 80–84.9% is AMBER), ATT, Notes, Coverage, Transfers; the rail includes a Transfers row when the Transfer read succeeded. Multi-day ranges SHOW the range sparkline (single-day keeps the 30-day trend + "vs 30-day team average"). From > To auto-corrects. The copied TSV follows the current sort, has plain values only, and exports an unreadable notes Sheet as blank (never 0). The two info-tone reference lists are folded behind the diagnostics disclosure; the likely-name-mismatch warning stays visible above it. Non-manager calling `getTeamMetrics` directly gets "Manager access required."
 
 S43 | Metrics — CDR unavailable fallback | Subsystem: Server, Client (Metrics views)
   Steps:
@@ -6657,7 +6771,9 @@ S74 | Department-request tracking end to end (INV-131/138; the tracker had NO sc
     - As an enrolled rep, send a department email from a saved call note (Save & Compose → pick a department → Preview → Send)
     - Confirm the SENT email body ends with a "✓ Mark this request resolved" link, and that a `DeptRequests` row was appended (PHI-free: dept label + update category + `noteId`, `ToEmail` holding the recipient DOMAIN only)
     - Re-send the SAME note to the SAME department → confirm NO second row is appended and the CTA reuses the first row's token (the audit row is annotated `resend`, INV-131)
-    - Open **Metrics → Dept Requests** as the sending rep → the request appears under "Mine" as open with an elapsed time and an SLA chip
+    - Open **Metrics → Dept Requests** as the sending rep → the request appears under "Mine" as an OPEN-toned (`st-pending` amber) status card with an elapsed time; the KPI strip counts it under Open
+    - **(operator rounds 2–3)** Click the Open / Resolved status chips → the list filters in place (no refetch); with requests to 2+ departments, click a department chip → only that dept's cards remain and the section label reads "N of M"; click "All departments" → the filter clears (the default view shows every dept)
+    - Age a request past its SLA (or hand-set CreatedAt) → its card tones `st-overdue` (red) with "Overdue · Xh SLA"; at ≥75% of the SLA it tones `st-atrisk`
     - Click "Mark resolved" in-app → status flips; re-open and confirm the elapsed figure FROZE at the resolution time and does not keep growing
     - As a receiving-dept member (roster column N lists that dept) → confirm it appears under **Incoming** and can be resolved there
     - As a signed-in internal recipient, click the emailed link instead → `?resolve=` marks it resolved, attributed, and is idempotent on a second click

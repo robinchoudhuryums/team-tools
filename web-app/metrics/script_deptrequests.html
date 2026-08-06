@@ -30,14 +30,72 @@ function enterDeptRequestsView(area) {
     .getDeptRequests();
 }
 
+// Operator feedback 2026-08-06 — "My requests" status filter (All default;
+// chips filter the already-fetched combined list client-side, no refetch).
+var DR_FILTER = 'all';
+var DR_LAST_DATA = null;
+
+// Operator feedback round 3 — a DEPARTMENT filter over every list on the
+// page (My requests, Incoming, the manager team-wide list, and the stats
+// table). MULTI-SELECT: empty = all departments (the default view); each
+// chip toggles its department in/out; the "All departments" chip clears.
+// Client-side over the cached payload, like the status chips — no refetch.
+var DR_DEPT_FILTER = [];
+
+function drSetFilter_(f) {
+  DR_FILTER = (f === 'open' || f === 'resolved') ? f : 'all';
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
+
+function drToggleDeptFilter_(dept) {
+  if (dept === '*') DR_DEPT_FILTER = [];
+  else {
+    var i = DR_DEPT_FILTER.indexOf(dept);
+    if (i >= 0) DR_DEPT_FILTER.splice(i, 1); else DR_DEPT_FILTER.push(dept);
+  }
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
+
+/** A request's department COMPONENTS. A multi-dept send stores the JOINED
+ *  label ("Billing, Shipping" — the INV-138 drSplitDepts_ shape), so the
+ *  filter must match ANY component, never the raw joined string. */
+function drDeptsOf_(item) {
+  return String(item.toDept || '').split(/[,;]/)
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return x; });
+}
+
+function drDeptMatch_(item) {
+  if (!DR_DEPT_FILTER.length) return true;
+
+  return drDeptsOf_(item).some(function (d) { return DR_DEPT_FILTER.indexOf(d) >= 0; });
+}
+
+/** Row tone from status + the existing per-dept SLA machinery (operator
+ *  feedback 2026-08-06): green resolved; amber open on-time; deeper amber
+ *  at-risk (>=75% of SLA); destructive overdue (past SLA — the per-dept
+ *  DR_SLA_TARGETS / 48h default the Admin editor already tunes, so "red after
+ *  X days" is per-department config, not a new constant). */
+function drRowToneCls_(item) {
+  if (item.status === 'resolved') return 'st-resolved';
+  if (item.slaStatus === 'overdue') return 'st-overdue';
+  if (item.slaStatus === 'atrisk') return 'st-atrisk';
+  return 'st-pending';
+}
+
 function drRender_(area, data, errorMsg) {
+  if (data) DR_LAST_DATA = data;
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
+  // Operator feedback 2026-08-06 — this view now mirrors the Spanish Inbox
+  // layout: title + subtitle, a 4-cell telemetry strip, filter chips, and
+  // combined color-coded status CARDS (the shared .sp-task vocabulary in
+  // styles.html) under day-section-label headers.
   const head = compact
     ? cnCompactHeader_('Dept Requests', 'outbox')
-    : '<div class="cn-head"><div>' +
-        '<div class="cn-head-eyebrow">Tracked automatically from the department emails you send</div>' +
-        '<h2 class="cn-head-title">Dept Requests</h2>' +
-      '</div></div>';
+    : '<div class="view-title-row"><div><h1 class="view-title">Dept Requests</h1>' +
+      '<p>Tracked automatically from the department emails you send. Read-only + resolve.</p></div></div>';
   // A12/INV-175: a LOAD FAILURE renders errorStateHtml_ (warn card + glyph +
   // role="alert"), never .dr-empty — that is the same quiet muted card used
   // below for "No tracked requests yet", so a failed RPC read as "you have no
@@ -55,28 +113,77 @@ function drRender_(area, data, errorMsg) {
       ' Showing the most recent requests only — older entries aren’t listed.</div>'
     : '';
 
-  const mine = (data && data.mine) || [];
+  const mineAll = (data && data.mine) || [];
+  const openAll = mineAll.filter(function (r) { return r.status !== 'resolved'; });
+  const resolvedAll = mineAll.filter(function (r) { return r.status === 'resolved'; });
+  const overdueCount = openAll.filter(function (r) { return r.slaStatus === 'overdue'; }).length;
+  const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
+    .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+  const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
+  const strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
+    '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
+    '</div>';
+  // Round 3 — the department chip bar. Universe + counts from EVERY list in
+  // the payload (a chip renders even for a dept only present in the manager
+  // team-wide list). Prune selections for departments that left the payload
+  // so a stale selection can't silently filter everything out.
+  const allItems = mineAll.concat((data && data.incoming) || [], (data && data.allOpen) || []);
+  const deptCounts = {};
+  allItems.forEach(function (r) {
+    drDeptsOf_(r).forEach(function (dn) { deptCounts[dn] = (deptCounts[dn] || 0) + 1; });
+  });
+  const deptNames = Object.keys(deptCounts).sort();
+  DR_DEPT_FILTER = DR_DEPT_FILTER.filter(function (dn) { return deptNames.indexOf(dn) >= 0; });
+  const mkDeptChip = function (key, label) {
+    const on = (key === '*') ? !DR_DEPT_FILTER.length : DR_DEPT_FILTER.indexOf(key) >= 0;
+    return '<button type="button" class="toolbar-tab" data-dr-dept="' + esc(key) + '" aria-pressed="' + on +
+      '" onclick="drToggleDeptFilter_(this.getAttribute(\'data-dr-dept\'))">' + label + '</button>';
+  };
+  const deptBar = deptNames.length > 1
+    ? '<div class="toolbar-tabs" role="group" aria-label="Filter by department" style="margin:0 0 14px">' +
+        mkDeptChip('*', 'All departments') +
+        deptNames.map(function (dn) { return mkDeptChip(dn, esc(dn) + ' · ' + deptCounts[dn]); }).join('') +
+      '</div>'
+    : '';
+  const mine = mineAll.filter(drDeptMatch_).filter(function (r) {
+    if (DR_FILTER === 'open') return r.status !== 'resolved';
+    if (DR_FILTER === 'resolved') return r.status === 'resolved';
+    return true;
+  });
+  const mkChip = function (key, label) {
+    return '<button type="button" class="toolbar-tab" data-dr-filter="' + key + '" aria-pressed="' + (DR_FILTER === key) +
+      '" onclick="drSetFilter_(\'' + key + '\')">' + label + '</button>';
+  };
+  const filterBar = mineAll.length
+    ? '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:0 0 10px">' +
+        mkChip('all', 'All') + mkChip('open', 'Open') + mkChip('resolved', 'Resolved') +
+      '</div>'
+    : '';
   const mineHtml = mine.length
-    ? '<div class="dr-list">' + mine.map(drRequestRowHtml_).join('') + '</div>'
-    : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>';
+    ? '<div class="sp-tasks">' + mine.map(drRequestCardHtml_).join('') + '</div>'
+    : (mineAll.length
+        ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + ' in this list.</div>'
+        : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
+  const mineFiltered = mineAll.filter(drDeptMatch_);
+  const mineCount = DR_DEPT_FILTER.length ? (mineFiltered.length + ' of ' + mineAll.length) : String(mineAll.length);
   const mineSection =
-    '<div class="dr-section"><div class="dr-section-title">My requests' +
-    drCapNoteHtml_(mine.length, data && data.mineTotal) + '</div>' + mineHtml + '</div>';
+    '<div class="day-section-label" style="margin:14px 0 8px">My requests · ' + mineCount +
+    drCapNoteHtml_(mineAll.length, data && data.mineTotal) + '</div>' + filterBar + mineHtml;
 
   // v2 Incoming inbox — open requests addressed to a department the rep staffs
   // (roster column N → data.myDepts). Members can resolve in-app here.
   let incomingSection = '';
   if (data && data.myDepts && data.myDepts.length) {
-    const inc = data.incoming || [];
+    const inc = (data.incoming || []).filter(drDeptMatch_);
     const incHtml = inc.length
-      ? '<div class="dr-list">' + inc.map(drRequestRowHtml_).join('') + '</div>'
+      ? '<div class="sp-tasks">' + inc.map(drRequestCardHtml_).join('') + '</div>'
       : '<div class="dr-empty">No open requests to your department right now.</div>';
     incomingSection =
-      '<div class="dr-section"><div class="dr-section-title">Incoming · ' + esc(data.myDepts.join(', ')) +
-      drCapNoteHtml_(inc.length, data.incomingTotal) + '</div>' +
-      '<div class="dr-note">' + icon('outbox', 13) +
-        ' Open requests addressed to your department. Mark one resolved when it’s handled.</div>' +
-      incHtml + '</div>';
+      '<div class="day-section-label" style="margin:14px 0 8px">Incoming · ' + esc(data.myDepts.join(', ')) + ' · ' + inc.length +
+      drCapNoteHtml_(inc.length, data.incomingTotal) + '</div>' + incHtml;
   }
 
   let mgrSection = '';
@@ -84,7 +191,7 @@ function drRender_(area, data, errorMsg) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + trunc + incomingSection + mineSection + mgrSection;
+  area.innerHTML = head + intro + trunc + strip + deptBar + incomingSection + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -98,44 +205,46 @@ function drCapNoteHtml_(shown, total) {
   return ' <span class="dr-cap-note">showing ' + shown + ' of ' + t + '</span>';
 }
 
-function drStatusChip_(item) {
+/** The head-age slot: tone-colored status text (the Spanish card's colored
+ *  age). Resolved → green "resolved in Xh"; open → Open · elapsed, prefixed
+ *  At risk / Overdue (+ the SLA hours) when the SLA machinery says so. */
+function drCardStatusHtml_(item) {
   if (item.status === 'resolved') {
-    const by = item.resolvedBy ? ' · ' + esc(item.resolvedBy) : '';
-    return '<span class="dr-chip dr-chip-resolved">' + icon('check', 12) + ' Resolved' +
-      (item.elapsedMin != null ? ' in ' + drFmtMin_(item.elapsedMin) : '') + by + '</span>';
+    return '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' +
+      (item.elapsedMin != null ? esc(drFmtMin_(item.elapsedMin)) : 'resolved') + '</span>';
   }
-  return '<span class="dr-chip dr-chip-open">Open' +
-    (item.elapsedMin != null ? ' · ' + drFmtMin_(item.elapsedMin) + ' ago' : '') + '</span>';
+  const elapsed = item.elapsedMin != null ? drFmtMin_(item.elapsedMin) + ' ago' : '';
+  const sla = item.slaHours ? ' · ' + item.slaHours + 'h SLA' : '';
+  if (item.slaStatus === 'overdue') {
+    return '<span class="sp-task-age" style="color:var(--danger-deep)">' + esc('Overdue' + sla) + '</span>';
+  }
+  if (item.slaStatus === 'atrisk') {
+    return '<span class="sp-task-age" style="color:var(--warning-deep)">' + esc('At risk · ' + elapsed) + '</span>';
+  }
+  return '<span class="sp-task-age" style="color:var(--warning-deep)">' + esc('Open · ' + elapsed) + '</span>';
 }
 
-// v2 SLA badge — only on OPEN requests past 75% of their SLA (ontime is silent,
-// resolved rows show their resolution time instead).
-function drSlaChip_(item) {
-  if (item.status === 'resolved' || !item.slaStatus || item.slaStatus === 'ontime') return '';
-  const overdue = item.slaStatus === 'overdue';
-  const sla = item.slaHours ? ' · ' + item.slaHours + 'h' : '';
-  return '<span class="dr-chip ' + (overdue ? 'dr-sla-overdue' : 'dr-sla-atrisk') + '">' +
-    esc((overdue ? 'Overdue' : 'At risk') + sla) + '</span>';
-}
-
-function drRequestRowHtml_(item) {
-  const label = item.label ? '<span class="dr-tag">' + esc(item.label) + '</span>' : '';
-  const resolveBtn = item.status !== 'resolved'
-    ? '<button type="button" class="dr-resolve-btn" data-req="' + esc(item.requestId) +
+function drRequestCardHtml_(item) {
+  const resolved = item.status === 'resolved';
+  const resolveBtn = !resolved
+    ? '<button type="button" class="sp-more sp-resolve" data-req="' + esc(item.requestId) +
         '" onclick="drResolveClick_(this)">' + icon('check', 12) + ' Mark resolved</button>'
     : '';
-  return '<div class="dr-row js-anim">' +
-    '<div class="dr-row-main">' +
-      '<div class="dr-row-dept">' + esc(item.toDept || '—') + label + '</div>' +
-      '<div class="dr-row-meta">' + esc(item.createdAt || '') +
-        (item.byName ? ' · ' + esc(item.byName) : '') + '</div>' +
-    '</div>' +
-    '<div class="dr-row-right">' + drSlaChip_(item) + drStatusChip_(item) + resolveBtn + '</div>' +
+  const body = esc(item.createdAt || '') + (item.byName ? ' · ' + esc(item.byName) : '') +
+    (resolved && item.resolvedBy ? '\nResolved by ' + esc(item.resolvedBy) : '');
+  return '<div class="sp-task js-anim ' + drRowToneCls_(item) + '">' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(item.toDept || '—') + '</span>' +
+      drCardStatusHtml_(item) + '</div>' +
+    '<div class="sp-task-subj">' + esc(item.label || 'Department request') + '</div>' +
+    '<div class="sp-task-body">' + body + '</div>' +
+    (resolveBtn ? '<div class="sp-task-actions">' + resolveBtn + '</div>' : '') +
   '</div>';
 }
 
 function drManagerSectionHtml_(data) {
-  const stats = data.deptStats || [];
+  const stats = (data.deptStats || []).filter(function (sRow) {
+    return !DR_DEPT_FILTER.length || DR_DEPT_FILTER.indexOf(sRow.dept) >= 0;
+  });
   const statRows = stats.map(function (s) {
     const overdueCell = s.overdueOpen
       ? '<td class="dr-num" style="color:var(--danger-deep);font-weight:700">' + s.overdueOpen + '</td>'
@@ -156,18 +265,17 @@ function drManagerSectionHtml_(data) {
         '<tbody>' + statRows + '</tbody></table>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
 
-  const open = data.allOpen || [];
+  const openAllTeam = data.allOpen || [];
+  const open = openAllTeam.filter(drDeptMatch_);
+  const openCount = DR_DEPT_FILTER.length ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
-    ? '<div class="dr-list">' + open.map(drRequestRowHtml_).join('') + '</div>'
-    : '<div class="dr-empty">No open requests across the team.</div>';
+    ? '<div class="sp-tasks">' + open.map(drRequestCardHtml_).join('') + '</div>'
+    : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
-  return '<div class="dr-section dr-mgr"><div class="dr-section-title">Resolution time by department</div>' +
-      statTable +
-    '</div>' +
-    '<div class="dr-section"><div class="dr-section-title">Oldest open (team-wide)' +
-      drCapNoteHtml_(open.length, data.allOpenTotal) + '</div>' +
-      openHtml +
-    '</div>';
+  return '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +
+    '<div class="dr-section dr-mgr">' + statTable + '</div>' +
+    '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + openCount +
+      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml;
 }
 
 /** In-app resolve (the manual path): the sender or a manager marks an open
@@ -217,35 +325,19 @@ function drFmtMin_(min) {
 </script>
 
 <style>
+  /* The list rows moved to the SHARED .sp-task status-card vocabulary in
+     styles.html (operator feedback 2026-08-06 — this view mirrors the Spanish
+     Inbox). Only the DR-specific pieces remain below: the stats-table card,
+     the SLA tag, notes/empties, and the table itself. */
   .dr-section { background: var(--paper-card); border: 1px solid var(--line);
     border-radius: var(--radius-md); padding: 16px; margin-bottom: 14px; }
-  .dr-section-title { font-weight: 700; font-size: 13px; color: var(--ink); margin-bottom: 12px; }
   /* F18 — the "showing N of M" suffix on a payload-capped list. */
-  .dr-cap-note { font-weight: 400; font-size: 11px; color: var(--muted-2); }
+  .dr-cap-note { font-weight: 400; font-size: 11px; color: var(--muted-2); text-transform: none; letter-spacing: 0; }
   .dr-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--muted);
     background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md);
     padding: 10px 12px; margin-bottom: 14px; }
-  .dr-list { display: flex; flex-direction: column; gap: 8px; }
-  .dr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
-    background: var(--paper-card); }
-  .dr-row-main { min-width: 0; }
-  .dr-row-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-  .dr-row-dept { font-weight: 600; font-size: 13px; color: var(--ink); }
-  .dr-row-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .dr-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; font-size: 10px;
     font-weight: 600; color: var(--muted); background: var(--paper-2); border-radius: 999px; }
-  .dr-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-    padding: 3px 9px; font-size: 11px; font-weight: 600; border-radius: 999px; }
-  .dr-chip-open { color: var(--warn); background: var(--warn-soft); }
-  .dr-chip-resolved { color: var(--success-deep); background: var(--accent-soft); }
-  .dr-sla-atrisk { color: var(--warning-deep); background: var(--warn-soft); }
-  .dr-sla-overdue { color: var(--danger-deep); background: var(--danger-soft); }
-  .dr-resolve-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
-    font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
-    border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
-  .dr-resolve-btn:hover { filter: brightness(0.97); }
-  .dr-resolve-btn.is-busy { opacity: 0.6; cursor: default; }
   .dr-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--muted);
     background: var(--paper-card); border: 1px dashed var(--line); border-radius: var(--radius-md); }
   .dr-table { width: 100%; border-collapse: collapse; font-size: 12px; }

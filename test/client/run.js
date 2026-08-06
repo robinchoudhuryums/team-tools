@@ -4665,8 +4665,11 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
       fn + ' nulls/flags coverage when the read failed');
   });
   // NONE of the three result caches may pin a failed note read as fresh (L-3).
-  assert.ok(/!trendFailed && !noteRes\.unavailable/.test(extractRawFunction('Code.js', 'getMyMetricsRange')),
-    'a failed note read is the same class of partial as a failed trend read — not cacheable');
+  // Operator #5 widened the guard: a THROWN transfer read is the same class of
+  // partial (a reader-returned meta.error — tab absent — is a steady config
+  // state and stays cacheable per the documented "trend simply absent" posture).
+  assert.ok(/!trendFailed && !transferThrew && !noteRes\.unavailable/.test(extractRawFunction('Code.js', 'getMyMetricsRange')),
+    'a failed note/trend/transfer read is a partial round — not cacheable');
   [['getMyMetrics', /useMetricsCache && !noteRes\.unavailable/],
    ['getDashboardMetrics', /useCache && !noteRes\.unavailable/]].forEach(([fn, re]) => {
     assert.ok(re.test(extractRawFunction('Code.js', fn)),
@@ -5711,10 +5714,12 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   // Every call site, excluding the definition itself.
   const calls = (src.match(/getCsrTransferPerRepDaily_\((?!from, to, rosterNames, opts)/g) || []).length;
   const optedIn = (src.match(/getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g) || []).length;
-  // THE load-bearing number: the pre-Phase-1 callers cache their assembled
-  // payloads, so this must stay 3 no matter how many new callers opt in.
-  assert.strictEqual(calls - optedIn, 3,
-    'exactly the 3 pre-Phase-1 callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend)');
+  // THE load-bearing number: the no-queues callers cache their assembled
+  // payloads, so this set only grows deliberately. Operator #5 (2026-08-06)
+  // added the 4th — getMyMetricsRange's own transfer aggregate, which is
+  // ALSO cached (metrics_range_v1) and also wants no per-queue payload.
+  assert.strictEqual(calls - optedIn, 4,
+    'exactly the 4 opt-out callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend + getMyMetricsRange #5)');
   // Name the opted-in callers rather than counting them — a bare count has to
   // be edited every time the feature grows (Phase 2 tripped it immediately),
   // which trains the next author to bump the number instead of thinking. This
@@ -6824,8 +6829,8 @@ test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab r
   });
   const m = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
   assert.ok(/function spanishTruncNote_\(/.test(m), 'the client has the shared truncation note');
-  assert.ok((m.match(/spanishTruncNote_\(d\)/g) || []).length >= 4,
-    'stats + pending + resolved renders all consume it');
+  assert.ok((m.match(/spanishTruncNote_\((d|pd|rd)\)/g) || []).length >= 5,
+    'the stats note + both combined-list sections consume it');
 });
 
 test('batch-6: the three manager fan-ins carry same-view seq tokens (INV-156)', () => {
@@ -6911,6 +6916,258 @@ test('batch-7: the getAutomationHealth fixture mirrors the server return keys (I
     assert.ok(new RegExp('(^|[\\s{,])' + k + ':').test(fxRegion),
       'fixture carries the server key `' + k + '` — the Admin scenario cannot render a shape the server does not ship');
   });
+});
+
+
+// ---------------------------------------------------------------------------
+// Operator-feedback 2026-08-06 pins — the pop-out fit-to-template pass and the
+// combined color-coded Spanish / Dept Requests status views.
+console.log('\noperator feedback 2026-08-06 pins');
+
+test('pop-out fit: compact-only, popup-only, once, clamped, wired into the Log render', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const body = c17strip(c17fnBody(cn, 'cnPopoutFitToTemplate_'));
+  assert.ok(/COMPACT_MODE/.test(body), 'fit runs only in compact mode');
+  assert.ok(/umsTeamToolsCompact_/.test(body), 'fit runs only in the named pop-out window (resizeTo is popup-only)');
+  assert.ok(/__cnPopoutFitDone/.test(body), 'fit runs once per window session');
+  assert.ok(/screen\.availHeight/.test(body) && /screen\.availWidth/.test(body), 'target size is clamped to the screen');
+  assert.ok(/resizeTo\(/.test(body), 'the pass actually resizes');
+  assert.ok(/\.cnv-layout/.test(body), 'the fit measures the TEMPLATE block (form + rail), not the whole page');
+  const stripped = c17strip(cn);
+  assert.ok(/cnRenderStack_\(\);\s*cnPopoutFitToTemplate_\(\);/.test(stripped),
+    'the Log render path invokes the fit after the frame is built');
+});
+
+test('Spanish combined view: fan-in with guarded state writes, tones defined + wired', () => {
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const loader = c17strip(c17fnBody(m, 'spanishLoadList_'));
+  assert.ok(/getSpanishInboxPending/.test(loader) && /getSpanishInboxResolved/.test(loader),
+    'the combined loader fetches BOTH lists');
+  assert.ok((loader.match(/seq !== SPANISH_STATE\.listSeq/g) || []).length >= 4,
+    'every handler guards the STATE WRITE with the seq token (INV-156 fan-in)');
+  const ms = c17strip(m);
+  assert.ok(/SPANISH_OVERDUE_HOURS = 24/.test(ms), 'the overdue threshold is a named constant');
+  const tone = c17strip(c17fnBody(m, 'spanishPendingToneCls_'));
+  assert.ok(/>= SPANISH_OVERDUE_HOURS/.test(tone) && /st-overdue/.test(tone) && /st-pending/.test(tone),
+    'pending tone flips to overdue at the threshold');
+  assert.ok(/st-resolved/.test(c17strip(c17fnBody(m, 'spanishResolvedCard_'))), 'resolved cards carry the green tone');
+  // The INV-178-reverse check: a tone class USED must also be DEFINED — in
+  // styles.html since the vocabulary became SHARED with Dept Requests.
+  const sharedCss = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  ['st-resolved', 'st-pending', 'st-atrisk', 'st-overdue'].forEach((cls) => {
+    assert.ok(new RegExp('\\.sp-task\\.' + cls + '\\s*\\{').test(sharedCss),
+      '.sp-task.' + cls + ' is defined in the SHARED stylesheet');
+  });
+});
+
+test('Dept Requests: Spanish-vocabulary cards, SLA-driven tones, filter chips refetch-free', () => {
+  const d = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const tone = c17strip(c17fnBody(d, 'drRowToneCls_'));
+  assert.ok(/st-resolved/.test(tone) && /st-overdue/.test(tone) && /st-atrisk/.test(tone) && /st-pending/.test(tone),
+    'the tone map covers resolved / overdue / at-risk / open');
+  assert.ok(/slaStatus/.test(tone), 'open tones ride the existing per-dept SLA machinery, not a new constant');
+  // Operator feedback 2026-08-06 round 2 — the view renders the SHARED
+  // .sp-task status cards (the Spanish Inbox vocabulary), not bespoke rows.
+  const card = c17strip(c17fnBody(d, 'drRequestCardHtml_'));
+  assert.ok(/sp-task /.test(card) && /drRowToneCls_\(item\)/.test(card),
+    'every request renders as a shared status card carrying its tone class');
+  assert.ok(/sp-task-head/.test(card) && /sp-task-subj/.test(card) && /sp-task-actions|resolveBtn/.test(card),
+    'the card uses the shared head/subject/actions slots');
+  assert.ok(!/dr-row/.test(c17strip(d)), 'the bespoke .dr-row shape stays retired (INV-184)');
+  assert.ok(/class="telemetry"/.test(d), 'the view carries the Spanish-style KPI telemetry strip');
+  const setF = c17strip(c17fnBody(d, 'drSetFilter_'));
+  assert.ok(/DR_LAST_DATA/.test(setF) && !/google\.script\.run/.test(setF),
+    'a filter chip re-renders from the cached payload — never a refetch');
+  assert.ok(/data-dr-filter/.test(d) && /aria-pressed/.test(d), 'the chips carry pressed state (A11)');
+  // Round 3 — the DEPARTMENT filter: multi-select, empty = all (the default
+  // view), refetch-free, and matching a multi-dept send by COMPONENT (the
+  // INV-138 drSplitDepts_ shape — never the raw joined "Billing, Shipping").
+  const dtog = c17strip(c17fnBody(d, 'drToggleDeptFilter_'));
+  assert.ok(/DR_DEPT_FILTER = \[\]/.test(dtog) && /splice/.test(dtog) && /push/.test(dtog),
+    'dept chips toggle a multi-select set; the All chip clears it');
+  assert.ok(!/google\.script\.run/.test(dtog), 'a dept chip never refetches');
+  const dmatch = c17strip(c17fnBody(d, 'drDeptMatch_'));
+  assert.ok(/if \(!DR_DEPT_FILTER\.length\) return true/.test(dmatch),
+    'an empty selection shows ALL departments (the default view)');
+  assert.ok(/drDeptsOf_/.test(dmatch), 'matching is per split component');
+  assert.ok(/split\(\/\[,;\]\//.test(c17strip(c17fnBody(d, 'drDeptsOf_'))),
+    'components split on the drSplitDepts_ delimiters');
+  assert.ok(/data-dr-dept/.test(d), 'the dept chips render');
+  ['drDeptMatch_'].forEach(() => {});
+  // Every card list consumes the filter (mine + incoming + team-wide + stats).
+  assert.ok((c17strip(d).match(/filter\(drDeptMatch_\)/g) || []).length >= 3,
+    'mine, incoming, and the team-wide list all pass through the dept filter');
+});
+
+// ── Operator metrics improvements #1–#10 (2026-08-06) ───────────────────────
+console.log('\nmetrics — operator improvements #1–#10');
+
+// Comment-stripped (INV-188 — several of these fixes have explanatory comments
+// that quote the shapes they replaced).
+const mopStrip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+const mopPartial = mopStrip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+const mopCode = mopStrip(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+const mopFn = (src, name, nextName) => {
+  const a = src.indexOf('function ' + name + '(');
+  assert.ok(a >= 0, name + ' exists');
+  const b = nextName ? src.indexOf('function ' + nextName + '(', a) : -1;
+  return b > a ? src.slice(a, b) : src.slice(a, a + 4000);
+};
+
+test('#1: range mode fills the you-vs-team section instead of dropping it', () => {
+  assert.ok(/id="m-my-trends"/.test(mopPartial), 'range render emits the placeholder');
+  const fill = mopFn(mopPartial, 'mFillRangeTrends_', 'mBestWorstDays_');
+  assert.ok(/viewCacheFresh_/.test(fill), 'cache-first — the Today preset already warmed the SWR cache');
+  assert.ok(/seq !== M_STATE\.mySeq/.test(fill), 'a stale background response is dropped (INV-156)');
+  assert.ok(/getMyMetrics\(today\)/.test(fill), 'the fill source is the single-day Today payload');
+  assert.ok(/rangeMode: true/.test(fill), 'the section heading names its own (trailing-30d) window');
+});
+
+test('#2: unified time controls — pressed-state presets + Custom disclosure; the old chip class is retired', () => {
+  assert.ok(!/m-preset-chip/.test(mopPartial), '.m-preset-chip is fully retired (INV-184 — no dead selectors, no zombie callers)');
+  assert.ok(/function mTeamActivePreset_/.test(mopPartial), 'Team presets carry an active state (they had none)');
+  assert.ok((mopPartial.match(/data-team-preset/g) || []).length >= 2, 'team chips are stateful (aria-pressed synced by key)');
+  const chip = mopFn(mopPartial, 'mCustomChip_', 'mCustomRowOpen_');
+  assert.ok(/aria-expanded/.test(chip) && /aria-controls/.test(chip) && /aria-pressed/.test(chip),
+    'the Custom chip is a proper disclosure AND a state chip (INV-174)');
+  const tog = mopFn(mopPartial, 'mToggleCustom_', 'mLoadMyStats_');
+  assert.ok(/setAttribute\('aria-expanded'/.test(tog), 'the toggle keeps aria-expanded in step');
+  // Both custom rows exist and render hidden-by-default markup.
+  assert.ok(/id="m-my-custom"/.test(mopPartial) && /id="m-team-custom"/.test(mopPartial), 'both tabs carry the Custom row');
+  // MEASURED on the first shoot: `.m-controls { display:flex }` out-specifies
+  // the UA's `[hidden] { display:none }`, so without this rule the rows render
+  // visible with a preset active — the hidden attribute alone is not enough.
+  assert.ok(/\.m-custom-row\[hidden\]\s*\{\s*display:\s*none/.test(mopPartial),
+    'the [hidden] attribute actually hides the flex row (specificity fix)');
+});
+
+test('#3: the two permanently-non-empty CDR reference lists fold behind a disclosure; the actionable warning stays out', () => {
+  const render = mopFn(mopPartial, 'mRenderTeamMetrics_', 'mToggleDiag_');
+  const likely = render.indexOf('likelyMismatches');
+  const diag = render.indexOf('var diagBits');
+  assert.ok(likely >= 0 && diag > likely, 'likelyMismatches renders BEFORE (outside) the disclosure — it is the signal (INV-186)');
+  assert.ok(/diagBits \+=/.test(render), 'the reference lists assemble into the disclosure body');
+  assert.ok(render.indexOf('unmatchedAgents', diag) > 0 && render.indexOf('rosterWithNoCdr', diag) > 0,
+    'both info lists live inside the folded body');
+  const dtog = mopFn(mopPartial, 'mToggleDiag_', 'mRepDrill_');
+  assert.ok(/setAttribute\('aria-expanded'/.test(dtog) && /M_STATE\.diagOpen/.test(dtog),
+    'aria kept in step + state survives sort re-renders');
+});
+
+test('#4: the alert threshold is server-shipped (never client-mirrored) and drives banding + the target line', () => {
+  const ships = (mopCode.match(/alertThreshold: CONFIG\.CDR_ALERT_THRESHOLD \|\| 85/g) || []).length;
+  assert.strictEqual(ships, 3, 'all three metrics endpoints ship CONFIG.CDR_ALERT_THRESHOLD');
+  // No client mirror: the partial must not hardcode 85 as a fallback — absent
+  // field (a ≤5-min stale cached payload) degrades to the LEGACY behavior.
+  assert.ok(!/alertThreshold \|\| 85|thr \|\| 85/.test(mopPartial), 'the client never invents its own 85');
+  // Behavioral: banding follows the shipped threshold; legacy 80 when absent.
+  const mPctClass_ = loadFunction(sb, 'metrics/script_metrics.html', 'mPctClass_');
+  assert.strictEqual(mPctClass_(84), 'm-pct-high', 'absent threshold → legacy 80 band (old cached payloads)');
+  assert.strictEqual(mPctClass_(84, 85), 'm-pct-mid', 'below the shipped threshold is NOT green');
+  assert.strictEqual(mPctClass_(85, 85), 'm-pct-high', 'at threshold is green');
+  assert.strictEqual(mPctClass_(49, 85), 'm-pct-low', 'mid band floor stays 50');
+  assert.strictEqual(mPctClass_(null, 85), '', 'null stays unclassed');
+  // Behavioral: the spark target line renders only when passed, and the
+  // y-domain EXTENDS to include a target above every data point (otherwise
+  // the line lands outside the viewBox and silently vanishes).
+  const mBuildHeroSparkSvg_ = loadFunction(sb, 'metrics/script_metrics.html', 'mBuildHeroSparkSvg_');
+  const trend = [{ date: 'a', pctAnswered: 40 }, { date: 'b', pctAnswered: 50 }];
+  const withT = mBuildHeroSparkSvg_(trend, 'pctAnswered', null, 100);
+  assert.ok(/m-spark-target/.test(withT), 'target line renders when a threshold is passed');
+  assert.ok(/y1="4\.0"/.test(withT), 'the domain includes the target (100 maps to the top pad, not off-canvas)');
+  assert.ok(!/m-spark-target/.test(mBuildHeroSparkSvg_(trend, 'pctAnswered', null, null)),
+    'no threshold → no line (old server / stale cache)');
+});
+
+test('#5: transfer rail rows are null-guarded — absence is not zero (INV-180)', () => {
+  assert.ok(/if \(data\.transfer != null\)/.test(mopPartial), 'My Stats renders the row only when the scalar exists');
+  assert.ok(/data\.transferMeta && data\.transferMeta\.available && t\.transferred != null/.test(mopPartial),
+    'Team renders it only when the Transfer read SUCCEEDED (INV-175 — a failed read is not "0 transfers")');
+  // Server side: the team pct carries its own denominator or is null (INV-129).
+  assert.ok(/transferMeta\.available && teamTotals\.transferCalls > 0/.test(mopCode),
+    'teamTotals.transferPct is null without its own-sheet denominator');
+  // getMyMetricsRange reads the transfer aggregate best-effort (thrown → null
+  // + uncacheable; reader meta.error → absent-but-cacheable steady state).
+  const rangeFn = mopStrip(extractRawFunction('Code.js', 'getMyMetricsRange'));
+  assert.ok(/getCsrTransferPerRepDaily_\(from, to, \[emp\.name\]\)/.test(rangeFn), 'range endpoint reads own transfer aggregate');
+  assert.ok(/transferThrew = true/.test(rangeFn), 'a thrown transfer read marks the round partial');
+});
+
+test('#6: the coverage CTA is gated to single-day TODAY and rides the CLK_NAV_HINT mechanism', () => {
+  assert.ok(/!isRange && data\.date === mTodayIso_\(\) && missing > 0/.test(mopPartial),
+    'CTA only where the CN Log view (today-only) can actually show the work');
+  const cta = mopFn(mopPartial, 'mCoverageCta_', 'mFillRangeTrends_');
+  assert.ok(/fileMissingCalls_/.test(cta), 'reuses the Clock strip mechanism (CLK_NAV_HINT), not a bare nav');
+  assert.ok(/class="m-cta-link"/.test(mopPartial) && /<button type="button" class="m-cta-link"/.test(mopPartial),
+    'the CTA is a real button with link treatment (INV-173 / V-12)');
+});
+
+test('#7: best/worst day helper — behavioral', () => {
+  const mBestWorstDays_ = loadFunction(sb, 'metrics/script_metrics.html', 'mBestWorstDays_');
+  const mDowShort_ = loadFunction(sb, 'metrics/script_metrics.html', 'mDowShort_');
+  const t = [
+    { date: '2026-08-01', pctAnswered: 78.4 },
+    { date: '2026-08-02', pctAnswered: null },      // no-data day skipped
+    { date: '2026-08-03', pctAnswered: 96.2 },
+    { date: '2026-08-04', pctAnswered: 96.2 },      // tie — first occurrence wins
+  ];
+  const bw = mBestWorstDays_(t);
+  assert.strictEqual(bw.best.date, '2026-08-03', 'best found; tie keeps the FIRST occurrence (stable)');
+  assert.strictEqual(bw.worst.date, '2026-08-01', 'worst found');
+  assert.strictEqual(mBestWorstDays_([{ date: 'x', pctAnswered: 90 }]), null, 'a single data day names no outliers');
+  assert.strictEqual(mBestWorstDays_([{ date: 'x', pctAnswered: null }, { date: 'y' }]), null, 'all-null → null');
+  assert.strictEqual(mDowShort_('2026-08-03'), 'Mon', 'weekday derived UTC-noon-anchored (DST-safe)');
+});
+
+test('#8: multi-day team trend is span-capped + best-effort; the delta names its comparison', () => {
+  const teamFn = mopStrip(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/rangeSpan >= 2 && rangeSpan <= 92/.test(teamFn),
+    'the extra per-day scan is span-capped (getTeamMetrics has no overall cap)');
+  // The range-trend read is inside its own try/catch (INV-67 posture): a
+  // throw degrades to no sparkline, never a failed team table.
+  const elseIdx = teamFn.indexOf('rangeSpan');
+  assert.ok(teamFn.slice(elseIdx - 400, elseIdx + 900).indexOf('try {') >= 0 &&
+            /catch \(eRt\) \{ trendData = null; \}/.test(teamFn),
+    'a failed range-trend read leaves trend null (pre-#8 shape)');
+  assert.ok(/period daily average/.test(mopPartial) && /30-day team average/.test(mopPartial),
+    'the client delta names which average a multi-day vs single-day trend compares against');
+});
+
+test('#9: rep drill-through is a real button riding data-* attributes', () => {
+  assert.ok(/<button type="button" class="m-rep-link" data-rep="/.test(mopPartial),
+    'the rep cell is a <button> (INV-173), ids in data-* (the audit-panel discipline)');
+  const drill = mopFn(mopPartial, 'mRepDrill_', 'mTeamTableTsv_');
+  assert.ok(/getAttribute\('data-rep'\)/.test(drill) && /cnAuditDrillToNote_/.test(drill),
+    'the handler reads dataset attributes and reuses the existing drill path');
+});
+
+test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavioral)', () => {
+  loadFunction(sb, 'metrics/script_metrics.html', 'mSortReps_');   // dependency
+  const mTeamTableTsv_ = loadFunction(sb, 'metrics/script_metrics.html', 'mTeamTableTsv_');
+  const data = {
+    reps: [
+      { repName: 'Nina Patel', totalRung: 52, totalAnswered: 44, totalMissed: 8, pctAnswered: 84.6,
+        attSeconds: 238, attFormatted: '0:03:58', noteCount: 41, noteCoverage: 93, transferred: 21 },
+      { repName: 'Leo Kim', totalRung: 29, totalAnswered: 27, totalMissed: 2, pctAnswered: 93.1,
+        attSeconds: 260, attFormatted: '0:04:20', noteCount: 0, noteCountUnavailable: true, noteCoverage: null, transferred: 3 },
+    ],
+    queueRows: [{ queue: 'A_Q_Sales', transferred: 6, reps: 2 }],
+    groupRows: [{ group: 'Sales', transferred: 6, queues: ['A_Q_Sales'], reps: 2 }],
+  };
+  const tsv = mTeamTableTsv_(data, 'combined', { key: 'pctAnswered', dir: 'desc' });
+  const lines = tsv.split('\n');
+  assert.strictEqual(lines[0], ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Coverage', 'Transfers'].join('\t'));
+  assert.ok(lines[1].indexOf('Leo Kim') === 0, 'rows follow the CURRENT sort (93.1 desc first)');
+  assert.strictEqual(lines[1].split('\t')[6], '', 'an unreadable notes Sheet exports as BLANK, never 0 (INV-187)');
+  assert.strictEqual(lines[1].split('\t')[7], '', 'null coverage exports blank');
+  assert.ok(tsv.indexOf('<') === -1, 'plain values only — never HTML');
+  const qTsv = mTeamTableTsv_(data, 'queue', null);
+  assert.strictEqual(qTsv.split('\n')[0], 'Queue\tTransferred\tReps');
+  const gTsv = mTeamTableTsv_(data, 'dept', null);
+  assert.strictEqual(gTsv.split('\n')[1], 'Sales\t6\t1\t2', 'dept scope exports the member-queue COUNT');
+  // No Transfers column when the range produced no queue rows.
+  const noQ = mTeamTableTsv_({ reps: data.reps, queueRows: [] }, 'combined', null);
+  assert.ok(noQ.split('\n')[0].indexOf('Transfers') === -1, 'Transfers column only when transfer data exists');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

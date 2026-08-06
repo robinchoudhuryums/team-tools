@@ -14847,6 +14847,19 @@ function getMyMetrics(date) {
       trend: trend,
       series: series,
       kpiMinCohort: MIN_COHORT,
+      // #5 (operator 2026-08-06) — own transfer scalar for the day (the series
+      // carries only the pct; the rail row wants the count too). Null when the
+      // Transfer sheet has no row for this rep+date — absence, not zero
+      // (INV-180), so the client renders no row rather than a confident 0.
+      transfer: (trPRD[date] && trPRD[date][emp.name])
+        ? { transferred: trPRD[date][emp.name].transferred,
+            transferPct: trPRD[date][emp.name].transferPct }
+        : null,
+      // #4 — the sidebar-alert threshold, shipped so the client draws the
+      // target line + bands the table off the SAME number. No client mirror:
+      // the client degrades to its old behavior when the field is absent
+      // (a ≤5-min stale cached payload from before this deploy).
+      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,
     };
     // F5: a failed notes read must not be cached as fresh — the Clock coverage
     // strip reads this endpoint, so a 5-minute-pinned degraded result would
@@ -14920,6 +14933,21 @@ function getMyMetricsRange(from, to) {
       }
     } catch (e) { trend = []; trendFailed = true; }
 
+    // #5 (operator 2026-08-06) — own transfer aggregate over the range.
+    // Best-effort like the trend read above: a THROWN read degrades to null
+    // for this response and skips the cache put (the L-3 partial-failure
+    // rule); a reader-returned meta.error (Transfer tab absent — a steady
+    // config state, not transient) also yields null but still caches, per
+    // the documented "missing tab → the Transfer trend is simply absent"
+    // posture.
+    var trTotals = null;
+    var transferThrew = false;
+    try {
+      var trAgg = getCsrTransferPerRepDaily_(from, to, [emp.name]);
+      var ta = trAgg && trAgg.agents && trAgg.agents[emp.name];
+      if (ta) trTotals = { transferred: ta.transferred, transferPct: ta.transferPct };
+    } catch (eTr) { trTotals = null; transferThrew = true; }
+
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
     var rangeResult = {
@@ -14939,11 +14967,13 @@ function getMyMetricsRange(from, to) {
         ? null : cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
       noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
+      transfer: trTotals,                                   // #5 — null = absent, never 0
+      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,     // #4 — see getMyMetrics
     };
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
     // F5: a failed note read is the same class of partial as a failed trend
     // read (L-3) — never stamp it into the cache as a fresh, confident 0.
-    if (useRangeCache && !trendFailed && !noteRes.unavailable) {
+    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable) {
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -15019,6 +15049,34 @@ function getTeamMetrics(dateOrFrom, to) {
           missed: day ? day.missed : 0,
         });
       }
+    } else {
+      // #8 (operator 2026-08-06) — per-day TEAM trend over the selected range,
+      // so a multi-day range gets the hero sparkline instead of a bare number.
+      // BEST-EFFORT (the INV-67 posture): a failed read leaves trend null and
+      // the client renders the pre-#8 shape — a missing chart is not a
+      // reassuring degradation (INV-187's test). Span-capped at 92 days like
+      // getMyMetricsRange: getTeamMetrics has no overall span cap, and an
+      // unbounded manual range must not trigger this extra full-sheet per-day
+      // scan (the aggregate read above still serves it).
+      var rangeSpan = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
+      if (rangeSpan >= 2 && rangeSpan <= 92) {
+        try {
+          var rangeBreakdown = getCdrDailyBreakdown_(from, toDate, rosterNames);
+          trendData = [];
+          var rEndD = new Date(toDate + 'T12:00:00Z');
+          for (var rd = new Date(from + 'T12:00:00Z'); rd <= rEndD; rd.setUTCDate(rd.getUTCDate() + 1)) {
+            var rIso = isoFromUtc_(rd);
+            var rDay = rangeBreakdown.daily[rIso];
+            trendData.push({
+              date: rIso,
+              pctAnswered: rDay ? rDay.pctAnswered : null,
+              rung: rDay ? rDay.rung : 0,
+              answered: rDay ? rDay.answered : 0,
+              missed: rDay ? rDay.missed : 0,
+            });
+          }
+        } catch (eRt) { trendData = null; }
+      }
     }
 
     var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
@@ -15044,7 +15102,7 @@ function getTeamMetrics(dateOrFrom, to) {
     }
     var reps = [];
     var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
-      transferred: 0, queueTotal: 0 };
+      transferred: 0, queueTotal: 0, transferCalls: 0 };
     var teamQueues = {};        // queue -> {transferred, reps:{}}
     var unmatchedAgents = [];
 
@@ -15099,6 +15157,11 @@ function getTeamMetrics(dateOrFrom, to) {
         // population.
         teamTotals.transferred += rep.transferred;
         teamTotals.queueTotal += rep.queueTotal;
+        // #5 — the team Transfer-% denominator (the Transfer sheet's own
+        // Total Calls figure, summed over the same population as the rest of
+        // teamTotals). Kept separate from `rung`: the two sheets count calls
+        // differently, and pct must use its OWN sheet's denominator.
+        teamTotals.transferCalls += (tr && tr.totalCalls) || 0;
         Object.keys(rep.queues).forEach(function (q) {
           if (!teamQueues[q]) teamQueues[q] = { queue: q, transferred: 0, reps: {} };
           teamQueues[q].transferred += rep.queues[q];
@@ -15131,6 +15194,10 @@ function getTeamMetrics(dateOrFrom, to) {
     // beside its `noteCountPartial` warning.
     teamTotals.noteCoverage = teamTotals.noteCountPartial
       ? null : cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
+    // #5 — null (not 0) when the Transfer read failed or produced no calls:
+    // a pct assembled without its denominator is not a pct (the INV-129 rule).
+    teamTotals.transferPct = (transferMeta.available && teamTotals.transferCalls > 0)
+      ? Math.round((teamTotals.transferred / teamTotals.transferCalls) * 1000) / 10 : null;
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 
@@ -15158,6 +15225,8 @@ function getTeamMetrics(dateOrFrom, to) {
       // failed" (INV-175).
       transferMeta: transferMeta,
       queueRows: qRows,
+      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,   // #4 — see getMyMetrics
+
       // Phase 4 — the "By department" mode. Derived server-side from the same
       // qRows the by-queue mode uses, so the two views can never disagree.
       groupRows: groupQueueRows_(qRows, getCdrQueueGroups_()),

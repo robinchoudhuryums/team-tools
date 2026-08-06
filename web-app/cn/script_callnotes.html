@@ -2443,6 +2443,7 @@ function cnRenderNotesView(area) {
   cnRenderTrainingQATray_();
   cnRenderFilterBar_();
   cnRenderStack_();
+  cnPopoutFitToTemplate_();
   cnReloadPinnedTray_();
   cnLoadTrainingQA_();
   // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint.
@@ -7370,6 +7371,51 @@ function cnRenderQAThread_(note, opts) {
  *  exists: extend hint.calls[] to carry call IDs, then prefill the form
  *  or auto-filter the rolling stack here. Always nulls the hint after
  *  read so subsequent CN view enters don't re-fire the same toast. */
+/** Operator feedback 2026-08-06 — standardized on-launch pop-out geometry:
+ *  fit the window to the note TEMPLATE (the form + flags/tags/save rail =
+ *  .cnv-layout) so every part a rep must complete is in view with no
+ *  scrolling and no dead space — the template fills the window, i.e.
+ *  centered by construction; the pinned tray / filter bar / stack below
+ *  stay reachable by scroll. Runs ONCE per pop-out window session (the
+ *  named window is reused + focused on repeat clicks, so no re-fit
+ *  mid-session), ONLY in the compact pop-out (resizeTo is a popup-only
+ *  capability; window.name is the umsTeamToolsCompact_<tool> target).
+ *  WIDTH stays the 480 content standard (the layout the operator chose);
+ *  HEIGHT fits the template, clamped to the screen. The fitted size then
+ *  persists through popoutPersistGeometryInit_'s resize listener, so later
+ *  launches OPEN at the fitted size (no visible jump on a stable template)
+ *  while a rep's mid-session manual resize still sticks for that session.
+ *  Everything best-effort: a browser that refuses resizeTo leaves the
+ *  480×800 default standing. */
+function cnPopoutFitToTemplate_() {
+  try {
+    if (typeof COMPACT_MODE === 'undefined' || !COMPACT_MODE) return;
+    if (String(window.name || '').indexOf('umsTeamToolsCompact_') !== 0) return;
+    if (window.__cnPopoutFitDone) return;
+    if (!document.querySelector('.cnv-layout')) return;
+    window.__cnPopoutFitDone = true;
+    // Double-rAF: measure after layout + first paint settle; the +14 margin
+    // absorbs small web-font metric shifts.
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      try {
+        var el = document.querySelector('.cnv-layout');
+        if (!el) return;
+        var rect = el.getBoundingClientRect();
+        var neededInner = Math.ceil(rect.bottom + (window.scrollY || 0)) + 14;
+        if (neededInner < 300) return;   // bogus measurement — keep the default
+        var chromeH = Math.max(0, window.outerHeight - window.innerHeight);
+        var chromeW = Math.max(0, window.outerWidth - window.innerWidth);
+        var targetH = Math.min(screen.availHeight || 900, neededInner + chromeH);
+        var targetW = Math.min(screen.availWidth || 480, 480 + chromeW);
+        // Already within a few px (a later launch opening at the persisted
+        // fitted size) — skip the no-op resize.
+        if (Math.abs(window.outerHeight - targetH) < 8 && Math.abs(window.outerWidth - targetW) < 8) return;
+        window.resizeTo(targetW, targetH);
+      } catch (e) { /* resize refused — the opener's default stands */ }
+    }); });
+  } catch (e) {}
+}
+
 function cnConsumeNavHint_() {
   const hint = window.CLK_NAV_HINT;
   if (!hint || hint.source !== 'coverageStrip') return;
