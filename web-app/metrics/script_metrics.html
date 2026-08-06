@@ -228,24 +228,62 @@
   .m-qbar { min-width: 40px; }
   .m-scope-hint { width: 100%; margin-left: 0; }
 }
-.m-preset-chip {
-  /* A1 (cycle 13): these are <button>s, not spans — a bare span with an inline
-     onclick is unreachable by keyboard and invisible to assistive tech. The
-     reset keeps the chip looking identical to the span it replaced (`font:
-     inherit` must precede font-size, since the shorthand resets it). */
-  appearance: none; -webkit-appearance: none;
-  font: inherit;
-  display: inline-block;
-  font-size: 0.75rem;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--paper-card);
-  color: var(--muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+/* (.m-preset-chip retired with operator #2 — the Team presets now use the
+   shared .toolbar-tab pressed-state chips; INV-184: no dead selectors.) */
+
+/* ── #2/#3 — Custom… + Match-diagnostics disclosures ─────────────── */
+.m-custom-row { margin-top: calc(-1 * var(--space-xs)); }
+/* The class rule `.m-controls { display:flex }` out-specifies the UA's
+   `[hidden] { display:none }`, so the attribute alone never hides the row —
+   the classic hidden-vs-display override. MEASURED (the first shoot rendered
+   both custom rows visible with a preset active); this rule restores the
+   attribute's meaning at higher specificity. */
+.m-custom-row[hidden] { display: none; }
+.m-diag { margin-top: var(--space-md); }
+.m-diag-toggle {
+  appearance: none; -webkit-appearance: none; font: inherit; font-size: 0.78rem;
+  background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
 }
-.m-preset-chip:hover { background: var(--accent-soft); color: var(--accent); }
+.m-diag-toggle:hover { color: var(--ink); }
+.m-diag-toggle svg:last-child { transition: transform .18s ease; }
+.m-diag-toggle.open svg:last-child { transform: rotate(180deg); }
+#m-diag-body { margin-top: var(--space-xs); }
+
+/* ── #4 — answer-rate target line + label ────────────────────────── */
+.m-hero-spark svg .m-spark-target {
+  stroke: var(--warn); stroke-dasharray: 2 3; stroke-width: 1; fill: none; opacity: .75;
+}
+.m-hero-target { color: var(--muted); }
+
+/* ── #6 — inline nav CTA (link treatment per V-12: navigation, not a pill) */
+.m-cta-link {
+  appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
+  font: inherit; font-size: inherit; color: var(--info-deep);
+  text-decoration: underline; cursor: pointer;
+}
+
+/* ── #7 — best/worst day line (range mode hero) ──────────────────── */
+.m-hero-bw { font-size: 0.78rem; margin-top: 2px; color: var(--muted); }
+.m-hero-bw .pos { color: var(--success-deep); font-weight: 600; }
+.m-hero-bw .neg { color: var(--warning-deep); font-weight: 600; }
+
+/* ── #9 — rep drill-through (link treatment, V-12) ───────────────── */
+.m-rep-link {
+  appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.m-rep-link:hover { color: var(--info-deep); text-decoration: underline; }
+
+/* ── #10 — copy-table button ─────────────────────────────────────── */
+.m-section-row { display: flex; align-items: center; gap: var(--space-sm); }
+.m-copy-btn {
+  appearance: none; -webkit-appearance: none; font: inherit; font-size: var(--text-xs);
+  background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: var(--radius-pill); padding: 2px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.m-copy-btn:hover { background: var(--accent-soft); color: var(--accent); }
 
 /* ── Hero + Rail layout (V4·E4) ────────────────────────────────────
    Replaces the prior 6-tile KPI grid with a hero answer-rate +
@@ -432,7 +470,9 @@
 
 var M_STATE = { myDate: null, teamFrom: null, teamTo: null,
   myMode: 'single', myFrom: '', myTo: '', myData: null,            // §6/#1 My Stats single date | aggregated range + cache
-  teamSort: { key: 'pctAnswered', dir: 'desc' }, teamData: null };  // §6 sortable team table + cache
+  teamSort: { key: 'pctAnswered', dir: 'desc' }, teamData: null,   // §6 sortable team table + cache
+  customOpen: {},      // #2 — per-tab ('my'/'team') Custom… row visibility (survives sort/SWR re-renders)
+  diagOpen: false };   // #3 — Match-diagnostics disclosure state (survives sort re-renders)
 
 // F7 (cycle 16) — MIRRORS the server's `CDR_QUEUE_UNGROUPED` (Code.js). The
 // "N queue(s) are not mapped to a department yet" hint is found by comparing a
@@ -489,17 +529,22 @@ function enterMetricsMyStatsView() {
     '</div>' +
     '<div class="m-controls">' +
       // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
-      // 7D/30D = server-AGGREGATED ranges (#1). A specific past day stays
-      // available via the date input; custom spans via From/To.
+      // 7D/30D = server-AGGREGATED ranges (#1). A specific past day / custom
+      // span lives behind the shared Custom… disclosure (operator #2 — the
+      // three overlapping pickers were clutter, worst on mobile).
       '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
         mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
+        mCustomChip_('my', 'm-my-custom') +
       '</div>' +
+      '<button class="refresh-btn" onclick="mLoadMyStats_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
+    '</div>' +
+    '<div class="m-controls m-custom-row" id="m-my-custom"' +
+      (mCustomRowOpen_('my', mMyActivePreset_()) ? '' : ' hidden') + '>' +
       '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
       '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
-      '<button class="refresh-btn" onclick="mLoadMyStats_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
@@ -534,12 +579,42 @@ function mMyActivePreset_() {
 }
 function mMyStatsSyncPresets_() {
   var active = mMyActivePreset_();
-  document.querySelectorAll('.m-preset-tabs .toolbar-tab').forEach(function (b) {
+  document.querySelectorAll('.m-preset-tabs .toolbar-tab[data-my-preset]').forEach(function (b) {
     b.setAttribute('aria-pressed', b.getAttribute('data-my-preset') === active ? 'true' : 'false');
   });
+  // #2 — the Custom chip is "pressed" when the selection matches no preset.
+  var cEl = document.querySelector('.m-custom-chip[data-custom="my"]');
+  if (cEl) cEl.setAttribute('aria-pressed', active === '' ? 'true' : 'false');
   var dEl = document.getElementById('m-my-date'); if (dEl && M_STATE.myMode === 'single') dEl.value = M_STATE.myDate;
   var fEl = document.getElementById('m-my-from'); if (fEl) fEl.value = M_STATE.myFrom || '';
   var tEl = document.getElementById('m-my-to'); if (tEl) tEl.value = M_STATE.myTo || '';
+}
+
+// ── #2 — shared "Custom…" disclosure chip (both Metrics tabs) ─────────
+/** Pressed = the current selection matches no preset; expanded mirrors the
+ *  input row's visibility (aria-expanded + aria-controls — INV-174). */
+function mCustomChip_(which, rowId) {
+  var active = (which === 'my') ? mMyActivePreset_() : mTeamActivePreset_();
+  var open = mCustomRowOpen_(which, active);
+  return '<button type="button" class="toolbar-tab m-custom-chip" data-custom="' + which + '"' +
+    ' aria-pressed="' + (active === '' ? 'true' : 'false') + '"' +
+    ' aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + rowId + '"' +
+    ' onclick="mToggleCustom_(\'' + which + '\', \'' + rowId + '\')">Custom&hellip;</button>';
+}
+/** Render-time visibility: a remembered open state OR a selection no preset
+ *  describes (the inputs ARE the description of the current view then). */
+function mCustomRowOpen_(which, activePreset) {
+  return !!(M_STATE.customOpen && M_STATE.customOpen[which]) || activePreset === '';
+}
+function mToggleCustom_(which, rowId) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  var next = row.hidden;   // hidden → open it
+  row.hidden = !next;
+  M_STATE.customOpen = M_STATE.customOpen || {};
+  M_STATE.customOpen[which] = next;
+  var chip = document.querySelector('.m-custom-chip[data-custom="' + which + '"]');
+  if (chip) chip.setAttribute('aria-expanded', String(next));
 }
 /** Today = single (rich); 7D/30D = aggregated ranges ending today (#1). */
 function mMyPreset_(key) {
@@ -651,24 +726,43 @@ function mRenderMyStats_(data) {
   // Hero + Rail. Hero = % answered (range = aggregate over from→to) + vs-avg +
   // period sparkline. Rail = notes filed, answered, missed, avg/total talk.
   var avg = mTrendAvg_(trend, 'pctAnswered');
-  var deltaHtml = '';
+  // #4 — the server-shipped alert threshold. Guarded everywhere: a ≤5-min
+  // stale cached payload from before the deploy lacks the field, and the
+  // client then simply renders no target line (no client-side mirror of 85).
+  var thr = data.alertThreshold;
+  var deltaCore = '';
   if (trend.length > 1 && avg != null && c.pctAnswered != null) {
     var d = c.pctAnswered - avg;
     var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
     var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
               : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
               : '±0';
-    deltaHtml = '<div class="m-hero-delta">' +
-      '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)</div>';
+    deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)';
   }
+  var targetBit = (thr != null)
+    ? '<span class="m-hero-target" title="The sidebar alert fires below this">target ' + esc(thr) + '%</span>' : '';
+  var deltaHtml = (deltaCore || targetBit)
+    ? '<div class="m-hero-delta">' + deltaCore + (deltaCore && targetBit ? ' · ' : '') + targetBit + '</div>' : '';
 
   html += '<div class="m-layout">';
   html += '<div class="m-hero">';
   html += '<div class="m-hero-label">' + periodLabel + ' · % Answered</div>';
   html += '<div class="m-hero-value">' + esc(c.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
+  // #7 — range mode names the outliers an average hides. Pure helper,
+  // Node-pinned; needs ≥2 days with data or renders nothing.
+  if (isRange) {
+    var bw = mBestWorstDays_(trend);
+    if (bw) {
+      html += '<div class="m-hero-bw">' +
+        '<span class="pos">Best ' + esc(mDowShort_(bw.best.date)) + ' ' + esc(String(bw.best.date).substring(5)) + ' · ' + esc(bw.best.v) + '%</span>' +
+        ' · ' +
+        '<span class="neg">Worst ' + esc(mDowShort_(bw.worst.date)) + ' ' + esc(String(bw.worst.date).substring(5)) + ' · ' + esc(bw.worst.v) + '%</span>' +
+        '</div>';
+    }
+  }
   if (trend.length > 1) {
-    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg) + '</div>';
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg, thr) + '</div>';
     var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
     var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
@@ -693,20 +787,111 @@ function mRenderMyStats_(data) {
     { values: trend.map(function (t) { return t.missed; }), tone: 'warn' });
   html += mRailRow_('Avg talk', c.attFormatted, null, null,
     { values: seriesOwn('attSeconds') });
+  // #5 — transfer volume. Null = no Transfer row/tab for this rep+period
+  // (absence, not zero — INV-180), so the row simply doesn't render; also
+  // absent on a pre-deploy cached payload (field missing → same branch).
+  if (data.transfer != null) {
+    html += mRailRow_('Transfers', data.transfer.transferred,
+      data.transfer.transferPct != null ? data.transfer.transferPct + '% of calls' : null,
+      null,
+      isRange ? null : { values: seriesOwn('transferPct') });
+  }
   html += mRailRow_('Total talk', c.tttFormatted);
   html += '</div>';
   html += '</div>';
 
   if (data.noteCoverage != null && data.noteCoverage < 80) {
+    // #6 — the hint was a dead end; the Clock strip's "File N missing" CTA
+    // already solves this via the CLK_NAV_HINT pattern. Only offered for
+    // TODAY in single-day mode — the CN Log view is today-only, so a link
+    // from a past day / a range would land somewhere that can't show them.
+    var missing = (c && c.totalAnswered != null)
+      ? Math.max(0, c.totalAnswered - (data.noteCount || 0)) : 0;
+    var showCta = !isRange && data.date === mTodayIso_() && missing > 0;
     html += '<div class="m-hint">' + mCoverageBadge_(data.noteCoverage) +
-      ' &nbsp; Coverage below 80% — some answered calls may not have a corresponding note.</div>';
+      ' &nbsp; Coverage below 80% — some answered calls may not have a corresponding note.' +
+      (showCta ? ' <button type="button" class="m-cta-link" onclick="mCoverageCta_()">File them in Call Notes &rarr;</button>' : '') +
+      '</div>';
   }
 
   // T4 #5/#6 — own-vs-team trend charts. data.series is present from the
   // extended getMyMetrics; absent on an older server (degrade silently).
-  html += mRenderTrendSection_(data);
+  // Operator #1: in RANGE mode the section used to silently vanish (the
+  // series is a single-day-anchored concept, INV-124) — render a placeholder
+  // and fill it from the Today payload instead.
+  if (isRange) {
+    html += '<div id="m-my-trends"></div>';
+  } else {
+    html += mRenderTrendSection_(data);
+  }
 
   el.innerHTML = html;
+  if (isRange) mFillRangeTrends_();
+}
+
+/** #6 — coverage-hint CTA: jump to Call Notes with the CLK_NAV_HINT set (the
+ *  Clock coverage strip's own mechanism — reuses fileMissingCalls_ when the
+ *  Clock partial is loaded, which in this app it always is). */
+function mCoverageCta_() {
+  var d = M_STATE.myData || {};
+  var c = d.cdr || {};
+  var missing = Math.max(0, (c.totalAnswered || 0) - (d.noteCount || 0));
+  if (typeof fileMissingCalls_ === 'function') { fileMissingCalls_(d.date, missing); return; }
+  if (typeof enterTool === 'function') enterTool('callNotes');
+}
+
+/** #1 — fill the range-mode trend placeholder from the single-day Today
+ *  payload: cache-first (the SWR cache the Today preset already warms), else
+ *  one background getMyMetrics(today) guarded by the SAME seq/view tokens as
+ *  the primary load (INV-156 — a stale response must not write into a newer
+ *  render). Best-effort: on failure the section is simply absent, which is
+ *  the pre-#1 shape — an ancillary enrichment, never an error state. */
+function mFillRangeTrends_() {
+  if (!document.getElementById('m-my-trends')) return;
+  var today = mTodayIso_();
+  var key = 'day:' + today;
+  var inject = function (data) {
+    var slot = document.getElementById('m-my-trends');
+    if (!slot || !data || data.error) return;
+    slot.innerHTML = mRenderTrendSection_(data, { rangeMode: true });
+  };
+  M_STATE.myCache = M_STATE.myCache || {};
+  var cached = M_STATE.myCache[key];
+  if (cached && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(cached.entry)) {
+    inject(cached.data);
+    return;
+  }
+  var requestedView = currentView;
+  var seq = M_STATE.mySeq;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
+      if (currentView !== requestedView || seq !== M_STATE.mySeq) return;
+      inject(data);
+    })
+    .withFailureHandler(function () { /* section absent — ancillary (see docstring) */ })
+    .getMyMetrics(today);
+}
+
+/** #7 — best/worst day by pctAnswered over a range trend. Pure (Node-pinned):
+ *  null/absent days are skipped; needs ≥2 days WITH data; ties keep the FIRST
+ *  occurrence (stable). Returns {best:{date,v}, worst:{date,v}} or null. */
+function mBestWorstDays_(trend) {
+  var best = null, worst = null, n = 0;
+  for (var i = 0; i < (trend || []).length; i++) {
+    var v = trend[i] && trend[i].pctAnswered;
+    if (v == null || isNaN(v)) continue;
+    n++;
+    if (!best || v > best.v) best = { date: trend[i].date, v: v };
+    if (!worst || v < worst.v) worst = { date: trend[i].date, v: v };
+  }
+  return n >= 2 ? { best: best, worst: worst } : null;
+}
+/** Short weekday for a yyyy-MM-dd (UTC-noon anchor — DST-safe, like mDaysAgo_). */
+function mDowShort_(iso) {
+  try {
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(iso + 'T12:00:00Z').getUTCDay()] || '';
+  } catch (_) { return ''; }
 }
 
 // 5-KPI own-vs-team trend section. Team values are the anonymized,
@@ -719,7 +904,7 @@ var MY_KPI_DEFS = [
   { key: 'attSeconds',  label: 'Avg Talk',   fmt: 'secs' },
   { key: 'transferPct', label: 'Transfer %', fmt: 'pct' },
 ];
-function mRenderTrendSection_(data) {
+function mRenderTrendSection_(data, opts) {
   var series = data.series;
   if (!series) return '';
   var cards = '';
@@ -730,8 +915,13 @@ function mRenderTrendSection_(data) {
   }
   if (!cards) return '';
   var minN = data.kpiMinCohort || 3;
+  // #1 — in range mode the section is filled from the TODAY payload, so the
+  // heading says exactly what window it shows (independent of the range).
+  var head = (opts && opts.rangeMode)
+    ? 'Trends · you vs team avg (trailing 30 days ending today)'
+    : 'Trends · you vs team avg (30 days)';
   return '<div class="m-trends">' +
-    '<div class="m-trends-head">Trends · you vs team avg (30 days)</div>' +
+    '<div class="m-trends-head">' + head + '</div>' +
     '<div class="m-trends-grid">' + cards + '</div>' +
     '<div class="m-trends-note">Team avg is anonymized — hidden on any day with fewer than ' + minN + ' reporting reps.</div>' +
   '</div>';
@@ -807,8 +997,11 @@ function mTrendAvg_(trend, metric) {
 }
 
 /** Hero sparkline with a dashed baseline at the trend average (visual
- *  anchor for the "vs avg" comparison in the hero delta line). */
-function mBuildHeroSparkSvg_(trend, metric, avg) {
+ *  anchor for the "vs avg" comparison in the hero delta line). #4: optional
+ *  4th arg draws a second dashed line at the alert TARGET — the y-domain is
+ *  extended to include it, so a target above every data point still renders
+ *  inside the box instead of clamping to (or vanishing off) the top edge. */
+function mBuildHeroSparkSvg_(trend, metric, avg, target) {
   metric = metric || 'pctAnswered';
   var pts = [];
   for (var i = 0; i < trend.length; i++) {
@@ -818,6 +1011,7 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
   if (pts.length < 2) return '';
   var maxV = 0;
   for (var j = 0; j < pts.length; j++) { if (pts[j].v > maxV) maxV = pts[j].v; }
+  if (target != null && target > maxV) maxV = target;   // #4 — domain includes the target
   if (maxV === 0) maxV = 1;
   var w = 300, h = 60, pad = 4;
   var xScale = (w - pad * 2) / (trend.length - 1);
@@ -832,6 +1026,10 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
   if (avg != null) {
     var by = (h - pad - avg * yScale).toFixed(1);
     baselineHtml = '<line class="baseline" x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) + '" y2="' + by + '"/>';
+  }
+  if (target != null) {
+    var ty = (h - pad - target * yScale).toFixed(1);
+    baselineHtml += '<line class="m-spark-target" x1="' + pad + '" y1="' + ty + '" x2="' + (w - pad) + '" y2="' + ty + '"/>';
   }
   // §4 sparkline draw — the polyline draws itself in on render. --len is a safe
   // over-estimate of the path length (viewBox width 300); over-estimating just
@@ -888,8 +1086,14 @@ function mRailRow_(label, value, toneOrSub, sub, spark) {
     '</div>';
 }
 
-/** Tri-tone class for a % Answered / coverage value (mCoverageBadge_ thresholds). */
-function mPctClass_(p) { return (p == null) ? '' : (p >= 80 ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low'); }
+/** Tri-tone class for a % Answered value. #4: the GREEN band starts at the
+ *  server-shipped alert threshold when provided (so the table can never paint
+ *  a rep green while they sit below the line the sidebar alert fires on);
+ *  absent (older cached payload) → the legacy 80 band. Mid stays ≥50. */
+function mPctClass_(p, thr) {
+  var hi = (thr != null) ? thr : 80;
+  return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low');
+}
 
 // §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
 // numeric attSeconds (not the formatted string), coverage treats null as lowest.
@@ -1037,19 +1241,23 @@ function enterMetricsTeamView() {
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">Team Call Metrics</h1>' +
     '</div>' +
+    // #2 — same control vocabulary as My Stats: pressed-state preset chips +
+    // the Custom… disclosure hiding the raw date inputs until wanted.
+    // (A1 still holds: every chip is a <button>, keyboard-reachable.)
     '<div class="m-controls">' +
+      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
+        mTeamPresetBtn_('Today', 'today') + mTeamPresetBtn_('Yesterday', 'yesterday') +
+        mTeamPresetBtn_('7D', 'week') + mTeamPresetBtn_('30D', 'month') +
+        mCustomChip_('team', 'm-team-custom') +
+      '</div>' +
+      '<button class="refresh-btn" onclick="mLoadTeamMetrics_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
+    '</div>' +
+    '<div class="m-controls m-custom-row" id="m-team-custom"' +
+      (mCustomRowOpen_('team', mTeamActivePreset_()) ? '' : ' hidden') + '>' +
       '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
       '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
       '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
       '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
-      '<button class="refresh-btn" onclick="mLoadTeamMetrics_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
-    '</div>' +
-    // A1: <button>, not <span> — keyboard-reachable and announced as a control.
-    '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
-      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</button>' +
-      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'yesterday\')">Yesterday</button>' +
-      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</button>' +
-      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</button>' +
     '</div>' +
     '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
@@ -1059,6 +1267,7 @@ function enterMetricsTeamView() {
       M_STATE.teamTo = M_STATE.teamFrom;
       document.getElementById('m-team-to').value = M_STATE.teamTo;
     }
+    mTeamSyncPresets_();   // #2 — a manual range un-presses the preset chips
     mLoadTeamMetrics_();
   });
   document.getElementById('m-team-to').addEventListener('change', function () {
@@ -1067,10 +1276,37 @@ function enterMetricsTeamView() {
       M_STATE.teamFrom = M_STATE.teamTo;
       document.getElementById('m-team-from').value = M_STATE.teamFrom;
     }
+    mTeamSyncPresets_();   // #2
     mLoadTeamMetrics_();
   });
 
   mLoadTeamMetrics_();
+}
+
+// #2 — pressed-state preset chips (the My Stats pattern; Team never had an
+// active state at all — the chips were fire-and-forget buttons).
+function mTeamPresetBtn_(label, key) {
+  return '<button class="toolbar-tab" data-team-preset="' + key + '"' +
+    ' aria-pressed="' + (mTeamActivePreset_() === key ? 'true' : 'false') + '"' +
+    ' onclick="mTeamPreset_(\'' + key + '\')">' + label + '</button>';
+}
+/** Which preset (if any) the current from/to matches — for the pressed state. */
+function mTeamActivePreset_() {
+  var today = mTodayIso_();
+  var f = M_STATE.teamFrom, t = M_STATE.teamTo;
+  if (f === today && t === today) return 'today';
+  if (f === mDaysAgo_(1) && t === mDaysAgo_(1)) return 'yesterday';
+  if (f === mDaysAgo_(6) && t === today) return 'week';
+  if (f === mDaysAgo_(29) && t === today) return 'month';
+  return '';
+}
+function mTeamSyncPresets_() {
+  var active = mTeamActivePreset_();
+  document.querySelectorAll('.m-preset-tabs .toolbar-tab[data-team-preset]').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.getAttribute('data-team-preset') === active ? 'true' : 'false');
+  });
+  var cEl = document.querySelector('.m-custom-chip[data-custom="team"]');
+  if (cEl) cEl.setAttribute('aria-pressed', active === '' ? 'true' : 'false');
 }
 
 function mTeamPreset_(key) {
@@ -1083,6 +1319,7 @@ function mTeamPreset_(key) {
   var toEl = document.getElementById('m-team-to');
   if (fromEl) fromEl.value = M_STATE.teamFrom;
   if (toEl)   toEl.value = M_STATE.teamTo;
+  mTeamSyncPresets_();   // #2
   mLoadTeamMetrics_();
 }
 
@@ -1152,23 +1389,31 @@ function mRenderTeamMetrics_(data) {
 
   var html = '';
 
-  // V4·E4 — Hero + Rail. Hero = team % Answered + 30-day trend (single-day
-  // only — multi-day ranges hide the sparkline since trend isn't meaningful).
+  // V4·E4 — Hero + Rail. Hero = team % Answered + trend sparkline. #8: a
+  // multi-day range now carries a per-day trend over the SELECTED range
+  // (previously single-day only, so ranges showed a bare number) — the delta
+  // label names which comparison it is.
+  var multiDay = !!(data.from && data.to && data.from !== data.to);
   var avg = data.trend ? mTrendAvg_(data.trend, 'pctAnswered') : null;
-  var deltaHtml = '';
+  var thr = data.alertThreshold;   // #4 — guarded like My Stats (absent → no line)
+  var deltaCore = '';
   if (avg != null && t.pctAnswered != null) {
     var d = t.pctAnswered - avg;
     var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
     var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
               : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
               : '±0';
-    deltaHtml = '<div class="m-hero-delta">' +
-      '<span class="' + sign + '">' + label + ' pts</span> vs 30-day team average (' + avg.toFixed(1) + '%)</div>';
+    deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs ' +
+      (multiDay ? 'period daily average' : '30-day team average') + ' (' + avg.toFixed(1) + '%)';
   }
+  var targetBit = (thr != null)
+    ? '<span class="m-hero-target" title="The sidebar alert fires below this">target ' + esc(thr) + '%</span>' : '';
+  var deltaHtml = (deltaCore || targetBit)
+    ? '<div class="m-hero-delta">' + deltaCore + (deltaCore && targetBit ? ' · ' : '') + targetBit + '</div>' : '';
   // F(cycle-8): esc() the echoed dates — server-validated shapes today, but
   // the Metrics-esc() gotcha (the F5 XSS class) says every server string
   // routes through esc() before innerHTML; My Stats escapes the same fields.
-  var heroLabel = (data.from && data.to && data.from !== data.to)
+  var heroLabel = multiDay
     ? esc(data.from) + ' → ' + esc(data.to) + ' · Team % Answered'
     : 'Team · % Answered';
 
@@ -1178,7 +1423,7 @@ function mRenderTeamMetrics_(data) {
   html += '<div class="m-hero-value">' + esc(t.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
   if (data.trend && data.trend.length > 1) {
-    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg, thr) + '</div>';
     var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
     var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
@@ -1198,6 +1443,13 @@ function mRenderTeamMetrics_(data) {
     ? mRailRow_('Notes filed', t.noteCount, 'warn', 'partial — at least one rep Sheet was unreadable')
     : mRailRow_('Notes filed', t.noteCount,
         t.noteCoverage != null ? t.noteCoverage + '% coverage' : null);
+  // #5 — team transfer volume. Only when the Transfer read succeeded
+  // (INV-175: a failed auxiliary read must not render as "0 transfers");
+  // transferPct is null without its own-sheet denominator (INV-129).
+  if (data.transferMeta && data.transferMeta.available && t.transferred != null) {
+    html += mRailRow_('Transfers', t.transferred,
+      t.transferPct != null ? t.transferPct + '% of calls' : null);
+  }
   html += '</div>';
   html += '</div>';
 
@@ -1210,7 +1462,11 @@ function mRenderTeamMetrics_(data) {
   if (data.reps.length === 0) {
     html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
-    html += '<div class="m-section-title">Per-Rep Breakdown</div>';
+    // #10 — Copy table: TSV of whatever table the current scope displays.
+    html += '<div class="m-section-title m-section-row">Per-Rep Breakdown' +
+      '<button type="button" class="m-copy-btn" onclick="mCopyTeamTable_(this)"' +
+      ' title="Copy the displayed table as tab-separated values (pastes into a spreadsheet)">' +
+      icon('copy', 12) + ' Copy table</button></div>';
     // Phase 2 — the sub-queue scope switcher. Only rendered when the Transfer
     // read actually produced queues; with none there is nothing to switch
     // between, and an inert control would be worse than no control.
@@ -1222,6 +1478,7 @@ function mRenderTeamMetrics_(data) {
     var scope = 'combined';
     if (hasQueues && want === 'queue') scope = 'queue';
     if (hasQueues && want === 'dept' && data.groupRows && data.groupRows.length) scope = 'dept';
+    M_STATE.teamScopeActive = scope;   // #10 — the copy handler reads the RESOLVED scope
     if (tmeta.error) {
       // INV-175: a failed auxiliary read says so; it must not read as "this
       // team made no transfers".
@@ -1300,16 +1557,25 @@ function mRenderTeamMetrics_(data) {
     // #3 — render via the shared mtRenderTable_ component (also used by the CN
     // manager Stats table). Rows pre-sorted here; mTeamSort_ re-renders.
     var reps = mSortReps_(data.reps, M_STATE.teamSort || { key: 'pctAnswered', dir: 'desc' });
+    // #9 — drill target date: the range END (single day = the day itself); the
+    // Per-Rep view is single-date, so a range drills to its most recent day.
+    var drillDate = data.to || data.date || '';
     html += mtRenderTable_({
       rows: reps,
       sort: M_STATE.teamSort,
       onSort: 'mTeamSort_',
       columns: [
-        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return esc(r.repName); } },
+        // #9 — a real <button> (INV-173), link treatment (V-12: navigation,
+        // not a pill); ids/dates ride data-* attributes read from the handler
+        // (the cnStatsDrillDown_/audit-panel discipline — never inline JS).
+        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) {
+            return '<button type="button" class="m-rep-link" data-rep="' + esc(r.repId) + '"' +
+              ' data-date="' + esc(drillDate) + '" onclick="mRepDrill_(this)"' +
+              ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>'; } },
         { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
         { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
         { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
-        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered) + '">' + esc(r.pctAnswered) + '%</span>'; } },
+        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered, thr) + '">' + esc(r.pctAnswered) + '%</span>'; } },
         { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
         // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
         // not "0" — a zero here reads as a rep who logged nothing.
@@ -1360,21 +1626,124 @@ function mRenderTeamMetrics_(data) {
       '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
   }
 
+  // #3 — the two "expected" reference lists fold behind a disclosure: both are
+  // permanently non-empty on this deployment BY DESIGN (the cycle-15 rule —
+  // the CDR Report covers the whole phone system; the roster holds non-phone
+  // staff), so they are reference detail, not a signal, and were eating the
+  // bottom of the page. The actionable likelyMismatches warning above stays
+  // always-visible. State survives sort re-renders via M_STATE.diagOpen.
+  var diagBits = '';
   if (data.unmatchedAgents && data.unmatchedAgents.length > 0) {
-    html += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
+    diagBits += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
       icon('info', 14) + ' ' + data.unmatchedAgents.length +
       ' CDR agent(s) not on this roster — expected when the CDR Report covers other departments: ' +
       mNameList_(data.unmatchedAgents) + '</div>';
   }
-
   if (data.rosterWithNoCdr && data.rosterWithNoCdr.length > 0) {
-    html += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
+    diagBits += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
       icon('info', 14) + ' ' + data.rosterWithNoCdr.length +
       ' roster rep(s) with no CDR rows — expected for non-phone staff and full-range PTO: ' +
       mNameList_(data.rosterWithNoCdr) + '</div>';
   }
+  if (diagBits) {
+    var diagN = ((data.unmatchedAgents && data.unmatchedAgents.length) || 0) +
+                ((data.rosterWithNoCdr && data.rosterWithNoCdr.length) || 0);
+    var diagOpen = !!M_STATE.diagOpen;
+    html += '<div class="m-diag">' +
+      '<button type="button" class="m-diag-toggle' + (diagOpen ? ' open' : '') + '"' +
+        ' aria-expanded="' + (diagOpen ? 'true' : 'false') + '" aria-controls="m-diag-body"' +
+        ' onclick="mToggleDiag_(this)">' +
+        icon('info', 14) + ' Match diagnostics (' + diagN + ') ' + icon('chevronDown', 10) +
+      '</button>' +
+      '<div id="m-diag-body"' + (diagOpen ? '' : ' hidden') + '>' + diagBits + '</div>' +
+    '</div>';
+  }
 
   el.innerHTML = html;
+}
+
+/** #3 — Match-diagnostics disclosure (aria-expanded kept in step, INV-174). */
+function mToggleDiag_(btn) {
+  var body = document.getElementById('m-diag-body');
+  if (!body) return;
+  var next = body.hidden;   // hidden → open it
+  body.hidden = !next;
+  M_STATE.diagOpen = next;
+  btn.setAttribute('aria-expanded', String(next));
+  btn.classList.toggle('open', next);
+}
+
+/** #9 — drill from a Team Metrics rep row to Team Notes → Per-Rep View.
+ *  Reuses cnAuditDrillToNote_ (sets CN_STATE.mgrRepView + the pending-drill
+ *  flag, then showView('callNotesManage') — which re-gates visibility, F8). */
+function mRepDrill_(btn) {
+  var repId = btn.getAttribute('data-rep') || '';
+  var date = btn.getAttribute('data-date') || '';
+  if (typeof cnAuditDrillToNote_ === 'function') { cnAuditDrillToNote_(repId, date, ''); return; }
+  if (typeof showToast === 'function') showToast('Team Notes unavailable', 'toast-warn');
+}
+
+/** #10 — TSV of the currently displayed team table, scope-aware. Pure
+ *  (Node-pinned): plain values only, never HTML; an unavailable note read
+ *  exports as '' — unknown is not 0 (INV-187). */
+function mTeamTableTsv_(data, scope, sort) {
+  var out = [];
+  if (scope === 'queue') {
+    out.push(['Queue', 'Transferred', 'Reps'].join('\t'));
+    (data.queueRows || []).forEach(function (q) {
+      out.push([q.queue, q.transferred, q.reps].join('\t'));
+    });
+  } else if (scope === 'dept') {
+    out.push(['Department', 'Transferred', 'Queues', 'Reps (min)'].join('\t'));
+    (data.groupRows || []).forEach(function (g) {
+      out.push([g.group, g.transferred, (g.queues || []).length, g.reps].join('\t'));
+    });
+  } else {
+    var hasTr = !!(data.queueRows && data.queueRows.length);
+    var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Coverage'];
+    if (hasTr) head.push('Transfers');
+    out.push(head.join('\t'));
+    var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
+    reps.forEach(function (r) {
+      var row = [r.repName, r.totalRung, r.totalAnswered, r.totalMissed,
+        (r.pctAnswered != null ? r.pctAnswered + '%' : ''),
+        r.attFormatted,
+        (r.noteCountUnavailable ? '' : r.noteCount),
+        (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
+      if (hasTr) row.push(r.transferred);
+      out.push(row.join('\t'));
+    });
+  }
+  return out.join('\n');
+}
+function mCopyTeamTable_(btn) {
+  var data = M_STATE.teamData;
+  if (!data || !data.reps) { showToast('Nothing to copy yet', 'toast-warn'); return; }
+  var tsv = mTeamTableTsv_(data, M_STATE.teamScopeActive || 'combined', M_STATE.teamSort);
+  var doneOk = function () {
+    if (btn && typeof flashCopied === 'function') flashCopied(btn);
+    showToast('Table copied — paste into a spreadsheet', 'toast-success');
+  };
+  // Clipboard API first, textarea shim as fallback — both from the click
+  // gesture (the documented HtmlService-iframe clipboard gotcha).
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(tsv).then(doneOk, function () { mCopyFallback_(tsv, doneOk); });
+      return;
+    }
+  } catch (_) { /* fall through to the shim */ }
+  mCopyFallback_(tsv, doneOk);
+}
+function mCopyFallback_(text, onOk) {
+  try {
+    if (typeof cnFallbackCopy_ === 'function') { cnFallbackCopy_(text); onOk(); return; }
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    onOk();
+  } catch (e) { showToast('Copy failed — select the table and copy manually', 'toast-error'); }
 }
 
 // ── Ambient polling: answer-rate alert badge on Metrics sidebar icon ──

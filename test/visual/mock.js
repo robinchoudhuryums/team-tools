@@ -116,7 +116,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     // server cannot produce. The harness README's first rule is that fixtures
     // mirror the real server contract; two prior violations produced convincing
     // FAKE defects, so this is a correctness issue for the harness itself.
-    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6 },
+    // Operator #4/#5 (2026-08-06): alertThreshold mirrors the server's
+    // CONFIG.CDR_ALERT_THRESHOLD ship; `transfer` is the own-day scalar
+    // ({transferred, transferPct}, null = absent — INV-180 zero-vs-absence).
+    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
+      transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 },
     // V-14: the range endpoint returns its OWN cdr totals for the span, so the
     // fixture needs weekly-scale numbers — reusing the single-day `kpis` made
     // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the
@@ -124,7 +128,8 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
-      noteCount: 218, noteCoverage: 86, trend: trend30() },
+      noteCount: 218, noteCoverage: 86, trend: trend30(),
+      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
     // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
@@ -154,15 +159,22 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           tq[q].transferred += r.queues[q]; tq[q].reps[r.repName] = true;
         });
       });
-      var totals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0, transferred: 0, queueTotal: 0 };
+      var totals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0, transferred: 0, queueTotal: 0, transferCalls: 0 };
       reps.forEach(function (r) {
         totals.rung += r.totalRung; totals.answered += r.totalAnswered; totals.missed += r.totalMissed;
         totals.tttSeconds += r.tttSeconds; totals.noteCount += r.noteCount;
         totals.transferred += r.transferred; totals.queueTotal += r.queueTotal;
+        // #5 — the Transfer sheet's own Total Calls denominator (the fixture
+        // approximates it with answered, which is what the mk() pct used).
+        totals.transferCalls += r.totalAnswered;
       });
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
+      // #5 — mirrors the server: null unless the Transfer read succeeded AND
+      // its own denominator is positive.
+      totals.transferPct = totals.transferCalls > 0
+        ? Math.round((totals.transferred / totals.transferCalls) * 1000) / 10 : null;
       var qRows = Object.keys(tq).map(function (q) {
         return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
       }).sort(function (a, b) { return b.transferred - a.transferred; });
@@ -181,6 +193,7 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
         queueRows: qRows,
+        alertThreshold: 85,   // #4 — mirrors CONFIG.CDR_ALERT_THRESHOLD
         // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
         // hand, and had already drifted — it omitted the per-group queues.sort()
         // the server does, so the screenshot showed a group's queues in the
