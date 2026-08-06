@@ -6974,6 +6974,24 @@ test('Dept Requests: Spanish-vocabulary cards, SLA-driven tones, filter chips re
   assert.ok(/DR_LAST_DATA/.test(setF) && !/google\.script\.run/.test(setF),
     'a filter chip re-renders from the cached payload — never a refetch');
   assert.ok(/data-dr-filter/.test(d) && /aria-pressed/.test(d), 'the chips carry pressed state (A11)');
+  // Round 3 — the DEPARTMENT filter: multi-select, empty = all (the default
+  // view), refetch-free, and matching a multi-dept send by COMPONENT (the
+  // INV-138 drSplitDepts_ shape — never the raw joined "Billing, Shipping").
+  const dtog = c17strip(c17fnBody(d, 'drToggleDeptFilter_'));
+  assert.ok(/DR_DEPT_FILTER = \[\]/.test(dtog) && /splice/.test(dtog) && /push/.test(dtog),
+    'dept chips toggle a multi-select set; the All chip clears it');
+  assert.ok(!/google\.script\.run/.test(dtog), 'a dept chip never refetches');
+  const dmatch = c17strip(c17fnBody(d, 'drDeptMatch_'));
+  assert.ok(/if \(!DR_DEPT_FILTER\.length\) return true/.test(dmatch),
+    'an empty selection shows ALL departments (the default view)');
+  assert.ok(/drDeptsOf_/.test(dmatch), 'matching is per split component');
+  assert.ok(/split\(\/\[,;\]\//.test(c17strip(c17fnBody(d, 'drDeptsOf_'))),
+    'components split on the drSplitDepts_ delimiters');
+  assert.ok(/data-dr-dept/.test(d), 'the dept chips render');
+  ['drDeptMatch_'].forEach(() => {});
+  // Every card list consumes the filter (mine + incoming + team-wide + stats).
+  assert.ok((c17strip(d).match(/filter\(drDeptMatch_\)/g) || []).length >= 3,
+    'mine, incoming, and the team-wide list all pass through the dept filter');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

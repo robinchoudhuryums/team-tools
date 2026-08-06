@@ -35,10 +35,42 @@ function enterDeptRequestsView(area) {
 var DR_FILTER = 'all';
 var DR_LAST_DATA = null;
 
+// Operator feedback round 3 — a DEPARTMENT filter over every list on the
+// page (My requests, Incoming, the manager team-wide list, and the stats
+// table). MULTI-SELECT: empty = all departments (the default view); each
+// chip toggles its department in/out; the "All departments" chip clears.
+// Client-side over the cached payload, like the status chips — no refetch.
+var DR_DEPT_FILTER = [];
+
 function drSetFilter_(f) {
   DR_FILTER = (f === 'open' || f === 'resolved') ? f : 'all';
   var area = getDeptRequestsArea_();
   if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
+
+function drToggleDeptFilter_(dept) {
+  if (dept === '*') DR_DEPT_FILTER = [];
+  else {
+    var i = DR_DEPT_FILTER.indexOf(dept);
+    if (i >= 0) DR_DEPT_FILTER.splice(i, 1); else DR_DEPT_FILTER.push(dept);
+  }
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
+
+/** A request's department COMPONENTS. A multi-dept send stores the JOINED
+ *  label ("Billing, Shipping" — the INV-138 drSplitDepts_ shape), so the
+ *  filter must match ANY component, never the raw joined string. */
+function drDeptsOf_(item) {
+  return String(item.toDept || '').split(/[,;]/)
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return x; });
+}
+
+function drDeptMatch_(item) {
+  if (!DR_DEPT_FILTER.length) return true;
+
+  return drDeptsOf_(item).some(function (d) { return DR_DEPT_FILTER.indexOf(d) >= 0; });
 }
 
 /** Row tone from status + the existing per-dept SLA machinery (operator
@@ -94,7 +126,29 @@ function drRender_(area, data, errorMsg) {
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
     '</div>';
-  const mine = mineAll.filter(function (r) {
+  // Round 3 — the department chip bar. Universe + counts from EVERY list in
+  // the payload (a chip renders even for a dept only present in the manager
+  // team-wide list). Prune selections for departments that left the payload
+  // so a stale selection can't silently filter everything out.
+  const allItems = mineAll.concat((data && data.incoming) || [], (data && data.allOpen) || []);
+  const deptCounts = {};
+  allItems.forEach(function (r) {
+    drDeptsOf_(r).forEach(function (dn) { deptCounts[dn] = (deptCounts[dn] || 0) + 1; });
+  });
+  const deptNames = Object.keys(deptCounts).sort();
+  DR_DEPT_FILTER = DR_DEPT_FILTER.filter(function (dn) { return deptNames.indexOf(dn) >= 0; });
+  const mkDeptChip = function (key, label) {
+    const on = (key === '*') ? !DR_DEPT_FILTER.length : DR_DEPT_FILTER.indexOf(key) >= 0;
+    return '<button type="button" class="toolbar-tab" data-dr-dept="' + esc(key) + '" aria-pressed="' + on +
+      '" onclick="drToggleDeptFilter_(this.getAttribute(\'data-dr-dept\'))">' + label + '</button>';
+  };
+  const deptBar = deptNames.length > 1
+    ? '<div class="toolbar-tabs" role="group" aria-label="Filter by department" style="margin:0 0 14px">' +
+        mkDeptChip('*', 'All departments') +
+        deptNames.map(function (dn) { return mkDeptChip(dn, esc(dn) + ' · ' + deptCounts[dn]); }).join('') +
+      '</div>'
+    : '';
+  const mine = mineAll.filter(drDeptMatch_).filter(function (r) {
     if (DR_FILTER === 'open') return r.status !== 'resolved';
     if (DR_FILTER === 'resolved') return r.status === 'resolved';
     return true;
@@ -111,17 +165,19 @@ function drRender_(area, data, errorMsg) {
   const mineHtml = mine.length
     ? '<div class="sp-tasks">' + mine.map(drRequestCardHtml_).join('') + '</div>'
     : (mineAll.length
-        ? '<div class="dr-empty">No ' + (DR_FILTER === 'open' ? 'open' : 'resolved') + ' requests in this list.</div>'
+        ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + ' in this list.</div>'
         : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
+  const mineFiltered = mineAll.filter(drDeptMatch_);
+  const mineCount = DR_DEPT_FILTER.length ? (mineFiltered.length + ' of ' + mineAll.length) : String(mineAll.length);
   const mineSection =
-    '<div class="day-section-label" style="margin:14px 0 8px">My requests · ' + mineAll.length +
+    '<div class="day-section-label" style="margin:14px 0 8px">My requests · ' + mineCount +
     drCapNoteHtml_(mineAll.length, data && data.mineTotal) + '</div>' + filterBar + mineHtml;
 
   // v2 Incoming inbox — open requests addressed to a department the rep staffs
   // (roster column N → data.myDepts). Members can resolve in-app here.
   let incomingSection = '';
   if (data && data.myDepts && data.myDepts.length) {
-    const inc = data.incoming || [];
+    const inc = (data.incoming || []).filter(drDeptMatch_);
     const incHtml = inc.length
       ? '<div class="sp-tasks">' + inc.map(drRequestCardHtml_).join('') + '</div>'
       : '<div class="dr-empty">No open requests to your department right now.</div>';
@@ -135,7 +191,7 @@ function drRender_(area, data, errorMsg) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + trunc + strip + incomingSection + mineSection + mgrSection;
+  area.innerHTML = head + intro + trunc + strip + deptBar + incomingSection + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -186,7 +242,9 @@ function drRequestCardHtml_(item) {
 }
 
 function drManagerSectionHtml_(data) {
-  const stats = data.deptStats || [];
+  const stats = (data.deptStats || []).filter(function (sRow) {
+    return !DR_DEPT_FILTER.length || DR_DEPT_FILTER.indexOf(sRow.dept) >= 0;
+  });
   const statRows = stats.map(function (s) {
     const overdueCell = s.overdueOpen
       ? '<td class="dr-num" style="color:var(--danger-deep);font-weight:700">' + s.overdueOpen + '</td>'
@@ -207,15 +265,17 @@ function drManagerSectionHtml_(data) {
         '<tbody>' + statRows + '</tbody></table>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
 
-  const open = data.allOpen || [];
+  const openAllTeam = data.allOpen || [];
+  const open = openAllTeam.filter(drDeptMatch_);
+  const openCount = DR_DEPT_FILTER.length ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
     ? '<div class="sp-tasks">' + open.map(drRequestCardHtml_).join('') + '</div>'
-    : '<div class="dr-empty">No open requests across the team.</div>';
+    : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
   return '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +
     '<div class="dr-section dr-mgr">' + statTable + '</div>' +
-    '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + open.length +
-      drCapNoteHtml_(open.length, data.allOpenTotal) + '</div>' + openHtml;
+    '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + openCount +
+      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml;
 }
 
 /** In-app resolve (the manual path): the sender or a manager marks an open
