@@ -1219,6 +1219,13 @@
      machinery (drRowToneCls_). Moved here from the metrics partial when Dept
      Requests adopted the vocabulary. */
   .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: 920px; }
+  /* List-swap motion (operator 2026-08-06) — see animateListSwap_ in
+     script_core.html. Transform/opacity only; one-shot via `both`; per-item
+     stagger rides the inline --d; the global prefers-reduced-motion block
+     (styles_design_tokens.html) neutralizes it wholesale. Generic — any
+     re-rendered list item (status cards, table rows) can carry it. */
+  @keyframes listSwapIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .swap-in { animation: listSwapIn .26s var(--ease) both; animation-delay: var(--d, 0s); }
   .sp-task { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 12px 14px; }
   .sp-task.st-resolved { box-shadow: inset 3px 0 0 var(--good), var(--shadow-sm); background: var(--good-soft); }
   .sp-task.st-pending  { box-shadow: inset 3px 0 0 var(--warn), var(--shadow-sm); background: var(--warn-soft); }

@@ -14594,8 +14594,10 @@ function cnCountNotesResult_(emp, from, to) {
 //  Reuses the CDR layer (getCdrAgentMetrics_ / getCsrTransferPerRepDaily_) over a
 //  SERVER-resolved period (Yesterday / MTD / YTD), so the 92-day getMyMetricsRange
 //  cap (INV-129) doesn't apply — the period is server-controlled, not arbitrary
-//  user input. Caller-scoped own; team is ANONYMIZED via the N=3 cohort guard
-//  (INV-124). Result-cached per (emp, period) like getMyMetrics.
+//  user input. Caller-scoped own; team is the whole-roster aggregate (the N=3
+//  cohort hide was DROPPED for this card by operator decision 2026-08-06 —
+//  INV-124's per-day My Stats series guard is unchanged). Result-cached per
+//  (emp, period) like getMyMetrics.
 // ════════════════════════════════════════════════════════════════════════════
 var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
 
@@ -14665,7 +14667,10 @@ function getDashboardMetrics(periodKey) {
 
     var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     var cache = CacheService.getScriptCache();
-    var cacheKey = 'dash_metrics_v1:' + emp.id + ':' + periodKey;
+    // v2 (operator 2026-08-06): the team field's semantics changed (cohort
+    // guard dropped for this card — see MIN_COHORT below), so stale v1
+    // entries must not serve the old hidden-team payload for the TTL.
+    var cacheKey = 'dash_metrics_v2:' + emp.id + ':' + periodKey;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -14692,7 +14697,12 @@ function getDashboardMetrics(periodKey) {
       allNames.push(nm);
     }
 
-    var MIN_COHORT = 3;
+    // OPERATOR DECISION (2026-08-06): the Dashboard Team/Department card shows
+    // the team aggregate whenever ANY rep reported — the N=3 hide is dropped
+    // HERE ONLY. INV-124's per-day anonymized SERIES guard in getMyMetrics
+    // (the peer-benchmark surface a small cohort can be back-solved from) is
+    // UNCHANGED and must stay 3. team:null now means "no data at all".
+    var MIN_COHORT = 1;
     var ownDq = (getCdrAgentMetrics_(from, to, [emp.name]).agents || {})[emp.name] || null;
     var teamDqMap = getCdrAgentMetrics_(from, to, allNames).agents || {};
     var ownTr = (getCsrTransferPerRepDaily_(from, to, [emp.name]).agents || {})[emp.name] || null;

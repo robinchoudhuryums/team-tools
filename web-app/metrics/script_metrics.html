@@ -1210,7 +1210,16 @@ function mToggleQueueRow_(btn) {
 
 function mQueueScope_(scope) {
   M_STATE.teamScope = (scope === 'queue' || scope === 'dept') ? scope : 'combined';
-  if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
+  if (M_STATE.teamData) {
+    mRenderTeamMetrics_(M_STATE.teamData);
+    // Operator 2026-08-06 — the scope swap re-renders the table in place;
+    // stagger the rows so the switch is legible (decoration;
+    // reduced-motion-safe; detail rows stay hidden so only visible rows get
+    // the delay stamp).
+    if (typeof animateListSwap_ === 'function') {
+      animateListSwap_(document.getElementById('m-team-content'), '.m-table tbody tr:not([hidden])');
+    }
+  }
 }
 
 /** Phase 4 — the per-department detail: the member queues that make up the
@@ -1899,6 +1908,9 @@ function spanishSetTab_(tab) {
     b.setAttribute('aria-pressed', b.getAttribute('data-sp-tab') === SPANISH_STATE.tab);
   });
   spanishRenderList_();
+  // Operator 2026-08-06 — staggered fade+rise on the re-rendered cards so the
+  // tab swap is legible (decoration; reduced-motion-safe).
+  if (typeof animateListSwap_ === 'function') animateListSwap_(document.getElementById('spanish-list'));
 }
 
 /** Fetch BOTH lists for the combined view. An INV-156 FAN-IN (the batch-6
