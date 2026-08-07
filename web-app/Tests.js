@@ -4853,6 +4853,12 @@ function test_managerGates_rejectNonManager() {
     ['getFeatureFlags',                function () { return getFeatureFlags(); }],
     ['saveFeatureFlags',               function () { return saveFeatureFlags({}); }],
     ['getCallNotesEnrollment',         function () { return getCallNotesEnrollment(); }],
+    // Team-member onboarding (2026-08-07) — roster management, admin tier.
+    // The add/offboard cases use inert inputs: the gate fires BEFORE any
+    // validation or sheet write, so nothing is ever appended/cleared here.
+    ['addEmployee',                    function () { return addEmployee({}); }],
+    ['offboardEmployee',               function () { return offboardEmployee('no-such-id'); }],
+    ['getOnboardingPanel',             function () { return getOnboardingPanel(); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
@@ -4905,6 +4911,8 @@ function test_managerGates_rejectNonManager() {
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
+    // Team-member onboarding (2026-08-07) — roster management, admin tier.
+    addEmployee: 1, offboardEmployee: 1, getOnboardingPanel: 1,
     // KB content authoring (Reference tool) — admin-gated uploads/edits.
     kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
     // #4 — revision history + draft→publish (authoring-adjacent).

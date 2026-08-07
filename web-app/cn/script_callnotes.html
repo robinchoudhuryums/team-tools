@@ -9274,6 +9274,190 @@ function cnRenderFlagRows_(registry, values) {
 
 /** Loads the enrollment roster into the Admin tab's enrollment panel and binds
  *  a one-time delegated click handler for the per-rep Provision buttons. */
+// ── Team-member onboarding (Admin → Config → Team Members) ──────────────────
+
+function cnAdminLoadOnboarding_() {
+  var slot = document.getElementById('cn-admin-onboard');
+  if (!slot) return;
+  if (!slot._onboardDelegated) {
+    slot.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('button') : null;
+      if (!t) return;
+      if (t.id === 'cn-ob-toggle') { cnOnboardToggleForm_(t); return; }
+      if (t.id === 'cn-ob-submit') { cnOnboardSubmit_(t); return; }
+      if (t.classList.contains('cn-ob-offboard-btn')) {
+        cnOnboardOffboard_(t.getAttribute('data-emp-id'), t.getAttribute('data-emp-name'), t);
+      }
+    });
+    slot.addEventListener('change', function (e) {
+      // The anchor input only applies to the biweekly cycle — keep it in step.
+      if (e.target && e.target.id === 'cn-ob-paycycle') {
+        var a = document.getElementById('cn-ob-anchor');
+        if (a) { a.disabled = e.target.value !== 'biweekly'; if (a.disabled) a.value = ''; }
+      }
+    });
+    slot._onboardDelegated = true;
+  }
+  var requestedView = currentView;   // the F1 late-callback guard
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (!res || res.error) {
+        slot.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load the team-members panel');   // A12
+        return;
+      }
+      CN_STATE.onboardPanel = res;
+      slot.innerHTML = cnRenderOnboardingHtml_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      slot.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load the team-members panel');   // A12
+    })
+    .getOnboardingPanel();
+}
+
+/** The panel: an Add form behind a disclosure + a per-rep readiness list with
+ *  offboard buttons. Every server string routes through esc() (the documented
+ *  Metrics/CN discipline — CDR alias names cross a repo trust boundary). */
+function cnRenderOnboardingHtml_(res) {
+  var reps = res.reps || [];
+  var chip = function (tone, text, title) {
+    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : 'var(--muted)';
+    return '<span style="font-size:11px;font-family:var(--mono);color:' + color + ';white-space:nowrap"' +
+      (title ? ' title="' + esc(title) + '"' : '') + '>' + text + '</span>';
+  };
+  var rows = reps.map(function (r) {
+    var bits = [];
+    bits.push(r.enrolled ? chip('ok', '✓ notes')
+      : chip('warn', 'notes: provision below', 'No Call Notes Sheet yet — use the Call Notes Enrollment panel below.'));
+    if (!r.managerEmail) bits.push(chip('warn', 'manager: not set', 'Column M is blank — Employee Docs / Coaching visibility fails closed to the issuer only (INV-122).'));
+    else if (!r.managerEmailKnown) bits.push(chip('warn', 'manager: not in MANAGER_EMAILS', esc(r.managerEmail) + ' is not a configured manager.'));
+    else bits.push(chip('ok', '✓ manager'));
+    if (!r.tzValid) bits.push(chip('warn', 'tz: ' + esc(r.timezone || 'blank'), 'Timezone did not validate — punches and digests will use the CONFIG fallback.'));
+    if (res.cdr && res.cdr.ok) {
+      if (r.cdrSeen) bits.push(chip('ok', '✓ cdr'));
+      else if (r.cdrAlias) bits.push(chip('warn', 'cdr: add alias "' + esc(r.cdrAlias) + '"', 'The phone system reports this rep as "' + esc(r.cdrAlias) + '" — add an Agent Alias Overrides row in the CDR Report so their calls count.'));
+      else bits.push(chip('mut', 'cdr: no calls in 7d', 'No CDR rows under this exact name in the last 7 days — expected for a brand-new rep or non-phone staff.'));
+    } else {
+      bits.push(chip('mut', 'cdr: unknown', 'CDR Report unreachable — readiness could not be checked.'));
+    }
+    var self = res.callerEmail && r.email && r.email.toLowerCase() === res.callerEmail;
+    return '<div class="field-row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">' +
+      '<span style="flex:1;min-width:160px;font-size:13px">' + esc(r.name) +
+        ' <span style="color:var(--muted)">(' + esc(r.id) + ')</span>' +
+        (r.isManager ? ' <span style="font-size:10px;font-family:var(--mono);color:var(--muted)">MGR</span>' : '') + '</span>' +
+      bits.join(' ') +
+      (self ? '' : '<button class="refresh-btn cn-ob-offboard-btn" style="flex:0 0 auto;margin-left:auto" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) + '" title="Clears the login email; keeps the name and all history">Offboard</button>') +
+    '</div>';
+  }).join('');
+  var mgrOpts = '<option value="">— none —</option>' + (res.managers || []).map(function (m) {
+    return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
+  }).join('');
+  var tzList = (res.timezones || []).map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+  var form =
+    '<button type="button" class="refresh-btn" id="cn-ob-toggle" aria-expanded="false" aria-controls="cn-ob-form">' +
+      icon('plus', 12) + ' Add team member</button>' +
+    // A plain wrapper div (no display-setting class), so the hidden attribute
+    // actually hides it — the documented [hidden]-vs-display gotcha.
+    '<div id="cn-ob-form" hidden style="margin-top:12px">' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1.2"><label>Full name (exactly as the phone system spells it)</label><input id="cn-ob-name" maxlength="80"></div>' +
+        '<div class="field" style="flex:1"><label>Login email</label><input id="cn-ob-email" type="email" placeholder="name@umsupply.com"></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Employee ID</label><input id="cn-ob-id" maxlength="40" placeholder="E-1108"></div>' +
+        '<div class="field" style="flex:1"><label>Timezone</label><input id="cn-ob-tz" list="cn-ob-tzs" placeholder="America/Chicago"><datalist id="cn-ob-tzs">' + tzList + '</datalist></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Pay cycle</label><select id="cn-ob-paycycle"><option value="">—</option><option value="monthly">Monthly</option><option value="biweekly">Biweekly</option></select></div>' +
+        '<div class="field" style="flex:1"><label>Pay anchor (biweekly only' + (res.hasBiweeklyAnchor ? ' — already set, leave blank' : '') + ')</label><input id="cn-ob-anchor" type="date" disabled></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Annual leave balance</label><input id="cn-ob-annual" type="number" min="0" max="365" step="0.5" value="0"></div>' +
+        '<div class="field" style="flex:1"><label>Sick leave balance</label><input id="cn-ob-sick" type="number" min="0" max="365" step="0.5" value="0"></div>' +
+        '<div class="field" style="flex:1"><label>Manager (column M)</label><select id="cn-ob-manager">' + mgrOpts + '</select></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Departments staffed (optional, comma-separated' + (res.departments && res.departments.length ? ': ' + esc(res.departments.join(', ')) : '') + ')</label><input id="cn-ob-depts" placeholder=""></div>' +
+        '<div class="field" style="flex:1"><label>Shift override (optional, H:mm-H:mm in their tz)</label><input id="cn-ob-schedule" placeholder="9:00-17:30"></div></div>' +
+      '<div class="field-row" style="gap:16px;align-items:center;margin-top:4px;flex-wrap:wrap">' +
+        '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-pto" checked> Accrues paid leave (uncheck for contractors)</label>' +
+        '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-ismgr"> Manager (sees team dashboards)</label>' +
+        '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-provision" checked> Provision their Call Notes Sheet now</label>' +
+      '</div>' +
+      '<button class="btn-modal-ok" id="cn-ob-submit" style="margin:12px 0 0">Add team member</button>' +
+    '</div>' +
+    (res.offboarded && res.offboarded.length
+      ? '<div style="font-size:11px;color:var(--muted);margin-top:12px">' + esc(String(res.offboarded.length)) +
+        ' offboarded (name kept for history): ' + esc(res.offboarded.slice(0, 8).join(' · ')) +
+        (res.offboarded.length > 8 ? ' <em>+' + (res.offboarded.length - 8) + ' more</em>' : '') + '</div>'
+      : '');
+  return '<div style="margin-bottom:12px">' + rows + '</div>' + form;
+}
+
+function cnOnboardToggleForm_(btn) {
+  var f = document.getElementById('cn-ob-form');
+  if (!f) return;
+  var open = f.hidden;   // hidden → open it
+  f.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));   // INV-174 — kept in step
+}
+
+function cnOnboardSubmit_(btn) {
+  var v = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
+  var c = function (id) { var el = document.getElementById(id); return !!(el && el.checked); };
+  var payload = {
+    name: v('cn-ob-name'), email: v('cn-ob-email'), id: v('cn-ob-id'),
+    timezone: v('cn-ob-tz'), payCycle: v('cn-ob-paycycle'), payAnchor: v('cn-ob-anchor'),
+    annual: v('cn-ob-annual') || 0, sick: v('cn-ob-sick') || 0,
+    managerEmail: v('cn-ob-manager'), departments: v('cn-ob-depts'), schedule: v('cn-ob-schedule'),
+    ptoEnabled: c('cn-ob-pto'), isManager: c('cn-ob-ismgr'), provisionNotes: c('cn-ob-provision'),
+  };
+  uiConfirm({
+    title: 'Add team member',
+    message: 'Add ' + (payload.name || '(no name)') + ' (' + (payload.id || 'no ID') + ', ' +
+      (payload.email || 'no email') + ')' + (payload.provisionNotes ? ' and provision their Call Notes Sheet' : '') +
+      '? They can sign in as soon as this completes.',
+    confirmLabel: 'Add',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.textContent = 'Adding…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Add team member';
+        if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
+        if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
+        else showToast(res.name + ' added' + (res.provision ? ' + Call Notes Sheet provisioned' : ''), 'toast-success');
+        cnAdminLoadOnboarding_();
+        cnAdminLoadEnrollment_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Add team member';
+        showToast((err && err.message) || 'Add failed', 'toast-error');
+      })
+      .addEmployee(payload);
+  });
+}
+
+function cnOnboardOffboard_(empId, empName, btn) {
+  uiConfirm({
+    title: 'Offboard ' + (empName || empId),
+    message: 'This clears their login email so the app stops counting them — their name, history, notes, and sheets are all kept. Re-adding the email later restores access. Continue?',
+    confirmLabel: 'Offboard',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Offboarding…'; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Offboard'; }
+          showToast((res && res.error) || 'Offboard failed', 'toast-error');
+          return;
+        }
+        showToast((res.name || empName) + ' offboarded (history kept)', 'toast-success');
+        cnAdminLoadOnboarding_();
+        cnAdminLoadEnrollment_();
+      })
+      .withFailureHandler(function (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Offboard'; }
+        showToast((err && err.message) || 'Offboard failed', 'toast-error');
+      })
+      .offboardEmployee(empId);
+  });
+}
+
 function cnAdminLoadEnrollment_() {
   var slot = document.getElementById('cn-admin-enroll-list');
   if (!slot) return;
@@ -9459,6 +9643,15 @@ function cnRenderAdminBody_(cfg) {
       '<button class="btn-modal-ok" id="cn-admin-save-kbai" style="margin:10px 0 0">Save AI Settings</button>' +
     '</div>' : '') +
 
+    // Team-member onboarding (operator request 2026-08-07, pre-pilot): the
+    // roster row was the one remaining manual onboarding step. Add form +
+    // per-rep readiness + offboard, all served by getOnboardingPanel.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('user', 14) + ' Team Members</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Add a team member (validated roster row + one-click Call Notes Sheet), check each rep’s readiness, or offboard (clears the login email; keeps the name so history still reads).</div>' +
+      '<div id="cn-admin-onboard">' + loSweep() + '</div>' +
+    '</div>' +
+
     // #8 — reconcile hand-entered Sheet rows
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Sheet Reconciliation</div>' +
@@ -9475,6 +9668,7 @@ function cnRenderAdminBody_(cfg) {
     '</div>';
 
   cnAdminLoadEnrollment_();
+  cnAdminLoadOnboarding_();
 
   document.getElementById('cn-admin-reconcile').addEventListener('click', function () {
     var btn = this;

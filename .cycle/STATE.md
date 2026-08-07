@@ -35,6 +35,25 @@ Phase: idle (post-reflect) + operator-requested feature work:
   whitelist pinned. Pure 448 (2 new pins, 3 bite-checks), DOM 69, full
   39-matrix 0/0; animation + hidden-message verified by MEASUREMENT
   (computed animationName + stagger). Docs synced in the same commit.
+  Merged as **PR #156** (f7bf58f, CI green); branch restarted from main.
+- Team-member onboarding (operator request 2026-08-07, PRE-PILOT — the
+  operator distributes the app to pilot reps next week): Manage → Admin →
+  Config → **Team Members**. Three NEW admin-gated endpoints (INV-136 35→38,
+  doc-count net updated in the same commit): `addEmployee` (locked;
+  validate-under-lock via the pure `empValidateNewEmployee_` — unique
+  email/ID/NAME, no TEST_ ids, tz shape, dept whitelist, H:mm-H:mm-only
+  schedule, managerEmail ∈ MANAGER_EMAILS, second-biweekly-anchor reject
+  INV-18; appends the 15-col row, invalidates roster cache, audits
+  `EmployeeAdd`, optional Call Notes provisioning AFTER lock release),
+  `offboardEmployee` (clears ONLY the email — INV-183 convention; self-guard;
+  audits `EmployeeOffboard`), `getOnboardingPanel` (readiness: notes/manager/
+  tz/CDR-seen + alias suggestion via cdrLikelyNameMismatches_; CDR
+  best-effort). Client panel (form + readiness chips + offboard) in the cn
+  Admin partial; getOnboardingPanel fixture added (INV-185); omnibus gate
+  cases + ADMIN_GATED entries added to Tests.js (F9). Pure 450 (2 new pins,
+  4 bite-checks incl. the F7 doc-count net), DOM 69; panel render verified by
+  measurement + element screenshot. Docs: new KDD + operator-checklist entry
+  + S75 scenario + INV-136 count updates.
 (Cycle-17 history below is retained until the close-out move.)
 Phase (cycle-17 record): implement — the broad scan is COMPLETE. Implemented + doc-synced:
   TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,

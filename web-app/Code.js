@@ -3476,6 +3476,303 @@ function provisionCallNotesSheet(repEmpId) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  Team-member onboarding (operator request 2026-08-07, pre-pilot).
+//  The roster row was the ONE remaining manual onboarding step (a hand edit of
+//  the payroll-adjacent Employees sheet); these three endpoints make it an
+//  Admin-tab flow: add (validated append + optional one-click Call Notes
+//  provisioning), a readiness panel, and offboard (clear the EMAIL, keep the
+//  name — the documented roster convention, INV-183). All three are
+//  ADMIN-gated (INV-136 — roster management sits in the config tier).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** PURE (Node-pinned) — validate a new-employee payload and build the 15-cell
+ *  roster row in EMP-enum order. `ctx` carries everything sheet-derived:
+ *  {existingEmails[], existingIds[], existingNames[] (all lowercased+trimmed),
+ *   managerEmails[] (lowercased), deptKeys[], hasBiweeklyAnchor}.
+ *  Returns {ok:false, error} on the FIRST failure (the Admin form shows one
+ *  actionable message at a time) or {ok:true, row:[15]}.
+ *  Validation notes, each load-bearing:
+ *  - NAME uniqueness is required, not cosmetic: getTeamMetrics keys repMap by
+ *    name and CDR matching is name-based — two "Ana Cruz" rows would merge
+ *    into one metrics row.
+ *  - IDs must never start with TEST_ (the cleanupTestData sweep key).
+ *  - The timezone SHAPE check mirrors safeTimezone_'s gate (IANA
+ *    Area/Location or a UTC/GMT token) — the V8 runtime silently resolves
+ *    unknown ids to GMT, so shape is the only reliable reject.
+ *  - A biweekly PAY_ANCHOR is rejected when one already exists on the roster:
+ *    getCurrentBiweeklyRange_ reads the FIRST anchored biweekly row, so a
+ *    second anchor is at best ignored and at worst becomes the boundary when
+ *    the first row is later blanked (the documented INV-18 hazard).
+ *  - SCHEDULE must be the full H:mm-H:mm form: parseShiftOverride_ accepts
+ *    bare hours, but Sheets date-coerces a bare `9-17` typed into the cell —
+ *    and setValue of the same string risks the same coercion. */
+function empValidateNewEmployee_(p, ctx) {
+  p = p || {}; ctx = ctx || {};
+  var bad = function (msg) { return { ok: false, error: msg }; };
+  var email = String(p.email || '').trim();
+  var emailLc = email.toLowerCase();
+  if (!email) return bad('Email is required — it is the login identity.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad('That email does not look valid: ' + email);
+  if ((ctx.existingEmails || []).indexOf(emailLc) >= 0) return bad('An employee with that email already exists.');
+  var id = String(p.id || '').trim();
+  if (!id) return bad('Employee ID is required.');
+  if (id.length > 40) return bad('Employee ID is too long (max 40 characters).');
+  if (/^test_/i.test(id)) return bad('IDs must not start with TEST_ — that prefix is the test-data cleanup key.');
+
+  if ((ctx.existingIds || []).indexOf(id.toLowerCase()) >= 0) return bad('Employee ID "' + id + '" is already in use.');
+  var name = String(p.name || '').trim();
+  if (!name) return bad('Name is required.');
+  if (name.length > 80) return bad('Name is too long (max 80 characters).');
+  if ((ctx.existingNames || []).indexOf(name.toLowerCase()) >= 0) {
+    return bad('An employee named "' + name + '" already exists — metrics and CDR matching are name-keyed, so names must be unique.');
+  }
+
+  var tz = String(p.timezone || '').trim();
+  if (!tz) return bad('Timezone is required (e.g. America/Chicago, Asia/Manila).');
+  var tzShapeOk = /^[A-Za-z]+(\/[A-Za-z0-9_+\-]+)+$/.test(tz) ||
+                  /^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(tz);
+  if (!tzShapeOk) return bad('"' + tz + '" is not a valid timezone id (use the Area/Location form, e.g. America/Chicago).');
+  var cycle = String(p.payCycle || '').trim().toLowerCase();
+  if (cycle && cycle !== 'biweekly' && cycle !== 'monthly') return bad('Pay cycle must be biweekly or monthly (or blank).');
+  var anchor = String(p.payAnchor || '').trim();
+  if (anchor) {
+    if (cycle !== 'biweekly') return bad('A pay anchor only applies to the biweekly cycle.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return bad('Pay anchor must be yyyy-MM-dd.');
+    if (ctx.hasBiweeklyAnchor) {
+      return bad('A biweekly anchor already exists on the roster and governs the shared period boundary — leave the anchor blank.');
+    }
+  }
+  var annual = Number(p.annual);
+  var sick = Number(p.sick);
+  if (!isFinite(annual) || annual < 0 || annual > 365) return bad('Annual leave balance must be 0–365.');
+  if (!isFinite(sick) || sick < 0 || sick > 365) return bad('Sick leave balance must be 0–365.');
+  var mgrEmail = String(p.managerEmail || '').trim().toLowerCase();
+  if (mgrEmail && (ctx.managerEmails || []).indexOf(mgrEmail) < 0) {
+    return bad('"' + mgrEmail + '" is not in MANAGER_EMAILS — column M must name a real manager or doc/coaching visibility fails closed (INV-122).');
+  }
+  var deptsOut = '';
+  var deptsRaw = String(p.departments || '').trim();
+  if (deptsRaw) {
+    var keys = ctx.deptKeys || [];
+    var keyByLc = {};
+    for (var k = 0; k < keys.length; k++) keyByLc[String(keys[k]).toLowerCase()] = keys[k];
+    var seen = {}, canon = [];
+    var parts = deptsRaw.split(/[;,]/);
+    for (var d = 0; d < parts.length; d++) {
+      var dn = parts[d].trim();
+      if (!dn) continue;
+      var hit = keyByLc[dn.toLowerCase()];
+      if (!hit) return bad('Unknown department "' + dn + '" — departments must match the configured list (unknown names are silently dropped at read time).');
+      if (!seen[hit]) { seen[hit] = true; canon.push(hit); }
+    }
+    deptsOut = canon.join('; ');
+  }
+  var sched = String(p.schedule || '').trim();
+  if (sched) {
+    if (!/^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(sched)) {
+      return bad('Schedule must be the full H:mm-H:mm form (e.g. 9:00-17:30) — a bare 9-17 gets date-coerced by Sheets.');
+    }
+    if (parseShiftOverride_(sched) === null) {
+      return bad('"' + sched + '" is not a usable schedule (start must be before end, within 0:00–23:59).');
+    }
+  }
+  // The 15-cell row in EMP-enum order (A–O). Blank SHEET_ID (the optional
+  // legacy personal mirror) and blank CALL_NOTES_SHEET_ID (provisioning fills
+  // it). PtoEnabled is written EXPLICITLY ('TRUE'/'FALSE') — blank means
+  // enabled by back-compat, and an explicit cell can't be misread later.
+  var row = [];
+  row[EMP.EMAIL] = email;
+  row[EMP.ID] = id;
+  row[EMP.NAME] = name;
+  row[EMP.SHEET_ID] = '';
+  row[EMP.PAY_CYCLE] = cycle;
+  row[EMP.PAY_ANCHOR] = anchor;
+  row[EMP.IS_MANAGER] = p.isManager ? 'TRUE' : '';
+  row[EMP.TIMEZONE] = tz;
+  row[EMP.ANNUAL_LEAVE] = annual;
+  row[EMP.SICK_LEAVE] = sick;
+  row[EMP.PTO_ENABLED] = p.ptoEnabled ? 'TRUE' : 'FALSE';
+  row[EMP.CALL_NOTES_SHEET_ID] = '';
+  row[EMP.MANAGER_EMAIL] = mgrEmail;
+  row[EMP.DEPARTMENTS] = deptsOut;
+  row[EMP.SCHEDULE] = sched;
+  return { ok: true, row: row };
+}
+
+/** Admin-gated, locked — append a VALIDATED roster row, then (optionally)
+ *  auto-provision the rep's Call Notes Sheet. Validation runs INSIDE the lock
+ *  against a fresh sheet read so uniqueness can't race a concurrent add. The
+ *  provisioning step reuses provisionCallNotesSheet AFTER the lock is
+ *  released (it takes the same lock itself); a provisioning failure leaves
+ *  the employee created and reports the warning rather than failing the add. */
+function addEmployee(payload) {
+  try {
+    var callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    if (!payload || typeof payload !== 'object') return { error: 'No employee data supplied.' };
+    var check;
+    var lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      var sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+      var rows = sheet.getDataRange().getValues();
+      var existingEmails = [], existingIds = [], existingNames = [];
+      var hasBiweeklyAnchor = false;
+      for (var i = 1; i < rows.length; i++) {
+        var em = empRosterEmail_(rows[i]);   // F3: the one inclusion predicate
+        if (em) existingEmails.push(em.toLowerCase());
+        var exId = String(rows[i][EMP.ID] || '').trim();
+        if (exId) existingIds.push(exId.toLowerCase());
+        var exNm = String(rows[i][EMP.NAME] || '').trim();
+        if (exNm) existingNames.push(exNm.toLowerCase());
+        if (String(rows[i][EMP.PAY_CYCLE] || '').trim().toLowerCase() === 'biweekly' &&
+            String(rows[i][EMP.PAY_ANCHOR] || '').trim()) hasBiweeklyAnchor = true;
+      }
+      check = empValidateNewEmployee_(payload, {
+        existingEmails: existingEmails, existingIds: existingIds, existingNames: existingNames,
+        managerEmails: getManagerEmails_().map(function (e) { return String(e).toLowerCase(); }),
+        deptKeys: Object.keys(getDepartmentEmails_()),
+        hasBiweeklyAnchor: hasBiweeklyAnchor,
+      });
+      if (!check.ok) return { error: check.error };
+      sheet.appendRow(check.row);
+      invalidateRosterCache_();   // INV-10 — the new rep can log in immediately
+      writeAuditLog_(callerEmp, 'EmployeeAdd', String(payload.id).trim(), '', false, 0,
+        'id=' + String(payload.id).trim() + '; name=' + String(payload.name).trim() +
+        '; tz=' + String(payload.timezone).trim(), callerEmp.email);
+    } finally {
+      lock.releaseLock();
+    }
+    var result = { success: true, id: String(payload.id).trim(), name: String(payload.name).trim() };
+    if (payload.provisionNotes) {
+      // Sequential lock re-acquire (never nested) — see the docstring.
+      var prov = provisionCallNotesSheet(result.id);
+      if (prov && prov.success) result.provision = { sheetId: prov.sheetId, url: prov.url || '' };
+      else result.provisionWarning = (prov && prov.error) || 'Call Notes provisioning failed — use the Enrollment panel to retry.';
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated, locked — offboard by the ROSTER CONVENTION (INV-183): clear
+ *  the EMAIL cell, keep the name and every other cell, so history still reads
+ *  while every inclusion walk stops counting the row. Never deletes the row,
+ *  never touches the per-rep Sheets. Self-offboarding is rejected (it would
+ *  lock the caller out of the app mid-session). */
+function offboardEmployee(repEmpId) {
+  try {
+    var callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    repEmpId = String(repEmpId || '').trim();
+    if (!repEmpId) return { error: 'No employee specified.' };
+    var lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      var sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+      var rows = sheet.getDataRange().getValues();
+      var targetRow = -1, repName = '', repEmail = '';
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][EMP.ID] || '').trim() !== repEmpId) continue;
+        targetRow = i;
+        repName = String(rows[i][EMP.NAME] || '').trim();
+        repEmail = empRosterEmail_(rows[i]);
+        break;
+      }
+      if (targetRow < 0) return { error: 'Employee not found: ' + repEmpId };
+      if (!repEmail) return { error: (repName || repEmpId) + ' is already offboarded (no email on the row).' };
+      if (repEmail.toLowerCase() === String(callerEmp.email).toLowerCase()) {
+        return { error: 'You cannot offboard yourself — another admin has to do that.' };
+      }
+      sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue('');
+      invalidateRosterCache_();
+      writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
+        'id=' + repEmpId + '; name=' + repName, callerEmp.email);
+      return { success: true, id: repEmpId, name: repName };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated, read-only — everything the "Team members" Admin panel needs in
+ *  one call: per-rep readiness (Call Notes enrolled / ManagerEmail set+known /
+ *  timezone shape / CDR seen-in-last-7-days with an alias suggestion when the
+ *  phone system spells the name differently), the form's option lists
+ *  (managers, departments, roster timezones), the biweekly-anchor state, and
+ *  the offboarded (name-only) rows. The CDR block is BEST-EFFORT (the INV-67
+ *  posture): an unreachable CDR Report degrades to cdr.ok:false and every
+ *  rep's cdrSeen reads "unknown", never "missing". */
+function getOnboardingPanel() {
+  try {
+    var callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    var rows = getEmployeeRosterRows_();
+    var managerEmails = getManagerEmails_().map(function (e) { return String(e).toLowerCase(); });
+    var reps = [], offboarded = [], tzSeen = {};
+    var hasBiweeklyAnchor = false, anchorOwner = '';
+    for (var i = 1; i < rows.length; i++) {
+      var name = String(rows[i][EMP.NAME] || '').trim();
+      var email = empRosterEmail_(rows[i]);   // F3: the one inclusion predicate
+      if (!email) {
+        if (name) offboarded.push(name);
+        continue;
+      }
+      var tz = String(rows[i][EMP.TIMEZONE] || '').trim();
+      if (tz) tzSeen[tz] = true;
+      var mgr = String(rows[i][EMP.MANAGER_EMAIL] || '').trim().toLowerCase();
+      if (String(rows[i][EMP.PAY_CYCLE] || '').trim().toLowerCase() === 'biweekly' &&
+          String(rows[i][EMP.PAY_ANCHOR] || '').trim() && !hasBiweeklyAnchor) {
+        hasBiweeklyAnchor = true; anchorOwner = name;
+      }
+      reps.push({
+        id: String(rows[i][EMP.ID] || '').trim(),
+        name: name,
+        email: email,
+        timezone: tz,
+        tzValid: safeTimezone_(tz) === tz || tz === CONFIG.TIMEZONE,
+        enrolled: !!cnEnrolledSheetId_(rows[i]),
+        managerEmail: mgr,
+        managerEmailKnown: !!mgr && managerEmails.indexOf(mgr) >= 0,
+        isManager: /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim()),
+      });
+    }
+    reps.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    // Best-effort CDR readiness over the trailing 7 days: has the phone system
+    // reported this NAME at all, and if not, does an off-roster CDR agent look
+    // like the same person spelled differently (the INV-186 pairing)?
+    var cdr = { ok: false };
+    try {
+      var to = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+      var fromD = new Date(Date.parse(to + 'T12:00:00Z') - 6 * 86400000);
+      var from = isoFromUtc_(fromD);
+      var names = reps.map(function (r) { return r.name; });
+      var agg = getCdrAgentMetrics_(from, to, names);
+      var seenSet = agg.agents || {};
+      var noCdr = names.filter(function (n) { return !seenSet[n]; });
+      var likely = cdrLikelyNameMismatches_(noCdr, (agg.meta && agg.meta.offRosterAgents) || []);
+      var aliasByRoster = {};
+      likely.forEach(function (m) { aliasByRoster[m.roster] = m.cdr; });
+      reps.forEach(function (r) {
+        r.cdrSeen = !!seenSet[r.name];
+        if (!r.cdrSeen && aliasByRoster[r.name]) r.cdrAlias = aliasByRoster[r.name];
+      });
+      cdr = { ok: true, from: from, to: to };
+    } catch (eCdr) { cdr = { ok: false, error: eCdr.message }; }
+    return {
+      reps: reps,
+      offboarded: offboarded,
+      managers: getManagerEmails_(),
+      departments: Object.keys(getDepartmentEmails_()),
+      timezones: Object.keys(tzSeen).sort(),
+      hasBiweeklyAnchor: hasBiweeklyAnchor,
+      anchorOwner: anchorOwner,
+      cdr: cdr,
+      callerEmail: String(callerEmp.email || '').toLowerCase(),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
  *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
  *  returns unique tags with usage counts. Manager-gated; read-only.
