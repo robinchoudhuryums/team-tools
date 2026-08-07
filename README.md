@@ -9,7 +9,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
   Hosts seven tools today, registered side-by-side in the `TOOLS`
   registry in `script_core.html` — the six feature modules below plus
   **Manage**, the consolidated manager/admin home (Manage Time,
-  Coverage, Punctuality, and an admin-only Admin tab):
+  Coverage, Punctuality, and an admin-only Admin tab — config,
+  system health, compliance audit, and team-member onboarding:
+  add a rep with a validated form that also provisions their Call
+  Notes Sheet, check per-rep readiness, offboard):
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export, and a manager-only Coverage
     planner (forward staffing across timezones with PTO overlaid and

@@ -373,6 +373,33 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     getCallNotesEnrollment: { enrolled: [
       { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }],
       unenrolled: [{ id: 'E-1090', name: 'Leo Kim' }] },
+    // Team-member onboarding (2026-08-07) — field names mirror
+    // getOnboardingPanel's return site (INV-185). Covers every readiness
+    // state: fully-ready, needs-provisioning + alias suggestion, blank
+    // manager + no CDR rows, and unknown manager email.
+    getOnboardingPanel: {
+      reps: [
+        { id: 'E-1042', name: 'Avery Blake', email: 'avery@example.invalid', timezone: 'Asia/Kolkata',
+          tzValid: true, enrolled: true, managerEmail: 'robin@example.invalid', managerEmailKnown: true,
+          isManager: true, cdrSeen: true },
+        { id: 'E-1090', name: 'Leo Kim', email: 'leo@example.invalid', timezone: 'Asia/Manila',
+          tzValid: true, enrolled: false, managerEmail: 'robin@example.invalid', managerEmailKnown: true,
+          isManager: false, cdrSeen: false, cdrAlias: 'Kim, Leo' },
+        { id: 'E-1091', name: 'Nina Patel', email: 'nina@example.invalid', timezone: 'America/Chicago',
+          tzValid: true, enrolled: true, managerEmail: '', managerEmailKnown: false,
+          isManager: false, cdrSeen: false },
+        { id: 'E-1088', name: 'Sam Ortiz', email: 'sam@example.invalid', timezone: 'America/Chicago',
+          tzValid: true, enrolled: true, managerEmail: 'ghost@example.invalid', managerEmailKnown: false,
+          isManager: false, cdrSeen: true },
+      ],
+      offboarded: ['Jo Tran'],
+      managers: ['robin@example.invalid'],
+      departments: ['Billing', 'Shipping', 'Resupply', 'Intake'],
+      timezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
+      hasBiweeklyAnchor: true, anchorOwner: 'Avery Blake',
+      cdr: { ok: true, from: daysAgo(6), to: todayIso },
+      callerEmail: 'avery@example.invalid',
+    },
     managerGetUnresolvedActionCount: { count: 1, partial: false },
     getDeployReadiness: {
       items: [

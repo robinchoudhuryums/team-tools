@@ -4985,6 +4985,9 @@ test('F14: every column-L read goes through cnEnrolledSheetId_ (no raw truthines
     if (/String\(row\[EMP\.CALL_NOTES_SHEET_ID\]/.test(line)) return;
     // provisionCallNotesSheet's setValue target (a WRITE, not an enrollment test).
     if (/getRange\([^)]*EMP\.CALL_NOTES_SHEET_ID \+ 1\)/.test(line)) return;
+    // empValidateNewEmployee_'s row-builder slot (a WRITE — `=` assignment,
+    // not `==` comparison; the enum-derived index is the QUEUE_EXT lesson).
+    if (/row\[EMP\.CALL_NOTES_SHEET_ID\] =(?!=)/.test(line)) return;
     offenders.push((i + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
@@ -7214,6 +7217,88 @@ test('list-swap motion: shared helper, transform/opacity-only keyframes, wired a
   const met = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
   const calls = ((dr.match(/animateListSwap_\(/g) || []).length) + ((met.match(/animateListSwap_\(/g) || []).length);
   assert.ok(calls >= 4, 'all four switch sites animate the swap (found ' + calls + ')');
+});
+
+// ── Team-member onboarding (operator request 2026-08-07, pre-pilot) ─────────
+console.log('\nteam-member onboarding');
+
+test('empValidateNewEmployee_ — behavioral (the roster append is guarded by validation, not convention)', () => {
+  // Load the REAL EMP enum + parseShiftOverride_ + the validator into one ctx
+  // (the intake-engine pattern — never re-declare the enum in the test).
+  const obCtx = vm.createContext({});
+  const empConst = /const EMP = \{[\s\S]*?\};/.exec(codeSrc);
+  assert.ok(empConst, 'the EMP enum was located');
+  vm.runInContext(empConst[0], obCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'parseShiftOverride_'), obCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'empValidateNewEmployee_'), obCtx);
+  // A top-level `const` is a lexical binding, not a context property — read it
+  // back through the context rather than off the object.
+  const EMPn = vm.runInContext('EMP', obCtx);
+  const CTX = {
+    existingEmails: ['sam@umsupply.com'], existingIds: ['e-1077'], existingNames: ['sam ortiz'],
+    managerEmails: ['robin@umsupply.com'], deptKeys: ['Billing', 'Shipping'], hasBiweeklyAnchor: false,
+  };
+  const base = { email: 'Ana@umsupply.com', id: 'E-1108', name: 'Ana Cruz', timezone: 'Asia/Manila',
+    payCycle: '', payAnchor: '', annual: 12, sick: 5, ptoEnabled: false, isManager: false,
+    managerEmail: 'Robin@umsupply.com', departments: 'billing, SHIPPING', schedule: '9:00-17:30' };
+  const v = (over, ctxOver) => obCtx.empValidateNewEmployee_(
+    Object.assign({}, base, over || {}), Object.assign({}, CTX, ctxOver || {}));
+  const ok = v();
+  assert.strictEqual(ok.ok, true, 'a fully valid payload passes: ' + (ok.error || ''));
+  assert.strictEqual(ok.row.length, 15, 'the row spans the full A–O roster width');
+  assert.strictEqual(ok.row[EMPn.EMAIL], 'Ana@umsupply.com');
+  assert.strictEqual(ok.row[EMPn.PTO_ENABLED], 'FALSE', 'PTO off writes an EXPLICIT FALSE, never a blank');
+  assert.strictEqual(ok.row[EMPn.IS_MANAGER], '', 'non-manager stays blank (the roster convention)');
+  assert.strictEqual(ok.row[EMPn.DEPARTMENTS], 'Billing; Shipping', 'departments canonicalize to the configured keys');
+  assert.strictEqual(ok.row[EMPn.MANAGER_EMAIL], 'robin@umsupply.com', 'manager email stored lowercased');
+  // Uniqueness — all three identity columns, case-insensitively.
+  assert.ok(!v({ email: 'SAM@umsupply.com' }).ok, 'duplicate email rejected (case-insensitive)');
+  assert.ok(!v({ id: 'e-1077' }).ok, 'duplicate ID rejected');
+  assert.ok(!v({ name: 'SAM ORTIZ' }).ok, 'duplicate NAME rejected — repMap/CDR matching are name-keyed');
+  // The production-safety + shape rules.
+  assert.ok(/TEST_/.test(v({ id: 'TEST_9' }).error), 'TEST_-prefixed IDs rejected (the cleanup sweep key)');
+  assert.ok(!v({ timezone: 'NotATimezone' }).ok, 'a shapeless timezone is rejected');
+  assert.ok(!v({ departments: 'Billing, West' }).ok && /West/.test(v({ departments: 'West' }).error),
+    'an unknown department is rejected BY NAME (read-time parsing silently drops it)');
+  assert.ok(!v({ schedule: '9-17' }).ok, 'bare-hours schedule rejected — Sheets date-coerces 9-17');
+  assert.ok(!v({ schedule: '17:00-9:00' }).ok, 'inverted schedule rejected (parseShiftOverride_ null)');
+  assert.ok(!v({ managerEmail: 'stranger@umsupply.com' }).ok, 'a manager email outside MANAGER_EMAILS is rejected (fail-closed docs visibility)');
+  assert.ok(!v({ annual: -1 }).ok && !v({ sick: 'abc' }).ok, 'balances must be finite 0–365');
+  // The INV-18 anchor hazard: one anchored biweekly row governs the boundary.
+  assert.ok(!v({ payCycle: 'monthly', payAnchor: '2026-01-05' }).ok, 'anchor without biweekly rejected');
+  assert.ok(!v({ payCycle: 'biweekly', payAnchor: '2026-01-05' }, { hasBiweeklyAnchor: true }).ok,
+    'a SECOND biweekly anchor is rejected — the first anchored row governs (INV-18)');
+  assert.ok(v({ payCycle: 'biweekly', payAnchor: '2026-01-05' }).ok, 'the FIRST anchor is accepted');
+});
+
+test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and convention pins', () => {
+  const strip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const add = strip(extractRawFunction('Code.js', 'addEmployee'));
+  assert.ok(/'Admin access required\.'/.test(add), 'addEmployee is admin-gated (roster management, INV-136 tier)');
+  // Validation runs INSIDE the lock against a FRESH sheet read, so uniqueness
+  // cannot race a concurrent add; provisioning re-acquires AFTER release
+  // (sequential, never nested — LockService is not reentrant).
+  const wl = add.indexOf('waitLock'), val = add.indexOf('empValidateNewEmployee_('),
+        rel = add.indexOf('releaseLock'), prov = add.indexOf('provisionCallNotesSheet(');
+  assert.ok(wl >= 0 && val > wl && rel > val, 'validate-under-lock ordering holds');
+  assert.ok(prov > rel, 'Call Notes provisioning runs AFTER the lock releases (sequential re-acquire)');
+  assert.ok(/invalidateRosterCache_\(\)/.test(add) && /'EmployeeAdd'/.test(add),
+    'cache invalidated (INV-10) + audited (INV-08)');
+  const off = strip(extractRawFunction('Code.js', 'offboardEmployee'));
+  assert.ok(/'Admin access required\.'/.test(off), 'offboardEmployee is admin-gated');
+  // THE convention (INV-183): clear the EMAIL, keep everything else. Exactly
+  // one cell write, aimed at column A — never a row delete, never the name.
+  const writes = off.match(/setValue\(/g) || [];
+  assert.strictEqual(writes.length, 1, 'offboard writes exactly ONE cell');
+  assert.ok(/EMP\.EMAIL \+ 1\)\.setValue\(''\)/.test(off), 'the one write clears the EMAIL cell');
+  assert.ok(!/deleteRow/.test(off), 'the row is never deleted — history keeps reading');
+  assert.ok(/cannot offboard yourself/.test(off), 'self-offboard is rejected (would lock the caller out mid-session)');
+  const panel = strip(extractRawFunction('Code.js', 'getOnboardingPanel'));
+  assert.ok(/'Admin access required\.'/.test(panel), 'getOnboardingPanel is admin-gated');
+  assert.ok(/catch \(eCdr\)/.test(panel) && /ok: false/.test(panel),
+    'the CDR readiness block is best-effort (INV-67 posture) — an unreachable CDR Report degrades, never fails the panel');
+  assert.ok(/empRosterEmail_\(/.test(panel) && /empRosterEmail_\(/.test(add) && /empRosterEmail_\(/.test(off),
+    'all three route roster inclusion through the ONE predicate (INV-183/F3)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
