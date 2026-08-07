@@ -4372,6 +4372,14 @@ manually for a fresh deploy or environment:
   Spanish Inbox, and the Team Metrics scope switcher play a brief staggered
   fade+rise (reduced-motion-safe). **Post-deploy: run `runAllTests()`** as
   usual.
+- **The team-member onboarding flow (2026-08-07) adds NO new operator state** —
+  no Script Properties, triggers, migrations, or CONFIG constants; it WRITES
+  the existing stores (a validated Employees-sheet append; the same Call Notes
+  provisioning the Enrollment panel already runs). Two NEW audit actions
+  appear in the AuditLog (`EmployeeAdd`, `EmployeeOffboard` — neutral-toned in
+  the admin sheet viewer). Post-deploy: adding the first pilot rep THROUGH the
+  panel doubles as the S75 verification walk; the gate cases run with the
+  standing `runAllTests()`.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
