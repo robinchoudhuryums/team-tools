@@ -392,7 +392,10 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           tzValid: true, enrolled: true, managerEmail: 'ghost@example.invalid', managerEmailKnown: false,
           isManager: false, cdrSeen: true },
       ],
-      offboarded: [{ id: 'E-1099', name: 'Jo Tran' }],   // {id,name} since 2026-08-08 — the ID stays reserved
+      // {id,name,incomplete} since 2026-08-08 — an offboarded row (kept its
+      // roster data) vs a hand-stubbed one (ID reserved, never usable).
+      offboarded: [{ id: 'E-1099', name: 'Jo Tran', incomplete: false },
+                   { id: 'E-1120', name: 'Pat Rivera', incomplete: true }],
       managers: ['robin@example.invalid'],
       departments: ['Billing', 'Shipping', 'Resupply', 'Intake'],
       timezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],

@@ -9378,17 +9378,37 @@ function cnRenderOnboardingHtml_(res) {
       '</div>' +
       '<button class="btn-modal-ok" id="cn-ob-submit" style="margin:12px 0 0">Add team member</button>' +
     '</div>' +
-    (res.offboarded && res.offboarded.length
-      ? '<div style="font-size:11px;color:var(--muted);margin-top:12px">' + esc(String(res.offboarded.length)) +
-        ' offboarded (name + ID kept for history; the ID stays reserved): ' +
-        esc(res.offboarded.slice(0, 8).map(function (o) {
-          // Back-compat: an older server sent plain name strings.
-          if (!o || typeof o === 'string') return String(o || '');
-          return (o.name || '(no name)') + (o.id ? ' · ' + o.id : '');
-        }).join(' — ')) +
-        (res.offboarded.length > 8 ? ' <em>+' + (res.offboarded.length - 8) + ' more</em>' : '') + '</div>'
-      : '');
+    cnOnboardNoEmailHtml_(res.offboarded);
   return '<div style="margin-bottom:12px">' + rows + '</div>' + form;
+}
+
+/** Rows with no login email. They are excluded from every in-app list (the
+ *  empRosterEmail_ predicate) yet still RESERVE their employee ID, which is
+ *  what made an "already in use" error point at nothing visible (operator
+ *  2026-08-08). Split by the server's `incomplete` flag: an OFFBOARDED row
+ *  kept its roster data, a hand-stubbed one never had any — the two resolve
+ *  differently, so they are labelled apart. Back-compat: an older server sent
+ *  plain name strings (no id, no flag) — those render under the offboarded
+ *  heading exactly as before. */
+function cnOnboardNoEmailHtml_(list) {
+  var rows = (list || []).map(function (o) {
+    if (!o || typeof o === 'string') return { name: String(o || ''), id: '', incomplete: false };
+    return o;
+  });
+  if (!rows.length) return '';
+  var label = function (o) { return (o.name || '(no name)') + (o.id ? ' · ' + o.id : ''); };
+  var block = function (items, heading) {
+    if (!items.length) return '';
+    return '<div style="font-size:11px;color:var(--muted);margin-top:10px">' +
+      esc(String(items.length)) + ' ' + heading + ': ' +
+      esc(items.slice(0, 8).map(label).join(' — ')) +
+      (items.length > 8 ? ' <em>+' + (items.length - 8) + ' more</em>' : '') + '</div>';
+  };
+  return block(rows.filter(function (o) { return !o.incomplete; }),
+      'offboarded (name + ID kept for history; the ID stays reserved)') +
+    block(rows.filter(function (o) { return o.incomplete; }),
+      'incomplete row(s) — an Employee ID with no login email, so the ID is reserved but the person cannot use the app. ' +
+      'Clear the row’s ID and add them with the form above, or fill the row in by hand');
 }
 
 function cnOnboardToggleForm_(btn) {

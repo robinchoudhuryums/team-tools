@@ -2276,7 +2276,21 @@ this section before touching the relevant area.
   IDs stay reserved after offboarding; the panel's offboarded line carries
   `{id, name}` so the reserved ID is visible somewhere in the UI. Pinned by
   the `empValidateNewEmployee_` behavioral + gate/lock/convention Node pins
-  and the omnibus gate cases.
+  and the omnibus gate cases. **AN EMAIL-LESS ROW STILL RESERVES ITS ID, AND
+  IS INVISIBLE IN EVERY IN-APP LIST (operator report 2026-08-08, second
+  round).** `empRosterEmail_` excludes it (INV-183), so a HAND-STUBBED row
+  (ID + name typed into the sheet, nothing else) blocked an add with an
+  "already in use" error pointing at nothing the admin could see — the roster
+  panel is not a substitute for column B. Two resolutions now: the conflict
+  label SAYS the owning row has no login email and names both fixes (clear
+  its ID, or fill in the email), and `getOnboardingPanel` splits email-less
+  rows into **offboarded** (kept its roster data — `offboardEmployee` clears
+  column A ONLY) vs **incomplete** (no timezone/pay cycle/balances → never
+  onboarded), since the two resolve differently. NOTE the first diagnosis of
+  this report was WRONG (a failed-add orphan was assumed); the shape of the
+  row is what disproved it — no code path can write an ID with a blank
+  column A, because `addEmployee` requires an email and always writes
+  timezone + balances + PtoEnabled.
 - **Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
