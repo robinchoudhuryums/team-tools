@@ -7325,6 +7325,16 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   // and it is invisible in the active list — exactly where the conflict hides.
   assert.ok(/offboarded\.push\(\{ id:/.test(panel),
     'getOnboardingPanel returns offboarded rows as {id, name} — the reserved ID must be visible somewhere');
+  // Operator report 2026-08-08 (second round): the blocking row was a
+  // HAND-STUBBED one (ID + name, no email) — invisible in every in-app list,
+  // yet it reserves the ID. An offboarded row keeps its roster data; a stub
+  // never had any, and the two resolve differently.
+  assert.ok(/incomplete: !hasRosterData/.test(panel),
+    'email-less rows are split into offboarded vs incomplete (never all called "offboarded")');
+  assert.ok(/EMP\.TIMEZONE/.test(panel) && /EMP\.PAY_CYCLE/.test(panel),
+    'the split keys off roster data offboardEmployee PRESERVES (it clears column A only)');
+  assert.ok(/NO login email/.test(add) && /clear its Employee ID/.test(add),
+    'a conflict with an email-less row says so IN the message + names both resolutions');
   assert.ok(/empRosterEmail_\(/.test(panel) && /empRosterEmail_\(/.test(add) && /empRosterEmail_\(/.test(off),
     'all three route roster inclusion through the ONE predicate (INV-183/F3)');
 });

@@ -3647,8 +3647,17 @@ function addEmployee(payload) {
       var hasBiweeklyAnchor = false;
       for (var i = 1; i < rows.length; i++) {
         // The conflict label names the row the way an admin can find it in
-        // the sheet: display name + 1-based sheet row.
+        // the sheet: display name + 1-based sheet row. Operator report
+        // 2026-08-08 (second round): the blocking row was a HAND-STUBBED one
+        // (ID + name, no email) — invisible in every in-app list because
+        // empRosterEmail_ excludes it, so "already in use" pointed at
+        // nothing the admin could see. Say so in the label, with the two
+        // clean resolutions.
         var label = (String(rows[i][EMP.NAME] || '').trim() || '(no name)') + ' (row ' + (i + 1) + ')';
+        if (!empRosterEmail_(rows[i])) {
+          label += ' — that row has NO login email, so it is not in the list above; ' +
+            'clear its Employee ID, or fill in its email to reactivate it';
+        }
         var em = empRosterEmail_(rows[i]);   // F3: the one inclusion predicate
         if (em) { existingEmails.push(em.toLowerCase()); owners.email[em.toLowerCase()] = label; }
         var exId = String(rows[i][EMP.ID] || '').trim();
@@ -3769,7 +3778,18 @@ function getOnboardingPanel() {
         // (operator report 2026-08-08 — these rows are invisible in the
         // active list, which is exactly where the ID hides).
         if (name || String(rows[i][EMP.ID] || '').trim()) {
-          offboarded.push({ id: String(rows[i][EMP.ID] || '').trim(), name: name });
+          // OFFBOARDED vs INCOMPLETE: offboardEmployee clears ONLY column A,
+          // so a real offboarded row keeps its timezone / pay cycle /
+          // balances. A row with none of those was never onboarded — it is a
+          // hand-stubbed placeholder (operator 2026-08-08). Calling it
+          // "offboarded" sent an admin looking for departed staff that do not
+          // exist; the two states resolve differently, so name them apart.
+          var hasRosterData = !!(String(rows[i][EMP.TIMEZONE] || '').trim() ||
+                                 String(rows[i][EMP.PAY_CYCLE] || '').trim() ||
+                                 String(rows[i][EMP.ANNUAL_LEAVE] || '').trim() ||
+                                 String(rows[i][EMP.SICK_LEAVE] || '').trim());
+          offboarded.push({ id: String(rows[i][EMP.ID] || '').trim(), name: name,
+                            incomplete: !hasRosterData });
         }
         continue;
       }
