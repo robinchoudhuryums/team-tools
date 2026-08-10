@@ -7255,6 +7255,18 @@ test('empValidateNewEmployee_ — behavioral (the roster append is guarded by va
   assert.ok(!v({ email: 'SAM@umsupply.com' }).ok, 'duplicate email rejected (case-insensitive)');
   assert.ok(!v({ id: 'e-1077' }).ok, 'duplicate ID rejected');
   assert.ok(!v({ name: 'SAM ORTIZ' }).ok, 'duplicate NAME rejected — repMap/CDR matching are name-keyed');
+  // Operator report 2026-08-08: a bare "already in use" sent an admin hunting
+  // a roster they had already checked. Every conflict NAMES the owning row
+  // when the caller supplies the owners map (and degrades silently without).
+  const OWN = { owners: { id: { 'e-1077': 'Sam Ortiz (row 4)' },
+                          email: { 'sam@umsupply.com': 'Sam Ortiz (row 4)' },
+                          name: { 'sam ortiz': 'Sam Ortiz (row 4)' } } };
+  assert.ok(/Sam Ortiz \(row 4\)/.test(v({ id: 'E-1077' }, OWN).error), 'the ID conflict names the owning row');
+  assert.ok(/reserved after offboarding/.test(v({ id: 'E-1077' }, OWN).error),
+    'and says WHY a seemingly-unused ID can collide (offboarded rows keep theirs)');
+  assert.ok(/Sam Ortiz \(row 4\)/.test(v({ email: 'sam@umsupply.com' }, OWN).error), 'the email conflict names the row');
+  assert.ok(/Sam Ortiz \(row 4\)/.test(v({ name: 'Sam Ortiz' }, OWN).error), 'the name conflict names the row');
+  assert.ok(!/undefined/.test(v({ id: 'e-1077' }).error), 'without an owners map the message stays clean');
   // The production-safety + shape rules.
   assert.ok(/TEST_/.test(v({ id: 'TEST_9' }).error), 'TEST_-prefixed IDs rejected (the cleanup sweep key)');
   assert.ok(!v({ timezone: 'NotATimezone' }).ok, 'a shapeless timezone is rejected');
@@ -7284,6 +7296,18 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   assert.ok(prov > rel, 'Call Notes provisioning runs AFTER the lock releases (sequential re-acquire)');
   assert.ok(/invalidateRosterCache_\(\)/.test(add) && /'EmployeeAdd'/.test(add),
     'cache invalidated (INV-10) + audited (INV-08)');
+  // Operator report 2026-08-08 — THE reporting rule (INV-187 applied to a
+  // write): once the row is appended, no follow-up failure may report the add
+  // as failed. A bare {error} after the append is what produced a phantom
+  // "Employee ID already in use" on the admin's retry.
+  const appIdx = add.indexOf('appended = true');
+  assert.ok(appIdx > 0, 'the append is flagged');
+  assert.ok(/if \(appended\) \{[\s\S]*?success: true/.test(add),
+    'the outer catch reports success-with-warning once the row exists — never a bare failure');
+  assert.ok(/try \{ invalidateRosterCache_\(\); \} catch/.test(add),
+    'post-append bookkeeping cannot unwind a completed add');
+  assert.ok(/try \{ prov = provisionCallNotesSheet\(result\.id\); \}\s*\n?\s*catch/.test(add),
+    'provisioning is caught — its waitLock sits outside its own try, so a lock timeout THROWS');
   const off = strip(extractRawFunction('Code.js', 'offboardEmployee'));
   assert.ok(/'Admin access required\.'/.test(off), 'offboardEmployee is admin-gated');
   // THE convention (INV-183): clear the EMAIL, keep everything else. Exactly
@@ -7297,6 +7321,10 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   assert.ok(/'Admin access required\.'/.test(panel), 'getOnboardingPanel is admin-gated');
   assert.ok(/catch \(eCdr\)/.test(panel) && /ok: false/.test(panel),
     'the CDR readiness block is best-effort (INV-67 posture) — an unreachable CDR Report degrades, never fails the panel');
+  // The offboarded list carries IDs: an offboarded row still reserves its ID,
+  // and it is invisible in the active list — exactly where the conflict hides.
+  assert.ok(/offboarded\.push\(\{ id:/.test(panel),
+    'getOnboardingPanel returns offboarded rows as {id, name} — the reserved ID must be visible somewhere');
   assert.ok(/empRosterEmail_\(/.test(panel) && /empRosterEmail_\(/.test(add) && /empRosterEmail_\(/.test(off),
     'all three route roster inclusion through the ONE predicate (INV-183/F3)');
 });

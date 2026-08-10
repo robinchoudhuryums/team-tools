@@ -392,7 +392,7 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
           tzValid: true, enrolled: true, managerEmail: 'ghost@example.invalid', managerEmailKnown: false,
           isManager: false, cdrSeen: true },
       ],
-      offboarded: ['Jo Tran'],
+      offboarded: [{ id: 'E-1099', name: 'Jo Tran' }],   // {id,name} since 2026-08-08 — the ID stays reserved
       managers: ['robin@example.invalid'],
       departments: ['Billing', 'Shipping', 'Resupply', 'Intake'],
       timezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
