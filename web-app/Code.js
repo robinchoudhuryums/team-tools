@@ -3514,18 +3514,33 @@ function empValidateNewEmployee_(p, ctx) {
   var emailLc = email.toLowerCase();
   if (!email) return bad('Email is required — it is the login identity.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad('That email does not look valid: ' + email);
-  if ((ctx.existingEmails || []).indexOf(emailLc) >= 0) return bad('An employee with that email already exists.');
+  // Conflict messages NAME the row that owns the value (ctx.owners maps a
+  // lowercased key → "Name (row N)"). Operator report 2026-08-08: a bare
+  // "already in use" left an admin hunting a roster they had already
+  // checked — the conflict is usually a row the panel does not show
+  // prominently (an offboarded row, or one appended below a gap).
+  var owner = function (kind, key) {
+    var m = (ctx.owners && ctx.owners[kind]) || {};
+    return m[key] ? ' — used by ' + m[key] : '';
+  };
+  if ((ctx.existingEmails || []).indexOf(emailLc) >= 0) {
+    return bad('An employee with that email already exists' + owner('email', emailLc) + '.');
+  }
   var id = String(p.id || '').trim();
   if (!id) return bad('Employee ID is required.');
   if (id.length > 40) return bad('Employee ID is too long (max 40 characters).');
   if (/^test_/i.test(id)) return bad('IDs must not start with TEST_ — that prefix is the test-data cleanup key.');
 
-  if ((ctx.existingIds || []).indexOf(id.toLowerCase()) >= 0) return bad('Employee ID "' + id + '" is already in use.');
+  if ((ctx.existingIds || []).indexOf(id.toLowerCase()) >= 0) {
+    return bad('Employee ID "' + id + '" is already in use' + owner('id', id.toLowerCase()) +
+      '. IDs stay reserved after offboarding, so the row may not be in the active list above.');
+  }
   var name = String(p.name || '').trim();
   if (!name) return bad('Name is required.');
   if (name.length > 80) return bad('Name is too long (max 80 characters).');
   if ((ctx.existingNames || []).indexOf(name.toLowerCase()) >= 0) {
-    return bad('An employee named "' + name + '" already exists — metrics and CDR matching are name-keyed, so names must be unique.');
+    return bad('An employee named "' + name + '" already exists' + owner('name', name.toLowerCase()) +
+      ' — metrics and CDR matching are name-keyed, so names must be unique.');
   }
 
   var tz = String(p.timezone || '').trim();
@@ -3612,32 +3627,52 @@ function addEmployee(payload) {
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     if (!payload || typeof payload !== 'object') return { error: 'No employee data supplied.' };
     var check;
+    // Operator report 2026-08-08: EVERY step after the append used to sit
+    // under the one outer catch, so a throw in a FOLLOW-UP step (most
+    // reachably provisionCallNotesSheet, whose waitLock sits OUTSIDE its own
+    // try and throws on timeout) returned a bare {error} while the roster row
+    // already existed. The admin saw "failed", retried, and hit "Employee ID
+    // already in use" for an ID nothing visibly owned. Once the row is
+    // appended the call MUST report success-with-warning, never failure —
+    // the INV-187 rule applied to a WRITE: the response has to describe what
+    // actually happened to the store.
+    var appended = false;
     var lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
       var sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
       var rows = sheet.getDataRange().getValues();
       var existingEmails = [], existingIds = [], existingNames = [];
+      var owners = { email: {}, id: {}, name: {} };
       var hasBiweeklyAnchor = false;
       for (var i = 1; i < rows.length; i++) {
+        // The conflict label names the row the way an admin can find it in
+        // the sheet: display name + 1-based sheet row.
+        var label = (String(rows[i][EMP.NAME] || '').trim() || '(no name)') + ' (row ' + (i + 1) + ')';
         var em = empRosterEmail_(rows[i]);   // F3: the one inclusion predicate
-        if (em) existingEmails.push(em.toLowerCase());
+        if (em) { existingEmails.push(em.toLowerCase()); owners.email[em.toLowerCase()] = label; }
         var exId = String(rows[i][EMP.ID] || '').trim();
-        if (exId) existingIds.push(exId.toLowerCase());
+        if (exId) { existingIds.push(exId.toLowerCase()); owners.id[exId.toLowerCase()] = label; }
         var exNm = String(rows[i][EMP.NAME] || '').trim();
-        if (exNm) existingNames.push(exNm.toLowerCase());
+        if (exNm) { existingNames.push(exNm.toLowerCase()); owners.name[exNm.toLowerCase()] = label; }
         if (String(rows[i][EMP.PAY_CYCLE] || '').trim().toLowerCase() === 'biweekly' &&
             String(rows[i][EMP.PAY_ANCHOR] || '').trim()) hasBiweeklyAnchor = true;
       }
       check = empValidateNewEmployee_(payload, {
         existingEmails: existingEmails, existingIds: existingIds, existingNames: existingNames,
+        owners: owners,
         managerEmails: getManagerEmails_().map(function (e) { return String(e).toLowerCase(); }),
         deptKeys: Object.keys(getDepartmentEmails_()),
         hasBiweeklyAnchor: hasBiweeklyAnchor,
       });
       if (!check.ok) return { error: check.error };
       sheet.appendRow(check.row);
-      invalidateRosterCache_();   // INV-10 — the new rep can log in immediately
+      appended = true;
+      // Post-append bookkeeping is best-effort INDIVIDUALLY: neither of these
+      // may turn a completed add into a reported failure.
+      try { invalidateRosterCache_(); } catch (eCache) {   // INV-10 — the new rep can log in immediately
+        console.warn('addEmployee: roster cache invalidation failed: ' + eCache.message);
+      }
       writeAuditLog_(callerEmp, 'EmployeeAdd', String(payload.id).trim(), '', false, 0,
         'id=' + String(payload.id).trim() + '; name=' + String(payload.name).trim() +
         '; tz=' + String(payload.timezone).trim(), callerEmp.email);
@@ -3646,13 +3681,27 @@ function addEmployee(payload) {
     }
     var result = { success: true, id: String(payload.id).trim(), name: String(payload.name).trim() };
     if (payload.provisionNotes) {
-      // Sequential lock re-acquire (never nested) — see the docstring.
-      var prov = provisionCallNotesSheet(result.id);
+      // Sequential lock re-acquire (never nested) — see the docstring. The
+      // try/catch is load-bearing: provisionCallNotesSheet's own waitLock is
+      // outside its try, so a lock timeout THROWS rather than returning
+      // {error}, and that throw must not unwind a completed add.
+      var prov = null;
+      try { prov = provisionCallNotesSheet(result.id); }
+      catch (eProv) { prov = { error: eProv.message }; }
       if (prov && prov.success) result.provision = { sheetId: prov.sheetId, url: prov.url || '' };
       else result.provisionWarning = (prov && prov.error) || 'Call Notes provisioning failed — use the Enrollment panel to retry.';
     }
     return result;
-  } catch (err) { return { error: err.message }; }
+  } catch (err) {
+    // The row is already on the roster — reporting a bare failure here is what
+    // created the phantom "ID already in use" on retry. Report the truth.
+    if (appended) {
+      return { success: true, id: String(payload.id).trim(), name: String(payload.name).trim(),
+        provisionWarning: 'the employee WAS created, but a follow-up step failed: ' + err.message +
+          ' — do not re-add them; check the Team Members list.' };
+    }
+    return { error: err.message };
+  }
 }
 
 /** Admin-gated, locked — offboard by the ROSTER CONVENTION (INV-183): clear
@@ -3715,7 +3764,13 @@ function getOnboardingPanel() {
       var name = String(rows[i][EMP.NAME] || '').trim();
       var email = empRosterEmail_(rows[i]);   // F3: the one inclusion predicate
       if (!email) {
-        if (name) offboarded.push(name);
+        // Carry the ID: an offboarded row still RESERVES its employee ID, and
+        // an admin hunting an "already in use" conflict needs to see it
+        // (operator report 2026-08-08 — these rows are invisible in the
+        // active list, which is exactly where the ID hides).
+        if (name || String(rows[i][EMP.ID] || '').trim()) {
+          offboarded.push({ id: String(rows[i][EMP.ID] || '').trim(), name: name });
+        }
         continue;
       }
       var tz = String(rows[i][EMP.TIMEZONE] || '').trim();

@@ -2258,8 +2258,25 @@ this section before touching the relevant area.
   alias suggestion from `cdrLikelyNameMismatches_` when the phone system
   spells the name differently; the CDR block is best-effort, INV-67 posture).
   PtoEnabled writes an EXPLICIT `TRUE`/`FALSE` (never blank). No cache-key
-  bump (no `EMP` shape change, INV-28). Pinned by the `empValidateNewEmployee_`
-  behavioral + gate/lock/convention Node pins and the omnibus gate cases.
+  bump (no `EMP` shape change, INV-28). **ONCE THE ROW IS APPENDED,
+  `addEmployee` NEVER REPORTS FAILURE (operator report 2026-08-08 — INV-187
+  applied to a WRITE).** Every step after `appendRow` used to sit under the
+  one outer catch, so a throw in a FOLLOW-UP step returned a bare `{error}`
+  while the roster row already existed; the admin saw "failed", retried, and
+  hit `Employee ID already in use` for an ID nothing visibly owned. The
+  reachable thrower is `provisionCallNotesSheet`, whose `waitLock` sits
+  OUTSIDE its own try (a lock timeout throws rather than returning
+  `{error}`) — it is now try//caught at the call site, the post-append
+  bookkeeping is individually best-effort, and the outer catch returns
+  `success:true` + a `provisionWarning` naming the follow-up failure when
+  `appended` is set. The client mirrors it: the transport-failure toast says
+  the employee MAY have been created, and a `_onboardSubmitting` flag blocks
+  the double-click that queues two adds. **Conflict messages NAME the owning
+  row** (`ctx.owners` → "used by Jane Doe (row 7)") and the ID message says
+  IDs stay reserved after offboarding; the panel's offboarded line carries
+  `{id, name}` so the reserved ID is visible somewhere in the UI. Pinned by
+  the `empValidateNewEmployee_` behavioral + gate/lock/convention Node pins
+  and the omnibus gate cases.
 - **Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -6862,7 +6879,8 @@ S75 | Team-member onboarding (Admin → Config → Team Members) | Subsystem: Se
     - As the new rep (their Google login), open the web app → the shell loads with their name; Call Notes shows the active form (no enrollment splash)
     - Offboard a test rep → uiConfirm danger dialog; the row's email cell clears, the NAME stays, the rep moves to the "offboarded (name kept for history)" line, and AuditLog has `EmployeeOffboard`
     - Try `google.script.run...addEmployee({})` / `...offboardEmployee('x')` / `...getOnboardingPanel()` as a non-manager → all "Admin access required."
-  Expected: Validation is one-actionable-error-at-a-time and nothing is written on a reject; a biweekly anchor is rejected when one already exists (INV-18); the new rep can sign in immediately (the roster cache is invalidated on add). Offboard clears ONLY the email — history, sheets, and notes all keep reading. Self-offboard is rejected. The CDR chip is best-effort: with the CDR Report unreachable every rep reads "cdr: unknown", never "missing".
+    - **(operator report 2026-08-08)** Add a rep whose ID matches an OFFBOARDED row → the error names the owning row ("used by Jo Tran (row 9)") and says IDs stay reserved; confirm the offboarded line at the bottom of the panel lists that ID
+  Expected: Validation is one-actionable-error-at-a-time and nothing is written on a reject; a biweekly anchor is rejected when one already exists (INV-18); the new rep can sign in immediately (the roster cache is invalidated on add). Offboard clears ONLY the email — history, sheets, and notes all keep reading. Self-offboard is rejected. The CDR chip is best-effort: with the CDR Report unreachable every rep reads "cdr: unknown", never "missing". **A follow-up failure AFTER the row is appended reports success-with-warning ("the employee WAS created, but…"), never a bare failure** — a bare failure is what made an admin retry and hit a phantom "ID already in use".
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

@@ -9380,7 +9380,12 @@ function cnRenderOnboardingHtml_(res) {
     '</div>' +
     (res.offboarded && res.offboarded.length
       ? '<div style="font-size:11px;color:var(--muted);margin-top:12px">' + esc(String(res.offboarded.length)) +
-        ' offboarded (name kept for history): ' + esc(res.offboarded.slice(0, 8).join(' · ')) +
+        ' offboarded (name + ID kept for history; the ID stays reserved): ' +
+        esc(res.offboarded.slice(0, 8).map(function (o) {
+          // Back-compat: an older server sent plain name strings.
+          if (!o || typeof o === 'string') return String(o || '');
+          return (o.name || '(no name)') + (o.id ? ' · ' + o.id : '');
+        }).join(' — ')) +
         (res.offboarded.length > 8 ? ' <em>+' + (res.offboarded.length - 8) + ' more</em>' : '') + '</div>'
       : '');
   return '<div style="margin-bottom:12px">' + rows + '</div>' + form;
@@ -9395,6 +9400,12 @@ function cnOnboardToggleForm_(btn) {
 }
 
 function cnOnboardSubmit_(btn) {
+  // Double-submit guard: the button is only disabled AFTER uiConfirm resolves,
+  // so two fast clicks used to open two dialogs and queue two adds — the
+  // second landing as a phantom "ID already in use" (operator 2026-08-08).
+  if (CN_STATE._onboardSubmitting) { showToast('Already adding — one moment', 'toast-warn'); return; }
+  CN_STATE._onboardSubmitting = true;
+  var release = function () { CN_STATE._onboardSubmitting = false; };
   var v = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
   var c = function (id) { var el = document.getElementById(id); return !!(el && el.checked); };
   var payload = {
@@ -9411,10 +9422,11 @@ function cnOnboardSubmit_(btn) {
       '? They can sign in as soon as this completes.',
     confirmLabel: 'Add',
   }).then(function (ok) {
-    if (!ok) return;
+    if (!ok) { release(); return; }
     btn.disabled = true; btn.textContent = 'Adding…';
     google.script.run
       .withSuccessHandler(function (res) {
+        release();
         btn.disabled = false; btn.textContent = 'Add team member';
         if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
         if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
@@ -9423,8 +9435,13 @@ function cnOnboardSubmit_(btn) {
         cnAdminLoadEnrollment_();
       })
       .withFailureHandler(function (err) {
+        release();
         btn.disabled = false; btn.textContent = 'Add team member';
-        showToast((err && err.message) || 'Add failed', 'toast-error');
+        // A TRANSPORT failure cannot tell us whether the append landed — say
+        // so rather than implying nothing happened (the same reporting rule
+        // the server side now follows).
+        showToast(((err && err.message) || 'Add failed') +
+          ' — check the Team Members list before retrying; the employee may have been created.', 'toast-error');
       })
       .addEmployee(payload);
   });
