@@ -53,7 +53,26 @@ Phase: idle (post-reflect) + operator-requested feature work:
   cases + ADMIN_GATED entries added to Tests.js (F9). Pure 450 (2 new pins,
   4 bite-checks incl. the F7 doc-count net), DOM 69; panel render verified by
   measurement + element screenshot. Docs: new KDD + operator-checklist entry
-  + S75 scenario + INV-136 count updates.
+  + S75 scenario + INV-136 count updates. Merged as **PR #157** (a7b1186).
+- Onboarding follow-ups from PILOT TESTING (operator reports 2026-08-08), both
+  merged: **PR #158** (c10d767) — `addEmployee` reported FAILURE after a
+  successful append (every post-append step sat under the one outer catch;
+  `provisionCallNotesSheet`'s waitLock is outside its own try and throws on
+  timeout), so a retry hit a phantom duplicate. Now: `appended` flag →
+  success-with-warning, post-append bookkeeping individually best-effort,
+  provisioning try/caught at the call site, conflict labels name the owning
+  row, client double-submit guard. **PR #159** (e3bf86c) — the report's ACTUAL
+  cause: a HAND-STUBBED row (ID + name typed into the sheet, no email) reserves
+  the ID while `empRosterEmail_` hides it from every in-app list. Conflict
+  labels now say the owner has no login email + both resolutions; the panel
+  splits email-less rows into offboarded (kept roster data) vs incomplete.
+  **PROCESS NOTE: the first diagnosis (#158) was WRONG about this report** —
+  the row's SHAPE disproved it (no code path writes an ID with a blank column
+  A). #158's fix stands on its own merits; the correction is recorded in the
+  KDD so the wrong causal story is not re-derived.
+- SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
+  uniqueness namespace that spans EXCLUDED rows must name the owning row and
+  say it is excluded" — recorded as an INV-183 corollary for now.
 (Cycle-17 history below is retained until the close-out move.)
 Phase (cycle-17 record): implement — the broad scan is COMPLETE. Implemented + doc-synced:
   TOP 5 (`17-top5-broad-implement.md`), BATCH ② (`17-batch2-broad-implement.md`,
