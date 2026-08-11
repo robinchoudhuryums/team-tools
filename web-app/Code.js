@@ -18948,6 +18948,277 @@ function kbDocBodyToMarkdown_(body, docId) {
  *  { markdown, warnings, docTitle, title, department }. Never writes — the
  *  manager reviews in the editor and saves via the existing kbSaveItem,
  *  which is what flips the row to type=article in place. */
+// ── Sheet → article conversion (operator 2026-08-11) ───────────────────────
+// A Drive SHEET embed is the weakest item type in the KB: searchReference
+// treats every embed as a title-only hit, and the Ctrl/⌘+K drawer can't host
+// an iframe at 400px, so a roster embedded as a sheet is invisible at exactly
+// the moment a rep needs it mid-call. Converting it to a native article makes
+// it full-text searchable, readable in the drawer, and independent of whether
+// each rep personally has Drive access to the file.
+//
+// Bounds — a spreadsheet's used range can be enormous, and this runs behind an
+// admin click, not a poll. Truncation is REPORTED, never silent (INV-169).
+const KB_SHEET_MAX_ROWS = 400;
+const KB_SHEET_MAX_COLS = 30;
+
+/** Converts one sheet tab to markdown.
+ *
+ *  Two shapes, chosen by what the sheet actually IS rather than by a setting:
+ *
+ *  (a) A plain table — a header row and data rows, no merges — becomes a GFM
+ *      table, which `kbMd_` already renders.
+ *  (b) A BANDED grid — the merged-cell layout people build by hand, where a
+ *      full-width merge is a section and a partial merge is a sub-section —
+ *      becomes headings + grouped member lines. A GFM table of that shape is a
+ *      field of empty cells, which is why the shape is detected rather than
+ *      assumed.
+ *
+ *  Takes a plain accessor object so the Node harness can drive it without a
+ *  live spreadsheet (the kbDocBodyToMarkdown_ pattern):
+ *    { name, values: string[][], merges: [{row, col, rows, cols}], backgrounds }
+ *  Rows/cols are 1-indexed to match the Sheets API. */
+function kbSheetGridToMarkdown_(grid) {
+  const name = String((grid && grid.name) || '').trim();
+  const values = (grid && grid.values) || [];
+  const merges = (grid && grid.merges) || [];
+  const backgrounds = (grid && grid.backgrounds) || null;
+  const warnings = [];
+  if (!values.length) return { markdown: '', warnings: ['Sheet "' + name + '" is empty — skipped.'] };
+
+  // Width = the widest row that carries content, so trailing empty columns
+  // don't stretch every heading test.
+  let width = 0;
+  values.forEach(function (r) {
+    for (let c = r.length - 1; c >= 0; c--) {
+      if (String(r[c] == null ? '' : r[c]).trim()) { if (c + 1 > width) width = c + 1; break; }
+    }
+  });
+  if (!width) return { markdown: '', warnings: ['Sheet "' + name + '" is empty — skipped.'] };
+
+  // Index merges by their anchor cell (Sheets reports the value on the anchor).
+  const mergeAt = {};
+  merges.forEach(function (m) {
+    if (m && m.cols > 1) mergeAt[(m.row - 1) + ':' + (m.col - 1)] = m.cols;
+  });
+
+  // Highlighted cells carry meaning in hand-built sheets (a lead, a primary vs
+  // a backup) that no text in the cell states. Dropping it silently loses real
+  // information, and INVENTING a meaning would be worse — so a highlight is
+  // preserved as emphasis and the operator is told to write the legend down.
+  const tinted = {};
+  const tintSeen = {};
+  if (backgrounds) {
+    for (let r = 0; r < backgrounds.length; r++) {
+      for (let c = 0; c < (backgrounds[r] || []).length; c++) {
+        const bg = String(backgrounds[r][c] || '').toLowerCase();
+        if (bg && bg !== '#ffffff' && bg !== 'white' && bg !== '#fff') {
+          tinted[r + ':' + c] = true;
+          tintSeen[bg] = (tintSeen[bg] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  const esc = function (v) { return String(v == null ? '' : v).trim().replace(/\|/g, '\\|'); };
+  const cellMd = function (r, c) {
+    const raw = esc(values[r][c]);
+    if (!raw) return '';
+    return tinted[r + ':' + c] ? '**' + raw + '**' : raw;
+  };
+
+  const out = [];
+  if (name) out.push('## ' + name);
+
+  // Shape detection: a grid with NO multi-column merges and a non-empty first
+  // row is an ordinary table.
+  const hasBands = Object.keys(mergeAt).length > 0;
+  if (!hasBands) {
+    const head = [];
+    for (let c = 0; c < width; c++) head.push(esc(values[0][c]) || ('Column ' + (c + 1)));
+    out.push('', '| ' + head.join(' | ') + ' |', '|' + head.map(function () { return '---'; }).join('|') + '|');
+    let emitted = 0;
+    for (let r = 1; r < values.length; r++) {
+      const cells = [];
+      let any = false;
+      for (let c = 0; c < width; c++) { const v = cellMd(r, c); cells.push(v); if (v) any = true; }
+      if (!any) continue;
+      out.push('| ' + cells.join(' | ') + ' |');
+      emitted++;
+    }
+    if (!emitted) warnings.push('Sheet "' + name + '" had a header row but no data rows.');
+  } else {
+    // Banded grid. The load-bearing detail: these sheets partition by COLUMN,
+    // not by row — two sub-teams sit side by side in the same rows. A row-wise
+    // walk flattens them into one line and reads as though PPD's people cover
+    // MDO, which for a call-routing map is worse than not converting at all.
+    // So headers claim a COLUMN RANGE and members are collected per range.
+    let groups = [];           // [{ title, from, to, members: [] }]
+    const flush = function () {
+      groups.forEach(function (g) {
+        if (!g.members.length && !g.title) return;
+        if (g.title) out.push('', '#### ' + g.title.replace(/\|/g, '\\|'));
+        if (g.members.length) out.push(g.members.join(' · '));
+      });
+      groups = [];
+    };
+    // A BAND spans essentially the whole used width; a sub-team spans a slice
+    // of it. A ratio test is too coarse — measured against a real roster, a
+    // 3-column sub-team merge cleared a 60%-of-6-columns bar and every
+    // sub-team was misread as a department.
+    const bandWidth = Math.max(2, width);
+
+    for (let r = 0; r < values.length; r++) {
+      const rowVals = [];
+      for (let c = 0; c < width; c++) rowVals.push(String(values[r][c] == null ? '' : values[r][c]).trim());
+      if (!rowVals.some(function (v) { return v; })) continue;   // blank spacer
+
+      // (1) BAND row — one wide merge carrying the department name.
+      let band = '';
+      for (let c = 0; c < width; c++) {
+        const span = mergeAt[r + ':' + c];
+        if (span && span >= bandWidth && rowVals[c]) { band = rowVals[c]; break; }
+      }
+      if (band) { flush(); out.push('', '### ' + band.replace(/\|/g, '\\|')); continue; }
+
+      // (2) SUB-HEADER row — carries at least one multi-column merge. Every
+      // content cell on such a row is a header; each claims the columns from
+      // its own position up to the next header (or the end of the row), which
+      // is what makes the side-by-side sub-teams separable.
+      const headerCells = [];
+      let sawMerge = false;
+      for (let c = 0; c < width; c++) {
+        if (!rowVals[c]) continue;
+        const span = mergeAt[r + ':' + c] || 1;
+        if (span > 1) sawMerge = true;
+        headerCells.push({ title: rowVals[c], col: c });
+      }
+      if (sawMerge && headerCells.length) {
+        flush();
+        headerCells.forEach(function (h, i) {
+          const next = headerCells[i + 1];
+          groups.push({ title: h.title, from: h.col, to: next ? next.col : width, members: [] });
+        });
+        continue;
+      }
+
+      // (3) MEMBER row — each cell joins the group owning its column. Cells
+      // outside every group (or a band with no sub-headers) fall to an
+      // implicit full-width group so nothing is dropped.
+      if (!groups.length) groups = [{ title: '', from: 0, to: width, members: [] }];
+      for (let c = 0; c < width; c++) {
+        const v = cellMd(r, c);
+        if (!v) continue;
+        let g = null;
+        for (let gi = 0; gi < groups.length; gi++) {
+          if (c >= groups[gi].from && c < groups[gi].to) { g = groups[gi]; break; }
+        }
+        if (!g) { g = { title: '', from: c, to: width, members: [] }; groups.push(g); }
+        g.members.push(v);
+      }
+    }
+    flush();
+  }
+
+  const tintCount = Object.keys(tintSeen).length;
+  if (tintCount) {
+    warnings.push('Sheet "' + name + '": ' + tintCount + ' highlight colour(s) were used. Highlighted cells are ' +
+      'bolded, but what a colour MEANT is not written anywhere in the sheet — add a legend line to the article.');
+  }
+  return { markdown: out.join('\n').replace(/\n{3,}/g, '\n\n').trim(), warnings: warnings };
+}
+
+/** Admin-gated, strictly READ-ONLY (the INV-115 posture): it never writes the
+ *  Sheet and never writes a KB row. The manager reviews the markdown in the
+ *  editor and the normal kbSaveItem persists it — so re-converting after the
+ *  sheet changes is a deliberate refresh, never a background overwrite of an
+ *  article someone has since edited by hand. Uses SpreadsheetApp, already an
+ *  authorized scope, so unlike the Doc converter this adds NO new OAuth scope. */
+function kbConvertDriveSheet(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    payload = payload || {};
+    let fileId = '', title = '', department = '', status = '';
+    if (payload.itemId) {
+      const kb = getOrCreateKbSheet_();
+      const last = kb.getLastRow();
+      let row = null;
+      if (last >= 2) {
+        const ids = kb.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === payload.itemId) {
+            row = kb.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+            break;
+          }
+        }
+      }
+      if (!row) return { error: 'Item not found.' };
+      if (String(row[KB.TYPE]) !== 'embed' || String(row[KB.DRIVE_KIND] || '') !== 'sheet') {
+        return { error: 'Only embedded Google Sheets can be converted with this action.' };
+      }
+      fileId = String(row[KB.DRIVE_FILE_ID] || '');
+      title = String(row[KB.TITLE] || '');
+      department = String(row[KB.DEPARTMENT] || '');
+      status = kbRowStatus_(row[KB.STATUS]);   // M-13: a draft must stay a draft
+    } else {
+      const parsed = kbParseDriveUrl_(payload.driveUrl);
+      if (!parsed) return { error: 'Could not read that Drive link — paste a Google Sheet share URL.' };
+      if (parsed.kind !== 'sheet') return { error: 'That link is not a Google Sheet.' };
+      fileId = parsed.fileId;
+    }
+    if (!fileId) return { error: 'No Sheet id on this item.' };
+    let ss;
+    try { ss = SpreadsheetApp.openById(fileId); }
+    catch (e) {
+      return { error: 'Could not open the Sheet — the deploying account needs at least Viewer access. (' + e.message + ')' };
+    }
+    const parts = [], warnings = [];
+    ss.getSheets().forEach(function (sh) {
+      if (sh.isSheetHidden && sh.isSheetHidden()) return;
+      const lastRow = Math.min(sh.getLastRow(), KB_SHEET_MAX_ROWS);
+      const lastCol = Math.min(sh.getLastColumn(), KB_SHEET_MAX_COLS);
+      if (lastRow < 1 || lastCol < 1) return;
+      if (sh.getLastRow() > KB_SHEET_MAX_ROWS) {
+        warnings.push('Tab "' + sh.getName() + '" has ' + sh.getLastRow() + ' rows — only the first ' +
+          KB_SHEET_MAX_ROWS + ' were converted.');
+      }
+      if (sh.getLastColumn() > KB_SHEET_MAX_COLS) {
+        warnings.push('Tab "' + sh.getName() + '" has ' + sh.getLastColumn() + ' columns — only the first ' +
+          KB_SHEET_MAX_COLS + ' were converted.');
+      }
+      const range = sh.getRange(1, 1, lastRow, lastCol);
+      // getDisplayValues: a roster carries dates/numbers that must read exactly
+      // as the sheet shows them, and the CDR lesson (INV-64) applies to any
+      // foreign spreadsheet whose timezone we do not control.
+      const grid = {
+        name: sh.getName(),
+        values: range.getDisplayValues(),
+        backgrounds: range.getBackgrounds(),
+        merges: range.getMergedRanges().map(function (m) {
+          return { row: m.getRow(), col: m.getColumn(), rows: m.getNumRows(), cols: m.getNumColumns() };
+        }),
+      };
+      const res = kbSheetGridToMarkdown_(grid);
+      if (res.markdown) parts.push(res.markdown);
+      res.warnings.forEach(function (w) { warnings.push(w); });
+    });
+    if (!parts.length) return { error: 'That Sheet has no readable content.' };
+    const markdown = parts.join('\n\n');
+    if (markdown.length > KB_BODY_MAX) {
+      warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split it across articles.');
+    }
+    return {
+      success: true,
+      markdown: markdown,
+      warnings: warnings,
+      docTitle: String(ss.getName() || ''),
+      title: title,
+      department: department,
+      status: status,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 function kbConvertDriveDoc(payload) {
   try {
     const emp = getEmployeeInfo_();

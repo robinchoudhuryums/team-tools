@@ -7467,6 +7467,130 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
     'the tabs keep their width inside the scroller rather than squashing');
 });
 
+console.log('\nkb — Sheet→article converter (operator 2026-08-11)');
+
+// The grid walker, driven with plain objects (the kbDocBodyToMarkdown_ pattern
+// — no live spreadsheet needed).
+const kbSheetCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'kbSheetGridToMarkdown_'), kbSheetCtx);
+const kbSheetGridToMarkdown_ = kbSheetCtx.kbSheetGridToMarkdown_;
+
+test('a BANDED roster keeps each sub-team\'s people separate (they sit side by side, not stacked)', () => {
+  // This is the whole reason the converter exists and the one regression that
+  // would be actively harmful: these sheets partition by COLUMN, so a row-wise
+  // walk merges two sub-teams into one line and tells a rep that PPD's people
+  // cover MDO. Measured against the real roster's shape.
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const values = [
+    at([[0, 'PAK (Mary)']]),                                   // full-width band
+    at([[0, 'PPD'], [4, 'MDO']]),                              // two sub-teams, side by side
+    at([[1, 'Micheal'], [5, 'Sasha']]),
+    at([[0, 'Sandra'], [1, 'Selena'], [4, 'Rachel']]),
+    blank(),
+    at([[0, 'Qualifications & Auth (Rajdeep)']]),
+    at([[0, 'PT Eval'], [4, 'MDO Follow-Up']]),
+    at([[0, 'Hem'], [4, 'Sergio (P)'], [5, 'Scarlett (C)']]),
+  ];
+  const merges = [
+    { row: 1, col: 1, rows: 1, cols: 8 },   // band
+    { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 },
+    { row: 6, col: 1, rows: 1, cols: 8 },   // band
+    { row: 7, col: 1, rows: 1, cols: 3 }, { row: 7, col: 5, rows: 1, cols: 3 },
+  ];
+  const md = kbSheetGridToMarkdown_({ name: 'Sheet1', values, merges }).markdown;
+  // Departments are h3, sub-teams h4 — so search and the drawer both get a
+  // section anchor per sub-team.
+  assert.ok(/^### PAK \(Mary\)$/m.test(md), 'the full-width merge is a department band');
+  assert.ok(/^#### PPD$/m.test(md) && /^#### MDO$/m.test(md), 'each sub-team is its own sub-heading');
+  const ppd = md.slice(md.indexOf('#### PPD'), md.indexOf('#### MDO'));
+  const mdo = md.slice(md.indexOf('#### MDO'));
+  assert.ok(/Micheal/.test(ppd) && /Sandra/.test(ppd) && /Selena/.test(ppd), 'PPD keeps its own people');
+  assert.ok(!/Sasha|Rachel/.test(ppd), 'PPD does NOT absorb the column beside it');
+  assert.ok(/Sasha/.test(mdo) && /Rachel/.test(mdo), 'MDO keeps its own people');
+  assert.ok(!/Micheal|Sandra/.test(mdo), 'MDO does NOT absorb the column beside it');
+  // A band must not be confused with a sub-team: the test is "spans the used
+  // width", not a ratio of it — a 3-wide sub-team merge cleared a 60% bar.
+  assert.ok(!/^### PPD$/m.test(md), 'a sub-team merge is never promoted to a department band');
+});
+
+test('a plain tabular sheet becomes a GFM table; a banded one never does', () => {
+  const table = kbSheetGridToMarkdown_({
+    name: 'Rates',
+    values: [['State', 'Rate'], ['TX', '6.25%'], ['CA', '7.25%']],
+    merges: [],
+  }).markdown;
+  assert.ok(/\| State \| Rate \|/.test(table) && /\|---\|---\|/.test(table), 'no merges ⇒ GFM table');
+  assert.ok(/\| TX \| 6\.25% \|/.test(table), 'data rows carry through');
+  // A pipe in a cell must not break the table it is rendered into.
+  const piped = kbSheetGridToMarkdown_({ name: 'x', values: [['A'], ['a|b']], merges: [] }).markdown;
+  assert.ok(/a\\\|b/.test(piped), 'a literal pipe is escaped for GFM');
+});
+
+test('cell highlights are preserved as emphasis and their MEANING is reported, never invented', () => {
+  // Highlights matter in the BANDED (roster) shape — a table's header row is
+  // styled by the renderer, so bolding there would be noise.
+  const res = kbSheetGridToMarkdown_({
+    name: 'x',
+    values: [['Team', ''], ['Lead', 'Backup']],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 2 }],
+    backgrounds: [['#ffffff', '#ffffff'], ['#c9daf8', '#ffffff']],
+  });
+  assert.ok(/\*\*Lead\*\*/.test(res.markdown), 'a tinted cell keeps its emphasis');
+  assert.ok(!/\*\*Backup\*\*/.test(res.markdown), 'an untinted cell is left alone');
+  assert.ok(res.warnings.some((w) => /legend/i.test(w)),
+    'the operator is told to write down what a colour meant — the sheet never says');
+});
+
+test('converter output RENDERS through the real kbMd_ (the two are a parallel pair)', () => {
+  // The Doc converter has this same round-trip guard. It is what makes the
+  // section anchors real: search chunks by heading, so a rep searching "MDO"
+  // must land on that sub-team's section rather than the whole roster.
+  const rtCtx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'kbSheetGridToMarkdown_'), rtCtx);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbSlug_'), rtCtx);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbMd_'), rtCtx);
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const md = rtCtx.kbSheetGridToMarkdown_({
+    name: 'Sheet1',
+    values: [at([[0, 'PAK (Mary)']]), at([[0, 'PPD'], [4, 'MDO']]), at([[1, 'Micheal'], [5, 'Sasha']])],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 8 }, { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 }],
+    backgrounds: [blank().map(() => '#ffffff'), blank().map(() => '#ffffff'),
+                  blank().map((_, c) => (c === 1 ? '#c9daf8' : '#ffffff'))],
+  }).markdown;
+  const html = rtCtx.kbMd_(md);
+  assert.ok(/<h3[^>]*id="kb-h-[^"]*"[^>]*>PAK \(Mary\)<\/h3>/.test(html), 'the department renders as an anchored h3');
+  assert.ok(/<h4[^>]*id="kb-h-[^"]*"[^>]*>MDO<\/h4>/.test(html), 'each sub-team gets its own anchor, so search can jump to it');
+  assert.ok(/<strong>Micheal<\/strong>/.test(html), 'the highlighted lead survives the round trip');
+  assert.strictEqual(/[#*]{2}/.test(html.replace(/<[^>]*>/g, '')), false, 'no raw markdown leaks into the rendered text');
+  // A converted TABLE must render as a table, not as escaped pipes.
+  const tbl = rtCtx.kbMd_(rtCtx.kbSheetGridToMarkdown_({
+    name: 'Rates', values: [['State', 'Rate'], ['TX', '6.25%']], merges: [],
+  }).markdown);
+  assert.ok(/<table/.test(tbl) && /TX/.test(tbl), 'the tabular shape renders as a real table');
+});
+
+test('kbConvertDriveSheet is admin-gated, read-only, and bounded', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = nc(extractRawFunction('Code.js', 'kbConvertDriveSheet'));
+  assert.ok(/isAdmin/.test(fn) && /Admin access required\./.test(fn),
+    'admin-gated like the Doc converter (INV-136)');
+  // READ-ONLY is the contract that makes review-before-save safe: the article
+  // is only ever persisted by the admin pressing Save in the editor.
+  assert.ok(!/setValue|appendRow|getRange\([^)]*\)\.set/.test(fn), 'the converter writes nothing');
+  // Scoped to the FOREIGN sheet's grid read — the itemId branch legitimately
+  // uses getValues() on our OWN KB sheet to locate the row.
+  assert.ok(/values: range\.getDisplayValues\(\)/.test(fn),
+    'the foreign sheet is read as DISPLAYED (its timezone/format is not ours to reinterpret — INV-64)');
+  assert.ok(!/values: range\.getValues\(\)/.test(fn), 'never the raw-value read');
+  assert.ok(/KB_SHEET_MAX_ROWS/.test(fn) && /KB_SHEET_MAX_COLS/.test(fn), 'the read is bounded');
+  assert.ok(/only the first/.test(fn), 'truncation is REPORTED, never silent (INV-169)');
+  assert.ok(/kbRowStatus_\(/.test(fn), 'a draft embed converts to a draft article (the M-13 lesson)');
+  // No new OAuth scope: SpreadsheetApp is already authorized everywhere.
+  assert.ok(/SpreadsheetApp\.openById/.test(fn) && !/DocumentApp/.test(fn), 'uses SpreadsheetApp');
+});
+
 console.log('\npop-out: the repeated compact header is retired (operator 2026-08-11)');
 
 test('.compact-header is gone from every partial, its CSS, and cannot return', () => {

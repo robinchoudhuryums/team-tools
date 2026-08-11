@@ -1056,8 +1056,14 @@ function kbRenderItem_(item) {
   var mgr = KB_STATE.isAdmin;   // Convert/Edit/Delete are admin-gated authoring
   // Phase 2 — managers can convert a Doc embed into a native markdown article
   // (review-before-save: the converter only pre-fills the editor).
-  var convertBtn = (mgr && item.type === 'embed' && item.driveKind === 'doc')
-    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\')">' + icon('refresh', 13) + ' Convert to article</button>'
+  // A SHEET embed is the weakest item in the KB — search treats every embed as
+  // a title-only hit and the Ctrl/⌘+K drawer can't host an iframe — so the
+  // sheet converter is offered on the same button (operator 2026-08-11).
+  var convertKind = (mgr && item.type === 'embed' && (item.driveKind === 'doc' || item.driveKind === 'sheet'))
+    ? item.driveKind : '';
+  var convertBtn = convertKind
+    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\', \'' + convertKind + '\')">' +
+        icon('refresh', 13) + ' Convert to article</button>'
     : '';
   // #4 — draft→publish + revision history (admin authoring affordances).
   var isDraft = item.status === 'draft';
@@ -1241,11 +1247,14 @@ function kbDeleteItem_(id) {
 // manager presses Save (kbSaveItem updates the row in place, flipping
 // type embed → article); the Drive file itself is never modified.
 
-/** Reader-view entry: convert an existing doc-embed KB item. */
-function kbConvertItem_(id) {
+/** Reader-view entry: convert an existing doc- or sheet-embed KB item. */
+function kbConvertItem_(id, kind) {
+  var isSheet = (kind === 'sheet');
   uiConfirm({
-    title: 'Convert Doc to article',
-    message: 'Convert this embedded Google Doc into a native markdown article?\n\nYou\'ll review the result in the editor first — nothing changes until you press Save, and the Drive file itself is never modified. Images and tables don\'t fully convert (placeholders / flattened lists).',
+    title: isSheet ? 'Convert Sheet to article' : 'Convert Doc to article',
+    message: isSheet
+      ? 'Convert this embedded Google Sheet into a native markdown article?\n\nThe article is searchable, readable in the Ctrl/\u2318+K drawer, and needs no Drive access — an embedded sheet is none of those.\n\nYou\'ll review the result in the editor first: nothing changes until you press Save, and the Sheet itself is never modified. Merged section headers become headings; cell colours become bold, so add a legend for what a colour meant.'
+      : 'Convert this embedded Google Doc into a native markdown article?\n\nYou\'ll review the result in the editor first — nothing changes until you press Save, and the Drive file itself is never modified. Images and tables don\'t fully convert (placeholders / flattened lists).',
     confirmLabel: 'Convert',
   }).then(function (ok) {
     if (!ok) return;
@@ -1285,16 +1294,19 @@ function kbConvertItem_(id) {
       .withFailureHandler(function (err) {
         showToast((err && err.message) || 'Convert failed', 'toast-error');
       })
-      .kbConvertDriveDoc({ itemId: id });
+      [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ itemId: id });
   });
 }
 
-/** Editor entry: convert the Doc URL currently typed in embed mode, switching
- *  the open editor to article mode with the converted body. */
+/** Editor entry: convert the Doc OR Sheet URL currently typed in embed mode,
+ *  switching the open editor to article mode with the converted body. The
+ *  endpoint is picked from the URL itself so the admin doesn't have to say
+ *  which kind they pasted. */
 function kbConvertFromEditor_() {
   kbSnapshotEditor_();
   var url = String(KB_EDIT.driveUrl || '').trim();
-  if (!url) { showToast('Paste a Google Doc share URL first.', 'toast-warn'); return; }
+  if (!url) { showToast('Paste a Google Doc or Sheet share URL first.', 'toast-warn'); return; }
+  var isSheet = /\/spreadsheets\//.test(url);
   showToast('Converting…', '');
   // M-7 (cycle 10): identity guard. Every editor open assigns a FRESH KB_EDIT
   // object, so capturing the reference pins this convert to the editor it was
@@ -1328,7 +1340,7 @@ function kbConvertFromEditor_() {
     .withFailureHandler(function (err) {
       showToast((err && err.message) || 'Convert failed', 'toast-error');
     })
-    .kbConvertDriveDoc({ driveUrl: url });
+    [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ driveUrl: url });
 }
 
 function kbShowConvertWarnings_(warnings) {
@@ -1452,7 +1464,7 @@ function kbRenderEditorBody_() {
     host.innerHTML = '<div class="field"><label>Drive share URL (Google Doc, Sheet, or file)</label>' +
       '<input type="text" id="kb-ed-driveurl" value="' + esc(KB_EDIT.driveUrl) + '" placeholder="https://docs.google.com/document/d/…"></div>' +
       '<div style="font-size:.76rem;color:var(--muted);">The doc embeds as a read-only preview in the app, with an "Open in new tab" link. Reps need access to the file (share it with the team).</div>' +
-      '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc to an article instead</button>' +
+      '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
       '<div style="font-size:.72rem;color:var(--muted);margin-top:4px;">Google Docs only — pulls the Doc\'s text in as editable markdown (you review before saving; the Doc isn\'t changed).</div>';
   } else {
     host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +

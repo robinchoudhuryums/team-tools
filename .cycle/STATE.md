@@ -109,6 +109,21 @@ Phase: idle (post-reflect) + operator-requested feature work:
   button rather than shipping a dead one). Every branded caller now passes a
   module eyebrow. Verified by RENDERING each email and looking (no matrix
   scenario covers server-built mail). Pure 457 (2 pins, 6 bite-checks), DOM 69.
+- Sheet→article converter (operator 2026-08-11, third request of the day —
+  "a better version" than embedding a roster spreadsheet in Reference):
+  `kbConvertDriveSheet` + the pure `kbSheetGridToMarkdown_`. The motivating
+  facts are structural, verified in source: an embed is a TITLE-ONLY search hit
+  and the Ctrl/⌘+K drawer cannot host an iframe, so an embedded roster is
+  invisible mid-call; the /preview iframe also needs each REP's own Drive
+  access. Shape-detecting conversion (table vs banded grid). THE bug worth
+  remembering: banded rosters partition by COLUMN, so the first implementation
+  merged two sub-teams into one line (PPD's people shown as covering MDO) —
+  fixed by making headers claim column ranges; and the band test had to become
+  "spans the used width" after a 3-col sub-team merge cleared a 60%-of-6 ratio
+  bar. Both found by RUNNING the converter on a reconstruction of the
+  operator's sheet, not by reading it. Manual/review-before-save by design so
+  the eventual "app becomes the source" migration is not fought by a re-sync.
+  Pure 462 (5 pins, 6 bite-checks), DOM 69. INV-192 written; INV-136 39→40.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.
