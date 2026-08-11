@@ -3753,14 +3753,19 @@ function offboardEmployee(repEmpId) {
   } catch (err) { return { error: err.message }; }
 }
 
-/** Admin-gated, read-only — everything the "Team members" Admin panel needs in
- *  one call: per-rep readiness (Call Notes enrolled / ManagerEmail set+known /
- *  timezone shape / CDR seen-in-last-7-days with an alias suggestion when the
- *  phone system spells the name differently), the form's option lists
- *  (managers, departments, roster timezones), the biweekly-anchor state, and
- *  the offboarded (name-only) rows. The CDR block is BEST-EFFORT (the INV-67
- *  posture): an unreachable CDR Report degrades to cdr.ok:false and every
- *  rep's cdrSeen reads "unknown", never "missing". */
+/** Admin-gated, read-only — everything the "Team members" Admin panel needs
+ *  from the ROSTER: per-rep readiness (Call Notes enrolled / ManagerEmail
+ *  set+known / timezone shape), the form's option lists (managers,
+ *  departments, roster timezones), the biweekly-anchor state, and the
+ *  email-less rows.
+ *
+ *  CDR readiness is DELIBERATELY NOT HERE (operator report 2026-08-11: the
+ *  panel took seconds to appear). It needs a 7-day read of the whole CDR
+ *  Report — the slowest thing on the Admin tab and the only part that touches
+ *  a foreign spreadsheet — while everything above comes off the 5-min-cached
+ *  roster. Blocking the panel on it made a cheap read wait for an expensive
+ *  one; `getOnboardingCdrReadiness` supplies it separately and the client
+ *  patches the chips in when it lands. */
 function getOnboardingPanel() {
   try {
     var callerEmp = getEmployeeInfo_();
@@ -3813,27 +3818,6 @@ function getOnboardingPanel() {
       });
     }
     reps.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    // Best-effort CDR readiness over the trailing 7 days: has the phone system
-    // reported this NAME at all, and if not, does an off-roster CDR agent look
-    // like the same person spelled differently (the INV-186 pairing)?
-    var cdr = { ok: false };
-    try {
-      var to = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
-      var fromD = new Date(Date.parse(to + 'T12:00:00Z') - 6 * 86400000);
-      var from = isoFromUtc_(fromD);
-      var names = reps.map(function (r) { return r.name; });
-      var agg = getCdrAgentMetrics_(from, to, names);
-      var seenSet = agg.agents || {};
-      var noCdr = names.filter(function (n) { return !seenSet[n]; });
-      var likely = cdrLikelyNameMismatches_(noCdr, (agg.meta && agg.meta.offRosterAgents) || []);
-      var aliasByRoster = {};
-      likely.forEach(function (m) { aliasByRoster[m.roster] = m.cdr; });
-      reps.forEach(function (r) {
-        r.cdrSeen = !!seenSet[r.name];
-        if (!r.cdrSeen && aliasByRoster[r.name]) r.cdrAlias = aliasByRoster[r.name];
-      });
-      cdr = { ok: true, from: from, to: to };
-    } catch (eCdr) { cdr = { ok: false, error: eCdr.message }; }
     return {
       reps: reps,
       offboarded: offboarded,
@@ -3842,10 +3826,45 @@ function getOnboardingPanel() {
       timezones: Object.keys(tzSeen).sort(),
       hasBiweeklyAnchor: hasBiweeklyAnchor,
       anchorOwner: anchorOwner,
-      cdr: cdr,
+      // The client renders "cdr: checking…" for this shape and patches the
+      // chips when getOnboardingCdrReadiness lands. Distinct from ok:false,
+      // which means the CDR read was ATTEMPTED and failed.
+      cdr: { deferred: true },
       callerEmail: String(callerEmp.email || '').toLowerCase(),
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated, read-only — the CDR half of the Team-members panel, split out
+ *  of `getOnboardingPanel` so the roster-backed panel paints immediately.
+ *  Over the trailing 7 days: has the phone system reported this NAME at all,
+ *  and if not, does an off-roster CDR agent look like the same person spelled
+ *  differently (the INV-186 pairing)? BEST-EFFORT (the INV-67 posture): an
+ *  unreachable CDR Report returns ok:false and every rep reads "unknown",
+ *  never "missing" — an unread name is not an absent one (INV-187). */
+function getOnboardingCdrReadiness() {
+  try {
+    var callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    var rows = getEmployeeRosterRows_();
+    var names = [];
+    for (var i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;          // F3: the one predicate
+      var nm = String(rows[i][EMP.NAME] || '').trim();
+      if (nm) names.push(nm);
+    }
+    var to = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+    var fromD = new Date(Date.parse(to + 'T12:00:00Z') - 6 * 86400000);
+    var from = isoFromUtc_(fromD);
+    var agg = getCdrAgentMetrics_(from, to, names);
+    var seenSet = agg.agents || {};
+    var noCdr = names.filter(function (n) { return !seenSet[n]; });
+    var likely = cdrLikelyNameMismatches_(noCdr, (agg.meta && agg.meta.offRosterAgents) || []);
+    var seen = {}, alias = {};
+    names.forEach(function (n) { if (seenSet[n]) seen[n] = true; });
+    likely.forEach(function (m) { alias[m.roster] = m.cdr; });
+    return { ok: true, from: from, to: to, seen: seen, alias: alias };
+  } catch (err) { return { ok: false, error: err.message }; }
 }
 
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every

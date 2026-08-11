@@ -286,7 +286,7 @@ function renderTimeOffView(area, data) {
 
   area.innerHTML = `
     ${COMPACT_MODE
-      ? `<div class="compact-header"><div class="ch-title">${icon('timeoff', 16)} Time / PTO</div><div class="ch-actions"><button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button></div></div>`
+      ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
       : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time / PTO</span></div><h1 class="display-title">Time / PTO</h1></div><div class="app-bar-right">${modeBar}</div></div>`}
     ${COMPACT_MODE ? modeBar : ''}
     <div class="month-nav">

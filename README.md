@@ -16,7 +16,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export, and a manager-only Coverage
     planner (forward staffing across timezones with PTO overlaid and
-    understaffed manager-tz hours flagged).
+    understaffed manager-tz hours flagged). Break and end-of-shift
+    reminders fire from the shell, so they reach whichever tab or
+    pop-out window is open; each shows a toast plus an optional chime
+    (on by default, toggled by the sidebar bell) and, where the browser
+    permits it, a desktop notification.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails

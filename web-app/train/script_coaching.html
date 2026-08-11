@@ -61,8 +61,7 @@ function enterCoachingView() {
       '</div>'
     : '';
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('thumbsUp', 16) + ' Coaching</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Coaching</h1></div>' +
+        '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Coaching</h1></div>' +
     toggle +
     '<div id="coach-content"' + (isMgr ? ' role="tabpanel"' : '') + '></div>';
   coachDispatchMode_();

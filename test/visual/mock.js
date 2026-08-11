@@ -374,23 +374,23 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }],
       unenrolled: [{ id: 'E-1090', name: 'Leo Kim' }] },
     // Team-member onboarding (2026-08-07) — field names mirror
-    // getOnboardingPanel's return site (INV-185). Covers every readiness
-    // state: fully-ready, needs-provisioning + alias suggestion, blank
-    // manager + no CDR rows, and unknown manager email.
+    // getOnboardingPanel's return site (INV-185). Covers every roster
+    // readiness state: fully-ready, needs-provisioning, blank manager, and
+    // unknown manager email. CDR readiness rides the sibling fixture below.
     getOnboardingPanel: {
       reps: [
         { id: 'E-1042', name: 'Avery Blake', email: 'avery@example.invalid', timezone: 'Asia/Kolkata',
           tzValid: true, enrolled: true, managerEmail: 'robin@example.invalid', managerEmailKnown: true,
-          isManager: true, cdrSeen: true },
+          isManager: true },
         { id: 'E-1090', name: 'Leo Kim', email: 'leo@example.invalid', timezone: 'Asia/Manila',
           tzValid: true, enrolled: false, managerEmail: 'robin@example.invalid', managerEmailKnown: true,
-          isManager: false, cdrSeen: false, cdrAlias: 'Kim, Leo' },
+          isManager: false },
         { id: 'E-1091', name: 'Nina Patel', email: 'nina@example.invalid', timezone: 'America/Chicago',
           tzValid: true, enrolled: true, managerEmail: '', managerEmailKnown: false,
-          isManager: false, cdrSeen: false },
+          isManager: false },
         { id: 'E-1088', name: 'Sam Ortiz', email: 'sam@example.invalid', timezone: 'America/Chicago',
           tzValid: true, enrolled: true, managerEmail: 'ghost@example.invalid', managerEmailKnown: false,
-          isManager: false, cdrSeen: true },
+          isManager: false },
       ],
       // {id,name,incomplete} since 2026-08-08 — an offboarded row (kept its
       // roster data) vs a hand-stubbed one (ID reserved, never usable).
@@ -400,8 +400,17 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       departments: ['Billing', 'Shipping', 'Resupply', 'Intake'],
       timezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
       hasBiweeklyAnchor: true, anchorOwner: 'Avery Blake',
-      cdr: { ok: true, from: daysAgo(6), to: todayIso },
+      // The panel no longer carries CDR readiness — it is a second-stage read
+      // (getOnboardingCdrReadiness) so the roster panel paints immediately.
+      cdr: { deferred: true },
       callerEmail: 'avery@example.invalid',
+    },
+    // Mirrors getOnboardingCdrReadiness's return site (INV-185): seen names +
+    // an alias suggestion for the one the phone system spells differently.
+    getOnboardingCdrReadiness: {
+      ok: true, from: daysAgo(6), to: todayIso,
+      seen: { 'Avery Blake': true, 'Sam Ortiz': true },
+      alias: { 'Leo Kim': 'Kim, Leo' },
     },
     managerGetUnresolvedActionCount: { count: 1, partial: false },
     getDeployReadiness: {
