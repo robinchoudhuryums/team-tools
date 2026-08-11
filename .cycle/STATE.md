@@ -97,6 +97,18 @@ Phase: idle (post-reflect) + operator-requested feature work:
   `[data-theme-target]`-scoped — INV-191), and `.toolbar-tabs` overflowed the
   page 25px at 390px (now scrolls internally). Pure 455 (5 new pins, 10
   bite-checks), DOM 69, full 39-matrix 0/0.
+- Branded-email restyle (operator 2026-08-11, second request of the day): the
+  shared `buildBrandedEmailHtml_` + `brandedKvRows_` were restyled onto the
+  dept-email identity — UMS mark over a navy rule ON THE CARD (never on a navy
+  fill: `logoUrl` is a transparency-free JPEG), a real 22px heading with a
+  tone rule replacing the 11px mono chip + 9px dot, the navy-tinted detail
+  table replacing two columns of plain text, and `subLabel` (module name,
+  default EMPTY) replacing the generic "Notification" eyebrow. New
+  `statusLabel` option; the long-unused `ctaUrl`/`ctaLabel` are now wired
+  through the new `safeWebAppUrl_(tabKey)` (returns '' → the wrapper drops the
+  button rather than shipping a dead one). Every branded caller now passes a
+  module eyebrow. Verified by RENDERING each email and looking (no matrix
+  scenario covers server-built mail). Pure 457 (2 pins, 6 bite-checks), DOM 69.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

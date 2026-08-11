@@ -1354,6 +1354,55 @@ test('brandedKvRows_ escapes BOTH label and value', () => {
   assert.ok(rows.indexOf('Re&lt;b&gt;ason') >= 0, 'label escaped');
   assert.ok(rows.indexOf('a&quot;&lt;script&gt;x') >= 0, 'value escaped');
 });
+test('branded email chrome: logo bar degrades, heading is a heading, CTA is opt-in', () => {
+  const html = buildBrandedEmailHtml_('ADP export ready', '<p>body</p>',
+    { tone: 'info', subLabel: 'Payroll', ctaUrl: 'https://example.invalid/x', ctaLabel: 'Open it' });
+  // Many mail clients block remote images by default, so the identity cannot
+  // depend on the logo loading — the alt text IS the fallback wordmark and the
+  // cell carries its type styling.
+  assert.ok(/<img [^>]*alt="UMS Team Tools"/.test(html), 'the logo has a wordmark alt, not a bare "UMS"');
+  // The mark sits on the CARD over a navy rule, the treatment every other
+  // email in the app uses — and not on a navy band, because logoUrl is a JPEG
+  // with no transparency, which a navy band would frame as a white rectangle.
+  const logoCell = /<td style="([^"]*)"[^>]*>\s*<img [^>]*alt="UMS Team Tools"/.exec(html.replace(/\n/g, ''));
+  assert.ok(logoCell, 'the logo sits in a styled cell');
+  assert.ok(/border-bottom:2px solid/.test(logoCell[1]), 'the mark sits over the navy rule');
+  assert.ok(!/background:\s*#223b5d/.test(logoCell[1]), 'the mark is never placed on a navy fill (the JPEG has no transparency)');
+  assert.ok(/color:#223b5d/.test(logoCell[1]),
+    'the cell colours its own text so a BLOCKED image still reads as the brand');
+  // The heading used to be an 11px mono chip — the least prominent thing in a
+  // message whose whole job is that one line.
+  assert.ok(/font-size:22px[^"]*"[^>]*>ADP export ready/.test(html.replace(/\n/g, '')),
+    'the heading renders at heading size');
+  assert.ok(html.indexOf('Open it') >= 0 && html.indexOf('https://example.invalid/x') >= 0, 'the CTA renders');
+  // A missing url or label must drop the button rather than ship a dead one.
+  const noCta = buildBrandedEmailHtml_('x', '<p>b</p>', { ctaLabel: 'Open it' });
+  assert.strictEqual(noCta.indexOf('Open it'), -1, 'no CTA without a url');
+  // The eyebrow names a module; blank by default (repeating the wordmark beside
+  // the wordmark is worse than nothing).
+  assert.ok(html.indexOf('Payroll') >= 0, 'subLabel renders as the eyebrow');
+  assert.strictEqual(buildBrandedEmailHtml_('x', '').indexOf('Notification'), -1,
+    'no generic "Notification" eyebrow');
+  // Email-safe: no layout property an Outlook client drops (the documented rule).
+  assert.ok(!/display:\s*flex|[^-]gap:|filter:/.test(html), 'no flex/gap/filter in email HTML');
+});
+
+test('branded email CTA deep-links point at REGISTERED tab keys', () => {
+  // A CTA is the one part of these emails that can be silently wrong: a stale
+  // tab key still renders a button, it just lands on the default view.
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const used = [...code.matchAll(/safeWebAppUrl_\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(used.length >= 4, `CTAs are wired (found ${used.length})`);
+  const core = extractScript('script_core.html');
+  const tabs = new Set([...core.slice(core.indexOf('const TOOLS = {')).matchAll(/^\s{6}([a-zA-Z]+):\s*\{/gm)].map((m) => m[1]));
+  used.forEach((k) => assert.ok(tabs.has(k), `CTA deep-link '${k}' is a registered TOOLS tab key`));
+  // Resolution failure drops the button; it never ships a broken href.
+  const helper = nc(extractRawFunction('Code.js', 'safeWebAppUrl_'));
+  assert.ok(/catch \(e\) \{ return ''; \}/.test(helper) && /if \(!base\) return '';/.test(helper),
+    'an unresolvable web-app URL yields empty, which suppresses the CTA');
+});
+
 test('branded builders never throw on null / empty inputs', () => {
   assert.doesNotThrow(() => buildBrandedEmailHtml_('', ''));
   assert.doesNotThrow(() => brandedKvRows_([['x', null], [null, undefined]]));

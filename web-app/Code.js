@@ -6988,56 +6988,90 @@ function buildBrandedEmailHtml_(heading, bodyHtml, opts) {
   ACCENT_TONE[P.brand] = 'info';
   const tone = TONES[opts.tone] ? opts.tone : ((opts.accent && ACCENT_TONE[opts.accent]) || 'info');
   const T = TONES[tone];
-  const subLabel = opts.subLabel || 'Notification';
+  const TONE_WORD = { success: 'Complete', danger: 'Action needed', warn: 'Needs attention', info: 'Update' };
+  const statusWord = opts.statusLabel || TONE_WORD[tone];
+  // The eyebrow names the MODULE this came from ('Time Clock', 'Payroll', …).
+  // It defaults to EMPTY rather than the old generic 'Notification', which said
+  // nothing on any email — and repeating the wordmark here would be worse than
+  // blank, since it sits directly beside the wordmark.
   const cta = (opts.ctaUrl && opts.ctaLabel)
-    ? '<tr><td style="padding:4px 22px 18px;"><a href="' + esc_(opts.ctaUrl) + '" style="display:inline-block;' +
+    ? '<tr><td style="padding:6px 26px 22px;"><a href="' + esc_(opts.ctaUrl) + '" style="display:inline-block;' +
         'font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#ffffff;background:' + P.accent +
-        ';text-decoration:none;border-radius:8px;padding:10px 18px;">' + esc_(opts.ctaLabel) + ' &#8594;</a></td></tr>'
+        ';text-decoration:none;border-radius:8px;padding:11px 20px;">' + esc_(opts.ctaLabel) + ' &#8594;</a></td></tr>'
     : '';
   return (
     '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
-    '<div style="max-width:600px;margin:0 auto;padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:' + P.ink + ';">' +
+    '<div style="max-width:600px;margin:0 auto;padding:22px 12px;font-family:Arial,Helvetica,sans-serif;color:' + P.ink + ';">' +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + P.paperCard +
-        ';border:1px solid ' + P.line + ';border-radius:10px;overflow:hidden;">' +
-        // navy wordmark + navy underline rule + semantic status dot (company cue)
-        '<tr><td style="padding:18px 22px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
-          '<td style="border-bottom:2px solid ' + P.brand + ';padding-bottom:12px;">' +
-            '<span style="font-size:14px;font-weight:700;letter-spacing:.5px;color:' + P.brand + ';">UMS</span>' +
-            '<span style="font-size:14px;color:' + P.muted2 + ';">&nbsp;Team Tools</span>' +
-            '<div style="font-family:\'Courier New\',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:' + P.muted3 + ';margin-top:4px;">' + esc_(subLabel) + '</div>' +
-          '</td>' +
-          '<td align="right" style="border-bottom:2px solid ' + P.brand + ';padding-bottom:12px;vertical-align:bottom;">' +
-            '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + T.dot + ';"></span></td>' +
-        '</tr></table></td></tr>' +
-        // soft semantic chip — heading as a mono micro-label (app cue)
-        '<tr><td style="padding:16px 22px 2px;">' +
+        ';border:1px solid ' + P.line + ';border-radius:12px;overflow:hidden;">' +
+        // ── Logo bar. The dept / Intake / form emails all lead with the UMS
+        // mark over a navy rule ON THE CARD — leading these with a text
+        // wordmark instead was the biggest break in continuity across the
+        // app's mail. The mark stays on the light card rather than on a navy
+        // band: logoUrl is a JPEG (no transparency), so a navy band would
+        // frame a white rectangle.
+        '<tr><td style="padding:20px 26px 0;">' +
+          '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+            // The alt text is STYLED, not incidental: many clients block remote
+            // images by default, and an unstyled alt leaves a hole where the
+            // identity should be. Blocked -> a navy wordmark; loaded -> the mark.
+            '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';vertical-align:bottom;' +
+              'font-size:15px;font-weight:700;letter-spacing:.4px;color:' + P.brand + ';">' +
+              '<img src="' + P.logoUrl + '" alt="UMS Team Tools" style="display:block;border:0;height:40px;width:auto;">' +
+            '</td>' +
+            '<td align="right" style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';' +
+              'vertical-align:bottom;font-family:\'Courier New\',monospace;font-size:9px;' +
+              'font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:' + P.muted3 + ';">' +
+              esc_(opts.subLabel || '') + '</td>' +
+          '</tr></table></td></tr>' +
+        // ── Status pill + the heading as a REAL heading. The heading used to
+        // be an 11px mono chip, which made the one line saying what happened
+        // the least prominent thing in the message.
+        '<tr><td style="padding:18px 26px 0;">' +
           '<table role="presentation" cellpadding="0" cellspacing="0" style="background:' + T.bg +
-            ';border-left:4px solid ' + T.dot + ';border-radius:6px;"><tr><td style="padding:10px 14px;">' +
-            '<span style="font-family:\'Courier New\',monospace;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:' + T.text + ';">' + esc_(heading) + '</span>' +
-          '</td></tr></table></td></tr>' +
-        // body card
-        '<tr><td style="padding:12px 22px 6px;font-size:14px;line-height:1.55;color:' + P.ink + ';">' + bodyHtml + '</td></tr>' +
+            ';border:1px solid ' + T.border + ';border-radius:999px;"><tr><td style="padding:4px 12px;' +
+            'font-family:\'Courier New\',monospace;font-size:10px;font-weight:700;letter-spacing:1.2px;' +
+            'text-transform:uppercase;color:' + T.text + ';">' + esc_(statusWord) + '</td></tr></table>' +
+        '</td></tr>' +
+        '<tr><td style="padding:10px 26px 0;font-size:22px;line-height:1.25;font-weight:700;' +
+          'letter-spacing:-.01em;color:' + P.ink + ';">' + esc_(heading) + '</td></tr>' +
+        // A short tone-coloured rule under the heading carries the semantic
+        // state at a size that is actually visible (the old cue was a 9px dot).
+        '<tr><td style="padding:12px 26px 0;"><div style="width:46px;height:3px;border-radius:2px;background:' + T.dot + ';"></div></td></tr>' +
+        // ── Body
+        '<tr><td style="padding:16px 26px 6px;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + bodyHtml + '</td></tr>' +
         cta +
-        // mono footer
-        '<tr><td style="padding:6px 22px 18px;"><div style="border-top:1px solid ' + P.line +
-          ';padding-top:12px;font-family:\'Courier New\',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:' + P.muted3 + ';">Automated · do not reply</div></td></tr>' +
+        // ── Footer
+        '<tr><td style="padding:0 26px 20px;"><div style="border-top:1px solid ' + P.line +
+          ';padding-top:14px;font-family:\'Courier New\',monospace;font-size:10px;letter-spacing:1px;' +
+          'text-transform:uppercase;color:' + P.muted3 + ';">UMS Team Tools &middot; automated &middot; do not reply</div></td></tr>' +
       '</table>' +
-      '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · automated message</div>' +
     '</div></div>'
   );
 }
 
-/** Renders an array of [label, value] pairs as a styled two-column block for
- *  branded emails. Both label and value are esc_'d. */
+/** Renders an array of [label, value] pairs as the app's detail table for
+ *  branded emails — hairline-separated rows with a pale navy tint on
+ *  alternating rows, matching the Call Details table in the department emails
+ *  (the two used to look like different products). Both label and value are
+ *  esc_'d (INV-105). */
 function brandedKvRows_(pairs) {
   const P = CN_EMAIL_PALETTE;
-  return '<table style="width:100%;border-collapse:collapse;font-size:14px;margin:4px 0;">' +
-    pairs.map(function (p) {
-      return '<tr><td style="padding:4px 12px 4px 0;color:' + P.muted + ';font-weight:600;white-space:nowrap;vertical-align:top;">' +
-               esc_(p[0]) + '</td><td style="padding:4px 0;color:' + P.ink + ';">' + esc_(p[1]) + '</td></tr>';
+  return '<table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;' +
+    'margin:6px 0 4px;border:1px solid ' + P.line + ';border-radius:8px;overflow:hidden;">' +
+    pairs.map(function (p, idx) {
+      const bg = (idx % 2) ? P.navyTint : P.paperCard;
+      return '<tr style="background:' + bg + ';">' +
+        '<td style="padding:9px 14px;border-top:' + (idx ? '1px solid ' + P.line : 'none') +
+          ';color:' + P.muted + ';font-size:11px;font-family:\'Courier New\',monospace;font-weight:700;' +
+          'letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;vertical-align:top;width:38%;">' +
+          esc_(p[0]) + '</td>' +
+        '<td style="padding:9px 14px;border-top:' + (idx ? '1px solid ' + P.line : 'none') +
+          ';color:' + P.ink + ';vertical-align:top;">' + esc_(p[1]) + '</td></tr>';
     }).join('') +
   '</table>';
 }
+
 
 /** Renders the email HTML body + computed subject/recipients for a note +
  *  composer selections, without sending. The client shows this in a
@@ -8305,6 +8339,19 @@ function getWebAppExecUrl_() {
 
 function buildFormUrl_(token) {
   return getWebAppExecUrl_() + '?form=' + encodeURIComponent(token);
+}
+
+/** A deep link into a tool tab for an email CTA, or '' when the web-app URL
+ *  cannot be resolved. Returning '' is deliberate: buildBrandedEmailHtml_ only
+ *  renders the CTA when BOTH url and label are present, so a resolution failure
+ *  drops the button rather than shipping a dead one. `tabKey` is a TOOLS
+ *  registry tab key (INV-78's ?tool= deep-link contract). */
+function safeWebAppUrl_(tabKey) {
+  try {
+    const base = getWebAppExecUrl_();
+    if (!base) return '';
+    return tabKey ? base + '?tool=' + encodeURIComponent(tabKey) : base;
+  } catch (e) { return ''; }
 }
 
 /** Normalizes an Apps Script web-app URL to its canonical public /exec form:
@@ -10059,9 +10106,10 @@ function sendDailyMissedPunchAlerts() {
             `— UMS Time Clock (automated)\n`,
           htmlBody: buildBrandedEmailHtml_('Missing clock-out',
             '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
-            '<p style="margin:0 0 12px;">Our records show you clocked in on <b>' + esc_(emp.yesterdayStr) + '</b> (' + esc_(tzAbbr_(emp.timezone)) + ') but didn\'t clock out. Please open the UMS Time Clock app and use the <b>Adjust</b> feature to record your clock-out time.</p>' +
+            '<p style="margin:0 0 12px;">Our records show you clocked in on <b>' + esc_(emp.yesterdayStr) + '</b> (' + esc_(tzAbbr_(emp.timezone)) + ') but didn\'t clock out. Use <b>Adjust</b> to record your clock-out time so your timesheet is right.</p>' +
             '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">If you have any questions, please contact your manager.</p>',
-            { accent: CN_EMAIL_PALETTE.warn }),
+            { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Action needed',
+              ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Fix it in Time Clock' }),
         });
       } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
     });
@@ -10094,8 +10142,9 @@ function sendDailyMissedPunchAlerts() {
             '<p style="margin:0 0 10px;">The following employees clocked in but did not clock out:</p>' +
             listHtml +
             '<p style="margin:0 0 12px;color:' + CN_EMAIL_PALETTE.muted + ';">Each has been emailed a reminder to fix it via the Adjust feature.</p>' +
-            '<p style="margin:0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
-            { accent: CN_EMAIL_PALETTE.warn }),
+            '<p style="margin:0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.info + ';font-weight:600;">Open the audit log →</a></p>',
+            { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock',
+              ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open the manager dashboard' }),
         });
       } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
@@ -10180,7 +10229,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         htmlBody: buildBrandedEmailHtml_('No export generated',
           '<p style="margin:0 0 12px;">No export was generated for <b>' + esc_(range.start) + '</b> to <b>' + esc_(range.end) + '</b>.</p>' +
           brandedKvRows_([['Reason', result.error]]),
-          { accent: CN_EMAIL_PALETTE.warn }),
+          { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Payroll', statusLabel: 'Nothing to send' }),
       });
       writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
         `${payCycleFilter} skipped — ${result.error}`);
@@ -10206,8 +10255,9 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
           ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
           ['Rows', String(result.rowCount)],
         ]) +
-        '<p style="margin:14px 0 0;"><a href="' + esc_(result.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open as a Google Sheet →</a></p>',
-        { accent: CN_EMAIL_PALETTE.brand }),
+        '',
+        { accent: CN_EMAIL_PALETTE.brand, subLabel: 'Payroll', statusLabel: 'Ready',
+          ctaUrl: result.url, ctaLabel: 'Open as a Google Sheet' }),
       attachments: [blob],
     });
     Logger.log(`Automated ${payCycleFilter} export sent: ${result.rowCount} rows.`);
@@ -10240,7 +10290,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
             ? '<p style="margin:14px 0 0;">The export Google Sheet <b>was created successfully</b> — only the .xlsx attachment step failed. ' +
               '<a href="' + esc_(createdSheet.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open it →</a> (no need to re-run).</p>'
             : '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>'),
-          { accent: CN_EMAIL_PALETTE.danger }),
+          { accent: CN_EMAIL_PALETTE.danger, subLabel: 'Payroll', statusLabel: 'Failed' }),
       });
     } catch (e) {}
   }
@@ -10743,7 +10793,8 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   }
   html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
-  const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html, { accent: P.warnDeep });
+  const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html,
+    { accent: P.warnDeep, subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
   MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
 }
 
@@ -10765,7 +10816,8 @@ function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
   const text = 'Hi ' + empName + ', these documents are overdue (as of ' + todayIso + '):\n' +
     docs.map(function (d) { return '  ' + d.title + ' (due ' + d.dueAt + ')'; }).join('\n') +
     '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
-  const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html, { accent: P.warnDeep });
+  const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html,
+    { accent: P.warnDeep, subLabel: 'Employee Docs', ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
   MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
 }
 
@@ -13734,8 +13786,10 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
         ['Days back', String(daysBack) + ' (alert threshold > ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ', window ' + CONFIG.ADJUST_WINDOW_DAYS + ')'],
         ['Reason', reason || '(none provided)'],
       ]) +
-      '<p style="margin:14px 0 0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
-      { accent: CN_EMAIL_PALETTE.warn });
+      '',
+      { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Review',
+        ctaUrl: 'https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit',
+        ctaLabel: 'Open the audit log' });
     MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
@@ -13754,8 +13808,9 @@ function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
       '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> (' + esc_(emp.id) + ') submitted a training-flagged call note with a question:</p>' +
       '<div style="background:' + CN_EMAIL_PALETTE.brandSoft + ';border-radius:8px;padding:12px 14px;margin:0 0 12px;font-size:15px;color:' + CN_EMAIL_PALETTE.ink + ';">' + esc_(question) + '</div>' +
       brandedKvRows_([['Date', dateLocal]]) +
-      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Reply in the web app → Call Notes → Team Notes → Per-Rep View.</p>',
-      {});
+      '',
+      { subLabel: 'Call Notes', statusLabel: 'Question',
+        ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Reply in Team Notes' });
     MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
@@ -13806,7 +13861,9 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
       '<p style="margin:0 0 12px;">Your time off request has been <b>' + esc_(verb) + '</b>:</p>' +
       brandedKvRows_(kv) + balLine +
       '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please contact your manager with any questions.</p>',
-      { accent: accent });
+      { accent: accent, subLabel: 'Time Off',
+        statusLabel: newStatus === 'Approved' ? 'Approved' : newStatus === 'Denied' ? 'Denied' : 'Updated',
+        ctaUrl: safeWebAppUrl_('timeoff'), ctaLabel: 'Open Time / PTO' });
     MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
@@ -19422,7 +19479,7 @@ function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
         const htmlBody = buildBrandedEmailHtml_('New training assigned',
           '<p style="margin:0 0 12px;">Hi ' + esc_(name) + ',</p>' +
           brandedKvRows_([['Training item', itemTitle]].concat(dueDate ? [['Due', dueDate]] : [])) +
-          '<p style="margin:12px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → My Training</strong> to review and mark it complete.</p>');
+          '', { subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
         MailApp.sendEmail({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
       } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
     }
@@ -20513,7 +20570,9 @@ function notifyEmpDocIssued_(target, doc) {
     const htmlBody = buildBrandedEmailHtml_('Document for your ' + (doc.requiresSignature ? 'signature' : 'review'),
       '<p style="margin:0 0 12px;">Hi ' + esc_(target.name) + ',</p>' +
       brandedKvRows_([['Document', doc.title]].concat(doc.dueAt ? [['Due', doc.dueAt]] : [])) +
-      '<p style="margin:12px 0 0;">Open the web app &rarr; <strong>Training &amp; Employee Docs &rarr; My Docs</strong> to ' + action + ' it.</p>');
+      '<p style="margin:12px 0 0;">Please ' + esc_(action) + ' it.</p>',
+      { subLabel: 'Employee Docs', statusLabel: doc.requiresSignature ? 'Signature needed' : 'Review needed',
+        ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
     MailApp.sendEmail({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
 }
@@ -20529,7 +20588,8 @@ function notifyEmpDocSigned_(doc, signer, completedOnly) {
     const verb = completedOnly ? 'completed' : 'signed';
     const body = signer.name + ' ' + verb + ' "' + doc.title + '".';
     const htmlBody = buildBrandedEmailHtml_(completedOnly ? 'Document completed' : 'Document signed',
-      brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]));
+      brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]),
+      { tone: 'success', subLabel: 'Employee Docs' });
     MailApp.sendEmail({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
       body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
@@ -20896,8 +20956,10 @@ function notifyRepOfCoaching_(target, item, manager) {
     const body = manager.name + ' left you ' + sev + '. Open the web app → Training & Employee Docs → My Coaching to read and acknowledge it.';
     const htmlBody = buildBrandedEmailHtml_(item.severity === 'praise' ? 'You received praise' : 'New coaching feedback',
       brandedKvRows_([['From', manager.name], ['Type', item.severity]]) +
-      '<p style="margin:12px 0 0;">Open <strong>Training &amp; Employee Docs → My Coaching</strong> to read and acknowledge it.</p>',
-      { accent: item.severity === 'critical' ? CN_EMAIL_PALETTE.danger : (item.severity === 'praise' ? CN_EMAIL_PALETTE.brand : CN_EMAIL_PALETTE.warnDeep) });
+      '',
+      { accent: item.severity === 'critical' ? CN_EMAIL_PALETTE.danger : (item.severity === 'praise' ? CN_EMAIL_PALETTE.brand : CN_EMAIL_PALETTE.warnDeep),
+        subLabel: 'Coaching', statusLabel: item.severity === 'praise' ? 'Praise' : 'Please acknowledge',
+        ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open My Coaching' });
     MailApp.sendEmail({ to: target.email, subject: (item.severity === 'praise' ? '⭐ Praise from ' : '📋 Coaching from ') + manager.name, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyRepOfCoaching_ failed: ' + e.message); }
 }
@@ -20909,7 +20971,8 @@ function notifyManagerOfCoachingAck_(item, rep) {
     const body = rep.name + ' acknowledged your coaching (' + item.severity + ').';
     MailApp.sendEmail({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
       body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
-        brandedKvRows_([['Employee', rep.name], ['Type', item.severity]])) });
+        brandedKvRows_([['Employee', rep.name], ['Type', item.severity]]),
+        { tone: 'success', subLabel: 'Coaching' }) });
   } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
 
