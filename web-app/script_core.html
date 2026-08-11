@@ -300,6 +300,9 @@ window.addEventListener('load', () => {
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
       startHealthBadgePolling_();
+      // Break / clock-out reminders run at the SHELL level so they reach the
+      // pinned Call Notes pop-out, not only the Clock tab (operator 2026-08-11).
+      remindersStart_();
       // #4 — in the compact pop-out, persist the window's size/position so the
       // rep's manual resize/reposition sticks across launches.
       popoutPersistGeometryInit_();
@@ -644,6 +647,23 @@ function renderShell(state) {
               onclick="setTimeClockMode('dark')">${icon('moon', 14)}</button>
     </div>`;
 
+  // Reminder channels (operator 2026-08-11). Two independent toggles in the
+  // theme-control vocabulary. Prefs live in localStorage, which is shared
+  // origin-wide, so setting them here also governs the compact pop-out (whose
+  // sidebar is hidden).
+  const nPrefs = notifyPrefs_();
+  const reminderToggle = `
+    <div class="sb-theme-toggle" role="group" aria-label="Reminder alerts">
+      <button type="button" class="sb-theme-btn" data-remind="sound"
+              aria-pressed="${nPrefs.sound ? 'true' : 'false'}"
+              aria-label="Reminder sound" title="Play a chime for break and clock-out reminders (this browser)"
+              onclick="notifyToggleSound_(this)">${icon('bell', 14)}</button>
+      <button type="button" class="sb-theme-btn" data-remind="desktop"
+              aria-pressed="${nPrefs.desktop ? 'true' : 'false'}"
+              aria-label="Desktop notifications" title="Also show desktop notifications (browsers often block these for embedded apps)"
+              onclick="notifyToggleDesktop_(this)">${icon('monitor', 14)}</button>
+    </div>`;
+
   // Pop-out button — only shown in normal (full) mode. Compact mode is the
   // pop-out target, so hiding the button there keeps the chrome quiet.
   // F(L-7): this button carried TWO title attributes — HTML keeps the first,
@@ -686,6 +706,12 @@ function renderShell(state) {
             ${popOutBtn}
           </div>
         </div>
+        <div class="sb-theme">
+          <span class="sb-theme-label">Alerts</span>
+          <div class="sb-theme-controls">
+            ${reminderToggle}
+          </div>
+        </div>
         <!-- V-7 (cycle 12): both fields ellipsis at the 168px DEFAULT sidebar
              width ("Avery Bl…", "E-10…"), so titles carry the full values
              rather than relying on the rep widening the sidebar to read their
@@ -712,6 +738,7 @@ function renderShell(state) {
           </div>
           <div class="hdr-right">
             ${themeToggle}
+            ${reminderToggle}
             ${popOutBtn}
             <div class="hdr-id">${esc(state.id)}</div>
           </div>
@@ -1458,6 +1485,247 @@ function showToast(msg, cls) {
   }, 3500);
   // Cap the stack at 5
   while (stack.children.length > 5) stack.firstChild.remove();
+}
+
+// ── Reminders: sound + desktop notification + toast ────────────────────────
+// Operator request 2026-08-11 ("audio and/or computer notifications … upcoming
+// break time, … a missing punch"). THREE channels, each independently
+// degradable, so a blocked one never suppresses the others:
+//   toast    — always (the existing in-app channel)
+//   chime    — Web Audio oscillator, no asset file (a fetched sound would be
+//              blocked by the iframe's CSP anyway) and no autoplay surprise:
+//              the context only unlocks after a real user gesture
+//   desktop  — the Notification API, BEST-EFFORT. The app runs inside
+//              HtmlService's cross-origin googleusercontent iframe, where
+//              Permissions Policy blocks `notifications` in most browsers, so
+//              requestPermission() commonly rejects or resolves 'denied'. That
+//              is expected, not a bug — the settings row says so rather than
+//              leaving the rep to wonder (INV-187's honesty rule applied to a
+//              browser capability).
+// Preferences are per-browser in `umsNotify` — the FIFTEENTH localStorage key.
+var NOTIFY_KEY = 'umsNotify';
+var _notifyAudioCtx = null;
+
+function notifyPrefs_() {
+  var d = { sound: true, desktop: false };
+  try {
+    var raw = localStorage.getItem(NOTIFY_KEY);
+    if (!raw) return d;
+    var o = JSON.parse(raw);
+    if (!o || typeof o !== 'object') return d;
+    return { sound: o.sound !== false, desktop: !!o.desktop };
+  } catch (e) { return d; }
+}
+function notifySavePrefs_(p) {
+  try { localStorage.setItem(NOTIFY_KEY, JSON.stringify({ sound: !!p.sound, desktop: !!p.desktop })); } catch (e) {}
+}
+
+/** A short two-tone chime. Synthesized so nothing is fetched; wrapped whole in
+ *  try/catch because a suspended/blocked AudioContext must never throw into a
+ *  reminder path. */
+function notifyChime_() {
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifyAudioCtx) _notifyAudioCtx = new AC();
+    var ctx = _notifyAudioCtx;
+    if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+    var t0 = ctx.currentTime;
+    [[880, 0], [1174.7, 0.16]].forEach(function (pair) {
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = pair[0];
+      var start = t0 + pair[1];
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.14, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(start); osc.stop(start + 0.3);
+    });
+  } catch (e) {}
+}
+
+/** True when the browser will actually show desktop notifications for us.
+ *  Never throws — `window.Notification` is absent in some embedded contexts. */
+function notifyDesktopReady_() {
+  try { return typeof Notification !== 'undefined' && Notification.permission === 'granted'; }
+  catch (e) { return false; }
+}
+
+/** Asks for desktop permission. Resolves to the resulting state string, and
+ *  'unavailable' where the API does not exist at all — the honest answer for
+ *  the sandboxed iframe. */
+function notifyRequestDesktop_() {
+  return new Promise(function (resolve) {
+    try {
+      if (typeof Notification === 'undefined' || !Notification.requestPermission) return resolve('unavailable');
+      var r = Notification.requestPermission(function (s) { resolve(s || 'default'); });
+      if (r && typeof r.then === 'function') r.then(function (s) { resolve(s || 'default'); }, function () { resolve('unavailable'); });
+    } catch (e) { resolve('unavailable'); }
+  });
+}
+
+/** The one entry point every reminder uses. `tone` rides the toast variant. */
+function notifyRemind_(msg, tone) {
+  var p = notifyPrefs_();
+  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn');
+  if (p.sound) notifyChime_();
+  if (p.desktop && notifyDesktopReady_()) {
+    try { new Notification('Team Tools', { body: msg, tag: 'ums-remind' }); } catch (e) {}
+  }
+}
+
+/** Sidebar/header toggles. Both keep aria-pressed in step with the stored
+ *  preference (INV-174 — a class alone is invisible to assistive tech), and
+ *  both mirror onto the OTHER surface, since the sidebar and the mobile header
+ *  each render a copy of the control. */
+function notifySyncToggles_() {
+  var p = notifyPrefs_();
+  // The sidebar AND the mobile header each render a copy, so this selects by
+  // ATTRIBUTE — two elements cannot share an id.
+  [['sound', p.sound], ['desktop', p.desktop]].forEach(function (pair) {
+    document.querySelectorAll('[data-remind="' + pair[0] + '"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', pair[1] ? 'true' : 'false');
+    });
+  });
+}
+function notifyToggleSound_() {
+  var p = notifyPrefs_();
+  p.sound = !p.sound;
+  notifySavePrefs_(p);
+  notifySyncToggles_();
+  // Play it on the way ON: the click is the user gesture that unlocks the
+  // AudioContext, so this doubles as the unlock and as the confirmation.
+  if (p.sound) notifyChime_();
+  showToast('Reminder sound ' + (p.sound ? 'on' : 'off'), 'toast-info');
+}
+function notifyToggleDesktop_() {
+  var p = notifyPrefs_();
+  if (p.desktop) {
+    p.desktop = false; notifySavePrefs_(p); notifySyncToggles_();
+    showToast('Desktop notifications off', 'toast-info');
+    return;
+  }
+  notifyRequestDesktop_().then(function (state) {
+    if (state === 'granted') {
+      p.desktop = true; notifySavePrefs_(p); notifySyncToggles_();
+      showToast('Desktop notifications on', 'toast-success');
+      return;
+    }
+    notifySyncToggles_();
+    // Say WHY rather than silently refusing to switch on. The blocked case is
+    // the expected one here — this app renders inside a cross-origin iframe.
+    showToast(state === 'denied'
+      ? 'Your browser blocked desktop notifications for this page — the in-app alert and chime still work.'
+      : 'This browser will not allow desktop notifications for an embedded app — the in-app alert and chime still work.',
+      'toast-warn');
+  });
+}
+
+// ── Shell-level reminder ticker ────────────────────────────────────────────
+// Break reminders used to fire ONLY while the Clock tab was open, which meant
+// the pinned Call Notes pop-out — the window a rep actually spends the shift
+// in — never showed one. The ticker lives in the shell so it runs on every
+// view, and its break half is pure client-side arithmetic off empState.
+// (Apps Script web apps have no background push: a closed browser still gets
+// nothing. The daily missed-punch EMAIL remains that backstop.)
+var REMIND_TIMER = null;
+var _remindFired = {};        // key → true, reset on the rep's day rollover
+var _remindDay = '';
+var _remindStateAt = 0;       // last punch-state refresh (ms)
+
+function remindersStart_() {
+  if (REMIND_TIMER) return;                       // idempotent
+  REMIND_TIMER = setInterval(remindersTick_, 60000);
+  setTimeout(remindersTick_, 5000);               // off the boot critical path
+}
+
+function remindersSchedule_() {
+  return (empState && empState.schedule) || (typeof CLK_SCHEDULE !== 'undefined' ? CLK_SCHEDULE : null);
+}
+
+/** Fires each reminder at most once per rep-local day. */
+function remindOnce_(key, msg, tone) {
+  if (_remindFired[key]) return false;
+  _remindFired[key] = true;
+  notifyRemind_(msg, tone);
+  return true;
+}
+
+function remindersTick_() {
+  try {
+    if (!empState) return;
+    var tz = (typeof empTz === 'function' && empTz()) || (empState && empState.timezone);
+    if (!tz) return;
+    var today = isoDateTz(tz);
+    if (today !== _remindDay) { _remindDay = today; _remindFired = {}; }
+    var sched = remindersSchedule_();
+    if (!sched) return;
+    var nowMin = remindNowMin_(tz);
+
+    // (a) Upcoming break — the lead time is the rep's own breakReminderMin.
+    var lead = sched.breakReminderMin || 10;
+    var breaks = Array.isArray(sched.breaks) ? sched.breaks : [];
+    for (var i = 0; i < breaks.length; i++) {
+      var b = breaks[i];
+      var until = b.startMin - nowMin;
+      if (until >= 0 && until <= lead) {
+        remindOnce_(today + ':brk:' + b.startMin,
+          b.label + (until <= 0 ? ' starts now' : ' in ' + until + ' min'), 'toast-warn');
+      }
+    }
+
+    // (b) Still clocked in past the end of the shift. This needs PUNCH state,
+    // which the boot snapshot goes stale on, so it refreshes — but only inside
+    // the end-of-shift window and at most every 10 minutes. Outside that
+    // window the ticker makes ZERO server calls.
+    var endMin = (sched.startMin || 0) + (sched.lengthMin || 0);
+    if (nowMin >= endMin + 5 && nowMin <= endMin + 120) {
+      if (remindPunchState_() === 'in') {
+        remindOnce_(today + ':out', 'Your shift ended at ' + remindFmtMin_(endMin) +
+          ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn');
+      }
+      remindMaybeRefreshState_();
+    }
+  } catch (e) {}
+}
+
+/** 'in' | 'out' | 'unknown' from the last known punch snapshot. Deliberately
+ *  conservative: an unknown state never nags (a false clock-out reminder to a
+ *  rep who already clocked out is worse than a missed one — the daily email
+ *  still catches a genuinely missed punch). */
+function remindPunchState_() {
+  var acts = (empState && empState.nextActions) || null;
+  if (!acts || !acts.length) return 'unknown';
+  // getNextActions_ offers ClockIn only when the rep is NOT currently on the
+  // clock; ClockOut only when they are.
+  if (acts.indexOf('ClockOut') >= 0) return 'in';
+  if (acts.indexOf('ClockIn') >= 0) return 'out';
+  return 'unknown';
+}
+
+function remindMaybeRefreshState_() {
+  var now = Date.now();
+  if (now - _remindStateAt < 10 * 60 * 1000) return;
+  _remindStateAt = now;
+  try {
+    google.script.run
+      .withSuccessHandler(function (s) { if (s && !s.error) empState = s; })
+      .withFailureHandler(function () {})          // best-effort: keep last-good
+      .getEmployeeState();
+  } catch (e) {}
+}
+
+function remindNowMin_(tz) {
+  var parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+  var h = 0, m = 0;
+  parts.forEach(function (p) { if (p.type === 'hour') h = parseInt(p.value, 10) || 0; if (p.type === 'minute') m = parseInt(p.value, 10) || 0; });
+  return (h % 24) * 60 + m;
+}
+function remindFmtMin_(min) {
+  var h24 = Math.floor(min / 60) % 24, m = min % 60;
+  var h = h24 % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + (h24 < 12 ? 'AM' : 'PM');
 }
 
 // ── Custom modal-styled confirm / prompt ──────────────────────────────────

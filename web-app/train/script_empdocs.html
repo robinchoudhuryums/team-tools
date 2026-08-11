@@ -184,8 +184,7 @@ function enterMyDocsView() {
   var area = document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('paperclip', 16) + ' My Docs</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">My Documents</h1></div>' +
+        '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">My Documents</h1></div>' +
     '<div id="ed-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading documents&hellip;</div></div>';
   var requestedView = currentView;
   google.script.run
@@ -409,8 +408,7 @@ function enterDocsManageView() {
   var area = document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Issue Docs</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Employee Documents</h1></div>' +
+        '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Employee Documents</h1></div>' +
     '<div id="ed-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading&hellip;</div></div>';
   edLoadMgr_();
 }

@@ -190,6 +190,10 @@
     margin-top: auto;
     border-top: 1px solid var(--line);
   }
+  /* A SECOND settings row (Alerts) must sit directly under the first: with
+     `margin-top: auto` on both, flex splits the free space between them and
+     leaves a ~200px hole in the middle of the sidebar. */
+  .sb-theme + .sb-theme { margin-top: 0; border-top: none; padding-top: 0; }
   .sb-theme-label {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
@@ -1243,6 +1247,49 @@
   .sp-more:hover { text-decoration: underline; }
   .sp-more.is-busy { opacity: .6; cursor: default; }
 
+  /* ─── ADMIN · TEAM MEMBERS (onboarding readiness) ─────────────
+     A COLUMN grid, not a wrapping chip row: each readiness dimension owns a
+     cell so a gap on one rep sits directly under a pass on another (operator
+     2026-08-11 — the prior flex row put every rep's chips at a different x).
+     Stacks to a label-per-line card below 900px, where six columns cannot
+     hold their content. */
+  .cn-ob-grid { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--paper-card); }
+  .cn-ob-row {
+    display: grid;
+    /* The action column is minmax'd, not bare `auto`: the caller's own row
+       renders a "you" chip instead of an Offboard button, and a bare auto
+       track sized to it shifted that row's other five columns out of line. */
+    /* The phone-system column carries the actionable alias suggestion
+       ('cdr: add alias "Kim, Leo"'), so it gets the wider track — every other
+       readiness cell is a short verdict. */
+    grid-template-columns: minmax(150px, 1.3fr) repeat(3, minmax(88px, .9fr)) minmax(150px, 1.5fr) minmax(78px, auto);
+    gap: 8px; align-items: center;
+    padding: 8px 12px; border-top: 1px solid var(--line);
+  }
+  .cn-ob-row:first-child { border-top: none; }
+  .cn-ob-head {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted-2); background: var(--paper-2);
+  }
+  .cn-ob-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .cn-ob-name { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cn-ob-id { font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
+  .cn-ob-mgr { font-family: var(--mono); font-size: 9px; color: var(--muted-2); letter-spacing: .08em; }
+  .cn-ob-cell { min-width: 0; }
+  .cn-ob-act { display: flex; justify-content: flex-end; }
+  .cn-ob-chip {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    display: inline-block; max-width: 100%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cn-ob-chip.is-ok { color: var(--success-deep); }
+  .cn-ob-chip.is-warn { color: var(--warning-deep); }
+  @media (max-width: 900px) {
+    .cn-ob-row { grid-template-columns: 1fr; gap: 4px; padding: 10px 12px; }
+    .cn-ob-head { display: none; }
+    .cn-ob-act { justify-content: flex-start; margin-top: 4px; }
+  }
+
   /* ─── EMPLOYEE TIME-OFF ──────────────────────────────────────── */
   .req-list { display: flex; flex-direction: column; gap: 8px; }
   .req-card {
@@ -2198,34 +2245,10 @@
      with the active tool label + close. Each tool view is responsible
      for rendering its own compact header at the top of view-area when
      it detects COMPACT_MODE. Shared utility class lives here. */
-  .compact-header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; padding: 4px 0 12px;
-    border-bottom: 1px solid var(--line);
-    margin-bottom: 14px;
-  }
-  .compact-header .ch-title {
-    font-family: var(--display);
-    font-size: 15px; font-weight: 600;
-    color: var(--ink); letter-spacing: -.01em;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .compact-header .ch-actions {
-    display: inline-flex; align-items: center; gap: 6px;
-  }
-  .compact-header .ch-action-btn {
-    appearance: none; border: 1px solid var(--line);
-    background: var(--paper-card);
-    width: 26px; height: 26px;
-    border-radius: var(--radius-pill); cursor: pointer;
-    color: var(--muted);
-    display: inline-flex; align-items: center; justify-content: center;
-    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
-  }
-  .compact-header .ch-action-btn:hover {
-    color: var(--ink); border-color: var(--border-strong);
-  }
-  /* Hide the legacy app-bar in compact mode; views use .compact-header instead */
+  /* (.compact-header retired 2026-08-11 — the pop-out shows the tool tab bar,
+     which already names the active tab; INV-184: no dead selectors.) */
+
+  /* Hide the legacy app-bar in compact mode (the pop-out relies on the tool tab bar for its title). */
   :root[data-compact="1"] .app-bar { display: none; }
 
   /* ─── COMPACT-MODE TUNING FOR TIME CLOCK VIEWS ───────────────────

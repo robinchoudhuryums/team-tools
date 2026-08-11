@@ -590,7 +590,7 @@ this section before touching the relevant area.
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
-  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **38**
+  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **39**
   Admin-exclusive endpoints (29 Manage-module Admin-tab config/system/roster
   endpoints — incl. the 2026-08-07 team-member onboarding trio
   `addEmployee`/`offboardEmployee`/`getOnboardingPanel` — + the Reference
@@ -1225,6 +1225,28 @@ this section before touching the relevant area.
   underline on hover, and a label naming the destination); the filter row keeps
   the pill because it genuinely carries toggle state. Rule: reserve the pill for
   stateful toggles, use link treatment for navigation.
+- **A class-wide attribute write assumes every member of the class is yours
+  (operator 2026-08-11).** `index.html`'s theme reflector did
+  `querySelectorAll('.sb-theme-btn')` and wrote `aria-pressed` on every hit —
+  correct while that class had exactly two members, wrong the moment the
+  reminder-alert toggles reused it for its look. The toggles rendered
+  `aria-pressed="true"` in markup and read `false` in the live DOM on every
+  load, so the sound toggle silently reset itself each session. The reflector
+  now selects `.sb-theme-btn[data-theme-target]` — the attribute that actually
+  means "this is a theme button". **Reusing a class for its APPEARANCE is
+  normal; what is not safe is a writer keyed on that class rather than on the
+  thing it identifies.** The bug is invisible to source review (the markup is
+  right) and was found only by reading the attribute back in a real browser.
+- **A pill tab strip must scroll inside itself, or it pushes the whole page
+  sideways (operator 2026-08-11).** `.toolbar-tabs` is an `inline-flex` pill
+  with no wrap and no scroll; the Admin sub-tabs are five of them, which
+  measured 415px against a 390px viewport — the entire page scrolled
+  horizontally. It now carries `max-width: 100%; overflow-x: auto` with
+  `flex: 0 0 auto` tabs, so the strip scrolls internally and wide layouts are
+  byte-identical (max-width only binds when the row would overflow). The
+  Admin tab had never been shot at a mobile width, which is how a shared
+  component used on several surfaces kept a phone-width defect — see the
+  Visual Audit Stage's list of still-uncovered scenarios.
 - **The `hidden` attribute LOSES to any class rule that sets `display`
   (operator #2 batch, 2026-08-06 — MEASURED).** The UA stylesheet's
   `[hidden] { display: none }` is ordinary specificity, so
@@ -1759,7 +1781,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fourteen client-side localStorage keys total.** All per-browser, all
+- **Fifteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1854,10 +1876,19 @@ this section before touching the relevant area.
     panel; ANY dismissal path (Got it, Esc, backdrop — the modal renders no
     separate X button) stamps it via
     `whatsNewClose_`. Corrupt blob = never seen (NEW accent shows — fail-open).
-  Clearing browser data wipes all fourteen. (A 15th key, `umsDashboardCompact`
-  — an in-page Dashboard compact toggle — was REMOVED in the dashboard-feedback
-  batch: the toggle button lived inside the column it hid, so once collapsed
-  there was no way back, and the `?compact=1` pop-out already covers compact.)
+  - `umsNotify` — reminder-alert channels as ONE blob (`{sound, desktop}`,
+    operator 2026-08-11). `sound` DEFAULTS ON (a corrupt/absent blob reads as
+    sound-on, desktop-off); `desktop` is only ever set true after the browser
+    actually GRANTS permission, so it can't promise a channel that will never
+    fire. Read by `notifyPrefs_`, written by the sidebar/mobile-header bell +
+    pop-out toggles. Being localStorage, it is shared origin-wide, so setting
+    it in the main window also governs the compact pop-out (whose sidebar is
+    hidden).
+  Clearing browser data wipes all fifteen. (A prior 15th key,
+  `umsDashboardCompact` — an in-page Dashboard compact toggle — was REMOVED in
+  the dashboard-feedback batch: the toggle button lived inside the column it
+  hid, so once collapsed there was no way back, and the `?compact=1` pop-out
+  already covers compact.)
 
 ## Key Design Decisions
 
@@ -1884,7 +1915,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 38 Admin-exclusive endpoints (INV-136's list) gate on
+  server-side** — the 39 Admin-exclusive endpoints (INV-136's list) gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -2207,14 +2238,22 @@ this section before touching the relevant area.
   `?compact=1` (set by the pop-out button in `script_core.html`)
   toggles `data-compact="1"` on `documentElement`. Sidebar +
   mobile-nav + mobile-header all collapse via `:root[data-compact]`
-  selectors in `styles.html`. Tool views are responsible for
-  rendering a `.compact-header` slim strip at the top when they
-  detect `COMPACT_MODE === true` and for ensuring their layouts
-  reflow at ~360px width. The Call Notes view does this; Time
-  Clock's Time Off and Manager views also render `.compact-header`
-  when `COMPACT_MODE === true`. The Clock tab's hero layout needs
-  no explicit header. Per-class compact-mode tuning lives in the
-  styles partial.
+  selectors in `styles.html`. Tool views are responsible for ensuring
+  their layouts reflow at ~360px width. Per-class compact-mode tuning
+  lives in the styles partial.
+  **`.compact-header` is RETIRED (operator 2026-08-11).** Every tool used to
+  render a slim in-view strip repeating the tool's own icon + name at the top
+  of the pop-out — but the pop-out window's TITLE already says which tool it
+  is, and the tab bar directly below already names the view, so the strip was
+  ~44px of pure repetition at the top of the smallest window in the app. The
+  operator's report was concrete: they had to scroll past it to shrink the
+  window. The `cnCompactHeader_` helper, all twelve render sites (`cn`,
+  `metrics` ×2, `kb`, `train` ×3, `intake`, `tc/manager`, `tc/timeoff`) and the
+  CSS block are gone (INV-184 — a dead selector left behind is the next
+  reader's false lead). One control was NOT dead and survives: the manager
+  view's `#mgr-refresh` button, which now rides a bare right-aligned row.
+  MEASURED at 480px compact: the Call Notes content bottom moved 772→728px and
+  `cnPopoutFitToTemplate_` shrinks the launched window to match.
 - **Pop-out uses a PER-TOOL named window target.** `popOutCurrentView()`
   calls `window.open(url, 'umsTeamToolsCompact_' + popoutToolKey_(currentView),
   ...)` where `popoutToolKey_` maps the active tab to its tool via
@@ -2290,7 +2329,48 @@ this section before touching the relevant area.
   this report was WRONG (a failed-add orphan was assumed); the shape of the
   row is what disproved it — no code path can write an ID with a blank
   column A, because `addEmployee` requires an email and always writes
-  timezone + balances + PtoEnabled.
+  timezone + balances + PtoEnabled. **THE PANEL PAINTS FROM THE ROSTER ALONE
+  (operator 2026-08-11 — "takes some time to load").** `getOnboardingPanel`
+  used to compute CDR readiness inline, which meant the whole panel waited on
+  a 7-day read of the CDR Report — the slowest call on the Admin tab and the
+  only one touching a foreign spreadsheet — while everything else came off the
+  5-min-cached roster. The CDR half is now `getOnboardingCdrReadiness` (same
+  admin gate, same INV-67 best-effort posture): the client renders the roster
+  panel, then patches each rep's `cdr` chip via `data-cdr-name` when the second
+  read lands. **`cdr: {deferred:true}` on the panel is DISTINCT from
+  `ok:false`** — deferred means "not read yet" (chip: "checking…"), ok:false
+  means the read was attempted and failed (chip: "unknown", never "no calls" —
+  INV-187). First render and the patch share ONE chip builder
+  (`cnOnboardCdrChipHtml_`) so the two states cannot drift. **The readiness
+  list is a COLUMN GRID** (`.cn-ob-grid`), not the prior wrapping chip row that
+  put every rep's chips at a different x; the action column is
+  `minmax(78px, auto)` because the caller's own row renders a "you" chip
+  instead of an Offboard button and a bare `auto` track shifted that row's five
+  readiness columns out of line. It stacks at ≤900px (the A2 rule).
+- **Reminders are a SHELL capability, not a Clock-view one (operator
+  2026-08-11).** Break reminders used to fire only while the Clock tab was
+  open — so the pinned Call Notes pop-out, the window a rep actually spends the
+  shift in, never showed one. `remindersTick_` (`script_core.html`, 60s, started
+  at boot) now owns them. THREE channels, each independently degradable so a
+  blocked one never suppresses the others: the **toast** (always), a **chime**
+  (`notifyChime_` — a Web Audio oscillator, synthesized because a fetched sound
+  would be blocked by the iframe CSP, and whose context only unlocks after a
+  real user gesture), and a **desktop notification** (best-effort — the app runs
+  inside HtmlService's cross-origin iframe, where Permissions Policy blocks
+  `notifications` in most browsers, so a refusal is EXPECTED and the toggle says
+  which of the three still work rather than failing silently). Preferences live
+  in `umsNotify`; the sidebar + mobile-header toggles are attribute-keyed
+  (`data-remind`) because BOTH surfaces render a copy and two elements cannot
+  share an id. Two reminders ship: the upcoming break (pure client-side
+  arithmetic off `empState.schedule` — zero RPCs) and a **still-clocked-in**
+  nudge after the shift ends, which needs punch state and therefore refreshes
+  `getEmployeeState` at most once per 10 minutes, ONLY inside the
+  end-of-shift+5..+120min window. An UNKNOWN punch state never nags (a false
+  clock-out reminder to a rep who already clocked out is worse than a missed
+  one; the daily missed-punch EMAIL remains the real backstop). Apps Script web
+  apps have no background push, so a closed browser still gets nothing —
+  the reminder is for a rep with the app open, which is the case the operator
+  asked about.
 - **Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -2338,13 +2418,13 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fourteen client-side localStorage keys total" entry in
+  authoritative "Fifteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsWhatsNew`)
-  — all per-browser, all try/catch-wrapped.
+  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsWhatsNew`,
+  `umsNotify`) — all per-browser, all try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
@@ -2352,8 +2432,8 @@ this section before touching the relevant area.
   form drafts) + a `deptCollapsed` field inside `umsKbPanel`, the
   Clock-card background image added `umsClockBg`, the merged Coaching tab
   added `umsCoachingMode`, and the What's-new panel added `umsWhatsNew`.
-  The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14;
-  an earlier copy of this count said fifteen, corrected in cycle 11.)
+  The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — and
+  the reminder-alert toggles added `umsNotify`, net 15.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -4411,6 +4491,23 @@ manually for a fresh deploy or environment:
   the admin sheet viewer). Post-deploy: adding the first pilot rep THROUGH the
   panel doubles as the S75 verification walk; the gate cases run with the
   standing `runAllTests()`.
+- **The 2026-08-11 pilot-feedback round (reminders, onboarding-panel split,
+  pop-out header) adds NO new operator state** — no Script Properties,
+  triggers, migrations, or CONFIG constants. It adds ONE admin-gated endpoint
+  (`getOnboardingCdrReadiness`, taking INV-136's count to 39) and one
+  per-browser localStorage key (`umsNotify`). Behaviour changes to expect
+  post-deploy: (a) the Admin → Config **Team Members** panel appears
+  immediately and its "Phone system" chips fill in a moment later — the CDR
+  read moved off the panel's critical path, so "checking…" briefly is the fix
+  working; (b) the panel's readiness list is an aligned column grid;
+  (c) **break reminders now fire on every tab, including the pinned pop-out**,
+  with a chime ON BY DEFAULT — the bell in the sidebar (and mobile header)
+  turns it off per browser; (d) a new "still clocked in" nudge appears
+  5–120 min after a rep's scheduled shift end; (e) the pop-out no longer shows
+  the tool-name strip at the top, so its fitted window is ~44px shorter.
+  **Desktop notifications are expected to be REFUSED** by most browsers here
+  (the app renders in a cross-origin iframe) — the toggle says so and the
+  chime + in-app alert still work; there is nothing to configure server-side.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
@@ -4741,7 +4838,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 38 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 39 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -5797,7 +5894,20 @@ cases; and the gate/lock/convention pin — validate-under-lock ordering,
 provision-after-release, offboard's single EMAIL-only cell write + self-guard,
 best-effort CDR readiness — 4 mutations bite-checked incl. the INV-136
 doc-count net itself). The F14 column-L scan gained a third write-shape
-exemption (the validator's enum-derived row-builder slot).
+exemption (the validator's enum-derived row-builder slot). The 2026-08-11
+pilot-feedback round added five more → **455** (the onboarding CDR split —
+panel makes no CDR call, deferred≠failed, paint-before-patch, shared chip
+builder; the readiness column grid + its 900px breakpoint + the `.toolbar-tabs`
+overflow guard + the minmax'd action column; the three reminder channels
+degrading independently; the shell ticker's once-per-rep-day firing and
+server-quiet mid-shift behaviour incl. the theme-reflector scope and the
+no-duplicate-ids rule; and the `.compact-header` ban, derived over
+`PARSE_GUARD_PARTIALS` + both stylesheets — 10 mutations bite-checked). TWO
+lessons from that round's bite-checks, both about the REVERSAL rather than the
+pin: a `python` inverse edit must anchor on a string that is unique in the file
+— `flex: 0 0 auto` restored into `.instance-banner svg` instead of the grid
+rule it came from, and `.sb-theme-btn` restored into a COMMENT — so verify the
+restore by re-reading the anchor lines, not just by re-running the suite.
 Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
@@ -5946,7 +6056,7 @@ INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only 
 INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client. Enrollment is either manual (paste the ID into column L) or one-click via the manager-gated `provisionCallNotesSheet` (INV-110); `getCallNotesSheet_` itself never auto-provisions a Sheet on a read | Subsystem: Server
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
 INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
-INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
+INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views SUPPRESS their `.view-title-row` when `COMPACT_MODE === true`. They no longer render a `.compact-header` in its place — that strip repeated the window title + the tab bar immediately below it, costing ~44px at the top of the app's smallest window; retired with its CSS and all twelve render sites (operator 2026-08-11) | Subsystem: Client (shell)
 INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, weekTotal, flagCounts, staleFlagHours, flagsVersion}` for the calling rep (`weekTotal` + `flagCounts {all,action,training,review,unresolved,qa}` added in Phase 4 for the Log view's stats-mini + quick-chip-row; `flagsVersion` = `cnFlagsVersion_()`, a compact encoding of the client-deliverable feature flags so the poller can detect a manager toggle flip and refetch config within ≤60s — see the runtime-flag flip-semantics decision). Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`. The cache is purely TTL-driven; mutating endpoints do NOT eagerly invalidate (the 60s ceiling matches the sidebar polling interval). Used by the sidebar badge polling + Log view stats; never leaks cross-rep data | Subsystem: Server
 INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-type transition (`oldFlag !== t`), not only on full clear — so stale `resolved=TRUE` from a prior action-flag cycle doesn't resurface when the rep flips back to action | Subsystem: Server
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
@@ -6053,7 +6163,7 @@ INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
-INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **38 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; now 38 with the onboarding trio, updated in the same commit that added them). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
+INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **39 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
 
 INV-137 | **Automation-failure manager digest.** `sendAutomationHealthDigest` is a top-level TRIGGER handler (daily manager-tz 9am) reachable via `google.script.run`, so it carries the MANAGER_EMAILS `assertManagerCaller_` gate (INV-44 family, NOT `emp.isAdmin` — it runs as the installer; pinned by the trigger-gate Node tripwire + `test_triggerGate_automationHealthDigest_nonManagerThrows`) and is best-effort (INV-14 — try/catch, never throws past the catch). It reuses `computeAutomationHealth_()` — the UN-gated body factored out of `getAutomationHealth` so the push and the Admin panel share ONE computation (no parallel-source drift; the gate stays in the `getAutomationHealth` wrapper) — and emails `MANAGER_EMAILS` ONLY when a check is failing: a **stale digest heartbeat**, a **stale nightly reconcile** (the F1 class — `automationLastRuns[].last.ms`, the additive raw-ms field, older than 30h; reconcile is the one unconditional daily job that writes a row every run, so a stale last-run = a silently-dead trigger), or **personal-sheet sync-fails** — plus (Turn C) any **dead detector** from `automationDetectorChecks_()` (a failing writer↔parser round-trip or missing diagnostic channel — the failure class the other checks can't see). A HEALTHY system is silent (no daily nag), and "never ran yet" (no heartbeat / no reconcile row) is NOT flagged (fresh-deploy / not-yet-installed posture, matching the panel). CDR reachability is deliberately NOT pushed (it isn't a trigger; an unset `CDR_SS_ID` reads as unreachable and would false-nag a non-CDR deployment — the panels already surface it). PHI-free (counts + job names, all `esc_`'d via `buildBrandedEmailHtml_`, tone warn). The watcher writes no audit row + has no heartbeat of its own (verify it from the trigger list). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). | Subsystem: Server
 
@@ -6118,6 +6228,10 @@ INV-185 | **A test fixture must never REIMPLEMENT server logic — copy it VERBA
 INV-186 | **Before toning a health indicator off a count, ask what that count reads on a HEALTHY production system — if the answer is not zero, it is reference detail, not a signal.** The Automation Health CDR card toned off `unmatchedAgents`, which is PERMANENTLY non-empty here: the CDR Report covers the whole phone system (it is owned by `call-data-reporting`) while our roster is one team, and there is no department filter. It read "78 unmatched" indefinitely, and a card that can never go green trains the reader to ignore it — strictly worse than having no card. The obvious swap is also wrong: `rosterWithNoCdr` is every NAMED employee with no calls, so managers, admin staff and full-window PTO pin it amber just as permanently. The signal is the INTERSECTION (`cdrLikelyNameMismatches_`): a roster rep with no call data whose name resembles an unmatched CDR agent is one person spelled two ways, so their calls are silently missing from every metric. That set is normally EMPTY — the card reaches green — and it names the exact `Agent Alias Overrides` row to add. **Known limit:** the pairing requires normalized-equality or ≥2 shared name tokens, so a nickname sharing only a surname is a deliberate false NEGATIVE (under-reporting is the safe direction for something that raises a warning), and the capped raw lists render beneath it for the human. Verify: `CDR: the health card tones off likelyMismatches, never the raw lists` (which strips comments first — the function explains why the raw lists are unusable and would otherwise trip on its own rationale) | Subsystem: Server + Client (shell)
 INV-187 | **A surface that aggregates or draws a JUDGEMENT from a best-effort read must carry the read OUTCOME, and every judgement derived from it must be suppressed when that outcome is degraded.** Three cycles fixed instances of this one at a time before it was named: cycle-12 F5 (a swallowed per-rep read rendered as a confident 0%, telling reps to re-file work they had already filed), cycle-16 F1 (`managerGetShiftStats` pushed a rep with an unreadable Sheet onto the manager's END-OF-SHIFT PERFORMANCE table with `totalNotes:0` and a CRIT-toned 0% badge), F5 (`getTeamMetrics` nulled the per-rep coverage but computed the TEAM total anyway, so the rail said "partial" while the hint below drew a confident below-80% judgement from the same contaminated numerator) and F4 (`getCoveragePlan` swallowed a failed PTO read, and with the overlay empty EVERY REP COUNTS AS WORKING — so an understaffing planner returned a green all-clear on a day half the team is off). **The test that generalizes them: if the DEGRADED output is MORE reassuring than the healthy one, silence is not an option.** A number can be nulled; a judgement (a percentage, a staffing band, an all-clear, a threshold hint) must be actively suppressed and the degradation named to the user, because a missing judgement reads as "fine" rather than "unknown". Note the reason this class keeps escaping sweeps: an aggregate is a coverage surface even when it never calls the shared helper — `managerGetShiftStats` counts INLINE (it needs flags, emails and a median off the same read) and so appeared in no search for `cnCountNotesResult_`. **Ask what a function DERIVES from a best-effort read, not which helper it calls.** **Cycle-17 completed the class:** the export (C17-6 `skippedReps` + INCOMPLETE audit marker), the CN loaders (C17-5 preserve-last-good + failed-round-never-fresh), the three manager lazy cards (C17-7), and batch ② — the flagged/urgent digest aggregates, manager search, tag taxonomy/trends (`skippedReps`, partial-rounds-uncached), the unresolved-action count (`{count, partial}`, undercount never cached, `≥ N` badge), the extras SWR whole-round stamp, the no-CDR Notes-Filed branch, and the timesheet side rail. Verify: for each of `managerGetShiftStats`, `getCoveragePlan`, `getTeamMetrics`, `getMyMetrics` — and the batch-2 pin for the five walks — assert the response carries an outcome flag AND that the derived judgement is gated on it — not merely that the number is nulled | Subsystem: Server + Client (all manager aggregates)
 INV-188 | **A source-scanning tripwire must STRIP COMMENTS before matching.** The fix comment that explains what was removed quotes the removed code, so a naive scan trips on its own rationale — and the failure mode is a pin that looks like it caught a regression on the very commit that fixed one. It has now bitten twice in two cycles: cycle-15's F1 tripwire failed on its own allowlist because it searched a comment-stripped body for a marker that lives in a comment, and cycle-16's F8 pin reported `3 !== 1` raw `DR.STATUS` reads when two of the three were inside the comment explaining the fix. The related trap in the same family: slice from the RIGHT occurrence — cycle-16's F6 pin anchored on the first `ui-dialog-err`, which is the id CONSTANT, not the div it was checking. Verify: any pin asserting "N occurrences of X" strips `//` and `/* */` before counting, and fails on a file whose comment mentions X | Subsystem: Test Suite
+INV-189 | **A best-effort read that BLOCKS a cheap one belongs in its own endpoint.** `getOnboardingPanel` computed CDR readiness inline, so the whole Admin → Team Members panel — everything else in it coming off the 5-min-cached roster — waited on a 7-day read of a foreign spreadsheet (operator: "takes some time to load"). The split is `getOnboardingCdrReadiness` (same admin gate, same INV-67 posture): the client paints the roster panel, then patches each rep's chip via `data-cdr-name`. THREE properties make the split safe rather than merely faster: (a) the panel's `cdr: {deferred:true}` is DISTINCT from `ok:false` — "not read yet" renders "checking…", "read and failed" renders "unknown", and neither is ever "no calls in 7d", because an unread name is not an absent one (INV-187); (b) first render and the patch share ONE chip builder, so the states cannot drift; (c) the patch is DOM surgery keyed off an attribute, not a whole-panel re-render, so it cannot clobber a form the admin has begun filling in. The general rule: when one part of a response is an order of magnitude slower than the rest AND is decoration on top of it, splitting is not premature optimization — it is the difference between a panel that appears and one that hangs. Verify: the operator-2026-08-11 split pins (no CDR call in the panel; deferred marker; gate + best-effort on the split; paint-before-patch ordering; shared chip builder) | Subsystem: Server + Client (Call Notes views)
+INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. Each reminder fires at most once per key per REP-LOCAL day (the fired-set resets on that rollover, so it cannot grow in a long-lived pop-out). Apps Script has no background push: a closed browser still gets nothing. Verify: the reminder-channel + shell-ticker pins | Subsystem: Client (shell) + Client (Time Clock views)
+INV-191 | **A writer keyed on a CLASS silently clobbers anything else that borrows the class for its looks.** `index.html`'s boot theme reflector wrote `aria-pressed` across every `.sb-theme-btn`; the moment the reminder-alert toggles reused that class for its appearance, they rendered `aria-pressed="true"` in markup and read `false` in the live DOM on every load — the sound toggle silently reset itself each session. The selector is now `.sb-theme-btn[data-theme-target]`: the attribute that actually MEANS "this is a theme button". Reusing a class for appearance is normal and cheap; what is not safe is a writer that treats class membership as identity. This is invisible to source review — the markup is correct — and was caught only by reading the attribute back in a real browser, which is the general lesson: **for any state an element renders AND some other code writes, verify by measuring the live attribute, not by reading the template.** Sibling shape: two rendered copies of one control cannot share an `id`, so `notifySyncToggles_` selects by `data-remind`. Verify: the theme-reflector scope pin + the no-duplicate-ids pin | Subsystem: Client (shell)
+
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
 
@@ -6167,7 +6281,11 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    views — `spanish-light-wide` + `deptreq-light-wide` (fixtures cover all
    four DR tones + an overdue Spanish card) — taking the matrix to **39**.
    **Still uncovered: Manage → Coverage/Punctuality, Sent Forms, EmpDocs
-   My Docs, and modal/overlay states** (the matrix shoots tab landings only).
+   My Docs, and modal/overlay states** (the matrix shoots tab landings only),
+   and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
+   width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED
+   component, also the CN search field tabs) kept a 25px page overflow at
+   390px until it was measured by hand.
    Every scenario also logs the pre-existing Google-Fonts
    `ERR_CONNECTION_RESET` console line (no network in the sandbox) — ignore it.
 4. Re-shoot after ANY change to `styles*.html`, `styles_design_tokens.html`, or
@@ -6896,6 +7014,35 @@ S75 | Team-member onboarding (Admin → Config → Team Members) | Subsystem: Se
     - **(operator report 2026-08-08)** Add a rep whose ID matches an OFFBOARDED row → the error names the owning row ("used by Jo Tran (row 9)") and says IDs stay reserved; confirm the offboarded line at the bottom of the panel lists that ID
     - **(operator report 2026-08-08, second round — the case that actually fired)** Type an Employee ID + name straight into the Employees sheet, leaving column A (email) and D–L blank, then try to add that person through the form → the error names the owning row AND says it has NO login email, with both resolutions (clear its ID / fill in the email); confirm the panel lists it under **incomplete row(s)**, NOT under offboarded
   Expected: Validation is one-actionable-error-at-a-time and nothing is written on a reject; a biweekly anchor is rejected when one already exists (INV-18); the new rep can sign in immediately (the roster cache is invalidated on add). Offboard clears ONLY the email — history, sheets, and notes all keep reading. Self-offboard is rejected. The CDR chip is best-effort: with the CDR Report unreachable every rep reads "cdr: unknown", never "missing". **A follow-up failure AFTER the row is appended reports success-with-warning ("the employee WAS created, but…"), never a bare failure** — a bare failure is what made an admin retry and hit a phantom "ID already in use". **An ID conflict is always traceable from the error alone** — the owning row is named, and an email-less owner says so plus how to resolve it, because that row appears in NO in-app list (INV-183).
+
+S76 | Break + clock-out reminders reach every tab, with sound (operator 2026-08-11) | Subsystem: Client (shell), Client (Time Clock views)
+  Steps:
+    - As a rep whose roster schedule carries breaks, note the bell in the sidebar (Alerts row) — sound is ON by default; the second button is desktop notifications
+    - Open the Call Notes pop-out and leave it as the only visible window; wait until `breakReminderMin` before a scheduled break
+    - Return to the main window and confirm the SAME break did not toast a second time
+    - Click the bell to turn sound off, reload, and confirm it stayed off (and that switching light/dark theme does NOT switch it back on)
+    - Click the desktop-notification button and read the resulting toast
+    - Stay clocked in past your scheduled shift end and wait ~5 minutes
+    - Open DevTools → Network and watch the ticker for a few minutes mid-shift
+  Expected: The break reminder fires ONCE per break per rep-local day, in whichever window is open — the pop-out included (it used to fire only on the Clock tab). Each reminder shows a toast, plays a two-tone chime when sound is on, and posts a desktop notification only if the browser granted permission. The desktop button most likely reports that the browser blocked or disallows notifications for an embedded app — that is EXPECTED here (cross-origin iframe) and the message must say the toast + chime still work rather than failing silently. Turning sound off persists per browser via `umsNotify`, and a theme switch must not reset it (the theme reflector writes only to `[data-theme-target]` buttons). Past the shift end a "still clocked in" nudge appears once; it never fires when the punch state is unknown. Mid-shift the ticker makes ZERO server calls; inside the end-of-shift window it refreshes `getEmployeeState` at most once per 10 minutes. A closed browser gets nothing — the daily missed-punch email remains that backstop.
+
+S77 | Team Members panel paints instantly; readiness reads as a column (operator 2026-08-11) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As an admin, open Manage → Admin → Config and watch the Team Members block appear
+    - Read the "Phone system" column immediately, then again a moment later
+    - Scan DOWN the Manager column across several reps
+    - Find your OWN row and confirm the readiness columns line up with everyone else's
+    - Temporarily unset `CDR_SS_ID` (or point it at an unreadable id) and reload the panel
+    - Narrow the window to a phone width and check that the page does not scroll sideways
+  Expected: The roster panel renders as soon as the roster read returns — it no longer waits on the CDR Report. Each rep's phone-system chip shows "cdr: checking…" first and is then patched in place to ✓ / an alias suggestion / "no calls in 7d". With CDR unreachable every chip reads "cdr: unknown" (never "no calls" — an unread name is not an absent one), and nothing else on the panel degrades. Readiness is a headed grid, so a gap on one rep sits directly under a pass on another; the caller's own row shows a "you" chip in the action column and stays column-aligned. At ≤900px the rows stack and the header hides; the Admin sub-tab strip scrolls inside itself rather than pushing the page sideways.
+
+S78 | Pop-out has no repeated header strip (operator 2026-08-11) | Subsystem: Client (shell), Client (Call Notes views)
+  Steps:
+    - Pop out Call Notes; confirm the note template starts at the top with only the tab bar above it — no phone icon + "Call Notes" strip
+    - Repeat for Metrics, Reference, Training, Intake, Dept Requests, Manage Time, and Time / PTO
+    - In the Manage Time pop-out, click the refresh control and confirm the dashboard reloads
+    - Shrink the pop-out as far as it will go and confirm nothing needs scrolling past to do it
+  Expected: No tool renders the retired `.compact-header`. The pop-out window's own title already names the tool and the tab bar names the view, so the strip was pure repetition at the top of the smallest window in the app. The manager refresh button survived the retirement on its own right-aligned row and still works. The Call Notes pop-out self-sizes ~44px shorter than before.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

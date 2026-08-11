@@ -101,7 +101,7 @@ function drRender_(area, data, errorMsg) {
   // combined color-coded status CARDS (the shared .sp-task vocabulary in
   // styles.html) under day-section-label headers.
   const head = compact
-    ? cnCompactHeader_('Dept Requests', 'outbox')
+    ? ''   // pop-out: the tool tab bar already names the active tab (operator 2026-08-11)
     : '<div class="view-title-row"><div><h1 class="view-title">Dept Requests</h1>' +
       '<p>Tracked automatically from the department emails you send. Read-only + resolve.</p></div></div>';
   // A12/INV-175: a LOAD FAILURE renders errorStateHtml_ (warn card + glyph +

@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -7319,8 +7319,11 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   assert.ok(/cannot offboard yourself/.test(off), 'self-offboard is rejected (would lock the caller out mid-session)');
   const panel = strip(extractRawFunction('Code.js', 'getOnboardingPanel'));
   assert.ok(/'Admin access required\.'/.test(panel), 'getOnboardingPanel is admin-gated');
-  assert.ok(/catch \(eCdr\)/.test(panel) && /ok: false/.test(panel),
-    'the CDR readiness block is best-effort (INV-67 posture) — an unreachable CDR Report degrades, never fails the panel');
+  // CDR readiness MOVED to its own endpoint (operator 2026-08-11 — the panel
+  // was blocking on it); its best-effort posture is pinned with the split.
+  const cdrRead = strip(extractRawFunction('Code.js', 'getOnboardingCdrReadiness'));
+  assert.ok(/ok: false/.test(cdrRead),
+    'the CDR readiness read is best-effort (INV-67 posture) — an unreachable CDR Report degrades, never throws');
   // The offboarded list carries IDs: an offboarded row still reserves its ID,
   // and it is invisible in the active list — exactly where the conflict hides.
   assert.ok(/offboarded\.push\(\{ id:/.test(panel),
@@ -7337,6 +7340,205 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
     'a conflict with an email-less row says so IN the message + names both resolutions');
   assert.ok(/empRosterEmail_\(/.test(panel) && /empRosterEmail_\(/.test(add) && /empRosterEmail_\(/.test(off),
     'all three route roster inclusion through the ONE predicate (INV-183/F3)');
+});
+
+test('onboarding panel — CDR readiness is a SEPARATE second-stage read (operator 2026-08-11)', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const panel = nc(extractRawFunction('Code.js', 'getOnboardingPanel'));
+  const cdrFn = nc(extractRawFunction('Code.js', 'getOnboardingCdrReadiness'));
+  // The whole point: the roster panel must not pay for the CDR read. If the
+  // expensive foreign-spreadsheet call creeps back into the panel, the
+  // operator's "takes some time to load" report is live again.
+  assert.ok(!/getCdrAgentMetrics_|cdrLikelyNameMismatches_/.test(panel),
+    'getOnboardingPanel does NOT read the CDR Report — that is what made it slow');
+  assert.ok(/cdr: \{ deferred: true \}/.test(panel),
+    'the panel marks CDR as deferred (distinct from ok:false, which means the read was attempted and failed)');
+  // The split endpoint carries the same gate + the same best-effort posture.
+  assert.ok(/isAdmin/.test(cdrFn) && /Admin access required\./.test(cdrFn),
+    'getOnboardingCdrReadiness is admin-gated like the panel it was split from (INV-136)');
+  assert.ok(/getCdrAgentMetrics_\(/.test(cdrFn) && /cdrLikelyNameMismatches_\(/.test(cdrFn),
+    'the split endpoint does the CDR read + the INV-186 alias pairing');
+  assert.ok(/catch \(err\) \{ return \{ ok: false/.test(cdrFn),
+    'a failed CDR read returns ok:false — never a partial seen-map that would read as "no calls" (INV-187)');
+  assert.ok(/empRosterEmail_\(/.test(cdrFn),
+    'the split endpoint walks the roster through the ONE inclusion predicate (INV-183/F3)');
+  // Client: paints first, patches second, and an unread name never renders as
+  // an absent one.
+  const cnf = 'cn/script_callnotes.html';
+  const load = nc(extractFunction(cnf, 'cnAdminLoadOnboarding_'));
+  assert.ok(/cnRenderOnboardingHtml_\(res\)[\s\S]{0,120}cnOnboardLoadCdr_\(/.test(load),
+    'the panel renders BEFORE the CDR round-trip is fired (paint first, patch second)');
+  const apply = nc(extractFunction(cnf, 'cnOnboardApplyCdr_'));
+  assert.ok(/data-cdr-name/.test(apply),
+    'the patch is keyed off data-cdr-name cells, not a whole-panel re-render');
+  const chip = nc(extractFunction(cnf, 'cnOnboardCdrChipHtml_'));
+  assert.ok(/if \(!ok\)[\s\S]{0,220}cdr: unknown/.test(chip),
+    'a failed/unavailable CDR read renders "unknown", NEVER "no calls" (INV-187)');
+  const render = nc(extractFunction(cnf, 'cnRenderOnboardingHtml_'));
+  assert.ok(/cdr: checking…/.test(render),
+    'the first paint shows a pending chip so the deferred read is visible, not silently blank');
+  assert.ok(/cnOnboardCdrChipHtml_\(/.test(render),
+    'first render and the patch share ONE chip builder so the two cannot drift');
+});
+
+test('onboarding panel — the readiness list is a column grid, not a wrapping chip row', () => {
+  const render = extractFunction('cn/script_callnotes.html', 'cnRenderOnboardingHtml_');
+  assert.ok(/class="cn-ob-grid"/.test(render) && /class="cn-ob-row cn-ob-head"/.test(render),
+    'the list renders as a headed grid');
+  // Six cells per rep row, in a fixed order — that is what makes a column
+  // scannable (operator 2026-08-11: "the layout looks messy").
+  const rowCells = (render.match(/class="cn-ob-cell/g) || []).length;
+  assert.ok(rowCells >= 5, `each rep row emits its readiness cells (found ${rowCells})`);
+  assert.ok(!/flex-wrap:wrap/.test(render.slice(0, render.indexOf('var mgrOpts'))),
+    'the rep rows no longer wrap chips at arbitrary x positions');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = /\.cn-ob-row \{[\s\S]*?\}/.exec(css);
+  assert.ok(rule && /grid-template-columns:/.test(rule[0]),
+    '.cn-ob-row declares its columns');
+  // A2/F3: a fixed multi-column grid owes a real viewport breakpoint — six
+  // columns cannot hold their content on a phone.
+  assert.ok(/@media \(max-width: 900px\)[\s\S]{0,400}\.cn-ob-row \{ grid-template-columns: 1fr/.test(css),
+    '.cn-ob-row stacks at a real viewport breakpoint (the A2 rule)');
+  assert.ok(/\.cn-ob-chip\.is-ok \{ color: var\(--success-deep\)/.test(css) &&
+            /\.cn-ob-chip\.is-warn \{ color: var\(--warning-deep\)/.test(css),
+    'chip tones come from the semantic tokens, not inline hex');
+  // The caller's own row renders a "you" chip where every other row has an
+  // Offboard button; a bare `auto` last track sized to it and pulled that
+  // row's five readiness columns out of line (MEASURED at 1280px).
+  assert.ok(/minmax\(78px, auto\)/.test(rule[0]),
+    'the action column is minmax\'d so a narrower last cell cannot shift the row');
+  // The Admin sub-tab strip is five pills wide — wider than a phone. It must
+  // scroll inside itself rather than push the page sideways (MEASURED: page
+  // scrollWidth 415 -> 390 at a 390px viewport).
+  const tok = fs.readFileSync(path.join(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  const tabs = /\.toolbar-tabs \{[\s\S]*?\}/.exec(tok);
+  assert.ok(tabs && /max-width: 100%/.test(tabs[0]) && /overflow-x: auto/.test(tabs[0]),
+    '.toolbar-tabs scrolls internally instead of overflowing the page');
+  assert.ok(/\.toolbar-tab \{[^}]*flex: 0 0 auto/.test(tok),
+    'the tabs keep their width inside the scroller rather than squashing');
+});
+
+console.log('\npop-out: the repeated compact header is retired (operator 2026-08-11)');
+
+test('.compact-header is gone from every partial, its CSS, and cannot return', () => {
+  // It repeated the pop-out window title + the tab bar directly below it,
+  // costing ~44px at the top of the app's SMALLEST window. A dead selector
+  // left behind is the next reader's false lead (INV-184), so the CSS went
+  // with the markup and this pin holds both sides down.
+  const files = PARSE_GUARD_PARTIALS.concat(['styles.html', 'styles_design_tokens.html']);
+  const offenders = [];
+  files.forEach((f) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'); }
+    catch (e) { return; }
+    // Strip comments so the entries EXPLAINING the retirement don't trip it
+    // (INV-188 — this has bitten twice before).
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/<!--[\s\S]*?-->/g, '');
+    if (/compact-header|cnCompactHeader_/.test(clean)) offenders.push(f);
+  });
+  assert.deepStrictEqual(offenders, [],
+    'no partial or stylesheet references the retired compact header');
+  // The one control that lived in it was NOT dead — the manager refresh button
+  // survives on its own row, and its handler binds by id.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/id="mgr-refresh"/.test(mgr) && /mgr-refresh/.test(mgr.replace(/id="mgr-refresh"/, '')),
+    'the manager refresh control survived the retirement, still bound by id');
+});
+
+console.log('\nreminders: sound + desktop + shell-wide ticker (operator 2026-08-11)');
+
+test('the three reminder channels degrade independently; a blocked one never suppresses the others', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const core = 'script_core.html';
+  const remind = nc(extractFunction(core, 'notifyRemind_'));
+  // The toast fires unconditionally; sound and desktop are each independently
+  // gated. A rep with sound off and desktop blocked still SEES the reminder.
+  const toastAt = remind.indexOf('showToast(');
+  assert.ok(toastAt >= 0, 'notifyRemind_ always shows the in-app toast');
+  const toastLine = remind.split('\n').find((l) => l.indexOf('showToast(') >= 0) || '';
+  assert.ok(!/p\.sound|p\.desktop|notifyDesktopReady_/.test(toastLine),
+    'the toast is guarded only on the helper existing — never on a reminder preference');
+  assert.ok(/p\.sound/.test(remind) && /p\.desktop/.test(remind),
+    'sound and desktop are separately gated on the stored prefs');
+  assert.ok(/notifyDesktopReady_\(\)/.test(remind),
+    'desktop is additionally gated on an actually-granted permission');
+  // Every browser-capability call is wrapped: a reminder path must never throw.
+  const chime = nc(extractFunction(core, 'notifyChime_'));
+  assert.ok(/try \{/.test(chime) && /catch \(e\) \{\}/.test(chime),
+    'the chime swallows AudioContext failures (suspended/blocked contexts throw)');
+  assert.ok(!/new Audio\(|\.src\s*=/.test(chime),
+    'the chime is synthesized — no fetched asset (the iframe CSP would block one)');
+  const ready = nc(extractFunction(core, 'notifyDesktopReady_'));
+  assert.ok(/typeof Notification !== 'undefined'/.test(ready),
+    'the Notification API is feature-detected, not assumed');
+  const req = nc(extractFunction(core, 'notifyRequestDesktop_'));
+  assert.ok(/unavailable/.test(req),
+    "a browser that refuses the API resolves 'unavailable' — distinct from a user 'denied'");
+  const tog = nc(extractFunction(core, 'notifyToggleDesktop_'));
+  assert.ok(/blocked desktop notifications/.test(tog) && /will not allow/.test(tog),
+    'a refused permission SAYS why and states that the toast + chime still work (INV-187 honesty)');
+  const sync = nc(extractFunction(core, 'notifySyncToggles_'));
+  assert.ok(/aria-pressed/.test(sync),
+    'the toggles expose their state to assistive tech, not just a class (INV-174)');
+  // The sidebar and the mobile header each render a copy of the control, so
+  // the toggles are selected by ATTRIBUTE — two elements cannot share an id,
+  // and an id-keyed sync would silently update only the first.
+  assert.ok(/data-remind=/.test(sync) && !/getElementById\('sb-remind/.test(sync),
+    'both rendered copies of each toggle stay in step (attribute-keyed, not id-keyed)');
+  assert.ok(!/id="sb-remind/.test(nc(extractScript('script_core.html'))),
+    'the duplicated control renders no duplicate ids');
+  // The reminder toggles reuse .sb-theme-btn for its look, and the boot theme
+  // reflector used to write aria-pressed across that whole CLASS — which
+  // silently reset the sound toggle to "off" on every load (MEASURED: markup
+  // rendered true, the live attribute read false).
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(/querySelectorAll\('\.sb-theme-btn\[data-theme-target\]'\)/.test(idx),
+    'the theme reflector writes only to THEME toggles, not to every element sharing the class');
+});
+
+test('break reminders fire from the SHELL, once per rep-local day, and the ticker is server-quiet', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const core = 'script_core.html';
+  const coreSrc = nc(extractScript('script_core.html'));
+  assert.ok(/remindersStart_\(\);/.test(coreSrc),
+    'the ticker starts at shell boot, so it runs on EVERY view (incl. the pinned pop-out)');
+  const tick = nc(extractFunction(core, 'remindersTick_'));
+  // The break half is pure arithmetic — no RPC — so the common case costs
+  // nothing. The clock-out half is the only one that may refresh, and only
+  // inside the end-of-shift window.
+  assert.ok(!/google\.script\.run/.test(tick),
+    'the tick itself makes no server call; the bounded refresh is its own helper');
+  assert.ok(/nowMin >= endMin \+ 5 && nowMin <= endMin \+ 120/.test(tick),
+    'the clock-out nudge is confined to a window after the shift ends');
+  const refresh = nc(extractFunction(core, 'remindMaybeRefreshState_'));
+  assert.ok(/10 \* 60 \* 1000/.test(refresh),
+    'the punch-state refresh is throttled to at most once per 10 minutes');
+  assert.ok(/withFailureHandler\(function \(\) \{\}\)/.test(refresh),
+    'a failed refresh keeps the last-good state rather than clearing it');
+  // Once per day, reset on the REP's day rollover (not the browser's).
+  const once = nc(extractFunction(core, 'remindOnce_'));
+  assert.ok(/_remindFired\[key\]/.test(once), 'each reminder fires at most once per key');
+  assert.ok(/today !== _remindDay/.test(tick),
+    'the fired-set resets on the rep-local day rollover, so it cannot grow in a long-lived pop-out');
+  assert.ok(/isoDateTz\(tz\)/.test(tick) && /empTz/.test(tick),
+    'the day and the clock are derived in the REP\'s timezone, never browser-local (the F6 rule)');
+  // An unknown punch state must not nag.
+  const st = nc(extractFunction(core, 'remindPunchState_'));
+  // Both directions must be read explicitly: a fallthrough that assumes
+  // "clocked out" would be just as wrong as one that assumes "clocked in".
+  assert.ok(/indexOf\('ClockOut'\) >= 0\) return 'in'/.test(st) &&
+            /indexOf\('ClockIn'\) >= 0\) return 'out'/.test(st),
+    'the state is read off the offered next-actions in BOTH directions');
+  assert.strictEqual((st.match(/return 'unknown'/g) || []).length, 2,
+    'no-actions AND unrecognised-actions both yield unknown — never a guess');
+  assert.ok(/remindPunchState_\(\) === 'in'/.test(tick),
+    'only a positively clocked-in state triggers the clock-out reminder');
+  // And the Clock view must not double-fire the one that moved.
+  const clk = nc(extractFunction('tc/script_clock.html', 'clkUpdateBreak_'));
+  assert.ok(!/showToast\(/.test(clk),
+    'clkUpdateBreak_ only paints the chip — firing here too would double-toast');
+  assert.ok(!/clkBreakReminderMin_/.test(nc(extractScript('tc/script_clock.html'))),
+    'the Clock-local lead-time helper went with its only reader (INV-184)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

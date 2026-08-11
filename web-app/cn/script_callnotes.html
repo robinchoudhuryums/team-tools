@@ -2177,7 +2177,7 @@ function enterCallNotesFormsView(area) {
 function cnRenderSentFormsView_(area, forms, errorMsg) {
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
   const head = compact
-    ? cnCompactHeader_('Sent Forms', 'send')
+    ? ''   // pop-out: the tool tab bar already names the active tab (operator 2026-08-11)
     : '<div class="cn-head"><div>' +
         '<div class="cn-head-eyebrow">Fillable forms you’ve sent · read-only</div>' +
         '<h2 class="cn-head-title">Sent Forms</h2>' +
@@ -2368,7 +2368,6 @@ function cnRenderNotesView(area) {
     area.innerHTML = cnEnrollmentMissingHtml_();
     return;
   }
-  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes', 'phone') : '';
   const mod = cnIsMac_() ? '⌘' : 'Ctrl';
   // V4 Phase 4 — Log view restructure. cn-head replaces the prior
   // view-title-row + .cn-active-form-header chrome; carries the eyebrow,
@@ -2379,7 +2378,6 @@ function cnRenderNotesView(area) {
   // preserved beneath the new structure so reps still see their work.
   const eyebrow = `Log a call · all fields visible · ${mod}+⇧+C saves &amp; copies for CRM`;
   area.innerHTML = `
-    ${compactHeader}
     ${COMPACT_MODE ? '' : `
       <div class="cn-head">
         <div>
@@ -5891,11 +5889,9 @@ function cnRenderHistoryView(area) {
     area.innerHTML = cnEnrollmentMissingHtml_();
     return;
   }
-  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · History', 'list') : '';
   const startVal = CN_STATE.historyDate || '';
   const endVal = CN_STATE.historyEndDate || CN_STATE.historyDate || '';
   area.innerHTML = `
-    ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · History', 'Past days — pick a date or range to view & edit prior notes, or send a forgotten email.')}
     <div class="cn-history-range">
       <label>From</label>
@@ -6170,7 +6166,6 @@ function cnRenderSearchView(area) {
     area.innerHTML = cnEnrollmentMissingHtml_();
     return;
   }
-  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · Search', 'search') : '';
   // Exact-mode badge: appears when the rep arrived via "Find prior calls for
   // this TRX" on a card. Clearing returns to substring search with the same
   // query so they can widen the net without re-typing.
@@ -6181,7 +6176,6 @@ function cnRenderSearchView(area) {
        </div>`
     : '';
   area.innerHTML = `
-    ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Search', 'Find past interactions by caller name, phone, patient/TRX, or issue.')}
     <div class="cn-search-bar">
       <input type="text" id="cn-search-q" placeholder="Type a caller name, phone, TRX, or issue keyword…"
@@ -6350,7 +6344,6 @@ function cnRenderSearchResults_() {
 // ── Manage (manager-only) view ─────────────────────────────────────────
 
 function cnRenderManageView(area) {
-  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Team Notes', 'manage') : '';
   // "Export Range" button bundles every enrolled rep's notes for a range into
   // a new Sheet — the only path to a wider-than-flagged aggregate (training /
   // review digests cover flagged subsets only).
@@ -6360,7 +6353,6 @@ function cnRenderManageView(area) {
          <button class="refresh-btn" id="cn-mgr-export-btn">${icon('download', 14)}Export Range</button>
        </div>`;
   area.innerHTML = `
-    ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Team Notes', 'Manager view: per-rep notes, training queue, review candidates.')}
     <div id="cn-mgr-action-badge" style="margin-bottom:10px"></div>
     ${exportBtnRow}
@@ -7579,16 +7571,6 @@ function cnViewTitleBar_(title, subtitle) {
   `;
 }
 
-function cnCompactHeader_(title, iconName) {
-  return `
-    <div class="compact-header">
-      <div class="ch-title">${icon(iconName, 16)} ${esc(title)}</div>
-      <div class="ch-actions">
-        <button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button>
-      </div>
-    </div>
-  `;
-}
 
 function cnEnrollmentMissingHtml_() {
   return `
@@ -7760,7 +7742,7 @@ function cnStartDragModal_(e) {
 
 function enterCallNotesAdminView(area) {
   stopClock();   // F5 — every tab enter stops the Clock-view intervals; this one was missed
-  var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
+  var compactHeader = ''   // pop-out: the tool tab bar already names the active tab (operator 2026-08-11)
   // §7c — Admin is grouped into sub-tabs (same .toolbar-tabs vocabulary as the
   // Manage view) instead of one long scroll: Overview (system status + KPIs) /
   // Tags (taxonomy + trends) / Compliance (audit) / Config (dept/tax/suggestions).
@@ -9308,6 +9290,7 @@ function cnAdminLoadOnboarding_() {
       }
       CN_STATE.onboardPanel = res;
       slot.innerHTML = cnRenderOnboardingHtml_(res);
+      cnOnboardLoadCdr_(requestedView);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
@@ -9316,40 +9299,109 @@ function cnAdminLoadOnboarding_() {
     .getOnboardingPanel();
 }
 
+/** Second-stage CDR readiness (operator 2026-08-11). The roster panel is
+ *  already on screen; this only swaps each rep's "checking…" chip for its
+ *  verdict. A failure leaves the chips at "unknown" with the reason in the
+ *  tooltip — an unread name is never rendered as an absent one (INV-187) —
+ *  and never touches the rest of the panel. */
+function cnOnboardLoadCdr_(requestedView) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      cnOnboardApplyCdr_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      cnOnboardApplyCdr_({ ok: false, error: (err && err.message) || 'CDR read failed' });
+    })
+    .getOnboardingCdrReadiness();
+}
+
+/** Patches the per-rep cdr chip in place. Pure DOM surgery keyed off
+ *  data-cdr-name, so it survives whatever else is on the panel and no-ops
+ *  cleanly if the admin has navigated the panel away. */
+function cnOnboardApplyCdr_(res) {
+  var slots = document.querySelectorAll('[data-cdr-name]');
+  if (!slots.length) return;
+  var seen = (res && res.seen) || {}, alias = (res && res.alias) || {};
+  var ok = !!(res && res.ok);
+  for (var i = 0; i < slots.length; i++) {
+    var name = slots[i].getAttribute('data-cdr-name') || '';
+    slots[i].innerHTML = cnOnboardCdrChipHtml_(ok, !!seen[name], alias[name], res && res.error);
+  }
+}
+
+/** The cdr chip in its four states: pending (pre-response), verified, alias
+ *  suggested, quiet no-calls, and unreachable. Shared by first render and the
+ *  patch so the two can't drift. */
+function cnOnboardCdrChipHtml_(ok, isSeen, aliasName, err) {
+  if (!ok) {
+    return cnOnboardChipHtml_('mut', 'cdr: unknown',
+      err ? 'CDR Report unreachable — readiness could not be checked: ' + err
+          : 'CDR Report unreachable — readiness could not be checked.');
+  }
+  if (isSeen) return cnOnboardChipHtml_('ok', '✓ cdr', 'The phone system reported calls under this exact name in the last 7 days.');
+  if (aliasName) {
+    return cnOnboardChipHtml_('warn', 'cdr: add alias "' + esc(aliasName) + '"',
+      'The phone system reports this rep as "' + aliasName + '" — add an Agent Alias Overrides row in the CDR Report so their calls count.');
+  }
+  return cnOnboardChipHtml_('mut', 'cdr: no calls in 7d',
+    'No CDR rows under this exact name in the last 7 days — expected for a brand-new rep or non-phone staff.');
+}
+
+/** One chip vocabulary for the readiness grid (tone → token colour). `text` is
+ *  pre-escaped by the caller where it interpolates server data; `title` is
+ *  escaped here. */
+function cnOnboardChipHtml_(tone, text, title) {
+  var cls = tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'mut';
+  return '<span class="cn-ob-chip is-' + cls + '"' +
+    (title ? ' title="' + esc(title) + '"' : '') + '>' + text + '</span>';
+}
+
 /** The panel: an Add form behind a disclosure + a per-rep readiness list with
  *  offboard buttons. Every server string routes through esc() (the documented
  *  Metrics/CN discipline — CDR alias names cross a repo trust boundary). */
 function cnRenderOnboardingHtml_(res) {
   var reps = res.reps || [];
-  var chip = function (tone, text, title) {
-    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : 'var(--muted)';
-    return '<span style="font-size:11px;font-family:var(--mono);color:' + color + ';white-space:nowrap"' +
-      (title ? ' title="' + esc(title) + '"' : '') + '>' + text + '</span>';
-  };
+  var chip = cnOnboardChipHtml_;
+  // One row per rep on a fixed COLUMN grid (operator 2026-08-11: the prior
+  // wrapping flex row put each rep's chips at a different x, so nothing could
+  // be scanned down a column). Each readiness dimension owns a cell, so a
+  // missing manager on row 3 sits directly under a present one on row 2.
   var rows = reps.map(function (r) {
-    var bits = [];
-    bits.push(r.enrolled ? chip('ok', '✓ notes')
-      : chip('warn', 'notes: provision below', 'No Call Notes Sheet yet — use the Call Notes Enrollment panel below.'));
-    if (!r.managerEmail) bits.push(chip('warn', 'manager: not set', 'Column M is blank — Employee Docs / Coaching visibility fails closed to the issuer only (INV-122).'));
-    else if (!r.managerEmailKnown) bits.push(chip('warn', 'manager: not in MANAGER_EMAILS', esc(r.managerEmail) + ' is not a configured manager.'));
-    else bits.push(chip('ok', '✓ manager'));
-    if (!r.tzValid) bits.push(chip('warn', 'tz: ' + esc(r.timezone || 'blank'), 'Timezone did not validate — punches and digests will use the CONFIG fallback.'));
-    if (res.cdr && res.cdr.ok) {
-      if (r.cdrSeen) bits.push(chip('ok', '✓ cdr'));
-      else if (r.cdrAlias) bits.push(chip('warn', 'cdr: add alias "' + esc(r.cdrAlias) + '"', 'The phone system reports this rep as "' + esc(r.cdrAlias) + '" — add an Agent Alias Overrides row in the CDR Report so their calls count.'));
-      else bits.push(chip('mut', 'cdr: no calls in 7d', 'No CDR rows under this exact name in the last 7 days — expected for a brand-new rep or non-phone staff.'));
-    } else {
-      bits.push(chip('mut', 'cdr: unknown', 'CDR Report unreachable — readiness could not be checked.'));
-    }
+    var notes = r.enrolled ? chip('ok', '✓ notes')
+      : chip('warn', 'notes: none yet', 'No Call Notes Sheet yet — use the Call Notes Enrollment panel below.');
+    var mgr;
+    if (!r.managerEmail) mgr = chip('warn', 'manager: not set', 'Column M is blank — Employee Docs / Coaching visibility fails closed to the issuer only (INV-122).');
+    else if (!r.managerEmailKnown) mgr = chip('warn', 'manager: unknown', r.managerEmail + ' is not in MANAGER_EMAILS.');
+    else mgr = chip('ok', '✓ manager', r.managerEmail);
+    var tz = r.tzValid ? chip('ok', '✓ tz', r.timezone)
+      : chip('warn', 'tz: ' + esc(r.timezone || 'blank'), 'Timezone did not validate — punches and digests will use the CONFIG fallback.');
+    // The cdr cell starts as a placeholder and is patched by
+    // cnOnboardApplyCdr_ when the second-stage read lands.
+    var cdrCell = (res.cdr && res.cdr.deferred)
+      ? chip('mut', 'cdr: checking…', 'Reading the CDR Report for the last 7 days…')
+      : cnOnboardCdrChipHtml_(!!(res.cdr && res.cdr.ok), false, null, res.cdr && res.cdr.error);
     var self = res.callerEmail && r.email && r.email.toLowerCase() === res.callerEmail;
-    return '<div class="field-row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">' +
-      '<span style="flex:1;min-width:160px;font-size:13px">' + esc(r.name) +
-        ' <span style="color:var(--muted)">(' + esc(r.id) + ')</span>' +
-        (r.isManager ? ' <span style="font-size:10px;font-family:var(--mono);color:var(--muted)">MGR</span>' : '') + '</span>' +
-      bits.join(' ') +
-      (self ? '' : '<button class="refresh-btn cn-ob-offboard-btn" style="flex:0 0 auto;margin-left:auto" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) + '" title="Clears the login email; keeps the name and all history">Offboard</button>') +
+    return '<div class="cn-ob-row">' +
+      '<div class="cn-ob-who"><span class="cn-ob-name">' + esc(r.name) +
+          (r.isManager ? ' <span class="cn-ob-mgr">MGR</span>' : '') + '</span>' +
+        '<span class="cn-ob-id">' + esc(r.id) + '</span></div>' +
+      '<div class="cn-ob-cell">' + notes + '</div>' +
+      '<div class="cn-ob-cell">' + mgr + '</div>' +
+      '<div class="cn-ob-cell">' + tz + '</div>' +
+      '<div class="cn-ob-cell" data-cdr-name="' + esc(r.name) + '">' + cdrCell + '</div>' +
+      '<div class="cn-ob-cell cn-ob-act">' +
+        (self ? '<span class="cn-ob-chip is-mut">you</span>'
+              : '<button class="refresh-btn cn-ob-offboard-btn" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) + '" title="Clears the login email; keeps the name and all history">Offboard</button>') +
+      '</div>' +
     '</div>';
   }).join('');
+  rows = '<div class="cn-ob-grid">' +
+    '<div class="cn-ob-row cn-ob-head"><div class="cn-ob-who">Team member</div>' +
+      '<div class="cn-ob-cell">Call Notes</div><div class="cn-ob-cell">Manager</div>' +
+      '<div class="cn-ob-cell">Timezone</div><div class="cn-ob-cell">Phone system</div>' +
+      '<div class="cn-ob-cell cn-ob-act"></div></div>' + rows + '</div>';
   var mgrOpts = '<option value="">— none —</option>' + (res.managers || []).map(function (m) {
     return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
   }).join('');

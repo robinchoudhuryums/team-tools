@@ -1591,7 +1591,6 @@ function clkFmtMinShort_(min) {
   var h = h24 % 12; if (h === 0) h = 12;
   return h + ':' + String(m).padStart(2, '0') + (h24 < 12 ? 'a' : 'p');
 }
-function clkBreakReminderMin_() { return (CLK_SCHEDULE && CLK_SCHEDULE.breakReminderMin) || 10; }
 function clkNowMin_(tz) {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
   let h = 0, m = 0;
@@ -1613,17 +1612,10 @@ function clkNextBreak_(nowMin) {
   }
   return null;
 }
-var _clkRemindedBreaks = {};
-var _clkRemindedDay = '';
 function clkUpdateBreak_() {
   const host = document.getElementById('clk-next-break');
   if (!host) return;
   const tz = empTz();
-  // Reset the reminded-set on day rollover so it can't grow unbounded across
-  // days in a long-lived pinned pop-out (days without a reload). Keyed by
-  // today, so the map only ever holds the current day's breaks (F6).
-  const _today = isoDateTz(tz);
-  if (_today !== _clkRemindedDay) { _clkRemindedDay = _today; _clkRemindedBreaks = {}; }
   const next = clkNextBreak_(clkNowMin_(tz));
   if (!next) { host.innerHTML = ''; return; }
   const b = next.brk;
@@ -1636,16 +1628,10 @@ function clkUpdateBreak_() {
   }
   host.innerHTML = chip('Next break · ' + b.label + ' at ' + clkFmtMin_(b.startMin) +
     (next.minsUntil <= 90 ? ' (in ' + next.minsUntil + 'm)' : ''));
-  const lead = clkBreakReminderMin_();
-  if (next.minsUntil >= 0 && next.minsUntil <= lead) {
-    const key = isoDateTz(tz) + ':' + b.startMin;
-    if (!_clkRemindedBreaks[key]) {
-      _clkRemindedBreaks[key] = true;
-      if (typeof showToast === 'function') {
-        showToast(b.label + ' in ' + (next.minsUntil <= 0 ? 'a moment' : next.minsUntil + ' min'), 'toast-warn');
-      }
-    }
-  }
+  // The REMINDER itself is not fired here any more — it moved to the shell's
+  // remindersTick_ (operator 2026-08-11) so it also reaches the pinned pop-out
+  // and other tabs. Firing it in both places would double-toast. This function
+  // only paints the chip.
 }
 
 /** Note coverage — now rendered INLINE in the shift-strip header (#3): the

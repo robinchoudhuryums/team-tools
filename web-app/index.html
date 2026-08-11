@@ -66,11 +66,14 @@
         document.body && document.body.setAttribute('data-mode', m);
         window.syncThemeToggleState && window.syncThemeToggleState();
       };
-      // Reflect current mode on every sb-theme-btn / mobile-header theme btn.
+      // Reflect current mode on every THEME toggle (sidebar + mobile header).
       // Safe to call when no toggles exist yet (initial loading state).
+      // The selector requires data-theme-target, not just the shared class: the
+      // reminder-alert toggles reuse .sb-theme-btn for its look and carry their
+      // OWN aria-pressed state, which a class-wide write silently clobbered.
       window.syncThemeToggleState = function () {
         var m = document.documentElement.getAttribute('data-mode') || 'light';
-        var btns = document.querySelectorAll('.sb-theme-btn');
+        var btns = document.querySelectorAll('.sb-theme-btn[data-theme-target]');
         for (var i = 0; i < btns.length; i++) {
           btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-theme-target') === m ? 'true' : 'false');
         }

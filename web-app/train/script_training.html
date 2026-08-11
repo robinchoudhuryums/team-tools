@@ -194,8 +194,7 @@ function enterTrainingHomeView() {
   var area = document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('check', 16) + ' My Training</div>' : '') +
-    '<div id="tr-home-content"><div class="m-loading"><span class="lo-glyph">' + icon('check', 26) + '</span> Loading training&hellip;</div></div>';
+        '<div id="tr-home-content"><div class="m-loading"><span class="lo-glyph">' + icon('check', 26) + '</span> Loading training&hellip;</div></div>';
   trainLoadMy_();
 }
 
@@ -530,8 +529,7 @@ function enterTrainingManageView() {
   var area = document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Team Training</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Team Training</h1></div>' +
+        '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Team Training</h1></div>' +
     '<div id="tr-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('check', 26) + '</span> Loading dashboard&hellip;</div></div>';
   trainLoadMgr_();
 }

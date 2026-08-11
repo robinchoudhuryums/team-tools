@@ -444,7 +444,7 @@ function enterReferenceView(area) {
   area = area || document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('list', 16) + ' Reference</div>' : '<div class="view-title-row"><h1 class="view-title">Reference</h1></div>') +
+    '<div class="view-title-row"><h1 class="view-title">Reference</h1></div>' +
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
         '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +

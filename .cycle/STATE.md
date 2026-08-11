@@ -2,10 +2,11 @@
 
 ## Current
 Cycle: 17 — CLOSED (reflected, `.cycle/blocks/17-a-reflect.md`; metrics row
-appended). Between-cycles OPERATOR WORK is in progress on the branch (see
-below); cycle 18 has not opened. When it does, it should be the DUE Seams &
-Invariants audit (counter 4/4) and should write INV-189/190/191 into the
-library; move this cycle's block to HISTORY.md at that point.
+appended). Between-cycles OPERATOR WORK continues on the branch (see below);
+cycle 18 has not opened. When it does, it should be the DUE Seams &
+Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
+point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
+wrote 189/190/191.
 Phase: idle (post-reflect) + operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
   combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
@@ -70,6 +71,32 @@ Phase: idle (post-reflect) + operator-requested feature work:
   the row's SHAPE disproved it (no code path writes an ID with a blank column
   A). #158's fix stands on its own merits; the correction is recorded in the
   KDD so the wrong causal story is not re-derived.
+- Pilot-feedback round (operator 2026-08-11, from testing the deployed app —
+  three notes, all three implemented): (1) **Reminders are now a SHELL
+  capability** — break reminders fired only on the Clock tab, so the pinned
+  Call Notes pop-out never showed one; `remindersTick_` (60s, boot-started)
+  owns them, plus a synthesized Web Audio chime (on by default), a best-effort
+  desktop notification (expected to be REFUSED — cross-origin iframe; the
+  toggle says so), a sidebar/mobile-header Alerts row, the `umsNotify` key
+  (15th), and a new still-clocked-in nudge (refreshes getEmployeeState at most
+  1×/10min, ONLY in the shift-end+5..+120min window; an unknown punch state
+  never nags). (2) **Onboarding panel split** — `getOnboardingPanel` no longer
+  reads the CDR Report (that 7-day foreign-spreadsheet read was the whole
+  panel's latency); `getOnboardingCdrReadiness` is a second-stage admin-gated
+  endpoint (INV-136 38→39, doc-count net + gate case updated in the same
+  commit) and the client patches `data-cdr-name` chips; `cdr:{deferred:true}`
+  ≠ `ok:false` ≠ "no calls" (INV-187). The readiness list became a `.cn-ob-grid`
+  column grid (900px stacking breakpoint; the alias column is the wide one; the
+  action track is minmax'd because the caller's own row shows a "you" chip).
+  (3) **`.compact-header` RETIRED** — the tool-name strip repeated the pop-out
+  window title and the tab bar below it, costing ~44px at the top of the app's
+  smallest window; helper + 12 render sites + CSS removed (INV-184), the
+  manager `#mgr-refresh` control preserved. TWO defects found by MEASUREMENT
+  while verifying: the boot theme reflector wrote aria-pressed across the whole
+  `.sb-theme-btn` CLASS and silently reset the sound toggle every load (now
+  `[data-theme-target]`-scoped — INV-191), and `.toolbar-tabs` overflowed the
+  page 25px at 390px (now scrolls internally). Pure 455 (5 new pins, 10
+  bite-checks), DOM 69, full 39-matrix 0/0.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.
@@ -96,8 +123,10 @@ Subsystem cycles since last Seams audit: 4 (cycle 15 was the seams audit;
   16 and 17 have completed since, and cycle 17's reflection closes the fourth
   subsystem cycle. Cadence is every 4 — the NEXT audit should be a Seams &
   Invariants audit, which also owes the library its 3 pending candidates:
-  INV-189/190/191 from cycle 17's reflection)
-Updated: 2026-08-05
+  INV-189/190/191 were the cycle-17 reflection's candidates, but the
+  2026-08-11 pilot-feedback round WROTE those three numbers for its own
+  findings — the audit owes fresh candidates, not those)
+Updated: 2026-08-11
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 16 is CLOSED and archived to `.cycle/HISTORY.md` (this cycle's open).
@@ -275,6 +304,8 @@ Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
 improvements #1–#10 are implemented AND doc-synced; the operator authorized
 PR + merge of the branch (in progress at this checkpoint). Deploy remains
 ONE operator action (`cd web-app && clasp push -f` → New version →
-`runAllTests()` in the editor). Cycle 18, when opened, is the due Seams &
-Invariants audit (write INV-189/190/191; move the cycle-17 block to
-HISTORY.md then).
+`runAllTests()` in the editor). The 2026-08-11 pilot-feedback round
+(reminders / onboarding-panel split / pop-out header) is implemented AND
+doc-synced — INV-189/190/191 were WRITTEN into the library by that round, so
+cycle 18 (the due Seams & Invariants audit) owes the library new candidates
+rather than those three; move the cycle-17 block to HISTORY.md when it opens.

@@ -4859,6 +4859,7 @@ function test_managerGates_rejectNonManager() {
     ['addEmployee',                    function () { return addEmployee({}); }],
     ['offboardEmployee',               function () { return offboardEmployee('no-such-id'); }],
     ['getOnboardingPanel',             function () { return getOnboardingPanel(); }],
+    ['getOnboardingCdrReadiness',      function () { return getOnboardingCdrReadiness(); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
@@ -4913,6 +4914,7 @@ function test_managerGates_rejectNonManager() {
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
     // Team-member onboarding (2026-08-07) — roster management, admin tier.
     addEmployee: 1, offboardEmployee: 1, getOnboardingPanel: 1,
+    getOnboardingCdrReadiness: 1,
     // KB content authoring (Reference tool) — admin-gated uploads/edits.
     kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
     // #4 — revision history + draft→publish (authoring-adjacent).

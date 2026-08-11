@@ -581,7 +581,7 @@ var INTAKE_PAP_CLIENT = {
 // ── App-bar header (shared shell vocabulary; replaces the bespoke navy bar) ──
 function intakeAppBar_(form, name) {
   var compactIcon = INTAKE_TAB_ICON[form] || 'clipboardList';
-  if (COMPACT_MODE) return '<div class="compact-header">' + icon(compactIcon, 16) + ' ' + esc(name) + '</div>';
+  if (COMPACT_MODE) return '';   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
   var right = (form === 'sent') ? '' : intakeLangToggleHtml_(form);
   return '<div class="app-bar"><div class="app-bar-left">' +
       '<div class="breadcrumb"><span>Intake</span><span class="crumb-sep">›</span><span class="crumb-current">' + esc(name) + '</span></div>' +
