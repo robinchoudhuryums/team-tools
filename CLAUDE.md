@@ -1289,6 +1289,12 @@ this section before touching the relevant area.
   (re-affirmed by the PPD fix): NO `display:flex` / `gap` / `filter`** —
   Outlook drops them; `intakeRecListHtml_` was rebuilt from a flex `<li>` +
   `filter:grayscale` into 2-cell table rows with explicit grey for rejected.
+  **A second email-safe rule (2026-08-11): never place `logoUrl` on a coloured
+  fill** — it is a JPEG with no transparency, so a navy band frames it as a
+  white rectangle. Every email puts the mark on the light card over a navy
+  rule; and because most clients block remote images by default, the `alt`
+  text carries the cell's own type styling so a blocked logo still reads as
+  the brand.
 - **Clipboard API often fails in HtmlService iframes.** The auto-copy
   feature tries `navigator.clipboard.writeText` first and falls back
   to a `<textarea>` + `document.execCommand('copy')` shim
@@ -2534,6 +2540,32 @@ this section before touching the relevant area.
   success email keeps its `.xlsx` `attachments: [blob]` alongside the branded
   `htmlBody` — every automated sender is now branded (the prior plain-text
   follow-on is closed).
+  **RESTYLED (operator 2026-08-11 — "more in line with the rest of the web app
+  and emails").** The wrapper had drifted from the Call Notes / Intake / form
+  emails in four ways, each fixed: (a) it led with a TEXT wordmark while every
+  other email leads with the **UMS mark over a navy rule** — it now uses the
+  same treatment, and the mark stays ON THE CARD rather than in a navy band
+  because `logoUrl` is a **JPEG with no transparency**, which a navy band would
+  frame as a white rectangle (pinned); the `alt` is the styled fallback
+  wordmark, since most clients block remote images by default. (b) The heading
+  was an 11px mono chip — the least prominent thing in a message whose whole
+  job is that one line; it is now a 22px heading with a short tone-coloured
+  rule under it (the old semantic cue was a 9px dot). (c) `brandedKvRows_`
+  rendered two columns of plain text; it now renders the **navy-tinted detail
+  table** the department emails use, so the two stopped looking like different
+  products. (d) The generic `Notification` eyebrow became `opts.subLabel` — the
+  MODULE name ('Time Clock', 'Payroll', 'Employee Docs', …) — defaulting to
+  EMPTY, because repeating the wordmark beside the wordmark is worse than
+  blank. Two new options: `opts.statusLabel` overrides the tone's status pill
+  word, and the long-supported-but-unused `ctaUrl`/`ctaLabel` are now WIRED —
+  most consequentially on the missed-clock-out email, which asked a rep to go
+  fix their timesheet and gave them no link at all. CTA destinations go through
+  **`safeWebAppUrl_(tabKey)`**, which returns `''` when the web-app URL cannot
+  be resolved: the wrapper renders the button only when BOTH url and label are
+  present, so a resolution failure drops the button instead of shipping a dead
+  one. A Node pin asserts every `safeWebAppUrl_` argument is a REGISTERED TOOLS
+  tab key — a stale key still renders a button, it just lands on the wrong
+  view, which is the silent failure this class invites.
 - **Email body restored to the UMS legacy aesthetic.** Call-note
   emails sent from the new web app now match the prior
   `closeOrderEmail.js` / `updateOrderEmail.js` identity: UMS logo bar
@@ -4508,6 +4540,18 @@ manually for a fresh deploy or environment:
   **Desktop notifications are expected to be REFUSED** by most browsers here
   (the app renders in a cross-origin iframe) — the toggle says so and the
   chime + in-app alert still work; there is nothing to configure server-side.
+- **The branded-email restyle (2026-08-11) adds NO new operator state** — no
+  Script Properties, triggers, migrations or CONFIG constants; it changes the
+  shared wrapper + `brandedKvRows_` and the options each caller passes. EVERY
+  automated notification email changes appearance at once (Time Clock, Payroll,
+  Time Off, Training, Employee Docs, Coaching, Call Notes Q&A, the daily brief,
+  the digests and the health/self-test pushes) — the dept/Intake/form emails,
+  which have their own builders, are untouched. New in the mail: a green CTA
+  button on the emails that ask for an action, so the missed-clock-out reminder
+  finally links to the app. **Post-deploy: send yourself one** (approve a test
+  PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
+  the UMS logo loads in your client — the HTML-email restyle is the one thing
+  CI cannot verify, and it is the standing spot-check for any email change.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
@@ -5902,7 +5946,12 @@ overflow guard + the minmax'd action column; the three reminder channels
 degrading independently; the shell ticker's once-per-rep-day firing and
 server-quiet mid-shift behaviour incl. the theme-reflector scope and the
 no-duplicate-ids rule; and the `.compact-header` ban, derived over
-`PARSE_GUARD_PARTIALS` + both stylesheets — 10 mutations bite-checked). TWO
+`PARSE_GUARD_PARTIALS` + both stylesheets — 10 mutations bite-checked). The
+branded-email restyle (operator 2026-08-11) added two more → **457** (the
+email chrome — styled logo alt, logo never on a coloured fill, heading at
+heading size, CTA only when url AND label are present, no generic eyebrow, no
+flex/gap/filter; and the CTA deep-link keys checked against the live TOOLS
+registry with the empty-url suppression — 6 mutations bite-checked). TWO
 lessons from that round's bite-checks, both about the REVERSAL rather than the
 pin: a `python` inverse edit must anchor on a string that is unique in the file
 — `flex: 0 0 auto` restored into `.instance-banner svg` instead of the grid
