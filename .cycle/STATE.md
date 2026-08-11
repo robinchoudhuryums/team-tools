@@ -137,6 +137,18 @@ Phase: idle (post-reflect) + operator-requested feature work:
   `assert.deepStrictEqual` compares prototypes, so a vm-realm array fails
   against a plain [] even when equal (compare by value). Pure 467 (5 pins, 8
   bite-checks), DOM 69. INV-193 written.
+- Roster block Tier 1 (operator: "what else is possible from here?" →
+  /broad-implement Tier 1) — `.cycle/blocks/18pre-roster-tier1-broad-implement.md`.
+  Three views over one parsed source (Teams / Capabilities / Coverage) via a
+  real tablist; person detail panel; exact `tag:` filtering; unique
+  deep-link ids. Coverage states FACTS ONLY — no staffing verdict (INV-187).
+  THREE defects found and closed inside the batch, all by measuring: the
+  people count mixed distinct-vs-rows (read "49 people" for 46), a tag click
+  filtered by substring so "C" matched 42 of 46, and a person on two teams
+  produced duplicate DOM ids. Pure 472 (5 pins, 7 bite-checks), DOM 69,
+  full 39-scenario matrix 0 missing / 0 overflow. Org/tree view assessed and
+  NOT built (~4100px needed for 46 leaves — worse than the grid at every
+  viewport); reported as a follow-on, not silently skipped.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

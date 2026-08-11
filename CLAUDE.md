@@ -3655,6 +3655,38 @@ this section before touching the relevant area.
   (`plain:true` opts out), carrying a highlighted cell across as `*lead` — so
   converting a roster spreadsheet gives the interactive version in one step. A
   TABULAR sheet is never forced into a roster; it stays a table.
+  **Tier 1 (same block, more capability — operator 2026-08-11):** THREE views
+  over one parsed source, switched by a `role="tablist"` segmented control
+  (`kbRosterBodyHtml_(data, mode)`; the source rides on the root as `data-src`
+  so a switch re-renders without re-running `kbMd_` over the article).
+  **Teams** is the org's own shape; **Capabilities** regroups people by tag
+  ACROSS teams — "who can take a Complex Rehab call" is a question the
+  team-shaped sheet structurally cannot answer, and is the main reason a
+  structured roster beats a picture of one; **Coverage** is an aggregate
+  (people / teams / departments / capabilities, a per-capability table, and
+  the teams with no lead marked). **Coverage states FACTS ONLY — never a
+  staffing verdict**: the block has no idea what the target headcount is, so
+  "understaffed" would be a confident-looking judgement drawn from data that
+  cannot support it (INV-187); it reports single-point-of-contact rows and
+  lets the reader judge. It is also never filtered — filtering an aggregate
+  would report totals that quietly describe a subset. Clicking a person opens
+  a **detail panel** (every team they are on) rather than copying; Copy moved
+  into the panel. Clicking a tag filters by it. **Three things that bit during
+  this batch, all found by measuring rather than reading:** (a) the count
+  mixed units — distinct people on first paint, visible ROWS after a filter or
+  mode switch — so a 46-person roster read "49 people" in the capability view
+  where a person appears once per tag; it now counts distinct `data-name`s in
+  every mode; (b) a tag click filtered by SUBSTRING, and the single-letter tags
+  this data uses ("C", "P") also matched "Medical Review" and "Insurance
+  Change" — 42 of 46 people; tags now ride pipe-delimited in `data-tags` and a
+  `tag:` query matches exactly; (c) a person on two teams produced DUPLICATE
+  DOM ids, which is invalid and breaks the very anchors the ids exist for —
+  they now take the same `-2`/`-3` dedup walk `kbMd_` uses for repeated
+  headings, with the first occurrence keeping the bare slug as the canonical
+  target. **A node-link org chart was assessed and NOT built:** 46 leaves need
+  ~90px each to stay readable, i.e. ~4100px of width, so it is unreadable at
+  every viewport the app supports and strictly worse than the Teams grid — the
+  hierarchy is already legible there.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4610,15 +4642,18 @@ manually for a fresh deploy or environment:
   **Desktop notifications are expected to be REFUSED** by most browsers here
   (the app renders in a cross-origin iframe) — the toggle says so and the
   chime + in-app alert still work; there is nothing to configure server-side.
-- **The interactive roster block (2026-08-11) adds NO new operator state** — no
-  Script Properties, triggers, migrations or endpoints; it is a new fenced
-  block type in the KB renderer plus its styling. Existing articles are
+- **The interactive roster block + its Tier 1 views (2026-08-11) add NO new
+  operator state** — no Script Properties, triggers, migrations or endpoints;
+  it is a new fenced block type in the KB renderer plus its styling. Existing articles are
   unaffected (an ordinary fence still renders `<pre><code>`). To use it: put a
   ` ```roster ` fence in any Reference article, or convert a banded sheet and
   it is emitted for you. **Operator-visible behaviour:** converting a roster
   spreadsheet now produces the INTERACTIVE block rather than static headings —
   reps get a filter box, tag tooltips and click-to-copy, and the whole thing
-  works in the Ctrl/⌘+K drawer, which an embedded sheet never did.
+  works in the Ctrl/⌘+K drawer, which an embedded sheet never did. The block
+  also carries Teams / Capabilities / Coverage views — note that **Coverage
+  reports facts, not a staffing verdict**, so a capability held by one person
+  is flagged as a single point of contact and the judgement is left to you.
 - **The Sheet→article converter (2026-08-11) adds NO new operator state and NO
   new OAuth scope** — `SpreadsheetApp` is already authorized, so unlike the Doc
   converter there is nothing to re-authorize. It adds ONE admin-gated endpoint
@@ -6058,7 +6093,13 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). **A vm-realm trap worth
+roster-block emitter — 8 mutations bite-checked). Roster Tier 1 added five
+more → **472** (person index folds a multi-team person; three views from one
+source + coverage-states-no-verdict; exact tag matching; unique person ids
+with a canonical first; tablist ARIA + distinct-people count — 7 mutations
+bite-checked). **A pin that does not bite is not a pin: the verdict-word scan
+passed against a mutation until the FIXTURE was given a single-point-of-contact
+row, because the sentence it guards only renders in that case.** **A vm-realm trap worth
 knowing: `assert.deepStrictEqual` compares PROTOTYPES, so an array created
 inside a `vm` context fails against a plain `[]` even when the values match —
 compare by value (`.join('|')`) instead.** TWO

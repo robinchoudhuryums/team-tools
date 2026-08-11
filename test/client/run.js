@@ -7470,7 +7470,10 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
 console.log('\nkb — interactive roster block (operator 2026-08-11)');
 
 const kbRosCtx = vm.createContext({});
-['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterHtml_', 'kbMd_']
+['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterSlug_', 'kbRosterPeopleIndex_',
+ 'kbRosterTagChip_', 'kbRosterFlags_', 'kbRosterPersonHtml_', 'kbRosterTeamsHtml_',
+ 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterBodyHtml_',
+ 'kbRosterModeBtn_', 'kbRosterHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
 
 test('kbRosterParse_ — structure, flags, tags, and badges that travel with a person', () => {
@@ -7527,7 +7530,12 @@ test('roster block stays INERT and cannot break out of an attribute', () => {
   assert.strictEqual(html.indexOf('<script>'), -1, 'no live script survives');
   assert.ok(/&lt;script&gt;/.test(html), 'it renders as escaped text');
   const quoted = kbRosCtx.kbRosterHtml_('dept| D\nteam| T: A" onmouseover="x');
-  assert.strictEqual(/data-copy="[^"]*" on/.test(quoted), false, 'a quote in a name cannot open a new attribute');
+  // Assert the PROPERTY (the quote is entity-escaped inside the value), not
+  // "an on*= follows the attribute" — that heuristic matches the legitimate
+  // onclick after a correctly-terminated attribute and fails on good output.
+  assert.ok(/data-name="A&quot; onmouseover=&quot;x"/.test(quoted), 'a quote in a name is entity-escaped in its attribute');
+  // The SOURCE now rides on the root as an attribute too — same exposure.
+  assert.ok(/data-src="[^"]*&quot;[^"]*"/.test(quoted), 'and in the stored source attribute');
   assert.ok(/&quot;/.test(quoted), 'quotes are entity-escaped in attribute contexts');
 });
 
@@ -7550,6 +7558,87 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
   const secs = secCtx.kbSplitSections_('# Roster\n\n```roster\nteam| MDO: Sergio (P)\n```');
   assert.ok(secs.some((x) => x.md.toLowerCase().indexOf('sergio') >= 0),
     'a name inside the roster fence is still part of the searchable section text');
+});
+
+console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
+
+test('the people index folds a person across teams — the question the grid cannot answer', () => {
+  const d = kbRosCtx.kbRosterParse_([
+    'dept| Q — R',
+    'team| PAR > Submission: Kadija, Parker',
+    'team| PAR > F/U: Kadija (C), Bella',
+  ].join('\n'));
+  const idx = kbRosCtx.kbRosterPeopleIndex_(d);
+  assert.strictEqual(idx.order.length, 3, 'Kadija counts ONCE, not once per team');
+  const k = idx.byName.kadija;
+  assert.strictEqual(k.places.length, 2, 'but both of her teams are recorded');
+  assert.strictEqual(k.tags.join('|'), 'C', 'tags union across her rows');
+});
+
+test('the three views render from one source, and coverage states FACTS not verdicts', () => {
+  const src = [
+    'legend| C=Complex Rehab chair',
+    'dept| Q — R',
+    'team| A: Ann (C)*lead, Bob',
+    'team| B: Cy (C), Dee (ATP)',
+  ].join('\n');
+  const d = kbRosCtx.kbRosterParse_(src);
+  const teams = kbRosCtx.kbRosterBodyHtml_(d, 'teams');
+  const caps = kbRosCtx.kbRosterBodyHtml_(d, 'capabilities');
+  const cov = kbRosCtx.kbRosterBodyHtml_(d, 'coverage');
+  assert.ok(/kb-ros-dept-name/.test(teams), 'teams view groups by department');
+  // The capability view must put people from DIFFERENT teams in one card —
+  // that cross-team cut is the whole reason it exists.
+  const cCard = /<div class="kb-ros-team-name">C <span class="kb-ros-n">2<\/span>/.test(caps);
+  assert.ok(cCard, 'both C-tagged people group together across teams');
+  assert.ok(/Ann/.test(caps) && /Cy/.test(caps), 'and both are listed');
+  // Coverage reports counts and single-points-of-contact. It must NOT invent a
+  // staffing verdict — it has no idea what the target is (INV-187).
+  assert.ok(/>4<\/b><span>people</.test(cov), 'counts distinct people');
+  assert.ok(/>2<\/b><span>teams</.test(cov), 'and teams');
+  assert.ok(/No lead marked on: B\./.test(cov), 'names the teams with no lead — a fact');
+  // Dee is the only ATP, so the single-point-of-contact note renders — which
+  // is what puts that sentence under the no-verdict scan below.
+  assert.ok(/single point of contact/.test(cov), 'flags a capability only one person carries');
+  ['understaffed', 'too few', 'insufficient', 'at risk', 'critical'].forEach((w) => {
+    assert.strictEqual(cov.toLowerCase().indexOf(w), -1, 'coverage states no verdict: ' + w);
+  });
+});
+
+test('a tag click matches the tag EXACTLY, not as a substring', () => {
+  const src = ['dept| Q — R', 'team| Medical Review: Ann (C)', 'team| Insurance Change: Bob'].join('\n');
+  const html = kbRosCtx.kbRosterBodyHtml_(kbRosCtx.kbRosterParse_(src), 'teams');
+  // Tags ride pipe-delimited so "C" cannot also match "Medical Review" and
+  // "Insurance Change" — a bare substring matched 42 of 46 real people.
+  assert.ok(/data-tags="\|c\|"/.test(html), 'tags are pipe-delimited for exact matching');
+  assert.ok(/data-tags="\|\|"/.test(html), 'an untagged person has no tag to match');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/var q = 'tag:' \+ tag;/.test(kb), 'the tag button drives the same filter box the rep types into');
+  assert.ok(/tagNeedle \? false :/.test(kb), 'in tag mode a TEAM name never matches');
+});
+
+test('a person on two teams gets unique ids, and the first stays canonical', () => {
+  const src = ['dept| Q — R', 'team| A: Kadija', 'team| B: Kadija'].join('\n');
+  const html = kbRosCtx.kbRosterBodyHtml_(kbRosCtx.kbRosterParse_(src), 'teams');
+  const ids = (html.match(/id="kb-p-[^"]*"/g) || []);
+  assert.strictEqual(ids.length, 2, 'both rows are addressable');
+  assert.strictEqual(new Set(ids).size, 2, 'duplicate DOM ids would break the anchors this adds');
+  assert.ok(/id="kb-p-kadija"/.test(html), 'the FIRST occurrence keeps the bare slug as the canonical target');
+  assert.ok(/id="kb-p-kadija-2"/.test(html), 'later ones take the -2/-3 walk kbMd_ uses for repeated headings');
+  assert.ok(/id="kb-t-q-a"/.test(html), 'teams are addressable too');
+});
+
+test('the mode switcher is a real tablist and the count means the same thing in every view', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const html = kbRosCtx.kbRosterHtml_('dept| Q — R\nteam| A: Ann (C), Bob');
+  assert.ok(/role="tablist"/.test(html) && (html.match(/role="tab"/g) || []).length === 3, 'three real tabs');
+  assert.ok(/aria-selected="true"/.test(html), 'the active view is exposed, not just painted (INV-174)');
+  assert.ok(/setAttribute\('aria-selected'/.test(kb), 'and kept in step on switch');
+  // The count previously mixed units: distinct people on first paint, visible
+  // ROWS after a filter or mode switch — so a 46-person roster read "49
+  // people" in the capability view.
+  assert.ok(/seen\[people\[i\]\.getAttribute\('data-name'\)/.test(kb), 'the filter counts DISTINCT people');
+  assert.ok(/'data-mode'\) === 'coverage'/.test(kb), 'the coverage aggregate is never filtered to a subset');
 });
 
 console.log('\nkb — Sheet→article converter (operator 2026-08-11)');
