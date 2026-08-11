@@ -124,6 +124,19 @@ Phase: idle (post-reflect) + operator-requested feature work:
   operator's sheet, not by reading it. Manual/review-before-save by design so
   the eventual "app becomes the source" migration is not fought by a re-sync.
   Pure 462 (5 pins, 6 bite-checks), DOM 69. INV-192 written; INV-136 39→40.
+- Interactive roster block (operator 2026-08-11, follow-on to the Sheet
+  converter — "could it be executed in a better way with more features"):
+  ` ```roster ` fence → filter-as-you-type directory with tag tooltips,
+  click-to-copy, lead/new/badge chips. Follows the ```snippet precedent, so
+  the kbMd_ escape boundary is untouched (article bodies still cannot carry
+  HTML). kbConvertDriveSheet emits the block for a banded sheet by default.
+  THREE bugs worth remembering, all found by RUNNING it: the fence content is
+  pre-escaped so `&` arrives as `&amp;` and the tag split mangled "C & ATP";
+  the global :focus-visible ring is a box-shadow token, so a per-element
+  `outline: var(--ring-focus)` was both wrong and redundant; and
+  `assert.deepStrictEqual` compares prototypes, so a vm-realm array fails
+  against a plain [] even when equal (compare by value). Pure 467 (5 pins, 8
+  bite-checks), DOM 69. INV-193 written.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

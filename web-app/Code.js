@@ -19127,6 +19127,54 @@ function kbSheetGridToMarkdown_(grid) {
   return { markdown: out.join('\n').replace(/\n{3,}/g, '\n\n').trim(), warnings: warnings };
 }
 
+/** Re-emits a BANDED conversion as a ```roster fence — the interactive
+ *  directory block — instead of static headings. Same information, but the
+ *  reader gets filter-as-you-type, tag tooltips and click-to-copy, which is
+ *  what a routing map is actually used for. Only the banded shape converts:
+ *  a tabular sheet is a table, and forcing it into a roster would be a lie
+ *  about what the data is. */
+function kbRosterFromBanded_(markdown) {
+  const lines = String(markdown || '').split('\n');
+  const out = [];
+  let dept = '', team = '', sub = '', pending = [];
+  const flush = function () {
+    if (!team || !pending.length) { pending = []; return; }
+    out.push('team| ' + team + (sub ? ' > ' + sub : '') + ': ' + pending.join(', '));
+    pending = [];
+  };
+  lines.forEach(function (ln) {
+    const t = ln.trim();
+    if (!t) return;
+    let m = t.match(/^###\s+(.*)$/);
+    if (m) {
+      flush(); team = ''; sub = '';
+      // "PAK (Mary)" → the owner is the parenthesised name.
+      const dm = m[1].match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+      dept = dm ? dm[1].trim() : m[1].trim();
+      out.push('dept| ' + dept + (dm ? ' — ' + dm[2].trim() : ''));
+      return;
+    }
+    m = t.match(/^####\s+(.*)$/);
+    if (m) {
+      flush();
+      const full = m[1].trim();
+      const gi = full.indexOf('>');
+      if (gi >= 0) { team = full.slice(0, gi).trim(); sub = full.slice(gi + 1).trim(); }
+      else { team = full; sub = ''; }
+      return;
+    }
+    if (t.charAt(0) === '#') return;                 // the sheet-name h2
+    // A member line: "**Micheal** · Sandra · Selena". Bold marked a highlighted
+    // cell, which the sheet used for leads — carried across as the *lead flag.
+    t.split('·').map(function (x) { return x.trim(); }).filter(Boolean).forEach(function (cell) {
+      const bold = /^\*\*(.*)\*\*$/.exec(cell);
+      pending.push((bold ? bold[1].trim() : cell) + (bold ? '*lead' : ''));
+    });
+  });
+  flush();
+  return out.length ? '```roster\n' + out.join('\n') + '\n```' : '';
+}
+
 /** Admin-gated, strictly READ-ONLY (the INV-115 posture): it never writes the
  *  Sheet and never writes a KB row. The manager reviews the markdown in the
  *  editor and the normal kbSaveItem persists it — so re-converting after the
@@ -19203,7 +19251,18 @@ function kbConvertDriveSheet(payload) {
       res.warnings.forEach(function (w) { warnings.push(w); });
     });
     if (!parts.length) return { error: 'That Sheet has no readable content.' };
-    const markdown = parts.join('\n\n');
+    let markdown = parts.join('\n\n');
+    // A banded roster becomes the INTERACTIVE block by default — that is the
+    // shape this converter exists for, and a static rendering of it is the
+    // thing the operator asked to improve on. `plain: true` opts out.
+    if (!payload.plain) {
+      const ros = kbRosterFromBanded_(markdown);
+      if (ros) {
+        markdown = ros;
+        warnings.push('Converted to an interactive roster block: reps get filter-as-you-type, ' +
+          'tag tooltips and click-to-copy. Add a `legend|` line so the tags explain themselves.');
+      }
+    }
     if (markdown.length > KB_BODY_MAX) {
       warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split it across articles.');
     }

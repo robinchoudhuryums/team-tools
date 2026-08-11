@@ -7467,6 +7467,91 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
     'the tabs keep their width inside the scroller rather than squashing');
 });
 
+console.log('\nkb — interactive roster block (operator 2026-08-11)');
+
+const kbRosCtx = vm.createContext({});
+['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
+
+test('kbRosterParse_ — structure, flags, tags, and badges that travel with a person', () => {
+  const p = kbRosCtx.kbRosterParse_([
+    'legend| lead=Team lead; new=Training / New; C=Complex Rehab chair',
+    'badge| Parachute: Paula, Erica',
+    'dept| PAK — Mary',
+    'team| PPD: Micheal*lead, Sandra',
+    'dept| Qualifications &amp; Auth — Rajdeep',
+    'team| Medical Review > T3Q: Paula (C &amp; ATP)*lead, Alia (P)',
+    'team| PT Eval: Erica, Shelby*new',
+  ].join('\n'));
+  assert.strictEqual(p.depts.length, 2, 'two departments');
+  assert.strictEqual(p.depts[0].owner, 'Mary', 'the owner is split off the department name');
+  assert.strictEqual(p.depts[1].teams[0].sub, 'T3Q', '"Team > Sub" nests');
+  const paula = p.depts[1].teams[0].people[0];
+  // NOTE: values come from a vm context, so their Array prototype belongs to
+  // that realm and deepStrictEqual (which compares prototypes) fails on a
+  // correct result. Compare by value.
+  // The fence content arrives HTML-ESCAPED, so an ampersand separator is
+  // `&amp;` — splitting on a bare & yields the tag "amp; ATP".
+  assert.strictEqual(paula.tags.join('|'), 'C|ATP', 'an escaped & separator splits correctly');
+  assert.strictEqual(paula.lead, true, '*lead is a flag, not part of the name');
+  assert.strictEqual(paula.name, 'Paula', 'the name is clean of tags and flags');
+  // A badge is an attribute of a PERSON, so it follows them onto every team.
+  const erica = p.depts[1].teams[1].people[0];
+  assert.strictEqual(erica.badges.join('|'), 'Parachute', 'the badge travels to another department');
+  assert.strictEqual(paula.badges.join('|'), 'Parachute', 'and to a different team');
+  assert.strictEqual(p.depts[1].teams[1].people[1].isNew, true, '*new is parsed');
+  // An unparseable line is REPORTED, never silently dropped.
+  const bad = kbRosterParse_Warn();
+  function kbRosterParse_Warn() { return kbRosCtx.kbRosterParse_('team PPD no pipe here'); }
+  assert.strictEqual(bad.warnings.length, 1, 'a malformed line is counted as a warning');
+});
+
+test('kbMd_ renders a ```roster fence as the interactive block, and leaves other fences alone', () => {
+  const html = kbRosCtx.kbMd_(['Intro.', '', '```roster', 'dept| PAK — Mary', 'team| PPD: Micheal*lead', '```'].join('\n'));
+  assert.ok(/<div class="kb-roster"/.test(html), 'the roster fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown still renders');
+  // Real controls, not divs with handlers (INV-173), and the filter input is
+  // NAMED for assistive tech.
+  assert.ok(/<button type="button" class="kb-ros-name"/.test(html), 'a person is a real button');
+  assert.ok(/aria-label="Filter the roster/.test(html), 'the search input has an accessible name');
+  assert.ok(/role="status" aria-live="polite"/.test(html), 'the result count is announced');
+  const plain = kbRosCtx.kbMd_(['```js', 'var x = 1;', '```'].join('\n'));
+  assert.ok(/<pre><code>/.test(plain) && !/kb-roster/.test(plain), 'an ordinary fence is untouched');
+});
+
+test('roster block stays INERT and cannot break out of an attribute', () => {
+  // kbMd_ escapes & < > BEFORE the fence is captured, so markup in the body is
+  // already neutralised — but the top-level pass does NOT cover quotes, and the
+  // renderer puts names into attributes (the same gap kbMd_'s link rule guards).
+  const html = kbRosCtx.kbMd_(['```roster', 'dept| D', 'team| T: <script>alert(1)</script>', '```'].join('\n'));
+  assert.strictEqual(html.indexOf('<script>'), -1, 'no live script survives');
+  assert.ok(/&lt;script&gt;/.test(html), 'it renders as escaped text');
+  const quoted = kbRosCtx.kbRosterHtml_('dept| D\nteam| T: A" onmouseover="x');
+  assert.strictEqual(/data-copy="[^"]*" on/.test(quoted), false, 'a quote in a name cannot open a new attribute');
+  assert.ok(/&quot;/.test(quoted), 'quotes are entity-escaped in attribute contexts');
+});
+
+test('the roster block reflows for the 400px drawer, and its content stays searchable', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // A2: a fixed multi-column grid owes a real viewport breakpoint. The drawer
+  // is the surface this block exists for, so this is not optional.
+  assert.ok(/\.kb-ros-teams \{[^}]*repeat\(auto-fill/.test(kb), 'the team grid is intrinsic, not fixed tracks');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-ros-teams \{ grid-template-columns: 1fr/.test(kb),
+    'it stacks at a real breakpoint');
+  assert.ok(/\.kb-ros-teams \{[^}]*align-items: start/.test(kb),
+    'a short team does not stretch to match a tall one beside it');
+  // The tooltip must not be mouse-only.
+  assert.ok(/\.kb-ros-tag\[data-tip\]:hover::after, \.kb-ros-tag\[data-tip\]:focus::after/.test(kb),
+    'tag tooltips open on keyboard focus as well as hover');
+  // Searchability is the reason this beats an embed: kbSplitSections_ masks
+  // fences for HEADING detection only, so the names stay in the section text.
+  const secCtx = vm.createContext({});
+  ['kbSlug_', 'kbSplitSections_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), secCtx));
+  const secs = secCtx.kbSplitSections_('# Roster\n\n```roster\nteam| MDO: Sergio (P)\n```');
+  assert.ok(secs.some((x) => x.md.toLowerCase().indexOf('sergio') >= 0),
+    'a name inside the roster fence is still part of the searchable section text');
+});
+
 console.log('\nkb — Sheet→article converter (operator 2026-08-11)');
 
 // The grid walker, driven with plain objects (the kbDocBodyToMarkdown_ pattern
@@ -7569,6 +7654,33 @@ test('converter output RENDERS through the real kbMd_ (the two are a parallel pa
     name: 'Rates', values: [['State', 'Rate'], ['TX', '6.25%']], merges: [],
   }).markdown);
   assert.ok(/<table/.test(tbl) && /TX/.test(tbl), 'the tabular shape renders as a real table');
+});
+
+test('a banded sheet converts straight to an interactive roster block', () => {
+  const cvCtx = vm.createContext({});
+  ['kbSheetGridToMarkdown_', 'kbRosterFromBanded_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), cvCtx));
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const md = cvCtx.kbSheetGridToMarkdown_({
+    name: 'Sheet1',
+    values: [at([[0, 'PAK (Mary)']]), at([[0, 'PPD'], [4, 'MDO']]), at([[1, 'Micheal'], [5, 'Sasha']])],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 8 }, { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 }],
+    backgrounds: [blank().map(() => '#fff'), blank().map(() => '#fff'), blank().map((_, c) => (c === 1 ? '#c9daf8' : '#fff'))],
+  }).markdown;
+  const ros = cvCtx.kbRosterFromBanded_(md);
+  assert.ok(/^```roster/.test(ros), 'emits a roster fence');
+  assert.ok(/dept\| PAK — Mary/.test(ros), 'the parenthesised owner becomes the department owner');
+  assert.ok(/team\| PPD: Micheal\*lead/.test(ros), 'a highlighted cell carries across as the lead flag');
+  assert.ok(/team\| MDO: Sasha/.test(ros), 'the side-by-side sub-team stays separate');
+  // A TABULAR sheet must NOT be forced into a roster — that would misrepresent
+  // what the data is.
+  const table = cvCtx.kbSheetGridToMarkdown_({ name: 'Rates', values: [['State', 'Rate'], ['TX', '6.25%']], merges: [] }).markdown;
+  assert.strictEqual(cvCtx.kbRosterFromBanded_(table), '', 'a table is left as a table');
+  // And the round trip parses back into the same structure.
+  const back = kbRosCtx.kbRosterParse_(ros.replace(/^```roster\n/, '').replace(/\n```$/, ''));
+  assert.strictEqual(back.depts.length, 1);
+  assert.strictEqual(back.depts[0].teams.length, 2, 'both sub-teams survive the round trip');
+  assert.strictEqual(back.depts[0].teams[0].people[0].lead, true, 'the lead flag survives');
 });
 
 test('kbConvertDriveSheet is admin-gated, read-only, and bounded', () => {

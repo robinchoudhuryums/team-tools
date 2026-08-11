@@ -151,6 +151,67 @@
   .kb-rev-meta { font-size: .78rem; color: var(--muted); font-family: var(--mono); }
   .kb-rev-prev { font-size: .84rem; color: var(--ink); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
   .kb-rev-row .kb-btn { flex-shrink: 0; }
+  /* Interactive roster block (operator 2026-08-11). Must work at 400px — the
+     Ctrl/⌘+K drawer is the mid-call surface this exists for — so every row
+     wraps and the team grid is intrinsic (auto-fill), never fixed tracks. */
+  .kb-roster { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-ros-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .kb-ros-search {
+    flex: 1 1 180px; min-width: 0; font: inherit; font-size: .86rem;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--ink);
+  }
+  /* Focus rings come from the ONE global :focus-visible rule in styles.html
+     (box-shadow: var(--ring-focus)) — declaring a per-element outline here
+     would both duplicate it and misuse a shadow value as a colour. */
+  .kb-ros-search:focus { border-color: var(--border-strong); }
+  .kb-ros-count { flex: 0 0 auto; font-family: var(--mono); font-size: .72rem; color: var(--muted-2); }
+  .kb-ros-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .kb-ros-legend-item { font-size: .74rem; color: var(--muted); }
+  .kb-ros-legend-item b { font-family: var(--mono); color: var(--ink); font-weight: 700; }
+  .kb-ros-dept { margin: 0 0 14px; }
+  .kb-ros-dept-name { font-size: .95rem; font-weight: 700; color: var(--ink); margin: 0 0 8px; }
+  .kb-ros-owner { font-weight: 500; font-size: .8rem; color: var(--muted-2); }
+  .kb-ros-owner::before { content: '· '; }
+  /* align-items:start — a 3-person team must not stretch to match a 9-person
+     one beside it (the documented .m-layout / .dash-trk lesson). */
+  .kb-ros-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; align-items: start; }
+  .kb-ros-team { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; min-width: 0; }
+  .kb-ros-team-name { font-size: .74rem; font-family: var(--mono); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+  .kb-ros-sub { color: var(--info-deep); }
+  .kb-ros-sub::before { content: '› '; color: var(--muted-3); }
+  .kb-ros-people { display: flex; flex-direction: column; gap: 4px; }
+  .kb-ros-person { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0; }
+  .kb-ros-name {
+    appearance: none; border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; font-size: .86rem; color: var(--ink); text-align: left;
+    border-bottom: 1px dashed transparent;
+  }
+  .kb-ros-name:hover { border-bottom-color: var(--muted-3); }
+  .kb-ros-person.is-lead .kb-ros-name { font-weight: 700; }
+  .kb-ros-tag {
+    position: relative; font-family: var(--mono); font-size: .64rem; font-weight: 700;
+    padding: 1px 5px; border-radius: var(--radius-pill);
+    background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .kb-ros-tag[data-tip] { cursor: help; }
+  /* Same tokened tooltip as the Intake help glyph — hover AND keyboard focus,
+     so it is not a mouse-only affordance. */
+  .kb-ros-tag[data-tip]:hover::after, .kb-ros-tag[data-tip]:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px);
+    z-index: 5; white-space: nowrap; font-family: var(--ui); font-weight: 500;
+    font-size: .72rem; padding: 5px 8px; border-radius: 6px;
+    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
+  }
+  .kb-ros-flag { font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 5px; border-radius: var(--radius-pill); }
+  .kb-ros-flag.is-lead { background: var(--info-soft); color: var(--info-deep); }
+  .kb-ros-flag.is-new { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ros-flag.is-badge { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-warn { margin-top: 10px; font-size: .74rem; color: var(--warning-deep); }
+  @media (max-width: 560px) {
+    .kb-ros-teams { grid-template-columns: 1fr; }
+  }
+
   /* #6 — copyable "canned response" snippet card (rendered by kbMd_). */
   .kb-snippet { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; margin: 12px 0; background: var(--paper-2); overflow: hidden; }
   .kb-snippet-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--accent-soft); }
@@ -291,6 +352,217 @@ function kbSlug_(text) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+// ── Interactive roster block (operator 2026-08-11) ─────────────────────────
+// An employee/routing map is the one KB content type a static article serves
+// badly: mid-call, the rep's question is "who handles X, and can they take it"
+// — not "show me the org". A ```roster fence renders an interactive directory
+// instead, following the ```snippet precedent exactly: the fence content is
+// already HTML-escaped by kbMd_'s top-level pass, so the APP draws the
+// interactive markup around inert text. Nothing here executes article content.
+//
+// Syntax — deliberately hand-editable, because the operator's plan is for the
+// app to become the source of truth for this data:
+//   legend| lead=Team lead; new=Training / New; P=Standard powerchair
+//   badge|  Parachute access: Rajdeep, Erica, Paula
+//   dept|   PAK — Mary
+//   team|   PPD: Micheal*lead, Sandra, Selena
+//   team|   Medical Review > T3Q: Paula (C & ATP)*lead, Victoria
+// A person is `Name (tags)*flag`; `>` nests a sub-team under a team.
+
+/** PURE parser. Input is kbMd_-escaped text (& < > already entities); this
+ *  never unescapes — the renderer only ever adds quote-escaping for attribute
+ *  contexts, since the top-level pass does NOT cover quotes. */
+function kbRosterParse_(text) {
+  var legend = {}, badges = [], depts = [], warnings = [];
+  var cur = null;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;              // blank / comment
+    var m = line.match(/^(legend|badge|dept|team)\s*\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var key = m[1].toLowerCase(), val = m[2].trim();
+    if (key === 'legend') {
+      val.split(';').forEach(function (pair) {
+        var kv = pair.split('=');
+        if (kv.length >= 2 && kv[0].trim()) legend[kv[0].trim()] = kv.slice(1).join('=').trim();
+      });
+      return;
+    }
+    if (key === 'badge') {
+      var bi = val.indexOf(':');
+      if (bi < 0) { warnings.push(line); return; }
+      badges.push({
+        label: val.slice(0, bi).trim(),
+        people: val.slice(bi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+      });
+      return;
+    }
+    if (key === 'dept') {
+      // "PAK — Mary" / "PAK - Mary" / "PAK" (no owner)
+      var dm = val.split(/\s+[—–-]\s+/);
+      cur = { name: dm[0].trim(), owner: (dm[1] || '').trim(), teams: [] };
+      depts.push(cur);
+      return;
+    }
+    // team
+    var ti = val.indexOf(':');
+    if (ti < 0) { warnings.push(line); return; }
+    var head = val.slice(0, ti).trim();
+    var sub = '';
+    var si = head.indexOf('>');
+    if (si >= 0) { sub = head.slice(si + 1).trim(); head = head.slice(0, si).trim(); }
+    var people = val.slice(ti + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+      .map(function (tok) {
+        var flags = [];
+        // Strip trailing *flags FIRST so a name containing "*" is not mangled.
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        var tags = [];
+        var tm = tok.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+        if (tm) {
+          tok = tm[1].trim();
+          // The input is kbMd_-ESCAPED, so an ampersand separator arrives as
+          // `&amp;` — splitting on a bare `&` turns "C & ATP" into "C" and
+          // "amp; ATP". Accept both forms (and a comma).
+          tags = tm[2].split(/\s*(?:&amp;|&|,)\s*/).map(function (t) { return t.trim(); }).filter(Boolean);
+        }
+        return { name: tok, tags: tags, lead: flags.indexOf('lead') >= 0, isNew: flags.indexOf('new') >= 0 };
+      });
+    if (!cur) { cur = { name: '', owner: '', teams: [] }; depts.push(cur); }
+    cur.teams.push({ name: head, sub: sub, people: people });
+  });
+  // Badges are an attribute of a PERSON, not a place — they travel with them
+  // across every team they appear on, which a separate list cannot do.
+  var badgeByPerson = {};
+  badges.forEach(function (b) {
+    b.people.forEach(function (n) {
+      var k = n.toLowerCase();
+      (badgeByPerson[k] = badgeByPerson[k] || []).push(b.label);
+    });
+  });
+  depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      t.people.forEach(function (p) { p.badges = badgeByPerson[p.name.toLowerCase()] || []; });
+    });
+  });
+  return { legend: legend, badges: badges, depts: depts, warnings: warnings };
+}
+
+/** Renders the parsed roster. `v` values arrive kbMd_-escaped (& < >), so the
+ *  ONLY extra escaping needed is for quotes in attribute contexts — the same
+ *  gap kbMd_'s link/image rules guard (the top-level pass doesn't cover them). */
+function kbRosterAttr_(v) {
+  return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function kbRosterHtml_(text) {
+  var data = kbRosterParse_(text);
+  var legend = data.legend;
+  var tip = function (k) { return legend[k] || ''; };
+  var total = 0;
+
+  var tagChip = function (t) {
+    var t2 = tip(t);
+    return '<span class="kb-ros-tag"' + (t2 ? ' tabindex="0" data-tip="' + kbRosterAttr_(t2) + '" aria-label="' +
+      kbRosterAttr_(t + ': ' + t2) + '"' : '') + '>' + t + '</span>';
+  };
+
+  var personHtml = function (p) {
+    total++;
+    var cls = 'kb-ros-person' + (p.lead ? ' is-lead' : '') + (p.isNew ? ' is-new' : '');
+    // The searchable haystack rides an attribute so filtering never has to
+    // re-read (and re-parse) the rendered DOM text.
+    var hay = [p.name].concat(p.tags, p.badges || []).join(' ').toLowerCase();
+    var marks = '';
+    if (p.lead) marks += '<span class="kb-ros-flag is-lead"' + (tip('lead') ? ' title="' + kbRosterAttr_(tip('lead')) + '"' : '') + '>lead</span>';
+    if (p.isNew) marks += '<span class="kb-ros-flag is-new"' + (tip('new') ? ' title="' + kbRosterAttr_(tip('new')) + '"' : '') + '>new</span>';
+    (p.badges || []).forEach(function (b) {
+      marks += '<span class="kb-ros-flag is-badge">' + b + '</span>';
+    });
+    return '<span class="' + cls + '" data-hay="' + kbRosterAttr_(hay) + '">' +
+      '<button type="button" class="kb-ros-name" data-copy="' + kbRosterAttr_(p.name) + '" ' +
+        'title="Copy name" onclick="kbRosterCopy_(this)">' + p.name + '</button>' +
+      p.tags.map(tagChip).join('') + marks + '</span>';
+  };
+
+  var body = data.depts.map(function (d) {
+    var teams = d.teams.map(function (t) {
+      var label = t.name + (t.sub ? ' <span class="kb-ros-sub">' + t.sub + '</span>' : '');
+      return '<div class="kb-ros-team" data-team="' + kbRosterAttr_((t.name + ' ' + t.sub).toLowerCase()) + '">' +
+        '<div class="kb-ros-team-name">' + label + '</div>' +
+        '<div class="kb-ros-people">' + t.people.map(personHtml).join('') + '</div></div>';
+    }).join('');
+    return '<section class="kb-ros-dept" data-dept="' + kbRosterAttr_(d.name.toLowerCase()) + '">' +
+      '<h3 class="kb-ros-dept-name">' + d.name +
+        (d.owner ? ' <span class="kb-ros-owner">' + d.owner + '</span>' : '') + '</h3>' +
+      '<div class="kb-ros-teams">' + teams + '</div></section>';
+  }).join('');
+
+  var legendHtml = Object.keys(legend).length
+    ? '<div class="kb-ros-legend">' + Object.keys(legend).map(function (k) {
+        return '<span class="kb-ros-legend-item"><b>' + k + '</b> ' + legend[k] + '</span>';
+      }).join('') + '</div>'
+    : '';
+
+  return '<div class="kb-roster" data-roster="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search" placeholder="Filter by team, person or tag…" ' +
+        'aria-label="Filter the roster by team, person or tag" oninput="kbRosterFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + total + ' people</span>' +
+    '</div>' + legendHtml + body +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) in this roster block were not understood and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+/** Filters in place — hiding non-matching people, then teams and departments
+ *  left with nothing. No re-render, so the article around it is untouched. */
+function kbRosterFilter_(input) {
+  var root = input && input.closest ? input.closest('.kb-roster') : null;
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  var shown = 0;
+  var depts = root.querySelectorAll('.kb-ros-dept');
+  for (var d = 0; d < depts.length; d++) {
+    var deptName = depts[d].getAttribute('data-dept') || '';
+    var teams = depts[d].querySelectorAll('.kb-ros-team');
+    var deptHit = 0;
+    for (var t = 0; t < teams.length; t++) {
+      var teamName = teams[t].getAttribute('data-team') || '';
+      // A query matching the TEAM (or its department) keeps the whole team —
+      // "who is on PT Eval" is as common a question as "where is Sergio".
+      var teamMatch = !q || teamName.indexOf(q) >= 0 || deptName.indexOf(q) >= 0;
+      var people = teams[t].querySelectorAll('.kb-ros-person');
+      var teamHit = 0;
+      for (var i = 0; i < people.length; i++) {
+        var hit = teamMatch || (people[i].getAttribute('data-hay') || '').indexOf(q) >= 0;
+        people[i].style.display = hit ? '' : 'none';
+        if (hit) teamHit++;
+      }
+      teams[t].style.display = teamHit ? '' : 'none';
+      deptHit += teamHit;
+      shown += teamHit;
+    }
+    depts[d].style.display = deptHit ? '' : 'none';
+  }
+  var count = root.querySelector('.kb-ros-count');
+  if (count) count.textContent = q ? (shown + ' matching') : (shown + ' people');
+}
+
+/** Click a name to copy it — the rep is usually about to type it into the
+ *  phone system or the CRM. Reuses the shared copy + flash helpers. */
+function kbRosterCopy_(btn) {
+  var name = btn && btn.getAttribute ? btn.getAttribute('data-copy') : '';
+  if (!name) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(name);
+    else if (typeof cnFallbackCopy_ === 'function') cnFallbackCopy_(name);
+  } catch (e) {}
+  if (typeof flashCopied === 'function') flashCopied(btn);
+  else showToast('Copied ' + name, 'toast-success');
+}
+
 function kbMd_(src) {
   src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   var blocks = [];
@@ -311,7 +583,12 @@ function kbMd_(src) {
     // first), so both paths are inert.
     var info = infoLine.trim();
     var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
+    // A `roster` fence renders the interactive directory (operator 2026-08-11);
+    // same safety argument as snippet — the content is already escaped, so the
+    // app draws interactive markup around inert text.
+    var rm = info.match(/^roster\b/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
+    else if (rm) blocks.push({ roster: true, body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -369,7 +646,7 @@ function kbMd_(src) {
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
-    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
