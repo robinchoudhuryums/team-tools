@@ -3639,7 +3639,15 @@ this section before touching the relevant area.
   **Three things that are easy to get wrong:** (a) the fence content arrives
   HTML-ESCAPED, so an ampersand separator is `&amp;` — splitting tags on a bare
   `&` turns "C & ATP" into the tag "amp; ATP" (found by running it, invisible
-  in review); (b) the top-level escape does NOT cover quotes and the renderer
+  in review). **THE SAME TRAP BIT AGAIN AND SHIPPED**: `>` arrives as `&gt;`,
+  so `team| A > B` parsed as ONE team literally named `A &gt; B` with an EMPTY
+  sub-team, and it looked correct in every screenshot because the entity
+  DISPLAYS as `>`. The pins missed it because they fed the parser RAW text —
+  not the production contract. Every roster pin now escapes its input through
+  `rosEsc()` first, every separator matches BOTH forms (`&gt;`/`>`,
+  `-&gt;`/`->`, `&amp;`/`&`), and stage lookups normalise through
+  `kbRosterKey_`. **The parser never unescapes** — decoding to a raw `<`/`>`
+  and later emitting it would undo the very boundary the escape provides; (b) the top-level escape does NOT cover quotes and the renderer
   puts names into attributes, so attribute contexts need their own
   quote-escaping — the same gap `kbMd_`'s link/image rules guard; (c) a badge
   is an attribute of a PERSON, so it must follow them onto every team they
@@ -3707,6 +3715,37 @@ this section before touching the relevant area.
   the one statement of what the view shows exactly when a wide row made it most
   needed; and two department boxes at their wide min-width overflowed a 400px
   viewport before anything was expanded.
+  **Flow (5th view) + Expand (operator 2026-08-11, from the first deployed
+  screenshot).** A roster is org-SHAPED; an order moves through STAGES, and
+  those are different questions — so a `flow| [Label:] A -> B -> C` line
+  records the sequence and a **Flow** view renders it as numbered, wrapping
+  stages. A stage naming a real team links to it (people count, lead,
+  expandable inline); anything else renders as a plain step, so a flow may
+  include stages that are not teams. **The tab appears ONLY when a `flow|`
+  line exists, and the sequence is NEVER inferred from the sheet's layout** —
+  the order work actually travels in is operational knowledge, and a guessed
+  process shown to reps as fact is worse than no diagram; the empty state says
+  so and prints the exact line to add. **Expand** opens the block nearly
+  full-viewport via `ensureOverlay` (INV-83), because the Reference reader is a
+  height-capped panel in a two-column shell and an interactive block ends up in
+  a small window with nested scrollbars; the overlay hosts a FRESH instance
+  from the same source, so closing it leaves the inline copy untouched.
+  **A THIRD instance of the same count bug appeared here** (flow mode has no
+  `.kb-ros-dept` walk, so the row-counting filter reported 0), so the bypass is
+  now the RULE "not the dept/team grid" rather than a list of view names.
+- **A fenced block is ATOMIC in search-chunk truncation (operator 2026-08-11).**
+  `kbChunkTruncate_` cut at a paragraph boundary and then "repaired" an odd
+  fence count by appending a closing fence — turning a HALF block into a
+  syntactically VALID one. Measured on the live deployment: a truncated
+  `roster` fence rendered as a confident interactive directory holding **10 of
+  14 teams**, reporting **"40 people" for a 46-person roster**, with a mangled
+  partial line as its only hint. A truncated `snippet` is worse still — it
+  hands a rep a canned response to copy that stops mid-sentence. Prose can be
+  cut with a "continues in the article" note; a fenced block cannot. The cut
+  now extends to keep the whole fence when it fits `KB_CHUNK_FENCE_OVERAGE`
+  (4×) and otherwise stops BEFORE the fence, never inside it. The odd-fence
+  repair is retained for the DISTINCT case of a fence the SOURCE never closes —
+  truncation did not break that, the article did.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4671,7 +4710,7 @@ manually for a fresh deploy or environment:
   spreadsheet now produces the INTERACTIVE block rather than static headings —
   reps get a filter box, tag tooltips and click-to-copy, and the whole thing
   works in the Ctrl/⌘+K drawer, which an embedded sheet never did. The block
-  also carries Teams / Capabilities / Chart / Coverage views — note that
+  also carries Teams / Capabilities / Chart / Flow / Coverage views — note that
   **Coverage reports facts, not a staffing verdict**, so a capability held by
   one person is flagged as a single point of contact and the judgement is left
   to you, and **Chart shows team structure, not reporting lines**, because the
@@ -6115,7 +6154,11 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). Roster Tier 1 added five
+roster-block emitter — 8 mutations bite-checked). The first deployed-screenshot round added four
+more → **480** (fence-atomic chunk truncation with constants DERIVED from
+Code.js; separators surviving kbMd_ escaping — the pin that caught a SHIPPED
+sub-team defect; Flow-only-when-recorded; the Expand overlay — 11 mutations
+bite-checked). Roster Tier 1 added five
 more → **472** (person index folds a multi-team person; three views from one
 source + coverage-states-no-verdict; exact tag matching; unique person ids
 with a canonical first; tablist ARIA + distinct-people count — 7 mutations

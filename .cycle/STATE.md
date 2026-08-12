@@ -159,6 +159,21 @@ Phase: idle (post-reflect) + operator-requested feature work:
   the notes scrolled away INSIDE the scroller, and two dept boxes overflowed
   400px collapsed. Pure 476 (4 pins, 10 bite-checks incl. two re-written for
   biting too weakly), DOM 69.
+- FIRST DEPLOYED-SCREENSHOT round (operator, 2026-08-11, post-#163). Three
+  things: (1) **a SHIPPED defect** — `kbChunkTruncate_` cut inside the roster
+  fence and "repaired" it into a valid-but-half block, so the live search
+  result showed 10 of 14 teams and "40 people" for a 46-person roster; fences
+  are now atomic. (2) **A SECOND shipped defect the pins could not see** —
+  `>` arrives from kbMd_ as `&gt;`, so `team| A > B` parsed as one team named
+  `A &gt; B` with an empty sub; it LOOKED right because the entity displays as
+  `>`, and the pins fed RAW text instead of the production contract. All roster
+  pins now escape input via `rosEsc()`; separators match both forms; lookups
+  normalise via `kbRosterKey_`. (3) Operator asks: Expand (ensureOverlay,
+  near-full-viewport — the Reference reader is height-capped) and a **Flow**
+  view for the order process, which appears ONLY when a `flow|` line exists and
+  is NEVER inferred from the sheet layout. Pure 480, DOM 69, 11 bite-checks.
+  **OPEN QUESTION FOR THE OPERATOR: the actual order sequence.** The sample
+  article ships a clearly-labelled DRAFT flow; the real one is theirs to state.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.
