@@ -194,6 +194,11 @@
      `margin-top: auto` on both, flex splits the free space between them and
      leaves a ~200px hole in the middle of the sidebar. */
   .sb-theme + .sb-theme { margin-top: 0; border-top: none; padding-top: 0; }
+  /* MEASURED: inserting the Palette row BETWEEN the two .sb-theme rows broke
+     that adjacency, so Alerts got `margin-top: auto` back and flex pushed it
+     to the bottom with a ~200px hole above it — the exact defect the rule
+     above exists to prevent. Any new settings row owes this pairing. */
+  .sb-theme + .sb-pal, .sb-pal + .sb-theme { margin-top: 0; border-top: none; padding-top: 0; }
   .sb-theme-label {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
@@ -223,6 +228,36 @@
   body[data-mode="dark"] .sb-theme-btn[aria-pressed="true"] {
     box-shadow: 0 1px 2px rgba(0,0,0,.4);
   }
+
+  /* Palette picker (operator 2026-08-12) — each swatch previews the palette's
+     PAPER (the disc) and its ACCENT (the inset ring), because two of the four
+     differ from each other only in the paper. Colours come from the
+     --pal-*-paper/--pal-*-accent tokens, which the token partial declares
+     beside the palette blocks and a tripwire pins equal to them. */
+  /* MEASURED: inside a .sb-theme row the controls column is only 60px at the
+     168px default sidebar, so four 20px swatches wrapped to a 2x2. The palette
+     row therefore stacks its label ABOVE the swatches and takes the full
+     width; it still wraps (to one column) in the 56px collapsed sidebar. */
+  .sb-pal { display: flex; flex-direction: column; gap: 7px; padding: 0 6px 12px; }
+  .sb-pal-toggle { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .sb-pal-btn {
+    appearance: none; border: none; background: transparent; padding: 3px;
+    border-radius: var(--radius-pill); cursor: pointer; line-height: 0;
+    transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+  }
+  .sb-pal-btn:hover { background: var(--paper-card); }
+  .sb-pal-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); background: var(--paper-card); }
+  /* Split disc — paper on one half, accent on the other. MEASURED: an accent
+     RING over a paper disc made Console and Sand (which share the green
+     accent and differ only in the paper) indistinguishable at 14px. */
+  .sb-pal-dot {
+    display: block; width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--line-2);
+  }
+  .sb-pal-btn[data-palette-target="console"] .sb-pal-dot { background: linear-gradient(135deg, var(--pal-console-paper) 0 50%, var(--pal-console-accent) 50% 100%); }
+  .sb-pal-btn[data-palette-target="sand"]    .sb-pal-dot { background: linear-gradient(135deg, var(--pal-sand-paper)    0 50%, var(--pal-sand-accent)    50% 100%); }
+  .sb-pal-btn[data-palette-target="plum"]    .sb-pal-dot { background: linear-gradient(135deg, var(--pal-plum-paper)    0 50%, var(--pal-plum-accent)    50% 100%); }
+  .sb-pal-btn[data-palette-target="teal"]    .sb-pal-dot { background: linear-gradient(135deg, var(--pal-teal-paper)    0 50%, var(--pal-teal-accent)    50% 100%); }
 
   /* User card — paper-2 panel with accent-soft initials disc */
   .sb-user {

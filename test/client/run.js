@@ -158,42 +158,61 @@ test('every var(--token) resolves to a defined custom property', () => {
 //     DISTINCT tokens — training + review both rendered the same green until
 //     batch I (flag-training was var(--accent), the alias of --good).
 console.log('\nclient — contrast + flag-color tripwires (a11y batch G/I)');
-test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
+// ── Shared token-block parser (palette-aware since 2026-08-12) ─────────────
+// Colour now has TWO axes (mode x palette), so a test that assumes "two hex
+// declarations, light then dark" is wrong by construction. Parse the token
+// file into BLOCKS and derive the list — INV-179: a new palette must be swept
+// in automatically, not remembered.
+function tokenBlocks() {
   const toks = fs.readFileSync(
     path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
-  function hexes(name) {
-    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
-    const out = []; let m;
-    while ((m = re.exec(toks))) out.push(m[1]);
-    return out;
+  const vals = (body) => Object.fromEntries(
+    [...body.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)].map((m) => [m[1], m[2]]));
+  const slice = (startSel, stopAt) => {
+    const i = toks.indexOf(startSel);
+    assert.ok(i >= 0, 'block not found: ' + startSel);
+    return toks.slice(i, toks.indexOf(stopAt, i));
+  };
+  const blocks = [
+    { palette: 'console', mode: 'light', body: slice('  :root {', '  @supports (color: color-mix') },
+    { palette: 'console', mode: 'dark',
+      body: slice('  :root[data-mode="dark"],', '  @supports (color: color-mix(in oklch, red, blue)) {\n    :root[data-mode="dark"]') },
+  ];
+  const re = /:root\[data-palette="([a-z]+)"\](\[data-mode="dark"\])?[^{]*\{([\s\S]*?)\n  \}/g;
+  let m;
+  while ((m = re.exec(toks))) {
+    blocks.push({ palette: m[1], mode: m[2] ? 'dark' : 'light', body: m[3] });
   }
-  function lum(hex) {
-    const c = [1, 3, 5].map((i) => {
-      let v = parseInt(hex.slice(i, i + 2), 16) / 255;
-      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    });
-    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-  }
-  function ratio(a, b) {
-    const la = lum(a), lb = lum(b);
-    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-  }
-  const muted2 = hexes('muted-2');
-  // Hex declarations appear light-block first, dark-block second (the
-  // @supports color-mix overrides don't redeclare these greys as hex).
-  assert.strictEqual(muted2.length, 2, 'expected exactly 2 --muted-2 hex declarations (light, dark)');
-  const surfaces = ['paper', 'paper-2', 'paper-card'];
-  [0, 1].forEach((mode) => {
-    surfaces.forEach((s) => {
-      const surf = hexes(s);
-      assert.strictEqual(surf.length, 2, 'expected 2 --' + s + ' hex declarations');
-      const r = ratio(muted2[mode], surf[mode]);
-      assert.ok(r >= 4.5,
-        (mode ? 'dark' : 'light') + ' --muted-2 ' + muted2[mode] + ' on --' + s + ' ' +
-        surf[mode] + ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
+  blocks.forEach((b) => { b.vals = vals(b.body); b.id = b.palette + '/' + b.mode; });
+  return { toks, blocks };
+}
+function wcagLum(hex) {
+  const c = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+const wcagRatio = (a, b) => {
+  const la = wcagLum(a), lb = wcagLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+
+test('--muted-2 meets AA (4.5:1) on every surface, in EVERY palette and mode', () => {
+  const { blocks } = tokenBlocks();
+  assert.ok(blocks.length >= 8, 'expected the two Console blocks plus each palette x mode');
+  blocks.forEach((b) => {
+    ['paper', 'paper-2', 'paper-card'].forEach((surf) => {
+      const m2 = b.vals['muted-2'], sv = b.vals[surf];
+      assert.ok(m2 && sv, b.id + ' must declare --muted-2 and --' + surf +
+        ' (a palette block declares the FULL neutral set, so it is verifiable on its own)');
+      const r = wcagRatio(m2, sv);
+      assert.ok(r >= 4.5, b.id + ' --muted-2 ' + m2 + ' on --' + surf + ' ' + sv +
+        ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
     });
   });
 });
+
 // V-1 (cycle 12) — the four `-deep` semantic aliases must interpolate in
 // OKLAB, not OKLCH. `color-mix(in oklch, …)` interpolates hue POLARLY: mixing
 // a warm token with the near-neutral `--ink` (a low-chroma blue-ish grey, hue
@@ -259,13 +278,20 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
   // Each mode block mixes with its own partner + weight (light: ink 45%;
   // dark: paper-card 25%) — read them from the source so a retune can't
   // silently invalidate the pin.
+  // Palette-aware (2026-08-12): the -deep tokens are color-mixed toward
+  // --ink / --paper-card, and a PALETTE changes both — so the drift must be
+  // re-checked for every palette, not just Console. This is the reason a
+  // palette may not touch the semantic sources: only the PARTNER varies here.
+  const { blocks: palBlocks } = tokenBlocks();
   [['ink', 0], ['paper-card', 1]].forEach(([partnerTok, mode]) => {
-    const label = mode ? 'dark' : 'light';
+    const modeName = mode ? 'dark' : 'light';
     const declared = new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
       partnerTok + '\\) (\\d+)%\\)').exec(toks);
-    assert.ok(declared, label + ' block mixes --good with --' + partnerTok);
+    assert.ok(declared, modeName + ' block mixes --good with --' + partnerTok);
     const w = Number(declared[1]) / 100;
-    const partner = toOklab(hexes(partnerTok)[mode]);
+    palBlocks.filter((b) => b.mode === modeName).forEach((blk) => {
+    const label = modeName + ' [' + blk.palette + ']';
+    const partner = toOklab(blk.vals[partnerTok]);
     DEEP.forEach(([, srcTok]) => {
       const src = toOklab(hexes(srcTok)[mode]);
       const mix = src.map((v, i) => v * (1 - w) + partner[i] * w);
@@ -278,6 +304,7 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
         label + ' --' + srcTok + ' hue ' + hue(src).toFixed(0) + '° drifts ' +
         drift.toFixed(0) + '° to ' + hue(mix).toFixed(0) + '° in the -deep mix (max ' +
         MAX_DRIFT_DEG + '°) — a semantic colour must not change family');
+    });
     });
   });
 });
@@ -8520,6 +8547,157 @@ test('a reminder toast waits for its reader; routine toasts still self-dismiss',
   assert.ok(/\.toast-x \{/.test(css), 'the dismiss control is styled, not a bare UA button');
 });
 
+
+// ---------------------------------------------------------------------------
+// Colour palettes (operator 2026-08-12). Four rules hold the feature together;
+// each is a thing that would be invisible in review and obvious to a user.
+console.log('\ncolour palettes — contract, construction, and the picker');
+
+test('a palette redefines the NEUTRALS and the ACCENT — never a semantic colour', () => {
+  const { blocks } = tokenBlocks();
+  // Green means resolved, amber at risk, red overdue. A theme that restates a
+  // verdict in another hue makes every status chip mean something different
+  // per user — so the semantic set is off-limits to a palette by contract.
+  const FORBIDDEN = ['good', 'good-soft', 'warn', 'warn-soft', 'destructive', 'destructive-soft',
+    'info', 'info-soft', 'success-deep', 'warning-deep', 'danger-deep', 'info-deep',
+    'intake-ppd', 'intake-pmd', 'intake-pap'];
+  const pal = blocks.filter((b) => b.palette !== 'console');
+  assert.ok(pal.length >= 6, 'at least three alternative palettes x two modes');
+  pal.forEach((b) => {
+    FORBIDDEN.forEach((tok) => {
+      assert.ok(!new RegExp('--' + tok + ':').test(b.body),
+        b.id + ' redefines the semantic token --' + tok + ' — a palette may not restate a verdict');
+    });
+    // And it must declare the full neutral set, so the block is verifiable on
+    // its own rather than depending on what happens to cascade into it.
+    ['paper', 'paper-2', 'paper-3', 'paper-card', 'ink', 'muted', 'muted-2', 'muted-3',
+     'line', 'line-2', 'accent', 'accent-2'].forEach((tok) => {
+      assert.ok(b.vals[tok], b.id + ' is missing --' + tok);
+    });
+  });
+});
+
+test('every palette colour is a hue rotation at CONSTANT luminance', () => {
+  const { blocks } = tokenBlocks();
+  // This is the CONSTRUCTION that makes the AA test above pass for a palette
+  // nobody re-measured by hand: each colour has the same WCAG relative
+  // luminance as its Console counterpart, so every contrast ratio in the app
+  // is preserved exactly. If someone hand-edits a hex, this catches it even
+  // when the edit happens to stay above 4.5:1.
+  const base = Object.fromEntries(blocks.filter((b) => b.palette === 'console').map((b) => [b.mode, b.vals]));
+  blocks.filter((b) => b.palette !== 'console').forEach((b) => {
+    Object.keys(b.vals).forEach((tok) => {
+      const ref = base[b.mode][tok];
+      if (!ref) return;                       // a token Console does not declare as hex
+      const d = Math.abs(wcagLum(b.vals[tok]) - wcagLum(ref));
+      assert.ok(d < 0.004, b.id + ' --' + tok + ' ' + b.vals[tok] + ' has luminance ' +
+        wcagLum(b.vals[tok]).toFixed(4) + ' vs Console ' + ref + ' ' + wcagLum(ref).toFixed(4) +
+        ' — a palette re-tints at constant luminance so contrast is preserved by construction');
+    });
+    assert.strictEqual(b.vals['paper-card'], base[b.mode]['paper-card'] === '#ffffff' && b.mode === 'light'
+      ? '#ffffff' : b.vals['paper-card'],
+      'light --paper-card must stay #ffffff — white is the only colour at luminance 1.0');
+  });
+});
+
+test('the picker swatches are pinned to the palettes they claim to preview', () => {
+  const { toks, blocks } = tokenBlocks();
+  // The first hand-typed version of the swatch block had ALREADY drifted from
+  // the generated palette hexes — a picker that previews the wrong colour is
+  // worse than no preview.
+  const darkAt = toks.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n    --pal-');
+  assert.ok(darkAt > 0, 'the dark swatch block exists (a swatch must preview what the rep gets)');
+  const sw = (mode) => {
+    const scope = mode === 'dark' ? toks.slice(darkAt)
+      : toks.slice(toks.indexOf('--pal-console-paper'), darkAt);
+    return Object.fromEntries([...scope.matchAll(/--pal-([a-z]+)-(paper|accent):\s*(#[0-9a-f]{6})/g)]
+      .map((m) => [m[1] + '-' + m[2], m[3]]));
+  };
+  ['light', 'dark'].forEach((mode) => {
+    const swatches = sw(mode);
+    blocks.filter((b) => b.mode === mode).forEach((b) => {
+      ['paper', 'accent'].forEach((k) => {
+        assert.strictEqual(swatches[b.palette + '-' + k], b.vals[k],
+          'swatch --pal-' + b.palette + '-' + k + ' (' + mode + ') must equal the palette block');
+      });
+    });
+  });
+});
+
+test('the palette key list is the same in all three places it appears', () => {
+  const { toks } = tokenBlocks();
+  const core = fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const idx = fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8');
+  const inCss = [...new Set([...toks.matchAll(/:root\[data-palette="([a-z]+)"\]/g)].map((m) => m[1]))].sort();
+  const reg = core.slice(core.indexOf('const PALETTES = ['), core.indexOf('];', core.indexOf('const PALETTES = [')));
+  const inReg = [...reg.matchAll(/key: '([a-z]+)'/g)].map((m) => m[1]);
+  const inBoot = JSON.parse((idx.match(/var PALETTE_KEYS = (\[[^\]]+\])/) || [])[1].replace(/'/g, '"'));
+  // Console is the DEFAULT: it has no stylesheet block by design, so it must
+  // be first in both lists and absent from the CSS.
+  assert.strictEqual(inReg[0], 'console', 'Console leads the picker');
+  assert.strictEqual(inBoot[0], 'console', 'and the boot list');
+  assert.ok(inCss.indexOf('console') < 0, 'Console declares no block — an unknown value degrades to it');
+  assert.deepStrictEqual(inReg.slice(1).sort().join(','), inCss.join(','),
+    'the picker offers exactly the palettes the stylesheet defines');
+  assert.deepStrictEqual(inBoot.slice().sort().join(','), inReg.slice().sort().join(','),
+    'the boot allowlist and the picker agree');
+  // The boot gate must reject an unknown stored value rather than reflect it.
+  assert.ok(/PALETTE_KEYS\.indexOf\(storedPal\) > 0 \? storedPal : 'console'/.test(idx),
+    'a corrupt stored palette degrades to Console');
+});
+
+test('the picker is real buttons, in both shell copies, with its own settings row', () => {
+  const core = fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const css = fs.readFileSync(path.resolve(__dirname, '../../web-app/styles.html'), 'utf8');
+  const strip = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const c = strip(core);
+  // INV-173: a colour swatch is a control, so it is a <button> with a NAME —
+  // a colour alone does not say which palette it is.
+  assert.ok(/<button type="button" class="sb-pal-btn" data-palette-target="\$\{p\.key\}"[\s\S]*?aria-label="\$\{esc\(p\.label\)\} palette"/.test(c),
+    'each swatch is a named button');
+  // INV-191: the reflector keys on the attribute that MEANS palette swatch.
+  const idx = strip(fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8'));
+  assert.ok(/querySelectorAll\('\[data-palette-target\]'\)/.test(idx),
+    'the reflector selects by data-palette-target, not by a class another control may borrow');
+  // Two rendered copies (sidebar + mobile header), so no ids — and both must
+  // be reflected on render.
+  assert.strictEqual((c.match(/\$\{paletteToggle\}/g) || []).length, 2, 'sidebar AND mobile header render it');
+  assert.ok(/syncPaletteToggleState\(\);/.test(c), 'renderShell reflects the stored palette on every render');
+  assert.ok(!/id="sb-pal/.test(c), 'no id — two copies cannot share one');
+  // MEASURED: the palette row stacks its label so four swatches fit one line,
+  // and it must keep the settings rows adjacent or flex pushes Alerts to the
+  // bottom of the sidebar with a ~200px hole above it.
+  assert.ok(/\.sb-theme \+ \.sb-pal, \.sb-pal \+ \.sb-theme \{ margin-top: 0;/.test(css),
+    'the palette row keeps the settings rows adjacent (margin-top: auto would strand Alerts)');
+});
+
+test('the DOM harness stubs every global index.html defines (derived)', () => {
+  // index.html's <head> script is not a partial, so the jsdom harness stubs
+  // its globals by hand — and a new one (setTimeClockPalette) silently broke
+  // 19 DOM tests the moment renderShell called it. Derive the obligation
+  // rather than remembering it (INV-179).
+  const idx = fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8');
+  const boot = fs.readFileSync(path.resolve(__dirname, 'dom/boot.js'), 'utf8');
+  const defined = [...new Set([...idx.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=\s*function/g)].map((m) => m[1]))];
+  assert.ok(defined.length >= 4, 'found the boot-script globals');
+  defined.forEach((g) => assert.ok(new RegExp('window\\.' + g + '\\s*=').test(boot),
+    'test/client/dom/boot.js does not stub window.' + g + ' — the shell calls it by bare name'));
+});
+
+test('a palette block out-specifies the base dark block in BOTH directions', () => {
+  const { toks } = tokenBlocks();
+  // The trap this codebase has hit twice (V-2/V-3): :root[data-palette="x"]
+  // and :root[data-mode="dark"] are BOTH (0,2,0), so for a dark-mode user on a
+  // palette the winner would be decided by SOURCE ORDER. The :not() / paired-
+  // attribute forms make both (0,3,0), which beats the base block regardless
+  // of where the palette block sits in the file.
+  const light = toks.match(/:root\[data-palette="[a-z]+"\]:not\(\[data-mode="dark"\]\)/g) || [];
+  const dark = toks.match(/:root\[data-palette="[a-z]+"\]\[data-mode="dark"\]/g) || [];
+  assert.ok(light.length >= 3 && light.length === dark.length,
+    'each palette carries a :not([data-mode="dark"]) light block and a paired-attribute dark block');
+  assert.ok(!/:root\[data-palette="[a-z]+"\]\s*[,{]/.test(toks),
+    'a bare :root[data-palette=x] block would tie with the base dark block on specificity');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

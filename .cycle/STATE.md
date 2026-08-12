@@ -252,6 +252,28 @@ Phase: idle (post-reflect) + operator-requested feature work:
   39-scenario matrix re-shot 0 missing / 0 overflow. ONE pin was rewritten for
   biting too weakly (it asserted the star class existed SOMEWHERE rather than
   that the decor still emits it).
+- COLOUR PALETTES (operator 2026-08-12, "so users can choose a different color
+  scheme"): `data-palette` — a SECOND attribute overlay orthogonal to
+  light/dark, four options (Console default / Sand / Plum / Teal), picked from
+  a swatch row in the sidebar + mobile header, `umsTheme` (key count back to
+  15), no server state. TWO rules make it safe and both are pinned: a palette
+  may redefine ONLY neutrals + accent (never a semantic colour — green still
+  means resolved in all four), and every colour is a hue rotation at CONSTANT
+  WCAG luminance, so every measured contrast ratio is preserved BY
+  CONSTRUCTION. Specificity is load-bearing (a bare :root[data-palette] ties
+  with the base dark block at (0,2,0) — the V-2/V-3 trap); the :not()/paired
+  forms are (0,3,0), verified in Chromium. THREE defects found by MEASURING,
+  none visible in review: the generator reused LIGHT-mode chroma so every
+  palette's dark card collapsed to the same neutral grey; the accent-ring
+  swatch made Console and Sand indistinguishable at 14px (now a split disc);
+  and inserting the Palette row between the two .sb-theme rows broke their
+  adjacency rule, so flex pushed Alerts to the sidebar bottom with a ~200px
+  hole — the exact defect that rule's comment describes. The AA tripwire was
+  REWRITTEN from "two hex declarations, light then dark" to a derived block
+  scan, and the V-1 hue-drift pin now runs per palette. Pure 500→507, DOM 71,
+  13 bite-checks, full 39-matrix 0/0. A new harness coupling was pinned: the
+  jsdom boot stubs every window.* index.html defines (adding
+  setTimeClockPalette silently broke 19 DOM tests).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

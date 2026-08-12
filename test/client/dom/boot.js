@@ -234,8 +234,12 @@ function boot(opts) {
   });
   // Globals defined in index.html's <head> (not a partial, so not loaded here)
   // that renderShell / theme toggles call by bare name.
+  // (Pinned by run.js: this stub set must cover every window.* the index.html
+  // boot script defines — adding one there silently broke 19 DOM tests once.)
   window.setTimeClockMode = () => {};
   window.syncThemeToggleState = () => {};
+  window.setTimeClockPalette = () => {};
+  window.syncPaletteToggleState = () => {};
   // Deterministic timers — capture instead of firing on the real clock, so a
   // background poller/ambient interval can't perturb a test. api.flushTimers()
   // runs captured one-shots if a test needs a deferred render.
