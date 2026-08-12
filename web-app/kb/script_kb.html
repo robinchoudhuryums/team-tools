@@ -214,6 +214,13 @@
   .kb-ros-mode { appearance: none; border: none; background: none; cursor: pointer; font: inherit; font-size: .74rem; padding: 4px 10px; border-radius: var(--radius-pill); color: var(--muted); }
   .kb-ros-mode.on { background: var(--paper-card); color: var(--ink); font-weight: 700; box-shadow: var(--shadow-sm); }
   .kb-ros-n { font-family: var(--mono); color: var(--muted-3); font-weight: 500; }
+  .kb-ros-expand { flex: 0 0 auto; appearance: none; font: inherit; font-size: .74rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-ros-expand:hover { border-color: var(--border-strong); }
+  /* Expanded view: nearly the whole viewport, so the roster stops competing
+     with the height-capped reader panel it normally sits in. */
+  .kb-roster-modal { width: min(1400px, 96vw); max-width: 96vw; max-height: 92vh; overflow: auto; padding: 14px; }
+  .kb-roster-modal-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+  .kb-roster-modal .kb-roster { border: none; padding: 0; margin: 0; }
   /* The untagged group is usually the biggest; a single narrow column of 30+
      names is unreadable, so it spans and its rows flow into columns. */
   .kb-ros-team.is-wide { grid-column: 1 / -1; }
@@ -282,6 +289,54 @@
   .kb-ros-people { border: 1px solid var(--line); border-left: 2px solid var(--accent-soft); border-radius: 8px; background: var(--paper-2); padding: 7px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 132px; }
   .kb-ros-node.open > .kb-ros-children.is-leaves > li::after { display: none; }
   .kb-ros-chart.has-overflow .kb-ros-chart-hint { display: block; }
+  /* Flow view — stages left to right with connectors between them. Wraps
+     rather than forcing a scroll, because a process reads fine on two lines
+     but not at all when half of it is off-screen. */
+  .kb-ros-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 22px; }
+  .kb-ros-step { position: relative; }
+  .kb-ros-step + .kb-ros-step > .kb-ros-nodebox::before {
+    content: '→'; position: absolute; left: -18px; top: 12px;
+    color: var(--muted-3); font-size: .9rem;
+  }
+  .kb-ros-nodebox.is-step { background: var(--paper-2); border-style: dashed; }
+  .kb-ros-stepn { display: inline-block; min-width: 16px; margin-right: 4px; font-family: var(--mono); font-size: .64rem; color: var(--muted-2); }
+  .kb-ros-toggle.is-plain { cursor: default; }
+  .kb-ros-flow { margin-bottom: 16px; }
+  /* Process graph: phases are columns, the connector layer sits behind them
+     and is drawn by measuring the boxes CSS already placed. */
+  .kb-ros-procwrap { position: relative; overflow-x: auto; padding-bottom: 22px; }
+  .kb-ros-phases { display: flex; align-items: flex-start; gap: 40px; position: relative; z-index: 1; }
+  .kb-ros-phase { min-width: 176px; }
+  .kb-ros-phase-name { font-size: .74rem; font-family: var(--mono); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-2); margin: 0 0 8px; padding-bottom: 5px; border-bottom: 2px solid var(--accent-soft); }
+  .kb-ros-phase.is-external .kb-ros-phase-name { border-bottom-color: var(--line); font-style: italic; }
+  .kb-ros-fnodes { display: flex; flex-direction: column; gap: 14px; }
+  .kb-ros-fnode { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 7px 10px; }
+  .kb-ros-fnode.is-team { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-ros-fnode.is-decision { border-style: dashed; border-color: var(--warning-deep); background: var(--warn-soft); }
+  .kb-ros-fnode-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .kb-ros-flag.is-decision { background: var(--paper-2); color: var(--warning-deep); }
+  .kb-ros-flag.is-join { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-joinnote { display: block; margin-top: 4px; font-size: .68rem; color: var(--success-deep); }
+  .kb-ros-routes { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .kb-ros-routes li { font-size: .7rem; color: var(--muted); }
+  .kb-ros-routelbl { font-weight: 700; color: var(--ink); }
+  .kb-ros-edges { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .kb-ros-edge { fill: none; stroke: var(--muted-3); stroke-width: 1.5; }
+  .kb-ros-edge.is-back { stroke: var(--danger-deep); stroke-dasharray: 4 3; }
+  /* A skip passes something it does not visit — drawn distinctly so it cannot
+     be read as the step-by-step path. */
+  .kb-ros-edge.is-skip { stroke: var(--info-deep); stroke-dasharray: 5 3; }
+  .kb-ros-edges marker path { fill: var(--muted-3); }
+  @media (max-width: 700px) {
+    /* Connectors between columns are meaningless once the columns stack, so
+       the phases become an ordered list and the routes carry the structure. */
+    .kb-ros-phases { flex-direction: column; gap: 18px; }
+    .kb-ros-edges { display: none; }
+  }
+  .kb-ros-flowhint { font-family: var(--mono); font-size: .72rem; background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 8px 0; }
+  .kb-ros-empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: .84rem; }
+  .kb-ros-empty b { color: var(--ink); display: block; margin-bottom: 6px; }
+  .kb-ros-empty p { margin: 6px 0; }
   .kb-ros-chart-hint { display: none; font-size: .72rem; color: var(--muted-2); margin-bottom: 6px; }
   @media (max-width: 560px) {
     /* Two department boxes at their wide min-width overflow a 400px viewport
@@ -454,12 +509,12 @@ function kbSlug_(text) {
  *  never unescapes — the renderer only ever adds quote-escaping for attribute
  *  contexts, since the top-level pass does NOT cover quotes. */
 function kbRosterParse_(text) {
-  var legend = {}, badges = [], depts = [], warnings = [];
+  var legend = {}, badges = [], depts = [], flows = [], phases = [], steps = [], warnings = [];
   var cur = null;
   String(text == null ? '' : text).split('\n').forEach(function (raw) {
     var line = raw.trim();
     if (!line || line.charAt(0) === '#') return;              // blank / comment
-    var m = line.match(/^(legend|badge|dept|team)\s*\|\s*(.*)$/i);
+    var m = line.match(/^(legend|badge|dept|team|flow|phase|step)\s*\|\s*(.*)$/i);
     if (!m) { warnings.push(line); return; }
     var key = m[1].toLowerCase(), val = m[2].trim();
     if (key === 'legend') {
@@ -478,6 +533,51 @@ function kbRosterParse_(text) {
       });
       return;
     }
+    if (key === 'phase') {
+      // `phase| Name: Node, Node*decision, Node`. `phase| *: Sales` declares
+      // nodes that sit OUTSIDE the phases (an external feed).
+      var pi = val.indexOf(':');
+      if (pi < 0) { warnings.push(line); return; }
+      var pname = val.slice(0, pi).trim();
+      var nodes = val.slice(pi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+        .map(function (n) {
+          var dec = false, join = false;
+          // Markers are stripped in a loop so `Name*decision*join` works in
+          // either order, like the person flags.
+          for (var pass = 0; pass < 2; pass++) {
+            n = n.replace(/\*decision\s*$/i, function () { dec = true; return ''; })
+                 .replace(/\*join\s*$/i, function () { join = true; return ''; }).trim();
+          }
+          return { name: n, decision: dec, join: join };
+        });
+      phases.push({ name: pname === '*' ? '' : pname, external: pname === '*', nodes: nodes });
+      return;
+    }
+    if (key === 'step') {
+      // `step| From -> To: label`. The label may itself contain a colon, so
+      // split on the FIRST colon AFTER the arrow.
+      var am = val.match(/\s*-(?:&gt;|>)\s*/);
+      if (!am) { warnings.push(line); return; }
+      var from = val.slice(0, am.index).trim();
+      var afterArrow = val.slice(am.index + am[0].length);
+      var li = afterArrow.indexOf(':');
+      var to = (li >= 0 ? afterArrow.slice(0, li) : afterArrow).trim();
+      var slabel = li >= 0 ? afterArrow.slice(li + 1).trim() : '';
+      if (!from || !to) { warnings.push(line); return; }
+      steps.push({ from: from, to: to, label: slabel });
+      return;
+    }
+    if (key === 'flow') {
+      // `flow| [Label:] Stage -> Stage -> Stage`. The separator is `->` and
+      // NOT `>`, which already nests a sub-team under a team.
+      var lbl = '', rest = val;
+      var ci = val.indexOf(':');
+      if (ci >= 0 && !/-(?:&gt;|>)/.test(val.slice(0, ci))) { lbl = val.slice(0, ci).trim(); rest = val.slice(ci + 1); }
+      var stages = rest.split(/\s*-(?:&gt;|>)\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (stages.length >= 2) flows.push({ label: lbl, stages: stages });
+      else warnings.push(line);
+      return;
+    }
     if (key === 'dept') {
       // "PAK — Mary" / "PAK - Mary" / "PAK" (no owner)
       var dm = val.split(/\s+[—–-]\s+/);
@@ -490,8 +590,11 @@ function kbRosterParse_(text) {
     if (ti < 0) { warnings.push(line); return; }
     var head = val.slice(0, ti).trim();
     var sub = '';
-    var si = head.indexOf('>');
-    if (si >= 0) { sub = head.slice(si + 1).trim(); head = head.slice(0, si).trim(); }
+    // `>` arrives from kbMd_ as `&gt;` (same class as the `&amp;` tag
+    // separator). Match BOTH forms rather than unescaping: decoding to a raw
+    // `>` and later emitting it would undo the escape boundary.
+    var sm = head.match(/\s*(?:&gt;|>)\s*/);
+    if (sm) { sub = head.slice(sm.index + sm[0].length).trim(); head = head.slice(0, sm.index).trim(); }
     var people = val.slice(ti + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
       .map(function (tok) {
         var flags = [];
@@ -526,12 +629,30 @@ function kbRosterParse_(text) {
       t.people.forEach(function (p) { p.badges = badgeByPerson[p.name.toLowerCase()] || []; });
     });
   });
-  return { legend: legend, badges: badges, depts: depts, warnings: warnings };
+  // A linear `flow|` is sugar for a chain of steps, so both notations feed ONE
+  // renderer rather than two that could drift.
+  flows.forEach(function (f) {
+    if (!phases.length) {
+      var lin = f.stages.map(function (n) { return { name: n, decision: false }; });
+      phases.push({ name: f.label || '', external: false, nodes: lin, linear: true });
+    }
+    for (var i = 0; i + 1 < f.stages.length; i++) steps.push({ from: f.stages[i], to: f.stages[i + 1], label: '' });
+  });
+  return { legend: legend, badges: badges, depts: depts, flows: flows,
+           phases: phases, steps: steps, warnings: warnings };
 }
 
 /** Renders the parsed roster. `v` values arrive kbMd_-escaped (& < >), so the
  *  ONLY extra escaping needed is for quotes in attribute contexts — the same
  *  gap kbMd_'s link/image rules guard (the top-level pass doesn't cover them). */
+/** Normalised lookup key. Values carry kbMd_'s entities, so `A &gt; B` and
+ *  `A > B` must address the same team without either being unescaped. */
+function kbRosterKey_(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+}
+
 function kbRosterAttr_(v) {
   return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
@@ -792,6 +913,9 @@ function kbRosterToggleNode_(btn) {
   li.setAttribute('aria-expanded', open ? 'true' : 'false');
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   kbRosterChartOverflow_(btn);
+  // Opening a node moves every box below it, so the measured edges must be
+  // redrawn or they would point at where things used to be.
+  kbRosterDrawEdges_(kbRosterRoot_(btn));
 }
 
 /** A department with more teams than fit scrolls sideways inside the chart —
@@ -805,10 +929,240 @@ function kbRosterChartOverflow_(el) {
   if (chart) chart.classList.toggle('has-overflow', wrap.scrollWidth > wrap.clientWidth + 1);
 }
 
+/** VIEW 5 — flow. A roster is org-SHAPED; an order moves through STAGES, and
+ *  the two are different questions. A `flow|` line records the sequence, which
+ *  the roster itself does not contain — so this view only exists when someone
+ *  has written the sequence down. It is never inferred from the sheet's
+ *  layout: the order work actually travels in is operational knowledge, and a
+ *  guessed process displayed to reps as fact is worse than no diagram.
+ *
+ *  A stage naming a real team links to it (people count, lead, expandable);
+ *  any other stage renders as a plain step, so a flow can include stages that
+ *  are not teams at all. */
+function kbRosterFlowHtml_(data) {
+  var legend = data.legend, seen = {};
+  if (!data.phases.length) {
+    return '<div class="kb-ros-empty">' +
+      '<b>No process flow recorded yet.</b>' +
+      '<p>This roster describes who is on which team. To show the order work moves in, ' +
+      'add phases and steps — the sequence is yours to state, and is never guessed ' +
+      'from the layout:</p>' +
+      '<pre class="kb-ros-flowhint">phase| 1. Intake: PPD, MA Education\n' +
+      'phase| 2. Qualifications: Qualifications*decision, PT Scheduling\n' +
+      'step| PPD -&gt; MA Education\n' +
+      'step| Qualifications -&gt; PT Scheduling: Route A — PT Eval needed</pre>' +
+      '<p>Mark a branch point with <code>*decision</code>. Use <code>phase| *: Name</code> ' +
+      'for something feeding in from outside the phases. A node matching a team name links ' +
+      'to that team.</p></div>';
+  }
+
+  // Index teams so a node naming one links to its people.
+  var byTeam = {};
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      byTeam[kbRosterKey_(t.name)] = t;
+      if (t.sub) byTeam[kbRosterKey_(t.name + ' > ' + t.sub)] = t;
+    });
+  });
+  // Route labels are read off the STEPS, so a node can state what leads out of
+  // it without the diagram having to carry the text.
+  var outBy = {};
+  data.steps.forEach(function (st) {
+    var k = kbRosterKey_(st.from);
+    (outBy[k] = outBy[k] || []).push(st);
+  });
+
+  var nodeHtml = function (n, ri, ci) {
+    var t = byTeam[kbRosterKey_(n.name)];
+    var id = 'kb-fn-' + kbRosterSlug_(n.name);
+    var outs = outBy[kbRosterKey_(n.name)] || [];
+    var routes = outs.filter(function (o) { return o.label; });
+    return '<div class="kb-ros-fnode' + (n.decision ? ' is-decision' : '') + (t ? ' is-team' : '') + '"' +
+        ' id="' + id + '" data-col="' + ci + '" data-row="' + ri + '"' +
+        ' data-node="' + kbRosterAttr_(kbRosterKey_(n.name)) + '">' +
+      '<div class="kb-ros-fnode-head">' +
+        (t
+          ? '<button type="button" class="kb-ros-toggle" aria-expanded="false" ' +
+              'aria-controls="' + id + '-p" onclick="kbRosterToggleNode_(this)">' + n.name + '</button>'
+          : '<span class="kb-ros-toggle is-plain">' + n.name + '</span>') +
+        (n.decision ? '<span class="kb-ros-flag is-decision">decision</span>' : '') +
+        (n.join ? '<span class="kb-ros-flag is-join">join</span>' : '') +
+      '</div>' +
+      // An AND-join: several inbound paths, not alternatives. Without this the
+      // diagram reads as "any one path proceeds", which is the opposite of a
+      // stage that waits for every applicable one.
+      (n.join ? '<span class="kb-ros-joinnote">Waits for every applicable path above to complete</span>' : '') +
+      (t ? '<span class="kb-ros-nodemeta">' + t.people.length + ' ' +
+             (t.people.length === 1 ? 'person' : 'people') + '</span>' : '') +
+      (routes.length
+        ? '<ul class="kb-ros-routes">' + routes.map(function (o) {
+            return '<li><span class="kb-ros-routelbl">' + o.label + '</span> → ' + o.to + '</li>';
+          }).join('') + '</ul>'
+        : '') +
+      (t
+        ? '<ul class="kb-ros-children is-leaves" id="' + id + '-p" role="group">' +
+            '<li class="kb-ros-people">' +
+              t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+            '</li></ul>'
+        : '') +
+      '</div>';
+  };
+
+  var cols = data.phases.map(function (ph, ci) {
+    return '<section class="kb-ros-phase' + (ph.external ? ' is-external' : '') + '">' +
+      '<h3 class="kb-ros-phase-name">' + (ph.name || 'Feeds in') + '</h3>' +
+      '<div class="kb-ros-fnodes">' +
+        ph.nodes.map(function (n, ri) { return nodeHtml(n, ri, ci); }).join('') +
+      '</div></section>';
+  }).join('');
+
+  // The connector layer is drawn AFTER layout, by measuring the boxes CSS has
+  // already placed — so the diagram cannot disagree with what is on screen,
+  // and no layout engine is needed.
+  // A step naming a node no phase declares would just VANISH from the diagram,
+  // which would look complete while missing a connection — the reassuring
+  // failure this codebase names (INV-187). Say so instead.
+  var declared = {};
+  data.phases.forEach(function (ph) { ph.nodes.forEach(function (n) { declared[kbRosterKey_(n.name)] = 1; }); });
+  var seenD = {}, uniqD = [];
+  data.steps.forEach(function (st) {
+    [st.from, st.to].forEach(function (x) {
+      var k = kbRosterKey_(x);
+      if (!declared[k] && !seenD[k]) { seenD[k] = 1; uniqD.push(x); }
+    });
+  });
+
+  return '<div class="kb-ros-proc" data-proc="1">' +
+    '<div class="kb-ros-note">Nodes naming a team open to show its people. ' +
+      'Routes are labelled on the node they leave.</div>' +
+    (uniqD.length
+      ? '<div class="kb-ros-warn" role="alert">' + uniqD.length + ' step(s) name a node no phase declares, ' +
+        'so those connections are not drawn: ' + uniqD.join(', ') + '.</div>'
+      : '') +
+    '<div class="kb-ros-procwrap">' +
+      '<svg class="kb-ros-edges" aria-hidden="true"></svg>' +
+      '<div class="kb-ros-phases">' + cols + '</div>' +
+    '</div></div>';
+}
+
+/** PURE: decides what KIND of connector an edge needs, given the two boxes'
+ *  geometry and their column/row positions. Extracted because every drawing
+ *  bug so far lived in this decision rather than in the path arithmetic —
+ *  same-column steps misread as loop-backs, skips drawn as steps, upward
+ *  edges pointing at the source — and none of it was testable while it sat
+ *  inside a function that needs a real browser layout.
+ *    kind: 'step' | 'skip' | 'phaseSkip' | 'forward' | 'back'
+ *    down: true when the target sits below the source (same column only) */
+function kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal) {
+  // Classify by LEFT edges: a sibling stacked in the same column always sits
+  // left of its parent's RIGHT edge, so a right-vs-left test calls every
+  // vertical step a loop-back.
+  var sameCol = Math.abs(rb.left - ra.left) < 8;
+  if (sameCol) {
+    return {
+      kind: Math.abs(rowB - rowA) === 1 ? 'step' : 'skip',
+      down: rowB > rowA,
+      lane: reciprocal ? (rowB > rowA ? -7 : 7) : 0,
+    };
+  }
+  if (rb.left < ra.left - 8) return { kind: 'back', down: true, lane: 0 };
+  return { kind: (colB - colA) > 1 ? 'phaseSkip' : 'forward', down: true, lane: 0 };
+}
+
+/** Draws the edges by MEASURING the laid-out boxes. Runs after render, on
+ *  resize, and after any expand/collapse, because opening a node moves every
+ *  box below it. */
+function kbRosterDrawEdges_(root) {
+  if (!root) return;
+  var proc = root.querySelector('.kb-ros-proc');
+  var svg = proc && proc.querySelector('.kb-ros-edges');
+  var wrap = proc && proc.querySelector('.kb-ros-procwrap');
+  if (!svg || !wrap) return;
+  var data = kbRosterData_(root);
+  var box = wrap.getBoundingClientRect();
+  svg.setAttribute('width', wrap.scrollWidth);
+  svg.setAttribute('height', wrap.scrollHeight);
+  svg.setAttribute('viewBox', '0 0 ' + wrap.scrollWidth + ' ' + wrap.scrollHeight);
+  var find = function (name) { return proc.querySelector('[data-node="' + kbRosterKey_(name).replace(/"/g, '') + '"]'); };
+  // A RECIPROCAL pair (A→B and B→A, e.g. an appointment bouncing between two
+  // stages) would draw two opposite arrows on the same line, overlapping into
+  // one ambiguous stroke. Offset each side so both remain readable.
+  var pairKey = {};
+  data.steps.forEach(function (st) { pairKey[kbRosterKey_(st.from) + '\u0000' + kbRosterKey_(st.to)] = 1; });
+  var parts = [];
+  data.steps.forEach(function (st) {
+    var a = find(st.from), b = find(st.to);
+    if (!a || !b) return;                      // a step naming an undeclared node
+    var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    var ax = ra.right - box.left + wrap.scrollLeft, ay = ra.top - box.top + ra.height / 2 + wrap.scrollTop;
+    var bx = rb.left - box.left + wrap.scrollLeft, by = rb.top - box.top + rb.height / 2 + wrap.scrollTop;
+    // Classify by the boxes' LEFT edges, not source-right vs target-left: two
+    // nodes stacked in the SAME column always have target-left < source-right,
+    // so that test called every vertical step a loop-back (8 of 14 here).
+    var colA = +(a.getAttribute('data-col') || 0), colB = +(b.getAttribute('data-col') || 0);
+    var rowA = +(a.getAttribute('data-row') || 0), rowB = +(b.getAttribute('data-row') || 0);
+    var reciprocal = !!pairKey[kbRosterKey_(st.to) + '\u0000' + kbRosterKey_(st.from)];
+    var k = kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal);
+    var sameCol = k.kind === 'step' || k.kind === 'skip';
+    var back = k.kind === 'back';
+    var skip = k.kind === 'phaseSkip';
+    var d, cls = '';
+    if (sameCol) {
+      var cx = ra.left - box.left + ra.width / 2 + wrap.scrollLeft + k.lane;
+      var aTop = ra.top - box.top + wrap.scrollTop, aBot = ra.bottom - box.top + wrap.scrollTop;
+      var bTop = rb.top - box.top + wrap.scrollTop, bBot = rb.bottom - box.top + wrap.scrollTop;
+      var down = k.down;
+      if (k.kind === 'step') {
+        // Adjacent siblings: a straight vertical. Drawn source→target so the
+        // arrowhead lands on the TARGET even when the edge runs upward — it
+        // previously always ended at the topmost box, pointing at the source.
+        d = down ? ('M' + cx + ',' + aBot + ' L' + cx + ',' + bTop)
+                 : ('M' + cx + ',' + aTop + ' L' + cx + ',' + bBot);
+      } else {
+        // A SKIP within the column — it passes a node it does not visit, so it
+        // arcs around the side. Drawn as a straight vertical it was
+        // indistinguishable from the step-by-step chain, which is what made
+        // "PAR → Approval" read as "you must pass through Appeals".
+        var sx = ra.right - box.left + wrap.scrollLeft + 12;
+        var y1 = aTop + ra.height / 2, y2 = bTop + rb.height / 2;
+        d = 'M' + (ra.right - box.left + wrap.scrollLeft) + ',' + y1 +
+            ' C' + sx + ',' + y1 + ' ' + sx + ',' + y2 + ' ' + (rb.right - box.left + wrap.scrollLeft) + ',' + y2;
+        cls = ' is-skip';
+      }
+    } else if (skip) {
+      // Bypasses an entire phase (an order entering past the first stage), so
+      // it arcs ABOVE the columns rather than threading between the boxes it
+      // does not touch.
+      var top2 = Math.min(ra.top, rb.top) - box.top + wrap.scrollTop - 16;
+      var axm = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var bxm = rb.left - box.left + rb.width / 2 + wrap.scrollLeft;
+      d = 'M' + axm + ',' + (ra.top - box.top + wrap.scrollTop) +
+          ' C' + axm + ',' + top2 + ' ' + bxm + ',' + top2 + ' ' + bxm + ',' + (rb.top - box.top + wrap.scrollTop);
+      cls = ' is-skip';
+    } else if (back) {
+      // Route a back-edge UNDER both boxes so it cannot be mistaken for a
+      // forward step.
+      var ay2 = ra.bottom - box.top + wrap.scrollTop, by2 = rb.bottom - box.top + wrap.scrollTop;
+      var low = Math.max(ay2, by2) + 14;
+      var axc = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var bxc = rb.left - box.left + rb.width / 2 + wrap.scrollLeft;
+      d = 'M' + axc + ',' + ay2 + ' L' + axc + ',' + low + ' L' + bxc + ',' + low + ' L' + bxc + ',' + by2;
+    } else {
+      var mid = ax + (bx - ax) / 2;
+      d = 'M' + ax + ',' + ay + ' C' + mid + ',' + ay + ' ' + mid + ',' + by + ' ' + bx + ',' + by;
+    }
+    parts.push('<path d="' + d + '" class="kb-ros-edge' + (back ? ' is-back' : '') + cls + '" marker-end="url(#kb-ros-arrow)"/>');
+  });
+  svg.innerHTML =
+    '<defs><marker id="kb-ros-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">' +
+      '<path d="M0,0 L8,4 L0,8 z"/></marker></defs>' + parts.join('');
+}
+
 function kbRosterBodyHtml_(data, mode) {
   if (mode === 'capabilities') return kbRosterCapabilitiesHtml_(data);
   if (mode === 'coverage') return kbRosterCoverageHtml_(data);
   if (mode === 'chart') return kbRosterChartHtml_(data);
+  if (mode === 'flow') return kbRosterFlowHtml_(data);
   return kbRosterTeamsHtml_(data);
 }
 
@@ -834,10 +1188,13 @@ function kbRosterHtml_(text) {
       '<input type="search" class="kb-ros-search" placeholder="Filter by team, person or tag…" ' +
         'aria-label="Filter the roster by team, person or tag" oninput="kbRosterFilter_(this)">' +
       '<span class="kb-ros-count" role="status" aria-live="polite">' + total + ' people</span>' +
+      '<button type="button" class="kb-ros-expand" onclick="kbRosterExpand_(this)" ' +
+        'title="Open this roster full screen">Expand</button>' +
       '<span class="kb-ros-modes" role="tablist" aria-label="Roster view">' +
         kbRosterModeBtn_(mode, 'teams', 'Teams') +
         kbRosterModeBtn_(mode, 'capabilities', 'Capabilities') +
         kbRosterModeBtn_(mode, 'chart', 'Chart') +
+        (data.phases.length ? kbRosterModeBtn_(mode, 'flow', 'Flow') : '') +
         kbRosterModeBtn_(mode, 'coverage', 'Coverage') +
       '</span>' +
     '</div>' + legendHtml +
@@ -847,6 +1204,30 @@ function kbRosterHtml_(text) {
       ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) in this roster block were not understood and are not shown.</div>'
       : '') +
     '</div>';
+}
+
+/** The Reference reader is a height-capped panel inside a two-column shell, so
+ *  an interactive block ends up in a small window with its own nested
+ *  scrollbars. Rather than re-architect that shell (it is right for prose),
+ *  the block can open itself nearly full-viewport. The overlay hosts a FRESH
+ *  instance built from the same source, so it carries its own filter and view
+ *  state and closing it leaves the inline copy exactly as it was. */
+function kbRosterExpand_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var src = root.getAttribute('data-src') || '';
+  // ensureOverlay (never a hand-rolled overlay — INV-83) so Escape, the focus
+  // trap and the focus-restore lifecycle all behave; onClose is idempotent.
+  var ov = ensureOverlay('kb-roster-overlay', {
+    onClose: function () { var o = document.getElementById('kb-roster-overlay'); if (o) o.remove(); },
+  });
+  ov.innerHTML = '<div class="modal kb-roster-modal" role="dialog" aria-modal="true" aria-label="Roster">' +
+    '<div class="kb-roster-modal-head">' +
+      '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-roster-overlay\'))">Close</button>' +
+    '</div>' + kbRosterHtml_(src) + '</div>';
+  // The expanded copy has no use for its own Expand button.
+  var dup = ov.querySelector('.kb-ros-expand');
+  if (dup) dup.remove();
 }
 
 function kbRosterRoot_(el) { return el && el.closest ? el.closest('.kb-roster') : null; }
@@ -870,6 +1251,7 @@ function kbRosterSetMode_(btn) {
   }
   var body = root.querySelector('.kb-ros-body');
   if (body) body.innerHTML = kbRosterBodyHtml_(kbRosterData_(root), mode);
+  if (mode === 'flow') setTimeout(function () { kbRosterDrawEdges_(root); }, 0);
   kbRosterClosePanel_(root);
   var search = root.querySelector('.kb-ros-search');
   if (search) kbRosterFilter_(search);      // a mode switch keeps the active filter
@@ -945,7 +1327,10 @@ function kbRosterFilter_(input) {
   // The coverage view is an aggregate of the WHOLE roster; filtering it to a
   // subset would report totals that quietly describe only part of the team.
   var mode = root.getAttribute('data-mode');
-  if (mode === 'coverage' || mode === 'chart') {
+  // Every view that is NOT the dept/team grid must bypass the row-counting
+  // walk, or it reports 0. This is the third time a new view has hit it, so
+  // the condition is now "not the grid" rather than a list of view names.
+  if (mode && mode !== 'teams' && mode !== 'capabilities') {
     var cnt0 = root.querySelector('.kb-ros-count');
     if (cnt0) cnt0.textContent = q ? 'filter applies to Teams and Capabilities' : (kbRosterPeopleIndex_(kbRosterData_(root)).order.length + ' people');
     return;

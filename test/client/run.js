@@ -2633,6 +2633,14 @@ test('toggles add/remove, dedupes by id, prepends newest, caps length', () => {
 
 console.log('\nkb — section-aware search helpers (split / truncate / score / slug parity)');
 const _kbSearchCtx = vm.createContext({});
+// Seed the module constants kbChunkTruncate_ reads, DERIVED from Code.js so
+// the pin tracks the real values instead of a hand-copied guess.
+['KB_CHUNK_MAX_CHARS', 'KB_CHUNK_FENCE_OVERAGE'].forEach((k) => {
+  const m = new RegExp('const ' + k + '\\s*=\\s*(\\d+)').exec(
+    fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(m, k + ' is declared in Code.js');
+  vm.runInContext('const ' + k + ' = ' + m[1] + ';', _kbSearchCtx);
+});
 ['kbSlug_', 'kbSplitSections_', 'kbChunkTruncate_', 'kbSearchScore_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), _kbSearchCtx, { filename: 'Code.js#' + fn });
 });
@@ -2691,6 +2699,26 @@ test('anchor slugs: server kbSlug_ matches kbMd_\'s heading ids (parity pair)', 
   // and the dedup walks agree
   const anchors = kbSplitSections_('## Dup\nx\n\n## Dup\ny').map((s) => s.anchor);
   assert.strictEqual(anchors.join(','), 'dup,dup-2');
+});
+test('kbChunkTruncate_: a fenced block is ATOMIC — never cut in half', () => {
+  // Cutting inside a ```roster used to leave an odd fence, which was
+  // "repaired" by appending a close — producing a syntactically VALID but
+  // incomplete block. In production that rendered a confident interactive
+  // roster holding 10 of 14 teams and reporting "40 people" for a 46-person
+  // roster; a truncated ```snippet would hand a rep a canned response to copy
+  // that stops mid-sentence. Prose can carry a "continues in the article"
+  // note; these cannot.
+  const body = 'intro\n\n```roster\n' + Array.from({ length: 14 },
+    (_, i) => 'team| T' + i + ': Ann, Bob, Cy').join('\n') + '\n```';
+  const r = kbChunkTruncate_(body, 200);
+  assert.strictEqual((r.md.match(/^team\|/gm) || []).length, 14, 'every line of the block survives');
+  assert.strictEqual((r.md.match(/^\s*```/gm) || []).length, 2, 'and its fences are the real ones');
+  // Bounded: one enormous fence must not blow the payload — it is dropped
+  // instead, leaving the prose before it.
+  const huge = 'intro\n\n```roster\n' + 'team| T: ' + 'x'.repeat(9000) + '\n```';
+  const h = kbChunkTruncate_(huge, 200);
+  assert.ok(h.md.indexOf('```') < 0, 'an oversized block is dropped, not halved');
+  assert.ok(h.md.indexOf('intro') >= 0, 'the prose before it is kept');
 });
 test('kbChunkTruncate_: paragraph-boundary cut + odd-fence repair', () => {
   const short = kbChunkTruncate_('small', 100);
@@ -7470,22 +7498,29 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
 console.log('\nkb — interactive roster block (operator 2026-08-11)');
 
 const kbRosCtx = vm.createContext({});
+/** kbMd_ escapes & < > BEFORE the fence reaches the parser, so a pin that
+ *  feeds RAW text is not testing the production contract. That gap hid a live
+ *  defect: `team| A > B` arrived as `A &gt; B` and parsed as ONE team named
+ *  "A &gt; B" with an empty sub — which rendered plausibly, because the entity
+ *  displays as ">". Every roster pin now feeds input through this. */
+const rosEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 ['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterSlug_', 'kbRosterPeopleIndex_',
  'kbRosterTagChip_', 'kbRosterFlags_', 'kbRosterPersonHtml_', 'kbRosterTeamsHtml_',
- 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterChartHtml_', 'kbRosterBodyHtml_',
+ 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterChartHtml_',
+ 'kbRosterKey_', 'kbRosterFlowHtml_', 'kbRosterEdgeKind_', 'kbRosterBodyHtml_',
  'kbRosterModeBtn_', 'kbRosterHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
 
 test('kbRosterParse_ — structure, flags, tags, and badges that travel with a person', () => {
-  const p = kbRosCtx.kbRosterParse_([
+  const p = kbRosCtx.kbRosterParse_(rosEsc([
     'legend| lead=Team lead; new=Training / New; C=Complex Rehab chair',
     'badge| Parachute: Paula, Erica',
     'dept| PAK — Mary',
     'team| PPD: Micheal*lead, Sandra',
-    'dept| Qualifications &amp; Auth — Rajdeep',
-    'team| Medical Review > T3Q: Paula (C &amp; ATP)*lead, Alia (P)',
+    'dept| Qualifications & Auth — Rajdeep',
+    'team| Medical Review > T3Q: Paula (C & ATP)*lead, Alia (P)',
     'team| PT Eval: Erica, Shelby*new',
-  ].join('\n'));
+  ].join('\n')));
   assert.strictEqual(p.depts.length, 2, 'two departments');
   assert.strictEqual(p.depts[0].owner, 'Mary', 'the owner is split off the department name');
   assert.strictEqual(p.depts[1].teams[0].sub, 'T3Q', '"Team > Sub" nests');
@@ -7563,11 +7598,11 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
 console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
 
 test('the people index folds a person across teams — the question the grid cannot answer', () => {
-  const d = kbRosCtx.kbRosterParse_([
+  const d = kbRosCtx.kbRosterParse_(rosEsc([
     'dept| Q — R',
     'team| PAR > Submission: Kadija, Parker',
     'team| PAR > F/U: Kadija (C), Bella',
-  ].join('\n'));
+  ].join('\n')));
   const idx = kbRosCtx.kbRosterPeopleIndex_(d);
   assert.strictEqual(idx.order.length, 3, 'Kadija counts ONCE, not once per team');
   const k = idx.byName.kadija;
@@ -7638,7 +7673,8 @@ test('the mode switcher is a real tablist and the count means the same thing in 
   // ROWS after a filter or mode switch — so a 46-person roster read "49
   // people" in the capability view.
   assert.ok(/seen\[people\[i\]\.getAttribute\('data-name'\)/.test(kb), 'the filter counts DISTINCT people');
-  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb), 'the aggregate views are never filtered to a subset');
+  assert.ok(/mode !== 'teams' && mode !== 'capabilities'/.test(kb),
+    'every non-grid view bypasses the row count, by RULE rather than a name list');
 });
 
 console.log('\nkb — roster chart view (progressive disclosure)');
@@ -7704,13 +7740,171 @@ test('the chart scrolls inside its own container, and its notes stay put', () =>
     'two department boxes at their wide min-width overflowed a 400px viewport');
 });
 
+test('separators survive kbMd_ escaping — the sub-team and flow arrow', () => {
+  // THE PRODUCTION CONTRACT: & < > are already entities when the parser runs.
+  // Before this, `team| A > B` parsed as one team literally named "A &gt; B"
+  // with an empty sub — and it LOOKED right, because the entity displays as
+  // ">". The parser never unescapes (decoding then re-emitting would undo the
+  // escape boundary), so every separator matches both forms.
+  const d = kbRosCtx.kbRosterParse_(rosEsc([
+    'dept| Q — R',
+    'team| Medical Review > T3Q: Paula (C & ATP)*lead',
+    'flow| Order: Appt Passed -> Medical Review > T3Q',
+  ].join('\n')));
+  const t = d.depts[0].teams[0];
+  assert.strictEqual(t.name, 'Medical Review', 'the team name stops at the separator');
+  assert.strictEqual(t.sub, 'T3Q', 'and the sub-team is captured');
+  assert.strictEqual(t.people[0].tags.join('|'), 'C|ATP', 'escaped & still splits tags');
+  assert.strictEqual(d.flows.length, 1, 'the flow arrow survives escaping');
+  assert.strictEqual(d.flows[0].stages.length, 2, 'both stages parse');
+  // A stage naming a sub-team must ADDRESS it despite the entity.
+  const flowHtml = kbRosCtx.kbRosterFlowHtml_(d);
+  assert.ok(/1 person/.test(flowHtml), 'the stage links to the real team, not a plain step');
+  // And nothing was unescaped along the way.
+  assert.strictEqual(kbRosCtx.kbRosterParse_(rosEsc('team| T: <script>')).depts[0].teams[0].people[0].name,
+    '&lt;script&gt;', 'values stay escaped');
+});
+
+test('the Flow view exists only when a flow is recorded, and is never guessed', () => {
+  const noFlow = kbRosCtx.kbRosterHtml_(rosEsc('dept| D — O\nteam| T: Ann'));
+  assert.strictEqual(/data-mode="flow"/.test(noFlow), false, 'no Flow tab without a flow| line');
+  const withFlow = kbRosCtx.kbRosterHtml_(rosEsc('dept| D — O\nteam| T: Ann\nflow| A -> B'));
+  assert.ok(/data-mode="flow"/.test(withFlow), 'the tab appears once one exists');
+  // The sequence work travels in is operational knowledge. Inferring it from
+  // the sheet's layout and showing it to reps as fact would be worse than no
+  // diagram at all.
+  const empty = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('dept| D — O\nteam| T: Ann')));
+  assert.ok(/No process flow recorded yet/.test(empty), 'it says so rather than inventing one');
+  assert.ok(/phase\| 1\. Intake:/.test(empty), 'and shows exactly what to add');
+  const one = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('dept| D — O\nteam| T: Ann\nflow| T -> Ship')));
+  assert.strictEqual((one.match(/kb-ros-fnode/g) || []).length >= 2, true, 'both stages render as nodes');
+  assert.ok(/is-plain/.test(one), 'a stage that is not a team is not clickable');
+  // A branching process: phases + steps, which the linear form cannot express.
+  const g = kbRosCtx.kbRosterParse_(rosEsc([
+    'dept| D — O', 'team| PT Scheduling: Ann',
+    'phase| 2. Qualifications: Qualifications*decision, PT Scheduling, ATP Scheduling',
+    'step| Qualifications -> PT Scheduling: Route A',
+    'step| Qualifications -> ATP Scheduling: Route B',
+    'step| PAR -> Appeals: Denied',
+  ].join('\n')));
+  assert.strictEqual(g.phases.length, 1, 'the phase parses');
+  assert.strictEqual(g.phases[0].nodes[0].decision, true, 'a *decision branch point is marked');
+  assert.strictEqual(g.steps.length, 3, 'every labelled edge parses');
+  assert.strictEqual(g.steps[0].label, 'Route A', 'edge labels survive');
+  const gh = kbRosCtx.kbRosterFlowHtml_(g);
+  assert.ok(/is-decision/.test(gh), 'the branch point renders as a decision');
+  assert.ok(/Route A/.test(gh) && /Route B/.test(gh), 'both routes are stated on the node they leave');
+  assert.ok(/kb-ros-edges/.test(gh), 'a connector layer exists to be measured into');
+  // A tab must appear for a phase-only process too — the linear flow| form is
+  // not the only way to record one.
+  assert.ok(/data-mode="flow"/.test(kbRosCtx.kbRosterHtml_(rosEsc('phase| P: A, B\nstep| A -> B'))),
+    'phases alone are enough to offer the Flow view');
+});
+
+test('kbRosterEdgeKind_ — the decision every drawing bug lived in', () => {
+  const K = kbRosCtx.kbRosterEdgeKind_;
+  const box = (left, top) => ({ left, top, right: left + 100, bottom: top + 40, width: 100, height: 40 });
+  // SAME COLUMN. Comparing source-RIGHT to target-LEFT called these loop-backs
+  // (8 of 14 on the real process) because a stacked sibling always sits left
+  // of its parent's right edge.
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).kind, 'step', 'adjacent sibling = step');
+  assert.strictEqual(K(box(0, 0), box(0, 180), 1, 1, 0, 3, false).kind, 'skip', 'non-adjacent = skip');
+  // Direction: an upward edge must still report down:false so the path is
+  // anchored at its SOURCE and the arrowhead lands on the target.
+  assert.strictEqual(K(box(0, 180), box(0, 0), 1, 1, 3, 0, false).down, false, 'upward is not "down"');
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).down, true, 'downward is');
+  // COLUMN JUMPS.
+  assert.strictEqual(K(box(0, 0), box(200, 0), 1, 2, 0, 0, false).kind, 'forward', 'next column = forward');
+  assert.strictEqual(K(box(0, 0), box(400, 0), 0, 2, 0, 0, false).kind, 'phaseSkip', 'past a whole phase = skip');
+  assert.strictEqual(K(box(400, 0), box(0, 0), 3, 1, 0, 0, false).kind, 'back', 'leftward = back');
+  // RECIPROCAL pairs get one lane each way; drawn on the same centre line they
+  // overlap into a single stroke with arrowheads at both ends.
+  const down = K(box(0, 0), box(0, 60), 1, 1, 0, 1, true);
+  const up = K(box(0, 60), box(0, 0), 1, 1, 1, 0, true);
+  assert.ok(down.lane !== 0 && up.lane !== 0, 'both directions are offset');
+  assert.ok(down.lane !== up.lane, 'and to OPPOSITE sides');
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).lane, 0, 'a one-way edge stays centred');
+});
+
+test('the process graph draws edges MEASURED from the laid-out boxes', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const draw = extractFunction('kb/script_kb.html', 'kbRosterDrawEdges_');
+  assert.ok(/getBoundingClientRect\(\)/.test(draw), 'positions come from the laid-out boxes');
+  assert.ok(/kbRosterEdgeKind_\(ra, rb, colA, colB, rowA, rowB, reciprocal\)/.test(draw),
+    'and the classification goes through the pure helper');
+  const html = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc(
+    'phase| *: S\nphase| 1. I: A\nphase| 2. Q: B\nstep| S -> B')));
+  assert.ok(/data-col="0"/.test(html) && /data-row="0"/.test(html), 'nodes carry their column and row');
+  assert.ok(/kbRosterDrawEdges_\(kbRosterRoot_\(btn\)\)/.test(
+    extractFunction('kb/script_kb.html', 'kbRosterToggleNode_')), 'edges redraw after expand/collapse');
+  assert.ok(/@media \(max-width: 700px\)[\s\S]{0,300}\.kb-ros-edges \{ display: none/.test(kb),
+    'connectors hide once the columns stack, where they would be meaningless');
+  assert.ok(/\.kb-ros-edge\.is-skip \{[^}]*stroke-dasharray/.test(kb), 'a skip is visually distinct');
+});
+
+test('a join states that it WAITS for every applicable path, not any one', () => {
+  const d = kbRosCtx.kbRosterParse_(rosEsc([
+    'phase| 2. Qual: Qualifications*decision, PT Scheduling, ATP Scheduling',
+    'phase| 3. Auth: PWC Verification*join',
+    'step| Qualifications -> PT Scheduling: If PT Eval needed',
+    'step| Qualifications -> ATP Scheduling: If ATP Eval needed',
+    'step| Qualifications -> PWC Verification: If neither eval is needed',
+    'step| PT Scheduling -> PWC Verification',
+    'step| ATP Scheduling -> PWC Verification',
+  ].join('\n')));
+  const pwc = d.phases[1].nodes[0];
+  assert.strictEqual(pwc.name, 'PWC Verification', 'the marker is stripped from the name');
+  assert.strictEqual(pwc.join, true, 'and recorded');
+  // Several inbound paths drawn without this read as ALTERNATIVES — "any one
+  // proceeds" — which is the opposite of a stage that waits for all of them.
+  const html = kbRosCtx.kbRosterFlowHtml_(d);
+  assert.ok(/Waits for every applicable path above to complete/.test(html), 'the AND semantics are stated');
+  assert.ok(/kb-ros-flag is-join/.test(html), 'and flagged');
+  // Markers compose in either order.
+  const both = kbRosCtx.kbRosterParse_(rosEsc('phase| P: X*decision*join, Y*join*decision'));
+  assert.strictEqual(both.phases[0].nodes[0].decision && both.phases[0].nodes[0].join, true, 'decision+join');
+  assert.strictEqual(both.phases[0].nodes[1].decision && both.phases[0].nodes[1].join, true, 'join+decision');
+  assert.strictEqual(both.phases[0].nodes[0].name, 'X', 'name is clean either way');
+});
+
+test('a step naming an undeclared node is reported, not silently dropped', () => {
+  const withGhost = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(
+    rosEsc('phase| P: A, B\nstep| A -> B\nstep| B -> Ghost')));
+  // A vanished connection would leave a diagram that LOOKS complete — the
+  // reassuring-failure class (INV-187).
+  assert.ok(/name a node no phase declares/.test(withGhost), 'the gap is stated');
+  assert.ok(/Ghost/.test(withGhost), 'and the offending node is named');
+  assert.ok(/role="alert"/.test(withGhost), 'and announced');
+  const clean = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('phase| P: A, B\nstep| A -> B')));
+  assert.strictEqual(/name a node no phase declares/.test(clean), false, 'a sound process warns about nothing');
+  // A malformed phase/step line is COUNTED, not skipped — the block reports
+  // "N line(s) were not understood" rather than quietly rendering less.
+  const bad = kbRosCtx.kbRosterParse_(rosEsc('phase| no colon here\nstep| no arrow here\nphase| P: A'));
+  assert.strictEqual(bad.warnings.length, 2, 'both malformed lines are counted');
+  assert.strictEqual(bad.phases.length, 1, 'and the sound one still parses');
+});
+
+test('the roster can escape the height-capped reader panel', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const html = kbRosCtx.kbRosterHtml_('dept| D — O\nteam| T: Ann');
+  assert.ok(/class="kb-ros-expand"/.test(html), 'the block offers an expand control');
+  const fn = extractFunction('kb/script_kb.html', 'kbRosterExpand_');
+  // ensureOverlay, never a hand-rolled overlay — Escape, the focus trap and
+  // focus-restore all hang off it (INV-83), and onClose must be idempotent.
+  assert.ok(/ensureOverlay\('kb-roster-overlay'/.test(fn), 'built via ensureOverlay');
+  assert.ok(/onClose:/.test(fn) && /if \(o\) o\.remove\(\)/.test(fn), 'with an idempotent close');
+  assert.strictEqual(/createElement\('div'\)[\s\S]{0,120}overlay open/.test(fn), false, 'no hand-rolled overlay');
+  assert.ok(/kbRosterHtml_\(src\)/.test(fn), 'the expanded copy is built from the same source');
+  assert.ok(/\.kb-roster-modal \{ width: min\(1400px, 96vw\)/.test(kb), 'and gets nearly the viewport');
+});
+
 test('the chart and coverage views report distinct people, never a filtered row count', () => {
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   // Chart mode has no .kb-ros-dept walk, so the row-counting filter reported
   // "0 people" — the same mixed-units defect as the capability view, in a new
   // mode. Both aggregate views report the index size instead.
-  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb),
-    'both aggregate views bypass the row-counting filter');
+  assert.ok(/mode !== 'teams' && mode !== 'capabilities'/.test(kb),
+    'every non-grid view bypasses the row-counting filter, by RULE not a name list');
 });
 
 console.log('\nkb — Sheet→article converter (operator 2026-08-11)');

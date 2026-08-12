@@ -3639,7 +3639,15 @@ this section before touching the relevant area.
   **Three things that are easy to get wrong:** (a) the fence content arrives
   HTML-ESCAPED, so an ampersand separator is `&amp;` — splitting tags on a bare
   `&` turns "C & ATP" into the tag "amp; ATP" (found by running it, invisible
-  in review); (b) the top-level escape does NOT cover quotes and the renderer
+  in review). **THE SAME TRAP BIT AGAIN AND SHIPPED**: `>` arrives as `&gt;`,
+  so `team| A > B` parsed as ONE team literally named `A &gt; B` with an EMPTY
+  sub-team, and it looked correct in every screenshot because the entity
+  DISPLAYS as `>`. The pins missed it because they fed the parser RAW text —
+  not the production contract. Every roster pin now escapes its input through
+  `rosEsc()` first, every separator matches BOTH forms (`&gt;`/`>`,
+  `-&gt;`/`->`, `&amp;`/`&`), and stage lookups normalise through
+  `kbRosterKey_`. **The parser never unescapes** — decoding to a raw `<`/`>`
+  and later emitting it would undo the very boundary the escape provides; (b) the top-level escape does NOT cover quotes and the renderer
   puts names into attributes, so attribute contexts need their own
   quote-escaping — the same gap `kbMd_`'s link/image rules guard; (c) a badge
   is an attribute of a PERSON, so it must follow them onto every team they
@@ -3707,6 +3715,87 @@ this section before touching the relevant area.
   the one statement of what the view shows exactly when a wide row made it most
   needed; and two department boxes at their wide min-width overflowed a 400px
   viewport before anything was expanded.
+  **Flow (5th view) + Expand (operator 2026-08-11, from the first deployed
+  screenshot).** A roster is org-SHAPED; an order moves through STAGES, and
+  those are different questions — so a `flow| [Label:] A -> B -> C` line
+  records the sequence and a **Flow** view renders it as numbered, wrapping
+  stages. A stage naming a real team links to it (people count, lead,
+  expandable inline); anything else renders as a plain step, so a flow may
+  include stages that are not teams. **The tab appears ONLY when a `flow|`
+  line exists, and the sequence is NEVER inferred from the sheet's layout** —
+  the order work actually travels in is operational knowledge, and a guessed
+  process shown to reps as fact is worse than no diagram; the empty state says
+  so and prints the exact line to add. **Expand** opens the block nearly
+  full-viewport via `ensureOverlay` (INV-83), because the Reference reader is a
+  height-capped panel in a two-column shell and an interactive block ends up in
+  a small window with nested scrollbars; the overlay hosts a FRESH instance
+  from the same source, so closing it leaves the inline copy untouched.
+  **A THIRD instance of the same count bug appeared here** (flow mode has no
+  `.kb-ros-dept` walk, so the row-counting filter reported 0), so the bypass is
+  now the RULE "not the dept/team grid" rather than a list of view names.
+  **PROCESS GRAPH (operator's training diagram, 2026-08-11).** The real process
+  is NOT linear, so `flow| A -> B -> C` could not express it: it has branches
+  (Route A / Route B off one decision), a decision with two outcomes
+  (Approved / Denied), a loop back through Appeals, four named phases, and an
+  external feed (Sales) entering at two points. The block therefore takes
+  `phase| Name: Node, Node*decision, Node` (with `phase| *: Name` for something
+  outside the phases) and `step| From -> To: label`; the linear `flow|` form is
+  kept as SUGAR that generates the same steps, so both notations feed ONE
+  renderer rather than two that drift. **Edges are drawn by MEASURING the boxes
+  CSS already placed** (phases are flex columns, nodes stack in declaration
+  order) — no layout engine, and the diagram cannot disagree with what is on
+  screen; it redraws after any expand/collapse, because opening a node moves
+  every box below it. **Classify edges by the boxes' LEFT edges**: comparing
+  source-RIGHT to target-LEFT calls every same-column vertical step a loop-back
+  (8 of 14 on the real process), since a stacked sibling always sits left of
+  its parent's right edge. Three cases — same column (vertical), forward
+  (curve), backward (routed under). Connectors are hidden below 700px where the
+  columns stack and lines between them would be meaningless; the per-node route
+  labels carry the structure there. **A step naming a node no phase declares is
+  REPORTED, never silently dropped** — a vanished connection leaves a diagram
+  that looks complete (INV-187).
+  **AN EDGE THAT SKIPS SOMETHING MUST NOT LOOK LIKE ONE THAT STEPS TO IT
+  (operator correction, 2026-08-11).** Within a column, `PAR → Approval` and
+  `PAR → Appeals` both drew as plain verticals at the same x, so they
+  overlapped and read as a required chain `PAR → Appeals → Approval` — the
+  OPPOSITE of the real process, where approval is reached directly and appeals
+  is the denied branch. Adjacency now decides: a step to the next sibling draws
+  straight, a skip past one arcs around the side, and an edge spanning more
+  than one PHASE (an order entering past the first stage) arcs above the
+  columns; both skips are dashed and info-toned. Related direction bug: an
+  UPWARD same-column edge was drawn from the topmost box, so the arrowhead
+  landed on the SOURCE — every edge now starts at its source. **Node order
+  within a phase is therefore meaningful**: put the happy path in sequence and
+  it renders as the straight spine, with detours visibly leaving it.
+  **The classification is the pure `kbRosterEdgeKind_`** (step / skip /
+  phaseSkip / forward / back, plus `down` and a reciprocal `lane`), extracted
+  because EVERY drawing bug so far lived in that decision rather than in the
+  path arithmetic — and none of it was testable while it sat inside a function
+  that needs a real browser layout. It is now pinned behaviourally with stub
+  rects; the remaining source pins only assert the wiring.
+  **A RECIPROCAL pair gets one lane each way (operator, 2026-08-11):** an
+  appointment can bounce between two stages, so `A → B` and `B → A` both
+  exist; on one centre line they overlap into a single stroke with arrowheads
+  at both ends and no way to tell which label belongs to which.
+  **`*join` marks an AND-join** — a stage that waits for EVERY applicable
+  inbound path, not any one of them (PWC Verification waits on whichever of
+  PT Eval / ATP Eval the order needs, and neither is always required). Without
+  it, several inbound edges read as alternatives, which is the opposite of the
+  real rule; the node states the condition in words rather than relying on the
+  arrows alone. Markers compose in either order (`X*decision*join`).
+- **A fenced block is ATOMIC in search-chunk truncation (operator 2026-08-11).**
+  `kbChunkTruncate_` cut at a paragraph boundary and then "repaired" an odd
+  fence count by appending a closing fence — turning a HALF block into a
+  syntactically VALID one. Measured on the live deployment: a truncated
+  `roster` fence rendered as a confident interactive directory holding **10 of
+  14 teams**, reporting **"40 people" for a 46-person roster**, with a mangled
+  partial line as its only hint. A truncated `snippet` is worse still — it
+  hands a rep a canned response to copy that stops mid-sentence. Prose can be
+  cut with a "continues in the article" note; a fenced block cannot. The cut
+  now extends to keep the whole fence when it fits `KB_CHUNK_FENCE_OVERAGE`
+  (4×) and otherwise stops BEFORE the fence, never inside it. The odd-fence
+  repair is retained for the DISTINCT case of a fence the SOURCE never closes —
+  truncation did not break that, the article did.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4671,7 +4760,7 @@ manually for a fresh deploy or environment:
   spreadsheet now produces the INTERACTIVE block rather than static headings —
   reps get a filter box, tag tooltips and click-to-copy, and the whole thing
   works in the Ctrl/⌘+K drawer, which an embedded sheet never did. The block
-  also carries Teams / Capabilities / Chart / Coverage views — note that
+  also carries Teams / Capabilities / Chart / Flow / Coverage views — note that
   **Coverage reports facts, not a staffing verdict**, so a capability held by
   one person is flagged as a single point of contact and the judgement is left
   to you, and **Chart shows team structure, not reporting lines**, because the
@@ -6115,7 +6204,18 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). Roster Tier 1 added five
+roster-block emitter — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
+classifier folded three source-shape pins into one behavioural one → **484**
+(6 geometry decisions bite-checked). The skip/direction correction added one more → **483** (column+row
+attributes, adjacency deciding step-vs-skip, phase-bypass arcs, source-anchored
+arrows — 5 mutations bite-checked). The process-graph round added two more → **482**
+(measured edges + left-edge classification + redraw + stacking; dangling steps
+reported and malformed lines counted — 7 mutations bite-checked). The first
+deployed-screenshot round added four
+more → **480** (fence-atomic chunk truncation with constants DERIVED from
+Code.js; separators surviving kbMd_ escaping — the pin that caught a SHIPPED
+sub-team defect; Flow-only-when-recorded; the Expand overlay — 11 mutations
+bite-checked). Roster Tier 1 added five
 more → **472** (person index folds a multi-team person; three views from one
 source + coverage-states-no-verdict; exact tag matching; unique person ids
 with a canonical first; tablist ARIA + distinct-people count — 7 mutations

@@ -17110,6 +17110,9 @@ function getWhatsNew() {
 // match on title only (another native-first nudge).
 const KB_SEARCH_MAX_RESULTS = 20;
 const KB_SEARCH_MAX_PER_ITEM = 3;
+/** A fenced block is atomic, so a chunk may exceed KB_CHUNK_MAX_CHARS by up
+ *  to this factor to keep one whole rather than emit half of it. */
+const KB_CHUNK_FENCE_OVERAGE = 4;
 const KB_CHUNK_MAX_CHARS = 1200;
 // #8 — search synonym groups (Script Property `KB_SEARCH_SYNONYMS`, JSON array
 // of arrays of equivalent lowercase terms, e.g. [["cpap","pap"],["pmd","power
@@ -17182,10 +17185,37 @@ function kbChunkTruncate_(md, cap) {
   if (md.length <= cap) return { md: md, truncated: false };
   let cut = md.lastIndexOf('\n\n', cap);
   if (cut < cap * 0.4) cut = cap;
+
+  // A FENCED BLOCK IS ATOMIC. Cutting inside one used to leave an odd fence,
+  // which was "repaired" by appending a closing ``` — turning a half block
+  // into a SYNTACTICALLY VALID one. That is the worst outcome available: a
+  // truncated ```roster rendered as a confident interactive directory missing
+  // 4 of 14 teams (reported "40 people" for a 46-person roster), and a
+  // truncated ```snippet would hand a rep a canned response to copy that
+  // silently stops mid-sentence. Prose can be cut with a "continues in the
+  // article" note; these cannot.
+  const opens = [];
+  const fenceRe = /^[ \t]*```/gm;
+  let m;
+  while ((m = fenceRe.exec(md)) !== null) opens.push(m.index);
+  let inFence = -1;                       // index of the fence open we are inside
+  for (let i = 0; i + 1 < opens.length; i += 2) {
+    if (opens[i] < cut && cut <= opens[i + 1]) { inFence = i; break; }
+  }
+  if (inFence >= 0) {
+    const closeIdx = opens[inFence + 1];
+    const endOfFence = md.indexOf('\n', closeIdx);
+    const whole = endOfFence < 0 ? md.length : endOfFence;
+    // Prefer keeping the block WHOLE, bounded so one enormous fence cannot
+    // blow the payload; otherwise stop before it started.
+    cut = (whole <= cap * KB_CHUNK_FENCE_OVERAGE) ? whole : opens[inFence];
+  }
   let out = md.substring(0, cut).trim();
-  const fences = (out.match(/^\s*```/gm) || []).length;
-  if (fences % 2 === 1) out += '\n```';
-  return { md: out, truncated: true };
+  // DISTINCT CASE: a fence the SOURCE never closes. Truncation did not break
+  // that — the article did — so the old repair still applies, and without it
+  // the stray ``` renders as literal text.
+  if ((out.match(/^[ \t]*```/gm) || []).length % 2 === 1) out += '\n```';
+  return { md: out, truncated: cut < md.length };
 }
 
 /** PURE: weighted token score for one section. 0 unless the section's own
