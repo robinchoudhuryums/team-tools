@@ -274,6 +274,17 @@ Phase: idle (post-reflect) + operator-requested feature work:
   13 bite-checks, full 39-matrix 0/0. A new harness coupling was pinned: the
   jsdom boot stubs every window.* index.html defines (adding
   setTimeClockPalette silently broke 19 DOM tests).
+  FOLLOW-UP (same day): operator asked whether each palette has its own dark
+  mode (it does — every palette is a light block PLUS a dark block) and for a
+  sage/light-green option. **Sage** added: green-tinted paper (nScale 3.4) +
+  a DESATURATED green accent (chroma 0.070 vs Console's 0.132) at the same
+  luminance — a literally lighter accent is impossible under the
+  constant-luminance construction and would fail contrast as a button fill
+  under white text, so the character comes from the paper + desaturation.
+  Adding it needed NO test edit: all seven palette pins are derived, and two
+  Sage-specific mutations were bite-checked to confirm the scan reaches it.
+  NOTE: the container rolled back mid-session and lost the palette commit
+  locally; the remote had it (git reset --hard origin/<branch> recovered).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

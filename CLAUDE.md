@@ -2198,9 +2198,13 @@ this section before touching the relevant area.
 - **Colour palettes are a SECOND attribute overlay, orthogonal to light/dark
   (operator 2026-08-12).** `data-palette` on `<html>` (+ `body`), set
   synchronously in the `<head>` from `localStorage.umsTheme` by the same
-  no-flash bootstrap that applies `data-mode`. Four options — **Console**
-  (default), **Sand** (warm paper, green accent), **Plum** (mauve paper,
-  violet accent), **Teal** (cool paper, teal accent) — picked from a swatch row
+  no-flash bootstrap that applies `data-mode`. Five options — **Console**
+  (default), **Sand** (warm paper, green accent), **Sage** (soft green paper,
+  muted sage-green accent), **Plum** (mauve paper, violet accent), **Teal**
+  (cool paper, teal accent) — **each with its OWN dark block**, not a shared
+  one: a palette is a light block plus a dark block, so dark mode is re-tinted
+  per palette too (Sage dark paper `#060f08` vs Console's `#0a0d14`). Picked
+  from a swatch row
   in the sidebar + mobile header (`setTimeClockPalette`, reflected by
   `syncPaletteToggleState`). Console declares NO stylesheet block and stores
   NOTHING, so an unknown/corrupt value degrades to the shipped look.
@@ -2218,7 +2222,11 @@ this section before touching the relevant area.
   matched its Console counterpart exactly, so every contrast ratio the app was
   measured at is preserved BY CONSTRUCTION — `--muted-2` stays AA on every
   surface and `--ink` keeps its 18.1:1. Light `--paper-card` stays `#ffffff`
-  because white is the only colour at luminance 1.0. The AA tripwire measures
+  because white is the only colour at luminance 1.0. **This is also why "a
+  LIGHT green accent" is not on the table:** the accent is a button fill under
+  white text, so raising its luminance would fail contrast outright — Sage gets
+  its character from the paper tint and a DESATURATED accent (chroma 0.070 vs
+  Console's 0.132) at the same luminance. The AA tripwire measures
   every block anyway; the construction is why it passes, not a substitute for
   measuring. **Specificity is load-bearing:** a bare `:root[data-palette="x"]`
   is (0,2,0) — the SAME as `:root[data-mode="dark"]` — so for a dark-mode user
@@ -6382,7 +6390,11 @@ the read it actually governs.** The interactive roster block added five more
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
 roster-block emitter — 8 mutations bite-checked). The colour palettes added seven more → **507**
-(the palette contract — neutrals + accent only, never a semantic colour, and a
+(all seven are DERIVED, so adding the fifth palette (Sage) required no test
+edit at all — the AA, constant-luminance, contract, swatch, key-list,
+specificity and hue-drift pins all swept it in, which is the INV-179 promise
+actually paying out; two Sage-specific mutations were bite-checked to confirm
+the scan reaches it. The palette contract — neutrals + accent only, never a semantic colour, and a
 block declares the FULL neutral set so it is verifiable alone; the
 constant-luminance construction, which catches a hand-edited hex even when it
 stays above 4.5:1; the swatch-equals-its-palette pin; the three key lists

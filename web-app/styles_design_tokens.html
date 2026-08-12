@@ -377,6 +377,44 @@
     --ring-focus: 0 0 0 3px rgba(108, 238, 233, .3);
   }
 
+  :root[data-palette="sage"]:not([data-mode="dark"]),
+  body[data-palette="sage"]:not([data-mode="dark"]) {
+    --paper: #f2f9f3;
+    --paper-2: #e9f5ea;
+    --paper-3: #ddece0;
+    --paper-card: #ffffff;
+    --ink: #0b190e;
+    --muted: #3a4a3d;
+    --muted-2: #5b6c5e;
+    --muted-3: #a2afa4;
+    --line: #d5e3d7;
+    --line-2: #beccc0;
+    --accent: #568262;
+    --accent-2: #44684d;
+    --accent-soft: #ddf8e3;
+    --accent-glow: rgba(86, 130, 98, 0.16);
+    --selection-bg: #a4e2b3;
+  }
+  :root[data-palette="sage"][data-mode="dark"],
+  body[data-palette="sage"][data-mode="dark"] {
+    --paper: #060f08;
+    --paper-2: #131d15;
+    --paper-3: #1d271f;
+    --paper-card: #0c160e;
+    --ink: #d9ebdb;
+    --muted: #9fb1a2;
+    --muted-2: #778879;
+    --muted-3: #455147;
+    --line: #253027;
+    --line-2: #414d43;
+    --accent: #b6e6c1;
+    --accent-2: #a0c7a9;
+    --accent-soft: rgba(182, 230, 193, 0.12);
+    --accent-glow: rgba(182, 230, 193, 0.22);
+    --selection-bg: rgba(182, 230, 193, 0.32);
+    --ring-focus: 0 0 0 3px rgba(182, 230, 193, .3);
+  }
+
   /* Palette SWATCH tokens — the picker previews both dimensions a palette
      changes (paper AND accent), because Sand differs from Console only in the
      paper: two accent-only swatches would look identical. Declared here, next
@@ -387,12 +425,14 @@
   :root {
     --pal-console-paper: #f6f7f9;  --pal-console-accent: #0f8a52;
     --pal-sand-paper: #faf7f2;  --pal-sand-accent: #0d8a52;
+    --pal-sage-paper: #f2f9f3;  --pal-sage-accent: #568262;
     --pal-plum-paper: #faf6fa;  --pal-plum-accent: #9262c4;
     --pal-teal-paper: #f2f8fa;  --pal-teal-accent: #098683;
   }
   :root[data-mode="dark"], body[data-mode="dark"] {
     --pal-console-paper: #0a0d14;  --pal-console-accent: #7af2a1;
     --pal-sand-paper: #120c04;  --pal-sand-accent: #87efb1;
+    --pal-sage-paper: #060f08;  --pal-sage-accent: #b6e6c1;
     --pal-plum-paper: #130a12;  --pal-plum-accent: #e5d2fe;
     --pal-teal-paper: #020f12;  --pal-teal-accent: #6ceee9;
   }
