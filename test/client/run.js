@@ -7595,6 +7595,49 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
     'a name inside the roster fence is still part of the searchable section text');
 });
 
+console.log('\nintake — email chrome matched to the app (operator 2026-08-11)');
+
+test('the intake shell uses the same chrome as the branded wrapper', () => {
+  const shell = extractRawFunction('Code.js', 'intakeEmailShell_');
+  const branded = extractRawFunction('Code.js', 'buildBrandedEmailHtml_');
+  // The mark sits ON THE CARD over a navy rule — logoUrl is a JPEG with no
+  // transparency, so a navy band would frame a white rectangle.
+  [shell, branded].forEach(function (fn, i) {
+    assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(fn), 'navy rule under the mark (' + i + ')');
+    assert.ok(/alt="UMS Team Tools"/.test(fn), 'the alt text carries the identity when images are blocked (' + i + ')');
+    assert.ok(/font-size:22px/.test(fn), 'the subject is a real heading, not a line beside the logo (' + i + ')');
+    assert.ok(/width:46px;height:3px/.test(fn), 'with the short rule under it (' + i + ')');
+    assert.ok(/text-transform:uppercase;color:' \+ P\.muted3 \+ ';">UMS Team Tools/.test(fn),
+      'and the mono wordmark footer (' + i + ')');
+  });
+  // The module label is per form, so PPD / PMD / PAP are distinguishable.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.strictEqual((code.match(/intakeEmailShell_\(subject, [a-zA-Z]+, 'Intake · /g) || []).length, 4,
+    'every call site names its form');
+});
+
+test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
+  const band = extractRawFunction('Code.js', 'intakeSectionRowHtml_');
+  // A solid navy bar with centred white text was the piece that most made
+  // these read as a different product from the rest of the app's mail.
+  assert.ok(/text-transform:uppercase/.test(band) && /P\.navyTint/.test(band), 'section bands are mono-uppercase on a tint');
+  assert.strictEqual(/text-align:center/.test(band), false, 'not centred');
+  const ppd = extractRawFunction('Code.js', 'intakeBuildPpdBodyHtml_');
+  const acct = extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_');
+  [ppd, acct].forEach(function (fn, i) {
+    assert.ok(/border-bottom:1px solid ' \+ P\.line/.test(fn), 'hairline row separators (' + i + ')');
+    assert.strictEqual(/border:1px solid ' \+ P\.line \+ ';width:5/.test(fn), false, 'no bordered grid (' + i + ')');
+    assert.ok(/intakeSectionRowHtml_\(label\)/.test(fn), 'both bodies share the section band (' + i + ')');
+    // Outlook drops these; the palette + tables are the whole layout system.
+    ['display:flex', 'gap:', 'filter:'].forEach(function (bad) {
+      assert.strictEqual(fn.indexOf(bad), -1, 'email-safe: no ' + bad + ' (' + i + ')');
+    });
+  });
+  // The restyle must not have dropped an esc_ — every patient field is escaped
+  // and the server-generated justification stays the ONE raw exception.
+  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppd), 'labels and answers are escaped');
+});
+
 console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
 
 const kbDecCtx = vm.createContext({});

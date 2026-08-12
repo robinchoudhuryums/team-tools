@@ -209,6 +209,22 @@ Phase: idle (post-reflect) + operator-requested feature work:
   with no answers — rather than dead-ending a rep mid-call. Ticks never carry
   across a re-render. Pure 492, 9 bite-checks. Verified in a browser: full walk
   + crumb-back + tick.
+- INTAKE EMAIL RESTYLE (operator: "the PPD intake form email is still the same
+  email style as it was before the web app… maybe in the vein of the call
+  notes / branded restyle"). `intakeEmailShell_` now mirrors
+  `buildBrandedEmailHtml_`'s chrome (mark on the card over a navy rule, mono
+  module label `Intake · PPD|PMD|PAP`, 22px heading + short brand rule, mono
+  footer); the shared `intakeSectionRowHtml_` replaces both bodies' solid-navy
+  centred-white bars with the app's kicker vocabulary (mono-uppercase on
+  navyTint, left-aligned); Q/A rows moved from bordered grid + strong blue
+  zebra to hairline separators + quiet zebra. Recommendation cards, answer
+  tones and the raw-`justification` exception untouched. Verified by RENDERING
+  before/after (no matrix scenario covers server-built mail) — same method as
+  the branded restyle. Pure 494 (2 pins, 10 bite-checks), DOM 69.
+  **Operator-visible caveat recorded in the KDD + checklist:** the PPD body
+  feeds `intakeBodyHash_`, so a preview taken pre-deploy and sent post-deploy
+  is rejected with "The form changed since you previewed it" (INV-111 working
+  as designed; one page load wide).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

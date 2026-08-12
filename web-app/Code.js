@@ -16364,21 +16364,53 @@ function intakeFilterRecommendations_(answers, allProducts) {
 }
 
 // ── Email body builders (all user fields esc_'d — INV-89 discipline) ──────
-function intakeEmailShell_(title, innerHtml) {
+function intakeEmailShell_(title, innerHtml, subLabel) {
+  // Chrome matched to buildBrandedEmailHtml_ (the 2026-08-11 restyle) so the
+  // intake mail reads as the same product as the rest of the app's email: the
+  // UMS mark ON THE CARD over a navy rule (logoUrl is a JPEG with no
+  // transparency, so a navy band would frame a white rectangle), a right-
+  // aligned mono module label, then the subject as a REAL heading rather than
+  // an 18px line beside the logo.
   const P = CN_EMAIL_PALETTE;
   return (
     '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
-    '<div style="max-width:680px;margin:0 auto;padding:20px 12px;font-family:\'Helvetica Neue\',Arial,sans-serif;color:' + P.ink + ';">' +
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;"><tr>' +
-        '<td style="width:60px;vertical-align:middle;"><img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;"></td>' +
-        '<td style="vertical-align:middle;padding-left:14px;"><h2 style="margin:0;text-align:left;color:' + P.brand + ';font-size:18px;">' + esc_(title) + '</h2></td>' +
-      '</tr></table>' +
-      '<div style="background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:8px;padding:18px;">' +
-        innerHtml +
-      '</div>' +
-      '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · Intake</div>' +
+    '<div style="max-width:680px;margin:0 auto;padding:22px 12px;font-family:Arial,Helvetica,sans-serif;color:' + P.ink + ';">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + P.paperCard +
+        ';border:1px solid ' + P.line + ';border-radius:12px;overflow:hidden;">' +
+        '<tr><td style="padding:20px 26px 0;">' +
+          '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+            // The alt text carries the identity when a client blocks remote
+            // images, which most do by default.
+            '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';vertical-align:bottom;' +
+              'font-size:15px;font-weight:700;letter-spacing:.4px;color:' + P.brand + ';">' +
+              '<img src="' + P.logoUrl + '" alt="UMS Team Tools" style="display:block;border:0;height:40px;width:auto;">' +
+            '</td>' +
+            '<td align="right" style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';vertical-align:bottom;' +
+              'font-family:\'Courier New\',monospace;font-size:9px;font-weight:700;letter-spacing:1.6px;' +
+              'text-transform:uppercase;color:' + P.muted3 + ';">' + esc_(subLabel || 'Intake') + '</td>' +
+          '</tr></table></td></tr>' +
+        '<tr><td style="padding:18px 26px 0;font-size:22px;line-height:1.25;font-weight:700;' +
+          'letter-spacing:-.01em;color:' + P.ink + ';">' + esc_(title) + '</td></tr>' +
+        '<tr><td style="padding:12px 26px 0;"><div style="width:46px;height:3px;border-radius:2px;background:' + P.brand + ';"></div></td></tr>' +
+        '<tr><td style="padding:16px 26px 6px;">' + innerHtml + '</td></tr>' +
+        '<tr><td style="padding:0 26px 20px;"><div style="border-top:1px solid ' + P.line +
+          ';padding-top:14px;font-family:\'Courier New\',monospace;font-size:10px;letter-spacing:1px;' +
+          'text-transform:uppercase;color:' + P.muted3 + ';">UMS Team Tools &middot; Intake</div></td></tr>' +
+      '</table>' +
     '</div></div>'
   );
+}
+
+/** The section band shared by the PPD and account bodies. The app's table
+ *  vocabulary is a mono uppercase header on a tint with a rule under it — not
+ *  a solid navy bar with centred white text, which is the one piece of the
+ *  pre-web-app look that most made these mails read as a different product. */
+function intakeSectionRowHtml_(label) {
+  const P = CN_EMAIL_PALETTE;
+  return '<tr><td colspan="2" style="height:18px;"></td></tr>' +
+    '<tr><td colspan="2" style="padding:7px 10px;background:' + P.navyTint +
+      ';border-bottom:2px solid ' + P.brand + ';font-family:\'Courier New\',monospace;font-size:10px;' +
+      'font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:' + P.brand + ';">' + label + '</td></tr>';
 }
 
 const INTAKE_PPD_YESNO_QS = ['14','15','16','17','18','19','20','21','22','23','26','27','28','30','31','33','35','36','44'];
@@ -16402,10 +16434,7 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
   let fieldIdx = 0;
   (rows || []).forEach(function (r) {
     const label = esc_(r.label || '');
-    if (r.isHeader) {
-      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid ' + P.line + ';text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
-      return;
-    }
+    if (r.isHeader) { html += intakeSectionRowHtml_(label); return; }
     const answerRaw = String(r.value == null ? '' : r.value);
     const qNum = String(r.qNum || '');
     let displayAnswer;
@@ -16428,14 +16457,22 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
         displayAnswer = escAns;
       }
     }
-    const qStyle = r.isSecondary ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:25px;' : 'font-weight:bold;color:' + P.ink + ';';
-    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.brandSoft;
+    const qStyle = r.isSecondary
+      ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:24px;'
+      : 'font-weight:600;color:' + P.ink + ';';
+    // Hairline row separators and a very quiet zebra — the app's ledger table
+    // vocabulary. The old bordered grid with a strong blue zebra was the other
+    // half of the pre-web-app look.
+    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.paper;
     fieldIdx++;
-    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid ' + P.line + ';width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid ' + P.line + ';text-align:center;vertical-align:middle;font-weight:bold;">' + displayAnswer + '</td></tr>';
+    html += '<tr style="background:' + bg + ';">' +
+      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';width:56%;vertical-align:top;' + qStyle + '">' + label + '</td>' +
+      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;font-weight:700;">' + displayAnswer + '</td></tr>';
   });
 
   // --- Recommendations ---
-  html += '<tr><td colspan="2" style="padding:20px 10px 5px 10px;border-top:2px solid ' + P.line + ';"><h3 style="margin:0 0 8px;color:' + P.brand + ';">Recommended HCPCS:</h3>';
+  html += intakeSectionRowHtml_('Recommended HCPCS') +
+    '<tr><td colspan="2" style="padding:12px 0 0;">';
   const hasComplex = recData && recData.complex && recData.complex.length > 0;
   const hasStandard = recData && recData.standard && recData.standard.length > 0;
   if (!hasComplex && !hasStandard) {
@@ -16518,7 +16555,7 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
     const isHeader = layout.HEADER_ROWS.indexOf(i + 1) >= 0;
 
     if (isHeader) {
-      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid ' + P.line + ';text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
+      html += intakeSectionRowHtml_(label);
       return;
     }
 
@@ -16537,11 +16574,15 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
     }
 
     const qStyle = layout.SECONDARY_QUESTION_ROWS.indexOf(i) >= 0
-      ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:25px;'
-      : 'font-weight:bold;color:' + P.ink + ';';
-    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.brandSoft;
+      ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:24px;'
+      : 'font-weight:600;color:' + P.ink + ';';
+    // Same ledger vocabulary as the PPD body — hairline separators and a quiet
+    // zebra — so the three intake mails do not diverge halfway.
+    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.paper;
     fieldIdx++;
-    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid ' + P.line + ';width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid ' + P.line + ';text-align:center;vertical-align:middle;">' + displayAnswer + '</td></tr>';
+    html += '<tr style="background:' + bg + ';">' +
+      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';width:56%;vertical-align:top;' + qStyle + '">' + label + '</td>' +
+      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;">' + displayAnswer + '</td></tr>';
   });
   html += '</table>';
   return html;
@@ -16596,7 +16637,7 @@ function intakePreviewPPD(payload) {
     const recData = intakeFilterRecommendations_(payload.answers || {}, getIntakeOfferings_());
     const subject = 'PPD for ' + patientInfo;
     const body = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
-    const html = intakeEmailShell_(subject, body);
+    const html = intakeEmailShell_(subject, body, 'Intake · PPD');
     return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject) };
   } catch (err) { return { error: err.message }; }
 }
@@ -16651,7 +16692,7 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
     const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {});
-    const html = intakeEmailShell_(subject, finalBody);
+    const html = intakeEmailShell_(subject, finalBody, 'Intake · PPD');
 
     // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
     // spirit — the public form path has had these caps since the hardening
@@ -16693,7 +16734,7 @@ function intakePreviewAcct_(formType, payload) {
   const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
   const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
-  const html = intakeEmailShell_(subject, body);
+  const html = intakeEmailShell_(subject, body, 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
   return { success: true, html: html, subject: subject, bodyHash: intakeBodyHash_(body, subject) };
 }
 
@@ -16727,7 +16768,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
     inlineImagesObj = decoded.inlineImagesObj;
     innerBody += decoded.sectionHtml;
   }
-  const htmlBody = intakeEmailShell_(subject, innerBody);
+  const htmlBody = intakeEmailShell_(subject, innerBody, 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
 
   // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
   // spirit) — never email a submission we can't record.

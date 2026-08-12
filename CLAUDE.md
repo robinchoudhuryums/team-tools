@@ -2577,6 +2577,32 @@ this section before touching the relevant area.
   about that constant for the maintenance rule. Email-client
   compatibility is preserved by inlining the hex (no CSS variables;
   email clients strip `<style>` blocks).
+- **Intake emails share the app's email chrome (operator 2026-08-11).** The
+  PPD / PMD / PAP emails were the last builders still carrying their
+  pre-web-app look — an 18px title line beside the logo and solid-navy section
+  bars with centred white text — so they read as a different product from the
+  Call Notes and branded-notification mail beside them in the same inbox.
+  `intakeEmailShell_(title, innerHtml, subLabel)` now mirrors
+  `buildBrandedEmailHtml_`'s chrome exactly: the UMS mark **on the card** over
+  a 2px navy rule (never on a coloured fill — `logoUrl` is a transparency-free
+  JPEG), a right-aligned mono module label (`Intake · PPD` / `· PMD` / `· PAP`,
+  the wrapper's `subLabel` idea — repeating the wordmark beside the wordmark is
+  worse than naming the module), the subject as a **22px heading** with the
+  short brand rule under it, and the mono-uppercase `UMS Team Tools · Intake`
+  footer. Inside the body, the shared `intakeSectionRowHtml_(label)` replaces
+  both bodies' hand-rolled bars with the app's **kicker vocabulary** —
+  mono-uppercase brand text on `navyTint` under a navy rule, left-aligned, not
+  centred — and the Q/A rows moved from a bordered grid with strong blue zebra
+  to **hairline separators + a quiet `paperCard`/`paper` zebra**, matching the
+  in-app ledger tables. The recommendation cards, conditional answer tones and
+  the raw-`justification` exception (INV-89) are untouched. Two things this
+  restyle must not lose, both pinned: every patient field stays `esc_`'d, and
+  the layout stays table-only (**no `display:flex` / `gap` / `filter`** — see
+  the CN_EMAIL_PALETTE gotcha). **Deploy-window note:** the PPD body feeds
+  `intakeBodyHash_`, so a preview taken before the deploy and sent after it is
+  rejected with "The form changed since you previewed it" (INV-111). That is
+  the guard working; re-previewing clears it, and the window is one page load
+  wide.
 - **Department emails and state tax rates are editable via the Admin
   tab.** Call Notes → Admin (manager-only) reads the current config
   from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
@@ -4833,6 +4859,18 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The intake email restyle (operator 2026-08-11) adds NO new operator state**
+  — no Script Properties, triggers, migrations or CONFIG constants; it changes
+  `intakeEmailShell_`, the new shared `intakeSectionRowHtml_`, and the row
+  styling in the PPD + PMD/PAP body builders. All three intake emails change
+  appearance at once and now match the branded-notification and Call Notes
+  mail. Recipients, attachments, recommendations and the PHI submission rows
+  are untouched. **One transient effect worth knowing:** the PPD body feeds the
+  preview→send `bodyHash` guard, so a rep who previewed BEFORE the new version
+  went live and sends AFTER gets "The form changed since you previewed it" —
+  the guard doing its job (INV-111); re-previewing clears it. **Post-deploy:
+  send yourself one PPD and one PMD** and confirm the UMS mark loads — same
+  standing spot-check as any email change.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
@@ -6247,7 +6285,13 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The decision block added five more → **492** (parse; unwalkable-guide reporting;
+roster-block emitter — 8 mutations bite-checked). The intake email restyle added two more → **494** (the shell's chrome
+asserted against `buildBrandedEmailHtml_`'s own source so the two cannot drift
+apart again, plus per-form module labels at all four call sites; and the ledger
+vocabulary — mono-uppercase band on tint not centred, hairline separators, no
+bordered grid, the shared band in BOTH bodies — with the email-safety and
+`esc_` guarantees riding the same test — 10 mutations bite-checked).
+The decision block added five more → **492** (parse; unwalkable-guide reporting;
 path resolution incl. a stale answer; one-question-at-a-time + trail + fresh
 ticks; fence inertness — 9 mutations bite-checked). The glossary block added three more → **487** (parse/aliases/duplicate-refusal,
 fence + inertness + attribute quoting, first-mention-only + acronym case + skip
