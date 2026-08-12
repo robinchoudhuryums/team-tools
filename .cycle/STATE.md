@@ -225,6 +225,9 @@ Phase: idle (post-reflect) + operator-requested feature work:
   feeds `intakeBodyHash_`, so a preview taken pre-deploy and sent post-deploy
   is rejected with "The form changed since you previewed it" (INV-111 working
   as designed; one page load wide).
+- The glossary block, the decision block and the intake email restyle are
+  MERGED as **PR #165** (35eb721, CI green); branch restarted from main.
+  Deploy remains ONE operator action for all three.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
