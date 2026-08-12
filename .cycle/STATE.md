@@ -185,6 +185,13 @@ Phase: idle (post-reflect) + operator-requested feature work:
   making adjacency decide step-vs-skip (skips arc, phase-bypasses arc above)
   and anchoring every edge at its source so upward arrows point at the target.
   Pure 483.
+  Final operator round: MA Education ⇄ Appointment Needed is a LOOP (reciprocal
+  edges now get one lane each way), and the Qualifications evals are OPTIONAL +
+  PARALLEL with an AND-join at PWC Verification (`*join` states "waits for
+  every applicable path"). The edge classification was extracted into the PURE
+  `kbRosterEdgeKind_` — every drawing bug lived in that decision and none of it
+  was testable inside a function needing real layout. Pure 484, 6 geometry
+  decisions bite-checked. Operator approved PR + merge.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

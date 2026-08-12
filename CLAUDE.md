@@ -3767,6 +3767,22 @@ this section before touching the relevant area.
   landed on the SOURCE — every edge now starts at its source. **Node order
   within a phase is therefore meaningful**: put the happy path in sequence and
   it renders as the straight spine, with detours visibly leaving it.
+  **The classification is the pure `kbRosterEdgeKind_`** (step / skip /
+  phaseSkip / forward / back, plus `down` and a reciprocal `lane`), extracted
+  because EVERY drawing bug so far lived in that decision rather than in the
+  path arithmetic — and none of it was testable while it sat inside a function
+  that needs a real browser layout. It is now pinned behaviourally with stub
+  rects; the remaining source pins only assert the wiring.
+  **A RECIPROCAL pair gets one lane each way (operator, 2026-08-11):** an
+  appointment can bounce between two stages, so `A → B` and `B → A` both
+  exist; on one centre line they overlap into a single stroke with arrowheads
+  at both ends and no way to tell which label belongs to which.
+  **`*join` marks an AND-join** — a stage that waits for EVERY applicable
+  inbound path, not any one of them (PWC Verification waits on whichever of
+  PT Eval / ATP Eval the order needs, and neither is always required). Without
+  it, several inbound edges read as alternatives, which is the opposite of the
+  real rule; the node states the condition in words rather than relying on the
+  arrows alone. Markers compose in either order (`X*decision*join`).
 - **A fenced block is ATOMIC in search-chunk truncation (operator 2026-08-11).**
   `kbChunkTruncate_` cut at a paragraph boundary and then "repaired" an odd
   fence count by appending a closing fence — turning a HALF block into a
@@ -6188,7 +6204,9 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The skip/direction correction added one more → **483** (column+row
+roster-block emitter — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
+classifier folded three source-shape pins into one behavioural one → **484**
+(6 geometry decisions bite-checked). The skip/direction correction added one more → **483** (column+row
 attributes, adjacency deciding step-vs-skip, phase-bypass arcs, source-anchored
 arrows — 5 mutations bite-checked). The process-graph round added two more → **482**
 (measured edges + left-edge classification + redraw + stacking; dangling steps

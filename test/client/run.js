@@ -7507,7 +7507,7 @@ const rosEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 ['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterSlug_', 'kbRosterPeopleIndex_',
  'kbRosterTagChip_', 'kbRosterFlags_', 'kbRosterPersonHtml_', 'kbRosterTeamsHtml_',
  'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterChartHtml_',
- 'kbRosterKey_', 'kbRosterFlowHtml_', 'kbRosterBodyHtml_',
+ 'kbRosterKey_', 'kbRosterFlowHtml_', 'kbRosterEdgeKind_', 'kbRosterBodyHtml_',
  'kbRosterModeBtn_', 'kbRosterHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
 
@@ -7801,48 +7801,70 @@ test('the Flow view exists only when a flow is recorded, and is never guessed', 
     'phases alone are enough to offer the Flow view');
 });
 
-test('the process graph draws MEASURED edges and classifies them by column', () => {
+test('kbRosterEdgeKind_ — the decision every drawing bug lived in', () => {
+  const K = kbRosCtx.kbRosterEdgeKind_;
+  const box = (left, top) => ({ left, top, right: left + 100, bottom: top + 40, width: 100, height: 40 });
+  // SAME COLUMN. Comparing source-RIGHT to target-LEFT called these loop-backs
+  // (8 of 14 on the real process) because a stacked sibling always sits left
+  // of its parent's right edge.
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).kind, 'step', 'adjacent sibling = step');
+  assert.strictEqual(K(box(0, 0), box(0, 180), 1, 1, 0, 3, false).kind, 'skip', 'non-adjacent = skip');
+  // Direction: an upward edge must still report down:false so the path is
+  // anchored at its SOURCE and the arrowhead lands on the target.
+  assert.strictEqual(K(box(0, 180), box(0, 0), 1, 1, 3, 0, false).down, false, 'upward is not "down"');
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).down, true, 'downward is');
+  // COLUMN JUMPS.
+  assert.strictEqual(K(box(0, 0), box(200, 0), 1, 2, 0, 0, false).kind, 'forward', 'next column = forward');
+  assert.strictEqual(K(box(0, 0), box(400, 0), 0, 2, 0, 0, false).kind, 'phaseSkip', 'past a whole phase = skip');
+  assert.strictEqual(K(box(400, 0), box(0, 0), 3, 1, 0, 0, false).kind, 'back', 'leftward = back');
+  // RECIPROCAL pairs get one lane each way; drawn on the same centre line they
+  // overlap into a single stroke with arrowheads at both ends.
+  const down = K(box(0, 0), box(0, 60), 1, 1, 0, 1, true);
+  const up = K(box(0, 60), box(0, 0), 1, 1, 1, 0, true);
+  assert.ok(down.lane !== 0 && up.lane !== 0, 'both directions are offset');
+  assert.ok(down.lane !== up.lane, 'and to OPPOSITE sides');
+  assert.strictEqual(K(box(0, 0), box(0, 60), 1, 1, 0, 1, false).lane, 0, 'a one-way edge stays centred');
+});
+
+test('the process graph draws edges MEASURED from the laid-out boxes', () => {
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   const draw = extractFunction('kb/script_kb.html', 'kbRosterDrawEdges_');
-  // Edges are drawn by measuring the boxes CSS already placed, so the diagram
-  // cannot disagree with what is on screen and no layout engine is needed.
   assert.ok(/getBoundingClientRect\(\)/.test(draw), 'positions come from the laid-out boxes');
-  // Classification is by the boxes' LEFT edges. Comparing source-RIGHT to
-  // target-LEFT called every same-column vertical step a loop-back (8 of 14
-  // on the real process).
-  assert.ok(/Math\.abs\(rb\.left - ra\.left\) < 8/.test(draw), 'same-column steps are detected by left edge');
-  assert.ok(/var back = !sameCol && rb\.left < ra\.left - 8/.test(draw), 'a back-edge is a LEFTWARD column jump');
-  // Opening a node moves every box below it.
+  assert.ok(/kbRosterEdgeKind_\(ra, rb, colA, colB, rowA, rowB, reciprocal\)/.test(draw),
+    'and the classification goes through the pure helper');
+  const html = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc(
+    'phase| *: S\nphase| 1. I: A\nphase| 2. Q: B\nstep| S -> B')));
+  assert.ok(/data-col="0"/.test(html) && /data-row="0"/.test(html), 'nodes carry their column and row');
   assert.ok(/kbRosterDrawEdges_\(kbRosterRoot_\(btn\)\)/.test(
     extractFunction('kb/script_kb.html', 'kbRosterToggleNode_')), 'edges redraw after expand/collapse');
   assert.ok(/@media \(max-width: 700px\)[\s\S]{0,300}\.kb-ros-edges \{ display: none/.test(kb),
-    'connectors are hidden once the columns stack, where they would be meaningless');
+    'connectors hide once the columns stack, where they would be meaningless');
+  assert.ok(/\.kb-ros-edge\.is-skip \{[^}]*stroke-dasharray/.test(kb), 'a skip is visually distinct');
 });
 
-test('an edge that SKIPS something is drawn differently from one that steps to it', () => {
-  const draw = extractFunction('kb/script_kb.html', 'kbRosterDrawEdges_');
-  const html = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc([
-    'phase| *: Sales', 'phase| 1. Intake: PPD', 'phase| 2. Qual: Qualifications',
-    'phase| 3. Auth: PWC, PAR, Approval, Appeals',
-    'step| Sales -> Qualifications', 'step| PAR -> Approval', 'step| PAR -> Appeals',
-    'step| Appeals -> Approval',
-  ].join('\n'))));
-  // The classifier needs each node's column and row; without them a skip is
-  // indistinguishable from a step.
-  assert.ok(/data-col="0"/.test(html) && /data-row="3"/.test(html), 'nodes carry their column and row');
-  // Drawn as plain verticals, "PAR → Approval" and "PAR → Appeals" overlapped
-  // and read as a required chain PAR → Appeals → Approval — which is the
-  // opposite of the real process, where approval is reached directly.
-  assert.ok(/Math\.abs\(rowB - rowA\) === 1/.test(draw), 'adjacency decides step vs skip');
-  assert.ok(/cls = ' is-skip'/.test(draw), 'a skip is marked');
-  assert.ok(/\(colB - colA\) > 1/.test(draw), 'and so is one that bypasses a whole phase');
-  // An upward edge previously ended at the topmost box — the arrowhead pointed
-  // at the SOURCE. Appeals → Approval runs upward on the real process.
-  assert.ok(/down \? \('M' \+ cx \+ ',' \+ aBot/.test(draw), 'a downward edge starts at the source bottom');
-  assert.ok(/: \('M' \+ cx \+ ',' \+ aTop \+ ' L' \+ cx \+ ',' \+ bBot\)/.test(draw),
-    'and an upward edge still starts at the source, so the arrow lands on the target');
-  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
-  assert.ok(/\.kb-ros-edge\.is-skip \{[^}]*stroke-dasharray/.test(kb), 'and a skip is visually distinct');
+test('a join states that it WAITS for every applicable path, not any one', () => {
+  const d = kbRosCtx.kbRosterParse_(rosEsc([
+    'phase| 2. Qual: Qualifications*decision, PT Scheduling, ATP Scheduling',
+    'phase| 3. Auth: PWC Verification*join',
+    'step| Qualifications -> PT Scheduling: If PT Eval needed',
+    'step| Qualifications -> ATP Scheduling: If ATP Eval needed',
+    'step| Qualifications -> PWC Verification: If neither eval is needed',
+    'step| PT Scheduling -> PWC Verification',
+    'step| ATP Scheduling -> PWC Verification',
+  ].join('\n')));
+  const pwc = d.phases[1].nodes[0];
+  assert.strictEqual(pwc.name, 'PWC Verification', 'the marker is stripped from the name');
+  assert.strictEqual(pwc.join, true, 'and recorded');
+  // Several inbound paths drawn without this read as ALTERNATIVES — "any one
+  // proceeds" — which is the opposite of a stage that waits for all of them.
+  const html = kbRosCtx.kbRosterFlowHtml_(d);
+  assert.ok(/Waits for every applicable path above to complete/.test(html), 'the AND semantics are stated');
+  assert.ok(/kb-ros-flag is-join/.test(html), 'and flagged');
+  // Markers compose in either order.
+  const both = kbRosCtx.kbRosterParse_(rosEsc('phase| P: X*decision*join, Y*join*decision'));
+  assert.strictEqual(both.phases[0].nodes[0].decision && both.phases[0].nodes[0].join, true, 'decision+join');
+  assert.strictEqual(both.phases[0].nodes[1].decision && both.phases[0].nodes[1].join, true, 'join+decision');
+  assert.strictEqual(both.phases[0].nodes[0].name, 'X', 'name is clean either way');
 });
 
 test('a step naming an undeclared node is reported, not silently dropped', () => {

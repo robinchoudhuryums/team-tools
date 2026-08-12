@@ -315,6 +315,8 @@
   .kb-ros-fnode.is-decision { border-style: dashed; border-color: var(--warning-deep); background: var(--warn-soft); }
   .kb-ros-fnode-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .kb-ros-flag.is-decision { background: var(--paper-2); color: var(--warning-deep); }
+  .kb-ros-flag.is-join { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-joinnote { display: block; margin-top: 4px; font-size: .68rem; color: var(--success-deep); }
   .kb-ros-routes { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
   .kb-ros-routes li { font-size: .7rem; color: var(--muted); }
   .kb-ros-routelbl { font-weight: 700; color: var(--ink); }
@@ -539,9 +541,14 @@ function kbRosterParse_(text) {
       var pname = val.slice(0, pi).trim();
       var nodes = val.slice(pi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
         .map(function (n) {
-          var dec = false;
-          n = n.replace(/\*decision\s*$/i, function () { dec = true; return ''; }).trim();
-          return { name: n, decision: dec };
+          var dec = false, join = false;
+          // Markers are stripped in a loop so `Name*decision*join` works in
+          // either order, like the person flags.
+          for (var pass = 0; pass < 2; pass++) {
+            n = n.replace(/\*decision\s*$/i, function () { dec = true; return ''; })
+                 .replace(/\*join\s*$/i, function () { join = true; return ''; }).trim();
+          }
+          return { name: n, decision: dec, join: join };
         });
       phases.push({ name: pname === '*' ? '' : pname, external: pname === '*', nodes: nodes });
       return;
@@ -979,7 +986,12 @@ function kbRosterFlowHtml_(data) {
               'aria-controls="' + id + '-p" onclick="kbRosterToggleNode_(this)">' + n.name + '</button>'
           : '<span class="kb-ros-toggle is-plain">' + n.name + '</span>') +
         (n.decision ? '<span class="kb-ros-flag is-decision">decision</span>' : '') +
+        (n.join ? '<span class="kb-ros-flag is-join">join</span>' : '') +
       '</div>' +
+      // An AND-join: several inbound paths, not alternatives. Without this the
+      // diagram reads as "any one path proceeds", which is the opposite of a
+      // stage that waits for every applicable one.
+      (n.join ? '<span class="kb-ros-joinnote">Waits for every applicable path above to complete</span>' : '') +
       (t ? '<span class="kb-ros-nodemeta">' + t.people.length + ' ' +
              (t.people.length === 1 ? 'person' : 'people') + '</span>' : '') +
       (routes.length
@@ -1033,6 +1045,30 @@ function kbRosterFlowHtml_(data) {
     '</div></div>';
 }
 
+/** PURE: decides what KIND of connector an edge needs, given the two boxes'
+ *  geometry and their column/row positions. Extracted because every drawing
+ *  bug so far lived in this decision rather than in the path arithmetic —
+ *  same-column steps misread as loop-backs, skips drawn as steps, upward
+ *  edges pointing at the source — and none of it was testable while it sat
+ *  inside a function that needs a real browser layout.
+ *    kind: 'step' | 'skip' | 'phaseSkip' | 'forward' | 'back'
+ *    down: true when the target sits below the source (same column only) */
+function kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal) {
+  // Classify by LEFT edges: a sibling stacked in the same column always sits
+  // left of its parent's RIGHT edge, so a right-vs-left test calls every
+  // vertical step a loop-back.
+  var sameCol = Math.abs(rb.left - ra.left) < 8;
+  if (sameCol) {
+    return {
+      kind: Math.abs(rowB - rowA) === 1 ? 'step' : 'skip',
+      down: rowB > rowA,
+      lane: reciprocal ? (rowB > rowA ? -7 : 7) : 0,
+    };
+  }
+  if (rb.left < ra.left - 8) return { kind: 'back', down: true, lane: 0 };
+  return { kind: (colB - colA) > 1 ? 'phaseSkip' : 'forward', down: true, lane: 0 };
+}
+
 /** Draws the edges by MEASURING the laid-out boxes. Runs after render, on
  *  resize, and after any expand/collapse, because opening a node moves every
  *  box below it. */
@@ -1048,6 +1084,11 @@ function kbRosterDrawEdges_(root) {
   svg.setAttribute('height', wrap.scrollHeight);
   svg.setAttribute('viewBox', '0 0 ' + wrap.scrollWidth + ' ' + wrap.scrollHeight);
   var find = function (name) { return proc.querySelector('[data-node="' + kbRosterKey_(name).replace(/"/g, '') + '"]'); };
+  // A RECIPROCAL pair (A→B and B→A, e.g. an appointment bouncing between two
+  // stages) would draw two opposite arrows on the same line, overlapping into
+  // one ambiguous stroke. Offset each side so both remain readable.
+  var pairKey = {};
+  data.steps.forEach(function (st) { pairKey[kbRosterKey_(st.from) + '\u0000' + kbRosterKey_(st.to)] = 1; });
   var parts = [];
   data.steps.forEach(function (st) {
     var a = find(st.from), b = find(st.to);
@@ -1058,18 +1099,20 @@ function kbRosterDrawEdges_(root) {
     // Classify by the boxes' LEFT edges, not source-right vs target-left: two
     // nodes stacked in the SAME column always have target-left < source-right,
     // so that test called every vertical step a loop-back (8 of 14 here).
-    var sameCol = Math.abs(rb.left - ra.left) < 8;
-    var back = !sameCol && rb.left < ra.left - 8;
     var colA = +(a.getAttribute('data-col') || 0), colB = +(b.getAttribute('data-col') || 0);
     var rowA = +(a.getAttribute('data-row') || 0), rowB = +(b.getAttribute('data-row') || 0);
-    var skip = !sameCol && !back && (colB - colA) > 1;     // bypasses a whole phase
+    var reciprocal = !!pairKey[kbRosterKey_(st.to) + '\u0000' + kbRosterKey_(st.from)];
+    var k = kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal);
+    var sameCol = k.kind === 'step' || k.kind === 'skip';
+    var back = k.kind === 'back';
+    var skip = k.kind === 'phaseSkip';
     var d, cls = '';
     if (sameCol) {
-      var cx = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var cx = ra.left - box.left + ra.width / 2 + wrap.scrollLeft + k.lane;
       var aTop = ra.top - box.top + wrap.scrollTop, aBot = ra.bottom - box.top + wrap.scrollTop;
       var bTop = rb.top - box.top + wrap.scrollTop, bBot = rb.bottom - box.top + wrap.scrollTop;
-      var down = rowB > rowA;
-      if (Math.abs(rowB - rowA) === 1) {
+      var down = k.down;
+      if (k.kind === 'step') {
         // Adjacent siblings: a straight vertical. Drawn source→target so the
         // arrowhead lands on the TARGET even when the edge runs upward — it
         // previously always ended at the topmost box, pointing at the source.
