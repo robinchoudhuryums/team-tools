@@ -7595,6 +7595,111 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
     'a name inside the roster fence is still part of the searchable section text');
 });
 
+console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
+
+const kbDecCtx = vm.createContext({});
+['kbSlug_', 'kbRosterAttr_', 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbDecCtx));
+
+const DEC_SRC = [
+  'ask|  q1: Eval in the last 6 months?',
+  'opt|  q1: Yes -> q2',
+  'opt|  q1: No -> aPT',
+  'ask|  q2: Group 3 chair?',
+  'opt|  q2: Yes -> aATP',
+  'opt|  q2: No -> aNone',
+  'do|   aPT: Route to PT Scheduling',
+  'todo| aPT: Book the earliest slot',
+  'todo| aPT: Log the appointment date',
+  'note| aPT: If the patient declines, send back to MA Education',
+  'do|   aATP: Route to ATP Scheduling',
+  'do|   aNone: Send to PWC Verification',
+].join('\n');
+
+test('kbDecideParse_ — questions, options, actions and their steps', () => {
+  const d = kbDecCtx.kbDecideParse_(rosEsc(DEC_SRC));
+  assert.strictEqual(d.root, 'q1', 'the FIRST ask is the root');
+  assert.strictEqual(d.order.length, 5, 'five nodes');
+  assert.strictEqual(d.nodes.q1.opts.length, 2, 'options parse');
+  assert.strictEqual(d.nodes.q1.opts[0].to, 'q2', 'and carry their destination');
+  assert.strictEqual(d.nodes.aPT.kind, 'do', 'an action is a leaf');
+  assert.strictEqual(d.nodes.aPT.todos.length, 2, 'with tickable steps');
+  assert.strictEqual(d.nodes.aPT.notes.length, 1, 'and a caveat');
+  assert.strictEqual(d.warnings.length + d.dangling.length + d.unreachable.length, 0, 'a sound guide warns about nothing');
+});
+
+test('a guide that cannot be walked says so instead of dead-ending mid-call', () => {
+  // An option pointing nowhere, and a branch nothing reaches, are authoring
+  // errors the reader would otherwise hit as a dead end while on a call.
+  const broken = kbDecCtx.kbDecideParse_(rosEsc([
+    'ask| q1: Start?', 'opt| q1: Yes -> ghost',
+    'do|  orphan: Never reachable',
+    'ask| q2: Also unreachable?', 'opt| q2: x -> orphan',
+  ].join('\n')));
+  assert.ok(broken.dangling.indexOf('ghost') >= 0, 'a dangling destination is caught');
+  assert.ok(broken.unreachable.indexOf('orphan') >= 0 && broken.unreachable.indexOf('q2') >= 0,
+    'and so is a branch nothing reaches');
+  const html = kbDecCtx.kbDecideHtml_(rosEsc('ask| q1: Start?\nopt| q1: Yes -> ghost'), []);
+  assert.ok(/role="alert"/.test(html) && /does not exist/.test(html), 'the reader is told, not left guessing');
+  // A second title for one id is ambiguous; a question with no answers is a
+  // dead end.
+  const dup = kbDecCtx.kbDecideParse_(rosEsc('ask| q1: A?\nask| q1: B?'));
+  assert.strictEqual(dup.warnings.length, 1, 'a redefined node is refused');
+  assert.ok(/no answers recorded/.test(kbDecCtx.kbDecideHtml_(rosEsc('ask| q1: Dead end?'), [])),
+    'a question with no options says so');
+});
+
+test('the walk resolves a path, and an edited tree cannot strand a reader', () => {
+  const d = kbDecCtx.kbDecideParse_(rosEsc(DEC_SRC));
+  const r = kbDecCtx.kbDecideResolve_(d, ['Yes', 'No']);
+  assert.strictEqual(r.at, 'aNone', 'the path lands on the right action');
+  assert.strictEqual(r.trail.length, 2, 'and records the questions answered');
+  assert.strictEqual(r.trail[0].a, 'Yes', 'with the answer given');
+  // An answer that no longer matches is SKIPPED rather than throwing — an
+  // author can edit the tree under a reader mid-walk.
+  const stale = kbDecCtx.kbDecideResolve_(d, ['Maybe', 'Yes']);
+  assert.strictEqual(stale.at, 'q2', 'an unknown answer is ignored, the rest still applies');
+  assert.strictEqual(kbDecCtx.kbDecideResolve_(d, []).at, 'q1', 'an empty path is the start');
+});
+
+test('the guide renders one question at a time with a walkable trail', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const start = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), []);
+  assert.strictEqual((start.match(/kb-dec-title/g) || []).length, 1, 'exactly one question is shown');
+  assert.strictEqual(/kb-dec-crumb/.test(start), false, 'no trail at the start');
+  assert.strictEqual(/Start over/.test(start), false, 'and nothing to start over from');
+  const mid = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), ['Yes']);
+  assert.ok(/kb-dec-crumb/.test(mid), 'answering leaves a crumb');
+  assert.ok(/Start over/.test(mid), 'and offers a restart');
+  const leaf = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), ['No']);
+  assert.ok(/kb-dec-todos/.test(leaf) && /type="checkbox"/.test(leaf), 'the action has tickable steps');
+  assert.ok(/Route to PT Scheduling/.test(leaf), 'and names the action');
+  // Real controls (INV-173) and the changing question is announced.
+  assert.ok(/<button type="button" class="kb-dec-opt"/.test(start), 'options are real buttons');
+  assert.ok(/<button type="button" class="kb-dec-crumb"/.test(mid), 'so are the crumbs');
+  assert.ok(/aria-live="polite"/.test(start), 'the new question is announced');
+  // Ticks belong to the action on screen: carrying them across a re-render
+  // would assert work that was not done.
+  // Ticks belong to the action on screen: a re-render rebuilds from source, so
+  // no checkbox can arrive pre-checked and assert work that was not done.
+  assert.strictEqual(/checked/.test(leaf), false, 'a freshly rendered action has nothing ticked');
+  const render = extractFunction('kb/script_kb.html', 'kbDecideRender_');
+  assert.ok(/kbDecideHtml_\(root\.getAttribute\('data-src'\)/.test(render), 're-render rebuilds from the source');
+  assert.ok(/replaceChild/.test(render), 'replacing the node, so no prior state survives');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-dec-opts \{ flex-direction: column/.test(kb),
+    'options stack on a phone');
+});
+
+test('kbMd_ renders a ```decision fence, inert like the others', () => {
+  const html = kbDecCtx.kbMd_(['Intro.', '', '```decision', 'ask| q1: Go?', 'opt| q1: Yes -> a', 'do| a: Done', '```'].join('\n'));
+  assert.ok(/<div class="kb-decision"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  const evil = kbDecCtx.kbMd_(['```decision', 'ask| q1: <script>alert(1)</script>', 'opt| q1: y -> a', 'do| a: x', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  const quoted = kbDecCtx.kbDecideHtml_('ask| q1: A?\nopt| q1: say "yes" -> a\ndo| a: x', []);
+  assert.ok(/data-opt="say &quot;yes&quot;"/.test(quoted), 'quotes are escaped in attributes');
+});
+
 console.log('\nkb — glossary block (operator 2026-08-11)');
 
 const kbGlossCtx = vm.createContext({});

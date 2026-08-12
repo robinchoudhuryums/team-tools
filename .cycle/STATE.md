@@ -201,7 +201,18 @@ Phase: idle (post-reflect) + operator-requested feature work:
   into both the Reference reader and the drawer. Pure 487, 8 bite-checks.
   Scope limit: annotation is within the defining article — app-wide linking
   would need a designated article + Script Property, deliberately deferred.
-- NEXT: decision-tree block (operator asked for it after the glossary).
+- DECISION / task-guide block (operator: "guide me through a task, with actions
+  at the leaves"). ```decision fence: ask|/opt|/do|/todo|/note|, first ask is
+  the root. One question at a time, crumb trail (each a button back to that
+  question), tickable steps at the action. Reports the three unwalkable-guide
+  errors — dangling option target, branch unreachable from the root, question
+  with no answers — rather than dead-ending a rep mid-call. Ticks never carry
+  across a re-render. Pure 492, 9 bite-checks. Verified in a browser: full walk
+  + crumb-back + tick.
+- NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
+  Intake catalog is currently unreachable without running a 46-question intake),
+  print stylesheet, per-article owner, inline knowledge check. Operator was
+  advised to let pilot usage data pick.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

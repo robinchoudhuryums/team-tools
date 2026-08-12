@@ -3796,6 +3796,25 @@ this section before touching the relevant area.
   (4×) and otherwise stops BEFORE the fence, never inside it. The odd-fence
   repair is retained for the DISTINCT case of a fence the SOURCE never closes —
   truncation did not break that, the article did.
+- **Decision / task-guide block (` ```decision `, operator 2026-08-11).** Asked
+  for as "guide me through a task, with actions at the leaves". A `decision`
+  fence asks ONE question at a time and lands on an ACTION with tickable steps,
+  so a rep mid-call is never reading a branching policy page while holding the
+  branch in their head. Syntax matches the other blocks:
+  `ask| id: Question`, `opt| id: Label -> targetId`, `do| id: Action`,
+  `todo| id: Step`, `note| id: Caveat`. **The first `ask|` is the root**; ids
+  are author-chosen and never shown. **Three authoring errors are REPORTED
+  rather than hit as a dead end mid-call**: an option pointing at a node that
+  does not exist, a node nothing can reach from the root (found by a walk), and
+  a question with no answers. A node given a second title is refused — picking
+  one silently would be worse. The trail of answers renders as crumbs, each a
+  button back to that question, because a rep who mis-answers must not have to
+  start again; `kbDecideResolve_` SKIPS an answer that no longer matches rather
+  than throwing, since an author can edit the tree under a reader mid-walk.
+  **Ticks are deliberately not carried across a re-render** — they belong to
+  the action on screen, and restoring them onto a different action would assert
+  work that was not done. Options and crumbs are real buttons (INV-173) and the
+  question region is `aria-live` so the new question is announced.
 - **Glossary block (` ```glossary `, operator 2026-08-11).** This department
   runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and a new rep meets
   them mid-call with no way to ask (five people on the live roster are marked
@@ -6228,7 +6247,9 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The glossary block added three more → **487** (parse/aliases/duplicate-refusal,
+roster-block emitter — 8 mutations bite-checked). The decision block added five more → **492** (parse; unwalkable-guide reporting;
+path resolution incl. a stale answer; one-question-at-a-time + trail + fresh
+ticks; fence inertness — 9 mutations bite-checked). The glossary block added three more → **487** (parse/aliases/duplicate-refusal,
 fence + inertness + attribute quoting, first-mention-only + acronym case + skip
 set + both readers wired — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
 classifier folded three source-shape pins into one behavioural one → **484**
