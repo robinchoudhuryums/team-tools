@@ -7775,10 +7775,65 @@ test('the Flow view exists only when a flow is recorded, and is never guessed', 
   // diagram at all.
   const empty = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('dept| D — O\nteam| T: Ann')));
   assert.ok(/No process flow recorded yet/.test(empty), 'it says so rather than inventing one');
-  assert.ok(/flow\| Order:/.test(empty), 'and shows exactly what to add');
+  assert.ok(/phase\| 1\. Intake:/.test(empty), 'and shows exactly what to add');
   const one = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('dept| D — O\nteam| T: Ann\nflow| T -> Ship')));
-  assert.strictEqual((one.match(/kb-ros-step/g) || []).length >= 2, true, 'both stages render');
-  assert.ok(/is-step/.test(one), 'a stage that is not a team renders as a plain step');
+  assert.strictEqual((one.match(/kb-ros-fnode/g) || []).length >= 2, true, 'both stages render as nodes');
+  assert.ok(/is-plain/.test(one), 'a stage that is not a team is not clickable');
+  // A branching process: phases + steps, which the linear form cannot express.
+  const g = kbRosCtx.kbRosterParse_(rosEsc([
+    'dept| D — O', 'team| PT Scheduling: Ann',
+    'phase| 2. Qualifications: Qualifications*decision, PT Scheduling, ATP Scheduling',
+    'step| Qualifications -> PT Scheduling: Route A',
+    'step| Qualifications -> ATP Scheduling: Route B',
+    'step| PAR -> Appeals: Denied',
+  ].join('\n')));
+  assert.strictEqual(g.phases.length, 1, 'the phase parses');
+  assert.strictEqual(g.phases[0].nodes[0].decision, true, 'a *decision branch point is marked');
+  assert.strictEqual(g.steps.length, 3, 'every labelled edge parses');
+  assert.strictEqual(g.steps[0].label, 'Route A', 'edge labels survive');
+  const gh = kbRosCtx.kbRosterFlowHtml_(g);
+  assert.ok(/is-decision/.test(gh), 'the branch point renders as a decision');
+  assert.ok(/Route A/.test(gh) && /Route B/.test(gh), 'both routes are stated on the node they leave');
+  assert.ok(/kb-ros-edges/.test(gh), 'a connector layer exists to be measured into');
+  // A tab must appear for a phase-only process too — the linear flow| form is
+  // not the only way to record one.
+  assert.ok(/data-mode="flow"/.test(kbRosCtx.kbRosterHtml_(rosEsc('phase| P: A, B\nstep| A -> B'))),
+    'phases alone are enough to offer the Flow view');
+});
+
+test('the process graph draws MEASURED edges and classifies them by column', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const draw = extractFunction('kb/script_kb.html', 'kbRosterDrawEdges_');
+  // Edges are drawn by measuring the boxes CSS already placed, so the diagram
+  // cannot disagree with what is on screen and no layout engine is needed.
+  assert.ok(/getBoundingClientRect\(\)/.test(draw), 'positions come from the laid-out boxes');
+  // Classification is by the boxes' LEFT edges. Comparing source-RIGHT to
+  // target-LEFT called every same-column vertical step a loop-back (8 of 14
+  // on the real process).
+  assert.ok(/Math\.abs\(rb\.left - ra\.left\) < 8/.test(draw), 'same-column steps are detected by left edge');
+  assert.ok(/var back = !sameCol && rb\.left < ra\.left - 8/.test(draw), 'a back-edge is a LEFTWARD column jump');
+  // Opening a node moves every box below it.
+  assert.ok(/kbRosterDrawEdges_\(kbRosterRoot_\(btn\)\)/.test(
+    extractFunction('kb/script_kb.html', 'kbRosterToggleNode_')), 'edges redraw after expand/collapse');
+  assert.ok(/@media \(max-width: 700px\)[\s\S]{0,300}\.kb-ros-edges \{ display: none/.test(kb),
+    'connectors are hidden once the columns stack, where they would be meaningless');
+});
+
+test('a step naming an undeclared node is reported, not silently dropped', () => {
+  const withGhost = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(
+    rosEsc('phase| P: A, B\nstep| A -> B\nstep| B -> Ghost')));
+  // A vanished connection would leave a diagram that LOOKS complete — the
+  // reassuring-failure class (INV-187).
+  assert.ok(/name a node no phase declares/.test(withGhost), 'the gap is stated');
+  assert.ok(/Ghost/.test(withGhost), 'and the offending node is named');
+  assert.ok(/role="alert"/.test(withGhost), 'and announced');
+  const clean = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc('phase| P: A, B\nstep| A -> B')));
+  assert.strictEqual(/name a node no phase declares/.test(clean), false, 'a sound process warns about nothing');
+  // A malformed phase/step line is COUNTED, not skipped — the block reports
+  // "N line(s) were not understood" rather than quietly rendering less.
+  const bad = kbRosCtx.kbRosterParse_(rosEsc('phase| no colon here\nstep| no arrow here\nphase| P: A'));
+  assert.strictEqual(bad.warnings.length, 2, 'both malformed lines are counted');
+  assert.strictEqual(bad.phases.length, 1, 'and the sound one still parses');
 });
 
 test('the roster can escape the height-capped reader panel', () => {

@@ -174,6 +174,11 @@ Phase: idle (post-reflect) + operator-requested feature work:
   is NEVER inferred from the sheet layout. Pure 480, DOM 69, 11 bite-checks.
   **OPEN QUESTION FOR THE OPERATOR: the actual order sequence.** The sample
   article ships a clearly-labelled DRAFT flow; the real one is theirs to state.
+  RESOLVED: the operator supplied their training diagram, and the block now
+  takes `phase|`/`step|` (branches, decisions, loop-backs, phases, external
+  feeds). Edges are MEASURED from the laid-out boxes rather than laid out by an
+  engine. Classify by LEFT edges — source-right-vs-target-left called 8 of 14
+  same-column steps loop-backs. Pure 482.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

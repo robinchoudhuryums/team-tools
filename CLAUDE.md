@@ -3733,6 +3733,27 @@ this section before touching the relevant area.
   **A THIRD instance of the same count bug appeared here** (flow mode has no
   `.kb-ros-dept` walk, so the row-counting filter reported 0), so the bypass is
   now the RULE "not the dept/team grid" rather than a list of view names.
+  **PROCESS GRAPH (operator's training diagram, 2026-08-11).** The real process
+  is NOT linear, so `flow| A -> B -> C` could not express it: it has branches
+  (Route A / Route B off one decision), a decision with two outcomes
+  (Approved / Denied), a loop back through Appeals, four named phases, and an
+  external feed (Sales) entering at two points. The block therefore takes
+  `phase| Name: Node, Node*decision, Node` (with `phase| *: Name` for something
+  outside the phases) and `step| From -> To: label`; the linear `flow|` form is
+  kept as SUGAR that generates the same steps, so both notations feed ONE
+  renderer rather than two that drift. **Edges are drawn by MEASURING the boxes
+  CSS already placed** (phases are flex columns, nodes stack in declaration
+  order) — no layout engine, and the diagram cannot disagree with what is on
+  screen; it redraws after any expand/collapse, because opening a node moves
+  every box below it. **Classify edges by the boxes' LEFT edges**: comparing
+  source-RIGHT to target-LEFT calls every same-column vertical step a loop-back
+  (8 of 14 on the real process), since a stacked sibling always sits left of
+  its parent's right edge. Three cases — same column (vertical), forward
+  (curve), backward (routed under). Connectors are hidden below 700px where the
+  columns stack and lines between them would be meaningless; the per-node route
+  labels carry the structure there. **A step naming a node no phase declares is
+  REPORTED, never silently dropped** — a vanished connection leaves a diagram
+  that looks complete (INV-187).
 - **A fenced block is ATOMIC in search-chunk truncation (operator 2026-08-11).**
   `kbChunkTruncate_` cut at a paragraph boundary and then "repaired" an odd
   fence count by appending a closing fence — turning a HALF block into a
@@ -6154,7 +6175,10 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The first deployed-screenshot round added four
+roster-block emitter — 8 mutations bite-checked). The process-graph round added two more → **482**
+(measured edges + left-edge classification + redraw + stacking; dangling steps
+reported and malformed lines counted — 7 mutations bite-checked). The first
+deployed-screenshot round added four
 more → **480** (fence-atomic chunk truncation with constants DERIVED from
 Code.js; separators surviving kbMd_ escaping — the pin that caught a SHIPPED
 sub-team defect; Flow-only-when-recorded; the Expand overlay — 11 mutations
