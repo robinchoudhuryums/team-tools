@@ -4117,9 +4117,8 @@ test('no Timesheet purge tier exists (keep-forever); the CN tier keeps the heade
     'no headerRows/width drift at the CN call site');
 });
 
-console.log('\ntc/script_clock.html — night-sky phases + moon + skeleton loaders (operator picks a+b+d)');
+console.log('\ntc/script_clock.html — night-sky phases + skeleton loaders (operator picks a+b)');
 const clkSkyFor_ = loadFunction(sb, 'tc/script_clock.html', 'clkSkyFor_');
-const clkMoonPhase_ = loadFunction(sb, 'tc/script_clock.html', 'clkMoonPhase_');
 
 test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Night" is gone)', () => {
   assert.strictEqual(clkSkyFor_(10).phase + '|' + clkSkyFor_(10).stars, 'Morning|0', 'day phases carry no stars');
@@ -4133,20 +4132,6 @@ test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Nigh
   const gradients = [18, 21, 0, 3, 4].map((h) => clkSkyFor_(h).grad);
   assert.strictEqual(new Set(gradients).size, gradients.length, 'each night sub-phase has its own gradient');
   [18, 21, 0, 3, 4].forEach((h) => assert.strictEqual(clkSkyFor_(h).glyph, 'moon'));
-});
-
-test('clkMoonPhase_ tracks the synodic cycle from the 2000-01-06 reference new moon', () => {
-  const ref = Date.UTC(2000, 0, 6, 18, 14);
-  const day = 86400000;
-  assert.strictEqual(clkMoonPhase_(ref).name, 'New Moon');
-  assert.ok(clkMoonPhase_(ref).frac < 0.01, 'reference instant ≈ frac 0');
-  assert.strictEqual(clkMoonPhase_(ref + 14.765 * day).name, 'Full Moon', 'half a synodic month later');
-  assert.strictEqual(clkMoonPhase_(ref + 7.38 * day).name, 'First Quarter');
-  assert.strictEqual(clkMoonPhase_(ref + 22.15 * day).name, 'Last Quarter');
-  assert.strictEqual(clkMoonPhase_(ref + 29.530588853 * day).name, 'New Moon', 'full cycle wraps');
-  assert.strictEqual(clkMoonPhase_(ref - 14.765 * day).name, 'Full Moon', 'pre-reference dates wrap correctly (negative mod)');
-  const m = clkMoonPhase_(Date.UTC(2026, 6, 10));
-  assert.ok(m.octant >= 0 && m.octant <= 7 && m.name, 'always a valid octant/name');
 });
 
 test('the Dashboard uses card-shaped skeletons — no sweep bar remains (operator pick)', () => {
@@ -4188,13 +4173,12 @@ test('L-35: spanishSearchQuery_ keeps the {to: cc:} brace-OR (Cc\'d requests ent
   assert.ok(/newer_than:7d$/.test(q), 'window rides the query');
 });
 
-test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok + no photo', () => {
+test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok', () => {
   const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   const fn = clockSrc.match(/function clkShootMaybe_\(\) \{[\s\S]*?\n\}/);
   assert.ok(fn, 'clkShootMaybe_ found');
   assert.ok(/_clkLastStarDensity < 2/.test(fn[0]), 'deep-night density gate (< 2 returns)');
   assert.ok(/prefers-reduced-motion/.test(fn[0]), 'reduced-motion skip (a non-animating streak would linger)');
-  assert.ok(/has-bg/.test(fn[0]), 'photo mode skips the decor');
   assert.ok(/clkSchedStartMin_/.test(fn[0]), 'rep-local shift-midpoint gate');
 });
 
@@ -7135,8 +7119,10 @@ test('#3: the two permanently-non-empty CDR reference lists fold behind a disclo
 });
 
 test('#4: the alert threshold is server-shipped (never client-mirrored) and drives banding + the target line', () => {
+  // Four ships since 2026-08-12: the three Metrics endpoints plus
+  // getDashboardMetrics, whose KPI banding uses the same operator-set target.
   const ships = (mopCode.match(/alertThreshold: CONFIG\.CDR_ALERT_THRESHOLD \|\| 85/g) || []).length;
-  assert.strictEqual(ships, 3, 'all three metrics endpoints ship CONFIG.CDR_ALERT_THRESHOLD');
+  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships CONFIG.CDR_ALERT_THRESHOLD');
   // No client mirror: the partial must not hardcode 85 as a fallback — absent
   // field (a ≤5-min stale cached payload) degrades to the LEGACY behavior.
   assert.ok(!/alertThreshold \|\| 85|thr \|\| 85/.test(mopPartial), 'the client never invents its own 85');
@@ -7258,8 +7244,11 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   const dash = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
   assert.ok(/var MIN_COHORT = 1;/.test(dash),
     'the operator decision: the Dashboard card renders team data whenever anyone reported');
-  assert.ok(/dash_metrics_v2:/.test(dash) && !/dash_metrics_v1:/.test(dash),
-    'the cache key bumped with the payload semantics (stale v1 must not serve hidden-team rounds)');
+  // The key bumps with every payload-semantics change (v2 = cohort hide
+  // dropped; v3 = prev/thresholds added) — a stale entry must never serve the
+  // previous contract for the TTL after a deploy.
+  assert.ok(/dash_metrics_v3:/.test(dash) && !/dash_metrics_v[12]:/.test(dash),
+    'the cache key bumped with the payload semantics');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
   // peer-benchmark surface) keeps its N=3 guard — INV-124 proper.
   const my = strip(extractRawFunction('Code.js', 'getMyMetrics'));
@@ -8391,6 +8380,146 @@ test('break reminders fire from the SHELL, once per rep-local day, and the ticke
   assert.ok(!/clkBreakReminderMin_/.test(nc(extractScript('tc/script_clock.html'))),
     'the Clock-local lead-time helper went with its only reader (INV-184)');
 });
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-12 — clock-card cleanup, Dashboard KPI banding +
+// month-over-month deltas, and reminder toasts that wait for their reader.
+console.log('\noperator 2026-08-12: clock cleanup, dashboard deltas, sticky reminders');
+
+test('the clock-card photo capability and the moon are fully gone (INV-184)', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  // Selector AND behaviour: a dead rule left behind is the next reader's false
+  // lead, and a dead localStorage key is operator state nobody maintains.
+  ['clk-hero-bg', 'clk-bg-ctrl', 'clk-bg-btn', 'has-bg', 'clk-moon',
+   'umsClockBg', 'CLK_BG_KEY', 'clkBgApply_', 'clkBgChoose_', 'clkBgOnFile_',
+   'clkBgDownscale_', 'clkMoonPhase_', 'CLK_MOON_SHADE'].forEach((dead) => {
+    assert.ok(clk.indexOf(dead) < 0, dead + ' reappeared in the Clock partial');
+  });
+  // The star field and the shooting star SURVIVE — only the moon went.
+  // Assert the star field is still EMITTED, not merely that the class is
+  // mentioned somewhere — a surviving CSS rule proves nothing about the render.
+  assert.ok(/deco\.className = 'clk-stars'/.test(clk) && /class="st'/.test(clk),
+    'the star field still renders');
+  assert.ok(/function clkShootMaybe_/.test(clk) && /clk-shoot/.test(clk), 'and the shooting star with it');
+  // And the z-index rule no longer excludes selectors nothing emits.
+  assert.ok(!/:not\(\.clk-sky-bg\)|:not\(\.clk-bg-ctrl\)/.test(clk),
+    'the sky z-index rule dropped its dead :not() exclusions');
+});
+
+// The slack constant is module-level, so pull the REAL declaration into the
+// sandbox rather than mirroring its value here (a mirrored 5 would drift).
+vm.runInContext(
+  extractScript('tc/script_clock.html').match(/var DASH_TONE_SLACK_PP = [^;]+;/)[0], sb);
+const dashPctTone_ = loadFunction(sb, 'tc/script_clock.html', 'dashPctTone_');
+const dashDelta_ = loadFunction(sb, 'tc/script_clock.html', 'dashDelta_');
+
+test('dashPctTone_ — bands by direction, and renders NO verdict without a target', () => {
+  // % Answered: higher is better, target 85.
+  assert.strictEqual(dashPctTone_(88, 85, false), 'good');
+  assert.strictEqual(dashPctTone_(85, 85, false), 'good', 'AT target is good, not warn');
+  assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'within the 5pp slack');
+  assert.strictEqual(dashPctTone_(80, 85, false), 'warn', 'exactly 5pp off is still warn');
+  assert.strictEqual(dashPctTone_(79, 85, false), 'crit');
+  // Transfer %: LOWER is better — the direction is the whole point.
+  assert.strictEqual(dashPctTone_(12, 20, true), 'good');
+  assert.strictEqual(dashPctTone_(24, 20, true), 'warn');
+  assert.strictEqual(dashPctTone_(31, 20, true), 'crit');
+  assert.strictEqual(dashPctTone_(12, 20, false), 'crit', 'the direction flag actually flips the band');
+  // A colour is a verdict: with no target (operator nulled CDR_TRANSFER_TARGET_PCT,
+  // or an older server that ships neither) the value renders untoned.
+  assert.strictEqual(dashPctTone_(12, null, true), '', 'no target → no tone');
+  assert.strictEqual(dashPctTone_(null, 20, true), '', 'no value → no tone');
+});
+
+test('dashDelta_ — an absent comparison is NOT "no change", and volumes get no verdict', () => {
+  assert.strictEqual(dashDelta_(88, null, 'pp', false), null, 'missing prior → no delta at all');
+  assert.strictEqual(dashDelta_(null, 80, 'pp', false), null);
+  assert.strictEqual(dashDelta_(80, 80, 'pp', false).text, 'no change', 'equal IS reported, distinctly');
+  const up = dashDelta_(88, 80, 'pp', false);
+  assert.strictEqual(up.text, '▲ 8 pp');
+  assert.strictEqual(up.tone, 'good', 'rising % Answered is good');
+  assert.strictEqual(dashDelta_(24, 20, 'pp', true).tone, 'crit', 'rising Transfer % is not');
+  assert.strictEqual(dashDelta_(16, 20, 'pp', true).tone, 'good');
+  // A volume delta is call load, not performance — arrow, no colour.
+  const vol = dashDelta_(120, 100, 'count');
+  assert.strictEqual(vol.text, '▲ 20');
+  assert.strictEqual(vol.tone, '', 'volume carries no verdict');
+  assert.strictEqual(dashDelta_(310, 295, 'sec').text, '▲ 15s', 'talk time reads in seconds');
+});
+
+test('dashboardPrevRange_ — MTD compares LIKE-FOR-LIKE elapsed days, clamped down', () => {
+  const ctx = vm.createContext({ Date, String, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'dashboardPrevRange_'), ctx, { filename: 'Code.js#prev' });
+  vm.runInContext('var DASH_MONTH_ABBR = ' +
+    JSON.stringify(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) + ';', ctx);
+  const r = ctx.dashboardPrevRange_('mtd', '2026-08-12');
+  // NOT the whole prior month: 12 days against 31 would read as a collapse
+  // every month and "recover" on the 31st.
+  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-12');
+  assert.strictEqual(r.label, 'Jul 1–12', 'the label states the window it compares');
+  assert.strictEqual(!!r.clamped, false);
+  // Clamps DOWN into a shorter month — never up, so the comparison can only
+  // under-report (the safe direction for a figure a rep is judged by).
+  const feb = ctx.dashboardPrevRange_('mtd', '2026-03-31');
+  assert.strictEqual(feb.from + '..' + feb.to, '2026-02-01..2026-02-28');
+  assert.strictEqual(feb.clamped, true);
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2028-03-30').to, '2028-02-29', 'leap year');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').from, '2025-12-01', 'January crosses the year');
+  // Deliberately scoped: only MTD is compared.
+  ['yesterday', 'ytd', ''].forEach((k) => assert.strictEqual(ctx.dashboardPrevRange_(k, '2026-08-12'), null));
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', 'nonsense'), null);
+});
+
+test('getDashboardMetrics: one shaper for both windows, best-effort prev, degraded rounds uncached', () => {
+  const strip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  // ONE shaper, called for the period AND its comparison — a delta computed
+  // from a differently-shaped figure than the value above it is worse than none.
+  assert.strictEqual((fn.match(/var shapeWindow = function/g) || []).length, 1, 'ONE shaper');
+  assert.strictEqual((fn.match(/= shapeWindow\(/g) || []).length, 2,
+    'called for the period AND its comparison window');
+  assert.ok(/try \{[\s\S]*shapeWindow\(prevRange\.from, prevRange\.to\)[\s\S]*catch \(e\) \{ prevUnavailable = true/.test(fn),
+    'the comparison read is best-effort — a failure drops the deltas, never the numbers');
+  assert.ok(/!noteRes\.unavailable && !prevUnavailable/.test(fn),
+    'a degraded round is never cached (INV-129) — otherwise the blip outlives itself');
+  assert.ok(/transferTarget: \(CONFIG\.CDR_TRANSFER_TARGET_PCT == null\) \? null/.test(fn),
+    'an unset transfer target ships null so the client renders NO tone (a verdict nobody set)');
+  // The client must not mirror either threshold.
+  const clk = strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.ok(!/transferTarget\s*\|\|\s*\d/.test(clk) && !/alertThreshold\s*\|\|\s*\d/.test(clk),
+    'the Dashboard never invents its own threshold');
+});
+
+test('both dashboard cards open on MTD, derived from the period list', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/CLK_DASH_DEFAULT_IDX = CLK_DASH_PERIODS\.indexOf\('mtd'\)/.test(clk),
+    'derived, so reordering the period list cannot silently repoint the default');
+  assert.ok(/mine: CLK_DASH_DEFAULT_IDX, team: CLK_DASH_DEFAULT_IDX/.test(clk),
+    'BOTH cards — two adjacent cards on different periods reads as a bug');
+  assert.ok(/CLK_DASH\.mine = CLK_DASH_DEFAULT_IDX; CLK_DASH\.team = CLK_DASH_DEFAULT_IDX;/.test(clk),
+    'and the new-day reset returns to the same default, not to index 0');
+  // The comparison window is NAMED in the card, and a failed read says so.
+  const note = extractFunction('tc/script_clock.html', 'clkDashCompareNote_');
+  assert.ok(/vs ' \+ esc\(prevLabel\)/.test(note) && /comparison unavailable/.test(note),
+    'the foot names the window, and distinguishes a failed comparison from none');
+});
+
+test('a reminder toast waits for its reader; routine toasts still self-dismiss', () => {
+  const core = extractFunction('script_core.html', 'showToast');
+  assert.ok(/if \(!opts\.sticky\) setTimeout\(dismiss, 3500\)/.test(core),
+    'only NON-sticky toasts auto-dismiss');
+  assert.ok(/x\.setAttribute\('aria-label'/.test(core) && /createElement\('button'\)/.test(core),
+    'a toast with no timeout owes a real, named dismiss control (INV-173)');
+  // The cap must not silently evict the reminder the rep has not seen yet.
+  assert.ok(/querySelector\('\.toast:not\(\.toast-sticky\)'\) \|\| stack\.firstChild/.test(core),
+    'the stack cap evicts the oldest NON-sticky first, and stays a real bound');
+  const rem = extractFunction('script_core.html', 'notifyRemind_');
+  assert.ok(/showToast\(msg, tone \|\| 'toast-warn', \{ sticky: true \}\)/.test(rem),
+    'every reminder goes out sticky — the chime calls the rep back after 3.5s has passed');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.toast-x \{/.test(css), 'the dismiss control is styled, not a bare UA button');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

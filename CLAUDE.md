@@ -1787,7 +1787,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fifteen client-side localStorage keys total.** All per-browser, all
+- **Fourteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1857,18 +1857,6 @@ this section before touching the relevant area.
     NOTE this is **PHI at rest in the browser** (patient answers) — the same
     posture as the Call Notes active-form draft; it lives only in the rep's
     own browser and is wiped on send/clear/expiry.
-  - `umsClockBg` — optional per-browser **clock-card** background image ("for
-    fun"), a downscaled (≤1280px, JPEG re-encoded) raster **data-URL** set via
-    the image control on the clock card. **With a photo set, the sky-gradient
-    layers hide and the photo (with its baked dark scrim) IS the clock card**;
-    clearing restores the time-of-day sky. (Operator fix 2026-07-09: the
-    Dashboard redesign made the hero == the clock tile, whose opaque sky sat ON
-    TOP of the photo layer — the upload "worked" but the photo was invisible.
-    The old "photo behind the hero card, sky kept" framing no longer applies.)
-    Client-only — NEVER server-side (so an accidental PHI image stays in this
-    browser; zero operator state), raster-only (PNG/JPEG/WebP, no SVG), ~1.1MB
-    cap after downscale, try/catch on read/write (quota-safe); cleared via the
-    card's × button.
   - `umsCoachingMode` — the merged Coaching tab's Mine/Team mode (managers
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
@@ -1890,7 +1878,7 @@ this section before touching the relevant area.
     pop-out toggles. Being localStorage, it is shared origin-wide, so setting
     it in the main window also governs the compact pop-out (whose sidebar is
     hidden).
-  Clearing browser data wipes all fifteen. (A prior 15th key,
+  Clearing browser data wipes all fourteen. (A prior 15th key,
   `umsDashboardCompact` — an in-page Dashboard compact toggle — was REMOVED in
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
@@ -2429,7 +2417,7 @@ this section before touching the relevant area.
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsWhatsNew`,
+  `umsIntakeDrafts`, `umsCoachingMode`, `umsWhatsNew`,
   `umsNotify`) — all per-browser, all try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
@@ -2438,8 +2426,10 @@ this section before touching the relevant area.
   form drafts) + a `deptCollapsed` field inside `umsKbPanel`, the
   Clock-card background image added `umsClockBg`, the merged Coaching tab
   added `umsCoachingMode`, and the What's-new panel added `umsWhatsNew`.
-  The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — and
-  the reminder-alert toggles added `umsNotify`, net 15.)
+  The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — the
+  reminder-alert toggles added `umsNotify` — net 15 — and the operator retired
+  the clock-card background image (2026-08-12), taking `umsClockBg` back out:
+  net 14.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2970,8 +2960,8 @@ this section before touching the relevant area.
   an app surface, not prose. **Left rail:** the existing `#clk-hero` — now just the
   sky clock with the white `.hero` card frame STRIPPED on the dashboard
   (`.dash-hero` zeroes bg/border/padding/shadow) so the gradient IS the card, not
-  a clock boxed inside a white card; `#clk-hero` is KEPT so `umsClockBg` + all
-  clock machinery work — + shift-strip. **Today's Punches + teammate moved OFF
+  a clock boxed inside a white card; `#clk-hero` is KEPT so all clock machinery
+  works — + shift-strip. **Today's Punches + teammate moved OFF
   the rail** into a 2-up `.dash-foot` row at the bottom of the main column (the
   rail was stacking them tall with blank space opposite); they stay visible in
   the compact pop-out because compact now hides `#dash-cards` (the briefing) but
@@ -2997,11 +2987,38 @@ this section before touching the relevant area.
   neutralized by the partial's `prefers-reduced-motion` block. v1 ships two carousels —
   **Your numbers** (own) + **Team**/**Department** (whole-roster team aggregate;
   the N=3 cohort HIDE was DROPPED for this card by operator decision 2026-08-06
-  — `getDashboardMetrics` uses `MIN_COHORT = 1`, cache key bumped
-  `dash_metrics_v2`, and `team: null` now only means "nobody reported at all";
-  INV-124's per-day My Stats series guard is UNCHANGED) — over
-  **Yesterday / MTD / YTD**, fed by `getDashboardMetrics(periodKey)` (all three
-  fetched up front, server-cached). **Annual PTO relocated** off the dashboard
+  — `getDashboardMetrics` uses `MIN_COHORT = 1` and `team: null` now only means
+  "nobody reported at all"; INV-124's per-day My Stats series guard is
+  UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
+  `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
+  cache key `dash_metrics_v3` — it bumps with every payload-semantics change).
+  **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
+  DERIVED from the period list so a reorder can't repoint it). Asked for on the
+  Department card and applied to both, because they sit side by side with
+  independent chips and two adjacent cards opening on different periods reads
+  as a bug rather than a default. **KPI banding + month-over-month deltas
+  (same round):** `dashPctTone_(value, target, lowerIsBetter)` tri-tones ONLY
+  the two rate metrics — % Answered against the shipped `CDR_ALERT_THRESHOLD`
+  (higher better) and Transfer % against `CONFIG.CDR_TRANSFER_TARGET_PCT`
+  (LOWER better) — at/better than target = good, within `DASH_TONE_SLACK_PP`
+  (5 points) = warn, beyond = crit. **Both thresholds RIDE THE PAYLOAD and are
+  never mirrored client-side**, and a null target renders NO tone at all: a
+  colour is a verdict, and Transfer % had no threshold anywhere in the app
+  before this, so the operator can null the CONFIG key to switch its banding
+  off rather than ship a verdict nobody chose. The MTD slide also carries a
+  per-KPI delta against `prev` — the prior month's **same elapsed days**
+  (`dashboardPrevRange_`, pure + Node-pinned), NOT the whole prior month:
+  comparing 12 days of volume against 31 is an artifact that would read as a
+  collapse every month and "recover" on the 31st. The day CLAMPS DOWN into a
+  shorter month (Mar 31 → Feb 28/29), so the comparison can only under-report.
+  **Volumes carry the arrow but no colour** — call load is not the rep's to be
+  judged on, and % Answered already carries that dimension's verdict. The card
+  foot NAMES the window ("vs Jul 1–23"), and a failed comparison read says
+  "comparison unavailable" rather than silently dropping the arrows (INV-187);
+  that round is also never cached (INV-129). MEASURED detail: `.dash-kpis` is
+  `align-items: flex-end`, so on a card where some metrics have a comparison
+  and some don't the delta-less KPI's label sat 14px low — the delta line is
+  RESERVED (empty, aria-hidden) whenever the card has any comparison. **Annual PTO relocated** off the dashboard
   (already the `.pto-tile` on Time/PTO). Compact: the `?compact=1` pop-out
   collapses to the rail (`:root[data-compact] .dash-grid`); mobile
   (`max-width:860px`) stacks. (The earlier in-page `umsDashboardCompact` toggle
@@ -3036,8 +3053,7 @@ this section before touching the relevant area.
 - **Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
-  clock + tz + date on the right; the optional per-browser photo is
-  the hero CARD background — see the `umsClockBg` gotcha), the
+  clock + tz + date on the right), the
   `.shift-strip` (head + day ribbon + breaks + the `.actions` row —
   one `.prime` CTA ClockIn → LunchIn → ClockOut by state, Adjust last
   as a `.sec`; **after the rep has already taken a lunch today** (a LunchIn
@@ -4626,11 +4642,13 @@ this section before touching the relevant area.
   Nightfall / Midnight / Late night / Pre-dawn — overnight-local IST reps now
   cross ≥4 distinct looks per shift) each carrying a `stars` density 0–3;
   `clkSkyDecor_` renders a deterministic (index-hashed, never re-scatters)
-  twinkling star field + the REAL moon phase (`clkMoonPhase_`, pure +
-  Node-pinned — synodic cycle from the 2000-01-06 reference new moon, an
-  octant-offset shade disc, name in the tooltip) inside `.clk-sky-layers` (so
-  a background photo hides the decor with the sky, and it all sits under the
-  z-1 content); `clkShootMaybe_` (1Hz-tick piggyback) fires a shooting star
+  twinkling star field inside `.clk-sky-layers` (under the z-1 content). **The
+  moon phase and the clock-card background photo were RETIRED by the operator
+  on 2026-08-12** — `clkMoonPhase_`, the shade-disc render, the whole
+  `umsClockBg` upload path and every `.clk-bg-*` / `.has-bg` / `.clk-moon`
+  selector are gone (INV-184: a dead selector is the next reader's false lead),
+  and the localStorage key count went 15 → 14. The star field and the
+  shooting star are UNCHANGED; `clkShootMaybe_` (1Hz-tick piggyback) fires a shooting star
   every ~2.5–4.5 min ONLY in deep night (density ≥ 2) after the rep-local
   shift midpoint, and skips entirely under `prefers-reduced-motion` (a
   non-animating streak would linger — the twinkle keyframes are killed by the
@@ -4859,6 +4877,27 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-12 operator round adds ONE optional CONFIG constant and removes
+  one localStorage key** — no Script Properties, triggers, or migrations. New:
+  `CONFIG.CDR_TRANSFER_TARGET_PCT` (default **20**) bands Transfer % on the two
+  Dashboard metric cards. **This is the one number to confirm** — Transfer %
+  had no threshold anywhere in the app before this, so 20 is a starting point,
+  not a measured target; **set it to `null` to render Transfer % with no colour
+  at all** rather than a verdict nobody chose. % Answered reuses the existing
+  `CDR_ALERT_THRESHOLD` (85). Both require a redeploy to change (CONFIG, no
+  Script Property override yet). Removed: `umsClockBg` — the clock-card
+  background image is retired, so a rep who set one simply gets the sky back;
+  the stored data-URL is orphaned in their browser and is cleared by the normal
+  "clear browsing data" (it was never server-side). Behaviour changes to expect
+  post-deploy: (a) both Dashboard metric cards **open on MTD**, not Yesterday;
+  (b) Transfer % and % Answered are **colour-banded**, so a green card and a
+  red card side by side is the banding working, not new data; (c) the MTD slide
+  shows a per-KPI change **vs the prior month's same elapsed days** — the foot
+  names the window ("vs Jul 1–23"), and volumes carry the arrow without a
+  colour; (d) the `dash_metrics_v3` cache bump means the new cards appear
+  within 5 minutes of deploy, not instantly; (e) **reminder toasts now stay
+  until dismissed** — a break reminder still on screen an hour later is the fix,
+  and the × clears it; (f) the clock card loses its image button and its moon.
 - **The intake email restyle (operator 2026-08-11) adds NO new operator state**
   — no Script Properties, triggers, migrations or CONFIG constants; it changes
   `intakeEmailShell_`, the new shared `intakeSectionRowHtml_`, and the row
@@ -6285,7 +6324,18 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The intake email restyle added two more → **494** (the shell's chrome
+roster-block emitter — 8 mutations bite-checked). The 2026-08-12 operator round added seven more → **500**
+(the clock-card photo + moon stay deleted, selector AND render — the star field
+is asserted by its ASSIGNMENT, since a surviving CSS rule proves nothing about
+what renders; `dashPctTone_` banding by direction with NO tone absent a target;
+`dashDelta_` where an absent comparison is not "no change" and volumes carry no
+verdict; `dashboardPrevRange_` like-for-like elapsed days clamped DOWN; the
+one-shaper/best-effort-prev/uncached-degraded server contract; both cards
+defaulting to a DERIVED MTD index; and the sticky-toast shape — 23 mutations
+bite-checked, one of which exposed a pin weaker than its property and was
+rewritten). DOM 69 → **71** (the sticky lifecycle: survives the auto-dismiss
+window, × dismisses, the cap evicts routine toasts first — 4 more bite-checks).
+The intake email restyle added two more → **494** (the shell's chrome
 asserted against `buildBrandedEmailHtml_`'s own source so the two cannot drift
 apart again, plus per-form module labels at all four call sites; and the ledger
 vocabulary — mono-uppercase band on tint not centred, hairline separators, no
@@ -6651,7 +6701,7 @@ INV-186 | **Before toning a health indicator off a count, ask what that count re
 INV-187 | **A surface that aggregates or draws a JUDGEMENT from a best-effort read must carry the read OUTCOME, and every judgement derived from it must be suppressed when that outcome is degraded.** Three cycles fixed instances of this one at a time before it was named: cycle-12 F5 (a swallowed per-rep read rendered as a confident 0%, telling reps to re-file work they had already filed), cycle-16 F1 (`managerGetShiftStats` pushed a rep with an unreadable Sheet onto the manager's END-OF-SHIFT PERFORMANCE table with `totalNotes:0` and a CRIT-toned 0% badge), F5 (`getTeamMetrics` nulled the per-rep coverage but computed the TEAM total anyway, so the rail said "partial" while the hint below drew a confident below-80% judgement from the same contaminated numerator) and F4 (`getCoveragePlan` swallowed a failed PTO read, and with the overlay empty EVERY REP COUNTS AS WORKING — so an understaffing planner returned a green all-clear on a day half the team is off). **The test that generalizes them: if the DEGRADED output is MORE reassuring than the healthy one, silence is not an option.** A number can be nulled; a judgement (a percentage, a staffing band, an all-clear, a threshold hint) must be actively suppressed and the degradation named to the user, because a missing judgement reads as "fine" rather than "unknown". Note the reason this class keeps escaping sweeps: an aggregate is a coverage surface even when it never calls the shared helper — `managerGetShiftStats` counts INLINE (it needs flags, emails and a median off the same read) and so appeared in no search for `cnCountNotesResult_`. **Ask what a function DERIVES from a best-effort read, not which helper it calls.** **Cycle-17 completed the class:** the export (C17-6 `skippedReps` + INCOMPLETE audit marker), the CN loaders (C17-5 preserve-last-good + failed-round-never-fresh), the three manager lazy cards (C17-7), and batch ② — the flagged/urgent digest aggregates, manager search, tag taxonomy/trends (`skippedReps`, partial-rounds-uncached), the unresolved-action count (`{count, partial}`, undercount never cached, `≥ N` badge), the extras SWR whole-round stamp, the no-CDR Notes-Filed branch, and the timesheet side rail. Verify: for each of `managerGetShiftStats`, `getCoveragePlan`, `getTeamMetrics`, `getMyMetrics` — and the batch-2 pin for the five walks — assert the response carries an outcome flag AND that the derived judgement is gated on it — not merely that the number is nulled | Subsystem: Server + Client (all manager aggregates)
 INV-188 | **A source-scanning tripwire must STRIP COMMENTS before matching.** The fix comment that explains what was removed quotes the removed code, so a naive scan trips on its own rationale — and the failure mode is a pin that looks like it caught a regression on the very commit that fixed one. It has now bitten twice in two cycles: cycle-15's F1 tripwire failed on its own allowlist because it searched a comment-stripped body for a marker that lives in a comment, and cycle-16's F8 pin reported `3 !== 1` raw `DR.STATUS` reads when two of the three were inside the comment explaining the fix. The related trap in the same family: slice from the RIGHT occurrence — cycle-16's F6 pin anchored on the first `ui-dialog-err`, which is the id CONSTANT, not the div it was checking. Verify: any pin asserting "N occurrences of X" strips `//` and `/* */` before counting, and fails on a file whose comment mentions X | Subsystem: Test Suite
 INV-189 | **A best-effort read that BLOCKS a cheap one belongs in its own endpoint.** `getOnboardingPanel` computed CDR readiness inline, so the whole Admin → Team Members panel — everything else in it coming off the 5-min-cached roster — waited on a 7-day read of a foreign spreadsheet (operator: "takes some time to load"). The split is `getOnboardingCdrReadiness` (same admin gate, same INV-67 posture): the client paints the roster panel, then patches each rep's chip via `data-cdr-name`. THREE properties make the split safe rather than merely faster: (a) the panel's `cdr: {deferred:true}` is DISTINCT from `ok:false` — "not read yet" renders "checking…", "read and failed" renders "unknown", and neither is ever "no calls in 7d", because an unread name is not an absent one (INV-187); (b) first render and the patch share ONE chip builder, so the states cannot drift; (c) the patch is DOM surgery keyed off an attribute, not a whole-panel re-render, so it cannot clobber a form the admin has begun filling in. The general rule: when one part of a response is an order of magnitude slower than the rest AND is decoration on top of it, splitting is not premature optimization — it is the difference between a panel that appears and one that hangs. Verify: the operator-2026-08-11 split pins (no CDR call in the panel; deferred marker; gate + best-effort on the split; paint-before-patch ordering; shared chip builder) | Subsystem: Server + Client (Call Notes views)
-INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. Each reminder fires at most once per key per REP-LOCAL day (the fired-set resets on that rollover, so it cannot grow in a long-lived pop-out). Apps Script has no background push: a closed browser still gets nothing. Verify: the reminder-channel + shell-ticker pins | Subsystem: Client (shell) + Client (Time Clock views)
+INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. Each reminder fires at most once per key per REP-LOCAL day (the fired-set resets on that rollover, so it cannot grow in a long-lived pop-out). Apps Script has no background push: a closed browser still gets nothing. **AMENDMENT (operator 2026-08-12): the reminder toast is STICKY** — `notifyRemind_` passes `{sticky:true}` to `showToast`, which then skips the 3.5s auto-dismiss and renders a real, `aria-label`led × button (INV-173). The chime does its job from another window, and by the time the rep gets back to the one that fired it a 3.5s toast is long gone — a reminder is the one toast class that must wait for its reader. Two consequences the pins hold: the stack cap evicts the oldest NON-sticky toast first (a reminder the rep has not read must not be pushed off by routine toasts) while staying a real bound, and every existing 2-arg `showToast` caller is untouched. Verify: the reminder-channel + shell-ticker pins, the sticky-toast source pin, and the DOM lifecycle pair (survives the auto-dismiss window; × dismisses; cap evicts routine first) | Subsystem: Client (shell) + Client (Time Clock views)
 INV-191 | **A writer keyed on a CLASS silently clobbers anything else that borrows the class for its looks.** `index.html`'s boot theme reflector wrote `aria-pressed` across every `.sb-theme-btn`; the moment the reminder-alert toggles reused that class for its appearance, they rendered `aria-pressed="true"` in markup and read `false` in the live DOM on every load — the sound toggle silently reset itself each session. The selector is now `.sb-theme-btn[data-theme-target]`: the attribute that actually MEANS "this is a theme button". Reusing a class for appearance is normal and cheap; what is not safe is a writer that treats class membership as identity. This is invisible to source review — the markup is correct — and was caught only by reading the attribute back in a real browser, which is the general lesson: **for any state an element renders AND some other code writes, verify by measuring the live attribute, not by reading the template.** Sibling shape: two rendered copies of one control cannot share an `id`, so `notifySyncToggles_` selects by `data-remind`. Verify: the theme-reflector scope pin + the no-duplicate-ids pin | Subsystem: Client (shell)
 
 

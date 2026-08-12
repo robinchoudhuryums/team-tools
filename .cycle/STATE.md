@@ -228,6 +228,30 @@ Phase: idle (post-reflect) + operator-requested feature work:
 - The glossary block, the decision block and the intake email restyle are
   MERGED as **PR #165** (35eb721, CI green); branch restarted from main.
   Deploy remains ONE operator action for all three.
+- OPERATOR ROUND 2026-08-12 (three notes from the deployed app): (1) **clock-card
+  photo + moon RETIRED** — the whole `umsClockBg` upload path, `.clk-bg-*` /
+  `.has-bg` / `.clk-hero-bg` / `.clk-moon` selectors, `clkMoonPhase_` and the
+  shade-disc render are gone (INV-184); the star field + shooting star SURVIVE;
+  localStorage keys 15 → 14. (2) **Dashboard KPI banding + MTD deltas** — both
+  cards open on MTD (derived index, applied to BOTH because two adjacent cards
+  on different periods reads as a bug); `dashPctTone_` tri-tones ONLY the two
+  rate metrics, thresholds SHIPPED not mirrored, a null target = no tone (a
+  colour is a verdict and Transfer % had no threshold in the app before —
+  `CONFIG.CDR_TRANSFER_TARGET_PCT` default 20 is the ONE number the operator
+  should confirm); MTD deltas compare the prior month's SAME ELAPSED DAYS
+  (`dashboardPrevRange_`, clamped DOWN) because 12 days against 31 is an
+  artifact, volumes get the arrow but no verdict, the foot NAMES the window,
+  and a failed comparison says so + is never cached (INV-129/187). Cache
+  `dash_metrics_v2`→`v3`. (3) **Reminder toasts are STICKY** (INV-190
+  amendment) — the chime calls the rep back after the 3.5s window has passed;
+  real ×, cap evicts routine toasts first, every 2-arg caller untouched.
+  Pure 494→500, DOM 69→71, 27 bite-checks. MEASURED, not reasoned: the
+  banding/deltas were rendered and read back (tones, delta text, foot label,
+  overflowPx 0, dark parity), which is how the flex-end mixed-row misalignment
+  (a delta-less KPI's label sitting 14px low) was found and fixed; full
+  39-scenario matrix re-shot 0 missing / 0 overflow. ONE pin was rewritten for
+  biting too weakly (it asserted the star class existed SOMEWHERE rather than
+  that the decor still emits it).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

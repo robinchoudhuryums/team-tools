@@ -2029,6 +2029,18 @@
   .toast-warn    .toast-icon { color: var(--warn); }
   .toast-info    .toast-icon { color: var(--info); }
   .toast-msg { flex: 1; line-height: 1.4; }
+  /* Sticky (reminder) toast — no auto-dismiss, so it owes a visible way out.
+     The × is a real button; the toast keeps the stack's pointer-events. */
+  .toast-x {
+    appearance: none; flex-shrink: 0; align-self: flex-start;
+    width: 22px; height: 22px; margin: -2px -4px 0 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: 6px;
+    color: var(--muted-2); cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .toast-x:hover { background: var(--paper-2); color: var(--ink); }
+  .toast-x svg { width: 13px; height: 13px; }
 
   /* ─── LOADING / EMPTY STATES ─────────────────────────────────── */
   .state-center {
