@@ -151,6 +151,148 @@
   .kb-rev-meta { font-size: .78rem; color: var(--muted); font-family: var(--mono); }
   .kb-rev-prev { font-size: .84rem; color: var(--ink); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
   .kb-rev-row .kb-btn { flex-shrink: 0; }
+  /* Interactive roster block (operator 2026-08-11). Must work at 400px — the
+     Ctrl/⌘+K drawer is the mid-call surface this exists for — so every row
+     wraps and the team grid is intrinsic (auto-fill), never fixed tracks. */
+  .kb-roster { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-ros-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .kb-ros-search {
+    flex: 1 1 180px; min-width: 0; font: inherit; font-size: .86rem;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--ink);
+  }
+  /* Focus rings come from the ONE global :focus-visible rule in styles.html
+     (box-shadow: var(--ring-focus)) — declaring a per-element outline here
+     would both duplicate it and misuse a shadow value as a colour. */
+  .kb-ros-search:focus { border-color: var(--border-strong); }
+  .kb-ros-count { flex: 0 0 auto; font-family: var(--mono); font-size: .72rem; color: var(--muted-2); }
+  .kb-ros-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .kb-ros-legend-item { font-size: .74rem; color: var(--muted); }
+  .kb-ros-legend-item b { font-family: var(--mono); color: var(--ink); font-weight: 700; }
+  .kb-ros-dept { margin: 0 0 14px; }
+  .kb-ros-dept-name { font-size: .95rem; font-weight: 700; color: var(--ink); margin: 0 0 8px; }
+  .kb-ros-owner { font-weight: 500; font-size: .8rem; color: var(--muted-2); }
+  .kb-ros-owner::before { content: '· '; }
+  /* align-items:start — a 3-person team must not stretch to match a 9-person
+     one beside it (the documented .m-layout / .dash-trk lesson). */
+  .kb-ros-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; align-items: start; }
+  .kb-ros-team { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; min-width: 0; }
+  .kb-ros-team-name { font-size: .74rem; font-family: var(--mono); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+  .kb-ros-sub { color: var(--info-deep); }
+  .kb-ros-sub::before { content: '› '; color: var(--muted-3); }
+  .kb-ros-people { display: flex; flex-direction: column; gap: 4px; }
+  .kb-ros-person { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0; }
+  .kb-ros-name {
+    appearance: none; border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; font-size: .86rem; color: var(--ink); text-align: left;
+    border-bottom: 1px dashed transparent;
+  }
+  .kb-ros-name:hover { border-bottom-color: var(--muted-3); }
+  .kb-ros-person.is-lead .kb-ros-name { font-weight: 700; }
+  .kb-ros-tag {
+    position: relative; font-family: var(--mono); font-size: .64rem; font-weight: 700;
+    padding: 1px 5px; border-radius: var(--radius-pill);
+    background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .kb-ros-tag[data-tip] { cursor: help; }
+  /* Same tokened tooltip as the Intake help glyph — hover AND keyboard focus,
+     so it is not a mouse-only affordance. */
+  .kb-ros-tag[data-tip]:hover::after, .kb-ros-tag[data-tip]:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px);
+    z-index: 5; white-space: nowrap; font-family: var(--ui); font-weight: 500;
+    font-size: .72rem; padding: 5px 8px; border-radius: 6px;
+    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
+  }
+  .kb-ros-flag { font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 5px; border-radius: var(--radius-pill); }
+  .kb-ros-flag.is-lead { background: var(--info-soft); color: var(--info-deep); }
+  .kb-ros-flag.is-new { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ros-flag.is-badge { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-warn { margin-top: 10px; font-size: .74rem; color: var(--warning-deep); }
+  /* Mode switcher — the segmented-pill vocabulary used by the Time/PTO and
+     Coaching toggles, so a stateful toggle looks the same everywhere. */
+  .kb-ros-modes { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
+  .kb-ros-mode { appearance: none; border: none; background: none; cursor: pointer; font: inherit; font-size: .74rem; padding: 4px 10px; border-radius: var(--radius-pill); color: var(--muted); }
+  .kb-ros-mode.on { background: var(--paper-card); color: var(--ink); font-weight: 700; box-shadow: var(--shadow-sm); }
+  .kb-ros-n { font-family: var(--mono); color: var(--muted-3); font-weight: 500; }
+  /* The untagged group is usually the biggest; a single narrow column of 30+
+     names is unreadable, so it spans and its rows flow into columns. */
+  .kb-ros-team.is-wide { grid-column: 1 / -1; }
+  .kb-ros-team.is-wide .kb-ros-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 10px; }
+  .kb-ros-where { font-size: .72rem; color: var(--muted-2); }
+  .kb-ros-cap-note { font-size: .72rem; color: var(--muted); margin-bottom: 6px; }
+  .kb-ros-note { margin-top: 10px; font-size: .74rem; color: var(--muted); }
+  /* Person detail panel — answers "where else does this person work", which
+     the team-shaped grid structurally cannot. */
+  .kb-ros-panel { border: 1px solid var(--border-strong); border-radius: 8px; background: var(--paper-2); padding: 10px 12px; margin-bottom: 12px; }
+  .kb-ros-panel[hidden] { display: none; }   /* [hidden] loses to a display rule */
+  .kb-ros-panel-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .kb-ros-panel-head b { font-size: .95rem; }
+  .kb-ros-panel-actions { margin-left: auto; display: flex; gap: 6px; }
+  .kb-ros-panel-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .kb-ros-panel-where { margin-top: 8px; font-size: .8rem; color: var(--muted); }
+  .kb-ros-panel-where ul { margin: 4px 0 0; padding-left: 18px; }
+  .kb-ros-panel-where li { color: var(--ink); }
+  /* Coverage view */
+  .kb-ros-cov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .kb-ros-tile { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; text-align: center; }
+  .kb-ros-tile b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .kb-ros-tile span { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-2); }
+  /* A wide table scrolls INSIDE its own container — the page must never scroll
+     sideways (the Visual Audit Stage's overflow rule). */
+  .kb-ros-tablewrap { overflow-x: auto; }
+  .kb-ros-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .kb-ros-table th, .kb-ros-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .kb-ros-table thead th { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-2); font-weight: 700; }
+  /* .kb-article th (the markdown-table ledger header) also matches these cells
+     and sets mono/uppercase — a ROW header is body text, so reset it here
+     rather than leaving capability names shouting in the table body. */
+  .kb-ros-table tbody th { font-family: var(--ui); font-size: .8rem; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--ink); }
+  .kb-ros-table tbody th .kb-ros-where { display: block; font-weight: 500; }
+  .kb-ros-table tr.is-single td, .kb-ros-table tr.is-single th { background: var(--warn-soft); }
+  /* Chart view. The tree's width is set by its widest VISIBLE row, which under
+     progressive disclosure is one department's team count — never the 46-leaf
+     full expansion. It still scrolls inside ITS OWN container so the page
+     never scrolls sideways (the Visual Audit Stage's overflow rule). */
+  .kb-ros-chartwrap { overflow-x: auto; padding-bottom: 4px; }
+  .kb-ros-tree, .kb-ros-children { list-style: none; margin: 0; padding: 0; }
+  .kb-ros-tree { display: flex; justify-content: flex-start; gap: 14px; padding-top: 4px; }
+  .kb-ros-node { position: relative; }
+  .kb-ros-nodebox { display: inline-block; min-width: 132px; max-width: 210px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 7px 10px; text-align: left; }
+  .kb-ros-nodebox.is-dept { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-ros-toggle { appearance: none; border: none; background: none; padding: 0; cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700; color: var(--ink); text-align: left; display: block; width: 100%; }
+  .kb-ros-toggle::before { content: '▸ '; color: var(--muted-3); font-weight: 400; }
+  .kb-ros-node.open > .kb-ros-nodebox > .kb-ros-toggle::before { content: '▾ '; }
+  .kb-ros-nodemeta { display: block; font-size: .7rem; color: var(--muted-2); margin-top: 2px; }
+  /* Children are hidden until their node is open — this IS the progressive
+     disclosure, so the collapsed tree is only as wide as its top level. */
+  .kb-ros-children { display: none; }
+  .kb-ros-node.open > .kb-ros-children { display: flex; justify-content: flex-start; gap: 12px; padding-top: 18px; }
+  /* Classic connector lines: a stub down from the parent, a horizontal rail
+     across the children, and a stub up into each child. */
+  .kb-ros-node.open > .kb-ros-children > li { position: relative; padding-top: 16px; }
+  .kb-ros-node.open > .kb-ros-children > li::before { content: ''; position: absolute; top: 0; left: 22px; width: 1px; height: 16px; background: var(--line); }
+  .kb-ros-node.open > .kb-ros-children > li::after { content: ''; position: absolute; top: -1px; left: 22px; right: -12px; height: 1px; background: var(--line); }
+  .kb-ros-node.open > .kb-ros-children > li:last-child::after { display: none; }
+  .kb-ros-node.open > .kb-ros-nodebox { position: relative; }
+  .kb-ros-node.open > .kb-ros-nodebox::after { content: ''; position: absolute; left: 22px; bottom: -18px; width: 1px; height: 18px; background: var(--line); }
+  /* People stack VERTICALLY inside their team, so opening a team costs height
+     rather than width — a 9-person team would otherwise be the widest row. */
+  .kb-ros-children.is-leaves { padding-top: 16px; }
+  .kb-ros-node.open > .kb-ros-children.is-leaves { display: block; }
+  .kb-ros-people { border: 1px solid var(--line); border-left: 2px solid var(--accent-soft); border-radius: 8px; background: var(--paper-2); padding: 7px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 132px; }
+  .kb-ros-node.open > .kb-ros-children.is-leaves > li::after { display: none; }
+  .kb-ros-chart.has-overflow .kb-ros-chart-hint { display: block; }
+  .kb-ros-chart-hint { display: none; font-size: .72rem; color: var(--muted-2); margin-bottom: 6px; }
+  @media (max-width: 560px) {
+    /* Two department boxes at their wide min-width overflow a 400px viewport
+       before anything is even expanded. */
+    .kb-ros-nodebox { min-width: 104px; max-width: 150px; padding: 6px 8px; }
+    .kb-ros-tree { gap: 10px; }
+  }
+  @media (max-width: 560px) {
+    .kb-ros-teams { grid-template-columns: 1fr; }
+  }
+
   /* #6 — copyable "canned response" snippet card (rendered by kbMd_). */
   .kb-snippet { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; margin: 12px 0; background: var(--paper-2); overflow: hidden; }
   .kb-snippet-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--accent-soft); }
@@ -291,6 +433,575 @@ function kbSlug_(text) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+// ── Interactive roster block (operator 2026-08-11) ─────────────────────────
+// An employee/routing map is the one KB content type a static article serves
+// badly: mid-call, the rep's question is "who handles X, and can they take it"
+// — not "show me the org". A ```roster fence renders an interactive directory
+// instead, following the ```snippet precedent exactly: the fence content is
+// already HTML-escaped by kbMd_'s top-level pass, so the APP draws the
+// interactive markup around inert text. Nothing here executes article content.
+//
+// Syntax — deliberately hand-editable, because the operator's plan is for the
+// app to become the source of truth for this data:
+//   legend| lead=Team lead; new=Training / New; P=Standard powerchair
+//   badge|  Parachute access: Rajdeep, Erica, Paula
+//   dept|   PAK — Mary
+//   team|   PPD: Micheal*lead, Sandra, Selena
+//   team|   Medical Review > T3Q: Paula (C & ATP)*lead, Victoria
+// A person is `Name (tags)*flag`; `>` nests a sub-team under a team.
+
+/** PURE parser. Input is kbMd_-escaped text (& < > already entities); this
+ *  never unescapes — the renderer only ever adds quote-escaping for attribute
+ *  contexts, since the top-level pass does NOT cover quotes. */
+function kbRosterParse_(text) {
+  var legend = {}, badges = [], depts = [], warnings = [];
+  var cur = null;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;              // blank / comment
+    var m = line.match(/^(legend|badge|dept|team)\s*\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var key = m[1].toLowerCase(), val = m[2].trim();
+    if (key === 'legend') {
+      val.split(';').forEach(function (pair) {
+        var kv = pair.split('=');
+        if (kv.length >= 2 && kv[0].trim()) legend[kv[0].trim()] = kv.slice(1).join('=').trim();
+      });
+      return;
+    }
+    if (key === 'badge') {
+      var bi = val.indexOf(':');
+      if (bi < 0) { warnings.push(line); return; }
+      badges.push({
+        label: val.slice(0, bi).trim(),
+        people: val.slice(bi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+      });
+      return;
+    }
+    if (key === 'dept') {
+      // "PAK — Mary" / "PAK - Mary" / "PAK" (no owner)
+      var dm = val.split(/\s+[—–-]\s+/);
+      cur = { name: dm[0].trim(), owner: (dm[1] || '').trim(), teams: [] };
+      depts.push(cur);
+      return;
+    }
+    // team
+    var ti = val.indexOf(':');
+    if (ti < 0) { warnings.push(line); return; }
+    var head = val.slice(0, ti).trim();
+    var sub = '';
+    var si = head.indexOf('>');
+    if (si >= 0) { sub = head.slice(si + 1).trim(); head = head.slice(0, si).trim(); }
+    var people = val.slice(ti + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+      .map(function (tok) {
+        var flags = [];
+        // Strip trailing *flags FIRST so a name containing "*" is not mangled.
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        var tags = [];
+        var tm = tok.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+        if (tm) {
+          tok = tm[1].trim();
+          // The input is kbMd_-ESCAPED, so an ampersand separator arrives as
+          // `&amp;` — splitting on a bare `&` turns "C & ATP" into "C" and
+          // "amp; ATP". Accept both forms (and a comma).
+          tags = tm[2].split(/\s*(?:&amp;|&|,)\s*/).map(function (t) { return t.trim(); }).filter(Boolean);
+        }
+        return { name: tok, tags: tags, lead: flags.indexOf('lead') >= 0, isNew: flags.indexOf('new') >= 0 };
+      });
+    if (!cur) { cur = { name: '', owner: '', teams: [] }; depts.push(cur); }
+    cur.teams.push({ name: head, sub: sub, people: people });
+  });
+  // Badges are an attribute of a PERSON, not a place — they travel with them
+  // across every team they appear on, which a separate list cannot do.
+  var badgeByPerson = {};
+  badges.forEach(function (b) {
+    b.people.forEach(function (n) {
+      var k = n.toLowerCase();
+      (badgeByPerson[k] = badgeByPerson[k] || []).push(b.label);
+    });
+  });
+  depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      t.people.forEach(function (p) { p.badges = badgeByPerson[p.name.toLowerCase()] || []; });
+    });
+  });
+  return { legend: legend, badges: badges, depts: depts, warnings: warnings };
+}
+
+/** Renders the parsed roster. `v` values arrive kbMd_-escaped (& < >), so the
+ *  ONLY extra escaping needed is for quotes in attribute contexts — the same
+ *  gap kbMd_'s link/image rules guard (the top-level pass doesn't cover them). */
+function kbRosterAttr_(v) {
+  return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** A URL-safe id fragment, so a person or team is addressable in the DOM. */
+function kbRosterSlug_(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .replace(/&[a-z]+;/g, ' ')                 // the input is escaped — drop entities
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
+}
+
+/** Folds the parsed roster into a PERSON-centric index: the same person can
+ *  sit on several teams, and "where else does Erica work" is a question the
+ *  team-shaped grid (and the source spreadsheet) cannot answer at all. */
+function kbRosterPeopleIndex_(data) {
+  var byName = {}, order = [];
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      t.people.forEach(function (p) {
+        var k = p.name.toLowerCase();
+        if (!byName[k]) { byName[k] = { name: p.name, tags: [], badges: [], lead: false, isNew: false, places: [] }; order.push(k); }
+        var e = byName[k];
+        e.lead = e.lead || p.lead;
+        e.isNew = e.isNew || p.isNew;
+        p.tags.forEach(function (x) { if (e.tags.indexOf(x) < 0) e.tags.push(x); });
+        (p.badges || []).forEach(function (x) { if (e.badges.indexOf(x) < 0) e.badges.push(x); });
+        e.places.push({ dept: d.name, team: t.name, sub: t.sub });
+      });
+    });
+  });
+  return { byName: byName, order: order };
+}
+
+function kbRosterTagChip_(t, legend, clickable) {
+  var tip = legend[t] || '';
+  var a = ' class="kb-ros-tag"' + (tip ? ' data-tip="' + kbRosterAttr_(tip) + '"' : '');
+  if (!clickable) return '<span' + a + (tip ? ' tabindex="0" aria-label="' + kbRosterAttr_(t + ': ' + tip) + '"' : '') + '>' + t + '</span>';
+  // Clickable => a REAL button (INV-173). The accessible name says what the
+  // click DOES, not just what the tag means.
+  return '<button type="button"' + a + ' data-tag="' + kbRosterAttr_(t) + '" onclick="kbRosterTagFilter_(this)"' +
+    ' aria-label="' + kbRosterAttr_('Show everyone tagged ' + t + (tip ? ' (' + tip + ')' : '')) + '">' + t + '</button>';
+}
+
+function kbRosterFlags_(p, legend) {
+  var out = '';
+  if (p.lead) out += '<span class="kb-ros-flag is-lead"' + (legend.lead ? ' title="' + kbRosterAttr_(legend.lead) + '"' : '') + '>lead</span>';
+  if (p.isNew) out += '<span class="kb-ros-flag is-new"' + (legend['new'] ? ' title="' + kbRosterAttr_(legend['new']) + '"' : '') + '>new</span>';
+  (p.badges || []).forEach(function (b) { out += '<span class="kb-ros-flag is-badge">' + b + '</span>'; });
+  return out;
+}
+
+/** One person row. `hay` carries the searchable text so filtering never has to
+ *  re-read the rendered DOM, and the id makes the person addressable. */
+function kbRosterPersonHtml_(p, legend, ctx, seen) {
+  var hay = [p.name].concat(p.tags, p.badges || [], ctx || []).join(' ').toLowerCase();
+  // A person on two teams renders twice, so the id needs the same -2/-3 dedup
+  // walk kbMd_ and kbSplitSections_ use for repeated headings: duplicate ids
+  // are invalid and would break the very anchors this adds. The FIRST
+  // occurrence keeps the bare slug, so it stays the canonical link target.
+  var id = 'kb-p-' + kbRosterSlug_(p.name);
+  if (seen) { seen[id] = (seen[id] || 0) + 1; if (seen[id] > 1) id += '-' + seen[id]; }
+  return '<span class="kb-ros-person' + (p.lead ? ' is-lead' : '') + (p.isNew ? ' is-new' : '') + '"' +
+      ' id="' + id + '"' +
+      ' data-name="' + kbRosterAttr_(p.name.toLowerCase()) + '"' +
+      // Tags are matched EXACTLY (see the tag: prefix in the filter), so they
+      // ride pipe-delimited rather than as loose text. `allTags` lets the
+      // capability view carry them without re-printing the chips.
+      ' data-tags="|' + kbRosterAttr_((p.allTags || p.tags).join('|').toLowerCase()) + '|"' +
+      ' data-hay="' + kbRosterAttr_(hay) + '">' +
+    '<button type="button" class="kb-ros-name" data-name="' + kbRosterAttr_(p.name) + '" ' +
+      'onclick="kbRosterOpenPerson_(this)" title="Show where ' + kbRosterAttr_(p.name) + ' works">' + p.name + '</button>' +
+    p.tags.map(function (t) { return kbRosterTagChip_(t, legend, true); }).join('') +
+    kbRosterFlags_(p, legend) +
+    // Secondary context (the person's teams, in the capability view) belongs
+    // INSIDE the row: as a sibling it became its own line, doubling the row
+    // count and needing its own hide/show bookkeeping in the filter.
+    (ctx && ctx.length ? '<span class="kb-ros-where">' + ctx.join(', ') + '</span>' : '') +
+    '</span>';
+}
+
+/** VIEW 1 — by team. The org's own shape, and the default. */
+function kbRosterTeamsHtml_(data) {
+  var legend = data.legend, seen = {};
+  return data.depts.map(function (d) {
+    var teams = d.teams.map(function (t) {
+      var label = t.name + (t.sub ? ' <span class="kb-ros-sub">' + t.sub + '</span>' : '');
+      return '<div class="kb-ros-team" id="kb-t-' + kbRosterSlug_(d.name + '-' + t.name + '-' + t.sub) + '"' +
+          ' data-team="' + kbRosterAttr_((t.name + ' ' + t.sub).toLowerCase()) + '">' +
+        '<div class="kb-ros-team-name">' + label + '</div>' +
+        '<div class="kb-ros-people">' +
+          t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+        '</div></div>';
+    }).join('');
+    return '<section class="kb-ros-dept" data-dept="' + kbRosterAttr_(d.name.toLowerCase()) + '">' +
+      '<h3 class="kb-ros-dept-name">' + d.name +
+        (d.owner ? ' <span class="kb-ros-owner">' + d.owner + '</span>' : '') + '</h3>' +
+      '<div class="kb-ros-teams">' + teams + '</div></section>';
+  }).join('');
+}
+
+/** VIEW 2 — by capability. "Who can take a Complex Rehab call" cuts ACROSS
+ *  teams, so the team-shaped sheet cannot answer it; this view is the whole
+ *  reason a structured roster beats a picture of a spreadsheet. */
+function kbRosterCapabilitiesHtml_(data) {
+  var legend = data.legend, idx = kbRosterPeopleIndex_(data), seen = {};
+  var byTag = {}, tagOrder = [], untagged = [];
+  idx.order.forEach(function (k) {
+    var e = idx.byName[k];
+    if (!e.tags.length) { untagged.push(e); return; }
+    e.tags.forEach(function (t) {
+      if (!byTag[t]) { byTag[t] = []; tagOrder.push(t); }
+      byTag[t].push(e);
+    });
+  });
+  tagOrder.sort(function (a, b) { return byTag[b].length - byTag[a].length || (a < b ? -1 : 1); });
+  if (!tagOrder.length) {
+    return '<div class="kb-ros-note">No capability tags in this roster yet — add them as ' +
+      '<code>Name (tag)</code> and a <code>legend|</code> line explaining each.</div>';
+  }
+  var card = function (label, people, note) {
+    return '<div class="kb-ros-team" data-team="' + kbRosterAttr_(label.toLowerCase()) + '">' +
+      '<div class="kb-ros-team-name">' + label + ' <span class="kb-ros-n">' + people.length + '</span></div>' +
+      (note ? '<div class="kb-ros-cap-note">' + note + '</div>' : '') +
+      '<div class="kb-ros-people">' + people.map(function (e) {
+        // In this view the person's TEAMS are the useful secondary detail.
+        var where = e.places.map(function (pl) { return pl.team + (pl.sub ? ' › ' + pl.sub : ''); });
+        return kbRosterPersonHtml_({ name: e.name, tags: [], allTags: e.tags, badges: e.badges, lead: e.lead, isNew: e.isNew }, legend, where, seen);
+      }).join('') + '</div></div>';
+  };
+  var cards = tagOrder.map(function (t) { return card(t, byTag[t], legend[t] || ''); }).join('');
+  if (untagged.length) cards += card('No capability tag', untagged, '').replace('class="kb-ros-team"', 'class="kb-ros-team is-wide"');
+  return '<section class="kb-ros-dept"><div class="kb-ros-teams">' + cards + '</div></section>';
+}
+
+/** VIEW 3 — coverage. FACTS ONLY (counts and single points of contact), never
+ *  a judgement like "understaffed": the block has no idea what the target
+ *  staffing is, and a confident-looking verdict drawn from data that cannot
+ *  support it is the INV-187 failure mode. */
+function kbRosterCoverageHtml_(data) {
+  var legend = data.legend, idx = kbRosterPeopleIndex_(data);
+  var teamCount = 0, noLead = [];
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      teamCount++;
+      if (!t.people.some(function (p) { return p.lead; })) noLead.push((t.name + (t.sub ? ' › ' + t.sub : '')));
+    });
+  });
+  var byTag = {};
+  idx.order.forEach(function (k) {
+    idx.byName[k].tags.forEach(function (t) {
+      if (!byTag[t]) byTag[t] = { people: [], teams: {} };
+      byTag[t].people.push(idx.byName[k].name);
+      idx.byName[k].places.forEach(function (pl) { byTag[t].teams[pl.team + (pl.sub ? ' › ' + pl.sub : '')] = 1; });
+    });
+  });
+  var tags = Object.keys(byTag).sort(function (a, b) { return byTag[b].people.length - byTag[a].people.length || (a < b ? -1 : 1); });
+  var rows = tags.map(function (t) {
+    var e = byTag[t], nTeams = Object.keys(e.teams).length;
+    var only = e.people.length === 1;
+    return '<tr' + (only ? ' class="is-single"' : '') + '><th scope="row">' + t +
+      (legend[t] ? ' <span class="kb-ros-where">' + legend[t] + '</span>' : '') + '</th>' +
+      '<td>' + e.people.length + '</td><td>' + nTeams + '</td>' +
+      '<td class="kb-ros-where">' + e.people.join(', ') + '</td></tr>';
+  }).join('');
+
+  return '<div class="kb-ros-cov">' +
+    '<div class="kb-ros-cov-tiles">' +
+      '<div class="kb-ros-tile"><b>' + idx.order.length + '</b><span>people</span></div>' +
+      '<div class="kb-ros-tile"><b>' + teamCount + '</b><span>teams</span></div>' +
+      '<div class="kb-ros-tile"><b>' + data.depts.length + '</b><span>departments</span></div>' +
+      '<div class="kb-ros-tile"><b>' + tags.length + '</b><span>capabilities</span></div>' +
+    '</div>' +
+    (tags.length
+      ? '<div class="kb-ros-tablewrap"><table class="kb-ros-table"><thead><tr>' +
+          '<th scope="col">Capability</th><th scope="col">People</th><th scope="col">Teams</th><th scope="col">Who</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '') +
+    (tags.some(function (t) { return byTag[t].people.length === 1; })
+      ? '<div class="kb-ros-note">Rows marked in amber have a single point of contact — one person carries that capability.</div>'
+      : '') +
+    (noLead.length
+      ? '<div class="kb-ros-note">No lead marked on: ' + noLead.join(', ') + '.</div>'
+      : '') +
+    '</div>';
+}
+
+/** VIEW 4 — chart. A node-link tree with PROGRESSIVE DISCLOSURE: departments
+ *  collapsed, expand one to see its teams, expand a team to see its people.
+ *
+ *  The whole tree is rendered and hidden with CSS rather than built on demand,
+ *  so expand state lives in the DOM (no re-render, nothing to lose) and the
+ *  filter can simply reveal the branches that match.
+ *
+ *  Why this is legible when a static chart is not: the width of a node-link
+ *  tree is set by its WIDEST VISIBLE ROW. Showing all 46 people at once needs
+ *  ~90px each — about 4100px, unreadable at every viewport this app supports.
+ *  Under disclosure the widest row is the team count of ONE department (9
+ *  here), and people stack VERTICALLY inside their team, so opening a team
+ *  costs height rather than width.
+ *
+ *  It shows STRUCTURE, not reporting lines: the source says who is on which
+ *  team, and does not say who reports to whom. Drawing person-to-person edges
+ *  would assert a relationship the data does not contain. */
+function kbRosterChartHtml_(data) {
+  var legend = data.legend, seen = {};
+  var nodes = data.depts.map(function (d, di) {
+    var nPeople = 0;
+    d.teams.forEach(function (t) { nPeople += t.people.length; });
+    var teams = d.teams.map(function (t, ti) {
+      var tid = 'kb-ch-' + di + '-' + ti;
+      var label = t.name + (t.sub ? ' <span class="kb-ros-sub">' + t.sub + '</span>' : '');
+      var lead = t.people.filter(function (p) { return p.lead; })
+        .map(function (p) { return p.name; }).join(', ');
+      return '<li class="kb-ros-node" role="treeitem" aria-expanded="false">' +
+        '<div class="kb-ros-nodebox is-team">' +
+          '<button type="button" class="kb-ros-toggle" aria-expanded="false" aria-controls="' + tid + '" ' +
+            'onclick="kbRosterToggleNode_(this)">' + label + '</button>' +
+          '<span class="kb-ros-nodemeta">' + t.people.length + ' ' + (t.people.length === 1 ? 'person' : 'people') +
+            (lead ? ' · lead ' + lead : '') + '</span>' +
+        '</div>' +
+        '<ul class="kb-ros-children is-leaves" id="' + tid + '" role="group">' +
+          '<li class="kb-ros-people">' +
+            t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+          '</li>' +
+        '</ul></li>';
+    }).join('');
+    var did = 'kb-ch-' + di;
+    return '<li class="kb-ros-node" role="treeitem" aria-expanded="false">' +
+      '<div class="kb-ros-nodebox is-dept">' +
+        '<button type="button" class="kb-ros-toggle" aria-expanded="false" aria-controls="' + did + '" ' +
+          'onclick="kbRosterToggleNode_(this)">' + d.name + '</button>' +
+        '<span class="kb-ros-nodemeta">' + (d.owner ? d.owner + ' · ' : '') +
+          d.teams.length + ' teams · ' + nPeople + ' people</span>' +
+      '</div>' +
+      '<ul class="kb-ros-children" id="' + did + '" role="group">' + teams + '</ul></li>';
+  }).join('');
+  // The notes sit OUTSIDE the scrolling container: inside it they scrolled
+  // away with the tree, so the one explanation of what the view shows
+  // disappeared exactly when a wide row made it most needed.
+  return '<div class="kb-ros-chart">' +
+    '<div class="kb-ros-note">Structure only — the roster records team membership, ' +
+      'not who reports to whom. Select a department, then a team.</div>' +
+    '<div class="kb-ros-chart-hint">Scroll sideways to see the rest of this row.</div>' +
+    '<div class="kb-ros-chartwrap">' +
+      '<ul class="kb-ros-tree" role="tree" aria-label="Organisation chart">' + nodes + '</ul>' +
+    '</div></div>';
+}
+
+/** Expand/collapse is a CLASS toggle plus the matching aria-expanded on BOTH
+ *  the treeitem and its button — a class alone is invisible to assistive tech
+ *  (INV-174), and these are the disclosure controls the whole view is built
+ *  around. */
+function kbRosterToggleNode_(btn) {
+  var li = btn.closest ? btn.closest('.kb-ros-node') : null;
+  if (!li) return;
+  var open = !li.classList.contains('open');
+  li.classList.toggle('open', open);
+  li.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  kbRosterChartOverflow_(btn);
+}
+
+/** A department with more teams than fit scrolls sideways inside the chart —
+ *  standard for an org chart, but the clipped teams simply looked ABSENT with
+ *  no cue. Flag it only when it is actually true, so the hint is never noise. */
+function kbRosterChartOverflow_(el) {
+  var root = kbRosterRoot_(el);
+  var wrap = root ? root.querySelector('.kb-ros-chartwrap') : null;
+  if (!wrap) return;
+  var chart = root.querySelector('.kb-ros-chart');
+  if (chart) chart.classList.toggle('has-overflow', wrap.scrollWidth > wrap.clientWidth + 1);
+}
+
+function kbRosterBodyHtml_(data, mode) {
+  if (mode === 'capabilities') return kbRosterCapabilitiesHtml_(data);
+  if (mode === 'coverage') return kbRosterCoverageHtml_(data);
+  if (mode === 'chart') return kbRosterChartHtml_(data);
+  return kbRosterTeamsHtml_(data);
+}
+
+function kbRosterModeBtn_(mode, key, label) {
+  var on = mode === key;
+  return '<button type="button" class="kb-ros-mode' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '"' +
+    ' data-mode="' + key + '" onclick="kbRosterSetMode_(this)">' + label + '</button>';
+}
+
+function kbRosterHtml_(text) {
+  var data = kbRosterParse_(text);
+  var mode = 'teams';
+  var total = kbRosterPeopleIndex_(data).order.length;
+  var legendHtml = Object.keys(data.legend).length
+    ? '<div class="kb-ros-legend">' + Object.keys(data.legend).map(function (k) {
+        return '<span class="kb-ros-legend-item"><b>' + k + '</b> ' + data.legend[k] + '</span>';
+      }).join('') + '</div>'
+    : '';
+  // The SOURCE rides on the root so a mode switch can re-render from the same
+  // parsed data without re-running kbMd_ over the whole article.
+  return '<div class="kb-roster" data-roster="1" data-mode="' + mode + '" data-src="' + kbRosterAttr_(text) + '">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search" placeholder="Filter by team, person or tag…" ' +
+        'aria-label="Filter the roster by team, person or tag" oninput="kbRosterFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + total + ' people</span>' +
+      '<span class="kb-ros-modes" role="tablist" aria-label="Roster view">' +
+        kbRosterModeBtn_(mode, 'teams', 'Teams') +
+        kbRosterModeBtn_(mode, 'capabilities', 'Capabilities') +
+        kbRosterModeBtn_(mode, 'chart', 'Chart') +
+        kbRosterModeBtn_(mode, 'coverage', 'Coverage') +
+      '</span>' +
+    '</div>' + legendHtml +
+    '<div class="kb-ros-panel" hidden></div>' +
+    '<div class="kb-ros-body">' + kbRosterBodyHtml_(data, mode) + '</div>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) in this roster block were not understood and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbRosterRoot_(el) { return el && el.closest ? el.closest('.kb-roster') : null; }
+
+function kbRosterData_(root) {
+  // The stored source is attribute-escaped; the DOM decodes &quot;/&#39; on
+  // read, so what comes back is exactly what kbMd_ handed the renderer.
+  return kbRosterParse_(root.getAttribute('data-src') || '');
+}
+
+function kbRosterSetMode_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var mode = btn.getAttribute('data-mode') || 'teams';
+  root.setAttribute('data-mode', mode);
+  var btns = root.querySelectorAll('.kb-ros-mode');
+  for (var i = 0; i < btns.length; i++) {
+    var on = btns[i] === btn;
+    btns[i].classList.toggle('on', on);
+    btns[i].setAttribute('aria-selected', on ? 'true' : 'false');   // INV-174
+  }
+  var body = root.querySelector('.kb-ros-body');
+  if (body) body.innerHTML = kbRosterBodyHtml_(kbRosterData_(root), mode);
+  kbRosterClosePanel_(root);
+  var search = root.querySelector('.kb-ros-search');
+  if (search) kbRosterFilter_(search);      // a mode switch keeps the active filter
+  if (typeof animateListSwap_ === 'function') { try { animateListSwap_(body, '.kb-ros-team'); } catch (e) {} }
+}
+
+/** Clicking a person opens a detail panel rather than copying, because "where
+ *  else does this person work" is the question the grid cannot answer. Copy
+ *  moved INTO the panel so both actions stay one click from the name. */
+function kbRosterOpenPerson_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var name = btn.getAttribute('data-name') || '';
+  var idx = kbRosterPeopleIndex_(kbRosterData_(root));
+  var e = idx.byName[name.toLowerCase()];
+  var panel = root.querySelector('.kb-ros-panel');
+  if (!panel || !e) return;
+  var legend = kbRosterData_(root).legend;
+  var places = e.places.map(function (pl) {
+    return '<li>' + pl.team + (pl.sub ? ' <span class="kb-ros-sub">' + pl.sub + '</span>' : '') +
+      ' <span class="kb-ros-where">' + pl.dept + '</span></li>';
+  }).join('');
+  panel.innerHTML =
+    '<div class="kb-ros-panel-head">' +
+      '<b>' + e.name + '</b>' + kbRosterFlags_(e, legend) +
+      '<span class="kb-ros-panel-actions">' +
+        '<button type="button" class="kb-btn kb-ros-copy" data-name="' + kbRosterAttr_(e.name) + '" ' +
+          'onclick="kbRosterCopy_(this)">Copy name</button>' +
+        '<button type="button" class="kb-btn" onclick="kbRosterClosePanel_(this)" aria-label="Close details">Close</button>' +
+      '</span>' +
+    '</div>' +
+    (e.tags.length ? '<div class="kb-ros-panel-tags">' +
+      e.tags.map(function (t) { return kbRosterTagChip_(t, legend, true); }).join('') + '</div>' : '') +
+    '<div class="kb-ros-panel-where">On ' + e.places.length + ' team' + (e.places.length === 1 ? '' : 's') +
+      ':<ul>' + places + '</ul></div>';
+  panel.hidden = false;
+  panel.setAttribute('tabindex', '-1');
+  try { panel.focus(); } catch (err) {}
+}
+
+function kbRosterClosePanel_(elOrRoot) {
+  var root = (elOrRoot && elOrRoot.classList && elOrRoot.classList.contains('kb-roster'))
+    ? elOrRoot : kbRosterRoot_(elOrRoot);
+  var panel = root ? root.querySelector('.kb-ros-panel') : null;
+  if (!panel) return;
+  panel.hidden = true;
+  panel.innerHTML = '';
+}
+
+/** Clicking a tag asks "who else can do this" — it drives the same filter box
+ *  the rep would have typed into, so the two paths cannot diverge. */
+function kbRosterTagFilter_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var tag = btn.getAttribute('data-tag') || '';
+  var search = root.querySelector('.kb-ros-search');
+  if (!search) return;
+  // A `tag:` query matches the tag EXACTLY. A bare substring would be far too
+  // loose for the short tags this data uses: filtering on "C" also matches
+  // "Medical Review" and "Insurance Change" — 42 of 46 people.
+  var q = 'tag:' + tag;
+  search.value = (String(search.value || '').trim().toLowerCase() === q.toLowerCase()) ? '' : q;
+  kbRosterFilter_(search);
+  try { search.focus(); } catch (e) {}
+}
+
+/** Filters in place — hiding non-matching people, then teams and departments
+ *  left with nothing. No re-render, so the article around it is untouched. */
+function kbRosterFilter_(input) {
+  var root = kbRosterRoot_(input);
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  // The coverage view is an aggregate of the WHOLE roster; filtering it to a
+  // subset would report totals that quietly describe only part of the team.
+  var mode = root.getAttribute('data-mode');
+  if (mode === 'coverage' || mode === 'chart') {
+    var cnt0 = root.querySelector('.kb-ros-count');
+    if (cnt0) cnt0.textContent = q ? 'filter applies to Teams and Capabilities' : (kbRosterPeopleIndex_(kbRosterData_(root)).order.length + ' people');
+    return;
+  }
+  var shown = 0, seen = {};
+  var tm = q.match(/^tag:\s*(.+)$/);
+  var tagNeedle = tm ? '|' + tm[1].trim() + '|' : '';
+  var depts = root.querySelectorAll('.kb-ros-dept');
+  for (var d = 0; d < depts.length; d++) {
+    var deptName = depts[d].getAttribute('data-dept') || '';
+    var teams = depts[d].querySelectorAll('.kb-ros-team');
+    var deptHit = 0;
+    for (var t = 0; t < teams.length; t++) {
+      var teamName = teams[t].getAttribute('data-team') || '';
+      // A query matching the TEAM (or its department) keeps the whole team —
+      // "who is on PT Eval" is as common a question as "where is Sergio".
+      // In tag mode a TEAM never matches — only the people carrying the tag.
+      var teamMatch = tagNeedle ? false : (!q || teamName.indexOf(q) >= 0 || deptName.indexOf(q) >= 0);
+      var people = teams[t].querySelectorAll('.kb-ros-person');
+      var teamHit = 0;
+      for (var i = 0; i < people.length; i++) {
+        var hit = tagNeedle
+          ? (people[i].getAttribute('data-tags') || '').indexOf(tagNeedle) >= 0
+          : (teamMatch || (people[i].getAttribute('data-hay') || '').indexOf(q) >= 0);
+        people[i].style.display = hit ? '' : 'none';
+        if (hit) { teamHit++; seen[people[i].getAttribute('data-name') || ''] = 1; }
+      }
+      teams[t].style.display = teamHit ? '' : 'none';
+      deptHit += teamHit;
+      shown += teamHit;
+    }
+    depts[d].style.display = deptHit ? '' : 'none';
+  }
+  // Report DISTINCT people in every mode. This previously mixed units —
+  // distinct on first paint, visible ROWS after a filter or mode switch — so
+  // the capability view (a person appears once per tag) read "49 people" for a
+  // 46-person roster.
+  var n = 0;
+  for (var k in seen) { if (Object.prototype.hasOwnProperty.call(seen, k)) n++; }
+  var count = root.querySelector('.kb-ros-count');
+  if (count) count.textContent = n + (q ? ' matching' : ' people');
+}
+
+/** Click a name in the panel to copy it — the rep is usually about to type it
+ *  into the phone system or the CRM. */
+function kbRosterCopy_(btn) {
+  var name = btn && btn.getAttribute ? btn.getAttribute('data-name') : '';
+  if (!name) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(name);
+    else if (typeof cnFallbackCopy_ === 'function') cnFallbackCopy_(name);
+  } catch (e) {}
+  if (typeof flashCopied === 'function') flashCopied(btn);
+  else if (typeof showToast === 'function') showToast('Copied ' + name, 'toast-success');
+}
+
 function kbMd_(src) {
   src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   var blocks = [];
@@ -311,7 +1022,12 @@ function kbMd_(src) {
     // first), so both paths are inert.
     var info = infoLine.trim();
     var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
+    // A `roster` fence renders the interactive directory (operator 2026-08-11);
+    // same safety argument as snippet — the content is already escaped, so the
+    // app draws interactive markup around inert text.
+    var rm = info.match(/^roster\b/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
+    else if (rm) blocks.push({ roster: true, body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -369,7 +1085,7 @@ function kbMd_(src) {
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
-    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -1056,8 +1772,14 @@ function kbRenderItem_(item) {
   var mgr = KB_STATE.isAdmin;   // Convert/Edit/Delete are admin-gated authoring
   // Phase 2 — managers can convert a Doc embed into a native markdown article
   // (review-before-save: the converter only pre-fills the editor).
-  var convertBtn = (mgr && item.type === 'embed' && item.driveKind === 'doc')
-    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\')">' + icon('refresh', 13) + ' Convert to article</button>'
+  // A SHEET embed is the weakest item in the KB — search treats every embed as
+  // a title-only hit and the Ctrl/⌘+K drawer can't host an iframe — so the
+  // sheet converter is offered on the same button (operator 2026-08-11).
+  var convertKind = (mgr && item.type === 'embed' && (item.driveKind === 'doc' || item.driveKind === 'sheet'))
+    ? item.driveKind : '';
+  var convertBtn = convertKind
+    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\', \'' + convertKind + '\')">' +
+        icon('refresh', 13) + ' Convert to article</button>'
     : '';
   // #4 — draft→publish + revision history (admin authoring affordances).
   var isDraft = item.status === 'draft';
@@ -1241,11 +1963,14 @@ function kbDeleteItem_(id) {
 // manager presses Save (kbSaveItem updates the row in place, flipping
 // type embed → article); the Drive file itself is never modified.
 
-/** Reader-view entry: convert an existing doc-embed KB item. */
-function kbConvertItem_(id) {
+/** Reader-view entry: convert an existing doc- or sheet-embed KB item. */
+function kbConvertItem_(id, kind) {
+  var isSheet = (kind === 'sheet');
   uiConfirm({
-    title: 'Convert Doc to article',
-    message: 'Convert this embedded Google Doc into a native markdown article?\n\nYou\'ll review the result in the editor first — nothing changes until you press Save, and the Drive file itself is never modified. Images and tables don\'t fully convert (placeholders / flattened lists).',
+    title: isSheet ? 'Convert Sheet to article' : 'Convert Doc to article',
+    message: isSheet
+      ? 'Convert this embedded Google Sheet into a native markdown article?\n\nThe article is searchable, readable in the Ctrl/\u2318+K drawer, and needs no Drive access — an embedded sheet is none of those.\n\nYou\'ll review the result in the editor first: nothing changes until you press Save, and the Sheet itself is never modified. Merged section headers become headings; cell colours become bold, so add a legend for what a colour meant.'
+      : 'Convert this embedded Google Doc into a native markdown article?\n\nYou\'ll review the result in the editor first — nothing changes until you press Save, and the Drive file itself is never modified. Images and tables don\'t fully convert (placeholders / flattened lists).',
     confirmLabel: 'Convert',
   }).then(function (ok) {
     if (!ok) return;
@@ -1285,16 +2010,19 @@ function kbConvertItem_(id) {
       .withFailureHandler(function (err) {
         showToast((err && err.message) || 'Convert failed', 'toast-error');
       })
-      .kbConvertDriveDoc({ itemId: id });
+      [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ itemId: id });
   });
 }
 
-/** Editor entry: convert the Doc URL currently typed in embed mode, switching
- *  the open editor to article mode with the converted body. */
+/** Editor entry: convert the Doc OR Sheet URL currently typed in embed mode,
+ *  switching the open editor to article mode with the converted body. The
+ *  endpoint is picked from the URL itself so the admin doesn't have to say
+ *  which kind they pasted. */
 function kbConvertFromEditor_() {
   kbSnapshotEditor_();
   var url = String(KB_EDIT.driveUrl || '').trim();
-  if (!url) { showToast('Paste a Google Doc share URL first.', 'toast-warn'); return; }
+  if (!url) { showToast('Paste a Google Doc or Sheet share URL first.', 'toast-warn'); return; }
+  var isSheet = /\/spreadsheets\//.test(url);
   showToast('Converting…', '');
   // M-7 (cycle 10): identity guard. Every editor open assigns a FRESH KB_EDIT
   // object, so capturing the reference pins this convert to the editor it was
@@ -1328,7 +2056,7 @@ function kbConvertFromEditor_() {
     .withFailureHandler(function (err) {
       showToast((err && err.message) || 'Convert failed', 'toast-error');
     })
-    .kbConvertDriveDoc({ driveUrl: url });
+    [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ driveUrl: url });
 }
 
 function kbShowConvertWarnings_(warnings) {
@@ -1452,7 +2180,7 @@ function kbRenderEditorBody_() {
     host.innerHTML = '<div class="field"><label>Drive share URL (Google Doc, Sheet, or file)</label>' +
       '<input type="text" id="kb-ed-driveurl" value="' + esc(KB_EDIT.driveUrl) + '" placeholder="https://docs.google.com/document/d/…"></div>' +
       '<div style="font-size:.76rem;color:var(--muted);">The doc embeds as a read-only preview in the app, with an "Open in new tab" link. Reps need access to the file (share it with the team).</div>' +
-      '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc to an article instead</button>' +
+      '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
       '<div style="font-size:.72rem;color:var(--muted);margin-top:4px;">Google Docs only — pulls the Doc\'s text in as editable markdown (you review before saving; the Doc isn\'t changed).</div>';
   } else {
     host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +

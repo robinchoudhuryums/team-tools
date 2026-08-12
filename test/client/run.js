@@ -7467,6 +7467,403 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
     'the tabs keep their width inside the scroller rather than squashing');
 });
 
+console.log('\nkb — interactive roster block (operator 2026-08-11)');
+
+const kbRosCtx = vm.createContext({});
+['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterSlug_', 'kbRosterPeopleIndex_',
+ 'kbRosterTagChip_', 'kbRosterFlags_', 'kbRosterPersonHtml_', 'kbRosterTeamsHtml_',
+ 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterChartHtml_', 'kbRosterBodyHtml_',
+ 'kbRosterModeBtn_', 'kbRosterHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
+
+test('kbRosterParse_ — structure, flags, tags, and badges that travel with a person', () => {
+  const p = kbRosCtx.kbRosterParse_([
+    'legend| lead=Team lead; new=Training / New; C=Complex Rehab chair',
+    'badge| Parachute: Paula, Erica',
+    'dept| PAK — Mary',
+    'team| PPD: Micheal*lead, Sandra',
+    'dept| Qualifications &amp; Auth — Rajdeep',
+    'team| Medical Review > T3Q: Paula (C &amp; ATP)*lead, Alia (P)',
+    'team| PT Eval: Erica, Shelby*new',
+  ].join('\n'));
+  assert.strictEqual(p.depts.length, 2, 'two departments');
+  assert.strictEqual(p.depts[0].owner, 'Mary', 'the owner is split off the department name');
+  assert.strictEqual(p.depts[1].teams[0].sub, 'T3Q', '"Team > Sub" nests');
+  const paula = p.depts[1].teams[0].people[0];
+  // NOTE: values come from a vm context, so their Array prototype belongs to
+  // that realm and deepStrictEqual (which compares prototypes) fails on a
+  // correct result. Compare by value.
+  // The fence content arrives HTML-ESCAPED, so an ampersand separator is
+  // `&amp;` — splitting on a bare & yields the tag "amp; ATP".
+  assert.strictEqual(paula.tags.join('|'), 'C|ATP', 'an escaped & separator splits correctly');
+  assert.strictEqual(paula.lead, true, '*lead is a flag, not part of the name');
+  assert.strictEqual(paula.name, 'Paula', 'the name is clean of tags and flags');
+  // A badge is an attribute of a PERSON, so it follows them onto every team.
+  const erica = p.depts[1].teams[1].people[0];
+  assert.strictEqual(erica.badges.join('|'), 'Parachute', 'the badge travels to another department');
+  assert.strictEqual(paula.badges.join('|'), 'Parachute', 'and to a different team');
+  assert.strictEqual(p.depts[1].teams[1].people[1].isNew, true, '*new is parsed');
+  // An unparseable line is REPORTED, never silently dropped.
+  const bad = kbRosterParse_Warn();
+  function kbRosterParse_Warn() { return kbRosCtx.kbRosterParse_('team PPD no pipe here'); }
+  assert.strictEqual(bad.warnings.length, 1, 'a malformed line is counted as a warning');
+});
+
+test('kbMd_ renders a ```roster fence as the interactive block, and leaves other fences alone', () => {
+  const html = kbRosCtx.kbMd_(['Intro.', '', '```roster', 'dept| PAK — Mary', 'team| PPD: Micheal*lead', '```'].join('\n'));
+  assert.ok(/<div class="kb-roster"/.test(html), 'the roster fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown still renders');
+  // Real controls, not divs with handlers (INV-173), and the filter input is
+  // NAMED for assistive tech.
+  assert.ok(/<button type="button" class="kb-ros-name"/.test(html), 'a person is a real button');
+  assert.ok(/aria-label="Filter the roster/.test(html), 'the search input has an accessible name');
+  assert.ok(/role="status" aria-live="polite"/.test(html), 'the result count is announced');
+  const plain = kbRosCtx.kbMd_(['```js', 'var x = 1;', '```'].join('\n'));
+  assert.ok(/<pre><code>/.test(plain) && !/kb-roster/.test(plain), 'an ordinary fence is untouched');
+});
+
+test('roster block stays INERT and cannot break out of an attribute', () => {
+  // kbMd_ escapes & < > BEFORE the fence is captured, so markup in the body is
+  // already neutralised — but the top-level pass does NOT cover quotes, and the
+  // renderer puts names into attributes (the same gap kbMd_'s link rule guards).
+  const html = kbRosCtx.kbMd_(['```roster', 'dept| D', 'team| T: <script>alert(1)</script>', '```'].join('\n'));
+  assert.strictEqual(html.indexOf('<script>'), -1, 'no live script survives');
+  assert.ok(/&lt;script&gt;/.test(html), 'it renders as escaped text');
+  const quoted = kbRosCtx.kbRosterHtml_('dept| D\nteam| T: A" onmouseover="x');
+  // Assert the PROPERTY (the quote is entity-escaped inside the value), not
+  // "an on*= follows the attribute" — that heuristic matches the legitimate
+  // onclick after a correctly-terminated attribute and fails on good output.
+  assert.ok(/data-name="A&quot; onmouseover=&quot;x"/.test(quoted), 'a quote in a name is entity-escaped in its attribute');
+  // The SOURCE now rides on the root as an attribute too — same exposure.
+  assert.ok(/data-src="[^"]*&quot;[^"]*"/.test(quoted), 'and in the stored source attribute');
+  assert.ok(/&quot;/.test(quoted), 'quotes are entity-escaped in attribute contexts');
+});
+
+test('the roster block reflows for the 400px drawer, and its content stays searchable', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // A2: a fixed multi-column grid owes a real viewport breakpoint. The drawer
+  // is the surface this block exists for, so this is not optional.
+  assert.ok(/\.kb-ros-teams \{[^}]*repeat\(auto-fill/.test(kb), 'the team grid is intrinsic, not fixed tracks');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-ros-teams \{ grid-template-columns: 1fr/.test(kb),
+    'it stacks at a real breakpoint');
+  assert.ok(/\.kb-ros-teams \{[^}]*align-items: start/.test(kb),
+    'a short team does not stretch to match a tall one beside it');
+  // The tooltip must not be mouse-only.
+  assert.ok(/\.kb-ros-tag\[data-tip\]:hover::after, \.kb-ros-tag\[data-tip\]:focus::after/.test(kb),
+    'tag tooltips open on keyboard focus as well as hover');
+  // Searchability is the reason this beats an embed: kbSplitSections_ masks
+  // fences for HEADING detection only, so the names stay in the section text.
+  const secCtx = vm.createContext({});
+  ['kbSlug_', 'kbSplitSections_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), secCtx));
+  const secs = secCtx.kbSplitSections_('# Roster\n\n```roster\nteam| MDO: Sergio (P)\n```');
+  assert.ok(secs.some((x) => x.md.toLowerCase().indexOf('sergio') >= 0),
+    'a name inside the roster fence is still part of the searchable section text');
+});
+
+console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
+
+test('the people index folds a person across teams — the question the grid cannot answer', () => {
+  const d = kbRosCtx.kbRosterParse_([
+    'dept| Q — R',
+    'team| PAR > Submission: Kadija, Parker',
+    'team| PAR > F/U: Kadija (C), Bella',
+  ].join('\n'));
+  const idx = kbRosCtx.kbRosterPeopleIndex_(d);
+  assert.strictEqual(idx.order.length, 3, 'Kadija counts ONCE, not once per team');
+  const k = idx.byName.kadija;
+  assert.strictEqual(k.places.length, 2, 'but both of her teams are recorded');
+  assert.strictEqual(k.tags.join('|'), 'C', 'tags union across her rows');
+});
+
+test('the three views render from one source, and coverage states FACTS not verdicts', () => {
+  const src = [
+    'legend| C=Complex Rehab chair',
+    'dept| Q — R',
+    'team| A: Ann (C)*lead, Bob',
+    'team| B: Cy (C), Dee (ATP)',
+  ].join('\n');
+  const d = kbRosCtx.kbRosterParse_(src);
+  const teams = kbRosCtx.kbRosterBodyHtml_(d, 'teams');
+  const caps = kbRosCtx.kbRosterBodyHtml_(d, 'capabilities');
+  const cov = kbRosCtx.kbRosterBodyHtml_(d, 'coverage');
+  assert.ok(/kb-ros-dept-name/.test(teams), 'teams view groups by department');
+  // The capability view must put people from DIFFERENT teams in one card —
+  // that cross-team cut is the whole reason it exists.
+  const cCard = /<div class="kb-ros-team-name">C <span class="kb-ros-n">2<\/span>/.test(caps);
+  assert.ok(cCard, 'both C-tagged people group together across teams');
+  assert.ok(/Ann/.test(caps) && /Cy/.test(caps), 'and both are listed');
+  // Coverage reports counts and single-points-of-contact. It must NOT invent a
+  // staffing verdict — it has no idea what the target is (INV-187).
+  assert.ok(/>4<\/b><span>people</.test(cov), 'counts distinct people');
+  assert.ok(/>2<\/b><span>teams</.test(cov), 'and teams');
+  assert.ok(/No lead marked on: B\./.test(cov), 'names the teams with no lead — a fact');
+  // Dee is the only ATP, so the single-point-of-contact note renders — which
+  // is what puts that sentence under the no-verdict scan below.
+  assert.ok(/single point of contact/.test(cov), 'flags a capability only one person carries');
+  ['understaffed', 'too few', 'insufficient', 'at risk', 'critical'].forEach((w) => {
+    assert.strictEqual(cov.toLowerCase().indexOf(w), -1, 'coverage states no verdict: ' + w);
+  });
+});
+
+test('a tag click matches the tag EXACTLY, not as a substring', () => {
+  const src = ['dept| Q — R', 'team| Medical Review: Ann (C)', 'team| Insurance Change: Bob'].join('\n');
+  const html = kbRosCtx.kbRosterBodyHtml_(kbRosCtx.kbRosterParse_(src), 'teams');
+  // Tags ride pipe-delimited so "C" cannot also match "Medical Review" and
+  // "Insurance Change" — a bare substring matched 42 of 46 real people.
+  assert.ok(/data-tags="\|c\|"/.test(html), 'tags are pipe-delimited for exact matching');
+  assert.ok(/data-tags="\|\|"/.test(html), 'an untagged person has no tag to match');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/var q = 'tag:' \+ tag;/.test(kb), 'the tag button drives the same filter box the rep types into');
+  assert.ok(/tagNeedle \? false :/.test(kb), 'in tag mode a TEAM name never matches');
+});
+
+test('a person on two teams gets unique ids, and the first stays canonical', () => {
+  const src = ['dept| Q — R', 'team| A: Kadija', 'team| B: Kadija'].join('\n');
+  const html = kbRosCtx.kbRosterBodyHtml_(kbRosCtx.kbRosterParse_(src), 'teams');
+  const ids = (html.match(/id="kb-p-[^"]*"/g) || []);
+  assert.strictEqual(ids.length, 2, 'both rows are addressable');
+  assert.strictEqual(new Set(ids).size, 2, 'duplicate DOM ids would break the anchors this adds');
+  assert.ok(/id="kb-p-kadija"/.test(html), 'the FIRST occurrence keeps the bare slug as the canonical target');
+  assert.ok(/id="kb-p-kadija-2"/.test(html), 'later ones take the -2/-3 walk kbMd_ uses for repeated headings');
+  assert.ok(/id="kb-t-q-a"/.test(html), 'teams are addressable too');
+});
+
+test('the mode switcher is a real tablist and the count means the same thing in every view', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const html = kbRosCtx.kbRosterHtml_('dept| Q — R\nteam| A: Ann (C), Bob');
+  assert.ok(/role="tablist"/.test(html) && (html.match(/role="tab"/g) || []).length === 4, 'four real tabs');
+  assert.ok(/aria-selected="true"/.test(html), 'the active view is exposed, not just painted (INV-174)');
+  assert.ok(/setAttribute\('aria-selected'/.test(kb), 'and kept in step on switch');
+  // The count previously mixed units: distinct people on first paint, visible
+  // ROWS after a filter or mode switch — so a 46-person roster read "49
+  // people" in the capability view.
+  assert.ok(/seen\[people\[i\]\.getAttribute\('data-name'\)/.test(kb), 'the filter counts DISTINCT people');
+  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb), 'the aggregate views are never filtered to a subset');
+});
+
+console.log('\nkb — roster chart view (progressive disclosure)');
+
+test('the chart is a real tree whose collapsed width is its TOP level only', () => {
+  const d = kbRosCtx.kbRosterParse_([
+    'dept| PAK — Mary', 'team| PPD: Ann*lead, Bob',
+    'dept| Q — R', 'team| A: Cy', 'team| B: Dee',
+  ].join('\n'));
+  const html = kbRosCtx.kbRosterChartHtml_(d);
+  assert.ok(/role="tree"/.test(html), 'a tree role');
+  assert.strictEqual((html.match(/role="treeitem"/g) || []).length, 5, 'every dept and team is a treeitem');
+  assert.strictEqual((html.match(/role="group"/g) || []).length, 5, 'each has a child group');
+  // Progressive disclosure is what makes this legible at all: showing every
+  // leaf at once needs ~90px each (~4100px on the real roster). Children are
+  // RENDERED but collapsed, so expand state lives in the DOM and the collapsed
+  // width is the top level alone.
+  assert.strictEqual((html.match(/aria-expanded="false"/g) || []).length, 10,
+    'everything starts collapsed, on both the treeitem and its button');
+  assert.strictEqual(html.indexOf('aria-expanded="true"'), -1, 'nothing starts open');
+  // Expanding must update BOTH — the treeitem carries the tree state, the
+  // button is what a screen reader announces when focused (INV-174).
+  const toggle = extractFunction('kb/script_kb.html', 'kbRosterToggleNode_');
+  assert.ok(/li\.setAttribute\('aria-expanded'/.test(toggle), 'the treeitem is kept in step');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(toggle), 'and so is its button');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-ros-children \{ display: none; \}/.test(kb), 'children are hidden until their node opens');
+  assert.ok(/\.kb-ros-node\.open > \.kb-ros-children\.is-leaves \{ display: block/.test(kb),
+    'people stack VERTICALLY inside a team, so opening one costs height not width');
+});
+
+test('the chart claims structure, not reporting lines — and says so', () => {
+  const html = kbRosCtx.kbRosterChartHtml_(kbRosCtx.kbRosterParse_('dept| D — O\nteam| T: Ann'));
+  // The source records team membership only. Person-to-person edges would
+  // assert a relationship the data does not contain.
+  assert.ok(/not who reports to whom/.test(html), 'the view states what it does not know');
+  // NOTE: do not scan for the phrase "reports to" — the disclaimer itself
+  // contains it (INV-188's family: a check that trips on its own rationale).
+  // What matters is that only membership edges are drawn: dept > team > people.
+  assert.strictEqual(html.indexOf('kb-ros-person'), html.lastIndexOf('kb-ros-person'),
+    'one person row here — people hang off their TEAM, never off another person');
+  assert.ok(/O · 1 teams/.test(html), 'the department owner is shown, which the data does assert');
+});
+
+test('the chart scrolls inside its own container, and its notes stay put', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-ros-chartwrap \{ overflow-x: auto/.test(kb), 'the tree scrolls inside itself, never the page');
+  const html = kbRosCtx.kbRosterChartHtml_(kbRosCtx.kbRosterParse_('dept| D — O\nteam| T: Ann'));
+  // The notes were INSIDE the scroll container and scrolled away with the
+  // tree — losing the only explanation of the view exactly when a wide row
+  // made it most needed.
+  // Structural, not positional: everything from the wrap onward must contain
+  // no note. (Checking "note index < wrap index" passes even if the wrap is
+  // renamed, which is how the first version of this pin failed to bite.)
+  const wrapAt = html.indexOf('class="kb-ros-chartwrap"');
+  assert.ok(wrapAt > 0, 'the scrolling wrap exists');
+  assert.ok(html.indexOf('kb-ros-note') >= 0, 'the note exists');
+  assert.strictEqual(html.slice(wrapAt).indexOf('kb-ros-note'), -1, 'and is NOT inside the scrolling wrap');
+  assert.strictEqual(html.slice(wrapAt).indexOf('kb-ros-chart-hint'), -1, 'nor is the scroll hint');
+  assert.ok(/has-overflow \.kb-ros-chart-hint \{ display: block/.test(kb),
+    'the scroll hint shows only when the row actually overflows');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,300}\.kb-ros-nodebox \{ min-width: 104px/.test(kb),
+    'two department boxes at their wide min-width overflowed a 400px viewport');
+});
+
+test('the chart and coverage views report distinct people, never a filtered row count', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // Chart mode has no .kb-ros-dept walk, so the row-counting filter reported
+  // "0 people" — the same mixed-units defect as the capability view, in a new
+  // mode. Both aggregate views report the index size instead.
+  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb),
+    'both aggregate views bypass the row-counting filter');
+});
+
+console.log('\nkb — Sheet→article converter (operator 2026-08-11)');
+
+// The grid walker, driven with plain objects (the kbDocBodyToMarkdown_ pattern
+// — no live spreadsheet needed).
+const kbSheetCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'kbSheetGridToMarkdown_'), kbSheetCtx);
+const kbSheetGridToMarkdown_ = kbSheetCtx.kbSheetGridToMarkdown_;
+
+test('a BANDED roster keeps each sub-team\'s people separate (they sit side by side, not stacked)', () => {
+  // This is the whole reason the converter exists and the one regression that
+  // would be actively harmful: these sheets partition by COLUMN, so a row-wise
+  // walk merges two sub-teams into one line and tells a rep that PPD's people
+  // cover MDO. Measured against the real roster's shape.
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const values = [
+    at([[0, 'PAK (Mary)']]),                                   // full-width band
+    at([[0, 'PPD'], [4, 'MDO']]),                              // two sub-teams, side by side
+    at([[1, 'Micheal'], [5, 'Sasha']]),
+    at([[0, 'Sandra'], [1, 'Selena'], [4, 'Rachel']]),
+    blank(),
+    at([[0, 'Qualifications & Auth (Rajdeep)']]),
+    at([[0, 'PT Eval'], [4, 'MDO Follow-Up']]),
+    at([[0, 'Hem'], [4, 'Sergio (P)'], [5, 'Scarlett (C)']]),
+  ];
+  const merges = [
+    { row: 1, col: 1, rows: 1, cols: 8 },   // band
+    { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 },
+    { row: 6, col: 1, rows: 1, cols: 8 },   // band
+    { row: 7, col: 1, rows: 1, cols: 3 }, { row: 7, col: 5, rows: 1, cols: 3 },
+  ];
+  const md = kbSheetGridToMarkdown_({ name: 'Sheet1', values, merges }).markdown;
+  // Departments are h3, sub-teams h4 — so search and the drawer both get a
+  // section anchor per sub-team.
+  assert.ok(/^### PAK \(Mary\)$/m.test(md), 'the full-width merge is a department band');
+  assert.ok(/^#### PPD$/m.test(md) && /^#### MDO$/m.test(md), 'each sub-team is its own sub-heading');
+  const ppd = md.slice(md.indexOf('#### PPD'), md.indexOf('#### MDO'));
+  const mdo = md.slice(md.indexOf('#### MDO'));
+  assert.ok(/Micheal/.test(ppd) && /Sandra/.test(ppd) && /Selena/.test(ppd), 'PPD keeps its own people');
+  assert.ok(!/Sasha|Rachel/.test(ppd), 'PPD does NOT absorb the column beside it');
+  assert.ok(/Sasha/.test(mdo) && /Rachel/.test(mdo), 'MDO keeps its own people');
+  assert.ok(!/Micheal|Sandra/.test(mdo), 'MDO does NOT absorb the column beside it');
+  // A band must not be confused with a sub-team: the test is "spans the used
+  // width", not a ratio of it — a 3-wide sub-team merge cleared a 60% bar.
+  assert.ok(!/^### PPD$/m.test(md), 'a sub-team merge is never promoted to a department band');
+});
+
+test('a plain tabular sheet becomes a GFM table; a banded one never does', () => {
+  const table = kbSheetGridToMarkdown_({
+    name: 'Rates',
+    values: [['State', 'Rate'], ['TX', '6.25%'], ['CA', '7.25%']],
+    merges: [],
+  }).markdown;
+  assert.ok(/\| State \| Rate \|/.test(table) && /\|---\|---\|/.test(table), 'no merges ⇒ GFM table');
+  assert.ok(/\| TX \| 6\.25% \|/.test(table), 'data rows carry through');
+  // A pipe in a cell must not break the table it is rendered into.
+  const piped = kbSheetGridToMarkdown_({ name: 'x', values: [['A'], ['a|b']], merges: [] }).markdown;
+  assert.ok(/a\\\|b/.test(piped), 'a literal pipe is escaped for GFM');
+});
+
+test('cell highlights are preserved as emphasis and their MEANING is reported, never invented', () => {
+  // Highlights matter in the BANDED (roster) shape — a table's header row is
+  // styled by the renderer, so bolding there would be noise.
+  const res = kbSheetGridToMarkdown_({
+    name: 'x',
+    values: [['Team', ''], ['Lead', 'Backup']],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 2 }],
+    backgrounds: [['#ffffff', '#ffffff'], ['#c9daf8', '#ffffff']],
+  });
+  assert.ok(/\*\*Lead\*\*/.test(res.markdown), 'a tinted cell keeps its emphasis');
+  assert.ok(!/\*\*Backup\*\*/.test(res.markdown), 'an untinted cell is left alone');
+  assert.ok(res.warnings.some((w) => /legend/i.test(w)),
+    'the operator is told to write down what a colour meant — the sheet never says');
+});
+
+test('converter output RENDERS through the real kbMd_ (the two are a parallel pair)', () => {
+  // The Doc converter has this same round-trip guard. It is what makes the
+  // section anchors real: search chunks by heading, so a rep searching "MDO"
+  // must land on that sub-team's section rather than the whole roster.
+  const rtCtx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'kbSheetGridToMarkdown_'), rtCtx);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbSlug_'), rtCtx);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbMd_'), rtCtx);
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const md = rtCtx.kbSheetGridToMarkdown_({
+    name: 'Sheet1',
+    values: [at([[0, 'PAK (Mary)']]), at([[0, 'PPD'], [4, 'MDO']]), at([[1, 'Micheal'], [5, 'Sasha']])],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 8 }, { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 }],
+    backgrounds: [blank().map(() => '#ffffff'), blank().map(() => '#ffffff'),
+                  blank().map((_, c) => (c === 1 ? '#c9daf8' : '#ffffff'))],
+  }).markdown;
+  const html = rtCtx.kbMd_(md);
+  assert.ok(/<h3[^>]*id="kb-h-[^"]*"[^>]*>PAK \(Mary\)<\/h3>/.test(html), 'the department renders as an anchored h3');
+  assert.ok(/<h4[^>]*id="kb-h-[^"]*"[^>]*>MDO<\/h4>/.test(html), 'each sub-team gets its own anchor, so search can jump to it');
+  assert.ok(/<strong>Micheal<\/strong>/.test(html), 'the highlighted lead survives the round trip');
+  assert.strictEqual(/[#*]{2}/.test(html.replace(/<[^>]*>/g, '')), false, 'no raw markdown leaks into the rendered text');
+  // A converted TABLE must render as a table, not as escaped pipes.
+  const tbl = rtCtx.kbMd_(rtCtx.kbSheetGridToMarkdown_({
+    name: 'Rates', values: [['State', 'Rate'], ['TX', '6.25%']], merges: [],
+  }).markdown);
+  assert.ok(/<table/.test(tbl) && /TX/.test(tbl), 'the tabular shape renders as a real table');
+});
+
+test('a banded sheet converts straight to an interactive roster block', () => {
+  const cvCtx = vm.createContext({});
+  ['kbSheetGridToMarkdown_', 'kbRosterFromBanded_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), cvCtx));
+  const W = 8, blank = () => Array(W).fill('');
+  const at = (pairs) => { const r = blank(); pairs.forEach(([c, v]) => { r[c] = v; }); return r; };
+  const md = cvCtx.kbSheetGridToMarkdown_({
+    name: 'Sheet1',
+    values: [at([[0, 'PAK (Mary)']]), at([[0, 'PPD'], [4, 'MDO']]), at([[1, 'Micheal'], [5, 'Sasha']])],
+    merges: [{ row: 1, col: 1, rows: 1, cols: 8 }, { row: 2, col: 1, rows: 1, cols: 3 }, { row: 2, col: 5, rows: 1, cols: 3 }],
+    backgrounds: [blank().map(() => '#fff'), blank().map(() => '#fff'), blank().map((_, c) => (c === 1 ? '#c9daf8' : '#fff'))],
+  }).markdown;
+  const ros = cvCtx.kbRosterFromBanded_(md);
+  assert.ok(/^```roster/.test(ros), 'emits a roster fence');
+  assert.ok(/dept\| PAK — Mary/.test(ros), 'the parenthesised owner becomes the department owner');
+  assert.ok(/team\| PPD: Micheal\*lead/.test(ros), 'a highlighted cell carries across as the lead flag');
+  assert.ok(/team\| MDO: Sasha/.test(ros), 'the side-by-side sub-team stays separate');
+  // A TABULAR sheet must NOT be forced into a roster — that would misrepresent
+  // what the data is.
+  const table = cvCtx.kbSheetGridToMarkdown_({ name: 'Rates', values: [['State', 'Rate'], ['TX', '6.25%']], merges: [] }).markdown;
+  assert.strictEqual(cvCtx.kbRosterFromBanded_(table), '', 'a table is left as a table');
+  // And the round trip parses back into the same structure.
+  const back = kbRosCtx.kbRosterParse_(ros.replace(/^```roster\n/, '').replace(/\n```$/, ''));
+  assert.strictEqual(back.depts.length, 1);
+  assert.strictEqual(back.depts[0].teams.length, 2, 'both sub-teams survive the round trip');
+  assert.strictEqual(back.depts[0].teams[0].people[0].lead, true, 'the lead flag survives');
+});
+
+test('kbConvertDriveSheet is admin-gated, read-only, and bounded', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = nc(extractRawFunction('Code.js', 'kbConvertDriveSheet'));
+  assert.ok(/isAdmin/.test(fn) && /Admin access required\./.test(fn),
+    'admin-gated like the Doc converter (INV-136)');
+  // READ-ONLY is the contract that makes review-before-save safe: the article
+  // is only ever persisted by the admin pressing Save in the editor.
+  assert.ok(!/setValue|appendRow|getRange\([^)]*\)\.set/.test(fn), 'the converter writes nothing');
+  // Scoped to the FOREIGN sheet's grid read — the itemId branch legitimately
+  // uses getValues() on our OWN KB sheet to locate the row.
+  assert.ok(/values: range\.getDisplayValues\(\)/.test(fn),
+    'the foreign sheet is read as DISPLAYED (its timezone/format is not ours to reinterpret — INV-64)');
+  assert.ok(!/values: range\.getValues\(\)/.test(fn), 'never the raw-value read');
+  assert.ok(/KB_SHEET_MAX_ROWS/.test(fn) && /KB_SHEET_MAX_COLS/.test(fn), 'the read is bounded');
+  assert.ok(/only the first/.test(fn), 'truncation is REPORTED, never silent (INV-169)');
+  assert.ok(/kbRowStatus_\(/.test(fn), 'a draft embed converts to a draft article (the M-13 lesson)');
+  // No new OAuth scope: SpreadsheetApp is already authorized everywhere.
+  assert.ok(/SpreadsheetApp\.openById/.test(fn) && !/DocumentApp/.test(fn), 'uses SpreadsheetApp');
+});
+
 console.log('\npop-out: the repeated compact header is retired (operator 2026-08-11)');
 
 test('.compact-header is gone from every partial, its CSS, and cannot return', () => {

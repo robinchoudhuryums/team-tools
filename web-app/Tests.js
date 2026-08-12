@@ -4843,6 +4843,7 @@ function test_managerGates_rejectNonManager() {
     ['getStorageHealth',               function () { return getStorageHealth(); }],
     ['getDeployReadiness',             function () { return getDeployReadiness(); }],
     ['getAdminSheetView',              function () { return getAdminSheetView('auditLog'); }],
+    ['kbConvertDriveSheet',            function () { return kbConvertDriveSheet({ driveUrl: 'https://docs.google.com/spreadsheets/d/x/edit' }); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
@@ -4917,6 +4918,7 @@ function test_managerGates_rejectNonManager() {
     getOnboardingCdrReadiness: 1,
     // KB content authoring (Reference tool) — admin-gated uploads/edits.
     kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
+    kbConvertDriveSheet: 1,
     // #4 — revision history + draft→publish (authoring-adjacent).
     kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
     // #8 — search-synonym config (authoring-adjacent).

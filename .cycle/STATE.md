@@ -109,6 +109,56 @@ Phase: idle (post-reflect) + operator-requested feature work:
   button rather than shipping a dead one). Every branded caller now passes a
   module eyebrow. Verified by RENDERING each email and looking (no matrix
   scenario covers server-built mail). Pure 457 (2 pins, 6 bite-checks), DOM 69.
+- Sheet→article converter (operator 2026-08-11, third request of the day —
+  "a better version" than embedding a roster spreadsheet in Reference):
+  `kbConvertDriveSheet` + the pure `kbSheetGridToMarkdown_`. The motivating
+  facts are structural, verified in source: an embed is a TITLE-ONLY search hit
+  and the Ctrl/⌘+K drawer cannot host an iframe, so an embedded roster is
+  invisible mid-call; the /preview iframe also needs each REP's own Drive
+  access. Shape-detecting conversion (table vs banded grid). THE bug worth
+  remembering: banded rosters partition by COLUMN, so the first implementation
+  merged two sub-teams into one line (PPD's people shown as covering MDO) —
+  fixed by making headers claim column ranges; and the band test had to become
+  "spans the used width" after a 3-col sub-team merge cleared a 60%-of-6 ratio
+  bar. Both found by RUNNING the converter on a reconstruction of the
+  operator's sheet, not by reading it. Manual/review-before-save by design so
+  the eventual "app becomes the source" migration is not fought by a re-sync.
+  Pure 462 (5 pins, 6 bite-checks), DOM 69. INV-192 written; INV-136 39→40.
+- Interactive roster block (operator 2026-08-11, follow-on to the Sheet
+  converter — "could it be executed in a better way with more features"):
+  ` ```roster ` fence → filter-as-you-type directory with tag tooltips,
+  click-to-copy, lead/new/badge chips. Follows the ```snippet precedent, so
+  the kbMd_ escape boundary is untouched (article bodies still cannot carry
+  HTML). kbConvertDriveSheet emits the block for a banded sheet by default.
+  THREE bugs worth remembering, all found by RUNNING it: the fence content is
+  pre-escaped so `&` arrives as `&amp;` and the tag split mangled "C & ATP";
+  the global :focus-visible ring is a box-shadow token, so a per-element
+  `outline: var(--ring-focus)` was both wrong and redundant; and
+  `assert.deepStrictEqual` compares prototypes, so a vm-realm array fails
+  against a plain [] even when equal (compare by value). Pure 467 (5 pins, 8
+  bite-checks), DOM 69. INV-193 written.
+- Roster block Tier 1 (operator: "what else is possible from here?" →
+  /broad-implement Tier 1) — `.cycle/blocks/18pre-roster-tier1-broad-implement.md`.
+  Three views over one parsed source (Teams / Capabilities / Coverage) via a
+  real tablist; person detail panel; exact `tag:` filtering; unique
+  deep-link ids. Coverage states FACTS ONLY — no staffing verdict (INV-187).
+  THREE defects found and closed inside the batch, all by measuring: the
+  people count mixed distinct-vs-rows (read "49 people" for 46), a tag click
+  filtered by substring so "C" matched 42 of 46, and a person on two teams
+  produced duplicate DOM ids. Pure 472 (5 pins, 7 bite-checks), DOM 69,
+  full 39-scenario matrix 0 missing / 0 overflow. Org/tree view assessed and
+  NOT built (~4100px needed for 46 leaves — worse than the grid at every
+  viewport); reported as a follow-on, not silently skipped.
+- Roster CHART view (operator follow-up: "does progressive disclosure help
+  with the visual concentration issue?" — it does, and the earlier NOT-viable
+  assessment was reasoning about a STATIC chart). Node-link tree, collapsed by
+  default, people stacked vertically inside a team so expanding costs height
+  not width; own scroll container; shows structure NOT reporting lines (the
+  data has no person-to-person edges) and says so. Four defects found by
+  measuring — count read "0 people", connector rail left the flex gap unlined,
+  the notes scrolled away INSIDE the scroller, and two dept boxes overflowed
+  400px collapsed. Pure 476 (4 pins, 10 bite-checks incl. two re-written for
+  biting too weakly), DOM 69.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.
