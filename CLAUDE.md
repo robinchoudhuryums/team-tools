@@ -3754,6 +3754,19 @@ this section before touching the relevant area.
   labels carry the structure there. **A step naming a node no phase declares is
   REPORTED, never silently dropped** — a vanished connection leaves a diagram
   that looks complete (INV-187).
+  **AN EDGE THAT SKIPS SOMETHING MUST NOT LOOK LIKE ONE THAT STEPS TO IT
+  (operator correction, 2026-08-11).** Within a column, `PAR → Approval` and
+  `PAR → Appeals` both drew as plain verticals at the same x, so they
+  overlapped and read as a required chain `PAR → Appeals → Approval` — the
+  OPPOSITE of the real process, where approval is reached directly and appeals
+  is the denied branch. Adjacency now decides: a step to the next sibling draws
+  straight, a skip past one arcs around the side, and an edge spanning more
+  than one PHASE (an order entering past the first stage) arcs above the
+  columns; both skips are dashed and info-toned. Related direction bug: an
+  UPWARD same-column edge was drawn from the topmost box, so the arrowhead
+  landed on the SOURCE — every edge now starts at its source. **Node order
+  within a phase is therefore meaningful**: put the happy path in sequence and
+  it renders as the straight spine, with detours visibly leaving it.
 - **A fenced block is ATOMIC in search-chunk truncation (operator 2026-08-11).**
   `kbChunkTruncate_` cut at a paragraph boundary and then "repaired" an odd
   fence count by appending a closing fence — turning a HALF block into a
@@ -6175,7 +6188,9 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The process-graph round added two more → **482**
+roster-block emitter — 8 mutations bite-checked). The skip/direction correction added one more → **483** (column+row
+attributes, adjacency deciding step-vs-skip, phase-bypass arcs, source-anchored
+arrows — 5 mutations bite-checked). The process-graph round added two more → **482**
 (measured edges + left-edge classification + redraw + stacking; dangling steps
 reported and malformed lines counted — 7 mutations bite-checked). The first
 deployed-screenshot round added four

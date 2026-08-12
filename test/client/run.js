@@ -7819,6 +7819,32 @@ test('the process graph draws MEASURED edges and classifies them by column', () 
     'connectors are hidden once the columns stack, where they would be meaningless');
 });
 
+test('an edge that SKIPS something is drawn differently from one that steps to it', () => {
+  const draw = extractFunction('kb/script_kb.html', 'kbRosterDrawEdges_');
+  const html = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(rosEsc([
+    'phase| *: Sales', 'phase| 1. Intake: PPD', 'phase| 2. Qual: Qualifications',
+    'phase| 3. Auth: PWC, PAR, Approval, Appeals',
+    'step| Sales -> Qualifications', 'step| PAR -> Approval', 'step| PAR -> Appeals',
+    'step| Appeals -> Approval',
+  ].join('\n'))));
+  // The classifier needs each node's column and row; without them a skip is
+  // indistinguishable from a step.
+  assert.ok(/data-col="0"/.test(html) && /data-row="3"/.test(html), 'nodes carry their column and row');
+  // Drawn as plain verticals, "PAR → Approval" and "PAR → Appeals" overlapped
+  // and read as a required chain PAR → Appeals → Approval — which is the
+  // opposite of the real process, where approval is reached directly.
+  assert.ok(/Math\.abs\(rowB - rowA\) === 1/.test(draw), 'adjacency decides step vs skip');
+  assert.ok(/cls = ' is-skip'/.test(draw), 'a skip is marked');
+  assert.ok(/\(colB - colA\) > 1/.test(draw), 'and so is one that bypasses a whole phase');
+  // An upward edge previously ended at the topmost box — the arrowhead pointed
+  // at the SOURCE. Appeals → Approval runs upward on the real process.
+  assert.ok(/down \? \('M' \+ cx \+ ',' \+ aBot/.test(draw), 'a downward edge starts at the source bottom');
+  assert.ok(/: \('M' \+ cx \+ ',' \+ aTop \+ ' L' \+ cx \+ ',' \+ bBot\)/.test(draw),
+    'and an upward edge still starts at the source, so the arrow lands on the target');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-ros-edge\.is-skip \{[^}]*stroke-dasharray/.test(kb), 'and a skip is visually distinct');
+});
+
 test('a step naming an undeclared node is reported, not silently dropped', () => {
   const withGhost = kbRosCtx.kbRosterFlowHtml_(kbRosCtx.kbRosterParse_(
     rosEsc('phase| P: A, B\nstep| A -> B\nstep| B -> Ghost')));

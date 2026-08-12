@@ -179,6 +179,12 @@ Phase: idle (post-reflect) + operator-requested feature work:
   feeds). Edges are MEASURED from the laid-out boxes rather than laid out by an
   engine. Classify by LEFT edges — source-right-vs-target-left called 8 of 14
   same-column steps loop-backs. Pure 482.
+  Operator corrected the data (Sales → PPD, plus a Sales → Qualifications
+  BYPASS of phase 1) and caught a rendering lie: stacking PAR/Appeals/Approval
+  drew plain verticals that read as a required chain through Appeals. Fixed by
+  making adjacency decide step-vs-skip (skips arc, phase-bypasses arc above)
+  and anchoring every edge at its source so upward arrows point at the target.
+  Pure 483.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

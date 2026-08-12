@@ -321,6 +321,9 @@
   .kb-ros-edges { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
   .kb-ros-edge { fill: none; stroke: var(--muted-3); stroke-width: 1.5; }
   .kb-ros-edge.is-back { stroke: var(--danger-deep); stroke-dasharray: 4 3; }
+  /* A skip passes something it does not visit — drawn distinctly so it cannot
+     be read as the step-by-step path. */
+  .kb-ros-edge.is-skip { stroke: var(--info-deep); stroke-dasharray: 5 3; }
   .kb-ros-edges marker path { fill: var(--muted-3); }
   @media (max-width: 700px) {
     /* Connectors between columns are meaningless once the columns stack, so
@@ -962,13 +965,14 @@ function kbRosterFlowHtml_(data) {
     (outBy[k] = outBy[k] || []).push(st);
   });
 
-  var nodeHtml = function (n) {
+  var nodeHtml = function (n, ri, ci) {
     var t = byTeam[kbRosterKey_(n.name)];
     var id = 'kb-fn-' + kbRosterSlug_(n.name);
     var outs = outBy[kbRosterKey_(n.name)] || [];
     var routes = outs.filter(function (o) { return o.label; });
     return '<div class="kb-ros-fnode' + (n.decision ? ' is-decision' : '') + (t ? ' is-team' : '') + '"' +
-        ' id="' + id + '" data-node="' + kbRosterAttr_(kbRosterKey_(n.name)) + '">' +
+        ' id="' + id + '" data-col="' + ci + '" data-row="' + ri + '"' +
+        ' data-node="' + kbRosterAttr_(kbRosterKey_(n.name)) + '">' +
       '<div class="kb-ros-fnode-head">' +
         (t
           ? '<button type="button" class="kb-ros-toggle" aria-expanded="false" ' +
@@ -992,11 +996,12 @@ function kbRosterFlowHtml_(data) {
       '</div>';
   };
 
-  var cols = data.phases.map(function (ph) {
+  var cols = data.phases.map(function (ph, ci) {
     return '<section class="kb-ros-phase' + (ph.external ? ' is-external' : '') + '">' +
       '<h3 class="kb-ros-phase-name">' + (ph.name || 'Feeds in') + '</h3>' +
-      '<div class="kb-ros-fnodes">' + ph.nodes.map(nodeHtml).join('') + '</div>' +
-      '</section>';
+      '<div class="kb-ros-fnodes">' +
+        ph.nodes.map(function (n, ri) { return nodeHtml(n, ri, ci); }).join('') +
+      '</div></section>';
   }).join('');
 
   // The connector layer is drawn AFTER layout, by measuring the boxes CSS has
@@ -1055,13 +1060,42 @@ function kbRosterDrawEdges_(root) {
     // so that test called every vertical step a loop-back (8 of 14 here).
     var sameCol = Math.abs(rb.left - ra.left) < 8;
     var back = !sameCol && rb.left < ra.left - 8;
-    var d;
+    var colA = +(a.getAttribute('data-col') || 0), colB = +(b.getAttribute('data-col') || 0);
+    var rowA = +(a.getAttribute('data-row') || 0), rowB = +(b.getAttribute('data-row') || 0);
+    var skip = !sameCol && !back && (colB - colA) > 1;     // bypasses a whole phase
+    var d, cls = '';
     if (sameCol) {
-      // A vertical step within one phase.
       var cx = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
-      var top = (rb.top < ra.top ? rb.bottom : ra.bottom) - box.top + wrap.scrollTop;
-      var bot = (rb.top < ra.top ? ra.top : rb.top) - box.top + wrap.scrollTop;
-      d = 'M' + cx + ',' + top + ' L' + cx + ',' + bot;
+      var aTop = ra.top - box.top + wrap.scrollTop, aBot = ra.bottom - box.top + wrap.scrollTop;
+      var bTop = rb.top - box.top + wrap.scrollTop, bBot = rb.bottom - box.top + wrap.scrollTop;
+      var down = rowB > rowA;
+      if (Math.abs(rowB - rowA) === 1) {
+        // Adjacent siblings: a straight vertical. Drawn source→target so the
+        // arrowhead lands on the TARGET even when the edge runs upward — it
+        // previously always ended at the topmost box, pointing at the source.
+        d = down ? ('M' + cx + ',' + aBot + ' L' + cx + ',' + bTop)
+                 : ('M' + cx + ',' + aTop + ' L' + cx + ',' + bBot);
+      } else {
+        // A SKIP within the column — it passes a node it does not visit, so it
+        // arcs around the side. Drawn as a straight vertical it was
+        // indistinguishable from the step-by-step chain, which is what made
+        // "PAR → Approval" read as "you must pass through Appeals".
+        var sx = ra.right - box.left + wrap.scrollLeft + 12;
+        var y1 = aTop + ra.height / 2, y2 = bTop + rb.height / 2;
+        d = 'M' + (ra.right - box.left + wrap.scrollLeft) + ',' + y1 +
+            ' C' + sx + ',' + y1 + ' ' + sx + ',' + y2 + ' ' + (rb.right - box.left + wrap.scrollLeft) + ',' + y2;
+        cls = ' is-skip';
+      }
+    } else if (skip) {
+      // Bypasses an entire phase (an order entering past the first stage), so
+      // it arcs ABOVE the columns rather than threading between the boxes it
+      // does not touch.
+      var top2 = Math.min(ra.top, rb.top) - box.top + wrap.scrollTop - 16;
+      var axm = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var bxm = rb.left - box.left + rb.width / 2 + wrap.scrollLeft;
+      d = 'M' + axm + ',' + (ra.top - box.top + wrap.scrollTop) +
+          ' C' + axm + ',' + top2 + ' ' + bxm + ',' + top2 + ' ' + bxm + ',' + (rb.top - box.top + wrap.scrollTop);
+      cls = ' is-skip';
     } else if (back) {
       // Route a back-edge UNDER both boxes so it cannot be mistaken for a
       // forward step.
@@ -1074,7 +1108,7 @@ function kbRosterDrawEdges_(root) {
       var mid = ax + (bx - ax) / 2;
       d = 'M' + ax + ',' + ay + ' C' + mid + ',' + ay + ' ' + mid + ',' + by + ' ' + bx + ',' + by;
     }
-    parts.push('<path d="' + d + '" class="kb-ros-edge' + (back ? ' is-back' : '') + '" marker-end="url(#kb-ros-arrow)"/>');
+    parts.push('<path d="' + d + '" class="kb-ros-edge' + (back ? ' is-back' : '') + cls + '" marker-end="url(#kb-ros-arrow)"/>');
   });
   svg.innerHTML =
     '<defs><marker id="kb-ros-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">' +
