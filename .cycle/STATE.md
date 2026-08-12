@@ -149,6 +149,16 @@ Phase: idle (post-reflect) + operator-requested feature work:
   full 39-scenario matrix 0 missing / 0 overflow. Org/tree view assessed and
   NOT built (~4100px needed for 46 leaves — worse than the grid at every
   viewport); reported as a follow-on, not silently skipped.
+- Roster CHART view (operator follow-up: "does progressive disclosure help
+  with the visual concentration issue?" — it does, and the earlier NOT-viable
+  assessment was reasoning about a STATIC chart). Node-link tree, collapsed by
+  default, people stacked vertically inside a team so expanding costs height
+  not width; own scroll container; shows structure NOT reporting lines (the
+  data has no person-to-person edges) and says so. Four defects found by
+  measuring — count read "0 people", connector rail left the flex gap unlined,
+  the notes scrolled away INSIDE the scroller, and two dept boxes overflowed
+  400px collapsed. Pure 476 (4 pins, 10 bite-checks incl. two re-written for
+  biting too weakly), DOM 69.
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

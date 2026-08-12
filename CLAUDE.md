@@ -3683,10 +3683,30 @@ this section before touching the relevant area.
   DOM ids, which is invalid and breaks the very anchors the ids exist for —
   they now take the same `-2`/`-3` dedup walk `kbMd_` uses for repeated
   headings, with the first occurrence keeping the bare slug as the canonical
-  target. **A node-link org chart was assessed and NOT built:** 46 leaves need
-  ~90px each to stay readable, i.e. ~4100px of width, so it is unreadable at
-  every viewport the app supports and strictly worse than the Teams grid — the
-  hierarchy is already legible there.
+  target. **Chart (4th view, operator 2026-08-11):** a node-link tree with
+  PROGRESSIVE DISCLOSURE — departments collapsed, expand one for its teams,
+  expand a team for its people. **This is the correction to an earlier
+  assessment that a chart was not viable**, whose reasoning assumed a STATIC
+  chart: 46 leaves × ~90px is ~4100px, unreadable everywhere. A tree's width is
+  set by its widest VISIBLE row, so under disclosure that becomes one
+  department's team count (9 here, ~1350px) and people stack VERTICALLY inside
+  their team, making an expanded team cost height rather than width. The whole
+  tree is rendered and hidden with CSS rather than built on demand, so expand
+  state lives in the DOM (nothing to lose on re-render) and a filter can simply
+  reveal matching branches. It scrolls inside its OWN container so the page
+  never scrolls sideways, and the scroll hint appears only when the row
+  actually overflows. **It shows STRUCTURE, not reporting lines, and says so:**
+  the source records team membership and does not say who reports to whom, so
+  person-to-person edges would assert a relationship the data does not contain.
+  Four defects fixed during the build, all found by measuring: the count read
+  "0 people" (chart mode has no `.kb-ros-dept` walk for the row-counting filter
+  — the mixed-units class again, so both aggregate views now report the index
+  size); the connector rail stopped at each box's own right edge, leaving the
+  flex gap unlined so the lines read as detached stubs; **the explanatory notes
+  sat INSIDE the scrolling container and scrolled away with the tree**, losing
+  the one statement of what the view shows exactly when a wide row made it most
+  needed; and two department boxes at their wide min-width overflowed a 400px
+  viewport before anything was expanded.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4651,9 +4671,11 @@ manually for a fresh deploy or environment:
   spreadsheet now produces the INTERACTIVE block rather than static headings —
   reps get a filter box, tag tooltips and click-to-copy, and the whole thing
   works in the Ctrl/⌘+K drawer, which an embedded sheet never did. The block
-  also carries Teams / Capabilities / Coverage views — note that **Coverage
-  reports facts, not a staffing verdict**, so a capability held by one person
-  is flagged as a single point of contact and the judgement is left to you.
+  also carries Teams / Capabilities / Chart / Coverage views — note that
+  **Coverage reports facts, not a staffing verdict**, so a capability held by
+  one person is flagged as a single point of contact and the judgement is left
+  to you, and **Chart shows team structure, not reporting lines**, because the
+  roster records membership and not who reports to whom.
 - **The Sheet→article converter (2026-08-11) adds NO new operator state and NO
   new OAuth scope** — `SpreadsheetApp` is already authorized, so unlike the Doc
   converter there is nothing to re-authorize. It adds ONE admin-gated endpoint
@@ -6097,7 +6119,14 @@ roster-block emitter — 8 mutations bite-checked). Roster Tier 1 added five
 more → **472** (person index folds a multi-team person; three views from one
 source + coverage-states-no-verdict; exact tag matching; unique person ids
 with a canonical first; tablist ARIA + distinct-people count — 7 mutations
-bite-checked). **A pin that does not bite is not a pin: the verdict-word scan
+bite-checked), and the chart view four more → **476** (tree roles + all-collapsed
++ CSS disclosure + vertical leaves; structure-not-reporting; own-scroller with
+notes OUTSIDE it + the 560px node width; aggregate views bypass the row count —
+10 mutations bite-checked). **TWO of those pins did not bite on the first
+write, both because the assertion was weaker than the property: an ordering
+check (`note index < wrap index`) survived renaming the wrap, and an
+initial-render check said nothing about whether the TOGGLE keeps aria-expanded
+in step. Mutate against the property, not its neighbourhood.** **A pin that does not bite is not a pin: the verdict-word scan
 passed against a mutation until the FIXTURE was given a single-point-of-contact
 row, because the sentence it guards only renders in that case.** **A vm-realm trap worth
 knowing: `assert.deepStrictEqual` compares PROTOTYPES, so an array created

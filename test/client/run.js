@@ -7472,7 +7472,7 @@ console.log('\nkb — interactive roster block (operator 2026-08-11)');
 const kbRosCtx = vm.createContext({});
 ['kbSlug_', 'kbRosterParse_', 'kbRosterAttr_', 'kbRosterSlug_', 'kbRosterPeopleIndex_',
  'kbRosterTagChip_', 'kbRosterFlags_', 'kbRosterPersonHtml_', 'kbRosterTeamsHtml_',
- 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterBodyHtml_',
+ 'kbRosterCapabilitiesHtml_', 'kbRosterCoverageHtml_', 'kbRosterChartHtml_', 'kbRosterBodyHtml_',
  'kbRosterModeBtn_', 'kbRosterHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbRosCtx));
 
@@ -7631,14 +7631,86 @@ test('a person on two teams gets unique ids, and the first stays canonical', () 
 test('the mode switcher is a real tablist and the count means the same thing in every view', () => {
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   const html = kbRosCtx.kbRosterHtml_('dept| Q — R\nteam| A: Ann (C), Bob');
-  assert.ok(/role="tablist"/.test(html) && (html.match(/role="tab"/g) || []).length === 3, 'three real tabs');
+  assert.ok(/role="tablist"/.test(html) && (html.match(/role="tab"/g) || []).length === 4, 'four real tabs');
   assert.ok(/aria-selected="true"/.test(html), 'the active view is exposed, not just painted (INV-174)');
   assert.ok(/setAttribute\('aria-selected'/.test(kb), 'and kept in step on switch');
   // The count previously mixed units: distinct people on first paint, visible
   // ROWS after a filter or mode switch — so a 46-person roster read "49
   // people" in the capability view.
   assert.ok(/seen\[people\[i\]\.getAttribute\('data-name'\)/.test(kb), 'the filter counts DISTINCT people');
-  assert.ok(/'data-mode'\) === 'coverage'/.test(kb), 'the coverage aggregate is never filtered to a subset');
+  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb), 'the aggregate views are never filtered to a subset');
+});
+
+console.log('\nkb — roster chart view (progressive disclosure)');
+
+test('the chart is a real tree whose collapsed width is its TOP level only', () => {
+  const d = kbRosCtx.kbRosterParse_([
+    'dept| PAK — Mary', 'team| PPD: Ann*lead, Bob',
+    'dept| Q — R', 'team| A: Cy', 'team| B: Dee',
+  ].join('\n'));
+  const html = kbRosCtx.kbRosterChartHtml_(d);
+  assert.ok(/role="tree"/.test(html), 'a tree role');
+  assert.strictEqual((html.match(/role="treeitem"/g) || []).length, 5, 'every dept and team is a treeitem');
+  assert.strictEqual((html.match(/role="group"/g) || []).length, 5, 'each has a child group');
+  // Progressive disclosure is what makes this legible at all: showing every
+  // leaf at once needs ~90px each (~4100px on the real roster). Children are
+  // RENDERED but collapsed, so expand state lives in the DOM and the collapsed
+  // width is the top level alone.
+  assert.strictEqual((html.match(/aria-expanded="false"/g) || []).length, 10,
+    'everything starts collapsed, on both the treeitem and its button');
+  assert.strictEqual(html.indexOf('aria-expanded="true"'), -1, 'nothing starts open');
+  // Expanding must update BOTH — the treeitem carries the tree state, the
+  // button is what a screen reader announces when focused (INV-174).
+  const toggle = extractFunction('kb/script_kb.html', 'kbRosterToggleNode_');
+  assert.ok(/li\.setAttribute\('aria-expanded'/.test(toggle), 'the treeitem is kept in step');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(toggle), 'and so is its button');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-ros-children \{ display: none; \}/.test(kb), 'children are hidden until their node opens');
+  assert.ok(/\.kb-ros-node\.open > \.kb-ros-children\.is-leaves \{ display: block/.test(kb),
+    'people stack VERTICALLY inside a team, so opening one costs height not width');
+});
+
+test('the chart claims structure, not reporting lines — and says so', () => {
+  const html = kbRosCtx.kbRosterChartHtml_(kbRosCtx.kbRosterParse_('dept| D — O\nteam| T: Ann'));
+  // The source records team membership only. Person-to-person edges would
+  // assert a relationship the data does not contain.
+  assert.ok(/not who reports to whom/.test(html), 'the view states what it does not know');
+  // NOTE: do not scan for the phrase "reports to" — the disclaimer itself
+  // contains it (INV-188's family: a check that trips on its own rationale).
+  // What matters is that only membership edges are drawn: dept > team > people.
+  assert.strictEqual(html.indexOf('kb-ros-person'), html.lastIndexOf('kb-ros-person'),
+    'one person row here — people hang off their TEAM, never off another person');
+  assert.ok(/O · 1 teams/.test(html), 'the department owner is shown, which the data does assert');
+});
+
+test('the chart scrolls inside its own container, and its notes stay put', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-ros-chartwrap \{ overflow-x: auto/.test(kb), 'the tree scrolls inside itself, never the page');
+  const html = kbRosCtx.kbRosterChartHtml_(kbRosCtx.kbRosterParse_('dept| D — O\nteam| T: Ann'));
+  // The notes were INSIDE the scroll container and scrolled away with the
+  // tree — losing the only explanation of the view exactly when a wide row
+  // made it most needed.
+  // Structural, not positional: everything from the wrap onward must contain
+  // no note. (Checking "note index < wrap index" passes even if the wrap is
+  // renamed, which is how the first version of this pin failed to bite.)
+  const wrapAt = html.indexOf('class="kb-ros-chartwrap"');
+  assert.ok(wrapAt > 0, 'the scrolling wrap exists');
+  assert.ok(html.indexOf('kb-ros-note') >= 0, 'the note exists');
+  assert.strictEqual(html.slice(wrapAt).indexOf('kb-ros-note'), -1, 'and is NOT inside the scrolling wrap');
+  assert.strictEqual(html.slice(wrapAt).indexOf('kb-ros-chart-hint'), -1, 'nor is the scroll hint');
+  assert.ok(/has-overflow \.kb-ros-chart-hint \{ display: block/.test(kb),
+    'the scroll hint shows only when the row actually overflows');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,300}\.kb-ros-nodebox \{ min-width: 104px/.test(kb),
+    'two department boxes at their wide min-width overflowed a 400px viewport');
+});
+
+test('the chart and coverage views report distinct people, never a filtered row count', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // Chart mode has no .kb-ros-dept walk, so the row-counting filter reported
+  // "0 people" — the same mixed-units defect as the capability view, in a new
+  // mode. Both aggregate views report the index size instead.
+  assert.ok(/mode === 'coverage' \|\| mode === 'chart'/.test(kb),
+    'both aggregate views bypass the row-counting filter');
 });
 
 console.log('\nkb — Sheet→article converter (operator 2026-08-11)');
