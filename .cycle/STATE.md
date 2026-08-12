@@ -191,7 +191,17 @@ Phase: idle (post-reflect) + operator-requested feature work:
   every applicable path"). The edge classification was extracted into the PURE
   `kbRosterEdgeKind_` — every drawing bug lived in that decision and none of it
   was testable inside a function needing real layout. Pure 484, 6 geometry
-  decisions bite-checked. Operator approved PR + merge.
+  decisions bite-checked. Operator approved PR + merge. MERGED as PR #164.
+- GLOSSARY block (operator pick from the post-merge enhancement list): a
+  ```glossary fence renders a filterable definition list and annotates the
+  FIRST mention of each term elsewhere in the same article (dotted underline +
+  hover/focus definition). ALL-CAPS terms match case-sensitively so "par" is
+  not PAR; longest term first; duplicate definitions refused; TEXT-NODE walk
+  (the kbHighlightTerms_ pattern) so it cannot damage kbMd_'s output. Wired
+  into both the Reference reader and the drawer. Pure 487, 8 bite-checks.
+  Scope limit: annotation is within the defining article — app-wide linking
+  would need a designated article + Script Property, deliberately deferred.
+- NEXT: decision-tree block (operator asked for it after the glossary).
 - SEAMS-AUDIT CANDIDATE (for cycle 18, alongside INV-189/190/191): "a
   uniqueness namespace that spans EXCLUDED rows must name the owning row and
   say it is excluded" — recorded as an INV-183 corollary for now.

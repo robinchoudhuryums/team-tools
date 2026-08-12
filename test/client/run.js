@@ -7595,6 +7595,69 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
     'a name inside the roster fence is still part of the searchable section text');
 });
 
+console.log('\nkb — glossary block (operator 2026-08-11)');
+
+const kbGlossCtx = vm.createContext({});
+['kbSlug_', 'kbRosterAttr_', 'kbGlossaryParse_', 'kbGlossaryHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbGlossCtx));
+
+test('kbGlossaryParse_ — terms, aliases, and refusal to define a term twice', () => {
+  const g = kbGlossCtx.kbGlossaryParse_(rosEsc([
+    'PAR (aka Prior Auth, PA)| Prior Authorization Request',
+    'ATP| Assistive Technology Professional',
+    'no pipe on this line',
+    'ATP| A second, conflicting definition',
+    'PPD|',
+  ].join('\n')));
+  assert.strictEqual(g.terms.length, 2, 'only the sound definitions');
+  assert.strictEqual(g.terms[0].term, 'ATP', 'sorted alphabetically');
+  const par = g.terms[1];
+  assert.strictEqual(par.term, 'PAR', 'the alias clause is stripped from the term');
+  assert.strictEqual(par.aliases.join('|'), 'Prior Auth|PA', 'and parsed');
+  // A repeated term is ambiguous, and an empty definition is not a definition.
+  assert.strictEqual(g.warnings.length, 3, 'malformed, duplicate and empty lines are all counted');
+  assert.ok(/2 terms/.test(kbGlossCtx.kbGlossaryHtml_(rosEsc('A| one\nB| two'))), 'the count is rendered');
+});
+
+test('kbMd_ renders a ```glossary fence, and the block stays inert', () => {
+  const html = kbGlossCtx.kbMd_(['Intro.', '', '```glossary', 'PAR| Prior Authorization', '```'].join('\n'));
+  assert.ok(/<div class="kb-glossary"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  assert.ok(/aria-label="Filter glossary terms"/.test(html), 'the filter has an accessible name');
+  const evil = kbGlossCtx.kbMd_(['```glossary', 'X| <script>alert(1)</script>', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  assert.ok(/&lt;script&gt;/.test(evil), 'it renders as escaped text');
+  // Definitions ride in attributes for the annotator, so quotes must be escaped
+  // there too — the top-level pass does not cover them.
+  const quoted = kbGlossCtx.kbGlossaryHtml_('X| a "quoted" definition');
+  assert.ok(/data-def="a &quot;quoted&quot; definition"/.test(quoted), 'quotes are escaped in attributes');
+});
+
+test('the annotator marks the FIRST mention only, and never inside the glossary', () => {
+  const fn = extractFunction('kb/script_kb.html', 'kbGlossaryAnnotate_');
+  // A TEXT-NODE walk (the kbHighlightTerms_ pattern) — never string surgery on
+  // rendered HTML, so it cannot damage what kbMd_ produced.
+  assert.ok(/createTreeWalker\(rootEl, NodeFilter\.SHOW_TEXT/.test(fn), 'walks text nodes');
+  assert.ok(/break;\s+\/\/ first mention only/.test(fn), 'stops after the first mention');
+  // Marking every mention turns a page into a field of dotted underlines.
+  assert.ok(/closest\('\.kb-glossary, code, pre, h1, h2, h3, h4, a, button, \.kb-gloss-mark'\)/.test(fn),
+    'skips the glossary itself, headings, code and links');
+  // An ALL-CAPS term is an acronym: "par" in ordinary prose must not link to PAR.
+  assert.ok(/var acronym = name === name\.toUpperCase\(\)/.test(fn), 'acronyms are detected');
+  assert.ok(/acronym \? '' : 'i'/.test(fn), 'and matched case-sensitively');
+  assert.ok(/defs\.sort\(function \(a, b\) \{ return b\.length - a\.length; \}\)/.test(fn),
+    'longest term first, so "PT Eval" wins over "PT"');
+  assert.ok(/catch \(e\) \{ \/\* annotation is decoration/.test(fn), 'and it can never break the reader');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-gloss-mark:hover::after, \.kb-gloss-mark:focus::after/.test(kb),
+    'the definition opens on keyboard focus as well as hover');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-gloss-row \{ grid-template-columns: 1fr/.test(kb),
+    'the two-column term list stacks on a phone');
+  // Both readers annotate — the tab and the mid-call drawer.
+  assert.strictEqual((kb.match(/kbGlossaryAnnotate_\((main|body)\);/g) || []).length, 2,
+    'wired into both the Reference reader and the drawer');
+});
+
 console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
 
 test('the people index folds a person across teams — the question the grid cannot answer', () => {

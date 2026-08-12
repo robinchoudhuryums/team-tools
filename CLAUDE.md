@@ -3796,6 +3796,30 @@ this section before touching the relevant area.
   (4×) and otherwise stops BEFORE the fence, never inside it. The odd-fence
   repair is retained for the DISTINCT case of a fence the SOURCE never closes —
   truncation did not break that, the article did.
+- **Glossary block (` ```glossary `, operator 2026-08-11).** This department
+  runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and a new rep meets
+  them mid-call with no way to ask (five people on the live roster are marked
+  `*new`). A `glossary` fence renders a filterable definition list from
+  `Term| Definition` lines (`Term (aka Other, Alt)|` for extra spellings) AND
+  teaches the article to explain itself: `kbGlossaryAnnotate_` marks the FIRST
+  mention of each defined term elsewhere in the same article with a dotted
+  underline and a hover/focus definition. **First mention only, on purpose** —
+  marking every occurrence turns a page into a field of dotted underlines and
+  stops reading as emphasis at all. **An ALL-CAPS term is treated as an acronym
+  and matched case-SENSITIVELY**, so "par" in ordinary prose does not link to
+  PAR; mixed-case terms match case-insensitively, and longer terms are matched
+  first so "PT Eval" wins over "PT". A term defined twice is REFUSED (a second
+  definition is ambiguous, and silently picking one is worse) and counted in the
+  block's warning line. The annotator is a TEXT-NODE walk — the
+  `kbHighlightTerms_` pattern, never string surgery on rendered HTML — skips the
+  glossary block itself plus headings/code/links, and is wrapped in a catch
+  because annotation is decoration and must never break the reader. Wired into
+  BOTH readers (the Reference tab and the Ctrl/⌘+K drawer). **Scope limit worth
+  knowing: terms annotate within the article that defines them.** App-wide
+  linking would need a designated glossary article behind a Script Property (the
+  `WHATSNEW_KB_ID` shape) — deliberately not built yet, since one glossary
+  article that reps search for already answers "what does PAR mean" through the
+  existing drawer search.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -6204,7 +6228,9 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
+roster-block emitter — 8 mutations bite-checked). The glossary block added three more → **487** (parse/aliases/duplicate-refusal,
+fence + inertness + attribute quoting, first-mention-only + acronym case + skip
+set + both readers wired — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
 classifier folded three source-shape pins into one behavioural one → **484**
 (6 geometry decisions bite-checked). The skip/direction correction added one more → **483** (column+row
 attributes, adjacency deciding step-vs-skip, phase-bypass arcs, source-anchored

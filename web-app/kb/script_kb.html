@@ -208,6 +208,25 @@
   .kb-ros-flag.is-new { background: var(--warn-soft); color: var(--warning-deep); }
   .kb-ros-flag.is-badge { background: var(--accent-soft); color: var(--success-deep); }
   .kb-ros-warn { margin-top: 10px; font-size: .74rem; color: var(--warning-deep); }
+  /* Glossary block. */
+  .kb-glossary { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-gloss-list { margin: 0; }
+  .kb-gloss-row { display: grid; grid-template-columns: minmax(96px, 168px) 1fr; gap: 4px 14px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .kb-gloss-row:first-child { border-top: none; }
+  .kb-gloss-term { margin: 0; font-weight: 700; font-size: .84rem; color: var(--ink); }
+  .kb-gloss-aka { display: block; font-weight: 500; font-size: .7rem; color: var(--muted-2); }
+  .kb-gloss-def { margin: 0; font-size: .84rem; color: var(--muted); }
+  /* The in-article mention: quiet enough to read past, obvious enough to try. */
+  .kb-gloss-mark { border-bottom: 1px dotted var(--muted-3); cursor: help; position: relative; }
+  .kb-gloss-mark:hover::after, .kb-gloss-mark:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 6;
+    width: max-content; max-width: min(320px, 70vw); white-space: normal;
+    font-size: .74rem; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 6px;
+    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
+  }
+  @media (max-width: 560px) {
+    .kb-gloss-row { grid-template-columns: 1fr; gap: 2px; }
+  }
   /* Mode switcher — the segmented-pill vocabulary used by the Time/PTO and
      Coaching toggles, so a stateful toggle looks the same everywhere. */
   .kb-ros-modes { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
@@ -486,6 +505,152 @@ function kbSlug_(text) {
   return String(text || '')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ── Glossary block (operator 2026-08-11) ──────────────────────────────────
+// This department runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and
+// a new rep meets them mid-call with no way to ask. A ```glossary fence renders
+// a filterable definition list AND teaches the article to explain itself: the
+// first mention of a defined term anywhere else in the same article gets a
+// dotted underline and a hover/focus definition.
+//
+//   PAR (aka Prior Auth)| Prior Authorization Request — payer sign-off before
+//   ATP| Assistive Technology Professional
+//
+// Same safety story as the other blocks: kbMd_ escapes the fence content before
+// the renderer sees it, and the annotation is a DOM TEXT-NODE walk (the
+// kbHighlightTerms_ pattern), never string surgery on rendered HTML.
+
+/** PURE. Input is kbMd_-escaped text; nothing here unescapes it. */
+function kbGlossaryParse_(text) {
+  var terms = [], warnings = [], seen = {};
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var i = line.indexOf('|');
+    if (i < 0) { warnings.push(line); return; }
+    var head = line.slice(0, i).trim();
+    var def = line.slice(i + 1).trim();
+    if (!head || !def) { warnings.push(line); return; }
+    // "PAR (aka Prior Auth, PA)" -> term PAR with two aliases, all pointing at
+    // the same definition.
+    var aliases = [];
+    var am = head.match(/^(.*?)\s*\(\s*aka\s+([^)]*)\)\s*$/i);
+    if (am) {
+      head = am[1].trim();
+      aliases = am[2].split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+    var k = head.toLowerCase();
+    if (seen[k]) { warnings.push(line); return; }      // a second definition would be ambiguous
+    seen[k] = 1;
+    terms.push({ term: head, aliases: aliases, def: def });
+  });
+  terms.sort(function (a, b) { return a.term.toLowerCase() < b.term.toLowerCase() ? -1 : 1; });
+  return { terms: terms, warnings: warnings };
+}
+
+function kbGlossaryHtml_(text) {
+  var data = kbGlossaryParse_(text);
+  if (!data.terms.length) {
+    return '<div class="kb-ros-empty"><b>No terms yet.</b>' +
+      '<p>Add one per line as <code>Term| Definition</code>. ' +
+      '<code>Term (aka Other, Alt)| …</code> gives a term more than one spelling.</p></div>';
+  }
+  var rows = data.terms.map(function (t) {
+    return '<div class="kb-gloss-row" data-term="' + kbRosterAttr_(t.term) + '"' +
+        ' data-aliases="' + kbRosterAttr_(t.aliases.join('|')) + '"' +
+        ' data-def="' + kbRosterAttr_(t.def) + '"' +
+        ' data-hay="' + kbRosterAttr_((t.term + ' ' + t.aliases.join(' ') + ' ' + t.def).toLowerCase()) + '">' +
+      '<dt class="kb-gloss-term">' + t.term +
+        (t.aliases.length ? '<span class="kb-gloss-aka">' + t.aliases.join(', ') + '</span>' : '') +
+      '</dt><dd class="kb-gloss-def">' + t.def + '</dd></div>';
+  }).join('');
+  return '<div class="kb-glossary" data-glossary="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search kb-gloss-search" placeholder="Filter terms…" ' +
+        'aria-label="Filter glossary terms" oninput="kbGlossaryFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + data.terms.length + ' terms</span>' +
+    '</div>' +
+    '<dl class="kb-gloss-list">' + rows + '</dl>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood (or repeat a term) ' +
+        'and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbGlossaryFilter_(input) {
+  var root = input.closest ? input.closest('.kb-glossary') : null;
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  var rows = root.querySelectorAll('.kb-gloss-row'), shown = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var hit = !q || (rows[i].getAttribute('data-hay') || '').indexOf(q) >= 0;
+    rows[i].style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  }
+  var c = root.querySelector('.kb-ros-count');
+  if (c) c.textContent = shown + (q ? ' matching' : ' terms');
+}
+
+/** Annotates the FIRST mention of each defined term in the surrounding article.
+ *  First-occurrence-only on purpose: marking every mention turns a page into a
+ *  field of dotted underlines and stops reading as emphasis at all.
+ *
+ *  Walks TEXT NODES (the kbHighlightTerms_ pattern) so it can never damage the
+ *  markup kbMd_ produced, and skips the glossary block itself, headings, code
+ *  and existing links. */
+function kbGlossaryAnnotate_(rootEl) {
+  try {
+    if (!rootEl) return;
+    var rows = rootEl.querySelectorAll('.kb-gloss-row');
+    if (!rows.length) return;
+    var defs = [], byKey = {};
+    for (var i = 0; i < rows.length; i++) {
+      var term = rows[i].getAttribute('data-term') || '';
+      var def = rows[i].getAttribute('data-def') || '';
+      var names = [term].concat((rows[i].getAttribute('data-aliases') || '').split('|').filter(Boolean));
+      names.forEach(function (n) {
+        if (!n) return;
+        defs.push(n);
+        byKey[n.toLowerCase()] = { term: term, def: def };
+      });
+    }
+    // Longest first, so "PT Eval" wins over "PT".
+    defs.sort(function (a, b) { return b.length - a.length; });
+    var used = {};
+    defs.forEach(function (name) {
+      var key = name.toLowerCase();
+      if (used[key]) return;
+      // An ALL-CAPS term is an acronym: match case-sensitively so "par" in
+      // ordinary prose is not mistaken for PAR. Mixed-case terms match
+      // case-insensitively.
+      var acronym = name === name.toUpperCase();
+      var re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', acronym ? '' : 'i');
+      var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+      var n;
+      while ((n = walker.nextNode())) {
+        var p = n.parentElement;
+        if (!p || p.closest('.kb-glossary, code, pre, h1, h2, h3, h4, a, button, .kb-gloss-mark')) continue;
+        var m = re.exec(n.nodeValue);
+        if (!m) continue;
+        var info = byKey[key];
+        var frag = document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(0, m.index)));
+        var mark = document.createElement('span');
+        mark.className = 'kb-gloss-mark';
+        mark.setAttribute('tabindex', '0');
+        mark.setAttribute('data-tip', info.def);
+        mark.setAttribute('aria-label', info.term + ': ' + info.def);
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(m.index + m[0].length)));
+        p.replaceChild(frag, n);
+        used[key] = 1;
+        break;                      // first mention only
+      }
+    });
+  } catch (e) { /* annotation is decoration — never break the reader */ }
 }
 
 // ── Interactive roster block (operator 2026-08-11) ─────────────────────────
@@ -1411,8 +1576,10 @@ function kbMd_(src) {
     // same safety argument as snippet — the content is already escaped, so the
     // app draws interactive markup around inert text.
     var rm = info.match(/^roster\b/i);
+    var gm = info.match(/^glossary\b/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
+    else if (gm) blocks.push({ glossary: true, body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -1470,7 +1637,8 @@ function kbMd_(src) {
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
-    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; }
+      if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -2189,6 +2357,7 @@ function kbRenderItem_(item) {
     main.innerHTML = head + draftBanner + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
   } else {
     main.innerHTML = head + draftBanner + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
+    kbGlossaryAnnotate_(main);
   }
 }
 
@@ -3087,6 +3256,7 @@ function kbDrawerOpenItem_(id, anchor) {
           kbFeedbackBarHtml_(res);
       } else {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res);
+        kbGlossaryAnnotate_(body);
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
     })
