@@ -208,6 +208,48 @@
   .kb-ros-flag.is-new { background: var(--warn-soft); color: var(--warning-deep); }
   .kb-ros-flag.is-badge { background: var(--accent-soft); color: var(--success-deep); }
   .kb-ros-warn { margin-top: 10px; font-size: .74rem; color: var(--warning-deep); }
+  /* Decision / task-guide block. One question at a time, a walkable trail,
+     and tickable steps at the leaf. */
+  .kb-decision { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-dec-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .kb-dec-step { font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-dec-bar .kb-ros-expand { margin-left: auto; }
+  .kb-dec-trail { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .kb-dec-crumb { appearance: none; text-align: left; cursor: pointer; font: inherit; background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+  .kb-dec-crumb:hover { border-color: var(--border-strong); }
+  .kb-dec-crumb-q { display: block; font-size: .66rem; color: var(--muted-2); }
+  .kb-dec-crumb-a { display: block; font-size: .78rem; font-weight: 700; color: var(--ink); }
+  .kb-dec-title { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--ink); }
+  .kb-dec-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .kb-dec-opt { appearance: none; cursor: pointer; font: inherit; font-size: .86rem; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--paper); color: var(--ink); }
+  .kb-dec-opt:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .kb-dec-action { border-left: 3px solid var(--accent); padding-left: 10px; }
+  .kb-dec-todos { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .kb-dec-todos label { display: flex; gap: 8px; align-items: flex-start; font-size: .86rem; cursor: pointer; }
+  .kb-dec-todos li.is-done span { text-decoration: line-through; color: var(--muted-2); }
+  .kb-dec-note { margin: 8px 0 0; font-size: .78rem; color: var(--muted); border-left: 2px solid var(--warn-soft); padding-left: 8px; }
+  @media (max-width: 560px) {
+    .kb-dec-opts { flex-direction: column; align-items: stretch; }
+  }
+  /* Glossary block. */
+  .kb-glossary { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-gloss-list { margin: 0; }
+  .kb-gloss-row { display: grid; grid-template-columns: minmax(96px, 168px) 1fr; gap: 4px 14px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .kb-gloss-row:first-child { border-top: none; }
+  .kb-gloss-term { margin: 0; font-weight: 700; font-size: .84rem; color: var(--ink); }
+  .kb-gloss-aka { display: block; font-weight: 500; font-size: .7rem; color: var(--muted-2); }
+  .kb-gloss-def { margin: 0; font-size: .84rem; color: var(--muted); }
+  /* The in-article mention: quiet enough to read past, obvious enough to try. */
+  .kb-gloss-mark { border-bottom: 1px dotted var(--muted-3); cursor: help; position: relative; }
+  .kb-gloss-mark:hover::after, .kb-gloss-mark:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 6;
+    width: max-content; max-width: min(320px, 70vw); white-space: normal;
+    font-size: .74rem; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 6px;
+    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
+  }
+  @media (max-width: 560px) {
+    .kb-gloss-row { grid-template-columns: 1fr; gap: 2px; }
+  }
   /* Mode switcher — the segmented-pill vocabulary used by the Time/PTO and
      Coaching toggles, so a stateful toggle looks the same everywhere. */
   .kb-ros-modes { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
@@ -486,6 +528,351 @@ function kbSlug_(text) {
   return String(text || '')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ── Decision / task-guide block (operator 2026-08-11) ─────────────────────
+// "Guide me through a task, with actions at the leaves." A ```decision fence
+// asks ONE question at a time and lands on an action with tickable steps, so a
+// rep mid-call is never reading a branching policy page and holding the branch
+// in their head.
+//
+//   ask|  q1: Does this order need a PT Eval?
+//   opt|  q1: Yes -> q2
+//   opt|  q1: No  -> a1
+//   do|   a1: Send straight to PWC Verification
+//   todo| a1: Confirm the qualification documents are attached
+//   note| a1: Group 3 chairs always need an ATP regardless
+//
+// The first `ask|` is the root. Ids are author-chosen and never shown.
+
+/** PURE. Input is kbMd_-escaped; nothing here unescapes it. */
+function kbDecideParse_(text) {
+  var nodes = {}, order = [], warnings = [], root = '';
+  var line, i;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var m = line.match(/^(ask|opt|do|todo|note)\s*\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var key = m[1].toLowerCase(), rest = m[2];
+    var ci = rest.indexOf(':');
+    if (ci < 0) { warnings.push(line); return; }
+    var id = rest.slice(0, ci).trim();
+    var val = rest.slice(ci + 1).trim();
+    if (!id || !val) { warnings.push(line); return; }
+    var n = nodes[id];
+    if (!n) { n = nodes[id] = { id: id, kind: '', title: '', opts: [], todos: [], notes: [] }; order.push(id); }
+    if (key === 'ask' || key === 'do') {
+      if (n.kind) { warnings.push(line); return; }      // a second title would be ambiguous
+      n.kind = (key === 'ask') ? 'ask' : 'do';
+      n.title = val;
+      if (key === 'ask' && !root) root = id;
+      return;
+    }
+    if (key === 'opt') {
+      // `opt| q1: Yes -> q2`
+      var am = val.match(/\s*-(?:&gt;|>)\s*/);
+      if (!am) { warnings.push(line); return; }
+      n.opts.push({ label: val.slice(0, am.index).trim(), to: val.slice(am.index + am[0].length).trim() });
+      return;
+    }
+    if (key === 'todo') n.todos.push(val);
+    else n.notes.push(val);
+  });
+
+  // A branch that leads nowhere, or a node nothing can reach, is an authoring
+  // error the reader would otherwise hit as a dead end mid-call.
+  var dangling = [], unreachable = [];
+  order.forEach(function (id) {
+    nodes[id].opts.forEach(function (o) { if (!nodes[o.to]) dangling.push(o.to); });
+    if (!nodes[id].kind) warnings.push(id);            // referenced but never defined
+  });
+  if (root) {
+    var seen = {}, stack = [root];
+    while (stack.length) {
+      var cur = stack.pop();
+      if (seen[cur] || !nodes[cur]) continue;
+      seen[cur] = 1;
+      nodes[cur].opts.forEach(function (o) { stack.push(o.to); });
+    }
+    order.forEach(function (id) { if (!seen[id]) unreachable.push(id); });
+  }
+  return { nodes: nodes, order: order, root: root, warnings: warnings,
+           dangling: dangling, unreachable: unreachable };
+}
+
+/** Resolves a stored answer path to the node it lands on, ignoring any step
+ *  that no longer matches (an author can edit the tree under a reader). */
+function kbDecideResolve_(data, path) {
+  var at = data.root, trail = [];
+  (path || []).forEach(function (choice) {
+    var n = data.nodes[at];
+    if (!n || n.kind !== 'ask') return;
+    var hit = null;
+    n.opts.forEach(function (o) { if (o.label === choice) hit = o; });
+    if (!hit || !data.nodes[hit.to]) return;
+    trail.push({ q: n.title, a: hit.label });
+    at = hit.to;
+  });
+  return { at: at, trail: trail };
+}
+
+function kbDecideHtml_(text, path) {
+  var data = kbDecideParse_(text);
+  if (!data.root) {
+    return '<div class="kb-ros-empty"><b>No guide recorded yet.</b>' +
+      '<p>Start with a question and give each answer a destination:</p>' +
+      '<pre class="kb-ros-flowhint">ask|  q1: Does this order need a PT Eval?\n' +
+      'opt|  q1: Yes -&gt; a1\n' +
+      'opt|  q1: No  -&gt; a2\n' +
+      'do|   a1: Schedule the PT Eval\n' +
+      'todo| a1: Book the earliest slot in PT Scheduling</pre>' +
+      '<p>The first <code>ask|</code> is where the guide starts. ' +
+      '<code>todo|</code> adds a tickable step and <code>note|</code> a caveat.</p></div>';
+  }
+  var r = kbDecideResolve_(data, path);
+  var node = data.nodes[r.at] || data.nodes[data.root];
+
+  var trail = r.trail.length
+    ? '<ol class="kb-dec-trail">' + r.trail.map(function (t, i) {
+        return '<li><button type="button" class="kb-dec-crumb" data-step="' + i + '" ' +
+          'onclick="kbDecideBack_(this)" title="Change this answer">' +
+          '<span class="kb-dec-crumb-q">' + t.q + '</span>' +
+          '<span class="kb-dec-crumb-a">' + t.a + '</span></button></li>';
+      }).join('') + '</ol>'
+    : '';
+
+  var body;
+  if (node.kind === 'do') {
+    body = '<div class="kb-dec-action">' +
+      '<h3 class="kb-dec-title">' + node.title + '</h3>' +
+      (node.todos.length
+        ? '<ul class="kb-dec-todos">' + node.todos.map(function (t, i) {
+            return '<li><label><input type="checkbox" onchange="kbDecideTick_(this)"> ' +
+              '<span>' + t + '</span></label></li>';
+          }).join('') + '</ul>'
+        : '') +
+      node.notes.map(function (n) { return '<p class="kb-dec-note">' + n + '</p>'; }).join('') +
+      '</div>';
+  } else {
+    body = '<div class="kb-dec-q">' +
+      '<h3 class="kb-dec-title">' + node.title + '</h3>' +
+      node.notes.map(function (n) { return '<p class="kb-dec-note">' + n + '</p>'; }).join('') +
+      '<div class="kb-dec-opts">' + node.opts.map(function (o) {
+        return '<button type="button" class="kb-dec-opt" data-opt="' + kbRosterAttr_(o.label) + '" ' +
+          'onclick="kbDecideChoose_(this)">' + o.label + '</button>';
+      }).join('') + '</div>' +
+      // A question with no options is a dead end the reader cannot leave.
+      (node.opts.length ? '' : '<p class="kb-ros-warn">This question has no answers recorded.</p>') +
+      '</div>';
+  }
+
+  var problems = [];
+  if (data.dangling.length) problems.push(data.dangling.length + ' answer(s) point at a step that does not exist: ' + data.dangling.join(', '));
+  if (data.unreachable.length) problems.push(data.unreachable.length + ' step(s) cannot be reached from the start: ' + data.unreachable.join(', '));
+
+  return '<div class="kb-decision" data-decision="1" data-src="' + kbRosterAttr_(text) + '"' +
+      ' data-path="' + kbRosterAttr_(JSON.stringify(path || [])) + '">' +
+    (problems.length ? '<div class="kb-ros-warn" role="alert">' + problems.join(' · ') + '</div>' : '') +
+    '<div class="kb-dec-bar">' +
+      '<span class="kb-dec-step">' + (node.kind === 'do' ? 'Action' : 'Step ' + (r.trail.length + 1)) + '</span>' +
+      (r.trail.length ? '<button type="button" class="kb-ros-expand" onclick="kbDecideRestart_(this)">Start over</button>' : '') +
+    '</div>' + trail +
+    '<div class="kb-dec-body" role="group" aria-live="polite">' + body + '</div>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbDecideRoot_(el) { return el && el.closest ? el.closest('.kb-decision') : null; }
+
+function kbDecidePath_(root) {
+  try { var p = JSON.parse(root.getAttribute('data-path') || '[]'); return Array.isArray(p) ? p : []; }
+  catch (e) { return []; }
+}
+
+/** Re-renders in place from the source + the new path. Ticked boxes are
+ *  deliberately NOT carried across: they belong to the action being shown, and
+ *  restoring them onto a different action would assert work that was not done. */
+function kbDecideRender_(root, path) {
+  var html = kbDecideHtml_(root.getAttribute('data-src') || '', path);
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  var next = tmp.firstChild;
+  root.parentNode.replaceChild(next, root);
+  var focusTarget = next.querySelector('.kb-dec-opt, .kb-dec-todos input, .kb-dec-title');
+  if (focusTarget && focusTarget.focus) { try { focusTarget.focus(); } catch (e) {} }
+}
+
+function kbDecideChoose_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (!root) return;
+  kbDecideRender_(root, kbDecidePath_(root).concat([btn.getAttribute('data-opt') || '']));
+}
+
+/** Clicking a crumb returns to that question — a rep who mis-answers must not
+ *  have to start again. */
+function kbDecideBack_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (!root) return;
+  kbDecideRender_(root, kbDecidePath_(root).slice(0, +(btn.getAttribute('data-step') || 0)));
+}
+
+function kbDecideRestart_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (root) kbDecideRender_(root, []);
+}
+
+function kbDecideTick_(input) {
+  var li = input.closest ? input.closest('li') : null;
+  if (li) li.classList.toggle('is-done', !!input.checked);
+}
+
+// ── Glossary block (operator 2026-08-11) ──────────────────────────────────
+// This department runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and
+// a new rep meets them mid-call with no way to ask. A ```glossary fence renders
+// a filterable definition list AND teaches the article to explain itself: the
+// first mention of a defined term anywhere else in the same article gets a
+// dotted underline and a hover/focus definition.
+//
+//   PAR (aka Prior Auth)| Prior Authorization Request — payer sign-off before
+//   ATP| Assistive Technology Professional
+//
+// Same safety story as the other blocks: kbMd_ escapes the fence content before
+// the renderer sees it, and the annotation is a DOM TEXT-NODE walk (the
+// kbHighlightTerms_ pattern), never string surgery on rendered HTML.
+
+/** PURE. Input is kbMd_-escaped text; nothing here unescapes it. */
+function kbGlossaryParse_(text) {
+  var terms = [], warnings = [], seen = {};
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var i = line.indexOf('|');
+    if (i < 0) { warnings.push(line); return; }
+    var head = line.slice(0, i).trim();
+    var def = line.slice(i + 1).trim();
+    if (!head || !def) { warnings.push(line); return; }
+    // "PAR (aka Prior Auth, PA)" -> term PAR with two aliases, all pointing at
+    // the same definition.
+    var aliases = [];
+    var am = head.match(/^(.*?)\s*\(\s*aka\s+([^)]*)\)\s*$/i);
+    if (am) {
+      head = am[1].trim();
+      aliases = am[2].split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+    var k = head.toLowerCase();
+    if (seen[k]) { warnings.push(line); return; }      // a second definition would be ambiguous
+    seen[k] = 1;
+    terms.push({ term: head, aliases: aliases, def: def });
+  });
+  terms.sort(function (a, b) { return a.term.toLowerCase() < b.term.toLowerCase() ? -1 : 1; });
+  return { terms: terms, warnings: warnings };
+}
+
+function kbGlossaryHtml_(text) {
+  var data = kbGlossaryParse_(text);
+  if (!data.terms.length) {
+    return '<div class="kb-ros-empty"><b>No terms yet.</b>' +
+      '<p>Add one per line as <code>Term| Definition</code>. ' +
+      '<code>Term (aka Other, Alt)| …</code> gives a term more than one spelling.</p></div>';
+  }
+  var rows = data.terms.map(function (t) {
+    return '<div class="kb-gloss-row" data-term="' + kbRosterAttr_(t.term) + '"' +
+        ' data-aliases="' + kbRosterAttr_(t.aliases.join('|')) + '"' +
+        ' data-def="' + kbRosterAttr_(t.def) + '"' +
+        ' data-hay="' + kbRosterAttr_((t.term + ' ' + t.aliases.join(' ') + ' ' + t.def).toLowerCase()) + '">' +
+      '<dt class="kb-gloss-term">' + t.term +
+        (t.aliases.length ? '<span class="kb-gloss-aka">' + t.aliases.join(', ') + '</span>' : '') +
+      '</dt><dd class="kb-gloss-def">' + t.def + '</dd></div>';
+  }).join('');
+  return '<div class="kb-glossary" data-glossary="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search kb-gloss-search" placeholder="Filter terms…" ' +
+        'aria-label="Filter glossary terms" oninput="kbGlossaryFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + data.terms.length + ' terms</span>' +
+    '</div>' +
+    '<dl class="kb-gloss-list">' + rows + '</dl>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood (or repeat a term) ' +
+        'and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbGlossaryFilter_(input) {
+  var root = input.closest ? input.closest('.kb-glossary') : null;
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  var rows = root.querySelectorAll('.kb-gloss-row'), shown = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var hit = !q || (rows[i].getAttribute('data-hay') || '').indexOf(q) >= 0;
+    rows[i].style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  }
+  var c = root.querySelector('.kb-ros-count');
+  if (c) c.textContent = shown + (q ? ' matching' : ' terms');
+}
+
+/** Annotates the FIRST mention of each defined term in the surrounding article.
+ *  First-occurrence-only on purpose: marking every mention turns a page into a
+ *  field of dotted underlines and stops reading as emphasis at all.
+ *
+ *  Walks TEXT NODES (the kbHighlightTerms_ pattern) so it can never damage the
+ *  markup kbMd_ produced, and skips the glossary block itself, headings, code
+ *  and existing links. */
+function kbGlossaryAnnotate_(rootEl) {
+  try {
+    if (!rootEl) return;
+    var rows = rootEl.querySelectorAll('.kb-gloss-row');
+    if (!rows.length) return;
+    var defs = [], byKey = {};
+    for (var i = 0; i < rows.length; i++) {
+      var term = rows[i].getAttribute('data-term') || '';
+      var def = rows[i].getAttribute('data-def') || '';
+      var names = [term].concat((rows[i].getAttribute('data-aliases') || '').split('|').filter(Boolean));
+      names.forEach(function (n) {
+        if (!n) return;
+        defs.push(n);
+        byKey[n.toLowerCase()] = { term: term, def: def };
+      });
+    }
+    // Longest first, so "PT Eval" wins over "PT".
+    defs.sort(function (a, b) { return b.length - a.length; });
+    var used = {};
+    defs.forEach(function (name) {
+      var key = name.toLowerCase();
+      if (used[key]) return;
+      // An ALL-CAPS term is an acronym: match case-sensitively so "par" in
+      // ordinary prose is not mistaken for PAR. Mixed-case terms match
+      // case-insensitively.
+      var acronym = name === name.toUpperCase();
+      var re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', acronym ? '' : 'i');
+      var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+      var n;
+      while ((n = walker.nextNode())) {
+        var p = n.parentElement;
+        if (!p || p.closest('.kb-glossary, code, pre, h1, h2, h3, h4, a, button, .kb-gloss-mark')) continue;
+        var m = re.exec(n.nodeValue);
+        if (!m) continue;
+        var info = byKey[key];
+        var frag = document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(0, m.index)));
+        var mark = document.createElement('span');
+        mark.className = 'kb-gloss-mark';
+        mark.setAttribute('tabindex', '0');
+        mark.setAttribute('data-tip', info.def);
+        mark.setAttribute('aria-label', info.term + ': ' + info.def);
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(m.index + m[0].length)));
+        p.replaceChild(frag, n);
+        used[key] = 1;
+        break;                      // first mention only
+      }
+    });
+  } catch (e) { /* annotation is decoration — never break the reader */ }
 }
 
 // ── Interactive roster block (operator 2026-08-11) ─────────────────────────
@@ -1411,8 +1798,12 @@ function kbMd_(src) {
     // same safety argument as snippet — the content is already escaped, so the
     // app draws interactive markup around inert text.
     var rm = info.match(/^roster\b/i);
+    var gm = info.match(/^glossary\b/i);
+    var dm = info.match(/^decision\b/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
+    else if (gm) blocks.push({ glossary: true, body: code });
+    else if (dm) blocks.push({ decision: true, body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -1470,7 +1861,9 @@ function kbMd_(src) {
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
-    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; }
+      if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
+      if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -2189,6 +2582,7 @@ function kbRenderItem_(item) {
     main.innerHTML = head + draftBanner + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
   } else {
     main.innerHTML = head + draftBanner + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
+    kbGlossaryAnnotate_(main);
   }
 }
 
@@ -3087,6 +3481,7 @@ function kbDrawerOpenItem_(id, anchor) {
           kbFeedbackBarHtml_(res);
       } else {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res);
+        kbGlossaryAnnotate_(body);
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
     })

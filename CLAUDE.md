@@ -2577,6 +2577,32 @@ this section before touching the relevant area.
   about that constant for the maintenance rule. Email-client
   compatibility is preserved by inlining the hex (no CSS variables;
   email clients strip `<style>` blocks).
+- **Intake emails share the app's email chrome (operator 2026-08-11).** The
+  PPD / PMD / PAP emails were the last builders still carrying their
+  pre-web-app look — an 18px title line beside the logo and solid-navy section
+  bars with centred white text — so they read as a different product from the
+  Call Notes and branded-notification mail beside them in the same inbox.
+  `intakeEmailShell_(title, innerHtml, subLabel)` now mirrors
+  `buildBrandedEmailHtml_`'s chrome exactly: the UMS mark **on the card** over
+  a 2px navy rule (never on a coloured fill — `logoUrl` is a transparency-free
+  JPEG), a right-aligned mono module label (`Intake · PPD` / `· PMD` / `· PAP`,
+  the wrapper's `subLabel` idea — repeating the wordmark beside the wordmark is
+  worse than naming the module), the subject as a **22px heading** with the
+  short brand rule under it, and the mono-uppercase `UMS Team Tools · Intake`
+  footer. Inside the body, the shared `intakeSectionRowHtml_(label)` replaces
+  both bodies' hand-rolled bars with the app's **kicker vocabulary** —
+  mono-uppercase brand text on `navyTint` under a navy rule, left-aligned, not
+  centred — and the Q/A rows moved from a bordered grid with strong blue zebra
+  to **hairline separators + a quiet `paperCard`/`paper` zebra**, matching the
+  in-app ledger tables. The recommendation cards, conditional answer tones and
+  the raw-`justification` exception (INV-89) are untouched. Two things this
+  restyle must not lose, both pinned: every patient field stays `esc_`'d, and
+  the layout stays table-only (**no `display:flex` / `gap` / `filter`** — see
+  the CN_EMAIL_PALETTE gotcha). **Deploy-window note:** the PPD body feeds
+  `intakeBodyHash_`, so a preview taken before the deploy and sent after it is
+  rejected with "The form changed since you previewed it" (INV-111). That is
+  the guard working; re-previewing clears it, and the window is one page load
+  wide.
 - **Department emails and state tax rates are editable via the Admin
   tab.** Call Notes → Admin (manager-only) reads the current config
   from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
@@ -3796,6 +3822,49 @@ this section before touching the relevant area.
   (4×) and otherwise stops BEFORE the fence, never inside it. The odd-fence
   repair is retained for the DISTINCT case of a fence the SOURCE never closes —
   truncation did not break that, the article did.
+- **Decision / task-guide block (` ```decision `, operator 2026-08-11).** Asked
+  for as "guide me through a task, with actions at the leaves". A `decision`
+  fence asks ONE question at a time and lands on an ACTION with tickable steps,
+  so a rep mid-call is never reading a branching policy page while holding the
+  branch in their head. Syntax matches the other blocks:
+  `ask| id: Question`, `opt| id: Label -> targetId`, `do| id: Action`,
+  `todo| id: Step`, `note| id: Caveat`. **The first `ask|` is the root**; ids
+  are author-chosen and never shown. **Three authoring errors are REPORTED
+  rather than hit as a dead end mid-call**: an option pointing at a node that
+  does not exist, a node nothing can reach from the root (found by a walk), and
+  a question with no answers. A node given a second title is refused — picking
+  one silently would be worse. The trail of answers renders as crumbs, each a
+  button back to that question, because a rep who mis-answers must not have to
+  start again; `kbDecideResolve_` SKIPS an answer that no longer matches rather
+  than throwing, since an author can edit the tree under a reader mid-walk.
+  **Ticks are deliberately not carried across a re-render** — they belong to
+  the action on screen, and restoring them onto a different action would assert
+  work that was not done. Options and crumbs are real buttons (INV-173) and the
+  question region is `aria-live` so the new question is announced.
+- **Glossary block (` ```glossary `, operator 2026-08-11).** This department
+  runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and a new rep meets
+  them mid-call with no way to ask (five people on the live roster are marked
+  `*new`). A `glossary` fence renders a filterable definition list from
+  `Term| Definition` lines (`Term (aka Other, Alt)|` for extra spellings) AND
+  teaches the article to explain itself: `kbGlossaryAnnotate_` marks the FIRST
+  mention of each defined term elsewhere in the same article with a dotted
+  underline and a hover/focus definition. **First mention only, on purpose** —
+  marking every occurrence turns a page into a field of dotted underlines and
+  stops reading as emphasis at all. **An ALL-CAPS term is treated as an acronym
+  and matched case-SENSITIVELY**, so "par" in ordinary prose does not link to
+  PAR; mixed-case terms match case-insensitively, and longer terms are matched
+  first so "PT Eval" wins over "PT". A term defined twice is REFUSED (a second
+  definition is ambiguous, and silently picking one is worse) and counted in the
+  block's warning line. The annotator is a TEXT-NODE walk — the
+  `kbHighlightTerms_` pattern, never string surgery on rendered HTML — skips the
+  glossary block itself plus headings/code/links, and is wrapped in a catch
+  because annotation is decoration and must never break the reader. Wired into
+  BOTH readers (the Reference tab and the Ctrl/⌘+K drawer). **Scope limit worth
+  knowing: terms annotate within the article that defines them.** App-wide
+  linking would need a designated glossary article behind a Script Property (the
+  `WHATSNEW_KB_ID` shape) — deliberately not built yet, since one glossary
+  article that reps search for already answers "what does PAR mean" through the
+  existing drawer search.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4790,6 +4859,18 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The intake email restyle (operator 2026-08-11) adds NO new operator state**
+  — no Script Properties, triggers, migrations or CONFIG constants; it changes
+  `intakeEmailShell_`, the new shared `intakeSectionRowHtml_`, and the row
+  styling in the PPD + PMD/PAP body builders. All three intake emails change
+  appearance at once and now match the branded-notification and Call Notes
+  mail. Recipients, attachments, recommendations and the PHI submission rows
+  are untouched. **One transient effect worth knowing:** the PPD body feeds the
+  preview→send `bodyHash` guard, so a rep who previewed BEFORE the new version
+  went live and sends AFTER gets "The form changed since you previewed it" —
+  the guard doing its job (INV-111); re-previewing clears it. **Post-deploy:
+  send yourself one PPD and one PMD** and confirm the UMS mark loads — same
+  standing spot-check as any email change.
 - **Cycle 17 (top-5 + batches ②–⑦) adds NO new operator state** — no Script
   Properties, triggers, migrations, or CONFIG constants; every new response
   field is ADDITIVE (`skippedReps`, `partial`, `total`/`cap`, `warning`,
@@ -6204,7 +6285,17 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
+roster-block emitter — 8 mutations bite-checked). The intake email restyle added two more → **494** (the shell's chrome
+asserted against `buildBrandedEmailHtml_`'s own source so the two cannot drift
+apart again, plus per-form module labels at all four call sites; and the ledger
+vocabulary — mono-uppercase band on tint not centred, hairline separators, no
+bordered grid, the shared band in BOTH bodies — with the email-safety and
+`esc_` guarantees riding the same test — 10 mutations bite-checked).
+The decision block added five more → **492** (parse; unwalkable-guide reporting;
+path resolution incl. a stale answer; one-question-at-a-time + trail + fresh
+ticks; fence inertness — 9 mutations bite-checked). The glossary block added three more → **487** (parse/aliases/duplicate-refusal,
+fence + inertness + attribute quoting, first-mention-only + acronym case + skip
+set + both readers wired — 8 mutations bite-checked). The join/reciprocal round added two more → **485**, then extracting the pure
 classifier folded three source-shape pins into one behavioural one → **484**
 (6 geometry decisions bite-checked). The skip/direction correction added one more → **483** (column+row
 attributes, adjacency deciding step-vs-skip, phase-bypass arcs, source-anchored

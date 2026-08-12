@@ -7595,6 +7595,217 @@ test('the roster block reflows for the 400px drawer, and its content stays searc
     'a name inside the roster fence is still part of the searchable section text');
 });
 
+console.log('\nintake — email chrome matched to the app (operator 2026-08-11)');
+
+test('the intake shell uses the same chrome as the branded wrapper', () => {
+  const shell = extractRawFunction('Code.js', 'intakeEmailShell_');
+  const branded = extractRawFunction('Code.js', 'buildBrandedEmailHtml_');
+  // The mark sits ON THE CARD over a navy rule — logoUrl is a JPEG with no
+  // transparency, so a navy band would frame a white rectangle.
+  [shell, branded].forEach(function (fn, i) {
+    assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(fn), 'navy rule under the mark (' + i + ')');
+    assert.ok(/alt="UMS Team Tools"/.test(fn), 'the alt text carries the identity when images are blocked (' + i + ')');
+    assert.ok(/font-size:22px/.test(fn), 'the subject is a real heading, not a line beside the logo (' + i + ')');
+    assert.ok(/width:46px;height:3px/.test(fn), 'with the short rule under it (' + i + ')');
+    assert.ok(/text-transform:uppercase;color:' \+ P\.muted3 \+ ';">UMS Team Tools/.test(fn),
+      'and the mono wordmark footer (' + i + ')');
+  });
+  // The module label is per form, so PPD / PMD / PAP are distinguishable.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.strictEqual((code.match(/intakeEmailShell_\(subject, [a-zA-Z]+, 'Intake · /g) || []).length, 4,
+    'every call site names its form');
+});
+
+test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
+  const band = extractRawFunction('Code.js', 'intakeSectionRowHtml_');
+  // A solid navy bar with centred white text was the piece that most made
+  // these read as a different product from the rest of the app's mail.
+  assert.ok(/text-transform:uppercase/.test(band) && /P\.navyTint/.test(band), 'section bands are mono-uppercase on a tint');
+  assert.strictEqual(/text-align:center/.test(band), false, 'not centred');
+  const ppd = extractRawFunction('Code.js', 'intakeBuildPpdBodyHtml_');
+  const acct = extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_');
+  [ppd, acct].forEach(function (fn, i) {
+    assert.ok(/border-bottom:1px solid ' \+ P\.line/.test(fn), 'hairline row separators (' + i + ')');
+    assert.strictEqual(/border:1px solid ' \+ P\.line \+ ';width:5/.test(fn), false, 'no bordered grid (' + i + ')');
+    assert.ok(/intakeSectionRowHtml_\(label\)/.test(fn), 'both bodies share the section band (' + i + ')');
+    // Outlook drops these; the palette + tables are the whole layout system.
+    ['display:flex', 'gap:', 'filter:'].forEach(function (bad) {
+      assert.strictEqual(fn.indexOf(bad), -1, 'email-safe: no ' + bad + ' (' + i + ')');
+    });
+  });
+  // The restyle must not have dropped an esc_ — every patient field is escaped
+  // and the server-generated justification stays the ONE raw exception.
+  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppd), 'labels and answers are escaped');
+});
+
+console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
+
+const kbDecCtx = vm.createContext({});
+['kbSlug_', 'kbRosterAttr_', 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbDecCtx));
+
+const DEC_SRC = [
+  'ask|  q1: Eval in the last 6 months?',
+  'opt|  q1: Yes -> q2',
+  'opt|  q1: No -> aPT',
+  'ask|  q2: Group 3 chair?',
+  'opt|  q2: Yes -> aATP',
+  'opt|  q2: No -> aNone',
+  'do|   aPT: Route to PT Scheduling',
+  'todo| aPT: Book the earliest slot',
+  'todo| aPT: Log the appointment date',
+  'note| aPT: If the patient declines, send back to MA Education',
+  'do|   aATP: Route to ATP Scheduling',
+  'do|   aNone: Send to PWC Verification',
+].join('\n');
+
+test('kbDecideParse_ — questions, options, actions and their steps', () => {
+  const d = kbDecCtx.kbDecideParse_(rosEsc(DEC_SRC));
+  assert.strictEqual(d.root, 'q1', 'the FIRST ask is the root');
+  assert.strictEqual(d.order.length, 5, 'five nodes');
+  assert.strictEqual(d.nodes.q1.opts.length, 2, 'options parse');
+  assert.strictEqual(d.nodes.q1.opts[0].to, 'q2', 'and carry their destination');
+  assert.strictEqual(d.nodes.aPT.kind, 'do', 'an action is a leaf');
+  assert.strictEqual(d.nodes.aPT.todos.length, 2, 'with tickable steps');
+  assert.strictEqual(d.nodes.aPT.notes.length, 1, 'and a caveat');
+  assert.strictEqual(d.warnings.length + d.dangling.length + d.unreachable.length, 0, 'a sound guide warns about nothing');
+});
+
+test('a guide that cannot be walked says so instead of dead-ending mid-call', () => {
+  // An option pointing nowhere, and a branch nothing reaches, are authoring
+  // errors the reader would otherwise hit as a dead end while on a call.
+  const broken = kbDecCtx.kbDecideParse_(rosEsc([
+    'ask| q1: Start?', 'opt| q1: Yes -> ghost',
+    'do|  orphan: Never reachable',
+    'ask| q2: Also unreachable?', 'opt| q2: x -> orphan',
+  ].join('\n')));
+  assert.ok(broken.dangling.indexOf('ghost') >= 0, 'a dangling destination is caught');
+  assert.ok(broken.unreachable.indexOf('orphan') >= 0 && broken.unreachable.indexOf('q2') >= 0,
+    'and so is a branch nothing reaches');
+  const html = kbDecCtx.kbDecideHtml_(rosEsc('ask| q1: Start?\nopt| q1: Yes -> ghost'), []);
+  assert.ok(/role="alert"/.test(html) && /does not exist/.test(html), 'the reader is told, not left guessing');
+  // A second title for one id is ambiguous; a question with no answers is a
+  // dead end.
+  const dup = kbDecCtx.kbDecideParse_(rosEsc('ask| q1: A?\nask| q1: B?'));
+  assert.strictEqual(dup.warnings.length, 1, 'a redefined node is refused');
+  assert.ok(/no answers recorded/.test(kbDecCtx.kbDecideHtml_(rosEsc('ask| q1: Dead end?'), [])),
+    'a question with no options says so');
+});
+
+test('the walk resolves a path, and an edited tree cannot strand a reader', () => {
+  const d = kbDecCtx.kbDecideParse_(rosEsc(DEC_SRC));
+  const r = kbDecCtx.kbDecideResolve_(d, ['Yes', 'No']);
+  assert.strictEqual(r.at, 'aNone', 'the path lands on the right action');
+  assert.strictEqual(r.trail.length, 2, 'and records the questions answered');
+  assert.strictEqual(r.trail[0].a, 'Yes', 'with the answer given');
+  // An answer that no longer matches is SKIPPED rather than throwing — an
+  // author can edit the tree under a reader mid-walk.
+  const stale = kbDecCtx.kbDecideResolve_(d, ['Maybe', 'Yes']);
+  assert.strictEqual(stale.at, 'q2', 'an unknown answer is ignored, the rest still applies');
+  assert.strictEqual(kbDecCtx.kbDecideResolve_(d, []).at, 'q1', 'an empty path is the start');
+});
+
+test('the guide renders one question at a time with a walkable trail', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const start = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), []);
+  assert.strictEqual((start.match(/kb-dec-title/g) || []).length, 1, 'exactly one question is shown');
+  assert.strictEqual(/kb-dec-crumb/.test(start), false, 'no trail at the start');
+  assert.strictEqual(/Start over/.test(start), false, 'and nothing to start over from');
+  const mid = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), ['Yes']);
+  assert.ok(/kb-dec-crumb/.test(mid), 'answering leaves a crumb');
+  assert.ok(/Start over/.test(mid), 'and offers a restart');
+  const leaf = kbDecCtx.kbDecideHtml_(rosEsc(DEC_SRC), ['No']);
+  assert.ok(/kb-dec-todos/.test(leaf) && /type="checkbox"/.test(leaf), 'the action has tickable steps');
+  assert.ok(/Route to PT Scheduling/.test(leaf), 'and names the action');
+  // Real controls (INV-173) and the changing question is announced.
+  assert.ok(/<button type="button" class="kb-dec-opt"/.test(start), 'options are real buttons');
+  assert.ok(/<button type="button" class="kb-dec-crumb"/.test(mid), 'so are the crumbs');
+  assert.ok(/aria-live="polite"/.test(start), 'the new question is announced');
+  // Ticks belong to the action on screen: carrying them across a re-render
+  // would assert work that was not done.
+  // Ticks belong to the action on screen: a re-render rebuilds from source, so
+  // no checkbox can arrive pre-checked and assert work that was not done.
+  assert.strictEqual(/checked/.test(leaf), false, 'a freshly rendered action has nothing ticked');
+  const render = extractFunction('kb/script_kb.html', 'kbDecideRender_');
+  assert.ok(/kbDecideHtml_\(root\.getAttribute\('data-src'\)/.test(render), 're-render rebuilds from the source');
+  assert.ok(/replaceChild/.test(render), 'replacing the node, so no prior state survives');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-dec-opts \{ flex-direction: column/.test(kb),
+    'options stack on a phone');
+});
+
+test('kbMd_ renders a ```decision fence, inert like the others', () => {
+  const html = kbDecCtx.kbMd_(['Intro.', '', '```decision', 'ask| q1: Go?', 'opt| q1: Yes -> a', 'do| a: Done', '```'].join('\n'));
+  assert.ok(/<div class="kb-decision"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  const evil = kbDecCtx.kbMd_(['```decision', 'ask| q1: <script>alert(1)</script>', 'opt| q1: y -> a', 'do| a: x', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  const quoted = kbDecCtx.kbDecideHtml_('ask| q1: A?\nopt| q1: say "yes" -> a\ndo| a: x', []);
+  assert.ok(/data-opt="say &quot;yes&quot;"/.test(quoted), 'quotes are escaped in attributes');
+});
+
+console.log('\nkb — glossary block (operator 2026-08-11)');
+
+const kbGlossCtx = vm.createContext({});
+['kbSlug_', 'kbRosterAttr_', 'kbGlossaryParse_', 'kbGlossaryHtml_', 'kbMd_']
+  .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbGlossCtx));
+
+test('kbGlossaryParse_ — terms, aliases, and refusal to define a term twice', () => {
+  const g = kbGlossCtx.kbGlossaryParse_(rosEsc([
+    'PAR (aka Prior Auth, PA)| Prior Authorization Request',
+    'ATP| Assistive Technology Professional',
+    'no pipe on this line',
+    'ATP| A second, conflicting definition',
+    'PPD|',
+  ].join('\n')));
+  assert.strictEqual(g.terms.length, 2, 'only the sound definitions');
+  assert.strictEqual(g.terms[0].term, 'ATP', 'sorted alphabetically');
+  const par = g.terms[1];
+  assert.strictEqual(par.term, 'PAR', 'the alias clause is stripped from the term');
+  assert.strictEqual(par.aliases.join('|'), 'Prior Auth|PA', 'and parsed');
+  // A repeated term is ambiguous, and an empty definition is not a definition.
+  assert.strictEqual(g.warnings.length, 3, 'malformed, duplicate and empty lines are all counted');
+  assert.ok(/2 terms/.test(kbGlossCtx.kbGlossaryHtml_(rosEsc('A| one\nB| two'))), 'the count is rendered');
+});
+
+test('kbMd_ renders a ```glossary fence, and the block stays inert', () => {
+  const html = kbGlossCtx.kbMd_(['Intro.', '', '```glossary', 'PAR| Prior Authorization', '```'].join('\n'));
+  assert.ok(/<div class="kb-glossary"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  assert.ok(/aria-label="Filter glossary terms"/.test(html), 'the filter has an accessible name');
+  const evil = kbGlossCtx.kbMd_(['```glossary', 'X| <script>alert(1)</script>', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  assert.ok(/&lt;script&gt;/.test(evil), 'it renders as escaped text');
+  // Definitions ride in attributes for the annotator, so quotes must be escaped
+  // there too — the top-level pass does not cover them.
+  const quoted = kbGlossCtx.kbGlossaryHtml_('X| a "quoted" definition');
+  assert.ok(/data-def="a &quot;quoted&quot; definition"/.test(quoted), 'quotes are escaped in attributes');
+});
+
+test('the annotator marks the FIRST mention only, and never inside the glossary', () => {
+  const fn = extractFunction('kb/script_kb.html', 'kbGlossaryAnnotate_');
+  // A TEXT-NODE walk (the kbHighlightTerms_ pattern) — never string surgery on
+  // rendered HTML, so it cannot damage what kbMd_ produced.
+  assert.ok(/createTreeWalker\(rootEl, NodeFilter\.SHOW_TEXT/.test(fn), 'walks text nodes');
+  assert.ok(/break;\s+\/\/ first mention only/.test(fn), 'stops after the first mention');
+  // Marking every mention turns a page into a field of dotted underlines.
+  assert.ok(/closest\('\.kb-glossary, code, pre, h1, h2, h3, h4, a, button, \.kb-gloss-mark'\)/.test(fn),
+    'skips the glossary itself, headings, code and links');
+  // An ALL-CAPS term is an acronym: "par" in ordinary prose must not link to PAR.
+  assert.ok(/var acronym = name === name\.toUpperCase\(\)/.test(fn), 'acronyms are detected');
+  assert.ok(/acronym \? '' : 'i'/.test(fn), 'and matched case-sensitively');
+  assert.ok(/defs\.sort\(function \(a, b\) \{ return b\.length - a\.length; \}\)/.test(fn),
+    'longest term first, so "PT Eval" wins over "PT"');
+  assert.ok(/catch \(e\) \{ \/\* annotation is decoration/.test(fn), 'and it can never break the reader');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-gloss-mark:hover::after, \.kb-gloss-mark:focus::after/.test(kb),
+    'the definition opens on keyboard focus as well as hover');
+  assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-gloss-row \{ grid-template-columns: 1fr/.test(kb),
+    'the two-column term list stacks on a phone');
+  // Both readers annotate — the tab and the mid-call drawer.
+  assert.strictEqual((kb.match(/kbGlossaryAnnotate_\((main|body)\);/g) || []).length, 2,
+    'wired into both the Reference reader and the drawer');
+});
+
 console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
 
 test('the people index folds a person across teams — the question the grid cannot answer', () => {
