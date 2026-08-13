@@ -46,6 +46,22 @@ const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 //  Enter handlers live in the per-tool script_*.html partials; the registry
 //  looks them up by name (window[...]).
 // ════════════════════════════════════════════════════════════════════════════
+// ── Colour palettes (operator 2026-08-12) ───────────────────────────────────
+// An axis ORTHOGONAL to light/dark: the palette re-tints the neutrals and the
+// accent; the mode still decides light or dark. Every palette is a hue
+// rotation at CONSTANT luminance (see styles_design_tokens.html), and none may
+// touch the semantic status colours — green still means resolved in all four.
+// Console is the default and declares no stylesheet block; its swatch clears
+// the stored preference. Keys must match PALETTE_KEYS in index.html's boot
+// script and the `data-palette` blocks in the token partial.
+const PALETTES = [
+  { key: 'console', label: 'Console' },
+  { key: 'sand',    label: 'Sand' },
+  { key: 'sage',    label: 'Sage' },
+  { key: 'plum',    label: 'Plum' },
+  { key: 'teal',    label: 'Teal' },
+];
+
 const TOOLS = {
   timeClock: {
     label: 'Dashboard',
@@ -664,6 +680,19 @@ function renderShell(state) {
               onclick="notifyToggleDesktop_(this)">${icon('monitor', 14)}</button>
     </div>`;
 
+  // Colour palettes (operator 2026-08-12) — an axis orthogonal to light/dark.
+  // Each swatch previews its own accent; the label rides `title` + aria-label
+  // because a colour alone is not a name. Console is the default and clears
+  // the stored preference rather than storing 'console', so an untouched
+  // browser and a deliberately-reset one look the same in localStorage.
+  const paletteToggle = `
+    <div class="sb-pal-toggle" role="group" aria-label="Colour palette">
+      ${PALETTES.map(p => `
+      <button type="button" class="sb-pal-btn" data-palette-target="${p.key}"
+              aria-pressed="false" aria-label="${esc(p.label)} palette" title="${esc(p.label)} palette"
+              onclick="setTimeClockPalette('${p.key}')"><span class="sb-pal-dot"></span></button>`).join('')}
+    </div>`;
+
   // Pop-out button — only shown in normal (full) mode. Compact mode is the
   // pop-out target, so hiding the button there keeps the chrome quiet.
   // F(L-7): this button carried TWO title attributes — HTML keeps the first,
@@ -706,6 +735,10 @@ function renderShell(state) {
             ${popOutBtn}
           </div>
         </div>
+        <div class="sb-pal">
+          <span class="sb-theme-label">Palette</span>
+          ${paletteToggle}
+        </div>
         <div class="sb-theme">
           <span class="sb-theme-label">Alerts</span>
           <div class="sb-theme-controls">
@@ -738,6 +771,7 @@ function renderShell(state) {
           </div>
           <div class="hdr-right">
             ${themeToggle}
+            ${paletteToggle}
             ${reminderToggle}
             ${popOutBtn}
             <div class="hdr-id">${esc(state.id)}</div>
@@ -756,8 +790,9 @@ function renderShell(state) {
       </div>
     </div>`;
 
-  // Reflect current theme in both toggle pills
+  // Reflect current theme + palette in both copies of each control.
   syncThemeToggleState();
+  syncPaletteToggleState();
   // Round 2 · 8a — restore + wire resizable sidebar (drag-to-resize, dbl-click
   // to snap, persistence via localStorage.umsSidebarW).
   initResizableSidebar_();
@@ -1455,9 +1490,14 @@ function flagOn_(key) {
 // ── Toast stack ────────────────────────────────────────────────────────
 // Stackable, auto-dismissing toasts with semantic variants.
 // API: showToast(message, 'toast-success' | 'toast-error' | 'toast-warn' | undefined)
-function showToast(msg, cls) {
+function showToast(msg, cls, opts) {
   const stack = document.getElementById('toast-stack');
   if (!stack) return;
+  // opts.sticky (operator 2026-08-12) — stay until the reader dismisses it.
+  // A reminder that auto-dismisses after 3.5s is gone before the rep gets back
+  // to the window the chime called them to, which is the whole point of the
+  // reminder. Additive: every existing 2-arg caller is unchanged.
+  opts = opts || {};
   // Normalize the variant: most callers pass the full class
   // ('toast-success'/'toast-error'/'toast-warn'/'toast-info'), but Training /
   // EmpDocs pass bare names ('success'/'error'/'warn'/'info'). Without this,
@@ -1478,13 +1518,31 @@ function showToast(msg, cls) {
   if (cls === 'toast-error') t.setAttribute('role', 'alert');
   t.innerHTML = `<span class="toast-icon">${icon(iconName, 16)}</span><span class="toast-msg"></span>`;
   t.querySelector('.toast-msg').textContent = clean;
-  stack.appendChild(t);
-  setTimeout(() => {
+  const dismiss = () => {
     t.classList.add('toast-leave');
     t.addEventListener('animationend', () => t.remove(), { once: true });
-  }, 3500);
-  // Cap the stack at 5
-  while (stack.children.length > 5) stack.firstChild.remove();
+  };
+  if (opts.sticky) {
+    t.classList.add('toast-sticky');
+    // A real <button> with an accessible name (INV-173) — the only way out of a
+    // toast that never times out.
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'toast-x';
+    x.setAttribute('aria-label', 'Dismiss reminder');
+    x.innerHTML = icon('x', 13);
+    x.addEventListener('click', dismiss);
+    t.appendChild(x);
+  }
+  stack.appendChild(t);
+  if (!opts.sticky) setTimeout(dismiss, 3500);
+  // Cap the stack at 5 — evicting the oldest NON-sticky first, so a reminder
+  // the rep has not seen is never silently pushed off by routine toasts. If
+  // every toast is sticky the oldest still goes (the cap stays a real bound).
+  while (stack.children.length > 5) {
+    const victim = stack.querySelector('.toast:not(.toast-sticky)') || stack.firstChild;
+    victim.remove();
+  }
 }
 
 // ── Reminders: sound + desktop notification + toast ────────────────────────
@@ -1568,7 +1626,10 @@ function notifyRequestDesktop_() {
 /** The one entry point every reminder uses. `tone` rides the toast variant. */
 function notifyRemind_(msg, tone) {
   var p = notifyPrefs_();
-  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn');
+  // STICKY (operator 2026-08-12): the chime calls the rep back to the window
+  // and the toast had already timed out by the time they got there. A reminder
+  // is the one toast class that must wait for its reader.
+  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', { sticky: true });
   if (p.sound) notifyChime_();
   if (p.desktop && notifyDesktopReady_()) {
     try { new Notification('Team Tools', { body: msg, tag: 'ums-remind' }); } catch (e) {}

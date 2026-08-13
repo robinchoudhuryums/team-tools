@@ -66,6 +66,49 @@
         document.body && document.body.setAttribute('data-mode', m);
         window.syncThemeToggleState && window.syncThemeToggleState();
       };
+      // ── Colour palette (operator 2026-08-12) ───────────────────────────
+      // An axis ORTHOGONAL to light/dark: the palette re-tints the neutrals
+      // and the accent, the mode decides light or dark. Applied here, in the
+      // same synchronous <head> pass, for the same reason — the first paint
+      // must already be the rep's palette, not a flash of Console.
+      // 'console' is the default and has NO stylesheet block, so an unknown
+      // or corrupt stored value degrades to the shipped look.
+      var PALETTE_KEYS = ['console', 'sand', 'sage', 'plum', 'teal'];
+      var applyPalette = function (p) {
+        var el = document.documentElement;
+        if (p && p !== 'console') { el.setAttribute('data-palette', p); }
+        else { el.removeAttribute('data-palette'); }
+        var setBodyPal = function () {
+          if (!document.body) return;
+          if (p && p !== 'console') document.body.setAttribute('data-palette', p);
+          else document.body.removeAttribute('data-palette');
+        };
+        if (document.body) setBodyPal();
+        else document.addEventListener('DOMContentLoaded', setBodyPal);
+      };
+      try {
+        var storedPal = localStorage.getItem('umsTheme');
+        applyPalette(PALETTE_KEYS.indexOf(storedPal) > 0 ? storedPal : 'console');
+      } catch (e) { /* localStorage unavailable — Console */ }
+      window.setTimeClockPalette = function (p) {
+        if (PALETTE_KEYS.indexOf(p) < 0) p = 'console';
+        try {
+          if (p === 'console') localStorage.removeItem('umsTheme');
+          else localStorage.setItem('umsTheme', p);
+        } catch (e) {}
+        applyPalette(p);
+        window.syncPaletteToggleState && window.syncPaletteToggleState();
+      };
+      // Same scoping lesson as the theme reflector below (INV-191): key the
+      // write on the attribute that MEANS "palette swatch", not on a class
+      // some other control may borrow for its look.
+      window.syncPaletteToggleState = function () {
+        var cur = document.documentElement.getAttribute('data-palette') || 'console';
+        var btns = document.querySelectorAll('[data-palette-target]');
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-palette-target') === cur ? 'true' : 'false');
+        }
+      };
       // Reflect current mode on every THEME toggle (sidebar + mobile header).
       // Safe to call when no toggles exist yet (initial loading state).
       // The selector requires data-theme-target, not just the shared class: the

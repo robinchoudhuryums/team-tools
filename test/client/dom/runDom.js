@@ -1014,3 +1014,44 @@ test('Escape dismisses through the close hook and stamps the seen-flag (no re-sh
   assert.strictEqual(h.window.whatsNewShouldShow_(stored, 'S2'), false, 'same stamp stays quiet');
   assert.strictEqual(h.window.whatsNewShouldShow_(stored, 'S3-edited'), true, 'an edit re-surfaces it');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Sticky reminder toasts (operator 2026-08-12). The source pin can assert the
+// shape; only a real DOM can prove the LIFECYCLE — that a reminder is still on
+// screen after the auto-dismiss window the rep missed, that clicking its × is
+// the way out, and that the stack cap cannot silently evict it.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Reminder toasts — sticky lifecycle (operator 2026-08-12)');
+
+test('a reminder outlives the auto-dismiss window; a routine toast does not', () => {
+  const h = boot();
+  h.bootShell();
+  h.window.showToast('Saved', 'toast-success');          // routine
+  h.window.notifyRemind_('Break in 10 min', 'toast-warn'); // reminder
+  assert.strictEqual(h.$$('#toast-stack .toast').length, 2, 'both rendered');
+  h.flushTimers();   // run every pending setTimeout — i.e. past the 3.5s window
+  // (jsdom never fires animationend, so removal is the CLASS, not the node.)
+  const routine = h.$$('#toast-stack .toast:not(.toast-sticky)')[0];
+  const remind = h.$('#toast-stack .toast-sticky');
+  assert.ok(/toast-leave/.test(routine.className), 'the routine toast timed out');
+  assert.ok(remind && !/toast-leave/.test(remind.className), 'the reminder did NOT');
+  assert.ok(/Break in 10 min/.test(remind.textContent), 'with its message intact');
+});
+
+test('the × dismisses it, and the stack cap evicts routine toasts first', () => {
+  const h = boot();
+  h.bootShell();
+  h.window.notifyRemind_('Your shift ended — clock out', 'toast-warn');
+  // Five routine toasts AFTER it: the cap is 5, so something must go. The
+  // reminder the rep has not read must not be what goes.
+  for (let i = 0; i < 5; i++) h.window.showToast('Note ' + i, 'toast-info');
+  const stack = h.$('#toast-stack');
+  assert.ok(stack.children.length <= 5, 'the cap is still a real bound');
+  assert.strictEqual(h.$$('#toast-stack .toast-sticky').length, 1, 'the reminder survived the eviction');
+  const x = h.$('#toast-stack .toast-sticky .toast-x');
+  assert.ok(x && x.tagName === 'BUTTON' && x.getAttribute('aria-label'),
+    'a real, named button is the way out (INV-173)');
+  x.dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.ok(/toast-leave/.test(h.$('#toast-stack .toast-sticky').className),
+    'clicking it starts the same leave animation a timed-out toast uses');
+});

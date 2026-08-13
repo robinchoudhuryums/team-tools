@@ -158,42 +158,61 @@ test('every var(--token) resolves to a defined custom property', () => {
 //     DISTINCT tokens — training + review both rendered the same green until
 //     batch I (flag-training was var(--accent), the alias of --good).
 console.log('\nclient — contrast + flag-color tripwires (a11y batch G/I)');
-test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
+// ── Shared token-block parser (palette-aware since 2026-08-12) ─────────────
+// Colour now has TWO axes (mode x palette), so a test that assumes "two hex
+// declarations, light then dark" is wrong by construction. Parse the token
+// file into BLOCKS and derive the list — INV-179: a new palette must be swept
+// in automatically, not remembered.
+function tokenBlocks() {
   const toks = fs.readFileSync(
     path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
-  function hexes(name) {
-    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
-    const out = []; let m;
-    while ((m = re.exec(toks))) out.push(m[1]);
-    return out;
+  const vals = (body) => Object.fromEntries(
+    [...body.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)].map((m) => [m[1], m[2]]));
+  const slice = (startSel, stopAt) => {
+    const i = toks.indexOf(startSel);
+    assert.ok(i >= 0, 'block not found: ' + startSel);
+    return toks.slice(i, toks.indexOf(stopAt, i));
+  };
+  const blocks = [
+    { palette: 'console', mode: 'light', body: slice('  :root {', '  @supports (color: color-mix') },
+    { palette: 'console', mode: 'dark',
+      body: slice('  :root[data-mode="dark"],', '  @supports (color: color-mix(in oklch, red, blue)) {\n    :root[data-mode="dark"]') },
+  ];
+  const re = /:root\[data-palette="([a-z]+)"\](\[data-mode="dark"\])?[^{]*\{([\s\S]*?)\n  \}/g;
+  let m;
+  while ((m = re.exec(toks))) {
+    blocks.push({ palette: m[1], mode: m[2] ? 'dark' : 'light', body: m[3] });
   }
-  function lum(hex) {
-    const c = [1, 3, 5].map((i) => {
-      let v = parseInt(hex.slice(i, i + 2), 16) / 255;
-      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    });
-    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-  }
-  function ratio(a, b) {
-    const la = lum(a), lb = lum(b);
-    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-  }
-  const muted2 = hexes('muted-2');
-  // Hex declarations appear light-block first, dark-block second (the
-  // @supports color-mix overrides don't redeclare these greys as hex).
-  assert.strictEqual(muted2.length, 2, 'expected exactly 2 --muted-2 hex declarations (light, dark)');
-  const surfaces = ['paper', 'paper-2', 'paper-card'];
-  [0, 1].forEach((mode) => {
-    surfaces.forEach((s) => {
-      const surf = hexes(s);
-      assert.strictEqual(surf.length, 2, 'expected 2 --' + s + ' hex declarations');
-      const r = ratio(muted2[mode], surf[mode]);
-      assert.ok(r >= 4.5,
-        (mode ? 'dark' : 'light') + ' --muted-2 ' + muted2[mode] + ' on --' + s + ' ' +
-        surf[mode] + ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
+  blocks.forEach((b) => { b.vals = vals(b.body); b.id = b.palette + '/' + b.mode; });
+  return { toks, blocks };
+}
+function wcagLum(hex) {
+  const c = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+const wcagRatio = (a, b) => {
+  const la = wcagLum(a), lb = wcagLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+
+test('--muted-2 meets AA (4.5:1) on every surface, in EVERY palette and mode', () => {
+  const { blocks } = tokenBlocks();
+  assert.ok(blocks.length >= 8, 'expected the two Console blocks plus each palette x mode');
+  blocks.forEach((b) => {
+    ['paper', 'paper-2', 'paper-card'].forEach((surf) => {
+      const m2 = b.vals['muted-2'], sv = b.vals[surf];
+      assert.ok(m2 && sv, b.id + ' must declare --muted-2 and --' + surf +
+        ' (a palette block declares the FULL neutral set, so it is verifiable on its own)');
+      const r = wcagRatio(m2, sv);
+      assert.ok(r >= 4.5, b.id + ' --muted-2 ' + m2 + ' on --' + surf + ' ' + sv +
+        ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
     });
   });
 });
+
 // V-1 (cycle 12) — the four `-deep` semantic aliases must interpolate in
 // OKLAB, not OKLCH. `color-mix(in oklch, …)` interpolates hue POLARLY: mixing
 // a warm token with the near-neutral `--ink` (a low-chroma blue-ish grey, hue
@@ -259,13 +278,20 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
   // Each mode block mixes with its own partner + weight (light: ink 45%;
   // dark: paper-card 25%) — read them from the source so a retune can't
   // silently invalidate the pin.
+  // Palette-aware (2026-08-12): the -deep tokens are color-mixed toward
+  // --ink / --paper-card, and a PALETTE changes both — so the drift must be
+  // re-checked for every palette, not just Console. This is the reason a
+  // palette may not touch the semantic sources: only the PARTNER varies here.
+  const { blocks: palBlocks } = tokenBlocks();
   [['ink', 0], ['paper-card', 1]].forEach(([partnerTok, mode]) => {
-    const label = mode ? 'dark' : 'light';
+    const modeName = mode ? 'dark' : 'light';
     const declared = new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
       partnerTok + '\\) (\\d+)%\\)').exec(toks);
-    assert.ok(declared, label + ' block mixes --good with --' + partnerTok);
+    assert.ok(declared, modeName + ' block mixes --good with --' + partnerTok);
     const w = Number(declared[1]) / 100;
-    const partner = toOklab(hexes(partnerTok)[mode]);
+    palBlocks.filter((b) => b.mode === modeName).forEach((blk) => {
+    const label = modeName + ' [' + blk.palette + ']';
+    const partner = toOklab(blk.vals[partnerTok]);
     DEEP.forEach(([, srcTok]) => {
       const src = toOklab(hexes(srcTok)[mode]);
       const mix = src.map((v, i) => v * (1 - w) + partner[i] * w);
@@ -278,6 +304,7 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
         label + ' --' + srcTok + ' hue ' + hue(src).toFixed(0) + '° drifts ' +
         drift.toFixed(0) + '° to ' + hue(mix).toFixed(0) + '° in the -deep mix (max ' +
         MAX_DRIFT_DEG + '°) — a semantic colour must not change family');
+    });
     });
   });
 });
@@ -4117,9 +4144,8 @@ test('no Timesheet purge tier exists (keep-forever); the CN tier keeps the heade
     'no headerRows/width drift at the CN call site');
 });
 
-console.log('\ntc/script_clock.html — night-sky phases + moon + skeleton loaders (operator picks a+b+d)');
+console.log('\ntc/script_clock.html — night-sky phases + skeleton loaders (operator picks a+b)');
 const clkSkyFor_ = loadFunction(sb, 'tc/script_clock.html', 'clkSkyFor_');
-const clkMoonPhase_ = loadFunction(sb, 'tc/script_clock.html', 'clkMoonPhase_');
 
 test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Night" is gone)', () => {
   assert.strictEqual(clkSkyFor_(10).phase + '|' + clkSkyFor_(10).stars, 'Morning|0', 'day phases carry no stars');
@@ -4133,20 +4159,6 @@ test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Nigh
   const gradients = [18, 21, 0, 3, 4].map((h) => clkSkyFor_(h).grad);
   assert.strictEqual(new Set(gradients).size, gradients.length, 'each night sub-phase has its own gradient');
   [18, 21, 0, 3, 4].forEach((h) => assert.strictEqual(clkSkyFor_(h).glyph, 'moon'));
-});
-
-test('clkMoonPhase_ tracks the synodic cycle from the 2000-01-06 reference new moon', () => {
-  const ref = Date.UTC(2000, 0, 6, 18, 14);
-  const day = 86400000;
-  assert.strictEqual(clkMoonPhase_(ref).name, 'New Moon');
-  assert.ok(clkMoonPhase_(ref).frac < 0.01, 'reference instant ≈ frac 0');
-  assert.strictEqual(clkMoonPhase_(ref + 14.765 * day).name, 'Full Moon', 'half a synodic month later');
-  assert.strictEqual(clkMoonPhase_(ref + 7.38 * day).name, 'First Quarter');
-  assert.strictEqual(clkMoonPhase_(ref + 22.15 * day).name, 'Last Quarter');
-  assert.strictEqual(clkMoonPhase_(ref + 29.530588853 * day).name, 'New Moon', 'full cycle wraps');
-  assert.strictEqual(clkMoonPhase_(ref - 14.765 * day).name, 'Full Moon', 'pre-reference dates wrap correctly (negative mod)');
-  const m = clkMoonPhase_(Date.UTC(2026, 6, 10));
-  assert.ok(m.octant >= 0 && m.octant <= 7 && m.name, 'always a valid octant/name');
 });
 
 test('the Dashboard uses card-shaped skeletons — no sweep bar remains (operator pick)', () => {
@@ -4188,13 +4200,12 @@ test('L-35: spanishSearchQuery_ keeps the {to: cc:} brace-OR (Cc\'d requests ent
   assert.ok(/newer_than:7d$/.test(q), 'window rides the query');
 });
 
-test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok + no photo', () => {
+test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok', () => {
   const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   const fn = clockSrc.match(/function clkShootMaybe_\(\) \{[\s\S]*?\n\}/);
   assert.ok(fn, 'clkShootMaybe_ found');
   assert.ok(/_clkLastStarDensity < 2/.test(fn[0]), 'deep-night density gate (< 2 returns)');
   assert.ok(/prefers-reduced-motion/.test(fn[0]), 'reduced-motion skip (a non-animating streak would linger)');
-  assert.ok(/has-bg/.test(fn[0]), 'photo mode skips the decor');
   assert.ok(/clkSchedStartMin_/.test(fn[0]), 'rep-local shift-midpoint gate');
 });
 
@@ -7135,8 +7146,10 @@ test('#3: the two permanently-non-empty CDR reference lists fold behind a disclo
 });
 
 test('#4: the alert threshold is server-shipped (never client-mirrored) and drives banding + the target line', () => {
+  // Four ships since 2026-08-12: the three Metrics endpoints plus
+  // getDashboardMetrics, whose KPI banding uses the same operator-set target.
   const ships = (mopCode.match(/alertThreshold: CONFIG\.CDR_ALERT_THRESHOLD \|\| 85/g) || []).length;
-  assert.strictEqual(ships, 3, 'all three metrics endpoints ship CONFIG.CDR_ALERT_THRESHOLD');
+  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships CONFIG.CDR_ALERT_THRESHOLD');
   // No client mirror: the partial must not hardcode 85 as a fallback — absent
   // field (a ≤5-min stale cached payload) degrades to the LEGACY behavior.
   assert.ok(!/alertThreshold \|\| 85|thr \|\| 85/.test(mopPartial), 'the client never invents its own 85');
@@ -7258,8 +7271,11 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   const dash = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
   assert.ok(/var MIN_COHORT = 1;/.test(dash),
     'the operator decision: the Dashboard card renders team data whenever anyone reported');
-  assert.ok(/dash_metrics_v2:/.test(dash) && !/dash_metrics_v1:/.test(dash),
-    'the cache key bumped with the payload semantics (stale v1 must not serve hidden-team rounds)');
+  // The key bumps with every payload-semantics change (v2 = cohort hide
+  // dropped; v3 = prev/thresholds added) — a stale entry must never serve the
+  // previous contract for the TTL after a deploy.
+  assert.ok(/dash_metrics_v3:/.test(dash) && !/dash_metrics_v[12]:/.test(dash),
+    'the cache key bumped with the payload semantics');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
   // peer-benchmark surface) keeps its N=3 guard — INV-124 proper.
   const my = strip(extractRawFunction('Code.js', 'getMyMetrics'));
@@ -8390,6 +8406,297 @@ test('break reminders fire from the SHELL, once per rep-local day, and the ticke
     'clkUpdateBreak_ only paints the chip — firing here too would double-toast');
   assert.ok(!/clkBreakReminderMin_/.test(nc(extractScript('tc/script_clock.html'))),
     'the Clock-local lead-time helper went with its only reader (INV-184)');
+});
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-12 — clock-card cleanup, Dashboard KPI banding +
+// month-over-month deltas, and reminder toasts that wait for their reader.
+console.log('\noperator 2026-08-12: clock cleanup, dashboard deltas, sticky reminders');
+
+test('the clock-card photo capability and the moon are fully gone (INV-184)', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  // Selector AND behaviour: a dead rule left behind is the next reader's false
+  // lead, and a dead localStorage key is operator state nobody maintains.
+  ['clk-hero-bg', 'clk-bg-ctrl', 'clk-bg-btn', 'has-bg', 'clk-moon',
+   'umsClockBg', 'CLK_BG_KEY', 'clkBgApply_', 'clkBgChoose_', 'clkBgOnFile_',
+   'clkBgDownscale_', 'clkMoonPhase_', 'CLK_MOON_SHADE'].forEach((dead) => {
+    assert.ok(clk.indexOf(dead) < 0, dead + ' reappeared in the Clock partial');
+  });
+  // The star field and the shooting star SURVIVE — only the moon went.
+  // Assert the star field is still EMITTED, not merely that the class is
+  // mentioned somewhere — a surviving CSS rule proves nothing about the render.
+  assert.ok(/deco\.className = 'clk-stars'/.test(clk) && /class="st'/.test(clk),
+    'the star field still renders');
+  assert.ok(/function clkShootMaybe_/.test(clk) && /clk-shoot/.test(clk), 'and the shooting star with it');
+  // And the z-index rule no longer excludes selectors nothing emits.
+  assert.ok(!/:not\(\.clk-sky-bg\)|:not\(\.clk-bg-ctrl\)/.test(clk),
+    'the sky z-index rule dropped its dead :not() exclusions');
+});
+
+// The slack constant is module-level, so pull the REAL declaration into the
+// sandbox rather than mirroring its value here (a mirrored 5 would drift).
+vm.runInContext(
+  extractScript('tc/script_clock.html').match(/var DASH_TONE_SLACK_PP = [^;]+;/)[0], sb);
+const dashPctTone_ = loadFunction(sb, 'tc/script_clock.html', 'dashPctTone_');
+const dashDelta_ = loadFunction(sb, 'tc/script_clock.html', 'dashDelta_');
+
+test('dashPctTone_ — bands by direction, and renders NO verdict without a target', () => {
+  // % Answered: higher is better, target 85.
+  assert.strictEqual(dashPctTone_(88, 85, false), 'good');
+  assert.strictEqual(dashPctTone_(85, 85, false), 'good', 'AT target is good, not warn');
+  assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'within the 5pp slack');
+  assert.strictEqual(dashPctTone_(80, 85, false), 'warn', 'exactly 5pp off is still warn');
+  assert.strictEqual(dashPctTone_(79, 85, false), 'crit');
+  // Transfer %: LOWER is better — the direction is the whole point.
+  assert.strictEqual(dashPctTone_(12, 20, true), 'good');
+  assert.strictEqual(dashPctTone_(24, 20, true), 'warn');
+  assert.strictEqual(dashPctTone_(31, 20, true), 'crit');
+  assert.strictEqual(dashPctTone_(12, 20, false), 'crit', 'the direction flag actually flips the band');
+  // A colour is a verdict: with no target (operator nulled CDR_TRANSFER_TARGET_PCT,
+  // or an older server that ships neither) the value renders untoned.
+  assert.strictEqual(dashPctTone_(12, null, true), '', 'no target → no tone');
+  assert.strictEqual(dashPctTone_(null, 20, true), '', 'no value → no tone');
+});
+
+test('dashDelta_ — an absent comparison is NOT "no change", and volumes get no verdict', () => {
+  assert.strictEqual(dashDelta_(88, null, 'pp', false), null, 'missing prior → no delta at all');
+  assert.strictEqual(dashDelta_(null, 80, 'pp', false), null);
+  assert.strictEqual(dashDelta_(80, 80, 'pp', false).text, 'no change', 'equal IS reported, distinctly');
+  const up = dashDelta_(88, 80, 'pp', false);
+  assert.strictEqual(up.text, '▲ 8 pp');
+  assert.strictEqual(up.tone, 'good', 'rising % Answered is good');
+  assert.strictEqual(dashDelta_(24, 20, 'pp', true).tone, 'crit', 'rising Transfer % is not');
+  assert.strictEqual(dashDelta_(16, 20, 'pp', true).tone, 'good');
+  // A volume delta is call load, not performance — arrow, no colour.
+  const vol = dashDelta_(120, 100, 'count');
+  assert.strictEqual(vol.text, '▲ 20');
+  assert.strictEqual(vol.tone, '', 'volume carries no verdict');
+  assert.strictEqual(dashDelta_(310, 295, 'sec').text, '▲ 15s', 'talk time reads in seconds');
+});
+
+test('dashboardPrevRange_ — MTD compares LIKE-FOR-LIKE elapsed days, clamped down', () => {
+  const ctx = vm.createContext({ Date, String, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'dashboardPrevRange_'), ctx, { filename: 'Code.js#prev' });
+  vm.runInContext('var DASH_MONTH_ABBR = ' +
+    JSON.stringify(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) + ';', ctx);
+  const r = ctx.dashboardPrevRange_('mtd', '2026-08-12');
+  // NOT the whole prior month: 12 days against 31 would read as a collapse
+  // every month and "recover" on the 31st.
+  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-12');
+  assert.strictEqual(r.label, 'Jul 1–12', 'the label states the window it compares');
+  assert.strictEqual(!!r.clamped, false);
+  // Clamps DOWN into a shorter month — never up, so the comparison can only
+  // under-report (the safe direction for a figure a rep is judged by).
+  const feb = ctx.dashboardPrevRange_('mtd', '2026-03-31');
+  assert.strictEqual(feb.from + '..' + feb.to, '2026-02-01..2026-02-28');
+  assert.strictEqual(feb.clamped, true);
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2028-03-30').to, '2028-02-29', 'leap year');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').from, '2025-12-01', 'January crosses the year');
+  // Deliberately scoped: only MTD is compared.
+  ['yesterday', 'ytd', ''].forEach((k) => assert.strictEqual(ctx.dashboardPrevRange_(k, '2026-08-12'), null));
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', 'nonsense'), null);
+});
+
+test('getDashboardMetrics: one shaper for both windows, best-effort prev, degraded rounds uncached', () => {
+  const strip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  // ONE shaper, called for the period AND its comparison — a delta computed
+  // from a differently-shaped figure than the value above it is worse than none.
+  assert.strictEqual((fn.match(/var shapeWindow = function/g) || []).length, 1, 'ONE shaper');
+  assert.strictEqual((fn.match(/= shapeWindow\(/g) || []).length, 2,
+    'called for the period AND its comparison window');
+  assert.ok(/try \{[\s\S]*shapeWindow\(prevRange\.from, prevRange\.to\)[\s\S]*catch \(e\) \{ prevUnavailable = true/.test(fn),
+    'the comparison read is best-effort — a failure drops the deltas, never the numbers');
+  assert.ok(/!noteRes\.unavailable && !prevUnavailable/.test(fn),
+    'a degraded round is never cached (INV-129) — otherwise the blip outlives itself');
+  assert.ok(/transferTarget: \(CONFIG\.CDR_TRANSFER_TARGET_PCT == null\) \? null/.test(fn),
+    'an unset transfer target ships null so the client renders NO tone (a verdict nobody set)');
+  // The client must not mirror either threshold.
+  const clk = strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.ok(!/transferTarget\s*\|\|\s*\d/.test(clk) && !/alertThreshold\s*\|\|\s*\d/.test(clk),
+    'the Dashboard never invents its own threshold');
+});
+
+test('both dashboard cards open on MTD, derived from the period list', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/CLK_DASH_DEFAULT_IDX = CLK_DASH_PERIODS\.indexOf\('mtd'\)/.test(clk),
+    'derived, so reordering the period list cannot silently repoint the default');
+  assert.ok(/mine: CLK_DASH_DEFAULT_IDX, team: CLK_DASH_DEFAULT_IDX/.test(clk),
+    'BOTH cards — two adjacent cards on different periods reads as a bug');
+  assert.ok(/CLK_DASH\.mine = CLK_DASH_DEFAULT_IDX; CLK_DASH\.team = CLK_DASH_DEFAULT_IDX;/.test(clk),
+    'and the new-day reset returns to the same default, not to index 0');
+  // The comparison window is NAMED in the card, and a failed read says so.
+  const note = extractFunction('tc/script_clock.html', 'clkDashCompareNote_');
+  assert.ok(/vs ' \+ esc\(prevLabel\)/.test(note) && /comparison unavailable/.test(note),
+    'the foot names the window, and distinguishes a failed comparison from none');
+});
+
+test('a reminder toast waits for its reader; routine toasts still self-dismiss', () => {
+  const core = extractFunction('script_core.html', 'showToast');
+  assert.ok(/if \(!opts\.sticky\) setTimeout\(dismiss, 3500\)/.test(core),
+    'only NON-sticky toasts auto-dismiss');
+  assert.ok(/x\.setAttribute\('aria-label'/.test(core) && /createElement\('button'\)/.test(core),
+    'a toast with no timeout owes a real, named dismiss control (INV-173)');
+  // The cap must not silently evict the reminder the rep has not seen yet.
+  assert.ok(/querySelector\('\.toast:not\(\.toast-sticky\)'\) \|\| stack\.firstChild/.test(core),
+    'the stack cap evicts the oldest NON-sticky first, and stays a real bound');
+  const rem = extractFunction('script_core.html', 'notifyRemind_');
+  assert.ok(/showToast\(msg, tone \|\| 'toast-warn', \{ sticky: true \}\)/.test(rem),
+    'every reminder goes out sticky — the chime calls the rep back after 3.5s has passed');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.toast-x \{/.test(css), 'the dismiss control is styled, not a bare UA button');
+});
+
+
+// ---------------------------------------------------------------------------
+// Colour palettes (operator 2026-08-12). Four rules hold the feature together;
+// each is a thing that would be invisible in review and obvious to a user.
+console.log('\ncolour palettes — contract, construction, and the picker');
+
+test('a palette redefines the NEUTRALS and the ACCENT — never a semantic colour', () => {
+  const { blocks } = tokenBlocks();
+  // Green means resolved, amber at risk, red overdue. A theme that restates a
+  // verdict in another hue makes every status chip mean something different
+  // per user — so the semantic set is off-limits to a palette by contract.
+  const FORBIDDEN = ['good', 'good-soft', 'warn', 'warn-soft', 'destructive', 'destructive-soft',
+    'info', 'info-soft', 'success-deep', 'warning-deep', 'danger-deep', 'info-deep',
+    'intake-ppd', 'intake-pmd', 'intake-pap'];
+  const pal = blocks.filter((b) => b.palette !== 'console');
+  assert.ok(pal.length >= 6, 'at least three alternative palettes x two modes');
+  pal.forEach((b) => {
+    FORBIDDEN.forEach((tok) => {
+      assert.ok(!new RegExp('--' + tok + ':').test(b.body),
+        b.id + ' redefines the semantic token --' + tok + ' — a palette may not restate a verdict');
+    });
+    // And it must declare the full neutral set, so the block is verifiable on
+    // its own rather than depending on what happens to cascade into it.
+    ['paper', 'paper-2', 'paper-3', 'paper-card', 'ink', 'muted', 'muted-2', 'muted-3',
+     'line', 'line-2', 'accent', 'accent-2'].forEach((tok) => {
+      assert.ok(b.vals[tok], b.id + ' is missing --' + tok);
+    });
+  });
+});
+
+test('every palette colour is a hue rotation at CONSTANT luminance', () => {
+  const { blocks } = tokenBlocks();
+  // This is the CONSTRUCTION that makes the AA test above pass for a palette
+  // nobody re-measured by hand: each colour has the same WCAG relative
+  // luminance as its Console counterpart, so every contrast ratio in the app
+  // is preserved exactly. If someone hand-edits a hex, this catches it even
+  // when the edit happens to stay above 4.5:1.
+  const base = Object.fromEntries(blocks.filter((b) => b.palette === 'console').map((b) => [b.mode, b.vals]));
+  blocks.filter((b) => b.palette !== 'console').forEach((b) => {
+    Object.keys(b.vals).forEach((tok) => {
+      const ref = base[b.mode][tok];
+      if (!ref) return;                       // a token Console does not declare as hex
+      const d = Math.abs(wcagLum(b.vals[tok]) - wcagLum(ref));
+      assert.ok(d < 0.004, b.id + ' --' + tok + ' ' + b.vals[tok] + ' has luminance ' +
+        wcagLum(b.vals[tok]).toFixed(4) + ' vs Console ' + ref + ' ' + wcagLum(ref).toFixed(4) +
+        ' — a palette re-tints at constant luminance so contrast is preserved by construction');
+    });
+    assert.strictEqual(b.vals['paper-card'], base[b.mode]['paper-card'] === '#ffffff' && b.mode === 'light'
+      ? '#ffffff' : b.vals['paper-card'],
+      'light --paper-card must stay #ffffff — white is the only colour at luminance 1.0');
+  });
+});
+
+test('the picker swatches are pinned to the palettes they claim to preview', () => {
+  const { toks, blocks } = tokenBlocks();
+  // The first hand-typed version of the swatch block had ALREADY drifted from
+  // the generated palette hexes — a picker that previews the wrong colour is
+  // worse than no preview.
+  const darkAt = toks.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n    --pal-');
+  assert.ok(darkAt > 0, 'the dark swatch block exists (a swatch must preview what the rep gets)');
+  const sw = (mode) => {
+    const scope = mode === 'dark' ? toks.slice(darkAt)
+      : toks.slice(toks.indexOf('--pal-console-paper'), darkAt);
+    return Object.fromEntries([...scope.matchAll(/--pal-([a-z]+)-(paper|accent):\s*(#[0-9a-f]{6})/g)]
+      .map((m) => [m[1] + '-' + m[2], m[3]]));
+  };
+  ['light', 'dark'].forEach((mode) => {
+    const swatches = sw(mode);
+    blocks.filter((b) => b.mode === mode).forEach((b) => {
+      ['paper', 'accent'].forEach((k) => {
+        assert.strictEqual(swatches[b.palette + '-' + k], b.vals[k],
+          'swatch --pal-' + b.palette + '-' + k + ' (' + mode + ') must equal the palette block');
+      });
+    });
+  });
+});
+
+test('the palette key list is the same in all three places it appears', () => {
+  const { toks } = tokenBlocks();
+  const core = fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const idx = fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8');
+  const inCss = [...new Set([...toks.matchAll(/:root\[data-palette="([a-z]+)"\]/g)].map((m) => m[1]))].sort();
+  const reg = core.slice(core.indexOf('const PALETTES = ['), core.indexOf('];', core.indexOf('const PALETTES = [')));
+  const inReg = [...reg.matchAll(/key: '([a-z]+)'/g)].map((m) => m[1]);
+  const inBoot = JSON.parse((idx.match(/var PALETTE_KEYS = (\[[^\]]+\])/) || [])[1].replace(/'/g, '"'));
+  // Console is the DEFAULT: it has no stylesheet block by design, so it must
+  // be first in both lists and absent from the CSS.
+  assert.strictEqual(inReg[0], 'console', 'Console leads the picker');
+  assert.strictEqual(inBoot[0], 'console', 'and the boot list');
+  assert.ok(inCss.indexOf('console') < 0, 'Console declares no block — an unknown value degrades to it');
+  assert.deepStrictEqual(inReg.slice(1).sort().join(','), inCss.join(','),
+    'the picker offers exactly the palettes the stylesheet defines');
+  assert.deepStrictEqual(inBoot.slice().sort().join(','), inReg.slice().sort().join(','),
+    'the boot allowlist and the picker agree');
+  // The boot gate must reject an unknown stored value rather than reflect it.
+  assert.ok(/PALETTE_KEYS\.indexOf\(storedPal\) > 0 \? storedPal : 'console'/.test(idx),
+    'a corrupt stored palette degrades to Console');
+});
+
+test('the picker is real buttons, in both shell copies, with its own settings row', () => {
+  const core = fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const css = fs.readFileSync(path.resolve(__dirname, '../../web-app/styles.html'), 'utf8');
+  const strip = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const c = strip(core);
+  // INV-173: a colour swatch is a control, so it is a <button> with a NAME —
+  // a colour alone does not say which palette it is.
+  assert.ok(/<button type="button" class="sb-pal-btn" data-palette-target="\$\{p\.key\}"[\s\S]*?aria-label="\$\{esc\(p\.label\)\} palette"/.test(c),
+    'each swatch is a named button');
+  // INV-191: the reflector keys on the attribute that MEANS palette swatch.
+  const idx = strip(fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8'));
+  assert.ok(/querySelectorAll\('\[data-palette-target\]'\)/.test(idx),
+    'the reflector selects by data-palette-target, not by a class another control may borrow');
+  // Two rendered copies (sidebar + mobile header), so no ids — and both must
+  // be reflected on render.
+  assert.strictEqual((c.match(/\$\{paletteToggle\}/g) || []).length, 2, 'sidebar AND mobile header render it');
+  assert.ok(/syncPaletteToggleState\(\);/.test(c), 'renderShell reflects the stored palette on every render');
+  assert.ok(!/id="sb-pal/.test(c), 'no id — two copies cannot share one');
+  // MEASURED: the palette row stacks its label so four swatches fit one line,
+  // and it must keep the settings rows adjacent or flex pushes Alerts to the
+  // bottom of the sidebar with a ~200px hole above it.
+  assert.ok(/\.sb-theme \+ \.sb-pal, \.sb-pal \+ \.sb-theme \{ margin-top: 0;/.test(css),
+    'the palette row keeps the settings rows adjacent (margin-top: auto would strand Alerts)');
+});
+
+test('the DOM harness stubs every global index.html defines (derived)', () => {
+  // index.html's <head> script is not a partial, so the jsdom harness stubs
+  // its globals by hand — and a new one (setTimeClockPalette) silently broke
+  // 19 DOM tests the moment renderShell called it. Derive the obligation
+  // rather than remembering it (INV-179).
+  const idx = fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8');
+  const boot = fs.readFileSync(path.resolve(__dirname, 'dom/boot.js'), 'utf8');
+  const defined = [...new Set([...idx.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=\s*function/g)].map((m) => m[1]))];
+  assert.ok(defined.length >= 4, 'found the boot-script globals');
+  defined.forEach((g) => assert.ok(new RegExp('window\\.' + g + '\\s*=').test(boot),
+    'test/client/dom/boot.js does not stub window.' + g + ' — the shell calls it by bare name'));
+});
+
+test('a palette block out-specifies the base dark block in BOTH directions', () => {
+  const { toks } = tokenBlocks();
+  // The trap this codebase has hit twice (V-2/V-3): :root[data-palette="x"]
+  // and :root[data-mode="dark"] are BOTH (0,2,0), so for a dark-mode user on a
+  // palette the winner would be decided by SOURCE ORDER. The :not() / paired-
+  // attribute forms make both (0,3,0), which beats the base block regardless
+  // of where the palette block sits in the file.
+  const light = toks.match(/:root\[data-palette="[a-z]+"\]:not\(\[data-mode="dark"\]\)/g) || [];
+  const dark = toks.match(/:root\[data-palette="[a-z]+"\]\[data-mode="dark"\]/g) || [];
+  assert.ok(light.length >= 3 && light.length === dark.length,
+    'each palette carries a :not([data-mode="dark"]) light block and a paired-attribute dark block');
+  assert.ok(!/:root\[data-palette="[a-z]+"\]\s*[,{]/.test(toks),
+    'a bare :root[data-palette=x] block would tie with the base dark block on specificity');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

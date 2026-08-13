@@ -7,35 +7,9 @@
   /* §10 sky cross-fade — stacked gradient layers (CSS can't transition between
      two gradients, so we cross-fade opacity between two absolute layers). */
   .clk-sky-layers { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; }
-  .clk-sky > :not(.clk-sky-layers):not(.clk-sky-bg):not(.clk-bg-ctrl) { position: relative; z-index: 1; }
-  /* Optional per-browser background image ("for fun") — a downscaled raster
-     data-URL (localStorage) shown as the CLOCK CARD's background. Operator fix
-     2026-07-09: since the Dashboard redesign the hero IS the clock tile, whose
-     opaque sky gradient sat ON TOP of the photo layer — the upload "worked"
-     (localStorage set, clear button appeared) but the photo was 100% hidden.
-     With a photo set, the tile goes transparent and the sky-gradient layers
-     hide, so the photo (with its baked dark scrim) IS the card; the white
-     time/text + phase glyph render over it unchanged. Clearing restores the
-     time-of-day sky. */
+  .clk-sky > :not(.clk-sky-layers) { position: relative; z-index: 1; }
   .hero { position: relative; overflow: hidden; }
-  .clk-hero-bg { position: absolute; inset: 0; z-index: 0; display: none;
-    background-size: cover; background-position: center; border-radius: inherit; }
-  .hero.has-bg .clk-hero-bg { display: block; }
   .hero > .greet, .hero > .clk { position: relative; z-index: 1; }
-  .hero.has-bg .clk.clk-sky { background: transparent; }
-  .hero.has-bg .clk-sky-layers { display: none; }
-  /* Over a photo the greeting text turns light for contrast (the clock tile is
-     opaque, so it needs no change). */
-  .hero.has-bg .greet-kicker { color: rgba(255, 255, 255, .82); }
-  .hero.has-bg .greet-name { color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
-  .hero.has-bg .status-sentence { color: rgba(255, 255, 255, .94); text-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
-  .hero.has-bg .status-sentence strong { color: #fff; }
-  .clk-bg-ctrl { position: absolute; right: 10px; bottom: 8px; z-index: 2; display: flex; gap: 6px; }
-  .clk-bg-btn { appearance: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .34); color: #fff; border-radius: 8px;
-    cursor: pointer; opacity: .5; transition: opacity .15s ease, background .15s ease; }
-  .clk-sky:hover .clk-bg-btn, .hero:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
-  .clk-bg-btn:hover { background: rgba(255, 255, 255, .3); }
   .clk-sky .clk-time { color: #fff; }
   /* V-2 (cycle 12): the AM/PM is a nested span whose own rule in styles.html
      (`.hero .clk-time .ampm { color: var(--muted) }`, specificity 0,3,0) BEAT
@@ -73,9 +47,6 @@
     12%  { opacity: .95; }
     to   { opacity: 0; transform: translate(-150px, 94px) rotate(-32deg); }
   }
-  .clk-moon { position: absolute; right: 16px; top: 42px; width: 30px; height: 30px; border-radius: 50%;
-    background: #f2eddc; overflow: hidden; box-shadow: 0 0 14px rgba(255, 246, 214, .35); pointer-events: auto; }
-  .clk-moon .shade { position: absolute; inset: 0; border-radius: 50%; background: rgba(14, 18, 38, .92); }
 
   /* Dashboard card-shaped skeletons (operator pick 2026-07-10) — compose the
      shared .skel shimmer (styles.html) into the shapes the briefing cards
@@ -249,6 +220,18 @@
   .dash-kpi-v { font-family: var(--display, var(--ui)); font-size: 1.3rem; font-weight: 700; color: var(--ink); line-height: 1; }
   .dash-kpi-l { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 5px; }
   .dash-kpi-big .dash-kpi-v { font-size: 2rem; color: var(--accent); }
+  /* KPI banding (operator 2026-08-12) — the -deep aliases, so the value stays
+     WCAG-legible as body-weight text in both modes (the plain --good/--warn
+     fills are surface tones). Declared AFTER .dash-kpi-big so a toned hero
+     value wins over the accent green. */
+  .dash-kpi-v.dash-v-good, .dash-kpi-big .dash-kpi-v.dash-v-good { color: var(--success-deep); }
+  .dash-kpi-v.dash-v-warn, .dash-kpi-big .dash-kpi-v.dash-v-warn { color: var(--warning-deep); }
+  .dash-kpi-v.dash-v-crit, .dash-kpi-big .dash-kpi-v.dash-v-crit { color: var(--danger-deep); }
+  /* Period-over-period delta. Neutral by default — a volume delta is call load,
+     not performance, so it carries the arrow without a verdict. */
+  .dash-kpi-d { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--muted-2); margin-top: 3px; }
+  .dash-kpi-d.dash-d-good { color: var(--success-deep); }
+  .dash-kpi-d.dash-d-crit { color: var(--danger-deep); }
   .dash-card-foot { font-size: 10px; color: var(--muted); margin-top: 12px; }
   .dash-empty { font-size: 13px; color: var(--muted); min-height: 56px; display: flex; align-items: center; }
   /* Spanish pending-request preview (d2) — surfaced when there are open requests. */
@@ -388,8 +371,8 @@ function renderClockView(area) {
   // Dashboard (Time Clock → Dashboard): two-column grid — clock rail (left) +
   // briefing carousels (main). The greeting moves to the top of the main column
   // so the clock card fits the 360px rail; #clk-hero is kept (just the clock now)
-  // so the umsClockBg background + all clock machinery (#clk-sky, #live-time,
-  // #clk-regions, ribbon) keep working. Annual PTO relocated to the Time/PTO tab.
+  // so all clock machinery (#clk-sky, #live-time, #clk-regions, ribbon) keeps
+  // working. Annual PTO relocated to the Time/PTO tab.
   const isMgr = !!(s && s.isManager);
   const onClock = !!(stats && (stats.state === 'working' || stats.state === 'lunch'));
   const onClockPill = onClock
@@ -408,7 +391,6 @@ function renderClockView(area) {
     <div class="dash-grid" id="dash-grid">
       <div class="dash-rail">
         <div class="hero dash-hero" id="clk-hero">
-          <div class="clk-hero-bg" id="clk-hero-bg"></div>
           <div class="clk clk-sky" id="clk-sky">
             <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
             <div class="clk-sky-top">
@@ -422,11 +404,6 @@ function renderClockView(area) {
             </div>
             <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
             <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
-            <div class="clk-bg-ctrl">
-              <button class="clk-bg-btn" id="clk-bg-set" title="Set a background image (saved to this browser only)" aria-label="Set clock background image" onclick="clkBgChoose_(event)">${icon('image', 13)}</button>
-              <button class="clk-bg-btn" id="clk-bg-clear" title="Remove background" aria-label="Remove clock background" style="display:none" onclick="clkBgClear_(event)">${icon('x', 13)}</button>
-            </div>
-            <input type="file" id="clk-bg-input" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="clkBgOnFile_(this)">
           </div>
         </div>
 
@@ -460,7 +437,6 @@ function renderClockView(area) {
   loadTeammateStatus();
   loadCoverageStrip_();
   clkApplySky_(true);        // initial gradient + phase glyph
-  clkBgApply_();             // optional per-browser background image (localStorage)
   clkUpdateRegions_();       // paint the rotating world-clock strip immediately
   clkBindTzSelect_();
   clkLoadNoteVolume_();      // C2 — note-volume histogram (async, best-effort)
@@ -476,7 +452,12 @@ function renderClockView(area) {
 // cone are documented follow-ons.
 var CLK_DASH_PERIODS = ['yesterday', 'mtd', 'ytd'];
 var CLK_DASH_LABELS = ['Yesterday', 'MTD', 'YTD'];
-var CLK_DASH = { mine: 0, team: 0, data: {}, isMgr: false, loadedDay: '', loadedAt: 0, extra: null, extraDay: '', extraAt: 0, spIdx: 0 };
+// Operator 2026-08-12: both cards open on MTD. Asked for on the Department card;
+// applied to BOTH because they sit side by side with independent chips, and two
+// adjacent cards opening on different periods reads as a bug rather than a
+// default. Derived from the period list so a reorder can't silently repoint it.
+var CLK_DASH_DEFAULT_IDX = CLK_DASH_PERIODS.indexOf('mtd');
+var CLK_DASH = { mine: CLK_DASH_DEFAULT_IDX, team: CLK_DASH_DEFAULT_IDX, data: {}, isMgr: false, loadedDay: '', loadedAt: 0, extra: null, extraDay: '', extraAt: 0, spIdx: 0 };
 // Stale-while-revalidate freshness window: a re-render within this of the last
 // load renders from cache with NO loader and NO refetch; older renders still
 // paint the cache instantly, then refresh in the background (silent swap). This
@@ -531,7 +512,8 @@ function clkLoadDashboard_(isMgr) {
     clkRenderDashboard_();
     if (Date.now() - (CLK_DASH.loadedAt || 0) < CLK_DASH_FRESH_MS) return;
   } else {
-    CLK_DASH.mine = 0; CLK_DASH.team = 0;   // first load (or new day) → reset carousels
+    // first load (or new day) → reset both carousels to the default period
+    CLK_DASH.mine = CLK_DASH_DEFAULT_IDX; CLK_DASH.team = CLK_DASH_DEFAULT_IDX;
   }
   var requestedView = currentView, got = {}, done = 0, anyFail = false;
   var finish = function (pk, res) {
@@ -646,10 +628,64 @@ function clkDashSet_(key, idx) {
   clkDashFit_(key);   // re-fit the viewport to the newly-active slide
 }
 
-function clkDashKpi_(label, val, big) {
-  return '<div class="dash-kpi' + (big ? ' dash-kpi-big' : '') + '">' +
-    '<div class="dash-kpi-v tabular">' + esc(String(val)) + '</div>' +
-    '<div class="dash-kpi-l">' + esc(label) + '</div></div>';
+// ── KPI banding + period-over-period deltas (operator 2026-08-12) ───────────
+// Slack, in PERCENTAGE POINTS, between "at/better than target" (good) and the
+// crit band. Stated as one number so the band is explainable in a sentence:
+// at or better than target = green, within 5 points = amber, beyond = red.
+var DASH_TONE_SLACK_PP = 5;
+
+/** Pure (Node-pinned) — tri-tone band for a percentage against its target.
+ *  `lowerIsBetter` inverts the direction (Transfer %). Returns '' — NO tone —
+ *  for a null value or a null target, because a colour is a verdict and the
+ *  app must not render one on a number nobody set (the operator can null
+ *  CONFIG.CDR_TRANSFER_TARGET_PCT to turn Transfer % banding off entirely). */
+function dashPctTone_(value, target, lowerIsBetter) {
+  if (value == null || target == null || !isFinite(value) || !isFinite(target)) return '';
+  var ok = lowerIsBetter ? (value <= target) : (value >= target);
+  if (ok) return 'good';
+  var miss = lowerIsBetter ? (value - target) : (target - value);
+  return miss <= DASH_TONE_SLACK_PP ? 'warn' : 'crit';
+}
+
+/** Pure (Node-pinned) — one KPI's change vs the comparison window. Returns null
+ *  when either side is missing (an absent comparison is NOT "no change" — the
+ *  card must render nothing rather than a reassuring 0). `kind` picks the unit:
+ *  'pp' (percentage points), 'count', 'sec'. `lowerIsBetter` tones the arrow;
+ *  omit it for a volume, which is call load rather than performance and so gets
+ *  no verdict. */
+function dashDelta_(cur, prev, kind, lowerIsBetter) {
+  if (cur == null || prev == null || !isFinite(cur) || !isFinite(prev)) return null;
+  var diff = cur - prev;
+  var rounded = (kind === 'pp') ? Math.round(diff * 10) / 10 : Math.round(diff);
+  if (rounded === 0) return { text: 'no change', tone: '', up: null };
+  var up = rounded > 0, mag = Math.abs(rounded);
+  var text = (up ? '▲ ' : '▼ ') +
+    (kind === 'pp' ? mag + ' pp' : kind === 'sec' ? mag + 's' : mag);
+  var tone = '';
+  if (lowerIsBetter === true) tone = up ? 'crit' : 'good';
+  else if (lowerIsBetter === false) tone = up ? 'good' : 'crit';
+  return { text: text, tone: tone, up: up };
+}
+
+function clkDashDeltaHtml_(d, prevLabel) {
+  // MEASURED: .dash-kpis is align-items:flex-end, so on a card where SOME
+  // metrics have a comparison and some don't, the delta-less KPI's label sat
+  // 14px below its neighbours' — the row read as broken. Reserve the line
+  // (empty, aria-hidden) whenever this card has a comparison at all.
+  if (!d) return prevLabel ? '<div class="dash-kpi-d" aria-hidden="true">&nbsp;</div>' : '';
+  return '<div class="dash-kpi-d' + (d.tone ? ' dash-d-' + d.tone : '') + '"' +
+    (prevLabel ? ' title="vs ' + esc(prevLabel) + '"' : '') + '>' + esc(d.text) + '</div>';
+}
+
+/** opts: { big, tone, delta, prevLabel } — tone bands the VALUE, delta is the
+ *  period-over-period line under it. Both are omitted when absent, so a slide
+ *  with no comparison renders exactly as it did before this shipped. */
+function clkDashKpi_(label, val, opts) {
+  opts = opts || {};
+  return '<div class="dash-kpi' + (opts.big ? ' dash-kpi-big' : '') + '">' +
+    '<div class="dash-kpi-v tabular' + (opts.tone ? ' dash-v-' + opts.tone : '') + '">' + esc(String(val)) + '</div>' +
+    '<div class="dash-kpi-l">' + esc(label) + '</div>' +
+    clkDashDeltaHtml_(opts.delta, opts.prevLabel) + '</div>';
 }
 function clkDashEmpty_(res) {
   return '<div class="dash-empty">No call data for ' + esc((res && res.label) || 'this period') + '.</div>';
@@ -676,17 +712,51 @@ function dashProjection_(value, fromIso, toIso, periodKey) {
   return { projected: Math.round(value * (total / elapsed)), elapsed: elapsed, total: total, endLabel: endLabel };
 }
 
+/** Names the comparison window in the card foot. The LABEL is the disclosure:
+ *  MTD compares against the prior month's same elapsed days, so "vs Jul 1–12"
+ *  states the window rather than leaving the reader to assume a full month.
+ *  A failed comparison read SAYS SO instead of silently dropping the deltas —
+ *  "no arrows" and "no change" must not look alike (INV-187). */
+function clkDashCompareNote_(res, prevLabel) {
+  if (prevLabel) return ' · vs ' + esc(prevLabel);
+  if (res && res.prevUnavailable) return ' · comparison unavailable';
+  return '';
+}
+
+/** The comparison side for one card, or null. `which` is 'own' | 'team'. */
+function clkDashPrev_(res, which) {
+  var p = res && res.prev;
+  return (p && p[which]) ? { v: p[which], label: p.label } : null;
+}
+/** The banding thresholds ride the payload (never mirrored client-side); an
+ *  older server that ships neither simply renders untoned. */
+function clkDashTone_(res, kind, value) {
+  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false);
+  return dashPctTone_(value, res && res.transferTarget, true);   // Transfer % — lower is better
+}
+
 function clkDashOwnCard_(res) {
   if (!res || !res.own) return clkDashEmpty_(res);
   var o = res.own;
+  var pr = clkDashPrev_(res, 'own'), pv = pr && pr.v, pl = pr && pr.label;
   var kpis = '<div class="dash-kpis">' +
-    clkDashKpi_('Transfer %', o.transferPct != null ? o.transferPct + '%' : '—', true) +
-    clkDashKpi_('% Answered', o.pctAnswered != null ? o.pctAnswered + '%' : '—') +
-    clkDashKpi_('Answered', o.answered != null ? o.answered : '—') +
-    clkDashKpi_('Missed', o.missed != null ? o.missed : '—') +
-    clkDashKpi_('Avg talk', o.attFormatted || '—') +
+    clkDashKpi_('Transfer %', o.transferPct != null ? o.transferPct + '%' : '—',
+      { big: true, tone: clkDashTone_(res, 'transfer', o.transferPct),
+        delta: dashDelta_(o.transferPct, pv && pv.transferPct, 'pp', true), prevLabel: pl }) +
+    clkDashKpi_('% Answered', o.pctAnswered != null ? o.pctAnswered + '%' : '—',
+      { tone: clkDashTone_(res, 'answered', o.pctAnswered),
+        delta: dashDelta_(o.pctAnswered, pv && pv.pctAnswered, 'pp', false), prevLabel: pl }) +
+    // Volumes carry a delta but NO tone: they track call load, which is not the
+    // rep's to be judged on.
+    clkDashKpi_('Answered', o.answered != null ? o.answered : '—',
+      { delta: dashDelta_(o.answered, pv && pv.answered, 'count'), prevLabel: pl }) +
+    clkDashKpi_('Missed', o.missed != null ? o.missed : '—',
+      { delta: dashDelta_(o.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
+    clkDashKpi_('Avg talk', o.attFormatted || '—',
+      { delta: dashDelta_(o.attSeconds, pv && pv.attSeconds, 'sec'), prevLabel: pl }) +
   '</div>';
-  var foot = '<div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') + '</div>';
+  var foot = '<div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') +
+    clkDashCompareNote_(res, pl) + '</div>';
   // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
   // aggregate. The full daily "cone" chart would need a series in the endpoint.
   var proj = dashProjection_(o.answered, res.from, res.to, res.periodKey);
@@ -700,12 +770,20 @@ function clkDashTeamCard_(res) {
   // MIN_COHORT=1) — team:null now only means nobody reported at all.
   if (!res.team) return '<div class="dash-empty">No team call data for this period.</div>';
   var t = res.team;
+  var pr = clkDashPrev_(res, 'team'), pv = pr && pr.v, pl = pr && pr.label;
   var kpis = '<div class="dash-kpis">' +
-    clkDashKpi_('Transfer %', t.transferPct != null ? t.transferPct + '%' : '—', true) +
-    clkDashKpi_('% Answered', t.pctAnswered != null ? t.pctAnswered + '%' : '—') +
-    clkDashKpi_('Answered', t.answered != null ? t.answered : '—') +
-    clkDashKpi_('Missed', t.missed != null ? t.missed : '—') +
-  '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps</div>';
+    clkDashKpi_('Transfer %', t.transferPct != null ? t.transferPct + '%' : '—',
+      { big: true, tone: clkDashTone_(res, 'transfer', t.transferPct),
+        delta: dashDelta_(t.transferPct, pv && pv.transferPct, 'pp', true), prevLabel: pl }) +
+    clkDashKpi_('% Answered', t.pctAnswered != null ? t.pctAnswered + '%' : '—',
+      { tone: clkDashTone_(res, 'answered', t.pctAnswered),
+        delta: dashDelta_(t.pctAnswered, pv && pv.pctAnswered, 'pp', false), prevLabel: pl }) +
+    clkDashKpi_('Answered', t.answered != null ? t.answered : '—',
+      { delta: dashDelta_(t.answered, pv && pv.answered, 'count'), prevLabel: pl }) +
+    clkDashKpi_('Missed', t.missed != null ? t.missed : '—',
+      { delta: dashDelta_(t.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
+  '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps' +
+    clkDashCompareNote_(res, pl) + '</div>';
   var proj = dashProjection_(t.answered, res.from, res.to, res.periodKey);
   return kpis + (proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '');
@@ -812,7 +890,7 @@ function clkDashTrainingCard_(res) {
   });
   var todo = overdue + pending;
   var kpis = '<div class="dash-kpis">' +
-    clkDashKpi_('To do', todo, true) +
+    clkDashKpi_('To do', todo, { big: true }) +
     clkDashKpi_('Overdue', overdue) +
     clkDashKpi_('Done', doneN) +
   '</div>';
@@ -858,7 +936,7 @@ function clkDashSpanishCard_(res, pendingRes) {
       '</div>' + openLink;
   }
   return '<div class="dash-kpis">' +
-    clkDashKpi_('Pending', res.pending != null ? res.pending : '—', true) +
+    clkDashKpi_('Pending', res.pending != null ? res.pending : '—', { big: true }) +
     clkDashKpi_('Resolved · 7d', res.resolved != null ? res.resolved : '—') +
     clkDashKpi_('Median reply', res.medianMinutes != null ? res.medianMinutes + 'm' : '—') +
   '</div>' + openLink;
@@ -885,7 +963,7 @@ function clkDashRequestsCard_(res) {
     var stats = res.deptStats, open = 0, resolved = 0;
     stats.forEach(function (d) { open += d.open || 0; resolved += d.resolved || 0; });
     return '<div class="dash-kpis">' +
-      clkDashKpi_('Open', open, true) +
+      clkDashKpi_('Open', open, { big: true }) +
       clkDashKpi_('Resolved', resolved) +
       clkDashKpi_('Depts', stats.length) +
     '</div>' + openLink;
@@ -894,7 +972,7 @@ function clkDashRequestsCard_(res) {
   var mine = res.mine || [], myOpen = 0, myResolved = 0;
   mine.forEach(function (m) { if (String(m.status) === 'resolved') myResolved++; else myOpen++; });
   return '<div class="dash-kpis">' +
-    clkDashKpi_('Open', myOpen, true) +
+    clkDashKpi_('Open', myOpen, { big: true }) +
     clkDashKpi_('Resolved', myResolved) +
   '</div>' + openLink;
 }
@@ -1043,26 +1121,8 @@ function clkSkyFor_(h) {
   return { grad: 'linear-gradient(135deg,#232a52,#7a4a63)', phase: 'Pre-dawn', glyph: 'moon', stars: 1 };   // 4–5
 }
 
-/** (d) Real lunar phase — days since a reference new moon (2000-01-06 18:14
- *  UTC) mod the synodic month. Returns { frac (0 = new → .5 = full), octant
- *  0–7, name }. Self-contained + pure (Node-pinned); decorative accuracy
- *  (±hours) is plenty for a 30px moon. */
-function clkMoonPhase_(ms) {
-  var NAMES = ['New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
-               'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent'];
-  var SYNODIC = 29.530588853 * 86400000;
-  var ref = Date.UTC(2000, 0, 6, 18, 14);
-  var frac = (((ms - ref) % SYNODIC + SYNODIC) % SYNODIC) / SYNODIC;
-  var octant = Math.floor(frac * 8 + 0.5) % 8;
-  return { frac: frac, octant: octant, name: NAMES[octant] };
-}
-// Two-circle moon rendering: the dark shade disc slides by octant to carve the
-// lit shape (negative = waxing reveals the right limb, positive = waning).
-var CLK_MOON_SHADE = ['0%', '-32%', '-52%', '-74%', '-102%', '74%', '52%', '32%'];
-
-/** (b)+(d) — star field + moon. Lives INSIDE .clk-sky-layers, so a set
- *  background photo (.has-bg hides the layers) hides the decor with it, and
- *  everything sits under the z-1 card content. Star positions are
+/** (b) — star field. Lives INSIDE .clk-sky-layers, so it sits under the z-1
+ *  card content. Star positions are
  *  deterministic (index-hashed), so re-renders never scatter them; the
  *  twinkle keyframes are neutralized by the global reduced-motion block. */
 var _clkLastStarDensity = -1;
@@ -1089,11 +1149,6 @@ function clkSkyDecor_(sky) {
     html += '<span class="st' + (i % 5 === 0 ? ' big' : '') + '" style="left:' + left + '%;top:' + top +
       '%;animation-delay:' + ((i % 7) * 0.55).toFixed(2) + 's;animation-duration:' + (2.8 + (i % 4) * 0.7).toFixed(1) + 's"></span>';
   }
-  if (density > 0) {
-    var moon = clkMoonPhase_(Date.now());
-    html += '<span class="clk-moon" title="' + esc(moon.name) + '" aria-label="' + esc(moon.name) + '">' +
-      '<span class="shade" style="transform:translateX(' + CLK_MOON_SHADE[moon.octant] + ')"></span></span>';
-  }
   deco.innerHTML = html;
 }
 
@@ -1111,8 +1166,6 @@ function clkShootMaybe_() {
   if (now < _clkNextShootAt) return;
   _clkNextShootAt = now + 150000 + Math.random() * 120000;
   try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
-  var hero = document.getElementById('clk-hero');
-  if (hero && hero.classList.contains('has-bg')) return;   // photo replaces the sky
   // After the rep-local shift midpoint only (the operator's "after mid-shift").
   try {
     var start = (typeof clkSchedStartMin_ === 'function') ? clkSchedStartMin_() : 480;
@@ -1156,86 +1209,9 @@ function clkApplySky_(force) {
   } else {
     card.style.background = sky.grad;
   }
-  clkSkyDecor_(sky);   // (b)+(d) stars + moon (no-op when the density is unchanged)
+  clkSkyDecor_(sky);   // (b) stars (no-op when the density is unchanged)
   const ph = document.getElementById('clk-phase');
   if (ph) ph.innerHTML = icon(sky.glyph, 12) + ' ' + esc(sky.phase.toUpperCase());
-}
-
-// ── Clock-card background image (per-browser, opt-in, "for fun") ───────────────
-// Stored as a downscaled raster data-URL in localStorage['umsClockBg'] — NEVER
-// server-side, so any accidental PHI stays in this browser and it adds zero
-// operator state. Applied as the GREETING (hero) CARD background — behind both
-// the greeting text and the clock tile, which keeps its own sky gradient; a dark
-// scrim is baked into the image (clkBgApply_) so the greeting text stays legible.
-var CLK_BG_KEY = 'umsClockBg';
-var CLK_BG_MAX_CHARS = 1500000;                                  // ~1.1MB data-URL cap (localStorage-safe)
-var CLK_BG_TYPES = { 'image/png': 1, 'image/jpeg': 1, 'image/webp': 1 };   // raster only — no SVG (script-capable)
-
-function clkBgGet_() { try { return localStorage.getItem(CLK_BG_KEY) || ''; } catch (e) { return ''; } }
-
-function clkBgApply_() {
-  var hero = document.getElementById('clk-hero'); if (!hero) return;
-  var bgEl = document.getElementById('clk-hero-bg');
-  var clearBtn = document.getElementById('clk-bg-clear');
-  var data = clkBgGet_();
-  if (data && bgEl) {
-    // Bake a time-of-day-independent dark scrim over the image for legibility.
-    bgEl.style.backgroundImage = 'linear-gradient(rgba(12,18,38,.30), rgba(12,18,38,.46)), url("' + data + '")';
-    hero.classList.add('has-bg');
-  } else {
-    if (bgEl) bgEl.style.backgroundImage = '';
-    hero.classList.remove('has-bg');
-  }
-  if (clearBtn) clearBtn.style.display = data ? '' : 'none';
-}
-
-function clkBgChoose_(ev) { if (ev) ev.stopPropagation(); var i = document.getElementById('clk-bg-input'); if (i) i.click(); }
-
-function clkBgClear_(ev) {
-  if (ev) ev.stopPropagation();
-  try { localStorage.removeItem(CLK_BG_KEY); } catch (e) {}
-  clkBgApply_();
-  if (typeof showToast === 'function') showToast('Background cleared', 'toast-info');
-}
-
-function clkBgOnFile_(input) {
-  var file = input && input.files && input.files[0];
-  if (input) input.value = '';                                  // allow re-picking the same file later
-  if (!file) return;
-  if (!CLK_BG_TYPES[file.type]) { if (typeof showToast === 'function') showToast('Use a PNG, JPEG, or WebP image', 'toast-error'); return; }
-  clkBgDownscale_(file, function (dataUrl) {
-    if (!dataUrl) { if (typeof showToast === 'function') showToast('Could not read that image', 'toast-error'); return; }
-    if (dataUrl.length > CLK_BG_MAX_CHARS) { if (typeof showToast === 'function') showToast('That image is still too large after resizing — try a smaller one', 'toast-error'); return; }
-    try { localStorage.setItem(CLK_BG_KEY, dataUrl); }
-    catch (e) { if (typeof showToast === 'function') showToast('Couldn’t save the background (browser storage is full)', 'toast-error'); return; }
-    clkBgApply_();
-    if (typeof showToast === 'function') showToast('Background set (this browser only)', 'toast-success');
-  });
-}
-
-// Downscale to ≤ maxW wide via canvas + re-encode as JPEG so the stored data-URL
-// stays small (a raw phone photo would blow the localStorage quota / slow boot).
-function clkBgDownscale_(file, cb) {
-  var reader = new FileReader();
-  reader.onload = function () {
-    var img = new Image();
-    img.onload = function () {
-      try {
-        var maxW = 1280;
-        var scale = Math.min(1, maxW / (img.width || maxW));
-        var w = Math.max(1, Math.round((img.width || maxW) * scale));
-        var h = Math.max(1, Math.round((img.height || maxW) * scale));
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        cb(canvas.toDataURL('image/jpeg', 0.82));
-      } catch (e) { cb(null); }
-    };
-    img.onerror = function () { cb(null); };
-    img.src = reader.result;
-  };
-  reader.onerror = function () { cb(null); };
-  reader.readAsDataURL(file);
 }
 
 /** Render the big time in the displayed tz (extracted from startClock so the

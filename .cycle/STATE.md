@@ -225,6 +225,66 @@ Phase: idle (post-reflect) + operator-requested feature work:
   feeds `intakeBodyHash_`, so a preview taken pre-deploy and sent post-deploy
   is rejected with "The form changed since you previewed it" (INV-111 working
   as designed; one page load wide).
+- The glossary block, the decision block and the intake email restyle are
+  MERGED as **PR #165** (35eb721, CI green); branch restarted from main.
+  Deploy remains ONE operator action for all three.
+- OPERATOR ROUND 2026-08-12 (three notes from the deployed app): (1) **clock-card
+  photo + moon RETIRED** — the whole `umsClockBg` upload path, `.clk-bg-*` /
+  `.has-bg` / `.clk-hero-bg` / `.clk-moon` selectors, `clkMoonPhase_` and the
+  shade-disc render are gone (INV-184); the star field + shooting star SURVIVE;
+  localStorage keys 15 → 14. (2) **Dashboard KPI banding + MTD deltas** — both
+  cards open on MTD (derived index, applied to BOTH because two adjacent cards
+  on different periods reads as a bug); `dashPctTone_` tri-tones ONLY the two
+  rate metrics, thresholds SHIPPED not mirrored, a null target = no tone (a
+  colour is a verdict and Transfer % had no threshold in the app before —
+  `CONFIG.CDR_TRANSFER_TARGET_PCT` default 20 is the ONE number the operator
+  should confirm); MTD deltas compare the prior month's SAME ELAPSED DAYS
+  (`dashboardPrevRange_`, clamped DOWN) because 12 days against 31 is an
+  artifact, volumes get the arrow but no verdict, the foot NAMES the window,
+  and a failed comparison says so + is never cached (INV-129/187). Cache
+  `dash_metrics_v2`→`v3`. (3) **Reminder toasts are STICKY** (INV-190
+  amendment) — the chime calls the rep back after the 3.5s window has passed;
+  real ×, cap evicts routine toasts first, every 2-arg caller untouched.
+  Pure 494→500, DOM 69→71, 27 bite-checks. MEASURED, not reasoned: the
+  banding/deltas were rendered and read back (tones, delta text, foot label,
+  overflowPx 0, dark parity), which is how the flex-end mixed-row misalignment
+  (a delta-less KPI's label sitting 14px low) was found and fixed; full
+  39-scenario matrix re-shot 0 missing / 0 overflow. ONE pin was rewritten for
+  biting too weakly (it asserted the star class existed SOMEWHERE rather than
+  that the decor still emits it).
+- COLOUR PALETTES (operator 2026-08-12, "so users can choose a different color
+  scheme"): `data-palette` — a SECOND attribute overlay orthogonal to
+  light/dark, four options (Console default / Sand / Plum / Teal), picked from
+  a swatch row in the sidebar + mobile header, `umsTheme` (key count back to
+  15), no server state. TWO rules make it safe and both are pinned: a palette
+  may redefine ONLY neutrals + accent (never a semantic colour — green still
+  means resolved in all four), and every colour is a hue rotation at CONSTANT
+  WCAG luminance, so every measured contrast ratio is preserved BY
+  CONSTRUCTION. Specificity is load-bearing (a bare :root[data-palette] ties
+  with the base dark block at (0,2,0) — the V-2/V-3 trap); the :not()/paired
+  forms are (0,3,0), verified in Chromium. THREE defects found by MEASURING,
+  none visible in review: the generator reused LIGHT-mode chroma so every
+  palette's dark card collapsed to the same neutral grey; the accent-ring
+  swatch made Console and Sand indistinguishable at 14px (now a split disc);
+  and inserting the Palette row between the two .sb-theme rows broke their
+  adjacency rule, so flex pushed Alerts to the sidebar bottom with a ~200px
+  hole — the exact defect that rule's comment describes. The AA tripwire was
+  REWRITTEN from "two hex declarations, light then dark" to a derived block
+  scan, and the V-1 hue-drift pin now runs per palette. Pure 500→507, DOM 71,
+  13 bite-checks, full 39-matrix 0/0. A new harness coupling was pinned: the
+  jsdom boot stubs every window.* index.html defines (adding
+  setTimeClockPalette silently broke 19 DOM tests).
+  FOLLOW-UP (same day): operator asked whether each palette has its own dark
+  mode (it does — every palette is a light block PLUS a dark block) and for a
+  sage/light-green option. **Sage** added: green-tinted paper (nScale 3.4) +
+  a DESATURATED green accent (chroma 0.070 vs Console's 0.132) at the same
+  luminance — a literally lighter accent is impossible under the
+  constant-luminance construction and would fail contrast as a button fill
+  under white text, so the character comes from the paper + desaturation.
+  Adding it needed NO test edit: all seven palette pins are derived, and two
+  Sage-specific mutations were bite-checked to confirm the scan reaches it.
+  NOTE: the container rolled back mid-session and lost the palette commit
+  locally; the remote had it (git reset --hard origin/<branch> recovered).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

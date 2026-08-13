@@ -122,6 +122,14 @@ const CONFIG = {
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
   CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
+  // Dashboard KPI banding (operator 2026-08-12). % Answered reuses the target
+  // above; Transfer % had NO threshold anywhere in the app, so this one is a
+  // starting number the operator should confirm — set it to null to render
+  // Transfer % with NO tone rather than a tone nobody chose (a colour is a
+  // verdict, and a verdict on a number nobody set is worse than no colour).
+  // The band is: at/better than target = good, within DASH_TONE_SLACK_PP = warn,
+  // beyond = crit. LOWER Transfer % is treated as better.
+  CDR_TRANSFER_TARGET_PCT: 20,
   // Cycle-14 Phase 4 — queue → department grouping for the Metrics
   // "By department" view. OPERATOR-SUPPLIED (2026-07-31), not inferred: Phase 1
   // deliberately shipped no grouping because guessing it from queue names would
@@ -15064,6 +15072,34 @@ function dashboardPeriodRange_(periodKey, todayIso) {
   return null;
 }
 
+var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
+ *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
+ *
+ *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS, not the whole
+ *  prior month. That choice is load-bearing for the VOLUME metrics: on the 12th,
+ *  12 days of answered calls against a full 31-day month is not a delta, it is
+ *  an arithmetic artifact that would read as a collapse every month and recover
+ *  on the 31st. The day is CLAMPED to the prior month's length (Mar 31 → Feb 28
+ *  / 29), which makes the comparison SHORTER, never longer — under-reporting is
+ *  the safe direction for a figure a rep is judged by. Returns null for periods
+ *  we do not compare (yesterday / ytd — deliberately out of scope). */
+function dashboardPrevRange_(periodKey, todayIso) {
+  if (periodKey !== 'mtd' || !/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
+  var y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7), d = +todayIso.slice(8, 10);
+  var py = (m === 1) ? y - 1 : y, pm = (m === 1) ? 12 : m - 1;
+  var pLen = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  var pd = Math.min(d, pLen);
+  var pad = function (n) { return String(n).padStart(2, '0'); };
+  return {
+    from: py + '-' + pad(pm) + '-01',
+    to: py + '-' + pad(pm) + '-' + pad(pd),
+    label: DASH_MONTH_ABBR[pm - 1] + ' 1–' + pd,
+    clamped: pd < d,
+  };
+}
+
 /** Pure (Node-pinned) — team CDR aggregate from getCdrAgentMetrics_'s .agents
  *  map. Cohort = agents with totalRung > 0; team is null below minCohort
  *  (INV-124 — a small team can't be back-solved to an individual). ATT is
@@ -15118,7 +15154,9 @@ function getDashboardMetrics(periodKey) {
     // v2 (operator 2026-08-06): the team field's semantics changed (cohort
     // guard dropped for this card — see MIN_COHORT below), so stale v1
     // entries must not serve the old hidden-team payload for the TTL.
-    var cacheKey = 'dash_metrics_v2:' + emp.id + ':' + periodKey;
+    // v3 (operator 2026-08-12): the payload gained prev/thresholds, so a stale
+    // v2 entry would serve delta-less cards for the TTL after the deploy.
+    var cacheKey = 'dash_metrics_v3:' + emp.id + ':' + periodKey;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -15151,39 +15189,75 @@ function getDashboardMetrics(periodKey) {
     // (the peer-benchmark surface a small cohort can be back-solved from) is
     // UNCHANGED and must stay 3. team:null now means "no data at all".
     var MIN_COHORT = 1;
-    var ownDq = (getCdrAgentMetrics_(from, to, [emp.name]).agents || {})[emp.name] || null;
-    var teamDqMap = getCdrAgentMetrics_(from, to, allNames).agents || {};
-    var ownTr = (getCsrTransferPerRepDaily_(from, to, [emp.name]).agents || {})[emp.name] || null;
-    var teamTrMap = getCsrTransferPerRepDaily_(from, to, allNames).agents || {};
+    // ONE shaper for the period and its comparison window, so the delta can
+    // never be computed from a differently-shaped figure than the value it
+    // sits under (the LEAVE_DEDUCTION_CLIENT lesson, inside one function).
+    var shapeWindow = function (wFrom, wTo) {
+      var dq = (getCdrAgentMetrics_(wFrom, wTo, [emp.name]).agents || {})[emp.name] || null;
+      var tr = (getCsrTransferPerRepDaily_(wFrom, wTo, [emp.name]).agents || {})[emp.name] || null;
+      var agg = dashboardTeamAggregate_(getCdrAgentMetrics_(wFrom, wTo, allNames).agents || {}, MIN_COHORT);
+      var trAgg = dashboardTeamTransfer_(getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {}, MIN_COHORT);
+      return {
+        ownDq: dq,
+        own: dq ? {
+          rung: dq.totalRung, answered: dq.totalAnswered, missed: dq.totalMissed,
+          pctAnswered: dq.pctAnswered, attSeconds: dq.attSeconds, attFormatted: dq.attFormatted,
+          transferPct: tr ? tr.transferPct : null, calls: tr ? tr.totalCalls : null,
+        } : null,
+        team: agg.team ? {
+          rung: agg.team.rung, answered: agg.team.answered, missed: agg.team.missed,
+          pctAnswered: agg.team.pctAnswered, attSeconds: agg.team.attSeconds,
+          transferPct: trAgg.transfer ? trAgg.transfer.transferPct : null,
+        } : null,
+        cohort: agg.cohort,
+      };
+    };
+    var cur = shapeWindow(from, to);
+    var ownDq = cur.ownDq;
 
-    var teamAgg = dashboardTeamAggregate_(teamDqMap, MIN_COHORT);
-    var teamTr = dashboardTeamTransfer_(teamTrMap, MIN_COHORT);
+    // Prior like-for-like window (MTD only) for the KPI deltas. BEST-EFFORT:
+    // a failed comparison read drops the DELTAS, never the numbers — but it is
+    // reported (prevUnavailable) rather than rendering as "no change", which is
+    // the reassuring-silence failure INV-187 exists to stop.
+    var prevRange = dashboardPrevRange_(periodKey, todayIso), prev = null, prevUnavailable = false;
+    if (prevRange) {
+      try {
+        var pShaped = shapeWindow(prevRange.from, prevRange.to);
+        prev = {
+          from: prevRange.from, to: prevRange.to, label: prevRange.label,
+          clamped: !!prevRange.clamped, own: pShaped.own, team: pShaped.team,
+        };
+      } catch (e) { prevUnavailable = true; }
+    }
+
     // F5: a failed Sheet read must not read as "0 notes filed".
     var noteRes = cnCountNotesResult_(emp, from, to);
     var noteCount = noteRes.count;
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
-      own: ownDq ? {
-        rung: ownDq.totalRung, answered: ownDq.totalAnswered, missed: ownDq.totalMissed,
-        pctAnswered: ownDq.pctAnswered, attSeconds: ownDq.attSeconds, attFormatted: ownDq.attFormatted,
-        transferPct: ownTr ? ownTr.transferPct : null, calls: ownTr ? ownTr.totalCalls : null,
-      } : null,
-      team: teamAgg.team ? {
-        rung: teamAgg.team.rung, answered: teamAgg.team.answered, missed: teamAgg.team.missed,
-        pctAnswered: teamAgg.team.pctAnswered, attSeconds: teamAgg.team.attSeconds,
-        transferPct: teamTr.transfer ? teamTr.transfer.transferPct : null,
-      } : null,
-      cohort: teamAgg.cohort,
+      own: cur.own,
+      team: cur.team,
+      cohort: cur.cohort,
       noteCount: noteCount,
       noteCoverage: noteRes.unavailable
         ? null : cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
       noteCountUnavailable: !!noteRes.unavailable,   // F5
       kpiMinCohort: MIN_COHORT,
+      // Operator 2026-08-12: the KPI banding thresholds ride the payload so the
+      // client never mirrors a number the operator can change (INV-186 shape).
+      // transferTarget is null when CONFIG leaves it unset → the client renders
+      // Transfer % with no tone at all rather than one nobody chose.
+      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,
+      transferTarget: (CONFIG.CDR_TRANSFER_TARGET_PCT == null) ? null : CONFIG.CDR_TRANSFER_TARGET_PCT,
+      prev: prev,
+      prevUnavailable: prevUnavailable,
     };
     // F5: never stamp a degraded round as fresh — a failed notes read would
-    // otherwise be pinned for the full TTL (the L-3 / INV-129 rule).
-    if (useCache && !noteRes.unavailable) {
+    // otherwise be pinned for the full TTL (the L-3 / INV-129 rule). A failed
+    // COMPARISON read is the same class: caching it would pin "no deltas" for
+    // the TTL after the underlying blip cleared.
+    if (useCache && !noteRes.unavailable && !prevUnavailable) {
       try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return result;

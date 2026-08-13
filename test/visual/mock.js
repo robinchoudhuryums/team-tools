@@ -203,11 +203,21 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         meta: { rowsScanned: 900, rowsMatched: 120, columnWarning: null, computeMs: 84 },
       };
     })(),
+    // The dashboard payload mirrors the server contract, INCLUDING the
+    // 2026-08-12 additions (prev / alertThreshold / transferTarget) — a fixture
+    // that omits them makes the banded + delta render unshootable (INV-185).
+    // Values are chosen to put a GOOD card beside a WARN/CRIT one in one shot.
     getDashboardMetrics: function (period) {
-      return { period: period, label: period === 'yesterday' ? 'Yesterday' : (period === 'mtd' ? 'Month to date' : 'Year to date'),
-        own: { answered: 41, missed: 5, pctAnswered: 89.1, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
-        team: { answered: 388, missed: 41, pctAnswered: 90.4, attFormatted: '4:12', transferPct: 9.9 },
-        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (period === 'mtd' ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
+      var mtd = (period === 'mtd');
+      return { period: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
+        own: { answered: 41, missed: 5, pctAnswered: 89.1, attSeconds: 281, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
+        team: { answered: 388, missed: 41, pctAnswered: 78.4, attSeconds: 252, attFormatted: '4:12', transferPct: 24.1 },
+        // MTD compares against the prior month's SAME elapsed days.
+        prev: mtd ? { from: daysAgo(53), to: daysAgo(31), label: 'Jul 1–23',
+          own: { answered: 36, missed: 8, pctAnswered: 81.8, attSeconds: 295, transferPct: 9.4 },
+          team: { answered: 402, missed: 33, pctAnswered: 82.1, attSeconds: 248, transferPct: 21.7 } } : null,
+        prevUnavailable: false, alertThreshold: 85, transferTarget: 20,
+        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
     getTeammateStatus: { enabled: true, teammates: [
       { name: 'Avery Blake', status: 'clocked_in', isSelf: true },
