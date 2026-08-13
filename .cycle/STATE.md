@@ -283,8 +283,66 @@ Phase: idle (post-reflect) + operator-requested feature work:
   under white text, so the character comes from the paper + desaturation.
   Adding it needed NO test edit: all seven palette pins are derived, and two
   Sage-specific mutations were bite-checked to confirm the scan reaches it.
-  NOTE: the container rolled back mid-session and lost the palette commit
-  locally; the remote had it (git reset --hard origin/<branch> recovered).
+  NOTE: the container rolled back TWICE mid-session and lost the palette
+  commits locally; the remote had them both times, and
+  `git reset --hard origin/<branch>` recovered cleanly. Push early — the
+  remote was the only surviving copy.
+  MERGED as **PR #166** (ba358ee, CI green) together with the 2026-08-12
+  round (clock cleanup / dashboard banding + deltas / sticky reminders);
+  branch restarted from main. Deploy remains ONE operator action.
+- OPERATOR LIST 2026-08-13 (seven items, phased). PHASE 1+2 IMPLEMENTED:
+  (1) copy-scope fix — the #cn-frame blanket ⌘C intercept inverted into a bug
+  once fields became contenteditable (selections carry text now); a real
+  selection copies natively, collapsed-⌘C keeps the full-template gesture.
+  (2) umsCallNotesLastDept REMOVED (reader+writer+KB-AI facet piggyback;
+  keys 15→14) — pre-selecting the previous note's departments invites a
+  mis-send. (3) Dashboard load: shapeWindow derives own from the team map
+  (halves cold CDR reads); client paints on FIRST period arrival, pending
+  slides are skeletons (never "No call data" — INV-187), later arrivals
+  patch their slides (a full re-render would duplicate the extras RPCs).
+  Verified with a staggered mock (~300ms paint, YTD skeleton→swap).
+  (4) activity-without-clock-in reminder: shift window + 15min grace + real
+  input in 5min + CONFIRMED-out snapshot (stale 'out' refreshes first;
+  confirm stamp only in the SUCCESS handler); once per rep-local day.
+  (5) auto-tag: admin-editable keyword→tag rules (CN_AUTO_TAG_RULES, seeded
+  from update types — OPERATOR SHOULD REVIEW THE LIST), matched client-side
+  on the suggestion debounce; removal dismisses the rule per note; INV-136
+  40→41 (saveAutoTagRules; F7/F9 nets + Tests.js omnibus updated).
+  (6) intake feedback loop: "Send feedback" button on all three intake
+  emails → ?intakefb= doGet page (signed-in; submitIntakeFeedback
+  re-auths) → append-only IntakeFeedback tab in the Intake PHI store →
+  "Recipient feedback" block in the Sent detail. CTA minted pre-send,
+  final-body-only (INV-41 untouched), no-URL→no-button.
+  Pure 514, DOM 71, 32 bite-checks (4 pins strengthened for not biting).
+  ANSWERED, NOT BUILT: (7) Google-Maps warehouse distances — needs the
+  warehouse ADDRESSES + a decision (haversine vs Distance Matrix API w/
+  billing); (8) article images — should already work (kbMd_ ![](…),
+  Phase 2b/3); likely the KB Images folder sharing policy — operator to
+  report what they see; Offerings catalog view offered as the follow-on.
+- OPERATOR FOLLOW-UP 2026-08-13 (items 7+8 resolved + BUILT): operator chose
+  Tier A ("don't want any cost/billing") and confirmed the image symptom is
+  the Workspace link-sharing block ("blocking message with open-in-drive
+  link"). (a) **Article-image fallback**: kbGetImageData (rep-callable,
+  read-only, NO lock; the file's PARENTS must include KB_IMAGES_FOLDER_ID
+  BEFORE bytes leave — without that check any employee could read any
+  deployer-visible Drive file by id; every refusal is the same generic
+  'Not available.'); client = ONE document-level CAPTURE-phase error
+  listener over .kb-article imgs, drive-thumbnail-src-only, retry-guarded,
+  session-cached with pending fan-out + 'failed' marker. Covers every kbMd_
+  render site (both readers, chunks, training/empdocs, What's new) with
+  zero per-site wiring. (b) **` ```map ` warehouse block (Tier A)**:
+  wh| Name: Address fence → directory + keyless output=embed toggle
+  (aria-expanded) + nearest lookup via the FREE built-in Maps.newGeocoder()
+  (no key, no billing, zero UrlFetchApp); kbHaversineMiles_ pure +
+  Node-pinned; straight-line stated as such with a Directions link for the
+  drive figure (INV-187). Privacy split: warehouse geocodes persist
+  (KB_MAP_GEOCODE_CACHE, hashed keys, self-resets >200); the QUERY is never
+  persisted/audited/logged (may be a patient address; UI asks for ZIP).
+  Escaped-contract parse (rosEsc-fed pins), %26-not-&amp; URLs, esc-on-
+  read-back. Pure 520 (+6, 8 bite-checks), DOM 71, measured in Chromium
+  (map-check.mjs: structure/lookup/embed-aria/400px-no-overflow/fallback
+  swap incl. fan-out + external-img untouched). Docs synced (2 KDDs, the
+  Script Property entry, operator-checklist round entry, test narrative).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

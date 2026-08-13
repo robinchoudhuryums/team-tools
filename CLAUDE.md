@@ -590,8 +590,8 @@ this section before touching the relevant area.
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
-  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **40**
-  Admin-exclusive endpoints (29 Manage-module Admin-tab config/system/roster
+  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **41**
+  Admin-exclusive endpoints (30 Manage-module Admin-tab config/system/roster
   endpoints — incl. the 2026-08-07 team-member onboarding trio
   `addEmployee`/`offboardEmployee`/`getOnboardingPanel` — + the Reference
   content-authoring set
@@ -1775,10 +1775,11 @@ this section before touching the relevant area.
   so persistence + completion-timer + phone-formatter listeners react
   the same way as user typing. Paste is sanitized to plain text via
   `execCommand('insertText')` on each `.ce`. A bound `copy` event on
-  `#cn-frame` intercepts ⌘C anywhere inside the frame and writes the
-  full formatted CRM template via `cnFormatNoteForCopy_` — drag-
-  highlighting any subset still produces a complete CRM-ready note
-  (the headline UX win that drove the contenteditable refactor).
+  `#cn-frame` writes the full formatted CRM template via
+  `cnFormatNoteForCopy_` — since 2026-08-13 ONLY when the selection is
+  collapsed; a real selection copies what is selected (see the
+  manual-copy-failover Key Design Decision for why the blanket
+  intercept inverted into a bug once the fields became contenteditable).
   COROLLARY: any document-level keyboard handler that exempts form
   fields must check `document.activeElement.isContentEditable` in
   addition to the `INPUT`/`TEXTAREA`/`SELECT` tagName check — the `.ce`
@@ -1787,16 +1788,10 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fifteen client-side localStorage keys total.** All per-browser, all
+- **Fourteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
-  - `umsCallNotesLastDept` — the rep's last email-composer department
-    selection. Applied as the default when the note being composed has NO
-    stored departments of its own (cycle-10 E1: virtually every app note
-    carries `subformData`, so the old subformData-absent-only branch made
-    this default dead — the composer seeds from it inside the subformData
-    branch now; a re-send still restores the note's own prior departments).
   - `umsCallNotesActiveFormDraft` — the in-progress Call Notes form
     auto-saved on every input (debounced 400ms); restored on next
     Log view enter with a "Draft restored" toast. Cleared on
@@ -1886,7 +1881,13 @@ this section before touching the relevant area.
     rather than being reflected onto `<html>`. Read + applied SYNCHRONOUSLY in
     the `<head>` (the `data-mode` discipline — a palette flash on every load
     would be worse than no palette), written by `setTimeClockPalette`.
-  Clearing browser data wipes all fifteen. (A prior key,
+  Clearing browser data wipes all fourteen. (`umsCallNotesLastDept` — the
+  composer's last-dept default — was REMOVED by operator decision 2026-08-13:
+  pre-selecting the previous note's departments on an unrelated note invites a
+  mis-send, and the failure mode is an email leaving the building rather than
+  retyping. A re-send still restores the note's OWN stored departments. The KB
+  AI facet-gather's department facet, which piggybacked on this key, is simply
+  absent now.) (A prior key,
   `umsDashboardCompact` — an in-page Dashboard compact toggle — was REMOVED in
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
@@ -1917,7 +1918,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 40 Admin-exclusive endpoints (INV-136's list) gate on
+  server-side** — the 41 Admin-exclusive endpoints (INV-136's list) gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -2469,9 +2470,9 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fifteen client-side localStorage keys total" entry in
+  authoritative "Fourteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
-  `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
+  `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
   `umsIntakeDrafts`, `umsCoachingMode`, `umsWhatsNew`,
@@ -2486,7 +2487,8 @@ this section before touching the relevant area.
   The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — the
   reminder-alert toggles added `umsNotify` — net 15 — and the operator retired
   the clock-card background image (2026-08-12), taking `umsClockBg` back out —
-  net 14 — and the colour palettes added `umsTheme`, net 15.)
+  net 14 — the colour palettes added `umsTheme`, net 15 — and the operator
+  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2543,6 +2545,39 @@ this section before touching the relevant area.
   header shows `X/3` capacity; at 3/3 the count goes warn-colored
   and un-pinned cards' bookmark buttons are dimmed with a
   "Unpin a note first" tooltip.
+- **Auto-tag rules (operator 2026-08-13).** Admin-curated keyword→tag rules
+  (`CN_AUTO_TAG_RULES` Script Property, CONFIG seed `AUTO_TAG_RULES` — the
+  seeded list derives from the update-type vocabulary and AWAITS OPERATOR
+  REVIEW) matched case-insensitively as substrings against the Issue +
+  Resolution text as the rep types (the existing 500ms suggestion debounce).
+  A match ADDS its tag as a normal removable chip; REMOVING an auto-added tag
+  dismisses that rule for the rest of the form session (`CN_STATE
+  .autoTagApplied`/`autoTagDismissed`, reset on clear/submit — re-adding on
+  the next keystroke would fight the rep for the chip). Distinct from the
+  heuristic SUGGESTIONS, which stay one-click offers from the rep's own
+  vocabulary. Everything runs client-side — note text never leaves the
+  browser (the INV-119 posture that keeps the AI version unbuilt).
+  `getAutoTagRules_` sanitize-on-read mirrors `saveAutoTagRules`'s validation
+  (admin-gated, INV-136 — the count is now 41) so a rejected save and a
+  sanitized read can never disagree; rules ride `getCallNotesDepartments`
+  (reps) + `getAdminConfig` (the editor). Pinned by the auto-tag Node pins.
+- **Intake recommendation feedback (operator 2026-08-13).** Every intake email
+  (PPD/PMD/PAP) carries a "Send feedback on this recommendation" button — an
+  email client can't host a live comment box (most strip forms), so the button
+  links to a tiny signed-in page served by `doGet` (`?intakefb=<submissionId>
+  &ft=<type>`, the `?resolve=` pattern with a textarea). The recipient is an
+  internal agent (roster-resolved), so `submitIntakeFeedback` re-authenticates
+  via `getEmployeeInfo_` — the page only collects text. The id is minted
+  BEFORE the send; the CTA joins the FINAL body only, after the INV-41 hash
+  check (the `drResolveCtaHtml_` placement), and an unresolvable exec URL
+  drops the button rather than shipping a dead one. Rows are append-only in
+  the Intake spreadsheet's `IntakeFeedback` tab (feedback may reference the
+  patient — it stays in the PHI store; the `IntakeFeedback` audit row carries
+  id + type only), written only when the submission EXISTS (a forged id can't
+  seed junk rows), text bounded 4000 chars. Surfaced newest-first as a
+  "Recipient feedback" block in the Intake Sent detail (all three forms; an
+  empty list renders NOTHING — an empty section would read as "no complaints
+  yet", which the data cannot support). Pinned by the feedback-loop Node pins.
 - **Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -3487,15 +3522,17 @@ this section before touching the relevant area.
   all downstream helpers (`cnReadActiveForm_`, sticky drafts,
   completion timer, phone formatter, optimistic UI) keep working
   through the new accessor helpers.
-- **Manual-copy failover on `#cn-frame` (Round 2 deferred 8e).** A
-  bound `copy` event on `#cn-frame` intercepts ⌘C anywhere inside
-  the frame, `preventDefault`s the browser's selection-text copy,
-  and writes the FULL formatted CRM template via
-  `cnFormatNoteForCopy_` — the same output Save & Copy produces.
-  Drag-highlighting any subset of the frame still pastes a complete,
-  CRM-ready note. Solves the "the button didn't work, let me drag-
-  highlight → blank paste" failure mode that input/textarea couldn't
-  address (their values don't contribute to text selection).
+- **Manual-copy failover on `#cn-frame` (Round 2 deferred 8e; RESCOPED
+  operator 2026-08-13).** A bound `copy` event on `#cn-frame` writes the FULL
+  formatted CRM template via `cnFormatNoteForCopy_` — but ONLY when the
+  selection is COLLAPSED (nothing selected). A real selection copies exactly
+  what is selected (browser default). The original blanket intercept solved
+  the "drag-highlight → blank paste" failure of input/textarea fields, whose
+  values don't contribute to a text selection — but the contenteditable
+  refactor made selections carry real text, and the intercept inverted into
+  the operator-reported bug: copying a phone number out of a note-in-progress
+  pasted the whole template. The deliberate whole-note gesture survives as
+  "click into the frame, ⌘C with nothing selected".
 - **Multi-select flag toolbar + free-text tags (Round 2 · 8e).** The
   form's flag toolbar is multi-select (`.flag-btn[data-flag]` with
   `.on` class): action / training / review / urgent. Free-text tags
@@ -3938,6 +3975,63 @@ this section before touching the relevant area.
   `WHATSNEW_KB_ID` shape) — deliberately not built yet, since one glossary
   article that reps search for already answers "what does PAR mean" through the
   existing drawer search.
+- **Warehouse map block (` ```map `, operator 2026-08-13 — Tier A, NO
+  billing).** The operator's constraint was explicit: no cost, no billing —
+  which rules out the Maps JavaScript/Places APIs (key + billing account) and
+  selects Apps Script's FREE built-in **`Maps.newGeocoder()`** (no key, daily
+  courtesy quota) plus the keyless `https://www.google.com/maps?q=…&output=embed`
+  iframe. A `map` fence of `wh| Name: Street, City, ST ZIP` lines (split on the
+  FIRST colon; cap 20 with the overflow REPORTED, INV-169) renders a warehouse
+  directory — per-warehouse open-in-Google-Maps link + a lazy keyless embed
+  behind a real `aria-expanded` toggle button — and a nearest-warehouse lookup:
+  the query geocodes SERVER-side (`kbMapDistances`, rep-callable, bounded ≤20
+  addresses / ≤200 chars each), straight-line miles come from the pure
+  Node-pinned `kbHaversineMiles_`, and results sort nearest-first with a
+  per-result **Directions ↗** link (real driving distance — the block never
+  presents haversine as a drive figure, INV-187; the copy says "straight-line
+  estimates"). **The privacy split is the load-bearing decision:** warehouse
+  geocodes cache PERMANENTLY (Script Property `KB_MAP_GEOCODE_CACHE`, keyed by
+  address HASH — operator-owned static addresses, and the cache keeps
+  steady-state quota at ~ONE geocode per lookup), while **the rep's query is
+  NEVER persisted** — no cache entry, no audit row, no log line — because a
+  looked-up address may be a patient's; the input placeholder asks for a ZIP
+  for the same reason. Pinned: the function's ONLY `setProperty` is the
+  coordinate cache, written BEFORE the query geocode so the query cannot be in
+  the blob, plus zero `UrlFetchApp` anywhere in the geo path (nothing to
+  bill). Fence rules match roster/glossary: content arrives HTML-escaped
+  (`&amp;` survives parse; only URL building decodes, then
+  `encodeURIComponent` re-encodes — `%26`, never `&amp;`, reaches the URL),
+  attributes are quote-escaped, values read back off `data-*` are DECODED so
+  the lookup render `esc()`s them, and unknown lines are counted, never
+  silently dropped. Rows are flex-wrap (intrinsic reflow — no A2 breakpoint
+  owed; measured 400/400 at drawer width). Geocode failures per warehouse
+  render "distance unavailable", never 0.
+- **Article images fall back to server-served data when Drive blocks the
+  thumbnail (operator 2026-08-13).** The KB Images folder's domain-link
+  sharing is BLOCKED by Workspace policy on this domain (the documented
+  `getOrCreateKbImagesFolder_` degradation), so the
+  `drive.google.com/thumbnail` `<img>`s `kbMd_` renders 403'd for reps — alt
+  text plus a Workspace "blocked" page behind the anchor. The web app runs as
+  the folder-OWNING deployer, so `kbGetImageData(fileId)` (rep-callable,
+  read-only, NO lock) serves the bytes as a base64 data URL. **The folder
+  check is the security boundary:** the file's parents must include
+  `KB_IMAGES_FOLDER_ID` BEFORE any bytes leave — without it, any signed-in
+  employee could read ANY Drive file the deployer can open, by id — and every
+  refusal path (unset property, bad id, missing file, out-of-folder, wrong
+  type, oversize `KB_IMG_FETCH_MAX_BYTES` 4MB) returns the SAME generic
+  'Not available.' so existence never leaks. Client: ONE document-level
+  CAPTURE-phase `error` listener (error events don't bubble) covers every
+  `kbMd_` render site — Reference reader, drawer, search chunks,
+  training/empdocs readers, What's new — with zero per-site wiring; scoped
+  STRICTLY to `.kb-article` imgs whose src starts with the Drive thumbnail
+  origin (an external image failing must not send its arbitrary URL to our
+  server), retry-guarded (`kbFbTried` — a failing swap can't loop),
+  session-cached per fileId with a pending fan-out (two `<img>`s of one file
+  fetch once) and a 'failed' marker (a broken file can't hammer the server on
+  re-renders). Progressive enhancement: when the thumbnail loads normally
+  (folder shared, policy relaxed), the endpoint is never called. The wrapping
+  anchor keeps its Drive href — the open-full-size path for accounts with
+  access, and a `data:` href would be blocked as top-level navigation anyway.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4026,7 +4120,8 @@ this section before touching the relevant area.
   non-vocabulary value (novel tags, typo'd enums, smuggled free text),
   and `kbAiBuildPrompt_(clean, chunks)` has no parameter through which
   note text could pass; the client's facet gather
-  (`kbAiGatherFacets_`: form flags + tags + `umsCallNotesLastDept`) is a
+  (`kbAiGatherFacets_`: form flags + tags; the department facet died with
+  `umsCallNotesLastDept`, 2026-08-13) is a
   convenience, not the boundary. Cost funnel: canonical facet-hash cache
   (6h, generation-salted by KB edits) → retrieval score floor (thin
   matches never call the API, cached as none) → daily org spend cap
@@ -4934,6 +5029,43 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-13 follow-up round (image fallback + warehouse map) adds NO
+  operator state to set up** — no triggers, no migrations, no API key, and
+  deliberately NO billing (the operator constraint): the map block's whole geo
+  stack is Apps Script's free built-in `Maps.newGeocoder()` (daily courtesy
+  quota — the coordinate cache keeps steady-state use at ~one geocode per
+  lookup) plus the keyless `output=embed` iframe. ONE auto-managed Script
+  Property appears on first lookup: `KB_MAP_GEOCODE_CACHE` (warehouse
+  lat/lng keyed by address hash — delete it to force re-geocoding after a
+  warehouse moves; the rep's lookup query is NEVER stored in it or anywhere
+  else). **To use the map: put a ` ```map ` fence in any Reference article**
+  with one `wh| Name: Street, City, ST ZIP` line per warehouse — the
+  addresses are authored in the article, so updating them is a normal KB
+  edit. Behaviour change to expect post-deploy: **article images that
+  previously showed only alt text + a Workspace "blocked" page now render
+  inline for every rep** — the reader silently refetches a blocked Drive
+  thumbnail through the server (`kbGetImageData`, scoped to the KB Images
+  folder only). Nothing to configure; if Workspace link-sharing is ever
+  allowed, the thumbnails load directly again and the fallback goes quiet.
+- **The 2026-08-13 operator round adds NO new operator state to set up** — no
+  triggers, no migrations; two AUTO-MANAGED Script Properties appear when
+  first used (`CN_AUTO_TAG_RULES` — written by the Admin tab's new Auto-tag
+  rules editor; the `IntakeFeedback` tab auto-provisions in the Intake
+  spreadsheet on the first feedback). **One review item: the seeded auto-tag
+  keyword list** (CONFIG `AUTO_TAG_RULES` — close-order / shipping / resupply
+  / oop / billing / insurance / transfer / callback) is a starting point
+  derived from the update-type vocabulary, editable live in Manage → Admin →
+  Config → Auto-tag rules. Behaviour changes to expect post-deploy: (a) ⌘C
+  with a real selection inside the note template copies the SELECTION; the
+  full-template copy still fires when nothing is selected; (b) the internal
+  email composer no longer pre-selects the last note's departments; (c) tags
+  appear on their own as a rep types matching keywords — removable chips,
+  and removing one stops that rule for the note; (d) the Dashboard metric
+  cards paint as soon as the first period returns (YTD fills in a beat
+  later as a skeleton swap); (e) a rep using the app mid-shift while not
+  clocked in gets a once-a-day nudge; (f) intake emails carry a "Send
+  feedback" button whose page requires an @umsupply sign-in, and feedback
+  shows in the Intake Sent detail.
 - **The colour palettes (operator 2026-08-12) add NO operator state** — no
   Script Properties, triggers, migrations or CONFIG constants; one per-browser
   localStorage key (`umsTheme`, taking the count back to 15) that each rep sets
@@ -5226,8 +5358,11 @@ manually for a fresh deploy or environment:
   created in the deployer's Drive, set domain-link-viewable (so `<img>`
   tags render for any signed-in rep), id stored here. If Workspace policy
   blocks link sharing, the create still succeeds with a console warning —
-  share the folder with the team manually or images render only as their
-  alt text + open-in-Drive link. Exported files are named
+  and since the 2026-08-13 image fallback the readers recover on their own:
+  a blocked thumbnail is refetched through the server (`kbGetImageData`,
+  scoped to THIS folder only) and rendered as a data URL, so sharing the
+  folder manually is now an optimization (direct thumbnail loads), not a
+  requirement. Exported files are named
   `kbdoc-<fileId>-<n>` and are REUSED on re-save; delete a file to force a
   re-export after the source Doc's image changed. Phase 3 paste-uploads
   land in the same folder as `kbpaste-<stamp>-<rand>` files (orphans from
@@ -5283,6 +5418,17 @@ manually for a fresh deploy or environment:
   No manual setup — documented so they're recognizable when inspecting
   Script Properties. Delete `KB_AI_SPEND` to reset today's budget; bump
   `KB_AI_GENERATION` to force-invalidate all cached guidance.
+- **Script Property `KB_MAP_GEOCODE_CACHE`** (auto-managed — the ` ```map `
+  warehouse block, operator 2026-08-13). JSON map of warehouse coordinates
+  keyed by an ADDRESS HASH, written best-effort by `kbMapDistances` so the
+  free built-in geocoder is called ~once per warehouse ever (steady-state
+  quota: one geocode per rep lookup, for the query itself). Contains ONLY
+  the operator-authored warehouse addresses' lat/lng — never a rep's lookup
+  query (a looked-up address may be a patient's; the query is deliberately
+  never persisted anywhere). Delete the property to force re-geocoding after
+  a warehouse address changes meaning (e.g. the geocoder had it wrong);
+  over `KB_MAP_GEOCODE_CACHE_MAX` (200) entries it self-resets to the
+  current article's warehouses. No manual setup.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -5305,7 +5451,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 40 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 41 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -6389,7 +6535,28 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The colour palettes added seven more → **507**
+roster-block emitter — 8 mutations bite-checked). The 2026-08-13 operator round added seven more → **514**
+(copy-scope + no-last-dept; the dashboard one-read-pair + paint-on-first-
+arrival/skeleton-not-empty/patch-not-rerender contract; the clock-in
+reminder's four gates incl. confirmed-snapshot-only; the auto-tag matcher
+behavioural + read/save mirror; and the intake feedback loop's gate/
+existence/PHI-free-audit/CTA-outside-the-hash contract — 32 mutations
+bite-checked; FOUR pins were strengthened after failing to bite: a comment
+broke a wiring regex (INV-188 again), an audit-notes scan stopped at a
+quoted semicolon, an indexOf(-1) passed a < comparison, and an
+adjacent-text match survived a reorder). The 2026-08-13 follow-up round
+(image fallback + map block) added six more → **520** (the image-fallback
+pair — server folder-scope-checked-BEFORE-bytes + same-generic-refusal +
+no-lock, and the client capture-phase/thumbnail-scoped/retry-guarded/
+failure-cached listener with the pure `kbImgFileId_` driven behaviourally;
+and the map-block four — escaped-contract parse + cap/truncated, attribute
+quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
++ lazy-embed aria + esc-on-read-back, and `kbHaversineMiles_` behavioural
+(Dallas→Houston ≈225mi) + the never-store-the-query server contract:
+exactly ONE property write (the coordinate cache), placed BEFORE the query
+geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
+`UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
+The colour palettes added seven more → **507**
 (all seven are DERIVED, so adding the fifth palette (Sage) required no test
 edit at all — the AA, constant-luminance, contract, swatch, key-list,
 specificity and hue-drift pins all swept it in, which is the INV-179 promise
@@ -6567,7 +6734,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
@@ -6716,7 +6883,7 @@ INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
-INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **40 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
+INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **41 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
 
 INV-137 | **Automation-failure manager digest.** `sendAutomationHealthDigest` is a top-level TRIGGER handler (daily manager-tz 9am) reachable via `google.script.run`, so it carries the MANAGER_EMAILS `assertManagerCaller_` gate (INV-44 family, NOT `emp.isAdmin` — it runs as the installer; pinned by the trigger-gate Node tripwire + `test_triggerGate_automationHealthDigest_nonManagerThrows`) and is best-effort (INV-14 — try/catch, never throws past the catch). It reuses `computeAutomationHealth_()` — the UN-gated body factored out of `getAutomationHealth` so the push and the Admin panel share ONE computation (no parallel-source drift; the gate stays in the `getAutomationHealth` wrapper) — and emails `MANAGER_EMAILS` ONLY when a check is failing: a **stale digest heartbeat**, a **stale nightly reconcile** (the F1 class — `automationLastRuns[].last.ms`, the additive raw-ms field, older than 30h; reconcile is the one unconditional daily job that writes a row every run, so a stale last-run = a silently-dead trigger), or **personal-sheet sync-fails** — plus (Turn C) any **dead detector** from `automationDetectorChecks_()` (a failing writer↔parser round-trip or missing diagnostic channel — the failure class the other checks can't see). A HEALTHY system is silent (no daily nag), and "never ran yet" (no heartbeat / no reconcile row) is NOT flagged (fresh-deploy / not-yet-installed posture, matching the panel). CDR reachability is deliberately NOT pushed (it isn't a trigger; an unset `CDR_SS_ID` reads as unreachable and would false-nag a non-CDR deployment — the panels already surface it). PHI-free (counts + job names, all `esc_`'d via `buildBrandedEmailHtml_`, tone warn). The watcher writes no audit row + has no heartbeat of its own (verify it from the trigger list). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). | Subsystem: Server
 
@@ -7418,7 +7585,7 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
     - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
     - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
-  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — if the org's sharing policy blocks domain-link visibility, the image degrades to alt text + the open-full-size link, and the operator should share the KB Images folder with the team manually. Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
+  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — since the 2026-08-13 fallback a Workspace-blocked thumbnail is silently refetched through the server (`kbGetImageData`) and still renders, so a visible image no longer proves the folder is shared; a broken image now indicates the fallback ALSO failed (file outside the KB Images folder, over the 4MB fetch cap, or `KB_IMAGES_FOLDER_ID` unset). Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
 
 S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, Client (Reference views), Client (shell), Client (Call Notes views)
   Steps:

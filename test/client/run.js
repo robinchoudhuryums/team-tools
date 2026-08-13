@@ -5806,11 +5806,13 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   const calls = (src.match(/getCsrTransferPerRepDaily_\((?!from, to, rosterNames, opts)/g) || []).length;
   const optedIn = (src.match(/getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g) || []).length;
   // THE load-bearing number: the no-queues callers cache their assembled
-  // payloads, so this set only grows deliberately. Operator #5 (2026-08-06)
-  // added the 4th — getMyMetricsRange's own transfer aggregate, which is
-  // ALSO cached (metrics_range_v1) and also wants no per-queue payload.
-  assert.strictEqual(calls - optedIn, 4,
-    'exactly the 4 opt-out callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend + getMyMetricsRange #5)');
+  // payloads, so this set only changes deliberately. Operator #5 (2026-08-06)
+  // added getMyMetricsRange's own transfer aggregate (also cached, also
+  // queue-free); the 2026-08-13 dashboard speedup then CONSOLIDATED
+  // getDashboardMetrics's two calls (own + team) into one — the own row is
+  // derived from the team map, halving the cold-start reads.
+  assert.strictEqual(calls - optedIn, 3,
+    'exactly the 3 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5)');
   // Name the opted-in callers rather than counting them — a bare count has to
   // be edited every time the feature grows (Phase 2 tripped it immediately),
   // which trains the next author to bump the number instead of thinking. This
@@ -7627,9 +7629,15 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
       'and the mono wordmark footer (' + i + ')');
   });
   // The module label is per form, so PPD / PMD / PAP are distinguishable.
+  // Every CALL SITE names its form via the subLabel (the body arg may be an
+  // expression — the 2026-08-13 feedback CTA rides it — so scan a window
+  // after each call rather than one rigid arg shape).
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  assert.strictEqual((code.match(/intakeEmailShell_\(subject, [a-zA-Z]+, 'Intake · /g) || []).length, 4,
-    'every call site names its form');
+  const callSites = code.split('intakeEmailShell_(subject,').slice(1);
+  assert.strictEqual(callSites.length, 4, 'four intakeEmailShell_ call sites');
+  callSites.forEach(function (c, i) {
+    assert.ok(c.slice(0, 220).indexOf("'Intake · ") >= 0, 'call site ' + (i + 1) + ' names its form');
+  });
 });
 
 test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
@@ -8697,6 +8705,369 @@ test('a palette block out-specifies the base dark block in BOTH directions', () 
     'each palette carries a :not([data-mode="dark"]) light block and a paired-attribute dark block');
   assert.ok(!/:root\[data-palette="[a-z]+"\]\s*[,{]/.test(toks),
     'a bare :root[data-palette=x] block would tie with the base dark block on specificity');
+});
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-13 — Notes fixes: copy scope + no last-dept default.
+console.log('\noperator 2026-08-13: copy scope + composer defaults');
+
+test('a real selection copies natively; the full-template intercept fires only when collapsed', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const i = cn.indexOf("frame.addEventListener('copy'");
+  assert.ok(i > 0, 'the copy failover still exists');
+  const handler = cn.slice(i, cn.indexOf('});', i));
+  // The original rationale (input/textarea contribute nothing to a selection)
+  // died with the contenteditable refactor; the blanket intercept had inverted
+  // into the bug — copying a phone number pasted the whole template.
+  const guardAt = handler.indexOf('sel.isCollapsed');
+  const writeAt = handler.indexOf('cnReadActiveForm_');
+  assert.ok(guardAt > 0 && writeAt > 0 && guardAt < writeAt,
+    'the selection guard runs BEFORE the template write');
+  assert.ok(/!sel\.isCollapsed && String\(sel\.toString\(\)\)\.trim\(\)\) return/.test(handler),
+    'a non-empty selection returns to the browser default (copies what is selected)');
+});
+
+test('the internal composer no longer remembers the last dept selection', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // Operator decision: pre-selecting the PREVIOUS note's departments on an
+  // unrelated note invites a mis-send — the failure mode is an email leaving
+  // the building, not retyping. Reader AND writer both gone (a read with no
+  // writer is the INV-184 dead-key class; a writer with no reader recreates
+  // the key for nothing).
+  [cn, kb].forEach((src, i) => {
+    assert.ok(src.indexOf("localStorage.getItem('umsCallNotesLastDept'") < 0 &&
+              src.indexOf("localStorage.setItem('umsCallNotesLastDept'") < 0,
+      ['cn', 'kb'][i] + ' partial still touches umsCallNotesLastDept');
+  });
+  // A re-send still restores the note's OWN stored departments — that branch
+  // must survive (it is the note's data, not a cross-note guess).
+  assert.ok(/departments: \[\], individualEmail: '', updateInfo: '',/.test(cn.replace(/\n\s*/g, ' ')),
+    'the subformData restore path is intact');
+});
+
+test('dashboard cold start: one read pair per window; first arrival paints, later ones patch', () => {
+  const strip = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  // The own row is DERIVED from the team map — a second [emp.name]-filtered
+  // scan of the same sheets doubled the cold-start cost across the periods.
+  assert.ok(!/getCdrAgentMetrics_\([^)]*\[emp\.name\]/.test(fn) && !/getCsrTransferPerRepDaily_\([^)]*\[emp\.name\]/.test(fn),
+    'no own-only CDR read remains — own comes from the team map');
+  assert.ok(/var dq = dqMap\[emp\.name\] \|\| null;/.test(fn), 'own DQE derived');
+  assert.ok(/var tr = trMap\[emp\.name\] \|\| null;/.test(fn), 'own transfer derived');
+  // Client: the slowest period (YTD) must not gate the first paint.
+  const clk = strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const loader = extractFunction('tc/script_clock.html', 'clkLoadDashboard_');
+  const paintAt = loader.indexOf('if (!painted) { painted = true; clkRenderDashboard_(); }');
+  const gateAt = loader.indexOf('if (done < need) return;');
+  assert.ok(paintAt > 0 && /else clkDashPatchPeriod_\(pk\);/.test(loader),
+    'first arrival renders; later arrivals patch their own slides');
+  assert.ok(gateAt > paintAt,
+    'the paint comes BEFORE the all-arrived gate — moving it after re-creates the wait-for-YTD stall');
+  const patch = extractFunction('tc/script_clock.html', 'clkDashPatchPeriod_');
+  assert.ok(/trk\.children\[idx\]/.test(patch) && /clkDashFit_\(key\)/.test(patch) &&
+    !/clkRenderDashboard_|clkLoadDashboardExtras_/.test(patch),
+    'the patch swaps slide innerHTML + refits — never a full re-render (extras RPCs would duplicate)');
+  // A pending period renders a SKELETON, never "No call data" (INV-187:
+  // absence of a read is not an empty read) — and a new day drops prior-day
+  // payloads so the skeleton path is actually reachable.
+  const own = extractFunction('tc/script_clock.html', 'clkDashOwnCard_');
+  const team = extractFunction('tc/script_clock.html', 'clkDashTeamCard_');
+  [own, team].forEach((f, i) => assert.ok(
+    f.indexOf('res === undefined) return clkDashSkelKpis_()') > 0 &&
+    f.indexOf('res === undefined') < f.indexOf('clkDashEmpty_'),
+    ['own', 'team'][i] + ' card: undefined → skeleton, checked BEFORE the empty state'));
+  assert.ok(/CLK_DASH\.data = \{\};/.test(clk), 'a new day resets the payload store');
+});
+
+test('activity-without-clock-in reminder: grace + activity + CONFIRMED-out, once per day', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const tick = nc(extractFunction('script_core.html', 'remindersTick_'));
+  // All four gates, in one condition: shift window past the grace, recent real
+  // input, a punch state that positively reads OUT, and not-already-fired.
+  assert.ok(/nowMin >= startMin \+ REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin/.test(tick),
+    'gated to the shift window past the start grace (everyone opens the app at 9:00 to clock in)');
+  assert.ok(/_remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS/.test(tick),
+    'requires recent real input — an app left open on a day off is not activity');
+  assert.ok(/remindPunchState_\(\) === 'out'/.test(tick),
+    "only a POSITIVE 'out' reading counts — unknown never nags (the (b) posture)");
+  // The stale-snapshot trap: a rep who clocked in from ANOTHER window still
+  // reads 'out' in this window's boot snapshot. The nag therefore requires a
+  // recently-CONFIRMED snapshot; a stale one triggers a bounded refresh and
+  // only the NEXT tick may nag.
+  assert.ok(/_remindStateOkAt < REMIND_STATE_CONFIRM_MS\) \{\s*\n\s*remindOnce_\(today \+ ':in'/.test(tick),
+    'nag only off a confirmed snapshot');
+  assert.ok(/\} else \{\s*\n\s*remindMaybeRefreshState_\(\);/.test(tick),
+    'a stale out-reading refreshes instead of nagging');
+  // And "confirmed" must mean a SUCCESSFUL refresh — stamping on the attempt
+  // would promote stale state to confirmed when the refresh failed.
+  const refresh = nc(extractFunction('script_core.html', 'remindMaybeRefreshState_'));
+  assert.ok(/if \(s && !s\.error\) \{ empState = s; _remindStateOkAt = Date\.now\(\); \}/.test(refresh),
+    '_remindStateOkAt is stamped inside the success handler only');
+  assert.ok(!/withFailureHandler\(function \(\) \{[^}]*_remindStateOkAt/.test(refresh),
+    'and never on failure');
+  // Activity is INPUT, not presence: pointer + keys only, capture + passive.
+  const start = nc(extractFunction('script_core.html', 'remindersStart_'));
+  assert.ok(/\['pointerdown', 'keydown'\]/.test(start) && /capture: true, passive: true/.test(start),
+    'activity listener is input-only, capture-phase, passive');
+  assert.ok(!/mousemove|scroll/.test(start), 'mousemove/scroll would count an untouched window as active');
+});
+
+test('auto-tag: rules ADD, dismissal sticks, session resets with the form', () => {
+  const cnAutoTagsFromText_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnAutoTagsFromText_');
+  const rules = [
+    { tag: 'close-order', keywords: ['close order', 'cancel order'] },
+    { tag: 'billing', keywords: ['invoice'] },
+  ];
+  // Case-insensitive substring, first matching keyword wins for its rule.
+  assert.deepStrictEqual(cnAutoTagsFromText_('Patient wants to CLOSE ORDER today', rules, [], []).join(','), 'close-order');
+  assert.deepStrictEqual(cnAutoTagsFromText_('sent invoice; then close order', rules, [], []).join(','), 'close-order,billing');
+  // Already-present and dismissed tags are both skipped — a rep who removed an
+  // auto-added tag has ANSWERED for this note; re-adding on the next keystroke
+  // would fight them for the chip.
+  assert.strictEqual(cnAutoTagsFromText_('close order', rules, ['close-order'], []).length, 0, 'present → skip');
+  assert.strictEqual(cnAutoTagsFromText_('close order', rules, [], ['close-order']).length, 0, 'dismissed → skip');
+  assert.strictEqual(cnAutoTagsFromText_('nothing relevant', rules, [], []).length, 0);
+  assert.strictEqual(cnAutoTagsFromText_('', rules, [], []).length, 0, 'empty text matches nothing');
+  // Wiring: removal records the dismissal ONLY for auto-added tags, and the
+  // form-clear path resets both session sets (they are per NOTE).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/autoTagApplied \|\| \[\]\)\.indexOf\(t\) >= 0/.test(cn), 'removal checks the auto-applied set');
+  const clear = extractFunction('cn/script_callnotes.html', 'cnClearActiveForm_');
+  assert.ok(/CN_STATE\.autoTagApplied = \[\];\s*\n\s*CN_STATE\.autoTagDismissed = \[\];/.test(clear),
+    'clearing the form resets both auto-tag session sets');
+  // The matcher runs CLIENT-side on the same debounce as the suggestions —
+  // note text never leaves the browser (the INV-119 posture). Strip comments
+  // before matching (INV-188 — the wiring lines carry trailing comments).
+  const ncc = cn.replace(/\/\/[^\n]*/g, '');
+  assert.ok(/cnApplyAutoTags_\(\);\s*\n\s*cnRefreshTagSuggest_\(\);/.test(ncc),
+    'auto-apply rides the existing Issue/Resolution debounce');
+});
+
+test('auto-tag rules: sanitize-on-read mirrors the save validation (server)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const read = nc(extractRawFunction('Code.js', 'getAutoTagRules_'));
+  const save = nc(extractRawFunction('Code.js', 'saveAutoTagRules'));
+  // Both sides normalize the tag identically (kebab, 2–24) so a rejected save
+  // and a sanitized read can never disagree about what a valid rule is.
+  const norm = /\.trim\(\)\.toLowerCase\(\)\s*\n?\s*\.replace\(\/\[\^a-z0-9\]\+\/g, '-'\)\.replace\(\/\^-\+\|-\+\$\/g, ''\)/;
+  assert.ok(norm.test(read) && norm.test(save), 'read and save share the tag normalization');
+  assert.ok(/tag\.length < 2 \|\| tag\.length > 24/.test(read) && /tag\.length < 2 \|\| tag\.length > 24/.test(save),
+    'both bound the tag length');
+  // Read side DROPS a malformed entry (a corrupt property must not break every
+  // rep's matcher); save side REFUSES with the rule named (an admin can fix it).
+  assert.ok(/if \(kws\.length\) out\.push/.test(read), 'read: entry-wise drop, never a throw');
+  assert.ok(/Admin access required/.test(save), 'save is admin-gated (INV-136 tier)');
+  assert.ok(/appears twice/.test(save), 'duplicate tags are refused, not silently merged');
+  assert.ok(/CN_AUTO_TAG_RULE_LIMIT/.test(save), 'rule count is bounded');
+  // Shipped to reps beside the other composer config; admins get it in the editor.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.strictEqual((code.match(/autoTagRules: getAutoTagRules_\(\),/g) || []).length, 2,
+    'getCallNotesDepartments AND getAdminConfig both carry the rules');
+});
+
+test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA outside the hash', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const w = nc(extractRawFunction('Code.js', 'submitIntakeFeedback'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(w) && /Not authorized/.test(w),
+    'the writer requires a registered employee — the page only collects text');
+  assert.ok(/INTAKE_FORM_TYPES_\.indexOf\(ft\) < 0/.test(w) && /INTAKE_FEEDBACK_MAX_CHARS/.test(w),
+    'form type whitelisted + text bounded');
+  const existAt = w.indexOf('Submission not found');
+  const appendAt = w.indexOf('getIntakeFeedbackSheet_().appendRow');
+  assert.ok(existAt > 0 && appendAt > existAt,
+    'the submission must EXIST before the append — a forged id cannot seed junk rows');
+  // The feedback TEXT may reference the patient: it lives in the Intake (PHI)
+  // store only; the shared AuditLog row carries id + type, never the text.
+  // The audit call's notes arg must be EXACTLY id+type — extract the call and
+  // assert the feedback text variable never enters it (a [^;]* scan stops at
+  // the semicolon INSIDE the quoted string, which is how the first version of
+  // this pin failed to bite).
+  const auditCall = w.slice(w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'"), w.indexOf('emp.email);', w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'")));
+  assert.ok(/'type=' \+ ft \+ '; submissionId=' \+ id,\s*$/.test(auditCall) && auditCall.indexOf('body') < 0,
+    'audit row is PHI-free — id + type only, never the feedback text');
+  assert.ok(/lock\.waitLock\(15000\)/.test(w) && /finally \{ lock\.releaseLock\(\); \}/.test(nc(w)),
+    'locked + finally-released (INV-01)');
+  // CTA placement: minted BEFORE the send, appended to the FINAL body only —
+  // AFTER the hash check, so the INV-41 preview contract (over the BASE body)
+  // is untouched. And a dead button is worse than none.
+  const ppd = nc(extractRawFunction('Code.js', 'intakeSendPPD'));
+  // The BASE body (the hashed one) must stay CTA-free — asserting the exact
+  // statement catches an appended CTA, where "the CTA call comes after the
+  // hash check" would not (the mutated base line adds its OWN call earlier).
+  assert.ok(/const baseBody = intakeBuildPpdBodyHtml_\(patientInfo, payload\.rows \|\| \[\], recData, null\);/.test(ppd),
+    'PPD: the hashed base body carries no CTA (INV-41 contract untouched)');
+  assert.ok(ppd.indexOf("intakeFeedbackCta_(submissionId, 'PPD')") > ppd.indexOf('intakeBodyHash_(baseBody, subject)'),
+    'PPD: CTA joins the final body after the hash check');
+  const mintAt = ppd.indexOf('const submissionId = Utilities.getUuid()');
+  assert.ok(mintAt > 0 && mintAt < ppd.indexOf('MailApp.sendEmail'),
+    'PPD: the id is minted (and BEFORE the send) so the button can reference it — indexOf -1 would pass a < check');
+  const cta = nc(extractRawFunction('Code.js', 'intakeFeedbackCta_'));
+  assert.ok(/if \(!base\) return '';/.test(cta), 'no resolvable exec URL → no button (never a dead one)');
+  // The route exists, and the detail read surfaces the rows for ALL forms.
+  assert.ok(/e\.parameter\.intakefb/.test(nc(extractRawFunction('Code.js', 'doGet'))), 'doGet routes ?intakefb=');
+  assert.ok(/feedback: intakeFeedbackFor_\(ft, id\)/.test(nc(extractRawFunction('Code.js', 'intakeGetSubmission'))),
+    'the Sent detail carries the feedback rows');
+  // Client render: escapes, and an EMPTY feedback list renders NOTHING — an
+  // empty "Recipient feedback" section would read as "no complaints yet",
+  // which the data cannot support.
+  const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/Array\.isArray\(d\.feedback\) && d\.feedback\.length/.test(intake), 'feedback section only when rows exist');
+  assert.ok(/esc\(String\(f\.text \|\| ''\)\)/.test(intake), 'feedback text is esc()-escaped before innerHTML');
+});
+
+console.log('\nkb — article-image server fallback (operator 2026-08-13)');
+
+test('kbGetImageData: employee-gated, FOLDER-SCOPED, capped, leak-free, lock-free', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'kbGetImageData'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'requires a registered employee');
+  // THE SCOPE CHECK IS THE SECURITY BOUNDARY: the web app runs as the
+  // deployer, so without the parents check any signed-in employee could read
+  // ANY Drive file the deployer's account can open, by id.
+  const parentsAt = f.indexOf('file.getParents()');
+  const gateAt = f.indexOf('if (!inKbFolder) return');
+  const bytesAt = f.indexOf('base64Encode');
+  assert.ok(parentsAt > 0 && gateAt > parentsAt && bytesAt > gateAt,
+    'parents are checked against the KB Images folder BEFORE any bytes leave');
+  assert.ok(/KB_IMAGES_FOLDER_PROP/.test(f) && /if \(!folderId\) return/.test(f),
+    'an unset folder property refuses — nothing can legitimately be inside a folder that does not exist');
+  // Existence never leaks: unset property, bad id, missing file, out-of-folder,
+  // wrong type, oversize — all the SAME generic refusal.
+  assert.ok((f.match(/'Not available\.'/g) || []).length >= 6,
+    'every refusal path returns the same generic message');
+  assert.ok(/KB_IMG_UPLOAD_TYPES\.indexOf\(contentType\) < 0/.test(f) && /KB_IMG_FETCH_MAX_BYTES/.test(f),
+    'type whitelist + size cap mirror the upload path');
+  assert.ok(!/waitLock/.test(f), 'read-only Drive fetch — no ScriptLock (the kbUploadImage reasoning)');
+});
+
+test('client image fallback: capture-phase, thumbnail-scoped, retry-guarded, failure-cached', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // error events don't bubble — a bubble-phase listener would never fire and
+  // the whole fallback would be silently dead (measure, don't assume).
+  assert.ok(/document\.addEventListener\('error', function \(e\) \{[\s\S]{0,400}\}, true\);/.test(kb),
+    'the error listener is CAPTURE-phase');
+  assert.ok(/t\.closest\('\.kb-article'\)/.test(kb), 'scoped to images inside rendered article containers');
+  const ctx = vm.createContext({});
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbImgFileId_'), ctx);
+  assert.strictEqual(ctx.kbImgFileId_('https://drive.google.com/thumbnail?id=abc123XYZ_-&sz=w1200'), 'abc123XYZ_-');
+  assert.strictEqual(ctx.kbImgFileId_('https://drive.google.com/thumbnail?sz=w1200&id=abc123'), 'abc123',
+    'id may follow another param');
+  // An EXTERNAL image failing must not send its arbitrary URL to our server.
+  assert.strictEqual(ctx.kbImgFileId_('https://evil.example/thumbnail?id=abc123'), null, 'non-Drive src → no fetch');
+  assert.strictEqual(ctx.kbImgFileId_('data:image/png;base64,AAAA'), null, 'a swapped data URL never re-triggers');
+  const fb = extractFunction('kb/script_kb.html', 'kbImgFallback_');
+  assert.ok(/if \(!img \|\| img\.dataset\.kbFbTried\) return;/.test(fb),
+    'retry guard — the swapped src erroring again cannot loop');
+  assert.ok(/KB_IMG_FB\.cache\[fileId\] = dataUrl \|\| 'failed';/.test(fb),
+    "a failed fetch caches 'failed' so a broken file cannot hammer the server on every re-render");
+  assert.ok(/KB_IMG_FB\.pending\[fileId\]\.push\(img\); return;/.test(fb),
+    'concurrent misses of one file fan into a single fetch');
+});
+
+console.log('\nkb — warehouse map block (operator 2026-08-13, Tier A — no billing)');
+
+const kbMapCtx = vm.createContext({});
+{
+  const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const capLine = kbSrc.match(/var KB_MAP_MAX_WH_CLIENT = \d+;/);
+  assert.ok(capLine, 'the client warehouse cap constant exists');
+  vm.runInContext(capLine[0], kbMapCtx);
+  ['kbSlug_', 'kbRosterAttr_', 'kbMapDecode_', 'kbMapParse_', 'kbMapHtml_', 'kbMd_']
+    .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbMapCtx));
+}
+
+test('kbMapParse_ — wh| lines against the PRODUCTION (escaped) contract', () => {
+  const d = kbMapCtx.kbMapParse_(rosEsc([
+    'wh| Dallas Warehouse: 4600 Main & 5th St, Dallas, TX 75201',
+    'wh| Phoenix: 88 Oak Ave, Phoenix, AZ 85001',
+    '# a comment line',
+    'wh| missing an address',
+    'not a wh line at all',
+  ].join('\n')));
+  assert.strictEqual(d.warehouses.length, 2, 'only the sound lines');
+  assert.strictEqual(d.warehouses[0].name, 'Dallas Warehouse', 'split on the FIRST colon');
+  // The fence content arrives HTML-escaped (the roster &gt; lesson): the
+  // parser keeps the escaped form; only URL building decodes.
+  assert.ok(d.warehouses[0].addr.indexOf('&amp;') >= 0, 'an & in the address survives as its escaped form');
+  assert.strictEqual(d.warnings.length, 2, 'malformed lines are counted, never silently dropped');
+  assert.strictEqual(kbMapCtx.kbMapDecode_('A &amp; B &lt;x&gt;'), 'A & B <x>', 'decode covers exactly the three kbMd_ escapes');
+  const many = kbMapCtx.kbMapParse_(Array.from({ length: 25 }, (_, i) => 'wh| W' + i + ': ' + i + ' Elm St').join('\n'));
+  assert.strictEqual(many.warehouses.length, 20, 'capped at 20');
+  assert.strictEqual(many.truncated, 5, 'with the overflow REPORTED (INV-169)');
+});
+
+test('kbMapHtml_ — attribute quoting, percent-encoded URLs, real controls, honest copy', () => {
+  const html = kbMapCtx.kbMapHtml_(rosEsc('wh| The "Main" Hub: 1 A & B Rd, Dallas, TX'));
+  // Quotes are the gap the top-level escape leaves — attributes need their own.
+  assert.ok(/data-name="The &quot;Main&quot; Hub"/.test(html), 'quotes escaped in attributes');
+  // The href is built from the DECODED address then encodeURIComponent'd —
+  // an escaped entity leaking in would geocode "amp;" as part of the street.
+  assert.ok(/href="https:\/\/www\.google\.com\/maps\?q=1%20A%20%26%20B%20Rd/.test(html),
+    'the & reaches the URL as %26, not &amp;');
+  assert.ok(/<button type="button" class="kb-map-embed-btn" aria-expanded="false"/.test(html),
+    'the embed toggle is a real button with disclosure state (INV-173/174)');
+  assert.ok(/<button type="button" class="kb-ros-expand"/.test(html), 'so is Find nearest');
+  assert.ok(/role="status" aria-live="polite"/.test(html), 'lookup results are announced');
+  assert.ok(/straight-line estimates/.test(html) && /Prefer a ZIP code/.test(html),
+    'the copy states straight-line and prefers a ZIP (the PHI posture)');
+  assert.ok(/No warehouses yet/.test(kbMapCtx.kbMapHtml_('')), 'empty fence explains the syntax');
+});
+
+test('kbMd_ renders a ```map fence, inert like the others', () => {
+  const html = kbMapCtx.kbMd_(['Intro.', '', '```map', 'wh| A: 1 Elm St', '```'].join('\n'));
+  assert.ok(/<div class="kb-map"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  const evil = kbMapCtx.kbMd_(['```map', 'wh| <script>alert(1)</script>: 1 Elm St', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  // The embed iframe is created lazily by the toggle, with aria kept in step.
+  const tog = extractFunction('kb/script_kb.html', 'kbMapToggleEmbed_');
+  assert.ok(/output=embed/.test(tog) && /encodeURIComponent\(kbMapDecode_/.test(tog),
+    'the keyless embed URL is built from the decoded, percent-encoded address');
+  assert.ok(/btn\.setAttribute\('aria-expanded', open \? 'true' : 'false'\);/.test(tog),
+    'the toggle keeps aria-expanded in step (INV-174)');
+  // getAttribute returns DECODED text, so anything read back off a data-attr
+  // must be esc()'d before re-entering innerHTML.
+  const look = extractFunction('kb/script_kb.html', 'kbMapLookup_');
+  assert.ok(/esc\(names\[r\.i\]/.test(look), 'warehouse names are re-escaped in the results render');
+  assert.ok(/esc\(res\.formatted \|\| q\)/.test(look), 'and so is the server-formatted location');
+});
+
+test('kbHaversineMiles_ — behavioral, and the server contract never stores the query', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = vm.createContext({ Math });
+  vm.runInContext(extractRawFunction('Code.js', 'kbHaversineMiles_'), ctx);
+  const dalHou = ctx.kbHaversineMiles_(32.7767, -96.7970, 29.7604, -95.3698);
+  assert.ok(dalHou > 215 && dalHou < 235, 'Dallas→Houston ≈ 225 mi great-circle (got ' + dalHou.toFixed(1) + ')');
+  assert.strictEqual(ctx.kbHaversineMiles_(41, -87, 41, -87), 0, 'identical points → 0');
+  const f = nc(extractRawFunction('Code.js', 'kbMapDistances'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'rep-gated');
+  assert.ok(/slice\(0, KB_MAP_MAX_WH\)/.test(f) && /KB_MAP_QUERY_MAX/.test(f), 'warehouse count + string lengths bounded');
+  // THE PRIVACY CONTRACT: warehouse geocodes persist (operator-owned, static);
+  // the rep's QUERY never does — a looked-up address may be a patient's.
+  // (a) the only property write is the warehouse-coordinate cache;
+  const setCalls = f.match(/props\.setProperty\([^)]*\)/g) || [];
+  assert.strictEqual(setCalls.length, 1, 'exactly one property write');
+  assert.ok(/KB_MAP_GEOCODE_CACHE_PROP/.test(setCalls[0]), 'and it is the coordinate cache');
+  // (b) that write happens BEFORE the query is even geocoded, so the query
+  //     value cannot be in the serialized blob;
+  const writeAt = f.indexOf('props.setProperty');
+  const qGeoAt = f.indexOf('kbGeocodeOne_(query)');
+  assert.ok(writeAt > 0 && qGeoAt > writeAt, 'cache write precedes the query geocode');
+  // (c) cache keys are address HASHES via kbMapCacheKey_, never raw strings;
+  assert.ok(/kbMapCacheKey_\(a\)/.test(f) && !/cache\[a\]/.test(f), 'keys are hashed addresses');
+  // (d) no audit row, no log line — nothing records what was looked up.
+  assert.ok(!/writeAuditLog_/.test(f) && !/Logger\.log/.test(f) && !/console\./.test(f),
+    'the lookup is never audited or logged');
+  // The free built-in geocoder — the whole point of Tier A. Any Maps-API-key
+  // path (UrlFetchApp to googleapis) would mean billing.
+  const g = nc(extractRawFunction('Code.js', 'kbGeocodeOne_'));
+  assert.ok(/Maps\.newGeocoder\(\)/.test(g), 'uses the built-in Maps service (no API key, no billing)');
+  assert.ok(!/UrlFetchApp/.test(f) && !/UrlFetchApp/.test(g), 'no external HTTP — nothing to bill');
+  // Hygiene reset keeps THIS run's entries warm (the current article's
+  // warehouses are exactly the ones worth keeping).
+  assert.ok(/cache = fresh;/.test(f), 'an oversized cache resets to the fresh entries, not to nothing');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
