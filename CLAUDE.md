@@ -1788,7 +1788,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fourteen client-side localStorage keys total.** All per-browser, all
+- **Sixteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1881,7 +1881,18 @@ this section before touching the relevant area.
     rather than being reflected onto `<html>`. Read + applied SYNCHRONOUSLY in
     the `<head>` (the `data-mode` discipline — a palette flash on every load
     would be worse than no palette), written by `setTimeClockPalette`.
-  Clearing browser data wipes all fourteen. (`umsCallNotesLastDept` — the
+  - `umsTzWarnedDay` — the roster-vs-browser timezone-mismatch warning's
+    once-per-day stamp (operator 2026-08-13; the 9:30 PM note diagnosis).
+    Written by `tzMismatchCheck_` when the browser's UTC offset disagrees
+    with the roster timezone's; the sticky warn toast then fires at most
+    once per browser-local day. Absent/corrupt = the check may warn today.
+  - `umsDashMetrics` — the Dashboard metric cards' same-day SWR blob
+    (`{day, data}` — the last COMPLETE, fully-successful
+    getDashboardMetrics round for all three periods). Seeded on a same-day
+    cold boot so a reload paints instantly; the refetch still runs
+    (freshness is never inherited — INV-156), and partial/failed rounds
+    are never persisted (INV-129). Aggregate call metrics only — no PHI.
+  Clearing browser data wipes all sixteen. (`umsCallNotesLastDept` — the
   composer's last-dept default — was REMOVED by operator decision 2026-08-13:
   pre-selecting the previous note's departments on an unrelated note invites a
   mis-send, and the failure mode is an email leaving the building rather than
@@ -2399,6 +2410,65 @@ this section before touching the relevant area.
   `minmax(78px, auto)` because the caller's own row renders a "you" chip
   instead of an Offboard button and a bare `auto` track shifted that row's five
   readiness columns out of line. It stacks at ≤900px (the A2 rule).
+- **Settings live behind ONE gear, in a flyout panel (operator 2026-08-13).**
+  The three stacked sidebar rows (Theme / Palette / Alerts) consolidated into a
+  gear button (sidebar + mobile header, both carrying `data-settings-toggle` —
+  the INV-191 rule: writers key on the attribute that MEANS the thing) opening
+  a fixed-position `.settings-panel` flyout. THE CONTROL MARKUP IS UNCHANGED
+  (`data-theme-target` / `data-palette-target` / `data-remind`), so every
+  reflector keeps working with zero edits. Three load-bearing details: the
+  panel mounts at the SHELL ROOT, never inside the sidebar — the sidebar is
+  `display:none` on mobile, where the header gear must still reach it; the
+  panel's class sets `display:flex`, so it owes the
+  `.settings-panel[hidden] { display: none; }` companion (the [hidden] gotcha
+  — without it the panel ships permanently open); and its Esc handler is
+  CAPTURE-phase with `stopPropagation`, so closing the flyout never also
+  closes an overlay beneath it. Positioning is measured from whichever gear
+  opened it (beside the sidebar gear, below the header gear, viewport-
+  clamped). The old multi-row adjacency CSS (`.sb-theme + .sb-pal` etc.) is
+  GONE with the rows it served (INV-184) — one settings row remains and
+  `margin-top: auto` pins it to the sidebar bottom. MEASURED: the gear label
+  needed 8px (not 10px) side padding to escape the "Setti…" ellipsis at the
+  168px default sidebar — the INV-170 class.
+- **View-as is an ADMIN-ONLY, SESSION-ONLY, CLIENT-ONLY preview (operator
+  2026-08-13).** A "View as" row in the settings flyout (Me / Manager /
+  Spanish CSR / CSR) overrides the three role flags on `empState`
+  (`viewAsFlags_`, pure + Node-pinned), re-renders the shell, and lands on the
+  Dashboard — so an admin can see which tabs and controls each role gets
+  before distributing the app. THE BOUNDARIES ARE THE DECISION: admin-only
+  (`viewAsSet_` refuses unless the REAL captured flags say admin — and
+  bypassing it from a console grants nothing, because every manager/admin
+  endpoint still gates on the server-side identity); session-only (nothing is
+  persisted — a refresh restores reality by construction); and UI-only (the
+  server answers with the admin's REAL access, so surfaces whose CONTENT
+  branches server-side still show the admin's data — it is a preview of
+  CHROME, not an impersonation, and the banner says so). While active, a
+  fixed-blue `.viewas-banner` (INV-166 — a banner that must be unmistakable
+  takes fixed colors) names the role and carries the exit; the View-as row
+  itself keys off the REAL role so the way back always renders. `empState` is
+  REPLACED by background refreshes (the reminder ticker + three Clock paths),
+  so every one of those sites calls `viewAsReapply_()` — without it the
+  preview silently snapped back mid-session. Pinned by the view-as pins.
+- **The slow tabs paint last-good INSTANTLY and refresh behind the pill
+  (operator 2026-08-13 — "My Stats / Team Metrics / Spanish Inbox take a
+  while").** Three parts. (a) The My Stats + Team Metrics loaders now paint
+  from ANY same-key cached payload, not only a `viewCacheFresh_` one — the
+  45s-TTL-gated paint re-showed the loader on almost every re-enter, which
+  read as "slow" even when the data was seconds old; the key is the exact
+  query (day/range), so an old payload is never the WRONG data, and the
+  refetch always runs behind the "Refreshing…" pill. (b) The Spanish tab
+  (THREE Gmail-scanning RPCs) seeds all three parts from its last complete
+  round (keyed by the days window): the stats refresh swaps ONLY
+  `#spanish-head`, and the list refresh paints the seeded lists first and
+  keeps last-good on a failed half — so the painted content is never
+  disturbed mid-read. (c) `getTeamMetrics` — the one UNCACHED heavy manager
+  endpoint — gained the sibling endpoint result cache (`team_metrics_v1:
+  <from>:<to>`, org-wide since every manager sees the same aggregate,
+  `CDR_CACHE_TTL`, `_TEST_OVERRIDE_CDR_SS_ID` bypass), with the put gated on
+  a CLEAN round (`!noteCountPartial && !transferMeta.error` — INV-129: a
+  degraded aggregate is never pinned for the TTL; a deployment with no
+  Transfer tab simply stays uncached). First-load-of-the-day on the Spanish
+  tab is still Gmail-bound — that read is deliberately live (INV-31).
 - **Reminders are a SHELL capability, not a Clock-view one (operator
   2026-08-11).** Break reminders used to fire only while the Clock tab was
   open — so the pinned Call Notes pop-out, the window a rep actually spends the
@@ -2470,7 +2540,7 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fourteen client-side localStorage keys total" entry in
+  authoritative "Sixteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
@@ -2487,8 +2557,10 @@ this section before touching the relevant area.
   The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — the
   reminder-alert toggles added `umsNotify` — net 15 — and the operator retired
   the clock-card background image (2026-08-12), taking `umsClockBg` back out —
-  net 14 — the colour palettes added `umsTheme`, net 15 — and the operator
-  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14.)
+  net 14 — the colour palettes added `umsTheme`, net 15 — the operator
+  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14 —
+  and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
+  `umsDashMetrics`, net 16.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -3013,7 +3085,10 @@ this section before touching the relevant area.
   rename/merge/archive) so the Admin table reflects a change
   immediately; `managerGetUnresolvedActionCount`
   (`CN_UNRESOLVED_CACHE_KEY`, 2 min) is TTL-only like the ambient
-  cache (INV-43). Open-ended substring search (`managerSearchCallNotes`
+  cache (INV-43). Since the 2026-08-13 speed round `getTeamMetrics` is ALSO
+  endpoint-result-cached (`team_metrics_v1:<from>:<to>`, org-wide,
+  `CDR_CACHE_TTL`; put gated on a clean round — see the slow-tabs KDD).
+  Open-ended substring search (`managerSearchCallNotes`
   without a date range) is intentionally NOT cached — speeding it up
   needs the full note text (a real index), which is out of scope; the
   date/column bounds (INV-46 reader) already cut its cell volume.
@@ -5029,6 +5104,32 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-13 settings/speed round adds NO operator state to set up** —
+  no Script Properties, triggers, migrations, or CONFIG constants; two new
+  per-browser localStorage keys (`umsTzWarnedDay`, `umsDashMetrics` — count
+  now sixteen) and one new server-side CacheService entry
+  (`team_metrics_v1:<from>:<to>`, self-managing). **ONE OPERATOR ACTION from
+  the 9:30 PM note report: open the Employees sheet and set YOUR OWN row's
+  Timezone cell to `America/Chicago`** — a blank cell falls back to
+  `CONFIG.TIMEZONE` (Asia/Kolkata), which is why a note logged mid-morning
+  CST carried a 9:30 PM (IST) stamp and yesterday's note appeared in today's
+  Log. Existing rows keep their as-written stamps; new writes are correct the
+  moment the cell is fixed (the roster cache refreshes within 5 min).
+  Behaviour changes to expect post-deploy: (a) the sidebar's Theme / Palette /
+  Alerts rows are consolidated behind a **Settings gear** (sidebar + mobile
+  header) opening a small flyout; (b) admins get a **View as** row in that
+  flyout (Me / Manager / Spanish CSR / CSR) — a session-only preview of each
+  role's tabs with a blue banner + Exit; data still loads with the admin's
+  real access; (c) anyone whose browser timezone disagrees with their roster
+  timezone sees a once-a-day sticky warning naming both zones — that is the
+  9:30 PM class being surfaced, not a new fault; (d) My Stats / Team Metrics /
+  Spanish Inbox re-enters paint instantly from the last load and refresh
+  behind the "Refreshing…" pill; Team Metrics is also server-cached ≤5 min
+  (org-wide per range); (e) the Dashboard holds its full 4-card layout from
+  the first frame (no more Spanish/Requests pop-in), the extras RPCs start in
+  parallel with the metrics RPCs, and a same-day reload paints the metric
+  cards instantly from the local blob while refreshing in the background.
+  **Post-deploy: run `runAllTests()`** as usual.
 - **The 2026-08-13 follow-up round (image fallback + warehouse map) adds NO
   operator state to set up** — no triggers, no migrations, no API key, and
   deliberately NO billing (the operator constraint): the map block's whole geo
@@ -5802,6 +5903,22 @@ manually for a fresh deploy or environment:
   of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
   with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
   Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
+  **A FOURTH consequence bit in pilot (operator 2026-08-13): a BLANK roster
+  Timezone cell falls back to `CONFIG.TIMEZONE` (Asia/Kolkata), so everything
+  that rep writes — punches, note timestamps, `DateLocal` — is silently
+  stamped in IST.** The reported symptom was a CST rep's note showing 9:30 PM
+  and yesterday's note sitting in today's Log: +5:30 is the only offset that
+  puts a :30 on a whole-hour zone, which is how it was diagnosed. The fix is
+  the roster cell (`America/Chicago` in the rep's row — the Team Members
+  panel's tz chip flags blank/malformed cells); existing rows keep their
+  as-written stamps. The code half is `tzMismatchCheck_` (`script_core.html`):
+  at boot the client compares the browser's real UTC OFFSET against the
+  roster timezone's (offsets, never ids — `America/Chicago` vs `US/Central`
+  must not warn; an Intl sanity-probe of UTC gates the check so a broken
+  browser can't nag) and shows a STICKY warn toast at most once per
+  browser-local day (`umsTzWarnedDay`) naming both zones and where to fix it.
+  The server cannot detect this class — only the browser knows where the rep
+  actually sits.
 - **`CONFIG.COVERAGE_MIN_STAFF`** (this deploy: **6**) + **`CONFIG.COVERAGE_STAFF_GOOD`**
   (this deploy: **7**) set the manager Coverage planner's three bands (#3): a
   manager-tz business hour with **≥ GOOD** confirmed reps renders green ("good"),
@@ -6556,7 +6673,23 @@ quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
 exactly ONE property write (the coordinate cache), placed BEFORE the query
 geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
 `UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
-The colour palettes added seven more → **507**
+The 2026-08-13 settings/speed round added seven more → **527** (the settings
+flyout — attribute-keyed gears, capture-phase Esc + stopPropagation, all
+three control groups inside the panel, the `[hidden]` display companion, and
+the single-render-site + shell-root-mount contract folded into the rewritten
+palette-picker pin; view-as — `viewAsFlags_` behavioural per role,
+admin-gate, no-localStorage session-only, all four `empState`-refresh
+reapply sites, banner + real-role row; `tzOffsetMinAt_` behavioural
+(CDT −300 / IST +330 / unknown → null) + the offset-not-id compare, UTC
+sanity probe, once-a-day key and sticky toast; the dashboard first-frame
+4-card skeleton + parallel extras kick + `extraBusy` guard;
+`clkDashSeedFromLs_` behavioural — same-day complete rounds only, freshness
+never inherited, partial rounds never persisted; the three slow tabs'
+paint-any-cache + Spanish head-only refresh + background last-good; and the
+`getTeamMetrics` endpoint cache — read after the gate, put gated on a clean
+round, test-override bypass — 12 mutations bite-checked; two pins updated
+for the deliberate layout/contract changes rather than the code, both
+verified to still bite). The colour palettes added seven more → **507**
 (all seven are DERIVED, so adding the fifth palette (Sage) required no test
 edit at all — the AA, constant-luminance, contract, swatch, key-list,
 specificity and hue-drift pins all swept it in, which is the INV-179 promise
@@ -6734,7 +6867,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server

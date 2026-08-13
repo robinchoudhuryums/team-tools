@@ -620,6 +620,108 @@ function whatsNewClose_() {
   if (ov) ov.classList.remove('open');
 }
 
+// ── Settings flyout (operator 2026-08-13) ───────────────────────────────────
+// One gear in the sidebar (and one in the mobile header) opens a small fixed-
+// position panel holding the Theme / Palette / Alerts controls that used to
+// stack as three sidebar rows — plus the admin-only View-as row. Both gears
+// carry `data-settings-toggle` (the INV-191 lesson: key writers on the
+// attribute that MEANS the thing, never on a shared look-class); the panel
+// closes on Esc, outside-click, or re-click, with aria-expanded kept in step.
+var _settingsDocBound = false;
+function settingsPanelEl_() { return document.getElementById('settings-panel'); }
+function settingsReflectExpanded_(open) {
+  document.querySelectorAll('[data-settings-toggle]').forEach(function (b) {
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
+function settingsClose_() {
+  var p = settingsPanelEl_();
+  if (!p || p.hasAttribute('hidden')) return;
+  p.setAttribute('hidden', '');
+  settingsReflectExpanded_(false);
+}
+function settingsToggle_(btn) {
+  var p = settingsPanelEl_();
+  if (!p) return;
+  if (!p.hasAttribute('hidden')) { settingsClose_(); return; }
+  p.removeAttribute('hidden');
+  // Anchor near the gear that opened it: beside it when there's room to the
+  // right (the sidebar), else below it clamped to the viewport (the header).
+  var r = btn.getBoundingClientRect();
+  var pw = p.offsetWidth, ph = p.offsetHeight;
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var left, top;
+  if (r.right + 8 + pw <= vw) {
+    left = r.right + 8;
+    top = Math.min(Math.max(8, r.bottom - ph), Math.max(8, vh - ph - 8));
+  } else {
+    left = Math.max(8, Math.min(r.left, vw - pw - 8));
+    top = Math.min(r.bottom + 8, Math.max(8, vh - ph - 8));
+  }
+  p.style.left = left + 'px';
+  p.style.top = top + 'px';
+  settingsReflectExpanded_(true);
+  if (!_settingsDocBound) {
+    _settingsDocBound = true;
+    document.addEventListener('pointerdown', function (e) {
+      var pp = settingsPanelEl_();
+      if (!pp || pp.hasAttribute('hidden')) return;
+      if (e.target.closest && (e.target.closest('#settings-panel') || e.target.closest('[data-settings-toggle]'))) return;
+      settingsClose_();
+    }, true);
+    // Capture-phase so an open panel consumes the Esc BEFORE the shared
+    // overlay handler — closing a flyout must not also close a modal below it.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var pp = settingsPanelEl_();
+      if (pp && !pp.hasAttribute('hidden')) { settingsClose_(); e.stopPropagation(); }
+    }, true);
+  }
+}
+
+// ── View-as (admin preview, operator 2026-08-13) ────────────────────────────
+// Overrides the CLIENT role flags on empState and re-renders the shell so an
+// admin can see which tabs/controls a CSR, Spanish CSR, or non-admin manager
+// gets. SESSION-ONLY (a refresh restores reality — deliberately nothing is
+// persisted) and UI-ONLY: the server gates every endpoint by the REAL signed-
+// in identity, so surfaces whose CONTENT branches server-side (e.g. manager
+// fields on rep-callable endpoints) still answer as the admin. That makes
+// this a safe preview, not an impersonation — and the reverse means it can
+// NEVER grant anything: a non-admin calling viewAsSet_ from the console gets
+// client chrome at most; every manager/admin endpoint still rejects them.
+var VIEW_AS = { active: null, real: null };
+var VIEW_AS_LABELS = { manager: 'Manager (non-admin)', spanish: 'Spanish CSR', csr: 'CSR' };
+function viewAsReapply_() {
+  // empState is REPLACED by background refreshes (reminder ticker, punch
+  // paths); while a preview is active the preview flags must survive that.
+  if (!VIEW_AS.active || !empState) return;
+  var f = viewAsFlags_(VIEW_AS.active);
+  if (!f) return;
+  empState.isAdmin = f.isAdmin; empState.isManager = f.isManager; empState.canSeeSpanish = f.canSeeSpanish;
+}
+function viewAsFlags_(role) {
+  var real = VIEW_AS.real;
+  if (!real) return null;
+  if (role === 'csr') return { isAdmin: false, isManager: false, canSeeSpanish: false };
+  if (role === 'spanish') return { isAdmin: false, isManager: false, canSeeSpanish: true };
+  if (role === 'manager') return { isAdmin: false, isManager: true, canSeeSpanish: real.canSeeSpanish };
+  return { isAdmin: real.isAdmin, isManager: real.isManager, canSeeSpanish: real.canSeeSpanish };
+}
+function viewAsSet_(role) {
+  if (!empState) return;
+  if (!VIEW_AS.real) {
+    VIEW_AS.real = { isAdmin: !!empState.isAdmin, isManager: !!empState.isManager, canSeeSpanish: !!empState.canSeeSpanish };
+  }
+  if (!VIEW_AS.real.isAdmin) return;   // admins only — and worthless to bypass (see above)
+  VIEW_AS.active = (role === 'csr' || role === 'spanish' || role === 'manager') ? role : null;
+  var f = viewAsFlags_(VIEW_AS.active || 'me');
+  empState.isAdmin = f.isAdmin; empState.isManager = f.isManager; empState.canSeeSpanish = f.canSeeSpanish;
+  settingsClose_();
+  renderShell(empState);
+  // Land on a tab every role can see; enterTool bumps gated tabs anyway.
+  enterTool('timeClock');
+}
+
 function renderShell(state) {
   const sbIcon = (name) => `<span class="sb-icon">${icon(name, 18)}</span>`;
   const nvIcon = (name) => `<span class="nav-icon">${icon(name, 20)}</span>`;
@@ -714,9 +816,51 @@ function renderShell(state) {
          ${icon('warning', 13)}<span>${esc(state.instanceLabel)} · isolated data &amp; email · not the team&rsquo;s live version</span>
        </div>`
     : '';
+
+  // Settings gear + flyout (operator 2026-08-13) — the three stacked sidebar
+  // rows (Theme / Palette / Alerts) consolidated behind one gear. The panel
+  // keeps the SAME control markup (data-theme-target / data-palette-target /
+  // data-remind), so every existing reflector (syncThemeToggleState,
+  // syncPaletteToggleState, notifySyncToggles_) keeps working unchanged. It
+  // mounts at the SHELL root (not inside the sidebar) because the sidebar is
+  // display:none on mobile, where the header gear opens the same panel.
+  const settingsGearBtn = (cls) => `
+    <button type="button" class="${cls}" data-settings-toggle
+            aria-expanded="false" aria-controls="settings-panel" aria-haspopup="true"
+            aria-label="Settings" title="Settings — theme, palette, alerts"
+            onclick="settingsToggle_(this)">${icon('settings', 14)}${cls === 'sb-settings-btn' ? '<span class="sb-lbl">Settings</span>' : ''}</button>`;
+  // View-as (admin only — keyed off the REAL role so the row survives while a
+  // preview is active and offers the way back). A UI preview, not an
+  // impersonation: the server still answers with the admin's real access.
+  const realAdmin = VIEW_AS.real ? VIEW_AS.real.isAdmin : !!state.isAdmin;
+  const viewAsRow = realAdmin ? `
+    <div class="stg-row">
+      <span class="sb-theme-label">View as</span>
+      <div class="stg-viewas-btns" role="group" aria-label="Preview the app as a role">
+        ${[['me', 'Me'], ['manager', 'Manager'], ['spanish', 'Spanish CSR'], ['csr', 'CSR']].map(([k, l]) => `
+        <button type="button" class="stg-va-btn" data-viewas="${k}"
+                aria-pressed="${(VIEW_AS.active || 'me') === k ? 'true' : 'false'}"
+                onclick="viewAsSet_('${k}')">${l}</button>`).join('')}
+      </div>
+      <div class="stg-note">Previews that role&rsquo;s tabs and controls — data still loads with your real access.</div>
+    </div>` : '';
+  const settingsPanel = `
+    <div class="settings-panel" id="settings-panel" hidden role="group" aria-label="Settings">
+      <div class="stg-row"><span class="sb-theme-label">Theme</span>${themeToggle}</div>
+      <div class="stg-row"><span class="sb-theme-label">Palette</span>${paletteToggle}</div>
+      <div class="stg-row"><span class="sb-theme-label">Alerts</span>${reminderToggle}</div>
+      ${viewAsRow}
+    </div>`;
+  const viewAsBanner = VIEW_AS.active ? `
+    <div class="viewas-banner" role="status">
+      ${icon('settings', 13)}<span>Previewing as <b>${esc(VIEW_AS_LABELS[VIEW_AS.active] || VIEW_AS.active)}</b> — tabs &amp; controls only; data still loads with your real access</span>
+      <button type="button" class="viewas-exit" onclick="viewAsSet_('me')">Exit preview</button>
+    </div>` : '';
+
   document.getElementById('app').innerHTML = `
     <a class="skip-link" href="#view-area">Skip to content</a>
     ${instanceBanner}
+    ${viewAsBanner}
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sb-brand">
@@ -729,20 +873,9 @@ function renderShell(state) {
         <div class="sb-section-label">Navigate</div>
         ${sbLinks}
         <div class="sb-theme">
-          <span class="sb-theme-label">Theme</span>
+          ${settingsGearBtn('sb-settings-btn')}
           <div class="sb-theme-controls">
-            ${themeToggle}
             ${popOutBtn}
-          </div>
-        </div>
-        <div class="sb-pal">
-          <span class="sb-theme-label">Palette</span>
-          ${paletteToggle}
-        </div>
-        <div class="sb-theme">
-          <span class="sb-theme-label">Alerts</span>
-          <div class="sb-theme-controls">
-            ${reminderToggle}
           </div>
         </div>
         <!-- V-7 (cycle 12): both fields ellipsis at the 168px DEFAULT sidebar
@@ -770,9 +903,7 @@ function renderShell(state) {
             </div>
           </div>
           <div class="hdr-right">
-            ${themeToggle}
-            ${paletteToggle}
-            ${reminderToggle}
+            ${settingsGearBtn('sb-theme-btn hdr-settings-btn')}
             ${popOutBtn}
             <div class="hdr-id">${esc(state.id)}</div>
           </div>
@@ -788,7 +919,8 @@ function renderShell(state) {
           </div>
         </nav>
       </div>
-    </div>`;
+    </div>
+    ${settingsPanel}`;
 
   // Reflect current theme + palette in both copies of each control.
   syncThemeToggleState();
@@ -1700,10 +1832,56 @@ var REMIND_CLOCKIN_GRACE_MIN = 15;            // no clock-in nag in the first sh
 var REMIND_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;   // "activity" = input in the last 5 min
 var REMIND_STATE_CONFIRM_MS = 12 * 60 * 1000;    // a snapshot this fresh counts as confirmed
 
+// ── Roster-vs-browser timezone check (operator report 2026-08-13) ───────────
+// Punches, note timestamps, and DateLocal are ALL stamped in the ROSTER
+// timezone (`empTz_` falls back to CONFIG.TIMEZONE when the cell is blank),
+// so a blank/wrong roster cell silently mis-stamps everything the rep writes.
+// The reported symptom: a CST rep's notes carried IST times — +5:30 is the
+// only offset that puts a :30 on a whole-hour zone, so the roster cell had
+// fallen back to Asia/Kolkata. The SERVER cannot detect this (it has no idea
+// where the rep actually sits); only the browser knows. Compare UTC OFFSETS,
+// not ids (America/Chicago vs US/Central must not warn), and nag at most
+// once per browser-local day via localStorage (`umsTzWarnedDay`).
+function tzOffsetMinAt_(tz, date) {
+  // The offset `tz` has at `date`, derived from Intl parts. null = the id is
+  // unknown to this browser (which is itself a mismatch worth warning about).
+  try {
+    var dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    var p = {};
+    dtf.formatToParts(date).forEach(function (x) { p[x.type] = x.value; });
+    var asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +(p.hour === '24' ? 0 : p.hour), +p.minute, +p.second);
+    return Math.round((asUtc - date.getTime()) / 60000);
+  } catch (e) { return null; }
+}
+function tzMismatchCheck_() {
+  try {
+    if (!empState || !empState.timezone) return;
+    var now = new Date();
+    // Sanity-probe Intl itself first: if a KNOWN zone doesn't resolve, this
+    // browser can't judge the roster id and must not nag daily about it.
+    if (tzOffsetMinAt_('UTC', now) !== 0) return;
+    var rosterOff = tzOffsetMinAt_(String(empState.timezone), now);
+    var browserOff = -now.getTimezoneOffset();
+    if (rosterOff !== null && rosterOff === browserOff) return;
+    var day = isoDateTz ? isoDateTz(Intl.DateTimeFormat().resolvedOptions().timeZone) : String(now.getDate());
+    try {
+      if (localStorage.getItem('umsTzWarnedDay') === day) return;
+      localStorage.setItem('umsTzWarnedDay', day);
+    } catch (e) { /* privacy mode — warn every load rather than never */ }
+    var here = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'a different zone';
+    showToast('Heads up: your profile timezone is ' + empState.timezone + ', but this browser looks like ' +
+      here + '. Punches and call notes are stamped in the PROFILE timezone — if your timestamps look wrong, ' +
+      'ask your manager to correct it (Manage → Admin → Team Members, or the Employees sheet).',
+      'toast-warn', { sticky: true });
+  } catch (e) { /* advisory only — never break boot */ }
+}
+
 function remindersStart_() {
   if (REMIND_TIMER) return;                       // idempotent
   REMIND_TIMER = setInterval(remindersTick_, 60000);
   setTimeout(remindersTick_, 5000);               // off the boot critical path
+  setTimeout(tzMismatchCheck_, 6000);             // same off-critical-path posture
   // The shell just loaded a fresh getEmployeeState, so the boot snapshot
   // counts as confirmed — a not-clocked-in rep who starts working right away
   // is reminded on an early tick instead of waiting out a refresh round-trip.
@@ -1818,7 +1996,7 @@ function remindMaybeRefreshState_() {
         // Only a SUCCESSFUL refresh confirms the snapshot — stamping on the
         // attempt would let a failed refresh promote stale state to
         // "confirmed" and nag a rep who already clocked in elsewhere.
-        if (s && !s.error) { empState = s; _remindStateOkAt = Date.now(); }
+        if (s && !s.error) { empState = s; viewAsReapply_(); _remindStateOkAt = Date.now(); }
       })
       .withFailureHandler(function () {})          // best-effort: keep last-good
       .getEmployeeState();

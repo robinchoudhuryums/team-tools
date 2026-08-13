@@ -343,6 +343,43 @@ Phase: idle (post-reflect) + operator-requested feature work:
   (map-check.mjs: structure/lookup/embed-aria/400px-no-overflow/fallback
   swap incl. fan-out + external-img untouched). Docs synced (2 KDDs, the
   Script Property entry, operator-checklist round entry, test narrative).
+- OPERATOR TESTING ROUND 2026-08-13 (post-redeploy, five notes — ALL FIVE
+  RESOLVED): (1) Settings gear + flyout — the three sidebar rows (Theme/
+  Palette/Alerts) consolidated behind one gear (sidebar + mobile header,
+  data-settings-toggle attribute-keyed, INV-191); panel at SHELL ROOT
+  (mobile reachability), [hidden] display companion, capture-Esc +
+  stopPropagation; dead adjacency CSS removed (INV-184); gear padding
+  MEASURED 10→8px to un-ellipsis "Settings" at 168px (INV-170).
+  (2) The 9:30 PM note DIAGNOSED, not a display bug: a blank roster
+  Timezone cell falls back to CONFIG.TIMEZONE (Asia/Kolkata) and every
+  write (punch/note timestamp/DateLocal) stamps IST — the :30-minute
+  offset is the IST signature. OPERATOR ACTION: set their own Employees-row
+  Timezone to America/Chicago. Code half: tzMismatchCheck_ compares the
+  browser's UTC OFFSET to the roster tz's (offsets never ids; UTC
+  sanity-probe gates it) and shows a sticky warn toast once per
+  browser-local day (umsTzWarnedDay). (3) Slow tabs: My Stats/Team Metrics
+  paint ANY same-key cached payload (the 45s fresh-gate re-showed loaders
+  on almost every re-enter) + refresh behind the pill; Spanish seeds its
+  whole last round (stats+both lists), head-only refresh swap, background
+  halves keep last-good; getTeamMetrics gained the sibling endpoint cache
+  (team_metrics_v1:<from>:<to>, org-wide, put gated on
+  !noteCountPartial && !transferMeta.error — INV-129). (4) Dashboard:
+  first-frame skeleton now holds BOTH pairs (extras no longer pop in),
+  extras RPCs start in PARALLEL with the metrics RPCs (extraBusy guard
+  makes the second loader call render-only), and umsDashMetrics
+  localStorage SWR seeds same-day reloads instantly (complete successful
+  rounds only; freshness never inherited — INV-156/129). (5) View-as
+  (admin-only, in the flyout): overrides the three empState role flags,
+  session-only (nothing persisted), UI-only (server answers with REAL
+  access — a preview, not impersonation), fixed-blue banner + exit,
+  viewAsReapply_ on all four empState-refresh sites. localStorage keys
+  14 → 16 (umsTzWarnedDay, umsDashMetrics; the stale "Fourteen" heading
+  audit-counted and corrected). Pure 527 (+7 pins, 12 bite-checks; 2 pins
+  updated for deliberate layout changes and re-bitten), DOM 71, FULL
+  39-matrix re-shot 0 missing/0 overflow, settings-check.mjs measured the
+  flyout/view-as/mobile flows in Chromium. Docs synced (2 KDDs + slow-tabs
+  KDD, tz-model amendment, aggregates-cache amendment, checklist entry,
+  key-list 16, test narrative).
   /sync-docs pass DONE (stale alt-text-degradation claims corrected in the
   KB_IMAGES_FOLDER_ID entry + S63 + the folder helper's comment; subsystem
   list + visual README gained map-check.mjs). MERGED to main as **PR #167**

@@ -15692,6 +15692,22 @@ function getTeamMetrics(dateOrFrom, to) {
       return { error: 'Invalid end date (expected yyyy-MM-dd).' };
     if (from > toDate) return { error: 'Start date must be on or before end date.' };
 
+    // Endpoint result cache (operator 2026-08-13 "Team Metrics takes a while"):
+    // the assembled response for a (from, to) range, org-wide — every manager
+    // sees the same aggregate, so the key carries no caller id. Same TTL and
+    // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
+    // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
+    // aggregate is never pinned for the TTL.
+    var teamCacheKey = 'team_metrics_v1:' + from + ':' + toDate;
+    var teamMetricsCache = CacheService.getScriptCache();
+    var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+    if (useTeamCache) {
+      try {
+        var cachedTeam = teamMetricsCache.get(teamCacheKey);
+        if (cachedTeam) { var cto = JSON.parse(cachedTeam); cto.cached = true; return cto; }
+      } catch (_) {}
+    }
+
     var isSingleDay = (from === toDate);
 
     var roster = getEmployeeRosterRows_();
@@ -15894,7 +15910,7 @@ function getTeamMetrics(dateOrFrom, to) {
                reps: Object.keys(teamQueues[q].reps).length };
     }).sort(function (a, b) { return b.transferred - a.transferred; });
 
-    return {
+    var teamResult = {
       from: from,
       to: toDate,
       date: from,
@@ -15919,6 +15935,15 @@ function getTeamMetrics(dateOrFrom, to) {
       meta: { rowsScanned: cdrResult.meta.rowsScanned, rowsMatched: cdrResult.meta.rowsMatched,
               columnWarning: cdrResult.meta.columnWarning, computeMs: Date.now() - t0 },
     };
+    // Cache ONLY a fully-successful round (INV-129): a per-rep-Sheet failure
+    // (noteCountPartial) or ANY transfer-read error would pin a degraded
+    // aggregate as authoritative for the TTL. On a deployment with no Transfer
+    // tab this endpoint simply stays uncached — the pre-cache behaviour.
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error) {
+      try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
+      catch (_) { /* >100KB or transient — the cache is a convenience */ }
+    }
+    return teamResult;
   } catch (err) { return { error: err.message }; }
 }
 
