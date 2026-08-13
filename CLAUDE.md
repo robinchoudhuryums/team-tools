@@ -5358,8 +5358,11 @@ manually for a fresh deploy or environment:
   created in the deployer's Drive, set domain-link-viewable (so `<img>`
   tags render for any signed-in rep), id stored here. If Workspace policy
   blocks link sharing, the create still succeeds with a console warning —
-  share the folder with the team manually or images render only as their
-  alt text + open-in-Drive link. Exported files are named
+  and since the 2026-08-13 image fallback the readers recover on their own:
+  a blocked thumbnail is refetched through the server (`kbGetImageData`,
+  scoped to THIS folder only) and rendered as a data URL, so sharing the
+  folder manually is now an optimization (direct thumbnail loads), not a
+  requirement. Exported files are named
   `kbdoc-<fileId>-<n>` and are REUSED on re-save; delete a file to force a
   re-export after the source Doc's image changed. Phase 3 paste-uploads
   land in the same folder as `kbpaste-<stamp>-<rand>` files (orphans from
@@ -6731,7 +6734,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
@@ -7582,7 +7585,7 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
     - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
     - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
-  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — if the org's sharing policy blocks domain-link visibility, the image degrades to alt text + the open-full-size link, and the operator should share the KB Images folder with the team manually. Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
+  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — since the 2026-08-13 fallback a Workspace-blocked thumbnail is silently refetched through the server (`kbGetImageData`) and still renders, so a visible image no longer proves the folder is shared; a broken image now indicates the fallback ALSO failed (file outside the KB Images folder, over the 4MB fetch cap, or `KB_IMAGES_FOLDER_ID` unset). Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
 
 S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, Client (Reference views), Client (shell), Client (Call Notes views)
   Steps:

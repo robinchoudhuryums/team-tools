@@ -22,6 +22,7 @@ node build.mjs         # composes web-app/ partials -> page.html (generated)
 node shoot.mjs         # all 39 scenarios -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
+node map-check.mjs     # spot-measure: the ```map block + article-image fallback
 ```
 
 `a13-measure.mjs` exists because a screenshot cannot answer "did this element
@@ -32,6 +33,14 @@ the old and new markup side by side and diffs computed style + bounding box.
 plain `<div>` and reported `display: inline -> block` for two of three cases,
 which was pure fixture artifact: both live in `display: flex` heads, where any
 child is blockified regardless. Same rule as the RPC fixtures below.
+
+`map-check.mjs` (operator 2026-08-13) drives the ` ```map ` warehouse block
+through the REAL `kbMd_` on the built page — structure, a mocked
+`kbMapDistances` lookup (sorted results, per-row chips, percent-encoded
+Directions hrefs), the lazy embed toggle's live `aria-expanded`, 400px
+no-overflow — and the article-image fallback (a broken Drive thumbnail swaps
+to a mocked data URL; two imgs of one file fan into one fetch; an external
+image is left alone). Screenshots land in `shots/map-*.png`.
 
 Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
 `chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the

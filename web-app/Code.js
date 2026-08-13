@@ -18742,9 +18742,11 @@ function kbCollectDocInlineImages_(body, cap) {
 
 /** KB Images folder: Script Property first, else create + share domain-link-
  *  viewable (so <img> tags render for any signed-in rep) + store the id.
- *  Workspace policy may forbid link sharing — degrades with a console warning;
- *  images then render only for accounts the folder is visible to, and the
- *  kbMd_ image anchor still gives every rep the open-in-Drive path. */
+ *  Workspace policy may forbid link sharing — the create still succeeds with
+ *  a console warning, and the readers recover on their own: a blocked
+ *  thumbnail is refetched through kbGetImageData (scoped to this folder) and
+ *  rendered as a data URL, so manual sharing is an optimization, not a
+ *  requirement. */
 function getOrCreateKbImagesFolder_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty(KB_IMAGES_FOLDER_PROP);
