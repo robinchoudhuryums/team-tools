@@ -283,8 +283,13 @@ Phase: idle (post-reflect) + operator-requested feature work:
   under white text, so the character comes from the paper + desaturation.
   Adding it needed NO test edit: all seven palette pins are derived, and two
   Sage-specific mutations were bite-checked to confirm the scan reaches it.
-  NOTE: the container rolled back mid-session and lost the palette commit
-  locally; the remote had it (git reset --hard origin/<branch> recovered).
+  NOTE: the container rolled back TWICE mid-session and lost the palette
+  commits locally; the remote had them both times, and
+  `git reset --hard origin/<branch>` recovered cleanly. Push early — the
+  remote was the only surviving copy.
+  MERGED as **PR #166** (ba358ee, CI green) together with the 2026-08-12
+  round (clock cleanup / dashboard banding + deltas / sticky reminders);
+  branch restarted from main. Deploy remains ONE operator action.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
