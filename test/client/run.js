@@ -7629,9 +7629,15 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
       'and the mono wordmark footer (' + i + ')');
   });
   // The module label is per form, so PPD / PMD / PAP are distinguishable.
+  // Every CALL SITE names its form via the subLabel (the body arg may be an
+  // expression — the 2026-08-13 feedback CTA rides it — so scan a window
+  // after each call rather than one rigid arg shape).
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  assert.strictEqual((code.match(/intakeEmailShell_\(subject, [a-zA-Z]+, 'Intake · /g) || []).length, 4,
-    'every call site names its form');
+  const callSites = code.split('intakeEmailShell_(subject,').slice(1);
+  assert.strictEqual(callSites.length, 4, 'four intakeEmailShell_ call sites');
+  callSites.forEach(function (c, i) {
+    assert.ok(c.slice(0, 220).indexOf("'Intake · ") >= 0, 'call site ' + (i + 1) + ' names its form');
+  });
 });
 
 test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
@@ -8805,6 +8811,110 @@ test('activity-without-clock-in reminder: grace + activity + CONFIRMED-out, once
   assert.ok(/\['pointerdown', 'keydown'\]/.test(start) && /capture: true, passive: true/.test(start),
     'activity listener is input-only, capture-phase, passive');
   assert.ok(!/mousemove|scroll/.test(start), 'mousemove/scroll would count an untouched window as active');
+});
+
+test('auto-tag: rules ADD, dismissal sticks, session resets with the form', () => {
+  const cnAutoTagsFromText_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnAutoTagsFromText_');
+  const rules = [
+    { tag: 'close-order', keywords: ['close order', 'cancel order'] },
+    { tag: 'billing', keywords: ['invoice'] },
+  ];
+  // Case-insensitive substring, first matching keyword wins for its rule.
+  assert.deepStrictEqual(cnAutoTagsFromText_('Patient wants to CLOSE ORDER today', rules, [], []).join(','), 'close-order');
+  assert.deepStrictEqual(cnAutoTagsFromText_('sent invoice; then close order', rules, [], []).join(','), 'close-order,billing');
+  // Already-present and dismissed tags are both skipped — a rep who removed an
+  // auto-added tag has ANSWERED for this note; re-adding on the next keystroke
+  // would fight them for the chip.
+  assert.strictEqual(cnAutoTagsFromText_('close order', rules, ['close-order'], []).length, 0, 'present → skip');
+  assert.strictEqual(cnAutoTagsFromText_('close order', rules, [], ['close-order']).length, 0, 'dismissed → skip');
+  assert.strictEqual(cnAutoTagsFromText_('nothing relevant', rules, [], []).length, 0);
+  assert.strictEqual(cnAutoTagsFromText_('', rules, [], []).length, 0, 'empty text matches nothing');
+  // Wiring: removal records the dismissal ONLY for auto-added tags, and the
+  // form-clear path resets both session sets (they are per NOTE).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/autoTagApplied \|\| \[\]\)\.indexOf\(t\) >= 0/.test(cn), 'removal checks the auto-applied set');
+  const clear = extractFunction('cn/script_callnotes.html', 'cnClearActiveForm_');
+  assert.ok(/CN_STATE\.autoTagApplied = \[\];\s*\n\s*CN_STATE\.autoTagDismissed = \[\];/.test(clear),
+    'clearing the form resets both auto-tag session sets');
+  // The matcher runs CLIENT-side on the same debounce as the suggestions —
+  // note text never leaves the browser (the INV-119 posture). Strip comments
+  // before matching (INV-188 — the wiring lines carry trailing comments).
+  const ncc = cn.replace(/\/\/[^\n]*/g, '');
+  assert.ok(/cnApplyAutoTags_\(\);\s*\n\s*cnRefreshTagSuggest_\(\);/.test(ncc),
+    'auto-apply rides the existing Issue/Resolution debounce');
+});
+
+test('auto-tag rules: sanitize-on-read mirrors the save validation (server)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const read = nc(extractRawFunction('Code.js', 'getAutoTagRules_'));
+  const save = nc(extractRawFunction('Code.js', 'saveAutoTagRules'));
+  // Both sides normalize the tag identically (kebab, 2–24) so a rejected save
+  // and a sanitized read can never disagree about what a valid rule is.
+  const norm = /\.trim\(\)\.toLowerCase\(\)\s*\n?\s*\.replace\(\/\[\^a-z0-9\]\+\/g, '-'\)\.replace\(\/\^-\+\|-\+\$\/g, ''\)/;
+  assert.ok(norm.test(read) && norm.test(save), 'read and save share the tag normalization');
+  assert.ok(/tag\.length < 2 \|\| tag\.length > 24/.test(read) && /tag\.length < 2 \|\| tag\.length > 24/.test(save),
+    'both bound the tag length');
+  // Read side DROPS a malformed entry (a corrupt property must not break every
+  // rep's matcher); save side REFUSES with the rule named (an admin can fix it).
+  assert.ok(/if \(kws\.length\) out\.push/.test(read), 'read: entry-wise drop, never a throw');
+  assert.ok(/Admin access required/.test(save), 'save is admin-gated (INV-136 tier)');
+  assert.ok(/appears twice/.test(save), 'duplicate tags are refused, not silently merged');
+  assert.ok(/CN_AUTO_TAG_RULE_LIMIT/.test(save), 'rule count is bounded');
+  // Shipped to reps beside the other composer config; admins get it in the editor.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.strictEqual((code.match(/autoTagRules: getAutoTagRules_\(\),/g) || []).length, 2,
+    'getCallNotesDepartments AND getAdminConfig both carry the rules');
+});
+
+test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA outside the hash', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const w = nc(extractRawFunction('Code.js', 'submitIntakeFeedback'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(w) && /Not authorized/.test(w),
+    'the writer requires a registered employee — the page only collects text');
+  assert.ok(/INTAKE_FORM_TYPES_\.indexOf\(ft\) < 0/.test(w) && /INTAKE_FEEDBACK_MAX_CHARS/.test(w),
+    'form type whitelisted + text bounded');
+  const existAt = w.indexOf('Submission not found');
+  const appendAt = w.indexOf('getIntakeFeedbackSheet_().appendRow');
+  assert.ok(existAt > 0 && appendAt > existAt,
+    'the submission must EXIST before the append — a forged id cannot seed junk rows');
+  // The feedback TEXT may reference the patient: it lives in the Intake (PHI)
+  // store only; the shared AuditLog row carries id + type, never the text.
+  // The audit call's notes arg must be EXACTLY id+type — extract the call and
+  // assert the feedback text variable never enters it (a [^;]* scan stops at
+  // the semicolon INSIDE the quoted string, which is how the first version of
+  // this pin failed to bite).
+  const auditCall = w.slice(w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'"), w.indexOf('emp.email);', w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'")));
+  assert.ok(/'type=' \+ ft \+ '; submissionId=' \+ id,\s*$/.test(auditCall) && auditCall.indexOf('body') < 0,
+    'audit row is PHI-free — id + type only, never the feedback text');
+  assert.ok(/lock\.waitLock\(15000\)/.test(w) && /finally \{ lock\.releaseLock\(\); \}/.test(nc(w)),
+    'locked + finally-released (INV-01)');
+  // CTA placement: minted BEFORE the send, appended to the FINAL body only —
+  // AFTER the hash check, so the INV-41 preview contract (over the BASE body)
+  // is untouched. And a dead button is worse than none.
+  const ppd = nc(extractRawFunction('Code.js', 'intakeSendPPD'));
+  // The BASE body (the hashed one) must stay CTA-free — asserting the exact
+  // statement catches an appended CTA, where "the CTA call comes after the
+  // hash check" would not (the mutated base line adds its OWN call earlier).
+  assert.ok(/const baseBody = intakeBuildPpdBodyHtml_\(patientInfo, payload\.rows \|\| \[\], recData, null\);/.test(ppd),
+    'PPD: the hashed base body carries no CTA (INV-41 contract untouched)');
+  assert.ok(ppd.indexOf("intakeFeedbackCta_(submissionId, 'PPD')") > ppd.indexOf('intakeBodyHash_(baseBody, subject)'),
+    'PPD: CTA joins the final body after the hash check');
+  const mintAt = ppd.indexOf('const submissionId = Utilities.getUuid()');
+  assert.ok(mintAt > 0 && mintAt < ppd.indexOf('MailApp.sendEmail'),
+    'PPD: the id is minted (and BEFORE the send) so the button can reference it — indexOf -1 would pass a < check');
+  const cta = nc(extractRawFunction('Code.js', 'intakeFeedbackCta_'));
+  assert.ok(/if \(!base\) return '';/.test(cta), 'no resolvable exec URL → no button (never a dead one)');
+  // The route exists, and the detail read surfaces the rows for ALL forms.
+  assert.ok(/e\.parameter\.intakefb/.test(nc(extractRawFunction('Code.js', 'doGet'))), 'doGet routes ?intakefb=');
+  assert.ok(/feedback: intakeFeedbackFor_\(ft, id\)/.test(nc(extractRawFunction('Code.js', 'intakeGetSubmission'))),
+    'the Sent detail carries the feedback rows');
+  // Client render: escapes, and an EMPTY feedback list renders NOTHING — an
+  // empty "Recipient feedback" section would read as "no complaints yet",
+  // which the data cannot support.
+  const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/Array\.isArray\(d\.feedback\) && d\.feedback\.length/.test(intake), 'feedback section only when rows exist');
+  assert.ok(/esc\(String\(f\.text \|\| ''\)\)/.test(intake), 'feedback text is esc()-escaped before innerHTML');
 });
 
 

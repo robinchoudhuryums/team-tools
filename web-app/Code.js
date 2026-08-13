@@ -198,6 +198,27 @@ const CONFIG = {
     // getExternalLinks_, this serving as the fallback). Each entry:
     // { label, url } where url is an http(s) link.
     EXTERNAL_LINKS: [],
+    // Auto-tag rules (operator 2026-08-13): keyword → tag, matched
+    // case-insensitively against the Issue + Resolution text CLIENT-side as
+    // the rep types (never sent anywhere — the INV-119 posture; this is why
+    // the AI version was deliberately not built). A matching rule ADDS its
+    // tag as a normal removable chip; removing it dismisses that rule for
+    // the rest of the form session. Admin-editable via the Admin tab
+    // (Script Property CN_AUTO_TAG_RULES, read first by getAutoTagRules_ —
+    // this seed serves fresh deploys). SEEDED FROM THE UPDATE-TYPE
+    // VOCABULARY as a starting point — the operator should review the list
+    // (their offer: "if a set list of eligible tags and keywords is needed,
+    // let me know").
+    AUTO_TAG_RULES: [
+      { tag: 'close-order',   keywords: ['close order', 'closing order', 'cancel order', 'cancelled order', 'canceled order'] },
+      { tag: 'shipping',      keywords: ['shipping', 'shipped', 'tracking number', 'delivery date'] },
+      { tag: 'resupply',      keywords: ['resupply', 're-supply', 'supplies order'] },
+      { tag: 'oop',           keywords: ['out of pocket', 'oop order'] },
+      { tag: 'billing',       keywords: ['billing', 'invoice', 'charged', 'refund'] },
+      { tag: 'insurance',     keywords: ['insurance', 'medicare', 'medicaid', 'payer'] },
+      { tag: 'transfer',      keywords: ['transferred to', 'transferred the call', 'warm transfer'] },
+      { tag: 'callback',      keywords: ['call back', 'callback requested', 'will call back'] },
+    ],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     // DEAD — retained deliberately, read NOWHERE. The EOD gate is local-hour
     // EQUALITY against EOD_WARNING_HOUR (an hourly trigger), not a ± window.
@@ -280,6 +301,7 @@ const CONFIG = {
     PPD_SUBMISSIONS_TAB: 'PPDSubmissions',
     PMD_SUBMISSIONS_TAB: 'PMDSubmissions',
     PAP_SUBMISSIONS_TAB: 'PAPSubmissions',
+    FEEDBACK_TAB:        'IntakeFeedback',   // recommendation feedback (operator 2026-08-13)
     SALES_EMAIL:         'sales@universalmedsupply.com',
     SLEEP_EMAIL:         'sleep@universalmedsupply.com',
     BCC_EMAIL:           'robin.choudhury@universalmedsupply.com',
@@ -448,6 +470,7 @@ const CN_FEEDBACK_MAX_ENTRIES = 200;         // a Q&A thread this long is pathol
 const CN_EXTERNAL_EMAILS_MAX_ENTRIES = 100;  // sends logged per note
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
+const CN_AUTO_TAG_RULE_LIMIT = 50;   // auto-tag rules (operator 2026-08-13)
 // Quick-link categories (the official external-collection path — #2). Order is
 // the composer-picker optgroup order; 'other' is the back-compat default.
 const CN_EXTERNAL_LINK_CATEGORIES = ['survey', 'review', 'feedback', 'other'];
@@ -660,6 +683,13 @@ function doGet(e) {
   // serveResolvePage_ identifies them via getActiveUserEmail_().
   if (e && e.parameter && e.parameter.resolve) {
     return serveResolvePage_(e.parameter.resolve);
+  }
+  // ── Intake recommendation-feedback route ───────────────────────────
+  // The "Send feedback" button in a PPD/PMD/PAP email lands here. The
+  // recipient is an internal agent; submitIntakeFeedback re-authenticates
+  // via getEmployeeInfo_, so this page only COLLECTS the text.
+  if (e && e.parameter && e.parameter.intakefb) {
+    return serveIntakeFeedbackPage_(e.parameter.intakefb, e.parameter.ft);
   }
   // ── Internal app — access gate ─────────────────────────────────────
   // Defense in depth on top of the per-endpoint getEmployeeInfo_() check.
@@ -3199,6 +3229,7 @@ function getCallNotesDepartments() {
       voiceInputEnabled: !!getFlag_('voiceInput'),
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
+      autoTagRules: getAutoTagRules_(),
       flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
@@ -4678,6 +4709,7 @@ function getAdminConfig() {
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
+      autoTagRules: getAutoTagRules_(),
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -4892,6 +4924,48 @@ function saveExternalLinks(links) {
     PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated external quick links (' + clean.length + ')', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Admin-gated (INV-136 tier — CN config, the saveExternalLinks family).
+ *  Persists the auto-tag rules the client matcher runs against Issue +
+ *  Resolution text. Validation mirrors getAutoTagRules_'s read-side rebuild
+ *  so a rejected save and a sanitized read can never disagree about what a
+ *  valid rule is; each error names its rule. */
+function saveAutoTagRules(rules) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(rules)) return { success: false, error: 'Invalid rules list.' };
+    if (rules.length > CN_AUTO_TAG_RULE_LIMIT) {
+      return { success: false, error: 'Too many rules (max ' + CN_AUTO_TAG_RULE_LIMIT + ').' };
+    }
+    const clean = [];
+    const seen = {};
+    for (var i = 0; i < rules.length; i++) {
+      const r = rules[i] || {};
+      const tag = String(r.tag || '').trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (tag.length < 2 || tag.length > 24) {
+        return { success: false, error: 'Rule ' + (i + 1) + ': the tag must normalize to 2–24 kebab-case characters.' };
+      }
+      if (seen[tag]) return { success: false, error: 'Tag "' + tag + '" appears twice — merge the keyword lists.' };
+      seen[tag] = true;
+      const kws = (Array.isArray(r.keywords) ? r.keywords : [])
+        .map(function (k) { return String(k || '').trim().toLowerCase(); })
+        .filter(function (k) { return k.length > 0; });
+      for (var j = 0; j < kws.length; j++) {
+        if (kws[j].length < 3 || kws[j].length > 60) {
+          return { success: false, error: 'Tag "' + tag + '": each keyword needs 3–60 characters.' };
+        }
+      }
+      if (!kws.length) return { success: false, error: 'Tag "' + tag + '" needs at least one keyword.' };
+      clean.push({ tag: tag, keywords: kws });
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_AUTO_TAG_RULES', JSON.stringify(clean));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated auto-tag rules (' + clean.length + ')', callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -11793,6 +11867,34 @@ function getEmailTemplates_() {
  *  Script Property CN_EXTERNAL_LINKS first, CONFIG fallback; sanitize-on-read
  *  (corrupt blob → fallback, never throws), keeping only entries with a label
  *  and an http(s) url. */
+/** Auto-tag rules — Script Property CN_AUTO_TAG_RULES first (Admin-edited),
+ *  else the CONFIG seed. Sanitize-on-read (the L-12 rule): each entry is
+ *  whitelist-rebuilt — the tag through the same normalization the client
+ *  applies (kebab, 2–24 chars), keywords as non-empty lowercased strings —
+ *  and a malformed entry is dropped rather than shipped to every rep's
+ *  matcher. A corrupt blob degrades to the CONFIG seed. */
+function getAutoTagRules_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_AUTO_TAG_RULES');
+  let raw = CONFIG.CALL_NOTES.AUTO_TAG_RULES || [];
+  if (prop) {
+    try {
+      const parsed = JSON.parse(prop);
+      if (Array.isArray(parsed)) raw = parsed;
+    } catch (_) {}
+  }
+  const out = [];
+  raw.forEach(function (r) {
+    const tag = String((r && r.tag) || '').trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (tag.length < 2 || tag.length > 24) return;
+    const kws = (Array.isArray(r.keywords) ? r.keywords : [])
+      .map(function (k) { return String(k || '').trim().toLowerCase(); })
+      .filter(function (k) { return k.length >= 3 && k.length <= 60; });
+    if (kws.length) out.push({ tag: tag, keywords: kws });
+  });
+  return out;
+}
+
 function getExternalLinks_() {
   const prop = PropertiesService.getScriptProperties().getProperty('CN_EXTERNAL_LINKS');
   let raw = CONFIG.CALL_NOTES.EXTERNAL_LINKS || [];
@@ -12846,6 +12948,48 @@ function serveResolvePage_(token) {
       '<p style="font-size:11px;color:' + P.muted + ';margin-top:20px;">UMS Team Tools</p>' +
     '</div>';
   return HtmlService.createHtmlOutput(html).setTitle('Mark resolved');
+}
+
+/** The intake-feedback collection page (?intakefb=<submissionId>&ft=<type>).
+ *  A tiny signed-in page: textarea + one button wired to submitIntakeFeedback
+ *  via google.script.run (the same bridge every doGet-served page gets). The
+ *  ids are injected with the <?!= JSON …?> XSS discipline of INV-78 — here as
+ *  plain string building, so both values are JSON-encoded + <-escaped. */
+function serveIntakeFeedbackPage_(submissionId, formType) {
+  const P = CN_EMAIL_PALETTE;
+  const idJs = JSON.stringify(String(submissionId || '').slice(0, 64)).replace(/</g, '\\u003c');
+  const ftJs = JSON.stringify(String(formType || '').slice(0, 8)).replace(/</g, '\\u003c');
+  const html =
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Intake feedback</title></head><body style="margin:0;background:' + P.paper + ';">' +
+    '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:48px auto;padding:28px;background:#ffffff;border:1px solid ' + P.line + ';border-radius:12px;color:' + P.ink + ';">' +
+      '<h2 style="font-size:19px;margin:0 0 6px;color:' + P.brand + ';">Feedback on this recommendation</h2>' +
+      '<p style="font-size:13px;color:' + P.muted + ';margin:0 0 16px;">Goes to the team that tunes the intake recommendation logic, attached to this exact submission. Please don\u2019t paste patient details beyond what\u2019s needed.</p>' +
+      '<textarea id="fb" rows="6" maxlength="4000" style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border:1px solid ' + P.line + ';border-radius:8px;" placeholder="What looked wrong, and what you expected\u2026"></textarea>' +
+      '<div style="margin-top:14px;display:flex;align-items:center;gap:12px;">' +
+        '<button id="send" style="background:' + P.accent + ';color:#fff;border:0;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;">Send feedback</button>' +
+        '<span id="msg" style="font-size:12px;color:' + P.muted + ';"></span>' +
+      '</div>' +
+      '<p style="font-size:11px;color:' + P.muted + ';margin-top:20px;">UMS Team Tools \u00b7 Intake</p>' +
+    '</div>' +
+    '<script>' +
+      'var SUB_ID = ' + idJs + ', FORM_TYPE = ' + ftJs + ';' +
+      'document.getElementById("send").onclick = function () {' +
+        'var btn = this, msg = document.getElementById("msg");' +
+        'var text = document.getElementById("fb").value;' +
+        'if (!text.trim()) { msg.textContent = "Type the feedback first."; return; }' +
+        'btn.disabled = true; msg.textContent = "Sending\u2026";' +
+        'google.script.run.withSuccessHandler(function (res) {' +
+          'if (res && res.success) { msg.textContent = "Sent \u2014 thank you. You can close this tab."; }' +
+          'else { btn.disabled = false; msg.textContent = (res && res.error) || "Could not send \u2014 try again."; }' +
+        '}).withFailureHandler(function (err) {' +
+          'btn.disabled = false; msg.textContent = (err && err.message) || "Could not send \u2014 try again.";' +
+        '}).submitIntakeFeedback(SUB_ID, FORM_TYPE, text);' +
+      '};' +
+    '</scr' + 'ipt></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle('Intake feedback')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /** Inter-department requests for the caller (rep: own; manager: all) + a
@@ -16028,6 +16172,122 @@ function getIntakeSubmissionSheet_(formType) {
   return sheet;
 }
 
+// ── Intake recommendation feedback (operator 2026-08-13) ─────────────────────
+// The PPD/PMD/PAP emails carry a "Send feedback" button so the RECIPIENT (an
+// internal agent — intakeResolveRecipient_ resolves from the roster) can flag
+// a recommendation the engine got wrong, and that feedback lands back in the
+// web app instead of a reply nobody sees. An email client can't host a live
+// comment box (forms in email are stripped by most clients), so the button
+// links to a tiny signed-in page served by doGet (?intakefb=…), the
+// serveResolvePage_ pattern with a textarea. Rows are append-only in the
+// Intake spreadsheet (feedback may reference the patient, so it stays in the
+// PHI store — never the shared AuditLog).
+const INTAKE_FEEDBACK_HEADERS = ['Timestamp', 'SubmissionId', 'FormType', 'FromEmail', 'FromName', 'Feedback'];
+const INTAKE_FEEDBACK_MAX_CHARS = 4000;
+const INTAKE_FEEDBACK_SCAN_MAX = 2000;   // bounded tail — feedback is recent-biased
+
+function getIntakeFeedbackSheet_() {
+  const ss = getIntakeSS_();
+  let sheet = ss.getSheetByName(CONFIG.INTAKE.FEEDBACK_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.INTAKE.FEEDBACK_TAB);
+    sheet.appendRow(INTAKE_FEEDBACK_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, INTAKE_FEEDBACK_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** The email button. Appended to the FINAL body (post-hash-check, the
+ *  drResolveCtaHtml_ pattern — INV-41's preview contract covers the BASE
+ *  body, so the CTA never enters the hash). Callers skip it entirely when
+ *  the exec URL cannot be resolved — a dead button is worse than none. */
+function intakeFeedbackCtaHtml_(url) {
+  const P = CN_EMAIL_PALETTE;
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    '<td style="padding:18px 0 2px;text-align:center;">' +
+      '<a href="' + esc_(url) + '" style="display:inline-block;background:' + P.paper + ';color:' + P.brand + ';' +
+      'border:1px solid ' + P.line + ';text-decoration:none;font-weight:600;padding:9px 18px;border-radius:8px;font-size:12px;">' +
+      'Send feedback on this recommendation</a>' +
+      '<p style="margin:7px 0 0;font-size:11px;color:' + P.muted + ';">Spot something off? A sentence here reaches the team that tunes the recommendation logic.</p>' +
+    '</td></tr></table>';
+}
+
+/** URL + button for one submission, or '' when the exec URL cannot be
+ *  resolved (a dead button is worse than none — the safeWebAppUrl_ posture). */
+function intakeFeedbackCta_(submissionId, formType) {
+  try {
+    const base = getWebAppExecUrl_();
+    if (!base) return '';
+    return intakeFeedbackCtaHtml_(base + '?intakefb=' + encodeURIComponent(submissionId) +
+      '&ft=' + encodeURIComponent(formType));
+  } catch (e) { return ''; }
+}
+
+/** Feedback rows for one submission — bounded tail scan, newest-first. */
+function intakeFeedbackFor_(formType, submissionId) {
+  try {
+    const sheet = getIntakeFeedbackSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return [];
+    const first = Math.max(2, last - INTAKE_FEEDBACK_SCAN_MAX + 1);
+    const rows = sheet.getRange(first, 1, last - first + 1, INTAKE_FEEDBACK_HEADERS.length).getValues();
+    const out = [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (String(rows[i][1]).trim() !== submissionId) continue;
+      if (String(rows[i][2]).trim().toUpperCase() !== formType) continue;
+      out.push({
+        at: intakeTsString_(rows[i][0]),
+        fromEmail: String(rows[i][3] || ''),
+        fromName: String(rows[i][4] || ''),
+        text: String(rows[i][5] || ''),
+      });
+    }
+    return out;
+  } catch (e) { return []; }   // best-effort: the submission detail still renders
+}
+
+/** Rep-callable (the recipient IS an employee — intake recipients resolve from
+ *  the roster). Locked (INV-01); the row is appended only when the submission
+ *  actually EXISTS, so a mistyped/forged id can't seed junk rows. The audit
+ *  row is PHI-free (id + type only — the feedback TEXT may reference the
+ *  patient and stays in the Intake store). */
+function submitIntakeFeedback(submissionId, formType, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const ft = String(formType || '').trim().toUpperCase();
+    if (INTAKE_FORM_TYPES_.indexOf(ft) < 0) return { success: false, error: 'Unknown form type.' };
+    const id = String(submissionId || '').trim();
+    if (!id || id.length > 64) return { success: false, error: 'Missing submission id.' };
+    const body = String(text || '').trim();
+    if (!body) return { success: false, error: 'Type the feedback first.' };
+    if (body.length > INTAKE_FEEDBACK_MAX_CHARS) {
+      return { success: false, error: 'Feedback is too long (max ' + INTAKE_FEEDBACK_MAX_CHARS + ' characters).' };
+    }
+    // Existence check — a bounded id-column scan of the right submissions tab.
+    const sub = getIntakeSubmissionSheet_(ft);
+    const lastRow = sub.getLastRow();
+    let found = false;
+    if (lastRow >= 2) {
+      const ids = sub.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]).trim() === id) { found = true; break; }
+      }
+    }
+    if (!found) return { success: false, error: 'Submission not found — the link may be stale.' };
+    getIntakeFeedbackSheet_().appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, emp.email, emp.name, body,
+    ]);
+    writeAuditLog_(emp, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
+      'type=' + ft + '; submissionId=' + id, emp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 function intakeValidateEmail_(email) {
   const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
   return re.test(String(email).toLowerCase());
@@ -16775,7 +17035,13 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
       return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
-    const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {});
+    // The submission id is minted BEFORE the send so the feedback button can
+    // reference it; the CTA rides the FINAL body only (post-hash-check — the
+    // drResolveCtaHtml_ pattern), so the INV-41 preview contract, which covers
+    // the BASE body, is untouched. No resolvable exec URL → no button.
+    const submissionId = Utilities.getUuid();
+    const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
+      + intakeFeedbackCta_(submissionId, 'PPD');
     const html = intakeEmailShell_(subject, finalBody, 'Intake · PPD');
 
     // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
@@ -16790,7 +17056,6 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
 
     MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
 
-    const submissionId = Utilities.getUuid();
     let storeWarning = null;
     try {
       getIntakeSubmissionSheet_('PPD').appendRow([
@@ -16852,7 +17117,12 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
     inlineImagesObj = decoded.inlineImagesObj;
     innerBody += decoded.sectionHtml;
   }
-  const htmlBody = intakeEmailShell_(subject, innerBody, 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
+  // Feedback CTA: id minted pre-send (see intakeSendPPD); the acct forms have
+  // no preview-hash over the inner body sections the CTA joins, but the same
+  // final-body-only placement keeps the two send paths uniform.
+  const submissionId = Utilities.getUuid();
+  const htmlBody = intakeEmailShell_(subject, innerBody + intakeFeedbackCta_(submissionId, formType),
+    'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
 
   // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
   // spirit) — never email a submission we can't record.
@@ -16862,7 +17132,6 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
 
   MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
 
-  const submissionId = Utilities.getUuid();
   let storeWarning = null;
   try {
     getIntakeSubmissionSheet_(formType).appendRow([
@@ -16998,6 +17267,7 @@ function intakeGetSubmission(formType, submissionId) {
     const result = {
       formType: ft,
       submissionId: id,
+      feedback: intakeFeedbackFor_(ft, id),   // recipient feedback, all three forms (2026-08-13)
       timestamp: intakeTsString_(row[1]),
       repId: repId,
       repName: String(row[3] || ''),

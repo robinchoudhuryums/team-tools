@@ -290,6 +290,35 @@ Phase: idle (post-reflect) + operator-requested feature work:
   MERGED as **PR #166** (ba358ee, CI green) together with the 2026-08-12
   round (clock cleanup / dashboard banding + deltas / sticky reminders);
   branch restarted from main. Deploy remains ONE operator action.
+- OPERATOR LIST 2026-08-13 (seven items, phased). PHASE 1+2 IMPLEMENTED:
+  (1) copy-scope fix — the #cn-frame blanket ⌘C intercept inverted into a bug
+  once fields became contenteditable (selections carry text now); a real
+  selection copies natively, collapsed-⌘C keeps the full-template gesture.
+  (2) umsCallNotesLastDept REMOVED (reader+writer+KB-AI facet piggyback;
+  keys 15→14) — pre-selecting the previous note's departments invites a
+  mis-send. (3) Dashboard load: shapeWindow derives own from the team map
+  (halves cold CDR reads); client paints on FIRST period arrival, pending
+  slides are skeletons (never "No call data" — INV-187), later arrivals
+  patch their slides (a full re-render would duplicate the extras RPCs).
+  Verified with a staggered mock (~300ms paint, YTD skeleton→swap).
+  (4) activity-without-clock-in reminder: shift window + 15min grace + real
+  input in 5min + CONFIRMED-out snapshot (stale 'out' refreshes first;
+  confirm stamp only in the SUCCESS handler); once per rep-local day.
+  (5) auto-tag: admin-editable keyword→tag rules (CN_AUTO_TAG_RULES, seeded
+  from update types — OPERATOR SHOULD REVIEW THE LIST), matched client-side
+  on the suggestion debounce; removal dismisses the rule per note; INV-136
+  40→41 (saveAutoTagRules; F7/F9 nets + Tests.js omnibus updated).
+  (6) intake feedback loop: "Send feedback" button on all three intake
+  emails → ?intakefb= doGet page (signed-in; submitIntakeFeedback
+  re-auths) → append-only IntakeFeedback tab in the Intake PHI store →
+  "Recipient feedback" block in the Sent detail. CTA minted pre-send,
+  final-body-only (INV-41 untouched), no-URL→no-button.
+  Pure 514, DOM 71, 32 bite-checks (4 pins strengthened for not biting).
+  ANSWERED, NOT BUILT: (7) Google-Maps warehouse distances — needs the
+  warehouse ADDRESSES + a decision (haversine vs Distance Matrix API w/
+  billing); (8) article images — should already work (kbMd_ ![](…),
+  Phase 2b/3); likely the KB Images folder sharing policy — operator to
+  report what they see; Offerings catalog view offered as the follow-on.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

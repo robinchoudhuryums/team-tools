@@ -2240,9 +2240,24 @@ function intakeRenderSentDetail_(d) {
       rowsHtml += '<div class="intk-row"><div class="q">Images attached</div><div>' + Number(d.imageCount) + '</div></div>';
     }
   }
+  // Recipient feedback (operator 2026-08-13) — what the receiving agent typed
+  // through the email's "Send feedback" button, newest-first. Renders for all
+  // three form types; absent/empty renders nothing (most submissions get no
+  // feedback, and an empty section would read as "no one has complaints yet",
+  // which the data cannot support). Every server string esc()'d.
+  var fbHtml = '';
+  if (Array.isArray(d.feedback) && d.feedback.length) {
+    fbHtml = '<div class="intk-head">Recipient feedback</div>';
+    d.feedback.forEach(function (f) {
+      fbHtml += '<div class="intk-row"><div class="q" style="font-weight:400">' +
+        esc(String(f.fromName || f.fromEmail || 'Unknown')) +
+        '<div style="font-size:.72rem;color:var(--muted)">' + esc(String(f.at || '')) + '</div></div>' +
+        '<div style="font-size:.82rem;white-space:pre-wrap">' + esc(String(f.text || '')) + '</div></div>';
+    });
+  }
   var meta = '<div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">' +
     esc(d.timestamp) + ' · sent by ' + esc(d.repName) + ' · to ' + esc(d.recipient) + '</div>';
-  return meta + '<div class="intk-grid">' + rowsHtml + '</div>';
+  return meta + '<div class="intk-grid">' + rowsHtml + fbHtml + '</div>';
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────

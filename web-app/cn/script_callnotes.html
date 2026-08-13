@@ -2702,6 +2702,11 @@ function cnWireActiveForm_() {
       const btn = e.target.closest('[data-remove-tag]');
       if (!btn) return;
       const t = btn.getAttribute('data-remove-tag');
+      // Removing an AUTO-added tag dismisses its rule for the rest of this
+      // form session — the matcher must not re-add it on the next keystroke.
+      if ((CN_STATE.autoTagApplied || []).indexOf(t) >= 0) {
+        (CN_STATE.autoTagDismissed = CN_STATE.autoTagDismissed || []).push(t);
+      }
       const cur = cnGetFormTags_(form).filter(function (x) { return x !== t; });
       cnSetFormTags_(form, cur);
       cnPersistActiveFormDraft_();
@@ -2824,7 +2829,10 @@ function cnWireActiveForm_() {
       persistDebounced();
       if (el.id === 'cn-fld-issue' || el.id === 'cn-fld-resolution') {
         clearTimeout(_cnTagSuggestTimer);
-        _cnTagSuggestTimer = setTimeout(cnRefreshTagSuggest_, 500);
+        _cnTagSuggestTimer = setTimeout(function () {
+          cnApplyAutoTags_();      // rules ADD their tag (removable chip)
+          cnRefreshTagSuggest_();  // vocabulary matches stay one-click offers
+        }, 500);
       }
       // Sync .empty class on contenteditable so the data-placeholder pseudo
       // shows/hides correctly. No-op for input/textarea.
@@ -3013,6 +3021,10 @@ function cnClearActiveForm_(opts) {
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
   cnFormTimerReset_();
+  // Auto-tag session state is per NOTE: a fresh form starts with no applied
+  // set and no dismissals (the dismissal was an answer about the old note).
+  CN_STATE.autoTagApplied = [];
+  CN_STATE.autoTagDismissed = [];
   const cb = document.getElementById('cn-fld-callback');
   if (cb) cb.focus();
 }
@@ -3286,6 +3298,42 @@ function cnSuggestTagsFromText_(text, vocab, current) {
   });
   return out.slice(0, 4);
 }
+// Auto-tag (operator 2026-08-13) — admin-curated keyword→tag rules matched
+// against the Issue/Resolution text. Distinct from the SUGGESTIONS above:
+// suggestions offer the rep's own vocabulary as one-click chips; a rule
+// match ADDS its tag outright (still a normal removable chip). Everything
+// runs client-side — the note text never leaves the browser (the same
+// INV-119 posture that keeps the AI version unbuilt). Pure; Node-pinned.
+function cnAutoTagsFromText_(text, rules, current, dismissed) {
+  const t = String(text || '').toLowerCase();
+  const out = [];
+  (rules || []).forEach(function (r) {
+    if (!r || !r.tag) return;
+    if ((current || []).indexOf(r.tag) >= 0) return;
+    // A rep who removed an auto-added tag has ANSWERED for this note —
+    // re-adding it on the next keystroke would fight them for the chip.
+    if ((dismissed || []).indexOf(r.tag) >= 0) return;
+    const kws = Array.isArray(r.keywords) ? r.keywords : [];
+    for (var i = 0; i < kws.length; i++) {
+      if (kws[i] && t.indexOf(kws[i]) >= 0) { out.push(r.tag); return; }
+    }
+  });
+  return out;
+}
+function cnApplyAutoTags_() {
+  const form = document.getElementById('cn-active-form');
+  if (!form) return;
+  const rules = (CN_STATE.deptConfig && CN_STATE.deptConfig.autoTagRules) || [];
+  if (!rules.length) return;
+  const text = cnGetFieldValue_('cn-fld-issue') + ' ' + cnGetFieldValue_('cn-fld-resolution');
+  const cur = cnGetFormTags_(form);
+  const add = cnAutoTagsFromText_(text, rules, cur, CN_STATE.autoTagDismissed || []);
+  if (!add.length) return;
+  (CN_STATE.autoTagApplied = CN_STATE.autoTagApplied || []).push.apply(CN_STATE.autoTagApplied, add);
+  cnSetFormTags_(form, cur.concat(add));   // the 8-cap + dedupe live in the setter
+  cnPersistActiveFormDraft_();
+}
+
 let _cnTagSuggestTimer = null;
 function cnRefreshTagSuggest_() {
   const host = document.getElementById('cn-tag-suggest');
@@ -9702,6 +9750,19 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // Auto-tag rules (operator 2026-08-13) — keyword → tag, matched against
+    // Issue/Resolution as the rep types. Client-side only; note text never
+    // leaves the browser.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Auto-tag rules</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">When a keyword appears in a note\'s <strong>Issue</strong> or <strong>Resolution</strong> text, its tag is added automatically (as a normal chip the rep can remove — removing it stops that rule for the rest of the note). Keywords match case-insensitively as substrings; separate several with commas. Matching happens in the rep\'s browser — note text is never sent anywhere for this.</div>' +
+      '<div id="cn-admin-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
+        '<button class="refresh-btn" id="cn-admin-add-atag">' + icon('plus', 12) + ' Add Rule</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-save-atags" style="margin:0">Save Rules</button>' +
+      '</div>' +
+    '</div>' +
+
     // DeptRequests v2 — per-department resolution SLA targets (hours)
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept-Request SLA targets</div>' +
@@ -9990,6 +10051,41 @@ function cnRenderAdminBody_(cfg) {
       .saveExternalLinks(out);
   });
 
+  document.getElementById('cn-admin-add-atag').addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-atag-list');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cnRenderAutoTagRow_({ tag: '', keywords: [] });
+    list.appendChild(wrap.firstElementChild);
+  });
+
+  document.getElementById('cn-admin-save-atags').addEventListener('click', function () {
+    var btn = this;
+    var rows = document.querySelectorAll('#cn-admin-atag-list .cn-admin-atag-row');
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var tag = ((rows[i].querySelector('.cn-admin-atag-tag') || {}).value || '').trim();
+      var kws = ((rows[i].querySelector('.cn-admin-atag-kws') || {}).value || '')
+        .split(',').map(function (k) { return k.trim(); }).filter(Boolean);
+      if (!tag && !kws.length) continue;  // skip fully-empty rows
+      out.push({ tag: tag, keywords: kws });
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Rules';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('Auto-tag rules saved', 'toast-success');
+        // Reps pick the change up on their next config fetch; THIS browser's
+        // matcher updates immediately.
+        if (CN_STATE.deptConfig) CN_STATE.deptConfig.autoTagRules = out;
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Rules';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveAutoTagRules(out);
+  });
+
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
   if (slaSaveBtn) slaSaveBtn.addEventListener('click', function () {
     var btn = this;
@@ -10050,6 +10146,22 @@ function cnRenderLinkRow_(l) {
         catOpt('survey', 'Survey') + catOpt('review', 'Review') + catOpt('feedback', 'Feedback') + catOpt('other', 'Other') +
       '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-link-row\').remove()">' + icon('x', 14) + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+/** Auto-tag rule editor rows (operator 2026-08-13). */
+function cnRenderAutoTagRows_(rules) {
+  if (!Array.isArray(rules) || rules.length === 0) return cnRenderAutoTagRow_({ tag: '', keywords: [] });
+  return rules.map(cnRenderAutoTagRow_).join('');
+}
+function cnRenderAutoTagRow_(r) {
+  r = r || {};
+  return '<div class="cn-admin-atag-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
+    '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
+      '<div class="field" style="flex:0 0 24%;margin:0"><input type="text" class="cn-admin-atag-tag" value="' + esc(r.tag || '') + '" placeholder="tag (kebab-case)"></div>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-atag-kws" value="' + esc((r.keywords || []).join(', ')) + '" placeholder="keywords, comma, separated"></div>' +
+      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-atag-row\').remove()">' + icon('x', 14) + '</button>' +
     '</div>' +
   '</div>';
 }

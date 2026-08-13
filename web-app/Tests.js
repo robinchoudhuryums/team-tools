@@ -4851,6 +4851,7 @@ function test_managerGates_rejectNonManager() {
     // M10 — previously untested gates:
     ['saveEmailTemplates',             function () { return saveEmailTemplates([]); }],
     ['saveExternalLinks',              function () { return saveExternalLinks([]); }],
+    ['saveAutoTagRules',               function () { return saveAutoTagRules([]); }],
     ['getFeatureFlags',                function () { return getFeatureFlags(); }],
     ['saveFeatureFlags',               function () { return saveFeatureFlags({}); }],
     ['getCallNotesEnrollment',         function () { return getCallNotesEnrollment(); }],
@@ -4911,7 +4912,7 @@ function test_managerGates_rejectNonManager() {
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
-    saveExternalLinks: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
+    saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
     // Team-member onboarding (2026-08-07) — roster management, admin tier.
     addEmployee: 1, offboardEmployee: 1, getOnboardingPanel: 1,

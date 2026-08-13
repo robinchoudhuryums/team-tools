@@ -590,8 +590,8 @@ this section before touching the relevant area.
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
-  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **40**
-  Admin-exclusive endpoints (29 Manage-module Admin-tab config/system/roster
+  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **41**
+  Admin-exclusive endpoints (30 Manage-module Admin-tab config/system/roster
   endpoints — incl. the 2026-08-07 team-member onboarding trio
   `addEmployee`/`offboardEmployee`/`getOnboardingPanel` — + the Reference
   content-authoring set
@@ -1918,7 +1918,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 40 Admin-exclusive endpoints (INV-136's list) gate on
+  server-side** — the 41 Admin-exclusive endpoints (INV-136's list) gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -2545,6 +2545,39 @@ this section before touching the relevant area.
   header shows `X/3` capacity; at 3/3 the count goes warn-colored
   and un-pinned cards' bookmark buttons are dimmed with a
   "Unpin a note first" tooltip.
+- **Auto-tag rules (operator 2026-08-13).** Admin-curated keyword→tag rules
+  (`CN_AUTO_TAG_RULES` Script Property, CONFIG seed `AUTO_TAG_RULES` — the
+  seeded list derives from the update-type vocabulary and AWAITS OPERATOR
+  REVIEW) matched case-insensitively as substrings against the Issue +
+  Resolution text as the rep types (the existing 500ms suggestion debounce).
+  A match ADDS its tag as a normal removable chip; REMOVING an auto-added tag
+  dismisses that rule for the rest of the form session (`CN_STATE
+  .autoTagApplied`/`autoTagDismissed`, reset on clear/submit — re-adding on
+  the next keystroke would fight the rep for the chip). Distinct from the
+  heuristic SUGGESTIONS, which stay one-click offers from the rep's own
+  vocabulary. Everything runs client-side — note text never leaves the
+  browser (the INV-119 posture that keeps the AI version unbuilt).
+  `getAutoTagRules_` sanitize-on-read mirrors `saveAutoTagRules`'s validation
+  (admin-gated, INV-136 — the count is now 41) so a rejected save and a
+  sanitized read can never disagree; rules ride `getCallNotesDepartments`
+  (reps) + `getAdminConfig` (the editor). Pinned by the auto-tag Node pins.
+- **Intake recommendation feedback (operator 2026-08-13).** Every intake email
+  (PPD/PMD/PAP) carries a "Send feedback on this recommendation" button — an
+  email client can't host a live comment box (most strip forms), so the button
+  links to a tiny signed-in page served by `doGet` (`?intakefb=<submissionId>
+  &ft=<type>`, the `?resolve=` pattern with a textarea). The recipient is an
+  internal agent (roster-resolved), so `submitIntakeFeedback` re-authenticates
+  via `getEmployeeInfo_` — the page only collects text. The id is minted
+  BEFORE the send; the CTA joins the FINAL body only, after the INV-41 hash
+  check (the `drResolveCtaHtml_` placement), and an unresolvable exec URL
+  drops the button rather than shipping a dead one. Rows are append-only in
+  the Intake spreadsheet's `IntakeFeedback` tab (feedback may reference the
+  patient — it stays in the PHI store; the `IntakeFeedback` audit row carries
+  id + type only), written only when the submission EXISTS (a forged id can't
+  seed junk rows), text bounded 4000 chars. Surfaced newest-first as a
+  "Recipient feedback" block in the Intake Sent detail (all three forms; an
+  empty list renders NOTHING — an empty section would read as "no complaints
+  yet", which the data cannot support). Pinned by the feedback-loop Node pins.
 - **Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -4939,6 +4972,25 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-13 operator round adds NO new operator state to set up** — no
+  triggers, no migrations; two AUTO-MANAGED Script Properties appear when
+  first used (`CN_AUTO_TAG_RULES` — written by the Admin tab's new Auto-tag
+  rules editor; the `IntakeFeedback` tab auto-provisions in the Intake
+  spreadsheet on the first feedback). **One review item: the seeded auto-tag
+  keyword list** (CONFIG `AUTO_TAG_RULES` — close-order / shipping / resupply
+  / oop / billing / insurance / transfer / callback) is a starting point
+  derived from the update-type vocabulary, editable live in Manage → Admin →
+  Config → Auto-tag rules. Behaviour changes to expect post-deploy: (a) ⌘C
+  with a real selection inside the note template copies the SELECTION; the
+  full-template copy still fires when nothing is selected; (b) the internal
+  email composer no longer pre-selects the last note's departments; (c) tags
+  appear on their own as a rep types matching keywords — removable chips,
+  and removing one stops that rule for the note; (d) the Dashboard metric
+  cards paint as soon as the first period returns (YTD fills in a beat
+  later as a skeleton swap); (e) a rep using the app mid-shift while not
+  clocked in gets a once-a-day nudge; (f) intake emails carry a "Send
+  feedback" button whose page requires an @umsupply sign-in, and feedback
+  shows in the Intake Sent detail.
 - **The colour palettes (operator 2026-08-12) add NO operator state** — no
   Script Properties, triggers, migrations or CONFIG constants; one per-browser
   localStorage key (`umsTheme`, taking the count back to 15) that each rep sets
@@ -5310,7 +5362,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 40 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 41 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -6394,7 +6446,16 @@ the read it actually governs.** The interactive roster block added five more
 → **467** (parse structure/flags/escaped-separator/badge-travel; fence
 recognition leaving other fences alone; inert + attribute-breakout; drawer
 reflow + focus-visible tooltips + searchability; and the banded-sheet →
-roster-block emitter — 8 mutations bite-checked). The colour palettes added seven more → **507**
+roster-block emitter — 8 mutations bite-checked). The 2026-08-13 operator round added seven more → **514**
+(copy-scope + no-last-dept; the dashboard one-read-pair + paint-on-first-
+arrival/skeleton-not-empty/patch-not-rerender contract; the clock-in
+reminder's four gates incl. confirmed-snapshot-only; the auto-tag matcher
+behavioural + read/save mirror; and the intake feedback loop's gate/
+existence/PHI-free-audit/CTA-outside-the-hash contract — 32 mutations
+bite-checked; FOUR pins were strengthened after failing to bite: a comment
+broke a wiring regex (INV-188 again), an audit-notes scan stopped at a
+quoted semicolon, an indexOf(-1) passed a < comparison, and an
+adjacent-text match survived a reorder). The colour palettes added seven more → **507**
 (all seven are DERIVED, so adding the fifth palette (Sage) required no test
 edit at all — the AA, constant-luminance, contract, swatch, key-list,
 specificity and hue-drift pins all swept it in, which is the INV-179 promise
@@ -6721,7 +6782,7 @@ INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
-INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **40 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
+INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **41 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
 
 INV-137 | **Automation-failure manager digest.** `sendAutomationHealthDigest` is a top-level TRIGGER handler (daily manager-tz 9am) reachable via `google.script.run`, so it carries the MANAGER_EMAILS `assertManagerCaller_` gate (INV-44 family, NOT `emp.isAdmin` — it runs as the installer; pinned by the trigger-gate Node tripwire + `test_triggerGate_automationHealthDigest_nonManagerThrows`) and is best-effort (INV-14 — try/catch, never throws past the catch). It reuses `computeAutomationHealth_()` — the UN-gated body factored out of `getAutomationHealth` so the push and the Admin panel share ONE computation (no parallel-source drift; the gate stays in the `getAutomationHealth` wrapper) — and emails `MANAGER_EMAILS` ONLY when a check is failing: a **stale digest heartbeat**, a **stale nightly reconcile** (the F1 class — `automationLastRuns[].last.ms`, the additive raw-ms field, older than 30h; reconcile is the one unconditional daily job that writes a row every run, so a stale last-run = a silently-dead trigger), or **personal-sheet sync-fails** — plus (Turn C) any **dead detector** from `automationDetectorChecks_()` (a failing writer↔parser round-trip or missing diagnostic channel — the failure class the other checks can't see). A HEALTHY system is silent (no daily nag), and "never ran yet" (no heartbeat / no reconcile row) is NOT flagged (fresh-deploy / not-yet-installed posture, matching the panel). CDR reachability is deliberately NOT pushed (it isn't a trigger; an unset `CDR_SS_ID` reads as unreachable and would false-nag a non-CDR deployment — the panels already surface it). PHI-free (counts + job names, all `esc_`'d via `buildBrandedEmailHtml_`, tone warn). The watcher writes no audit row + has no heartbeat of its own (verify it from the trigger list). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). | Subsystem: Server
 
