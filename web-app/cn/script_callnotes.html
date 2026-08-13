@@ -2505,9 +2505,10 @@ function cnRenderActiveForm_() {
            Round 2 deferred follow-on: the fields are <div contenteditable>
            spans instead of <input>/<textarea> so the whole frame becomes
            one selectable region. A 'copy' event listener on the frame
-           intercepts ⌘C anywhere inside and writes the FULL formatted
-           template via cnFormatNoteForCopy_ — same output the Save & Copy
-           button produces. Paste is sanitized to plain text. -->
+           writes the FULL formatted template (cnFormatNoteForCopy_) when
+           ⌘C fires with NOTHING selected; a real selection copies exactly
+           what is selected (rescoped 2026-08-13 — see the listener).
+           Paste is sanitized to plain text. -->
       <div class="cnv-doc">
         <div class="cnv-doc-frame" id="cn-frame">
           <div class="frame-stamp">
@@ -2864,16 +2865,23 @@ function cnWireActiveForm_() {
       }
     });
   }
-  // Round 2 deferred 8e — Manual-copy failover. ⌘C anywhere inside the
-  // frame intercepts the copy event, preventDefaults the browser's
-  // default selection-text copy, and writes the FULL formatted note
-  // template (cnFormatNoteForCopy_, same helper Save & Copy uses) to
-  // the clipboard. So drag-highlighting any subset of the frame still
-  // pastes a complete, CRM-ready note. */
+  // Round 2 deferred 8e, RESCOPED (operator 2026-08-13) — Manual-copy
+  // failover. The original intercepted EVERY ⌘C inside the frame and wrote
+  // the full CRM template, because the old input/textarea fields contributed
+  // nothing to a text selection ("drag-highlight → blank paste"). The fields
+  // are contenteditable .ce divs now, so a drag selection carries real text —
+  // and the blanket intercept had inverted into the bug: copying a phone
+  // number out of a note-in-progress pasted the WHOLE template. The rule now:
+  //   a REAL selection copies exactly what is selected (browser default);
+  //   ⌘C with NOTHING selected copies the full formatted template.
+  // So the deliberate "grab the whole note" gesture survives (click into the
+  // frame, ⌘C) while a partial selection means what it says.
   const frame = document.getElementById('cn-frame');
   if (frame) {
     frame.addEventListener('copy', function (e) {
       try {
+        const sel = window.getSelection && window.getSelection();
+        if (sel && !sel.isCollapsed && String(sel.toString()).trim()) return;   // real selection → native copy
         const payload = cnReadActiveForm_();
         const fmt = cnFormatNoteForCopy_(payload);
         if (e.clipboardData) {
@@ -5062,24 +5070,18 @@ function cnLoadComposerDefaults_(note) {
       callbackNeeded: false,
     }, note.subformData);
     if (!base.updateInfo && navTpl) base.updateInfo = navTpl;
-    // E1 (cycle 10): the documented umsCallNotesLastDept default was DEAD —
-    // virtually every app note has subformData (completionSeconds/flags/tags
-    // ride in it), so this branch always won and the localStorage branch
-    // below was unreachable. A never-emailed note (no stored departments)
-    // now seeds from the rep's last composer selection, as documented.
-    if (!Array.isArray(base.departments) || base.departments.length === 0) {
-      try {
-        const last = JSON.parse(localStorage.getItem('umsCallNotesLastDept') || '[]');
-        if (Array.isArray(last)) base.departments = last;
-      } catch (e) {}
-    }
+    // The last-dept default was REMOVED by operator decision (2026-08-13):
+    // pre-selecting the PREVIOUS note's departments on an unrelated note
+    // invites a mis-send to the wrong department — the opposite trade from a
+    // draft restore, because the failure mode is an EMAIL leaving the
+    // building rather than retyping. A RE-SEND still restores the note's OWN
+    // stored departments (the base object above — that is the note's data,
+    // not a cross-note guess); a first compose starts with none selected.
+    if (!Array.isArray(base.departments)) base.departments = [];
     return base;
   }
-  const lsKey = 'umsCallNotesLastDept';
-  let lastDept = [];
-  try { lastDept = JSON.parse(localStorage.getItem(lsKey) || '[]'); } catch (e) {}
   return {
-    departments: Array.isArray(lastDept) ? lastDept : [],
+    departments: [],
     individualEmail: '',
     updateInfo: navTpl || '',
     callbackNeeded: false,
@@ -5229,8 +5231,6 @@ function cnToggleComposerDept_(dept) {
   const idx = c.selections.departments.indexOf(dept);
   if (idx >= 0) c.selections.departments.splice(idx, 1);
   else c.selections.departments.push(dept);
-  // Persist a "last dept selection" for the next compose call
-  try { localStorage.setItem('umsCallNotesLastDept', JSON.stringify(c.selections.departments)); } catch (e) {}
   // Update only the parts of the modal that depend on the dept selection:
   // chip aria-pressed states, the conditional "Other email" row, and the
   // update-type datalist's suggestion set. Full modal re-render caused a

@@ -5806,11 +5806,13 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   const calls = (src.match(/getCsrTransferPerRepDaily_\((?!from, to, rosterNames, opts)/g) || []).length;
   const optedIn = (src.match(/getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g) || []).length;
   // THE load-bearing number: the no-queues callers cache their assembled
-  // payloads, so this set only grows deliberately. Operator #5 (2026-08-06)
-  // added the 4th — getMyMetricsRange's own transfer aggregate, which is
-  // ALSO cached (metrics_range_v1) and also wants no per-queue payload.
-  assert.strictEqual(calls - optedIn, 4,
-    'exactly the 4 opt-out callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend + getMyMetricsRange #5)');
+  // payloads, so this set only changes deliberately. Operator #5 (2026-08-06)
+  // added getMyMetricsRange's own transfer aggregate (also cached, also
+  // queue-free); the 2026-08-13 dashboard speedup then CONSOLIDATED
+  // getDashboardMetrics's two calls (own + team) into one — the own row is
+  // derived from the team map, halving the cold-start reads.
+  assert.strictEqual(calls - optedIn, 3,
+    'exactly the 3 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5)');
   // Name the opted-in callers rather than counting them — a bare count has to
   // be edited every time the feature grows (Phase 2 tripped it immediately),
   // which trains the next author to bump the number instead of thinking. This
@@ -8698,6 +8700,113 @@ test('a palette block out-specifies the base dark block in BOTH directions', () 
   assert.ok(!/:root\[data-palette="[a-z]+"\]\s*[,{]/.test(toks),
     'a bare :root[data-palette=x] block would tie with the base dark block on specificity');
 });
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-13 — Notes fixes: copy scope + no last-dept default.
+console.log('\noperator 2026-08-13: copy scope + composer defaults');
+
+test('a real selection copies natively; the full-template intercept fires only when collapsed', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const i = cn.indexOf("frame.addEventListener('copy'");
+  assert.ok(i > 0, 'the copy failover still exists');
+  const handler = cn.slice(i, cn.indexOf('});', i));
+  // The original rationale (input/textarea contribute nothing to a selection)
+  // died with the contenteditable refactor; the blanket intercept had inverted
+  // into the bug — copying a phone number pasted the whole template.
+  const guardAt = handler.indexOf('sel.isCollapsed');
+  const writeAt = handler.indexOf('cnReadActiveForm_');
+  assert.ok(guardAt > 0 && writeAt > 0 && guardAt < writeAt,
+    'the selection guard runs BEFORE the template write');
+  assert.ok(/!sel\.isCollapsed && String\(sel\.toString\(\)\)\.trim\(\)\) return/.test(handler),
+    'a non-empty selection returns to the browser default (copies what is selected)');
+});
+
+test('the internal composer no longer remembers the last dept selection', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // Operator decision: pre-selecting the PREVIOUS note's departments on an
+  // unrelated note invites a mis-send — the failure mode is an email leaving
+  // the building, not retyping. Reader AND writer both gone (a read with no
+  // writer is the INV-184 dead-key class; a writer with no reader recreates
+  // the key for nothing).
+  [cn, kb].forEach((src, i) => {
+    assert.ok(src.indexOf("localStorage.getItem('umsCallNotesLastDept'") < 0 &&
+              src.indexOf("localStorage.setItem('umsCallNotesLastDept'") < 0,
+      ['cn', 'kb'][i] + ' partial still touches umsCallNotesLastDept');
+  });
+  // A re-send still restores the note's OWN stored departments — that branch
+  // must survive (it is the note's data, not a cross-note guess).
+  assert.ok(/departments: \[\], individualEmail: '', updateInfo: '',/.test(cn.replace(/\n\s*/g, ' ')),
+    'the subformData restore path is intact');
+});
+
+test('dashboard cold start: one read pair per window; first arrival paints, later ones patch', () => {
+  const strip = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = strip(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  // The own row is DERIVED from the team map — a second [emp.name]-filtered
+  // scan of the same sheets doubled the cold-start cost across the periods.
+  assert.ok(!/getCdrAgentMetrics_\([^)]*\[emp\.name\]/.test(fn) && !/getCsrTransferPerRepDaily_\([^)]*\[emp\.name\]/.test(fn),
+    'no own-only CDR read remains — own comes from the team map');
+  assert.ok(/var dq = dqMap\[emp\.name\] \|\| null;/.test(fn), 'own DQE derived');
+  assert.ok(/var tr = trMap\[emp\.name\] \|\| null;/.test(fn), 'own transfer derived');
+  // Client: the slowest period (YTD) must not gate the first paint.
+  const clk = strip(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const loader = extractFunction('tc/script_clock.html', 'clkLoadDashboard_');
+  const paintAt = loader.indexOf('if (!painted) { painted = true; clkRenderDashboard_(); }');
+  const gateAt = loader.indexOf('if (done < need) return;');
+  assert.ok(paintAt > 0 && /else clkDashPatchPeriod_\(pk\);/.test(loader),
+    'first arrival renders; later arrivals patch their own slides');
+  assert.ok(gateAt > paintAt,
+    'the paint comes BEFORE the all-arrived gate — moving it after re-creates the wait-for-YTD stall');
+  const patch = extractFunction('tc/script_clock.html', 'clkDashPatchPeriod_');
+  assert.ok(/trk\.children\[idx\]/.test(patch) && /clkDashFit_\(key\)/.test(patch) &&
+    !/clkRenderDashboard_|clkLoadDashboardExtras_/.test(patch),
+    'the patch swaps slide innerHTML + refits — never a full re-render (extras RPCs would duplicate)');
+  // A pending period renders a SKELETON, never "No call data" (INV-187:
+  // absence of a read is not an empty read) — and a new day drops prior-day
+  // payloads so the skeleton path is actually reachable.
+  const own = extractFunction('tc/script_clock.html', 'clkDashOwnCard_');
+  const team = extractFunction('tc/script_clock.html', 'clkDashTeamCard_');
+  [own, team].forEach((f, i) => assert.ok(
+    f.indexOf('res === undefined) return clkDashSkelKpis_()') > 0 &&
+    f.indexOf('res === undefined') < f.indexOf('clkDashEmpty_'),
+    ['own', 'team'][i] + ' card: undefined → skeleton, checked BEFORE the empty state'));
+  assert.ok(/CLK_DASH\.data = \{\};/.test(clk), 'a new day resets the payload store');
+});
+
+test('activity-without-clock-in reminder: grace + activity + CONFIRMED-out, once per day', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const tick = nc(extractFunction('script_core.html', 'remindersTick_'));
+  // All four gates, in one condition: shift window past the grace, recent real
+  // input, a punch state that positively reads OUT, and not-already-fired.
+  assert.ok(/nowMin >= startMin \+ REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin/.test(tick),
+    'gated to the shift window past the start grace (everyone opens the app at 9:00 to clock in)');
+  assert.ok(/_remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS/.test(tick),
+    'requires recent real input — an app left open on a day off is not activity');
+  assert.ok(/remindPunchState_\(\) === 'out'/.test(tick),
+    "only a POSITIVE 'out' reading counts — unknown never nags (the (b) posture)");
+  // The stale-snapshot trap: a rep who clocked in from ANOTHER window still
+  // reads 'out' in this window's boot snapshot. The nag therefore requires a
+  // recently-CONFIRMED snapshot; a stale one triggers a bounded refresh and
+  // only the NEXT tick may nag.
+  assert.ok(/_remindStateOkAt < REMIND_STATE_CONFIRM_MS\) \{\s*\n\s*remindOnce_\(today \+ ':in'/.test(tick),
+    'nag only off a confirmed snapshot');
+  assert.ok(/\} else \{\s*\n\s*remindMaybeRefreshState_\(\);/.test(tick),
+    'a stale out-reading refreshes instead of nagging');
+  // And "confirmed" must mean a SUCCESSFUL refresh — stamping on the attempt
+  // would promote stale state to confirmed when the refresh failed.
+  const refresh = nc(extractFunction('script_core.html', 'remindMaybeRefreshState_'));
+  assert.ok(/if \(s && !s\.error\) \{ empState = s; _remindStateOkAt = Date\.now\(\); \}/.test(refresh),
+    '_remindStateOkAt is stamped inside the success handler only');
+  assert.ok(!/withFailureHandler\(function \(\) \{[^}]*_remindStateOkAt/.test(refresh),
+    'and never on failure');
+  // Activity is INPUT, not presence: pointer + keys only, capture + passive.
+  const start = nc(extractFunction('script_core.html', 'remindersStart_'));
+  assert.ok(/\['pointerdown', 'keydown'\]/.test(start) && /capture: true, passive: true/.test(start),
+    'activity listener is input-only, capture-phase, passive');
+  assert.ok(!/mousemove|scroll/.test(start), 'mousemove/scroll would count an untouched window as active');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

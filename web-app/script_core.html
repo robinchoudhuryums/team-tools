@@ -1693,12 +1693,27 @@ function notifyToggleDesktop_() {
 var REMIND_TIMER = null;
 var _remindFired = {};        // key → true, reset on the rep's day rollover
 var _remindDay = '';
-var _remindStateAt = 0;       // last punch-state refresh (ms)
+var _remindStateAt = 0;       // last punch-state refresh ATTEMPT (ms — the throttle)
+var _remindStateOkAt = 0;     // last CONFIRMED snapshot (ms — boot or a successful refresh)
+var _remindLastActivityAt = 0; // last real user input anywhere in the shell (ms)
+var REMIND_CLOCKIN_GRACE_MIN = 15;            // no clock-in nag in the first shift minutes
+var REMIND_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;   // "activity" = input in the last 5 min
+var REMIND_STATE_CONFIRM_MS = 12 * 60 * 1000;    // a snapshot this fresh counts as confirmed
 
 function remindersStart_() {
   if (REMIND_TIMER) return;                       // idempotent
   REMIND_TIMER = setInterval(remindersTick_, 60000);
   setTimeout(remindersTick_, 5000);               // off the boot critical path
+  // The shell just loaded a fresh getEmployeeState, so the boot snapshot
+  // counts as confirmed — a not-clocked-in rep who starts working right away
+  // is reminded on an early tick instead of waiting out a refresh round-trip.
+  _remindStateOkAt = Date.now();
+  // Real INPUT only (pointer + keys) — mousemove/scroll would count an
+  // untouched window as active; passive + capture so nothing is slowed and
+  // stopPropagation in a view can't hide activity.
+  ['pointerdown', 'keydown'].forEach(function (ev) {
+    document.addEventListener(ev, function () { _remindLastActivityAt = Date.now(); }, { capture: true, passive: true });
+  });
 }
 
 function remindersSchedule_() {
@@ -1748,6 +1763,34 @@ function remindersTick_() {
       }
       remindMaybeRefreshState_();
     }
+
+    // (c) Working but NOT clocked in (operator 2026-08-13: "if there is
+    // activity … and the user does not show as clocked-in, notify them").
+    // Fires at most once per rep-local day, and only when ALL of:
+    //   · rep-local time is inside the shift window, past a grace period
+    //     (reps open the app AT shift start precisely to clock in — nagging
+    //     during the first minutes would fire on everyone every morning);
+    //   · the app has seen REAL input recently (typing/clicking — an app
+    //     left open on a day off is not activity);
+    //   · a RECENTLY-CONFIRMED snapshot says not clocked in. The freshness
+    //     requirement is the false-positive guard: the boot snapshot goes
+    //     stale the moment the rep punches in from another window, and a
+    //     false "you're not clocked in" teaches reps to ignore the channel.
+    //     A stale 'out' snapshot triggers a bounded REFRESH, and only the
+    //     next tick — state re-confirmed, still out — nags. Unknown never
+    //     nags (the (b) posture); the daily missed-punch email stays the
+    //     backstop for a closed browser.
+    var startMin = sched.startMin || 0;
+    if (nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin &&
+        Date.now() - _remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS &&
+        remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
+      if (Date.now() - _remindStateOkAt < REMIND_STATE_CONFIRM_MS) {
+        remindOnce_(today + ':in', 'You are using Team Tools but not clocked in — ' +
+          'clock in so today counts on your timesheet.', 'toast-warn');
+      } else {
+        remindMaybeRefreshState_();
+      }
+    }
   } catch (e) {}
 }
 
@@ -1771,7 +1814,12 @@ function remindMaybeRefreshState_() {
   _remindStateAt = now;
   try {
     google.script.run
-      .withSuccessHandler(function (s) { if (s && !s.error) empState = s; })
+      .withSuccessHandler(function (s) {
+        // Only a SUCCESSFUL refresh confirms the snapshot — stamping on the
+        // attempt would let a failed refresh promote stale state to
+        // "confirmed" and nag a rep who already clocked in elsewhere.
+        if (s && !s.error) { empState = s; _remindStateOkAt = Date.now(); }
+      })
       .withFailureHandler(function () {})          // best-effort: keep last-good
       .getEmployeeState();
   } catch (e) {}

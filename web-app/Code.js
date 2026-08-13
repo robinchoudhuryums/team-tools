@@ -15193,10 +15193,20 @@ function getDashboardMetrics(periodKey) {
     // never be computed from a differently-shaped figure than the value it
     // sits under (the LEAVE_DEDUCTION_CLIENT lesson, inside one function).
     var shapeWindow = function (wFrom, wTo) {
-      var dq = (getCdrAgentMetrics_(wFrom, wTo, [emp.name]).agents || {})[emp.name] || null;
-      var tr = (getCsrTransferPerRepDaily_(wFrom, wTo, [emp.name]).agents || {})[emp.name] || null;
-      var agg = dashboardTeamAggregate_(getCdrAgentMetrics_(wFrom, wTo, allNames).agents || {}, MIN_COHORT);
-      var trAgg = dashboardTeamTransfer_(getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {}, MIN_COHORT);
+      // ONE pair of reads per window (operator 2026-08-13 — "the cards take a
+      // while to load initially"): the caller's own row is DERIVED from the
+      // team maps rather than read again. The old shape issued a second
+      // [emp.name]-filtered scan of each sheet per window — same rows, same
+      // alias map, different roster filter — which doubled the cold-start
+      // cost across the 3 periods (and the MTD prev window). emp.name is in
+      // allNames by construction: the caller passed getEmployeeInfo_, so
+      // their roster row has an email and survives the F3/F4 skip above.
+      var dqMap = getCdrAgentMetrics_(wFrom, wTo, allNames).agents || {};
+      var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
+      var dq = dqMap[emp.name] || null;
+      var tr = trMap[emp.name] || null;
+      var agg = dashboardTeamAggregate_(dqMap, MIN_COHORT);
+      var trAgg = dashboardTeamTransfer_(trMap, MIN_COHORT);
       return {
         ownDq: dq,
         own: dq ? {

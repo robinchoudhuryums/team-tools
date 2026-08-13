@@ -512,10 +512,21 @@ function clkLoadDashboard_(isMgr) {
     clkRenderDashboard_();
     if (Date.now() - (CLK_DASH.loadedAt || 0) < CLK_DASH_FRESH_MS) return;
   } else {
-    // first load (or new day) → reset both carousels to the default period
+    // first load (or new day) → reset both carousels to the default period,
+    // and DROP any prior-day payloads so a pending slide renders a skeleton
+    // rather than yesterday's numbers (per-arrival stores fill this back in).
     CLK_DASH.mine = CLK_DASH_DEFAULT_IDX; CLK_DASH.team = CLK_DASH_DEFAULT_IDX;
+    CLK_DASH.data = {};
   }
-  var requestedView = currentView, got = {}, done = 0, anyFail = false;
+  // Operator 2026-08-13 ("the cards take a while to load initially"): render
+  // on the FIRST response instead of waiting for all three periods — the
+  // slowest period (YTD scans a year of DQE) used to gate the whole pair of
+  // cards. The first arrival paints the full dashboard (not-yet-loaded slides
+  // show skeleton KPIs — a pending period must NOT render as "No call data",
+  // INV-187); each later arrival PATCHES its own slides in place, which
+  // avoids re-running the extras loader (whose in-flight RPCs would duplicate
+  // on a full re-render) and never disturbs the segmented chips.
+  var requestedView = currentView, got = {}, done = 0, anyFail = false, painted = hasCache;
   var finish = function (pk, res) {
     var ok = !!(res && !res.error);
     // D2a (cycle 10): a failed refetch keeps the LAST-GOOD payload for that
@@ -523,20 +534,42 @@ function clkLoadDashboard_(isMgr) {
     // authoritative-sounding "No call data for this period.").
     got[pk] = ok ? res : ((CLK_DASH.data && CLK_DASH.data[pk]) || null);
     if (!ok) anyFail = true;
-    if (++done < need || currentView !== requestedView) return;
-    CLK_DASH.data = got; CLK_DASH.loadedDay = today;
+    done++;
+    if (currentView !== requestedView) return;
+    // Store what has arrived so far WITHOUT dropping still-pending keys: on a
+    // cold day CLK_DASH.data starts empty and fills per arrival; on a refetch
+    // the last-good entries stay until their replacement lands.
+    CLK_DASH.data[pk] = got[pk];
+    CLK_DASH.loadedDay = today;
+    if (!painted) { painted = true; clkRenderDashboard_(); }
+    else clkDashPatchPeriod_(pk);
+    if (done < need) return;
     // D2a: never stamp a failed round as FRESH — the old stamp cached the
     // failure for the full 60s window (re-renders early-return on fresh), so
     // a transient blip read as confident no-data. A stale stamp makes the
     // next re-render (focus / nav-back) retry quietly.
     CLK_DASH.loadedAt = anyFail ? 0 : Date.now();
-    clkRenderDashboard_();   // background swap (or first paint); no loader either way
   };
   CLK_DASH_PERIODS.forEach(function (pk) {
     google.script.run
       .withSuccessHandler(function (res) { finish(pk, res); })
       .withFailureHandler(function () { finish(pk, null); })
       .getDashboardMetrics(pk);
+  });
+}
+
+/** Swap ONE period's slide content in both carousels (a late arrival or a
+ *  background refetch) without a full #dash-cards re-render. */
+function clkDashPatchPeriod_(pk) {
+  var idx = CLK_DASH_PERIODS.indexOf(pk);
+  if (idx < 0) return;
+  ['mine', 'team'].forEach(function (key) {
+    var trk = document.getElementById('dash-trk-' + key);
+    var sld = trk && trk.children[idx];
+    if (!sld) return;
+    var res = CLK_DASH.data[pk];
+    sld.innerHTML = (key === 'mine') ? clkDashOwnCard_(res) : clkDashTeamCard_(res);
+    clkDashFit_(key);
   });
 }
 
@@ -736,6 +769,10 @@ function clkDashTone_(res, kind, value) {
 }
 
 function clkDashOwnCard_(res) {
+  // undefined = not loaded YET (the render-on-first-arrival path) — a pending
+  // period must render as loading, never as the authoritative-sounding
+  // "No call data" (INV-187: absence of a read is not an empty read).
+  if (res === undefined) return clkDashSkelKpis_();
   if (!res || !res.own) return clkDashEmpty_(res);
   var o = res.own;
   var pr = clkDashPrev_(res, 'own'), pv = pr && pr.v, pl = pr && pr.label;
@@ -765,6 +802,7 @@ function clkDashOwnCard_(res) {
   return kpis + foot + projHtml;
 }
 function clkDashTeamCard_(res) {
+  if (res === undefined) return clkDashSkelKpis_();   // pending ≠ empty (see own card)
   if (!res) return clkDashEmpty_(res);
   // Operator 2026-08-06: the cohort hide was dropped for this card (server
   // MIN_COHORT=1) — team:null now only means nobody reported at all.

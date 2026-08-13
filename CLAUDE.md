@@ -1775,10 +1775,11 @@ this section before touching the relevant area.
   so persistence + completion-timer + phone-formatter listeners react
   the same way as user typing. Paste is sanitized to plain text via
   `execCommand('insertText')` on each `.ce`. A bound `copy` event on
-  `#cn-frame` intercepts ⌘C anywhere inside the frame and writes the
-  full formatted CRM template via `cnFormatNoteForCopy_` — drag-
-  highlighting any subset still produces a complete CRM-ready note
-  (the headline UX win that drove the contenteditable refactor).
+  `#cn-frame` writes the full formatted CRM template via
+  `cnFormatNoteForCopy_` — since 2026-08-13 ONLY when the selection is
+  collapsed; a real selection copies what is selected (see the
+  manual-copy-failover Key Design Decision for why the blanket
+  intercept inverted into a bug once the fields became contenteditable).
   COROLLARY: any document-level keyboard handler that exempts form
   fields must check `document.activeElement.isContentEditable` in
   addition to the `INPUT`/`TEXTAREA`/`SELECT` tagName check — the `.ce`
@@ -1787,16 +1788,10 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fifteen client-side localStorage keys total.** All per-browser, all
+- **Fourteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
-  - `umsCallNotesLastDept` — the rep's last email-composer department
-    selection. Applied as the default when the note being composed has NO
-    stored departments of its own (cycle-10 E1: virtually every app note
-    carries `subformData`, so the old subformData-absent-only branch made
-    this default dead — the composer seeds from it inside the subformData
-    branch now; a re-send still restores the note's own prior departments).
   - `umsCallNotesActiveFormDraft` — the in-progress Call Notes form
     auto-saved on every input (debounced 400ms); restored on next
     Log view enter with a "Draft restored" toast. Cleared on
@@ -1886,7 +1881,13 @@ this section before touching the relevant area.
     rather than being reflected onto `<html>`. Read + applied SYNCHRONOUSLY in
     the `<head>` (the `data-mode` discipline — a palette flash on every load
     would be worse than no palette), written by `setTimeClockPalette`.
-  Clearing browser data wipes all fifteen. (A prior key,
+  Clearing browser data wipes all fourteen. (`umsCallNotesLastDept` — the
+  composer's last-dept default — was REMOVED by operator decision 2026-08-13:
+  pre-selecting the previous note's departments on an unrelated note invites a
+  mis-send, and the failure mode is an email leaving the building rather than
+  retyping. A re-send still restores the note's OWN stored departments. The KB
+  AI facet-gather's department facet, which piggybacked on this key, is simply
+  absent now.) (A prior key,
   `umsDashboardCompact` — an in-page Dashboard compact toggle — was REMOVED in
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
@@ -2469,9 +2470,9 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fifteen client-side localStorage keys total" entry in
+  authoritative "Fourteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
-  `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
+  `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
   `umsIntakeDrafts`, `umsCoachingMode`, `umsWhatsNew`,
@@ -2486,7 +2487,8 @@ this section before touching the relevant area.
   The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — the
   reminder-alert toggles added `umsNotify` — net 15 — and the operator retired
   the clock-card background image (2026-08-12), taking `umsClockBg` back out —
-  net 14 — and the colour palettes added `umsTheme`, net 15.)
+  net 14 — the colour palettes added `umsTheme`, net 15 — and the operator
+  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -3487,15 +3489,17 @@ this section before touching the relevant area.
   all downstream helpers (`cnReadActiveForm_`, sticky drafts,
   completion timer, phone formatter, optimistic UI) keep working
   through the new accessor helpers.
-- **Manual-copy failover on `#cn-frame` (Round 2 deferred 8e).** A
-  bound `copy` event on `#cn-frame` intercepts ⌘C anywhere inside
-  the frame, `preventDefault`s the browser's selection-text copy,
-  and writes the FULL formatted CRM template via
-  `cnFormatNoteForCopy_` — the same output Save & Copy produces.
-  Drag-highlighting any subset of the frame still pastes a complete,
-  CRM-ready note. Solves the "the button didn't work, let me drag-
-  highlight → blank paste" failure mode that input/textarea couldn't
-  address (their values don't contribute to text selection).
+- **Manual-copy failover on `#cn-frame` (Round 2 deferred 8e; RESCOPED
+  operator 2026-08-13).** A bound `copy` event on `#cn-frame` writes the FULL
+  formatted CRM template via `cnFormatNoteForCopy_` — but ONLY when the
+  selection is COLLAPSED (nothing selected). A real selection copies exactly
+  what is selected (browser default). The original blanket intercept solved
+  the "drag-highlight → blank paste" failure of input/textarea fields, whose
+  values don't contribute to a text selection — but the contenteditable
+  refactor made selections carry real text, and the intercept inverted into
+  the operator-reported bug: copying a phone number out of a note-in-progress
+  pasted the whole template. The deliberate whole-note gesture survives as
+  "click into the frame, ⌘C with nothing selected".
 - **Multi-select flag toolbar + free-text tags (Round 2 · 8e).** The
   form's flag toolbar is multi-select (`.flag-btn[data-flag]` with
   `.on` class): action / training / review / urgent. Free-text tags
@@ -4026,7 +4030,8 @@ this section before touching the relevant area.
   non-vocabulary value (novel tags, typo'd enums, smuggled free text),
   and `kbAiBuildPrompt_(clean, chunks)` has no parameter through which
   note text could pass; the client's facet gather
-  (`kbAiGatherFacets_`: form flags + tags + `umsCallNotesLastDept`) is a
+  (`kbAiGatherFacets_`: form flags + tags; the department facet died with
+  `umsCallNotesLastDept`, 2026-08-13) is a
   convenience, not the boundary. Cost funnel: canonical facet-hash cache
   (6h, generation-salted by KB edits) → retrieval score floor (thin
   matches never call the API, cached as none) → daily org spend cap

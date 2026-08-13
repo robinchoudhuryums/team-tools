@@ -3280,7 +3280,9 @@ function kbDrawerRenderHome_() {
 // renders nothing and the existing Suggested block stands alone.
 function kbAiGatherFacets_() {
   var facets = { department: '', updateType: '', flagType: '', tags: [] };
-  try { facets.department = localStorage.getItem('umsCallNotesLastDept') || ''; } catch (e) {}
+  // The department facet used to piggyback on the composer's last-dept key;
+  // that key was removed with the last-dept default (operator 2026-08-13), so
+  // the facet is simply absent now — facets are best-effort by contract.
   try {
     if (typeof cnGetFormFlags_ === 'function' && typeof currentView !== 'undefined' &&
         (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[currentView]) === 'callNotes') {
