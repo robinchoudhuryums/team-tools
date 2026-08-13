@@ -343,6 +343,10 @@ Phase: idle (post-reflect) + operator-requested feature work:
   (map-check.mjs: structure/lookup/embed-aria/400px-no-overflow/fallback
   swap incl. fan-out + external-img untouched). Docs synced (2 KDDs, the
   Script Property entry, operator-checklist round entry, test narrative).
+  /sync-docs pass DONE (stale alt-text-degradation claims corrected in the
+  KB_IMAGES_FOLDER_ID entry + S63 + the folder helper's comment; subsystem
+  list + visual README gained map-check.mjs). MERGED to main as **PR #167**
+  (merge commit eb9651c, CI green both runs); branch restarted from main.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
