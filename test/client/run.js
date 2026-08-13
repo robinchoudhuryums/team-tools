@@ -8917,6 +8917,158 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   assert.ok(/esc\(String\(f\.text \|\| ''\)\)/.test(intake), 'feedback text is esc()-escaped before innerHTML');
 });
 
+console.log('\nkb — article-image server fallback (operator 2026-08-13)');
+
+test('kbGetImageData: employee-gated, FOLDER-SCOPED, capped, leak-free, lock-free', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'kbGetImageData'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'requires a registered employee');
+  // THE SCOPE CHECK IS THE SECURITY BOUNDARY: the web app runs as the
+  // deployer, so without the parents check any signed-in employee could read
+  // ANY Drive file the deployer's account can open, by id.
+  const parentsAt = f.indexOf('file.getParents()');
+  const gateAt = f.indexOf('if (!inKbFolder) return');
+  const bytesAt = f.indexOf('base64Encode');
+  assert.ok(parentsAt > 0 && gateAt > parentsAt && bytesAt > gateAt,
+    'parents are checked against the KB Images folder BEFORE any bytes leave');
+  assert.ok(/KB_IMAGES_FOLDER_PROP/.test(f) && /if \(!folderId\) return/.test(f),
+    'an unset folder property refuses — nothing can legitimately be inside a folder that does not exist');
+  // Existence never leaks: unset property, bad id, missing file, out-of-folder,
+  // wrong type, oversize — all the SAME generic refusal.
+  assert.ok((f.match(/'Not available\.'/g) || []).length >= 6,
+    'every refusal path returns the same generic message');
+  assert.ok(/KB_IMG_UPLOAD_TYPES\.indexOf\(contentType\) < 0/.test(f) && /KB_IMG_FETCH_MAX_BYTES/.test(f),
+    'type whitelist + size cap mirror the upload path');
+  assert.ok(!/waitLock/.test(f), 'read-only Drive fetch — no ScriptLock (the kbUploadImage reasoning)');
+});
+
+test('client image fallback: capture-phase, thumbnail-scoped, retry-guarded, failure-cached', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  // error events don't bubble — a bubble-phase listener would never fire and
+  // the whole fallback would be silently dead (measure, don't assume).
+  assert.ok(/document\.addEventListener\('error', function \(e\) \{[\s\S]{0,400}\}, true\);/.test(kb),
+    'the error listener is CAPTURE-phase');
+  assert.ok(/t\.closest\('\.kb-article'\)/.test(kb), 'scoped to images inside rendered article containers');
+  const ctx = vm.createContext({});
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbImgFileId_'), ctx);
+  assert.strictEqual(ctx.kbImgFileId_('https://drive.google.com/thumbnail?id=abc123XYZ_-&sz=w1200'), 'abc123XYZ_-');
+  assert.strictEqual(ctx.kbImgFileId_('https://drive.google.com/thumbnail?sz=w1200&id=abc123'), 'abc123',
+    'id may follow another param');
+  // An EXTERNAL image failing must not send its arbitrary URL to our server.
+  assert.strictEqual(ctx.kbImgFileId_('https://evil.example/thumbnail?id=abc123'), null, 'non-Drive src → no fetch');
+  assert.strictEqual(ctx.kbImgFileId_('data:image/png;base64,AAAA'), null, 'a swapped data URL never re-triggers');
+  const fb = extractFunction('kb/script_kb.html', 'kbImgFallback_');
+  assert.ok(/if \(!img \|\| img\.dataset\.kbFbTried\) return;/.test(fb),
+    'retry guard — the swapped src erroring again cannot loop');
+  assert.ok(/KB_IMG_FB\.cache\[fileId\] = dataUrl \|\| 'failed';/.test(fb),
+    "a failed fetch caches 'failed' so a broken file cannot hammer the server on every re-render");
+  assert.ok(/KB_IMG_FB\.pending\[fileId\]\.push\(img\); return;/.test(fb),
+    'concurrent misses of one file fan into a single fetch');
+});
+
+console.log('\nkb — warehouse map block (operator 2026-08-13, Tier A — no billing)');
+
+const kbMapCtx = vm.createContext({});
+{
+  const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const capLine = kbSrc.match(/var KB_MAP_MAX_WH_CLIENT = \d+;/);
+  assert.ok(capLine, 'the client warehouse cap constant exists');
+  vm.runInContext(capLine[0], kbMapCtx);
+  ['kbSlug_', 'kbRosterAttr_', 'kbMapDecode_', 'kbMapParse_', 'kbMapHtml_', 'kbMd_']
+    .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbMapCtx));
+}
+
+test('kbMapParse_ — wh| lines against the PRODUCTION (escaped) contract', () => {
+  const d = kbMapCtx.kbMapParse_(rosEsc([
+    'wh| Dallas Warehouse: 4600 Main & 5th St, Dallas, TX 75201',
+    'wh| Phoenix: 88 Oak Ave, Phoenix, AZ 85001',
+    '# a comment line',
+    'wh| missing an address',
+    'not a wh line at all',
+  ].join('\n')));
+  assert.strictEqual(d.warehouses.length, 2, 'only the sound lines');
+  assert.strictEqual(d.warehouses[0].name, 'Dallas Warehouse', 'split on the FIRST colon');
+  // The fence content arrives HTML-escaped (the roster &gt; lesson): the
+  // parser keeps the escaped form; only URL building decodes.
+  assert.ok(d.warehouses[0].addr.indexOf('&amp;') >= 0, 'an & in the address survives as its escaped form');
+  assert.strictEqual(d.warnings.length, 2, 'malformed lines are counted, never silently dropped');
+  assert.strictEqual(kbMapCtx.kbMapDecode_('A &amp; B &lt;x&gt;'), 'A & B <x>', 'decode covers exactly the three kbMd_ escapes');
+  const many = kbMapCtx.kbMapParse_(Array.from({ length: 25 }, (_, i) => 'wh| W' + i + ': ' + i + ' Elm St').join('\n'));
+  assert.strictEqual(many.warehouses.length, 20, 'capped at 20');
+  assert.strictEqual(many.truncated, 5, 'with the overflow REPORTED (INV-169)');
+});
+
+test('kbMapHtml_ — attribute quoting, percent-encoded URLs, real controls, honest copy', () => {
+  const html = kbMapCtx.kbMapHtml_(rosEsc('wh| The "Main" Hub: 1 A & B Rd, Dallas, TX'));
+  // Quotes are the gap the top-level escape leaves — attributes need their own.
+  assert.ok(/data-name="The &quot;Main&quot; Hub"/.test(html), 'quotes escaped in attributes');
+  // The href is built from the DECODED address then encodeURIComponent'd —
+  // an escaped entity leaking in would geocode "amp;" as part of the street.
+  assert.ok(/href="https:\/\/www\.google\.com\/maps\?q=1%20A%20%26%20B%20Rd/.test(html),
+    'the & reaches the URL as %26, not &amp;');
+  assert.ok(/<button type="button" class="kb-map-embed-btn" aria-expanded="false"/.test(html),
+    'the embed toggle is a real button with disclosure state (INV-173/174)');
+  assert.ok(/<button type="button" class="kb-ros-expand"/.test(html), 'so is Find nearest');
+  assert.ok(/role="status" aria-live="polite"/.test(html), 'lookup results are announced');
+  assert.ok(/straight-line estimates/.test(html) && /Prefer a ZIP code/.test(html),
+    'the copy states straight-line and prefers a ZIP (the PHI posture)');
+  assert.ok(/No warehouses yet/.test(kbMapCtx.kbMapHtml_('')), 'empty fence explains the syntax');
+});
+
+test('kbMd_ renders a ```map fence, inert like the others', () => {
+  const html = kbMapCtx.kbMd_(['Intro.', '', '```map', 'wh| A: 1 Elm St', '```'].join('\n'));
+  assert.ok(/<div class="kb-map"/.test(html), 'the fence renders the block');
+  assert.ok(/<p>Intro\.<\/p>/.test(html), 'surrounding markdown is untouched');
+  const evil = kbMapCtx.kbMd_(['```map', 'wh| <script>alert(1)</script>: 1 Elm St', '```'].join('\n'));
+  assert.strictEqual(evil.indexOf('<script>'), -1, 'no live script survives');
+  // The embed iframe is created lazily by the toggle, with aria kept in step.
+  const tog = extractFunction('kb/script_kb.html', 'kbMapToggleEmbed_');
+  assert.ok(/output=embed/.test(tog) && /encodeURIComponent\(kbMapDecode_/.test(tog),
+    'the keyless embed URL is built from the decoded, percent-encoded address');
+  assert.ok(/btn\.setAttribute\('aria-expanded', open \? 'true' : 'false'\);/.test(tog),
+    'the toggle keeps aria-expanded in step (INV-174)');
+  // getAttribute returns DECODED text, so anything read back off a data-attr
+  // must be esc()'d before re-entering innerHTML.
+  const look = extractFunction('kb/script_kb.html', 'kbMapLookup_');
+  assert.ok(/esc\(names\[r\.i\]/.test(look), 'warehouse names are re-escaped in the results render');
+  assert.ok(/esc\(res\.formatted \|\| q\)/.test(look), 'and so is the server-formatted location');
+});
+
+test('kbHaversineMiles_ — behavioral, and the server contract never stores the query', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = vm.createContext({ Math });
+  vm.runInContext(extractRawFunction('Code.js', 'kbHaversineMiles_'), ctx);
+  const dalHou = ctx.kbHaversineMiles_(32.7767, -96.7970, 29.7604, -95.3698);
+  assert.ok(dalHou > 215 && dalHou < 235, 'Dallas→Houston ≈ 225 mi great-circle (got ' + dalHou.toFixed(1) + ')');
+  assert.strictEqual(ctx.kbHaversineMiles_(41, -87, 41, -87), 0, 'identical points → 0');
+  const f = nc(extractRawFunction('Code.js', 'kbMapDistances'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'rep-gated');
+  assert.ok(/slice\(0, KB_MAP_MAX_WH\)/.test(f) && /KB_MAP_QUERY_MAX/.test(f), 'warehouse count + string lengths bounded');
+  // THE PRIVACY CONTRACT: warehouse geocodes persist (operator-owned, static);
+  // the rep's QUERY never does — a looked-up address may be a patient's.
+  // (a) the only property write is the warehouse-coordinate cache;
+  const setCalls = f.match(/props\.setProperty\([^)]*\)/g) || [];
+  assert.strictEqual(setCalls.length, 1, 'exactly one property write');
+  assert.ok(/KB_MAP_GEOCODE_CACHE_PROP/.test(setCalls[0]), 'and it is the coordinate cache');
+  // (b) that write happens BEFORE the query is even geocoded, so the query
+  //     value cannot be in the serialized blob;
+  const writeAt = f.indexOf('props.setProperty');
+  const qGeoAt = f.indexOf('kbGeocodeOne_(query)');
+  assert.ok(writeAt > 0 && qGeoAt > writeAt, 'cache write precedes the query geocode');
+  // (c) cache keys are address HASHES via kbMapCacheKey_, never raw strings;
+  assert.ok(/kbMapCacheKey_\(a\)/.test(f) && !/cache\[a\]/.test(f), 'keys are hashed addresses');
+  // (d) no audit row, no log line — nothing records what was looked up.
+  assert.ok(!/writeAuditLog_/.test(f) && !/Logger\.log/.test(f) && !/console\./.test(f),
+    'the lookup is never audited or logged');
+  // The free built-in geocoder — the whole point of Tier A. Any Maps-API-key
+  // path (UrlFetchApp to googleapis) would mean billing.
+  const g = nc(extractRawFunction('Code.js', 'kbGeocodeOne_'));
+  assert.ok(/Maps\.newGeocoder\(\)/.test(g), 'uses the built-in Maps service (no API key, no billing)');
+  assert.ok(!/UrlFetchApp/.test(f) && !/UrlFetchApp/.test(g), 'no external HTTP — nothing to bill');
+  // Hygiene reset keeps THIS run's entries warm (the current article's
+  // warehouses are exactly the ones worth keeping).
+  assert.ok(/cache = fresh;/.test(f), 'an oversized cache resets to the fresh entries, not to nothing');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

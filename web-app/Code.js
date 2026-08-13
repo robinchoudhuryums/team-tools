@@ -18854,6 +18854,148 @@ function kbUploadImage(dataUrl) {
   } catch (err) { return { success: false, error: err.message }; }
 }
 
+// ── Article-image fallback: serve KB Images through the app ─────────────────
+// (Operator 2026-08-13.) The Drive thumbnail URLs kbMd_ renders load only for
+// accounts the KB Images folder is visible to — and on this domain Workspace
+// policy blocks the domain-link sharing getOrCreateKbImagesFolder_ attempts,
+// so reps see the alt text plus a Workspace "blocked" page behind the anchor.
+// The web app runs as the DEPLOYER, who owns the folder — so the server can
+// read the bytes any rep's browser cannot. The client's onerror fallback
+// (kb/script_kb.html) swaps a blocked thumbnail <img> for a data URL fetched
+// here. Progressive enhancement: when the thumbnail loads (folder shared, or
+// policy relaxed), this endpoint is never called.
+const KB_IMG_FETCH_MAX_BYTES = 4 * 1024 * 1024;   // response cap — degrade past it
+
+/** Rep-callable, READ-ONLY, folder-scoped. Returns one KB image as a data URL.
+ *  THE SCOPE CHECK IS THE SECURITY BOUNDARY: the file's parents must include
+ *  the KB Images folder (Script Property KB_IMAGES_FOLDER_ID). Without it,
+ *  this endpoint would let any signed-in employee read ANY Drive file the
+ *  deployer's account can open, by id — so an unset property, a file outside
+ *  the folder, or an unreadable file all return the same generic refusal
+ *  (existence never leaks). No ScriptLock: a read-only Drive fetch must not
+ *  queue punch/note writes (the kbUploadImage no-lock reasoning). Type
+ *  whitelist + size cap mirror the upload path — anything legitimately in the
+ *  folder passes; anything odd degrades to the alt text the reader already
+ *  shows. */
+function kbGetImageData(fileId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    fileId = String(fileId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) return { error: 'Not available.' };
+    const folderId = PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP);
+    if (!folderId) return { error: 'Not available.' };
+    let file;
+    try { file = DriveApp.getFileById(fileId); }
+    catch (e) { return { error: 'Not available.' }; }
+    let inKbFolder = false;
+    const parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === folderId) { inKbFolder = true; break; }
+    }
+    if (!inKbFolder) return { error: 'Not available.' };
+    const blob = file.getBlob();
+    const contentType = String(blob.getContentType() || '').toLowerCase();
+    if (KB_IMG_UPLOAD_TYPES.indexOf(contentType) < 0) return { error: 'Not available.' };
+    const bytes = blob.getBytes();
+    if (bytes.length > KB_IMG_FETCH_MAX_BYTES) return { error: 'Not available.' };
+    return { success: true, dataUrl: 'data:' + contentType + ';base64,' + Utilities.base64Encode(bytes) };
+  } catch (err) { return { error: 'Not available.' }; }
+}
+
+// ── Warehouse-distance lookups (` ```map ` KB block — Tier A, no billing) ────
+// (Operator 2026-08-13: "don't want any cost/billing for this".) Apps Script's
+// BUILT-IN Maps.newGeocoder() is the whole geo stack — free, no API key, no
+// billing account, bounded by a daily courtesy quota. The endpoint geocodes
+// the operator's warehouse addresses (cached PERMANENTLY in a Script Property
+// — static addresses, and the cache keeps steady-state quota use at ~ONE
+// geocode per lookup) plus the rep's query, and returns straight-line miles
+// per warehouse. THE QUERY IS NEVER PERSISTED — no cache entry, no audit row,
+// no log line: a looked-up address may be a patient's (the client UI asks for
+// a ZIP for exactly that reason). Straight-line is stated as such; the
+// client's Directions link is the honest path to a drive figure (INV-187).
+const KB_MAP_MAX_WH = 20;
+const KB_MAP_QUERY_MAX = 200;
+const KB_MAP_GEOCODE_CACHE_PROP = 'KB_MAP_GEOCODE_CACHE';
+const KB_MAP_GEOCODE_CACHE_MAX = 200;   // hygiene bound — the property must stay small
+
+/** PURE: great-circle miles between two lat/lng points (haversine). */
+function kbHaversineMiles_(lat1, lon1, lat2, lon2) {
+  const R = 3958.8;                        // mean Earth radius, miles
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.sqrt(Math.min(1, a)));
+}
+
+/** One geocode through the free built-in service. null on anything but a
+ *  clean single-result hit — the caller treats null as "unavailable". */
+function kbGeocodeOne_(addr) {
+  try {
+    const res = Maps.newGeocoder().setRegion('us').geocode(addr);
+    if (!res || res.status !== 'OK' || !res.results || !res.results.length) return null;
+    const r = res.results[0];
+    if (!r.geometry || !r.geometry.location) return null;
+    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, formatted: String(r.formatted_address || '') };
+  } catch (e) { return null; }
+}
+
+function kbMapCacheKey_(addr) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(addr).toLowerCase()));
+}
+
+/** Rep-callable, read-only, bounded. `addresses` are the article's own wh|
+ *  lines (client-supplied but only ever geocoded + measured — nothing is
+ *  written per-address beyond the coordinate cache, which stores lat/lng
+ *  keyed by an address HASH, never the query). No ScriptLock — read-only
+ *  apart from the best-effort cache property write. */
+function kbMapDistances(query, addresses) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    query = String(query || '').trim();
+    if (query.length < 3 || query.length > KB_MAP_QUERY_MAX) {
+      return { error: 'Enter a ZIP code or city (3–' + KB_MAP_QUERY_MAX + ' characters).' };
+    }
+    if (!Array.isArray(addresses) || !addresses.length) return { error: 'No warehouses to measure.' };
+    const addrs = addresses.slice(0, KB_MAP_MAX_WH)
+      .map(function (a) { return String(a || '').trim().substring(0, KB_MAP_QUERY_MAX); });
+    // Warehouse geocodes: permanent Script-Property cache. Fresh entries from
+    // this run survive a hygiene reset (the current article's warehouses are
+    // exactly the ones worth keeping warm).
+    const props = PropertiesService.getScriptProperties();
+    let cache = {};
+    try { cache = JSON.parse(props.getProperty(KB_MAP_GEOCODE_CACHE_PROP) || '{}') || {}; } catch (e) { cache = {}; }
+    if (typeof cache !== 'object' || Array.isArray(cache)) cache = {};
+    const fresh = {};
+    let dirty = false;
+    const whGeo = addrs.map(function (a) {
+      if (!a) return null;
+      const key = kbMapCacheKey_(a);
+      const hit = cache[key];
+      if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
+      const geo = kbGeocodeOne_(a);
+      if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
+      return geo;
+    });
+    if (dirty) {
+      try {
+        if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
+        props.setProperty(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache));
+      } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
+    }
+    // The QUERY geocode: computed, used, returned — deliberately never stored.
+    const qGeo = kbGeocodeOne_(query);
+    if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    const results = whGeo.map(function (g, i) {
+      if (!g) return { i: i, miles: null };
+      return { i: i, miles: Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 };
+    });
+    return { success: true, formatted: qGeo.formatted, results: results };
+  } catch (err) { return { error: 'Lookup failed — try again.' }; }
+}
+
 // ── KB AI Phase A — facet-based guidance (Reference drawer) ─────────────────
 // kbGetFacetGuidance(facets): rep-callable. Sends ONLY whitelisted enum
 // facets (department / update type / tags / flag type) plus excerpts from our

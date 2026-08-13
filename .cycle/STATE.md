@@ -319,6 +319,30 @@ Phase: idle (post-reflect) + operator-requested feature work:
   billing); (8) article images — should already work (kbMd_ ![](…),
   Phase 2b/3); likely the KB Images folder sharing policy — operator to
   report what they see; Offerings catalog view offered as the follow-on.
+- OPERATOR FOLLOW-UP 2026-08-13 (items 7+8 resolved + BUILT): operator chose
+  Tier A ("don't want any cost/billing") and confirmed the image symptom is
+  the Workspace link-sharing block ("blocking message with open-in-drive
+  link"). (a) **Article-image fallback**: kbGetImageData (rep-callable,
+  read-only, NO lock; the file's PARENTS must include KB_IMAGES_FOLDER_ID
+  BEFORE bytes leave — without that check any employee could read any
+  deployer-visible Drive file by id; every refusal is the same generic
+  'Not available.'); client = ONE document-level CAPTURE-phase error
+  listener over .kb-article imgs, drive-thumbnail-src-only, retry-guarded,
+  session-cached with pending fan-out + 'failed' marker. Covers every kbMd_
+  render site (both readers, chunks, training/empdocs, What's new) with
+  zero per-site wiring. (b) **` ```map ` warehouse block (Tier A)**:
+  wh| Name: Address fence → directory + keyless output=embed toggle
+  (aria-expanded) + nearest lookup via the FREE built-in Maps.newGeocoder()
+  (no key, no billing, zero UrlFetchApp); kbHaversineMiles_ pure +
+  Node-pinned; straight-line stated as such with a Directions link for the
+  drive figure (INV-187). Privacy split: warehouse geocodes persist
+  (KB_MAP_GEOCODE_CACHE, hashed keys, self-resets >200); the QUERY is never
+  persisted/audited/logged (may be a patient address; UI asks for ZIP).
+  Escaped-contract parse (rosEsc-fed pins), %26-not-&amp; URLs, esc-on-
+  read-back. Pure 520 (+6, 8 bite-checks), DOM 71, measured in Chromium
+  (map-check.mjs: structure/lookup/embed-aria/400px-no-overflow/fallback
+  swap incl. fan-out + external-img untouched). Docs synced (2 KDDs, the
+  Script Property entry, operator-checklist round entry, test narrative).
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was

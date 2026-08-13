@@ -3975,6 +3975,63 @@ this section before touching the relevant area.
   `WHATSNEW_KB_ID` shape) — deliberately not built yet, since one glossary
   article that reps search for already answers "what does PAR mean" through the
   existing drawer search.
+- **Warehouse map block (` ```map `, operator 2026-08-13 — Tier A, NO
+  billing).** The operator's constraint was explicit: no cost, no billing —
+  which rules out the Maps JavaScript/Places APIs (key + billing account) and
+  selects Apps Script's FREE built-in **`Maps.newGeocoder()`** (no key, daily
+  courtesy quota) plus the keyless `https://www.google.com/maps?q=…&output=embed`
+  iframe. A `map` fence of `wh| Name: Street, City, ST ZIP` lines (split on the
+  FIRST colon; cap 20 with the overflow REPORTED, INV-169) renders a warehouse
+  directory — per-warehouse open-in-Google-Maps link + a lazy keyless embed
+  behind a real `aria-expanded` toggle button — and a nearest-warehouse lookup:
+  the query geocodes SERVER-side (`kbMapDistances`, rep-callable, bounded ≤20
+  addresses / ≤200 chars each), straight-line miles come from the pure
+  Node-pinned `kbHaversineMiles_`, and results sort nearest-first with a
+  per-result **Directions ↗** link (real driving distance — the block never
+  presents haversine as a drive figure, INV-187; the copy says "straight-line
+  estimates"). **The privacy split is the load-bearing decision:** warehouse
+  geocodes cache PERMANENTLY (Script Property `KB_MAP_GEOCODE_CACHE`, keyed by
+  address HASH — operator-owned static addresses, and the cache keeps
+  steady-state quota at ~ONE geocode per lookup), while **the rep's query is
+  NEVER persisted** — no cache entry, no audit row, no log line — because a
+  looked-up address may be a patient's; the input placeholder asks for a ZIP
+  for the same reason. Pinned: the function's ONLY `setProperty` is the
+  coordinate cache, written BEFORE the query geocode so the query cannot be in
+  the blob, plus zero `UrlFetchApp` anywhere in the geo path (nothing to
+  bill). Fence rules match roster/glossary: content arrives HTML-escaped
+  (`&amp;` survives parse; only URL building decodes, then
+  `encodeURIComponent` re-encodes — `%26`, never `&amp;`, reaches the URL),
+  attributes are quote-escaped, values read back off `data-*` are DECODED so
+  the lookup render `esc()`s them, and unknown lines are counted, never
+  silently dropped. Rows are flex-wrap (intrinsic reflow — no A2 breakpoint
+  owed; measured 400/400 at drawer width). Geocode failures per warehouse
+  render "distance unavailable", never 0.
+- **Article images fall back to server-served data when Drive blocks the
+  thumbnail (operator 2026-08-13).** The KB Images folder's domain-link
+  sharing is BLOCKED by Workspace policy on this domain (the documented
+  `getOrCreateKbImagesFolder_` degradation), so the
+  `drive.google.com/thumbnail` `<img>`s `kbMd_` renders 403'd for reps — alt
+  text plus a Workspace "blocked" page behind the anchor. The web app runs as
+  the folder-OWNING deployer, so `kbGetImageData(fileId)` (rep-callable,
+  read-only, NO lock) serves the bytes as a base64 data URL. **The folder
+  check is the security boundary:** the file's parents must include
+  `KB_IMAGES_FOLDER_ID` BEFORE any bytes leave — without it, any signed-in
+  employee could read ANY Drive file the deployer can open, by id — and every
+  refusal path (unset property, bad id, missing file, out-of-folder, wrong
+  type, oversize `KB_IMG_FETCH_MAX_BYTES` 4MB) returns the SAME generic
+  'Not available.' so existence never leaks. Client: ONE document-level
+  CAPTURE-phase `error` listener (error events don't bubble) covers every
+  `kbMd_` render site — Reference reader, drawer, search chunks,
+  training/empdocs readers, What's new — with zero per-site wiring; scoped
+  STRICTLY to `.kb-article` imgs whose src starts with the Drive thumbnail
+  origin (an external image failing must not send its arbitrary URL to our
+  server), retry-guarded (`kbFbTried` — a failing swap can't loop),
+  session-cached per fileId with a pending fan-out (two `<img>`s of one file
+  fetch once) and a 'failed' marker (a broken file can't hammer the server on
+  re-renders). Progressive enhancement: when the thumbnail loads normally
+  (folder shared, policy relaxed), the endpoint is never called. The wrapping
+  anchor keeps its Drive href — the open-full-size path for accounts with
+  access, and a `data:` href would be blocked as top-level navigation anyway.
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -4972,6 +5029,24 @@ manually for a fresh deploy or environment:
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-13 follow-up round (image fallback + warehouse map) adds NO
+  operator state to set up** — no triggers, no migrations, no API key, and
+  deliberately NO billing (the operator constraint): the map block's whole geo
+  stack is Apps Script's free built-in `Maps.newGeocoder()` (daily courtesy
+  quota — the coordinate cache keeps steady-state use at ~one geocode per
+  lookup) plus the keyless `output=embed` iframe. ONE auto-managed Script
+  Property appears on first lookup: `KB_MAP_GEOCODE_CACHE` (warehouse
+  lat/lng keyed by address hash — delete it to force re-geocoding after a
+  warehouse moves; the rep's lookup query is NEVER stored in it or anywhere
+  else). **To use the map: put a ` ```map ` fence in any Reference article**
+  with one `wh| Name: Street, City, ST ZIP` line per warehouse — the
+  addresses are authored in the article, so updating them is a normal KB
+  edit. Behaviour change to expect post-deploy: **article images that
+  previously showed only alt text + a Workspace "blocked" page now render
+  inline for every rep** — the reader silently refetches a blocked Drive
+  thumbnail through the server (`kbGetImageData`, scoped to the KB Images
+  folder only). Nothing to configure; if Workspace link-sharing is ever
+  allowed, the thumbnails load directly again and the fallback goes quiet.
 - **The 2026-08-13 operator round adds NO new operator state to set up** — no
   triggers, no migrations; two AUTO-MANAGED Script Properties appear when
   first used (`CN_AUTO_TAG_RULES` — written by the Admin tab's new Auto-tag
@@ -5340,6 +5415,17 @@ manually for a fresh deploy or environment:
   No manual setup — documented so they're recognizable when inspecting
   Script Properties. Delete `KB_AI_SPEND` to reset today's budget; bump
   `KB_AI_GENERATION` to force-invalidate all cached guidance.
+- **Script Property `KB_MAP_GEOCODE_CACHE`** (auto-managed — the ` ```map `
+  warehouse block, operator 2026-08-13). JSON map of warehouse coordinates
+  keyed by an ADDRESS HASH, written best-effort by `kbMapDistances` so the
+  free built-in geocoder is called ~once per warehouse ever (steady-state
+  quota: one geocode per rep lookup, for the query itself). Contains ONLY
+  the operator-authored warehouse addresses' lat/lng — never a rep's lookup
+  query (a looked-up address may be a patient's; the query is deliberately
+  never persisted anywhere). Delete the property to force re-geocoding after
+  a warehouse address changes meaning (e.g. the geocoder had it wrong);
+  over `KB_MAP_GEOCODE_CACHE_MAX` (200) entries it self-resets to the
+  current article's warehouses. No manual setup.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -6455,7 +6541,19 @@ existence/PHI-free-audit/CTA-outside-the-hash contract — 32 mutations
 bite-checked; FOUR pins were strengthened after failing to bite: a comment
 broke a wiring regex (INV-188 again), an audit-notes scan stopped at a
 quoted semicolon, an indexOf(-1) passed a < comparison, and an
-adjacent-text match survived a reorder). The colour palettes added seven more → **507**
+adjacent-text match survived a reorder). The 2026-08-13 follow-up round
+(image fallback + map block) added six more → **520** (the image-fallback
+pair — server folder-scope-checked-BEFORE-bytes + same-generic-refusal +
+no-lock, and the client capture-phase/thumbnail-scoped/retry-guarded/
+failure-cached listener with the pure `kbImgFileId_` driven behaviourally;
+and the map-block four — escaped-contract parse + cap/truncated, attribute
+quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
++ lazy-embed aria + esc-on-read-back, and `kbHaversineMiles_` behavioural
+(Dallas→Houston ≈225mi) + the never-store-the-query server contract:
+exactly ONE property write (the coordinate cache), placed BEFORE the query
+geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
+`UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
+The colour palettes added seven more → **507**
 (all seven are DERIVED, so adding the fifth palette (Sage) required no test
 edit at all — the AA, constant-luminance, contract, swatch, key-list,
 specificity and hue-drift pins all swept it in, which is the INV-179 promise

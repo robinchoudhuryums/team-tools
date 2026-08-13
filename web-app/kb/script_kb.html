@@ -250,6 +250,27 @@
   @media (max-width: 560px) {
     .kb-gloss-row { grid-template-columns: 1fr; gap: 2px; }
   }
+  /* Warehouse map block (` ```map `, operator 2026-08-13). Rows are flex-wrap
+     (intrinsic reflow — no fixed grid, so no A2 breakpoint owed); the embed
+     wrapper carries NO display-setting class so the [hidden] attribute works
+     (the [hidden]-vs-display gotcha). */
+  .kb-map-note { font-size: .72rem; color: var(--muted-3); margin: -4px 0 8px; }
+  .kb-map-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--line); }
+  .kb-map-row:first-child { border-top: none; }
+  .kb-map-main { flex: 1 1 220px; min-width: 0; }
+  .kb-map-name { display: block; font-size: .84rem; color: var(--ink); }
+  .kb-map-addr { display: block; font-size: .74rem; color: var(--muted); }
+  .kb-map-dist { font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--info-deep); }
+  .kb-map-open { font-size: .74rem; color: var(--info-deep); }
+  .kb-map-embed-btn { appearance: none; font: inherit; font-size: .72rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-map-embed-btn:hover { border-color: var(--border-strong); }
+  .kb-map-embed { flex: 1 0 100%; }
+  .kb-map-embed iframe { width: 100%; height: 280px; border: 1px solid var(--line); border-radius: 8px; }
+  .kb-map-results:not(:empty) { border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); padding: 8px 10px; margin-bottom: 8px; font-size: .8rem; }
+  .kb-map-from { font-size: .74rem; color: var(--muted-2); margin-bottom: 4px; }
+  .kb-map-ranks { margin: 0; padding-left: 20px; }
+  .kb-map-ranks li { padding: 2px 0; }
+  .kb-map-rk-na { color: var(--muted-3); }
   /* Mode switcher — the segmented-pill vocabulary used by the Time/PTO and
      Coaching toggles, so a stateful toggle looks the same everywhere. */
   .kb-ros-modes { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
@@ -1040,6 +1061,139 @@ function kbRosterKey_(v) {
     .replace(/\s+/g, ' ').trim();
 }
 
+// ── Warehouse map block (` ```map `, operator 2026-08-13 — Tier A, no billing) ──
+// `wh| Name: Address` lines render a warehouse directory: open-in-Google-Maps
+// links, a per-warehouse keyless embed (`?q=…&output=embed` — no API key, the
+// operator's no-billing constraint), and a nearest-warehouse lookup. The
+// lookup geocodes SERVER-side through Apps Script's free built-in Maps
+// service and returns straight-line miles; the query is never persisted
+// anywhere (a looked-up address may be a patient's — the placeholder asks for
+// a ZIP for exactly that reason). Distances are LABELED straight-line — the
+// per-result Directions link is the honest path to a drive figure (INV-187:
+// never imply a judgement the data doesn't carry). Fence rules match
+// roster/glossary: content arrives HTML-escaped, attributes get their own
+// quote escaping, values read back off data-attrs are DECODED (so they need
+// esc() before any innerHTML), and unknown lines are counted, never silently
+// dropped.
+var KB_MAP_MAX_WH_CLIENT = 20;
+function kbMapDecode_(s) {
+  // kbMd_'s top-level escape covers exactly these three entities. Decode ONLY
+  // for URL building (encodeURIComponent re-encodes everything, so the result
+  // is attribute-safe); text and attribute contexts keep the escaped form —
+  // the roster lesson: the parser never unescapes into markup.
+  return String(s == null ? '' : s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+function kbMapParse_(text) {
+  var whs = [], warnings = [], truncated = 0;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var m = line.match(/^wh\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var rest = m[1];
+    var ci = rest.indexOf(':');
+    if (ci < 1 || !rest.slice(ci + 1).trim()) { warnings.push(line); return; }
+    if (whs.length >= KB_MAP_MAX_WH_CLIENT) { truncated++; return; }
+    whs.push({ name: rest.slice(0, ci).trim(), addr: rest.slice(ci + 1).trim() });
+  });
+  return { warehouses: whs, warnings: warnings, truncated: truncated };
+}
+function kbMapHtml_(text) {
+  var data = kbMapParse_(text);
+  if (!data.warehouses.length) {
+    return '<div class="kb-ros-empty"><b>No warehouses yet.</b>' +
+      '<p>Add one per line as <code>wh| Name: Street, City, ST ZIP</code>.</p></div>';
+  }
+  var rows = data.warehouses.map(function (w) {
+    var q = encodeURIComponent(kbMapDecode_(w.addr));
+    return '<div class="kb-map-row" data-name="' + kbRosterAttr_(w.name) + '" data-addr="' + kbRosterAttr_(w.addr) + '">' +
+      '<div class="kb-map-main"><b class="kb-map-name">' + w.name + '</b>' +
+        '<span class="kb-map-addr">' + w.addr + '</span></div>' +
+      '<span class="kb-map-dist" data-dist></span>' +
+      '<a class="kb-map-open" href="https://www.google.com/maps?q=' + q + '" target="_blank" rel="noopener">Open ↗</a>' +
+      '<button type="button" class="kb-map-embed-btn" aria-expanded="false" onclick="kbMapToggleEmbed_(this)">Map</button>' +
+      '<div class="kb-map-embed" hidden></div>' +
+    '</div>';
+  }).join('');
+  return '<div class="kb-map" data-map="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search kb-map-q" placeholder="ZIP code (or city, state)" ' +
+        'aria-label="Find the nearest warehouse — enter a ZIP code or city" ' +
+        'onkeydown="if(event.key===\'Enter\')kbMapLookup_(this)">' +
+      '<button type="button" class="kb-ros-expand" onclick="kbMapLookup_(this)">Find nearest</button>' +
+      '<span class="kb-ros-count">' + data.warehouses.length + ' warehouse' + (data.warehouses.length === 1 ? '' : 's') + '</span>' +
+    '</div>' +
+    '<div class="kb-map-note">Prefer a ZIP code for patient lookups — the lookup goes to Google’s geocoder. Distances are straight-line estimates; use Directions for drive distance.</div>' +
+    '<div class="kb-map-results" role="status" aria-live="polite"></div>' +
+    '<div class="kb-map-list">' + rows + '</div>' +
+    (data.truncated ? '<div class="kb-ros-warn">Only the first ' + KB_MAP_MAX_WH_CLIENT + ' warehouses are shown (' + data.truncated + ' more in the source).</div>' : '') +
+    (data.warnings.length ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood and are not shown.</div>' : '') +
+  '</div>';
+}
+function kbMapToggleEmbed_(btn) {
+  var row = btn.closest ? btn.closest('.kb-map-row') : null;
+  if (!row) return;
+  var wrap = row.querySelector('.kb-map-embed');
+  if (!wrap) return;
+  var open = wrap.hasAttribute('hidden');
+  if (open && !wrap.firstChild) {
+    // Lazy — the keyless embed iframe is created on first open only.
+    var f = document.createElement('iframe');
+    f.src = 'https://www.google.com/maps?q=' +
+      encodeURIComponent(kbMapDecode_(row.getAttribute('data-addr') || '')) + '&output=embed';
+    f.setAttribute('loading', 'lazy');
+    f.setAttribute('title', 'Map of ' + (row.getAttribute('data-name') || 'warehouse'));
+    wrap.appendChild(f);
+  }
+  if (open) wrap.removeAttribute('hidden'); else wrap.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function kbMapLookup_(el) {
+  var root = el.closest ? el.closest('.kb-map') : null;
+  if (!root || root.dataset.busy) return;
+  var input = root.querySelector('.kb-map-q');
+  var out = root.querySelector('.kb-map-results');
+  var q = String((input && input.value) || '').trim();
+  if (q.length < 3) { out.textContent = 'Enter a ZIP code or city to look up.'; return; }
+  var rows = root.querySelectorAll('.kb-map-row');
+  var addrs = [], names = [];
+  for (var i = 0; i < rows.length; i++) {
+    addrs.push(kbMapDecode_(rows[i].getAttribute('data-addr') || ''));
+    names.push(rows[i].getAttribute('data-name') || '');   // decoded — esc() before innerHTML
+  }
+  root.dataset.busy = '1';
+  out.textContent = 'Looking up…';
+  var done = function () { delete root.dataset.busy; };
+  var fail = function (msg) { done(); out.textContent = msg || 'Lookup failed — try again.'; };
+  try {
+    google.script.run.withSuccessHandler(function (res) {
+      done();
+      if (!res || res.error) { fail(res && res.error); return; }
+      var list = (res.results || []).slice().sort(function (a, b) {
+        if (a.miles == null) return 1;
+        if (b.miles == null) return -1;
+        return a.miles - b.miles;
+      });
+      var html = '<div class="kb-map-from">Distances from <b>' + esc(res.formatted || q) + '</b></div><ol class="kb-map-ranks">';
+      list.forEach(function (r) {
+        var dir = 'https://www.google.com/maps/dir/' + encodeURIComponent(q) + '/' + encodeURIComponent(addrs[r.i] || '');
+        html += '<li><span class="kb-map-rk-name">' + esc(names[r.i] || ('Warehouse ' + (r.i + 1))) + '</span> — ' +
+          (r.miles == null ? '<span class="kb-map-rk-na">distance unavailable</span>'
+            : '<b>≈ ' + esc(String(r.miles)) + ' mi</b>') +
+          ' · <a href="' + dir + '" target="_blank" rel="noopener">Directions ↗</a></li>';
+      });
+      out.innerHTML = html + '</ol>';
+      for (var i = 0; i < rows.length; i++) {
+        var chip = rows[i].querySelector('[data-dist]'), hitR = null;
+        for (var j = 0; j < list.length; j++) { if (list[j].i === i) { hitR = list[j]; break; } }
+        if (chip) chip.textContent = (hitR && hitR.miles != null) ? '≈ ' + hitR.miles + ' mi' : '';
+      }
+    }).withFailureHandler(function (err) {
+      fail(err && err.message);
+    }).kbMapDistances(q, addrs);
+  } catch (e) { fail(); }
+}
+
 function kbRosterAttr_(v) {
   return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
@@ -1800,10 +1954,12 @@ function kbMd_(src) {
     var rm = info.match(/^roster\b/i);
     var gm = info.match(/^glossary\b/i);
     var dm = info.match(/^decision\b/i);
+    var mm = info.match(/^map\b/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
     else if (gm) blocks.push({ glossary: true, body: code });
     else if (dm) blocks.push({ decision: true, body: code });
+    else if (mm) blocks.push({ map: true, body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -1863,7 +2019,8 @@ function kbMd_(src) {
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
     if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; }
       if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
-      if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+      if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
+      if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -2308,6 +2465,66 @@ function kbLinkCardCopyFallback_(text) {
       if (KB_LINKCARD.el && KB_LINKCARD.el.classList.contains('show')) kbLinkCardHide_();
     }
   });
+})();
+
+// ── Article-image fallback (operator 2026-08-13) ────────────────────────────
+// On this domain Workspace policy blocks the KB Images folder's link sharing,
+// so the Drive thumbnail <img>s kbMd_ renders 403 for reps — the reader shows
+// alt text and the anchor lands on a Workspace "blocked" page. The server CAN
+// read the bytes (it runs as the folder-owning deployer), so a failed
+// thumbnail is swapped for a data URL from kbGetImageData. One document-level
+// CAPTURE-phase listener (error events don't bubble) covers every kbMd_
+// render site — Reference reader, drawer, search chunks, training/empdocs
+// readers, What's new — with zero per-site wiring. Scoped STRICTLY to
+// drive.google.com/thumbnail sources: an external image failing must not send
+// its arbitrary URL to our server. Session-cached per fileId (with a pending
+// fan-out so two <img>s of one file fetch once); a failed fetch caches
+// 'failed' so a broken file can't hammer the server on every re-render.
+var KB_IMG_FB = { cache: {}, pending: {} };
+function kbImgFileId_(src) {
+  src = String(src || '');
+  if (src.indexOf('https://drive.google.com/thumbnail?') !== 0) return null;
+  var m = /[?&]id=([a-zA-Z0-9_-]+)/.exec(src);
+  return m ? m[1] : null;
+}
+function kbImgApplyFallback_(img, dataUrl) {
+  img.src = dataUrl;
+  // Keep the wrapping anchor on the Drive URL — accounts WITH folder access
+  // still get the full-size open path; a data: href would be blocked anyway.
+}
+function kbImgFallback_(img) {
+  if (!img || img.dataset.kbFbTried) return;
+  img.dataset.kbFbTried = '1';
+  var fileId = kbImgFileId_(img.getAttribute('src'));
+  if (!fileId) return;
+  var hit = KB_IMG_FB.cache[fileId];
+  if (hit === 'failed') return;
+  if (hit) { kbImgApplyFallback_(img, hit); return; }
+  if (KB_IMG_FB.pending[fileId]) { KB_IMG_FB.pending[fileId].push(img); return; }
+  KB_IMG_FB.pending[fileId] = [img];
+  var settle = function (dataUrl) {
+    var imgs = KB_IMG_FB.pending[fileId] || [];
+    delete KB_IMG_FB.pending[fileId];
+    KB_IMG_FB.cache[fileId] = dataUrl || 'failed';
+    if (!dataUrl) return;   // leave the alt text — today's degradation
+    for (var i = 0; i < imgs.length; i++) {
+      try { kbImgApplyFallback_(imgs[i], dataUrl); } catch (e) {}
+    }
+  };
+  try {
+    google.script.run
+      .withSuccessHandler(function (res) { settle(res && res.success ? res.dataUrl : null); })
+      .withFailureHandler(function () { settle(null); })
+      .kbGetImageData(fileId);
+  } catch (e) { settle(null); }
+}
+(function kbBindImgFallback_() {
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.closest) return;
+    if (!t.closest('.kb-article')) return;
+    kbImgFallback_(t);
+  }, true);   // capture — error events don't bubble
 })();
 
 function kbHlRegex_(q) {
