@@ -9227,5 +9227,120 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/team_metrics_v1:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate');
 });
 
+console.log('\nemails — the three CN digests share the branded chrome (operator 2026-08-13)');
+
+test('EOD + flag digests route through buildBrandedEmailHtml_ with real CTAs', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const eod = nc(extractRawFunction('Code.js', 'sendOneRepEodDigest_'));
+  assert.ok(/buildBrandedEmailHtml_\(/.test(eod), 'the EOD digest uses the shared chrome');
+  // The old body said "hop into the web app" with NO LINK — the exact
+  // dead-end the 2026-08-11 restyle fixed on the missed-clock-out email.
+  assert.ok(/ctaUrl: safeWebAppUrl_\('callNotes'\), ctaLabel: 'Open Call Notes'/.test(eod),
+    'and finally links the rep into Call Notes');
+  assert.ok(/tone: 'warn'/.test(eod) && /subLabel: 'Call Notes'/.test(eod), 'warn tone + module eyebrow');
+  const flag = nc(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+  assert.ok(/buildBrandedEmailHtml_\(label, inner,/.test(flag), 'the weekly/urgent digests share it too');
+  assert.ok(/tone: label === 'Urgent' \? 'danger' : 'info'/.test(flag),
+    'Urgent reads as action-needed; the weekly queues as info');
+  assert.ok(/ctaUrl: safeWebAppUrl_\('callNotesManage'\)/.test(flag), 'managers land on Team Notes');
+  // The INV-187 warning line and the plain-text fallbacks survive the restyle.
+  assert.ok(/skipHtml/.test(flag) && /const textBody/.test(flag) && /const textBody/.test(eod),
+    'skippedReps warning + text fallbacks kept');
+});
+
+console.log('\nobservability — pre-pilot round (operator 2026-08-13)');
+
+test('errorStateHtml_ beacons handled failures; both normalizers accept errorState', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractFunction('script_core.html', 'errorStateHtml_'));
+  // The ONE choke point where a HANDLED failure becomes visible to a rep
+  // (every A12/INV-175 call site) — without this, only unhandled exceptions
+  // reached the ClientErrors tab.
+  assert.ok(/try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(String\(msg \|\| ''\), '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
+    'fires the beacon, guarded so jsdom/boot order can never break the render');
+  assert.ok(/role="alert"/.test(f), 'the returned markup is unchanged');
+  const pay = nc(extractFunction('script_core.html', 'errBeaconPayload_'));
+  assert.ok(/source === 'unhandledrejection' \|\| source === 'errorState'/.test(pay), 'client normalizer accepts it');
+  const srv = nc(extractRawFunction('Code.js', 'recordClientError'));
+  assert.ok(/p\.source === 'unhandledrejection' \|\| p\.source === 'errorState'/.test(srv), 'server normalizer agrees');
+});
+
+test('client-error spike alert: post-lock, thresholded, cooldown-deduped, escaped', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const rec = nc(extractRawFunction('Code.js', 'recordClientError'));
+  // M-7: the alert may send mail, so it runs only AFTER the lock releases.
+  const releaseAt = rec.indexOf('finally { lock.releaseLock(); }');
+  const alertAt = rec.indexOf('clientErrSpikeAlert_();');
+  assert.ok(releaseAt > 0 && alertAt > releaseAt, 'the spike check runs post-lock (M-7)');
+  const f = nc(extractRawFunction('Code.js', 'clientErrSpikeAlert_'));
+  // The threshold is what PRESERVES INV-150's "not pushed" rationale: a single
+  // benign quirk still emails no one; a burst that means breakage does.
+  assert.ok(/if \(n < CLIENT_ERR_ALERT_MIN\) return;/.test(f), 'thresholded');
+  assert.ok(/if \(cache\.get\('client_err_spike_sent'\)\) return;/.test(f) &&
+    /CLIENT_ERR_ALERT_COOLDOWN_SEC/.test(f), 'cooldown-deduped — a bad hour cannot flood inboxes');
+  assert.ok(/getManagerEmails_\(\)/.test(f) && /buildBrandedEmailHtml_\('Client errors are spiking'/.test(f),
+    'branded alert to the manager list');
+  assert.ok(/safeWebAppUrl_\('callNotesAdmin'\)/.test(f), 'CTA lands on the Admin panel');
+  assert.ok(/esc_\(msg\)/.test(f) && /esc_\(String\(data\[i\]\[2\]/.test(f), 'messages + view keys are esc_\'d');
+  assert.ok(/catch \(e\) \{ Logger\.log\('clientErrSpikeAlert_ skipped/.test(f), 'never throws into the beacon');
+  // And the 24h burst also rides the health dot + daily digest (thresholded).
+  const probs = nc(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/report\.clientErrors && report\.clientErrors\.last24h >= CLIENT_ERR_PROBLEM_MIN/.test(probs),
+    'automationProblems_ carries the thresholded 24h entry');
+  const sum = nc(extractRawFunction('Code.js', 'clientErrorsSummary_'));
+  assert.ok(/if \(tsRaw >= cut24\) out\.last24h\+\+;/.test(sum), 'the 24h count uses the tz-consistent compare');
+});
+
+test('viewUsageAggregate_ behavioral — windows, distinct reps, top view', () => {
+  const ctx = vm.createContext({ Object, String });
+  vm.runInContext(extractRawFunction('Code.js', 'viewUsageAggregate_'), ctx);
+  const cut30 = '2026-07-15 00:00:00', cut7 = '2026-08-07 00:00:00';
+  const ev = (ts, emp, view) => ({ ts, empId: emp, view, mode: 'full' });
+  const out = ctx.viewUsageAggregate_([
+    ev('2026-08-13 10:00:00', 'E1', 'callNotes'),
+    ev('2026-08-13 11:00:00', 'E1', 'callNotes'),
+    ev('2026-08-08 09:00:00', 'E2', 'callNotes'),
+    ev('2026-08-01 09:00:00', 'E2', 'clock'),      // 30d only
+    ev('2026-07-01 09:00:00', 'E3', 'clock'),      // older than 30d — dropped
+  ], cut7, cut30);
+  const cn = out.views[0];
+  assert.strictEqual(cn.view, 'callNotes', 'sorted by 30d volume');
+  assert.strictEqual(cn.n30, 3);
+  assert.strictEqual(cn.n7, 3);
+  assert.strictEqual(cn.reps30, 2, 'distinct reps, not visits');
+  const clock = out.views[1];
+  assert.strictEqual(clock.n30, 1, 'the pre-window event is DROPPED, not counted');
+  assert.strictEqual(out.totals.reps30, 2, 'E3 (outside the window) is not an active rep');
+  assert.strictEqual(out.reps[0].empId, 'E1');
+  assert.strictEqual(out.reps[0].topView, 'callNotes');
+});
+
+test('usage beacon: gated + capped server, throttled + preview-skipping client', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'recordViewEnter'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(srv), 'requires a registered employee');
+  assert.ok(/\^\[A-Za-z\]\[A-Za-z0-9\]\{1,39\}\$/.test(srv), 'tab-key shape validated');
+  assert.ok(/VIEW_USAGE_RATE_MAX_PER_HOUR/.test(srv), 'rate-capped per rep');
+  assert.ok(/getUserLock\(\)/.test(srv) && /finally \{ lock\.releaseLock\(\); \}/.test(srv),
+    'USER lock — telemetry must never queue punch writes behind the script lock');
+  const cli = nc(extractFunction('script_core.html', 'recordViewUsage_'));
+  // An admin exploring View-as must not pollute the very numbers the feature
+  // exists to read.
+  assert.ok(/if \(typeof VIEW_AS !== 'undefined' && VIEW_AS\.active\) return;/.test(cli), 'view-as previews skipped');
+  assert.ok(/VIEW_USAGE_THROTTLE_MS/.test(cli), 'per-tab throttle');
+  const core = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/recordViewUsage_\(view\);/.test(core), 'fired from showView — the single navigation entry point');
+  // The Admin panel: escaped, error-vs-empty split, and a real breakpoint for
+  // its fixed-track grid (the A2 rule).
+  const panel = nc(extractFunction('cn/script_callnotes.html', 'cnUsagePanelHtml_'));
+  assert.ok(/esc\(cnUsageViewLabel_\(v\.view\)\)/.test(panel) && /esc\(String\(v\.n30\)\)/.test(panel), 'server strings esc()\'d');
+  assert.ok(/No usage recorded yet/.test(panel), 'a genuinely empty log reads as quiet no-data');
+  const loader = nc(extractFunction('cn/script_callnotes.html', 'cnLoadUsagePanel_'));
+  assert.ok((loader.match(/errorStateHtml_\(/g) || []).length === 2, 'both failure shapes render the error card (A12)');
+  const cn = fs.readFileSync(path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/@media \(max-width: 700px\) \{\s*\n\s*\.cn-usage-row \{ grid-template-columns: minmax\(0, 1fr\) 44px 62px; \}/.test(cn),
+    'the usage grid stacks its fixed tracks on a phone');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

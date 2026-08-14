@@ -384,6 +384,47 @@ Phase: idle (post-reflect) + operator-requested feature work:
   KB_IMAGES_FOLDER_ID entry + S63 + the folder helper's comment; subsystem
   list + visual README gained map-check.mjs). MERGED to main as **PR #167**
   (merge commit eb9651c, CI green both runs); branch restarted from main.
+- EMAIL-ALIGNMENT AUDIT (operator question 2026-08-13: "are email templates
+  aligned with the web app design?"): all 30 MailApp.sendEmail sites
+  enumerated and mapped to their body builders. Result: 19 sites on
+  buildBrandedEmailHtml_, the intake trio on intakeEmailShell_, the dept +
+  customer/provider/form-submission family on the legacy UMS identity —
+  and exactly THREE stragglers: the Call Notes digests (EOD / weekly
+  Training+Review queues / Urgent), which share a hand-rolled table builder
+  predating the restyle. Two plain-text utility mails (failed-submission
+  notice, trigger-install reminder) deliberately left. Operator approved the
+  digest move → sendOneRepEodDigest_ + sendManagerFlagDigest_ now wrap their
+  items tables in buildBrandedEmailHtml_ (tones warn/danger/info, subLabel
+  'Call Notes', real safeWebAppUrl_ CTAs to callNotes/callNotesManage);
+  plain-text fallbacks kept. Committed f477e7e. The 2026-08-11 restyle
+  claim ("EVERY automated email") corrected in CLAUDE.md.
+- PRE-PILOT OBSERVABILITY ROUND (operator 2026-08-13: "error logging,
+  immediate notification of problems, detailed user activity … what parts
+  of the web app are priorities" before pilot reps start). Three parts:
+  (a) errorStateHtml_ now fires the INV-150 beacon (source 'errorState',
+  three-value enum both sides) — HANDLED failures reach the operator, not
+  only uncaught exceptions. (b) Thresholded push: clientErrSpikeAlert_
+  (post-releaseLock — M-7; ≥5 errors/rolling hour → ONE branded danger
+  email, 6h CacheService cooldown) + automationProblems_ entry (g)
+  (clientErrorsSummary_'s additive last24h ≥10 → health dot + failure
+  digest). INV-150's "single benign quirk must not nag" preserved BY the
+  thresholds — amendment written into the invariant. (c) Usage telemetry:
+  recordViewEnter (rep-gated, USER lock, shape-regexed view key, rate cap
+  120/hr/rep) → auto-provisioned ViewUsage tab on the ADP sheet (PHI-free
+  Timestamp/EmployeeId/View/Mode); client recordViewUsage_ in showView
+  (5-min per-view throttle, VIEW_AS.active previews SKIPPED);
+  getViewUsageStats (admin-gated — INV-136 41→42, F7/F9 nets + omnibus
+  updated) aggregates via the pure viewUsageAggregate_ (7d/30d, distinct
+  reps, top view) behind a Feature-usage panel on Admin → Overview
+  (cnUsagePanelHtml_, esc()'d, truncated surfaced, ≤700px breakpoint).
+  Pure 527→532 (5 pins, 9 bite-checks — one bite-check-harness lesson: match
+  the TEST NAME in ✗ lines, not a section header, or a biting mutation reads
+  as NO-BITE), DOM 71, admin scenarios re-shot 0/0, panel measured +
+  screenshotted. Docs synced (INV-150 amendment, restyle-claim correction,
+  observability KDD, checklist round entry, ViewUsage storage-map + tab
+  entries, test narrative →532). CONTAINER ROLLED BACK TWICE this session
+  (recovered via fetch+reset; the digest edits survived as a patch re-applied
+  onto origin) — commit+push per unit, never batch.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
