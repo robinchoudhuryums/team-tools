@@ -10574,21 +10574,23 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
     return `  ${time}  ${n.caller || n.patientAndTrx || '—'} — ${n.issue || ''}`;
   }).join('\n');
 
-  const htmlBody = (
-    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
-      `<div style="max-width:560px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
-        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">End of day · UMS Call Notes</div>` +
-        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">Hey ${esc_(emp.name.split(' ')[0])} — quick check</h2>` +
-        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">You flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
-        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
-          `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
-          itemsHtml +
-        `</table>` +
-        `<p style="color:${P.muted};font-size:12px;margin:14px 0 0;">Hop into the web app, knock these out, and toggle them resolved when done.</p>` +
-      `</div>` +
-      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
-    `</div>`
-  );
+  // Operator 2026-08-13 (email-alignment audit): the three CN digests were the
+  // mails the 2026-08-11 branded restyle missed — this one also told the rep
+  // to "hop into the web app" with NO LINK, the exact dead-end the restyle
+  // fixed on the missed-clock-out email. Now the shared chrome + a real CTA.
+  const inner =
+    `<p style="color:${P.muted};font-size:13px;margin:0 0 12px;">Hey ${esc_(emp.name.split(' ')[0])} — ` +
+      `you flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
+    `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
+      `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
+      itemsHtml +
+    `</table>` +
+    `<p style="color:${P.muted};font-size:12px;margin:12px 0 0;">Toggle each one resolved when it&rsquo;s handled.</p>`;
+  const htmlBody = buildBrandedEmailHtml_(
+    `${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged for follow-up`,
+    inner,
+    { tone: 'warn', subLabel: 'Call Notes',
+      ctaUrl: safeWebAppUrl_('callNotes'), ctaLabel: 'Open Call Notes' });
   const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
     `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
     itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
@@ -11140,18 +11142,16 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
            (reply ? `\n    A: ${reply}` : '');
   }).join('\n\n');
 
-  const htmlBody = (
-    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
-      `<div style="max-width:640px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
-        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">Weekly digest · UMS Call Notes</div>` +
-        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
-        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
-        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
-        skipHtml +
-      `</div>` +
-      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
-    `</div>`
-  );
+  // Operator 2026-08-13 (email-alignment audit): shares the branded chrome
+  // with every other notification mail — see sendOneRepEodDigest_'s note. The
+  // Urgent digest reads as action-needed (danger); the weekly queues as info.
+  const inner =
+    `<p style="color:${P.muted};font-size:13px;margin:0 0 12px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
+    `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+    skipHtml;
+  const htmlBody = buildBrandedEmailHtml_(label, inner,
+    { tone: label === 'Urgent' ? 'danger' : 'info', subLabel: 'Call Notes',
+      ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Open Team Notes' });
   const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
     MailApp.sendEmail({
