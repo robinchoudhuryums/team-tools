@@ -23,6 +23,7 @@ node shoot.mjs         # all 39 scenarios -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 node map-check.mjs     # spot-measure: the ```map block + article-image fallback
+node settings-check.mjs # spot-measure: the Settings flyout + View-as preview
 ```
 
 `a13-measure.mjs` exists because a screenshot cannot answer "did this element
@@ -41,6 +42,13 @@ Directions hrefs), the lazy embed toggle's live `aria-expanded`, 400px
 no-overflow — and the article-image fallback (a broken Drive thumbnail swaps
 to a mocked data URL; two imgs of one file fan into one fetch; an external
 image is left alone). Screenshots land in `shots/map-*.png`.
+
+`settings-check.mjs` (operator 2026-08-13) drives the Settings flyout +
+View-as preview on the built page: one settings row in the sidebar, both
+gears' live `aria-expanded`, the panel opening on-screen with all four
+control groups, Esc closing it, the CSR preview (banner up, Manage tool +
+Spanish tab gone, exit restoring), and the 390px header-gear open with zero
+page overflow. Screenshots land in `shots/settings-*.png`.
 
 Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
 `chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the

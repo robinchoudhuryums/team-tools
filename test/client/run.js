@@ -8654,7 +8654,7 @@ test('the palette key list is the same in all three places it appears', () => {
     'a corrupt stored palette degrades to Console');
 });
 
-test('the picker is real buttons, in both shell copies, with its own settings row', () => {
+test('the picker is real buttons inside the settings flyout, reflected on render', () => {
   const core = fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8');
   const css = fs.readFileSync(path.resolve(__dirname, '../../web-app/styles.html'), 'utf8');
   const strip = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
@@ -8667,16 +8667,20 @@ test('the picker is real buttons, in both shell copies, with its own settings ro
   const idx = strip(fs.readFileSync(path.resolve(__dirname, '../../web-app/index.html'), 'utf8'));
   assert.ok(/querySelectorAll\('\[data-palette-target\]'\)/.test(idx),
     'the reflector selects by data-palette-target, not by a class another control may borrow');
-  // Two rendered copies (sidebar + mobile header), so no ids — and both must
-  // be reflected on render.
-  assert.strictEqual((c.match(/\$\{paletteToggle\}/g) || []).length, 2, 'sidebar AND mobile header render it');
+  // Settings-flyout consolidation (operator 2026-08-13): the picker renders
+  // ONCE, inside the shared panel both gears open — the panel mounts at the
+  // SHELL root (after the .app-shell close), never inside the sidebar, which
+  // is display:none on mobile where the header gear must still reach it.
+  assert.strictEqual((c.match(/\$\{paletteToggle\}/g) || []).length, 1, 'the panel is the single render site');
+  assert.ok(/<\/div>\s*\$\{settingsPanel\}`;/.test(c), 'the panel mounts at the shell root');
   assert.ok(/syncPaletteToggleState\(\);/.test(c), 'renderShell reflects the stored palette on every render');
-  assert.ok(!/id="sb-pal/.test(c), 'no id — two copies cannot share one');
-  // MEASURED: the palette row stacks its label so four swatches fit one line,
-  // and it must keep the settings rows adjacent or flex pushes Alerts to the
-  // bottom of the sidebar with a ~200px hole above it.
-  assert.ok(/\.sb-theme \+ \.sb-pal, \.sb-pal \+ \.sb-theme \{ margin-top: 0;/.test(css),
-    'the palette row keeps the settings rows adjacent (margin-top: auto would strand Alerts)');
+  assert.ok(!/id="sb-pal/.test(c), 'no id on the swatches');
+  // BOTH gears carry the attribute the toggle/reflector key on (INV-191), and
+  // the panel owes the [hidden] companion because its class sets display (the
+  // [hidden]-vs-display gotcha — without it the panel ships permanently open).
+  assert.strictEqual((c.match(/data-settings-toggle/g) || []).length >= 2, true, 'sidebar AND header gears exist');
+  assert.ok(/\.settings-panel\[hidden\] \{ display: none; \}/.test(strip(css)),
+    'the panel has the [hidden] display companion');
 });
 
 test('the DOM harness stubs every global index.html defines (derived)', () => {
@@ -8802,8 +8806,8 @@ test('activity-without-clock-in reminder: grace + activity + CONFIRMED-out, once
   // And "confirmed" must mean a SUCCESSFUL refresh — stamping on the attempt
   // would promote stale state to confirmed when the refresh failed.
   const refresh = nc(extractFunction('script_core.html', 'remindMaybeRefreshState_'));
-  assert.ok(/if \(s && !s\.error\) \{ empState = s; _remindStateOkAt = Date\.now\(\); \}/.test(refresh),
-    '_remindStateOkAt is stamped inside the success handler only');
+  assert.ok(/if \(s && !s\.error\) \{ empState = s; viewAsReapply_\(\); _remindStateOkAt = Date\.now\(\); \}/.test(refresh),
+    '_remindStateOkAt is stamped inside the success handler only (and preview flags survive the refresh)');
   assert.ok(!/withFailureHandler\(function \(\) \{[^}]*_remindStateOkAt/.test(refresh),
     'and never on failure');
   // Activity is INPUT, not presence: pointer + keys only, capture + passive.
@@ -9068,6 +9072,274 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   // Hygiene reset keeps THIS run's entries warm (the current article's
   // warehouses are exactly the ones worth keeping).
   assert.ok(/cache = fresh;/.test(f), 'an oversized cache resets to the fresh entries, not to nothing');
+});
+
+console.log('\nshell — settings flyout + view-as + tz-mismatch (operator 2026-08-13)');
+
+test('settings flyout: attribute-keyed gears, capture-phase Esc, aria in step', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const core = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  // The reflector writes to every [data-settings-toggle], and the outside-click
+  // closer exempts both the panel and the gears — keyed on the ATTRIBUTE, not
+  // a shared look-class (INV-191).
+  assert.ok(/querySelectorAll\('\[data-settings-toggle\]'\)/.test(core), 'aria-expanded reflects on the attribute');
+  assert.ok(/closest\('#settings-panel'\) \|\| e\.target\.closest\('\[data-settings-toggle\]'\)/.test(core),
+    'outside-click close exempts the panel + gears');
+  // Esc is CAPTURE-phase with stopPropagation, so closing the flyout can never
+  // also close an overlay underneath it.
+  assert.ok(/settingsClose_\(\); e\.stopPropagation\(\);/.test(core), 'Esc consumes the event');
+  // All three control groups moved INTO the panel — the reflectors keep
+  // working because the attribute markup is unchanged.
+  const panel = core.slice(core.indexOf('const settingsPanel'), core.indexOf('const viewAsBanner'));
+  assert.ok(/\$\{themeToggle\}/.test(panel) && /\$\{paletteToggle\}/.test(panel) && /\$\{reminderToggle\}/.test(panel),
+    'theme + palette + alerts all render inside the panel');
+});
+
+test('view-as: admin-gated preview, session-only, flags per role, survives refreshes', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = vm.createContext({ VIEW_AS: { real: { isAdmin: true, isManager: true, canSeeSpanish: true } } });
+  vm.runInContext(extractFunction('script_core.html', 'viewAsFlags_'), ctx);
+  const f = (r) => ctx.viewAsFlags_(r);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('csr'))), { isAdmin: false, isManager: false, canSeeSpanish: false });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('spanish'))), { isAdmin: false, isManager: false, canSeeSpanish: true });
+  const m = f('manager');
+  assert.ok(!m.isAdmin && m.isManager && m.canSeeSpanish, 'manager preview: non-admin manager, real Spanish access kept');
+  const me = f('me');
+  assert.ok(me.isAdmin && me.isManager, "'me' restores the real flags");
+  const set = nc(extractFunction('script_core.html', 'viewAsSet_'));
+  assert.ok(/if \(!VIEW_AS\.real\.isAdmin\) return;/.test(set), 'only a real admin can preview');
+  assert.ok(!/localStorage/.test(set), 'session-only — a refresh restores reality by construction');
+  // empState is REPLACED by background refreshes; the preview must survive
+  // every one of them or the shell silently snaps back mid-preview.
+  const clock = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.strictEqual((clock.match(/typeof viewAsReapply_ === 'function'\) viewAsReapply_\(\);/g) || []).length, 3,
+    'all three clock refresh sites reapply');
+  const core = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/empState = s; viewAsReapply_\(\);/.test(core), 'the reminder-ticker refresh reapplies');
+  // The banner names the preview and offers the exit; the View-as row itself
+  // keys off the REAL role so the way back exists even while previewing CSR.
+  assert.ok(/class="viewas-banner" role="status"/.test(core) && /viewAsSet_\('me'\)/.test(core), 'banner + exit');
+  assert.ok(/VIEW_AS\.real \? VIEW_AS\.real\.isAdmin : !!state\.isAdmin/.test(core),
+    'the row renders from the REAL role, not the previewed one');
+});
+
+test('tzOffsetMinAt_ behavioral + the mismatch check compares OFFSETS once a day', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = vm.createContext({ Intl, Date, Math });
+  vm.runInContext(extractFunction('script_core.html', 'tzOffsetMinAt_'), ctx);
+  const at = new Date('2026-08-13T12:00:00Z');
+  assert.strictEqual(ctx.tzOffsetMinAt_('America/Chicago', at), -300, 'CDT in August');
+  // +5:30 — the only offset that puts a :30 on a whole-hour zone, which is
+  // exactly how the operator's mis-stamped notes were diagnosed.
+  assert.strictEqual(ctx.tzOffsetMinAt_('Asia/Kolkata', at), 330, 'IST');
+  assert.strictEqual(ctx.tzOffsetMinAt_('UTC', at), 0);
+  assert.strictEqual(ctx.tzOffsetMinAt_('Not/AZone', at), null, 'unknown id → null (itself a mismatch)');
+  const chk = nc(extractFunction('script_core.html', 'tzMismatchCheck_'));
+  // Compare OFFSETS, never ids — America/Chicago vs US/Central must not warn.
+  assert.ok(/rosterOff !== null && rosterOff === browserOff\) return;/.test(chk), 'equal offsets → silent');
+  // Intl sanity probe first: a browser that cannot resolve UTC cannot judge
+  // the roster id, and must not nag daily about its own limitation.
+  assert.ok(/tzOffsetMinAt_\('UTC', now\) !== 0\) return;/.test(chk), 'the UTC probe gates the check');
+  assert.ok(/umsTzWarnedDay/.test(chk), 'once per browser-local day');
+  assert.ok(/sticky: true/.test(chk), 'the warning is a sticky toast (INV-190 — it must wait for its reader)');
+  assert.ok(/PROFILE timezone/.test(chk), 'the copy says which timezone stamps punches and notes');
+});
+
+console.log('\nclock — dashboard cold-start round 2 (operator 2026-08-13)');
+
+test('the first frame holds all four cards, and the extras start in parallel', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const clock = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const skel = nc(extractFunction('tc/script_clock.html', 'clkDashSkeleton_'));
+  // The extras row used to POP IN below the metrics pair; the initial skeleton
+  // now renders BOTH pairs so nothing moves when content lands.
+  assert.strictEqual((skel.match(/dash-pair/g) || []).length, 2, 'skeleton holds both pairs');
+  assert.ok(/clkDashSkelExtra_\(\) \+\s*clkDashSkelExtra_\(\)/.test(skel), 'the second pair is extras-shaped');
+  const load = nc(extractFunction('tc/script_clock.html', 'clkLoadDashboard_'));
+  // Extras RPCs no longer wait for the first metrics response.
+  assert.ok(/clkLoadDashboardExtras_\(\);/.test(load), 'the cold branch kicks the extras in parallel');
+  const extras = nc(extractFunction('tc/script_clock.html', 'clkLoadDashboardExtras_'));
+  const busyAt = extras.indexOf('if (CLK_DASH.extraBusy) return;');
+  const fetchAt = extras.indexOf('google.script.run');
+  assert.ok(busyAt > 0 && busyAt < fetchAt, 'the in-flight guard sits before the fetches — a second call is render-only');
+  assert.ok(/CLK_DASH\.extraBusy = false;/.test(extras), 'and clears when the round settles');
+});
+
+test('same-day localStorage seed: complete successful rounds only, freshness never inherited', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const store = {};
+  const ctx = vm.createContext({
+    JSON, Object,
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    CLK_DASH_PERIODS: ['yesterday', 'mtd', 'ytd'],
+    CLK_DASH: { data: {}, loadedDay: '', loadedAt: 0 },
+    CLK_DASH_LS_KEY: 'umsDashMetrics',
+  });
+  vm.runInContext(extractFunction('tc/script_clock.html', 'clkDashSeedFromLs_'), ctx);
+  const good = { yesterday: { a: 1 }, mtd: { a: 2 }, ytd: { a: 3 } };
+  store.umsDashMetrics = JSON.stringify({ day: '2026-08-13', data: good });
+  assert.strictEqual(ctx.clkDashSeedFromLs_('2026-08-12'), false, 'a different day never seeds');
+  assert.strictEqual(ctx.clkDashSeedFromLs_('2026-08-13'), true, 'same-day complete round seeds');
+  assert.strictEqual(ctx.CLK_DASH.loadedAt, 0, 'freshness is NOT inherited — the refetch still runs (INV-156)');
+  store.umsDashMetrics = JSON.stringify({ day: '2026-08-13', data: { yesterday: { a: 1 }, mtd: { error: 'x' }, ytd: { a: 3 } } });
+  assert.strictEqual(ctx.clkDashSeedFromLs_('2026-08-13'), false, 'an error payload never seeds');
+  store.umsDashMetrics = 'not json';
+  assert.strictEqual(ctx.clkDashSeedFromLs_('2026-08-13'), false, 'corrupt blob → cold path');
+  // The write-through happens ONLY on a fully-successful round (INV-129).
+  const load = nc(extractFunction('tc/script_clock.html', 'clkLoadDashboard_'));
+  assert.ok(/if \(!anyFail\) clkDashSaveLs_\(\);/.test(load), 'partial rounds are never persisted');
+});
+
+console.log('\nmetrics — SWR paints any same-key cache; getTeamMetrics endpoint cache');
+
+test('the three slow tabs paint last-good instantly and refresh behind the pill', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const my = nc(extractFunction('metrics/script_metrics.html', 'mLoadMyStats_'));
+  const team = nc(extractFunction('metrics/script_metrics.html', 'mLoadTeamMetrics_'));
+  // ANY same-key cached payload paints (the old fresh-only paint re-showed the
+  // loader after the 45s TTL — almost every re-enter); the key is the exact
+  // query, so an old payload is never the WRONG data.
+  assert.ok(/if \(!opts\.force && cached\) \{/.test(my), 'My Stats paints any cached payload');
+  assert.ok(/if \(!opts\.force && cached\) \{/.test(team), 'Team Metrics paints any cached payload');
+  const sp = nc(extractFunction('metrics/script_metrics.html', 'spanishLoad_'));
+  // Spanish seeds all three parts (stats + both lists) and a background stats
+  // arrival swaps ONLY the head, so the painted list is never disturbed.
+  assert.ok(/cached && cached\.stats && cached\.pending && cached\.resolved/.test(sp), 'seeds only a complete round');
+  assert.ok(/getElementById\('spanish-head'\)/.test(sp) && /spanishHeadHtml_\(d\)/.test(sp), 'refresh swaps the head alone');
+  const list = nc(extractFunction('metrics/script_metrics.html', 'spanishLoadList_'));
+  assert.ok(/if \(opts\.background\) \{/.test(list) && /spanishRenderList_\(\);/.test(list),
+    'background list refresh paints the seeded lists first');
+  assert.ok(/if \(!opts\.background\) SPANISH_STATE\.pendingErr/.test(list),
+    'a failed background half keeps the painted last-good, never an error card');
+});
+
+test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'getTeamMetrics'));
+  const gateAt = f.indexOf('Manager access required');
+  const readAt = f.indexOf('teamMetricsCache.get(teamCacheKey)');
+  assert.ok(gateAt > 0 && readAt > gateAt, 'the cache read sits AFTER the manager gate');
+  // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
+  // a transfer-read error must not pin a degraded aggregate for the TTL.
+  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
+    'the put is gated on the round being clean');
+  assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
+  assert.ok(/team_metrics_v1:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate');
+});
+
+console.log('\nemails — the three CN digests share the branded chrome (operator 2026-08-13)');
+
+test('EOD + flag digests route through buildBrandedEmailHtml_ with real CTAs', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const eod = nc(extractRawFunction('Code.js', 'sendOneRepEodDigest_'));
+  assert.ok(/buildBrandedEmailHtml_\(/.test(eod), 'the EOD digest uses the shared chrome');
+  // The old body said "hop into the web app" with NO LINK — the exact
+  // dead-end the 2026-08-11 restyle fixed on the missed-clock-out email.
+  assert.ok(/ctaUrl: safeWebAppUrl_\('callNotes'\), ctaLabel: 'Open Call Notes'/.test(eod),
+    'and finally links the rep into Call Notes');
+  assert.ok(/tone: 'warn'/.test(eod) && /subLabel: 'Call Notes'/.test(eod), 'warn tone + module eyebrow');
+  const flag = nc(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+  assert.ok(/buildBrandedEmailHtml_\(label, inner,/.test(flag), 'the weekly/urgent digests share it too');
+  assert.ok(/tone: label === 'Urgent' \? 'danger' : 'info'/.test(flag),
+    'Urgent reads as action-needed; the weekly queues as info');
+  assert.ok(/ctaUrl: safeWebAppUrl_\('callNotesManage'\)/.test(flag), 'managers land on Team Notes');
+  // The INV-187 warning line and the plain-text fallbacks survive the restyle.
+  assert.ok(/skipHtml/.test(flag) && /const textBody/.test(flag) && /const textBody/.test(eod),
+    'skippedReps warning + text fallbacks kept');
+});
+
+console.log('\nobservability — pre-pilot round (operator 2026-08-13)');
+
+test('errorStateHtml_ beacons handled failures; both normalizers accept errorState', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractFunction('script_core.html', 'errorStateHtml_'));
+  // The ONE choke point where a HANDLED failure becomes visible to a rep
+  // (every A12/INV-175 call site) — without this, only unhandled exceptions
+  // reached the ClientErrors tab.
+  assert.ok(/try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(String\(msg \|\| ''\), '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
+    'fires the beacon, guarded so jsdom/boot order can never break the render');
+  assert.ok(/role="alert"/.test(f), 'the returned markup is unchanged');
+  const pay = nc(extractFunction('script_core.html', 'errBeaconPayload_'));
+  assert.ok(/source === 'unhandledrejection' \|\| source === 'errorState'/.test(pay), 'client normalizer accepts it');
+  const srv = nc(extractRawFunction('Code.js', 'recordClientError'));
+  assert.ok(/p\.source === 'unhandledrejection' \|\| p\.source === 'errorState'/.test(srv), 'server normalizer agrees');
+});
+
+test('client-error spike alert: post-lock, thresholded, cooldown-deduped, escaped', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const rec = nc(extractRawFunction('Code.js', 'recordClientError'));
+  // M-7: the alert may send mail, so it runs only AFTER the lock releases.
+  const releaseAt = rec.indexOf('finally { lock.releaseLock(); }');
+  const alertAt = rec.indexOf('clientErrSpikeAlert_();');
+  assert.ok(releaseAt > 0 && alertAt > releaseAt, 'the spike check runs post-lock (M-7)');
+  const f = nc(extractRawFunction('Code.js', 'clientErrSpikeAlert_'));
+  // The threshold is what PRESERVES INV-150's "not pushed" rationale: a single
+  // benign quirk still emails no one; a burst that means breakage does.
+  assert.ok(/if \(n < CLIENT_ERR_ALERT_MIN\) return;/.test(f), 'thresholded');
+  assert.ok(/if \(cache\.get\('client_err_spike_sent'\)\) return;/.test(f) &&
+    /CLIENT_ERR_ALERT_COOLDOWN_SEC/.test(f), 'cooldown-deduped — a bad hour cannot flood inboxes');
+  assert.ok(/getManagerEmails_\(\)/.test(f) && /buildBrandedEmailHtml_\('Client errors are spiking'/.test(f),
+    'branded alert to the manager list');
+  assert.ok(/safeWebAppUrl_\('callNotesAdmin'\)/.test(f), 'CTA lands on the Admin panel');
+  assert.ok(/esc_\(msg\)/.test(f) && /esc_\(String\(data\[i\]\[2\]/.test(f), 'messages + view keys are esc_\'d');
+  assert.ok(/catch \(e\) \{ Logger\.log\('clientErrSpikeAlert_ skipped/.test(f), 'never throws into the beacon');
+  // And the 24h burst also rides the health dot + daily digest (thresholded).
+  const probs = nc(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/report\.clientErrors && report\.clientErrors\.last24h >= CLIENT_ERR_PROBLEM_MIN/.test(probs),
+    'automationProblems_ carries the thresholded 24h entry');
+  const sum = nc(extractRawFunction('Code.js', 'clientErrorsSummary_'));
+  assert.ok(/if \(tsRaw >= cut24\) out\.last24h\+\+;/.test(sum), 'the 24h count uses the tz-consistent compare');
+});
+
+test('viewUsageAggregate_ behavioral — windows, distinct reps, top view', () => {
+  const ctx = vm.createContext({ Object, String });
+  vm.runInContext(extractRawFunction('Code.js', 'viewUsageAggregate_'), ctx);
+  const cut30 = '2026-07-15 00:00:00', cut7 = '2026-08-07 00:00:00';
+  const ev = (ts, emp, view) => ({ ts, empId: emp, view, mode: 'full' });
+  const out = ctx.viewUsageAggregate_([
+    ev('2026-08-13 10:00:00', 'E1', 'callNotes'),
+    ev('2026-08-13 11:00:00', 'E1', 'callNotes'),
+    ev('2026-08-08 09:00:00', 'E2', 'callNotes'),
+    ev('2026-08-01 09:00:00', 'E2', 'clock'),      // 30d only
+    ev('2026-07-01 09:00:00', 'E3', 'clock'),      // older than 30d — dropped
+  ], cut7, cut30);
+  const cn = out.views[0];
+  assert.strictEqual(cn.view, 'callNotes', 'sorted by 30d volume');
+  assert.strictEqual(cn.n30, 3);
+  assert.strictEqual(cn.n7, 3);
+  assert.strictEqual(cn.reps30, 2, 'distinct reps, not visits');
+  const clock = out.views[1];
+  assert.strictEqual(clock.n30, 1, 'the pre-window event is DROPPED, not counted');
+  assert.strictEqual(out.totals.reps30, 2, 'E3 (outside the window) is not an active rep');
+  assert.strictEqual(out.reps[0].empId, 'E1');
+  assert.strictEqual(out.reps[0].topView, 'callNotes');
+});
+
+test('usage beacon: gated + capped server, throttled + preview-skipping client', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'recordViewEnter'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(srv), 'requires a registered employee');
+  assert.ok(/\^\[A-Za-z\]\[A-Za-z0-9\]\{1,39\}\$/.test(srv), 'tab-key shape validated');
+  assert.ok(/VIEW_USAGE_RATE_MAX_PER_HOUR/.test(srv), 'rate-capped per rep');
+  assert.ok(/getUserLock\(\)/.test(srv) && /finally \{ lock\.releaseLock\(\); \}/.test(srv),
+    'USER lock — telemetry must never queue punch writes behind the script lock');
+  const cli = nc(extractFunction('script_core.html', 'recordViewUsage_'));
+  // An admin exploring View-as must not pollute the very numbers the feature
+  // exists to read.
+  assert.ok(/if \(typeof VIEW_AS !== 'undefined' && VIEW_AS\.active\) return;/.test(cli), 'view-as previews skipped');
+  assert.ok(/VIEW_USAGE_THROTTLE_MS/.test(cli), 'per-tab throttle');
+  const core = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/recordViewUsage_\(view\);/.test(core), 'fired from showView — the single navigation entry point');
+  // The Admin panel: escaped, error-vs-empty split, and a real breakpoint for
+  // its fixed-track grid (the A2 rule).
+  const panel = nc(extractFunction('cn/script_callnotes.html', 'cnUsagePanelHtml_'));
+  assert.ok(/esc\(cnUsageViewLabel_\(v\.view\)\)/.test(panel) && /esc\(String\(v\.n30\)\)/.test(panel), 'server strings esc()\'d');
+  assert.ok(/No usage recorded yet/.test(panel), 'a genuinely empty log reads as quiet no-data');
+  const loader = nc(extractFunction('cn/script_callnotes.html', 'cnLoadUsagePanel_'));
+  assert.ok((loader.match(/errorStateHtml_\(/g) || []).length === 2, 'both failure shapes render the error card (A12)');
+  const cn = fs.readFileSync(path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/@media \(max-width: 700px\) \{\s*\n\s*\.cn-usage-row \{ grid-template-columns: minmax\(0, 1fr\) 44px 62px; \}/.test(cn),
+    'the usage grid stacks its fixed tracks on a phone');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

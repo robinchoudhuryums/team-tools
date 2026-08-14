@@ -1462,6 +1462,22 @@
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* Pre-pilot observability — Feature-usage rows (Admin Overview). Fixed
+     tracks, so the A2 rule applies: a real viewport breakpoint below drops
+     the bar + reps columns rather than squeezing five tracks into a phone. */
+  .cn-usage-totals { font-size: .72rem; color: var(--muted-2); margin-bottom: 8px; }
+  .cn-usage-list { display: flex; flex-direction: column; gap: 4px; max-width: 760px; margin-bottom: 8px; }
+  .cn-usage-row { display: grid; grid-template-columns: minmax(140px, 230px) 1fr 44px 62px 60px; gap: 8px; align-items: center; font-size: .78rem; }
+  .cn-usage-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  .cn-usage-bar { height: 8px; background: var(--paper-2); border-radius: 4px; overflow: hidden; }
+  .cn-usage-bar > span { display: block; height: 100%; background: var(--accent-soft); border-right: 2px solid var(--accent); }
+  .cn-usage-n { text-align: right; color: var(--ink); font-weight: 600; }
+  .cn-usage-sub { color: var(--muted-3); font-size: .68rem; }
+  .cn-usage-reps { font-size: .72rem; color: var(--muted-2); margin-bottom: 12px; }
+  @media (max-width: 700px) {
+    .cn-usage-row { grid-template-columns: minmax(0, 1fr) 44px 62px; }
+    .cn-usage-bar, .cn-usage-sub:last-child { display: none; }
+  }
   /* 2nd-pass — System-details disclosure toggle (folds the full health panels) */
   .cn-sys-details-btn {
     appearance: none; cursor: pointer; margin: 4px 0 16px;
@@ -7818,6 +7834,9 @@ function enterCallNotesAdminView(area) {
         cnSysCardShell_('storage', 'Storage') +
       '</div>' +
       '<div id="cn-admin-kpis"></div>' +
+      // Pre-pilot observability (operator 2026-08-13): which tabs reps
+      // actually use — the priorities question needs data, not guesses.
+      '<div id="cn-admin-usage"></div>' +
       // 2nd-pass Admin consolidation: the 3 status cards above ARE the folded
       // summary of the Automation / CDR / Storage health panels; the full detail
       // panels move behind a disclosure so Overview lands on the summary, not a
@@ -7877,6 +7896,9 @@ function enterCallNotesAdminView(area) {
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
+  // Pre-pilot observability — feature-usage aggregate (independent load;
+  // failure stays contained to its own slot).
+  cnLoadUsagePanel_();
   // #1 (pre-deploy checklist) — one-click deploy-readiness report composed
   // from the storage + automation health + manager-email count. Independent
   // load; failure stays contained to its own slot.
@@ -8004,6 +8026,72 @@ function cnSaveRetention_() {
 
 // #1 — Deploy-readiness checklist panel (Admin Overview headline). Manager-
 // gated server endpoint; every server string esc()'d before innerHTML.
+// ── Feature-usage panel (pre-pilot observability, operator 2026-08-13) ──────
+// The Admin Overview aggregate of the ViewUsage beacon: per-tab visit counts
+// (30d bars + 7d + distinct reps) and the most-active reps. This is the data
+// behind "what parts of the web app are priorities" — every server string is
+// esc()'d, and a failed load renders the error card (A12/INV-175), never an
+// empty "no usage" that the data cannot support.
+function cnUsageViewLabel_(key) {
+  try {
+    var toolKey = VIEW_TO_TOOL[key];
+    var t = toolKey && TOOLS[toolKey];
+    var tab = t && t.tabs[key];
+    if (t && tab) return (t.shortLabel || t.label) + ' · ' + tab.label;
+  } catch (e) {}
+  return key;   // a retired tab key keeps its raw name rather than vanishing
+}
+function cnLoadUsagePanel_() {
+  var slot = document.getElementById('cn-admin-usage');
+  if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      var s = document.getElementById('cn-admin-usage');
+      if (!s) return;
+      if (!res || res.error) { s.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load usage'); return; }
+      s.innerHTML = cnUsagePanelHtml_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      var s = document.getElementById('cn-admin-usage');
+      if (s) s.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load usage');   // A12
+    })
+    .getViewUsageStats();
+}
+function cnUsagePanelHtml_(res) {
+  var st = (res && res.stats) || { views: [], reps: [], totals: {} };
+  var head = '<h2 class="card-label" style="margin:14px 0 8px">Feature usage · 30d' +
+    (res && res.url ? ' <a href="' + esc(res.url) + '" target="_blank" rel="noopener" style="font-weight:400;font-size:.72rem">Open ↗</a>' : '') +
+  '</h2>';
+  if (!st.views.length) {
+    return head + '<div class="no-data">No usage recorded yet — rows appear as reps navigate the app.</div>';
+  }
+  var t = st.totals || {};
+  var maxN = st.views[0] ? st.views[0].n30 : 1;   // sorted desc server-side
+  var rows = st.views.slice(0, 14).map(function (v) {
+    var pct = maxN ? Math.round((v.n30 / maxN) * 100) : 0;
+    return '<div class="cn-usage-row">' +
+      '<span class="cn-usage-lbl" title="' + esc(v.view) + '">' + esc(cnUsageViewLabel_(v.view)) + '</span>' +
+      '<span class="cn-usage-bar" aria-hidden="true"><span style="width:' + pct + '%"></span></span>' +
+      '<span class="cn-usage-n mono">' + esc(String(v.n30)) + '</span>' +
+      '<span class="cn-usage-sub mono">' + esc(String(v.n7)) + ' · 7d</span>' +
+      '<span class="cn-usage-sub mono">' + esc(String(v.reps30)) + ' rep' + (v.reps30 === 1 ? '' : 's') + '</span>' +
+    '</div>';
+  }).join('');
+  var totalsLine = '<div class="cn-usage-totals mono">' +
+    esc(String(t.n30 || 0)) + ' tab visits · ' + esc(String(t.reps30 || 0)) + ' active rep(s)' +
+    ' · last 7d: ' + esc(String(t.n7 || 0)) + ' visits, ' + esc(String(t.reps7 || 0)) + ' rep(s)' +
+    (res.truncated ? ' · <span style="color:var(--warning-deep)">scan capped — oldest rows not counted</span>' : '') +
+  '</div>';
+  var reps = (st.reps || []).slice(0, 8).map(function (r) {
+    return esc(r.empId) + ' (' + esc(String(r.n30)) + ', mostly ' + esc(cnUsageViewLabel_(r.topView)) + ')';
+  }).join(' · ');
+  var repLine = reps ? '<div class="cn-usage-reps">Most active: ' + reps + '</div>' : '';
+  return head + totalsLine + '<div class="cn-usage-list">' + rows + '</div>' + repLine;
+}
+
 function cnLoadDeployReadiness_() {
   var slot = document.getElementById('cn-admin-deploy');
   if (!slot) return;

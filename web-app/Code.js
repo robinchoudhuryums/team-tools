@@ -5220,7 +5220,12 @@ function recordClientError(payload) {
     if (!message) return { success: false };
     const stack = String(p.stack || '').substring(0, CLIENT_ERR_STACK_MAX);
     const view = String(p.view || '').substring(0, 40);
-    const source = p.source === 'unhandledrejection' ? 'unhandledrejection' : 'onerror';
+    // 'errorState' (pre-pilot observability, operator 2026-08-13): the client
+    // also beacons from errorStateHtml_ — the one choke point where a HANDLED
+    // failure (server {error} response / RPC failure) becomes a warn card a
+    // rep can see. Before this, only unhandled exceptions reached the tab.
+    const source = (p.source === 'unhandledrejection' || p.source === 'errorState')
+      ? p.source : 'onerror';
     // Approximate per-rep hourly rate cap. CacheService isn't atomic — close
     // enough for flood protection on a diagnostics (not audit) channel.
     const cache = CacheService.getScriptCache();
@@ -5242,6 +5247,10 @@ function recordClientError(payload) {
         emp.id, view, source, message, stack,
       ]);
     } finally { lock.releaseLock(); }
+    // Post-lock (the M-7 no-mail-in-lock rule): the spike alert may send an
+    // email, so it runs only after the user lock is released. Best-effort —
+    // the beacon's own success never depends on it.
+    clientErrSpikeAlert_();
     return { success: true };
   } catch (e) {
     Logger.log('recordClientError failed: ' + e.message);
@@ -5249,12 +5258,205 @@ function recordClientError(payload) {
   }
 }
 
+// ── Pre-pilot observability (operator 2026-08-13): IMMEDIATE spike alert ────
+// The ClientErrors tab was panel-only — a pilot rep hitting errors was
+// invisible until the operator happened to open Admin → Automation Health.
+// This sends managers ONE branded email when errors SPIKE (an org-wide count
+// threshold inside a rolling window), cooldown-deduped so a bad hour can't
+// flood inboxes. The threshold is what preserves INV-150's original
+// "deliberately not pushed" rationale — a single benign browser quirk still
+// never emails anyone; a burst that means real breakage does, immediately.
+const CLIENT_ERR_ALERT_MIN = 5;                 // org-wide errors in the window
+const CLIENT_ERR_ALERT_WINDOW_SEC = 3600;       // rolling ~1h counter
+const CLIENT_ERR_ALERT_COOLDOWN_SEC = 6 * 3600; // at most one alert email per 6h
+const CLIENT_ERR_PROBLEM_MIN = 10;              // 24h count that trips the health dot/digest
+
+/** Best-effort, post-lock. Counts beacons in a rolling CacheService window;
+ *  at the threshold (and outside the cooldown) emails MANAGER_EMAILS a
+ *  branded alert with the most recent distinct messages. Never throws. */
+function clientErrSpikeAlert_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = (parseInt(cache.get('client_err_spike_n'), 10) || 0) + 1;
+    cache.put('client_err_spike_n', String(n), CLIENT_ERR_ALERT_WINDOW_SEC);
+    if (n < CLIENT_ERR_ALERT_MIN) return;
+    if (cache.get('client_err_spike_sent')) return;   // cooldown — one email per window
+    cache.put('client_err_spike_sent', '1', CLIENT_ERR_ALERT_COOLDOWN_SEC);
+    const recipients = getManagerEmails_();
+    if (!recipients.length) return;
+    // A small, bounded tail of the tab for the email body — distinct messages
+    // only (metadata the beacon already minimized; never form values, INV-150).
+    const P = CN_EMAIL_PALETTE;
+    let rowsHtml = '', rowsText = '';
+    try {
+      const sheet = getAdpSS_().getSheetByName(CLIENT_ERRORS_TAB);
+      if (sheet && sheet.getLastRow() >= 2) {
+        const lastRow = sheet.getLastRow();
+        const startRow = Math.max(2, lastRow - 30 + 1);
+        const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
+        const seen = {};
+        for (let i = data.length - 1; i >= 0 && Object.keys(seen).length < 5; i--) {
+          const msg = String(data[i][4] || '').trim();
+          if (!msg || seen[msg]) continue;
+          seen[msg] = true;
+          rowsHtml += '<li style="padding:3px 0;color:' + P.ink + ';font-size:13px;">' +
+            '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.muted + ';">' +
+            esc_(String(data[i][2] || '?')) + '</span> · ' + esc_(msg) + '</li>';
+          rowsText += '  [' + String(data[i][2] || '?') + '] ' + msg + '\n';
+        }
+      }
+    } catch (e) { /* body detail is best-effort — the alert still sends */ }
+    const inner =
+      '<p style="color:' + P.muted + ';font-size:13px;margin:0 0 10px;">' + n +
+        ' client error(s) were reported in the last hour across the team&rsquo;s browsers. ' +
+        'Most recent distinct messages:</p>' +
+      (rowsHtml ? '<ul style="margin:0;padding-left:18px;">' + rowsHtml + '</ul>'
+                : '<p style="color:' + P.muted + ';font-size:13px;margin:0;">(could not read the tab for detail)</p>') +
+      '<p style="color:' + P.muted + ';font-size:12px;margin:12px 0 0;">Full detail: Manage &rarr; Admin &rarr; Automation Health &rarr; Client errors. ' +
+        'At most one of these emails is sent per ' + Math.round(CLIENT_ERR_ALERT_COOLDOWN_SEC / 3600) + 'h.</p>';
+    const htmlBody = buildBrandedEmailHtml_('Client errors are spiking', inner,
+      { tone: 'danger', subLabel: 'Diagnostics',
+        ctaUrl: safeWebAppUrl_('callNotesAdmin'), ctaLabel: 'Open Automation Health' });
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
+      body: n + ' client error(s) in the last hour.\n\n' + rowsText +
+        '\nFull detail: Manage → Admin → Automation Health → Client errors.',
+      htmlBody: htmlBody,
+    });
+  } catch (e) { Logger.log('clientErrSpikeAlert_ skipped: ' + e.message); }
+}
+
+// ── Pre-pilot observability: view-usage telemetry (operator 2026-08-13) ─────
+// "What parts of the web app are priorities" needs DATA, and the app had none:
+// the AuditLog records state-changing actions and KbViews records article
+// opens, but nothing recorded which TABS reps actually spend time in. The
+// client fires a throttled, fire-and-forget beacon on each tab enter (the
+// kbRecordView posture — PHI-free row: timestamp, empId, tab key, full/compact)
+// into a ViewUsage tab in the ADP spreadsheet; the Admin Overview renders the
+// aggregate. View-as previews are SKIPPED client-side so an admin exploring
+// roles doesn't pollute the numbers.
+const VIEW_USAGE_TAB = 'ViewUsage';
+const VIEW_USAGE_RATE_MAX_PER_HOUR = 120;   // per rep — navigation, not a firehose
+const VIEW_USAGE_SCAN_MAX = 8000;           // stats tail bound (INV-13 spirit)
+
+function getOrCreateViewUsageSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(VIEW_USAGE_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(VIEW_USAGE_TAB);
+    sheet.appendRow([
+      `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
+      'EmployeeId', 'View', 'Mode',
+    ]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Rep-callable, USER-locked (the recordClientError reasoning — a telemetry
+ *  append must never queue punch/note writes behind the ONE script lock),
+ *  append-only, shape-validated + rate-capped. Fire-and-forget end to end. */
+function recordViewEnter(viewKey, mode) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    const v = String(viewKey || '').trim();
+    // Tab keys are ASCII identifiers; the server has no TOOLS registry (it is
+    // client-side), so shape + length is the validation.
+    if (!/^[A-Za-z][A-Za-z0-9]{1,39}$/.test(v)) return { success: false };
+    const m = mode === 'compact' ? 'compact' : 'full';
+    const cache = CacheService.getScriptCache();
+    const rateKey = 'view_usage_rate:' + emp.id;
+    const n = parseInt(cache.get(rateKey), 10) || 0;
+    if (n >= VIEW_USAGE_RATE_MAX_PER_HOUR) return { success: false };
+    cache.put(rateKey, String(n + 1), 3600);
+    const lock = LockService.getUserLock();
+    lock.waitLock(15000);
+    try {
+      getOrCreateViewUsageSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+        emp.id, v, m,
+      ]);
+    } finally { lock.releaseLock(); }
+    return { success: true };
+  } catch (e) {
+    Logger.log('recordViewEnter failed: ' + e.message);
+    return { success: false };
+  }
+}
+
+/** PURE (Node-pinned): fold recovered usage events into per-view and per-rep
+ *  aggregates. `events` = [{ts, empId, view, mode}] with ts already recovered
+ *  to the as-written 'yyyy-MM-dd HH:mm:ss' form; cut7/cut30 are cutoff strings
+ *  in the SAME tz+format, so lexicographic compare is chronological. */
+function viewUsageAggregate_(events, cut7, cut30) {
+  const byView = {}, reps7 = {}, reps30 = {}, byRep = {};
+  let n7 = 0, n30 = 0;
+  (events || []).forEach(function (e) {
+    if (!e || !e.ts || e.ts < cut30) return;
+    const v = String(e.view || '?');
+    const r = String(e.empId || '?');
+    if (!byView[v]) byView[v] = { view: v, n7: 0, n30: 0, reps: {} };
+    byView[v].n30++; byView[v].reps[r] = true;
+    n30++; reps30[r] = true;
+    if (!byRep[r]) byRep[r] = { empId: r, n30: 0, viewCounts: {} };
+    byRep[r].n30++;
+    byRep[r].viewCounts[v] = (byRep[r].viewCounts[v] || 0) + 1;
+    if (e.ts >= cut7) { byView[v].n7++; n7++; reps7[r] = true; }
+  });
+  const views = Object.keys(byView).map(function (v) {
+    return { view: v, n7: byView[v].n7, n30: byView[v].n30, reps30: Object.keys(byView[v].reps).length };
+  }).sort(function (a, b) { return b.n30 - a.n30 || a.view.localeCompare(b.view); });
+  const reps = Object.keys(byRep).map(function (r) {
+    const vc = byRep[r].viewCounts;
+    let top = '', topN = 0;
+    Object.keys(vc).forEach(function (v) { if (vc[v] > topN) { top = v; topN = vc[v]; } });
+    return { empId: r, n30: byRep[r].n30, topView: top };
+  }).sort(function (a, b) { return b.n30 - a.n30 || a.empId.localeCompare(b.empId); });
+  return {
+    views: views,
+    reps: reps,
+    totals: { n7: n7, n30: n30, reps7: Object.keys(reps7).length, reps30: Object.keys(reps30).length },
+  };
+}
+
+/** Admin-gated (INV-136 tier — an operator-priorities surface), read-only,
+ *  bounded tail scan. Timestamps recover via normalizeAuditTs_ (same writer
+ *  form as ClientErrors); a missing tab (nothing recorded yet) is an EMPTY
+ *  aggregate, not an error. */
+function getViewUsageStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const empty = viewUsageAggregate_([], '', '');
+    const ss = getAdpSS_();
+    const sheet = ss.getSheetByName(VIEW_USAGE_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { stats: empty, url: '' };
+    let url = '';
+    try { url = ss.getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - VIEW_USAGE_SCAN_MAX + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 4).getValues();
+    const events = [];
+    for (let i = 0; i < data.length; i++) {
+      const ts = normalizeAuditTs_(data[i][0]);
+      if (!ts) continue;
+      events.push({ ts: ts, empId: String(data[i][1]), view: String(data[i][2]), mode: String(data[i][3]) });
+    }
+    const cut7 = Utilities.formatDate(new Date(Date.now() - 7 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    const cut30 = Utilities.formatDate(new Date(Date.now() - 30 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    return { stats: viewUsageAggregate_(events, cut7, cut30), url: url,
+             truncated: (lastRow - 1) > VIEW_USAGE_SCAN_MAX };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Bounded ClientErrors tail summary for the Automation Health panel.
  *  Read-only + best-effort — no tab yet (no error ever reported) reads as
  *  zero; timestamps recover via normalizeAuditTs_ (the writer uses the same
  *  'yyyy-MM-dd HH:mm:ss' CONFIG.TIMEZONE form as writeAuditLog_). */
 function clientErrorsSummary_(mgrTz) {
-  const out = { count: 0, recent: [], windowDays: CLIENT_ERR_WINDOW_DAYS, url: '' };
+  const out = { count: 0, last24h: 0, recent: [], windowDays: CLIENT_ERR_WINDOW_DAYS, url: '' };
   try {
     const ss = getAdpSS_();
     const sheet = ss.getSheetByName(CLIENT_ERRORS_TAB);
@@ -5272,6 +5474,11 @@ function clientErrorsSummary_(mgrTz) {
     // over-included up to ~a day of older rows (the mixed-tz date-compare
     // class INV-92 normalizes the same way).
     const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
+    // Pre-pilot observability: a 24h count feeds automationProblems_ (health
+    // dot + failure digest) at a threshold. Same tz-consistent lexicographic
+    // compare — both sides are 'yyyy-MM-dd HH:mm:ss' in CONFIG.TIMEZONE.
+    const cut24 = Utilities.formatDate(new Date(Date.now() - 24 * 3600000),
+      CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
     for (let i = data.length - 1; i >= 0; i--) {   // newest-first; append-only tab
       const tsRaw = normalizeAuditTs_(data[i][0]);
       // C6 (cycle 10): a blank/hand-mangled Timestamp cell normalizes to ''
@@ -5281,6 +5488,7 @@ function clientErrorsSummary_(mgrTz) {
       if (!tsRaw) continue;
       if (tsRaw.substring(0, 10) < cutoff) break;  // chronological — older rows follow
       out.count++;
+      if (tsRaw >= cut24) out.last24h++;
       if (out.recent.length < 5) {
         out.recent.push({
           timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
@@ -5716,6 +5924,15 @@ function automationProblems_(report) {
     problems.push('The nightly self-test (' + (report.selfTest.mode || '?') + ') reported ' +
       report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
       (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
+  }
+  // (g) Pre-pilot observability (operator 2026-08-13): a client-error BURST in
+  // the last 24h rides the health dot + daily failure digest. THRESHOLDED —
+  // INV-150's "a single benign browser quirk must not nag daily" rationale is
+  // preserved by the floor, not abandoned; a burst this size means reps are
+  // hitting real breakage.
+  if (report.clientErrors && report.clientErrors.last24h >= CLIENT_ERR_PROBLEM_MIN) {
+    problems.push(report.clientErrors.last24h + ' client error(s) in the last 24h — reps are hitting ' +
+      'real breakage. See Admin → Automation Health → Client errors.');
   }
   // (f) F15 — the self-test STARTED and never finished (a stuck {running:true}
   // sentinel). An execution-time-limit kill is not catchable, so without this
@@ -10574,21 +10791,23 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
     return `  ${time}  ${n.caller || n.patientAndTrx || '—'} — ${n.issue || ''}`;
   }).join('\n');
 
-  const htmlBody = (
-    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
-      `<div style="max-width:560px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
-        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">End of day · UMS Call Notes</div>` +
-        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">Hey ${esc_(emp.name.split(' ')[0])} — quick check</h2>` +
-        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">You flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
-        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
-          `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
-          itemsHtml +
-        `</table>` +
-        `<p style="color:${P.muted};font-size:12px;margin:14px 0 0;">Hop into the web app, knock these out, and toggle them resolved when done.</p>` +
-      `</div>` +
-      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
-    `</div>`
-  );
+  // Operator 2026-08-13 (email-alignment audit): the three CN digests were the
+  // mails the 2026-08-11 branded restyle missed — this one also told the rep
+  // to "hop into the web app" with NO LINK, the exact dead-end the restyle
+  // fixed on the missed-clock-out email. Now the shared chrome + a real CTA.
+  const inner =
+    `<p style="color:${P.muted};font-size:13px;margin:0 0 12px;">Hey ${esc_(emp.name.split(' ')[0])} — ` +
+      `you flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
+    `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
+      `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
+      itemsHtml +
+    `</table>` +
+    `<p style="color:${P.muted};font-size:12px;margin:12px 0 0;">Toggle each one resolved when it&rsquo;s handled.</p>`;
+  const htmlBody = buildBrandedEmailHtml_(
+    `${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged for follow-up`,
+    inner,
+    { tone: 'warn', subLabel: 'Call Notes',
+      ctaUrl: safeWebAppUrl_('callNotes'), ctaLabel: 'Open Call Notes' });
   const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
     `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
     itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
@@ -11140,18 +11359,16 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
            (reply ? `\n    A: ${reply}` : '');
   }).join('\n\n');
 
-  const htmlBody = (
-    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
-      `<div style="max-width:640px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
-        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">Weekly digest · UMS Call Notes</div>` +
-        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
-        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
-        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
-        skipHtml +
-      `</div>` +
-      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
-    `</div>`
-  );
+  // Operator 2026-08-13 (email-alignment audit): shares the branded chrome
+  // with every other notification mail — see sendOneRepEodDigest_'s note. The
+  // Urgent digest reads as action-needed (danger); the weekly queues as info.
+  const inner =
+    `<p style="color:${P.muted};font-size:13px;margin:0 0 12px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
+    `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+    skipHtml;
+  const htmlBody = buildBrandedEmailHtml_(label, inner,
+    { tone: label === 'Urgent' ? 'danger' : 'info', subLabel: 'Call Notes',
+      ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Open Team Notes' });
   const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
     MailApp.sendEmail({
@@ -15692,6 +15909,22 @@ function getTeamMetrics(dateOrFrom, to) {
       return { error: 'Invalid end date (expected yyyy-MM-dd).' };
     if (from > toDate) return { error: 'Start date must be on or before end date.' };
 
+    // Endpoint result cache (operator 2026-08-13 "Team Metrics takes a while"):
+    // the assembled response for a (from, to) range, org-wide — every manager
+    // sees the same aggregate, so the key carries no caller id. Same TTL and
+    // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
+    // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
+    // aggregate is never pinned for the TTL.
+    var teamCacheKey = 'team_metrics_v1:' + from + ':' + toDate;
+    var teamMetricsCache = CacheService.getScriptCache();
+    var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+    if (useTeamCache) {
+      try {
+        var cachedTeam = teamMetricsCache.get(teamCacheKey);
+        if (cachedTeam) { var cto = JSON.parse(cachedTeam); cto.cached = true; return cto; }
+      } catch (_) {}
+    }
+
     var isSingleDay = (from === toDate);
 
     var roster = getEmployeeRosterRows_();
@@ -15894,7 +16127,7 @@ function getTeamMetrics(dateOrFrom, to) {
                reps: Object.keys(teamQueues[q].reps).length };
     }).sort(function (a, b) { return b.transferred - a.transferred; });
 
-    return {
+    var teamResult = {
       from: from,
       to: toDate,
       date: from,
@@ -15919,6 +16152,15 @@ function getTeamMetrics(dateOrFrom, to) {
       meta: { rowsScanned: cdrResult.meta.rowsScanned, rowsMatched: cdrResult.meta.rowsMatched,
               columnWarning: cdrResult.meta.columnWarning, computeMs: Date.now() - t0 },
     };
+    // Cache ONLY a fully-successful round (INV-129): a per-rep-Sheet failure
+    // (noteCountPartial) or ANY transfer-read error would pin a degraded
+    // aggregate as authoritative for the TTL. On a deployment with no Transfer
+    // tab this endpoint simply stays uncached — the pre-cache behaviour.
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error) {
+      try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
+      catch (_) { /* >100KB or transient — the cache is a convenience */ }
+    }
+    return teamResult;
   } catch (err) { return { error: err.message }; }
 }
 

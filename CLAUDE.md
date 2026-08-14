@@ -1788,7 +1788,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fourteen client-side localStorage keys total.** All per-browser, all
+- **Sixteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1881,7 +1881,18 @@ this section before touching the relevant area.
     rather than being reflected onto `<html>`. Read + applied SYNCHRONOUSLY in
     the `<head>` (the `data-mode` discipline — a palette flash on every load
     would be worse than no palette), written by `setTimeClockPalette`.
-  Clearing browser data wipes all fourteen. (`umsCallNotesLastDept` — the
+  - `umsTzWarnedDay` — the roster-vs-browser timezone-mismatch warning's
+    once-per-day stamp (operator 2026-08-13; the 9:30 PM note diagnosis).
+    Written by `tzMismatchCheck_` when the browser's UTC offset disagrees
+    with the roster timezone's; the sticky warn toast then fires at most
+    once per browser-local day. Absent/corrupt = the check may warn today.
+  - `umsDashMetrics` — the Dashboard metric cards' same-day SWR blob
+    (`{day, data}` — the last COMPLETE, fully-successful
+    getDashboardMetrics round for all three periods). Seeded on a same-day
+    cold boot so a reload paints instantly; the refetch still runs
+    (freshness is never inherited — INV-156), and partial/failed rounds
+    are never persisted (INV-129). Aggregate call metrics only — no PHI.
+  Clearing browser data wipes all sixteen. (`umsCallNotesLastDept` — the
   composer's last-dept default — was REMOVED by operator decision 2026-08-13:
   pre-selecting the previous note's departments on an unrelated note invites a
   mis-send, and the failure mode is an email leaving the building rather than
@@ -1918,7 +1929,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 41 Admin-exclusive endpoints (INV-136's list) gate on
+  server-side** — the 42 Admin-exclusive endpoints (INV-136's list) gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -2399,6 +2410,100 @@ this section before touching the relevant area.
   `minmax(78px, auto)` because the caller's own row renders a "you" chip
   instead of an Offboard button and a bare `auto` track shifted that row's five
   readiness columns out of line. It stacks at ≤900px (the A2 rule).
+- **Settings live behind ONE gear, in a flyout panel (operator 2026-08-13).**
+  The three stacked sidebar rows (Theme / Palette / Alerts) consolidated into a
+  gear button (sidebar + mobile header, both carrying `data-settings-toggle` —
+  the INV-191 rule: writers key on the attribute that MEANS the thing) opening
+  a fixed-position `.settings-panel` flyout. THE CONTROL MARKUP IS UNCHANGED
+  (`data-theme-target` / `data-palette-target` / `data-remind`), so every
+  reflector keeps working with zero edits. Three load-bearing details: the
+  panel mounts at the SHELL ROOT, never inside the sidebar — the sidebar is
+  `display:none` on mobile, where the header gear must still reach it; the
+  panel's class sets `display:flex`, so it owes the
+  `.settings-panel[hidden] { display: none; }` companion (the [hidden] gotcha
+  — without it the panel ships permanently open); and its Esc handler is
+  CAPTURE-phase with `stopPropagation`, so closing the flyout never also
+  closes an overlay beneath it. Positioning is measured from whichever gear
+  opened it (beside the sidebar gear, below the header gear, viewport-
+  clamped). The old multi-row adjacency CSS (`.sb-theme + .sb-pal` etc.) is
+  GONE with the rows it served (INV-184) — one settings row remains and
+  `margin-top: auto` pins it to the sidebar bottom. MEASURED: the gear label
+  needed 8px (not 10px) side padding to escape the "Setti…" ellipsis at the
+  168px default sidebar — the INV-170 class.
+- **View-as is an ADMIN-ONLY, SESSION-ONLY, CLIENT-ONLY preview (operator
+  2026-08-13).** A "View as" row in the settings flyout (Me / Manager /
+  Spanish CSR / CSR) overrides the three role flags on `empState`
+  (`viewAsFlags_`, pure + Node-pinned), re-renders the shell, and lands on the
+  Dashboard — so an admin can see which tabs and controls each role gets
+  before distributing the app. THE BOUNDARIES ARE THE DECISION: admin-only
+  (`viewAsSet_` refuses unless the REAL captured flags say admin — and
+  bypassing it from a console grants nothing, because every manager/admin
+  endpoint still gates on the server-side identity); session-only (nothing is
+  persisted — a refresh restores reality by construction); and UI-only (the
+  server answers with the admin's REAL access, so surfaces whose CONTENT
+  branches server-side still show the admin's data — it is a preview of
+  CHROME, not an impersonation, and the banner says so). While active, a
+  fixed-blue `.viewas-banner` (INV-166 — a banner that must be unmistakable
+  takes fixed colors) names the role and carries the exit; the View-as row
+  itself keys off the REAL role so the way back always renders. `empState` is
+  REPLACED by background refreshes (the reminder ticker + three Clock paths),
+  so every one of those sites calls `viewAsReapply_()` — without it the
+  preview silently snapped back mid-session. Pinned by the view-as pins.
+- **The slow tabs paint last-good INSTANTLY and refresh behind the pill
+  (operator 2026-08-13 — "My Stats / Team Metrics / Spanish Inbox take a
+  while").** Three parts. (a) The My Stats + Team Metrics loaders now paint
+  from ANY same-key cached payload, not only a `viewCacheFresh_` one — the
+  45s-TTL-gated paint re-showed the loader on almost every re-enter, which
+  read as "slow" even when the data was seconds old; the key is the exact
+  query (day/range), so an old payload is never the WRONG data, and the
+  refetch always runs behind the "Refreshing…" pill. (b) The Spanish tab
+  (THREE Gmail-scanning RPCs) seeds all three parts from its last complete
+  round (keyed by the days window): the stats refresh swaps ONLY
+  `#spanish-head`, and the list refresh paints the seeded lists first and
+  keeps last-good on a failed half — so the painted content is never
+  disturbed mid-read. (c) `getTeamMetrics` — the one UNCACHED heavy manager
+  endpoint — gained the sibling endpoint result cache (`team_metrics_v1:
+  <from>:<to>`, org-wide since every manager sees the same aggregate,
+  `CDR_CACHE_TTL`, `_TEST_OVERRIDE_CDR_SS_ID` bypass), with the put gated on
+  a CLEAN round (`!noteCountPartial && !transferMeta.error` — INV-129: a
+  degraded aggregate is never pinned for the TTL; a deployment with no
+  Transfer tab simply stays uncached). First-load-of-the-day on the Spanish
+  tab is still Gmail-bound — that read is deliberately live (INV-31).
+- **Pre-pilot observability round (operator 2026-08-13 — "I want to know what
+  is working, if any issues arise, and what parts of the web app are
+  priorities").** Three parts, each riding an EXISTING posture rather than a
+  new subsystem. (a) **Handled failures are now visible to the operator, not
+  only to the rep:** `errorStateHtml_` — the single render path every
+  A12/INV-175 failure site routes through — fires the INV-150 client-error
+  beacon with source `errorState` before returning its markup, so "an RPC
+  returned `{error}` and the rep saw a warn card" lands in the ClientErrors
+  tab alongside uncaught exceptions. The beacon's session cap/dedupe/rate
+  caps all still apply; the fire is try/catch'd so a beacon problem can never
+  break the error card itself. (b) **Immediate notification is THRESHOLDED,
+  not always-on:** `clientErrSpikeAlert_` (post-lock in `recordClientError` —
+  M-7) emails managers ONE branded danger alert when ≥5 errors land within a
+  rolling hour, 6h cooldown; `automationProblems_` entry (g) (≥10 errors in
+  24h, off `clientErrorsSummary_`'s additive `last24h`) rides the shell
+  health dot + daily failure digest. See the INV-150 amendment for the
+  full contract — the original "a single benign quirk must not nag" rationale
+  is preserved by the thresholds. (c) **Feature-usage telemetry answers "what
+  parts are priorities":** `recordViewEnter(viewKey, mode)` (rep-callable,
+  `getEmployeeInfo_`-gated, USER lock, appendRow into an auto-provisioned
+  `ViewUsage` tab on the ADP sheet — the `kbRecordView`/ClientErrors posture:
+  PHI-free rows of Timestamp/EmployeeId/View/Mode only, fire-and-forget,
+  rate-capped `VIEW_USAGE_RATE_MAX_PER_HOUR`=120/rep). The client fires it
+  from `showView` behind a 5-min per-view throttle (`recordViewUsage_`), and
+  **View-as previews are excluded** (`VIEW_AS.active` skips the send — an
+  admin browsing as a persona is not usage data). `getViewUsageStats()`
+  (**admin-gated**, INV-136 — the 42nd admin endpoint) tail-scans
+  `VIEW_USAGE_SCAN_MAX`=8000 rows and aggregates via the pure, Node-pinned
+  `viewUsageAggregate_(events, cut7, cut30)` → per-view 7d/30d counts +
+  distinct reps + per-rep totals with top view; rendered as a **Feature
+  usage** panel on Admin → Overview (`cnUsagePanelHtml_` — bar rows resolved
+  to TOOLS-registry labels via `cnUsageViewLabel_` with a raw-key fallback,
+  every string `esc()`'d, `truncated` surfaced, Open↗ deep-link to the tab,
+  stacking at ≤700px per A2). Pinned by the five observability-round Node
+  tests (all bite-checked) + the `getViewUsageStats` omnibus gate case.
 - **Reminders are a SHELL capability, not a Clock-view one (operator
   2026-08-11).** Break reminders used to fire only while the Clock tab was
   open — so the pinned Call Notes pop-out, the window a rep actually spends the
@@ -2470,7 +2575,7 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fourteen client-side localStorage keys total" entry in
+  authoritative "Sixteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
@@ -2487,8 +2592,10 @@ this section before touching the relevant area.
   The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 14 — the
   reminder-alert toggles added `umsNotify` — net 15 — and the operator retired
   the clock-card background image (2026-08-12), taking `umsClockBg` back out —
-  net 14 — the colour palettes added `umsTheme`, net 15 — and the operator
-  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14.)
+  net 14 — the colour palettes added `umsTheme`, net 15 — the operator
+  removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14 —
+  and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
+  `umsDashMetrics`, net 16.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2558,7 +2665,7 @@ this section before touching the relevant area.
   vocabulary. Everything runs client-side — note text never leaves the
   browser (the INV-119 posture that keeps the AI version unbuilt).
   `getAutoTagRules_` sanitize-on-read mirrors `saveAutoTagRules`'s validation
-  (admin-gated, INV-136 — the count is now 41) so a rejected save and a
+  (admin-gated, INV-136 — the count is now 42) so a rejected save and a
   sanitized read can never disagree; rules ride `getCallNotesDepartments`
   (reps) + `getAdminConfig` (the editor). Pinned by the auto-tag Node pins.
 - **Intake recommendation feedback (operator 2026-08-13).** Every intake email
@@ -3013,7 +3120,10 @@ this section before touching the relevant area.
   rename/merge/archive) so the Admin table reflects a change
   immediately; `managerGetUnresolvedActionCount`
   (`CN_UNRESOLVED_CACHE_KEY`, 2 min) is TTL-only like the ambient
-  cache (INV-43). Open-ended substring search (`managerSearchCallNotes`
+  cache (INV-43). Since the 2026-08-13 speed round `getTeamMetrics` is ALSO
+  endpoint-result-cached (`team_metrics_v1:<from>:<to>`, org-wide,
+  `CDR_CACHE_TTL`; put gated on a clean round — see the slow-tabs KDD).
+  Open-ended substring search (`managerSearchCallNotes`
   without a date range) is intentionally NOT cached — speeding it up
   needs the full note text (a real index), which is out of scope; the
   date/column bounds (INV-46 reader) already cut its cell volume.
@@ -4872,7 +4982,7 @@ one-pane-of-glass for this table. Keep all seven in one Drive folder for sanity.
 
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
-| Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), SpanishManualResolved | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
+| Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), SpanishManualResolved | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions | **PHI** | 90-day purge (if enabled) | `getFormsSS_` |
@@ -5023,12 +5133,66 @@ manually for a fresh deploy or environment:
   automated notification email changes appearance at once (Time Clock, Payroll,
   Time Off, Training, Employee Docs, Coaching, Call Notes Q&A, the daily brief,
   the digests and the health/self-test pushes) — the dept/Intake/form emails,
-  which have their own builders, are untouched. New in the mail: a green CTA
+  which have their own builders, are untouched. **CORRECTION (2026-08-13):**
+  "every" turned out to exclude the three Call Notes digests (EOD / weekly
+  Training+Review queues / Urgent), which have their own hand-rolled table
+  builder and only joined the branded chrome on 2026-08-13 after an
+  email-alignment audit enumerated all 30 `MailApp.sendEmail` sites — the
+  items table is kept as the wrapper's `bodyHtml`, tones are warn (EOD) /
+  danger (Urgent) / info (queues), and each carries a real
+  `safeWebAppUrl_` CTA (`callNotes` for reps, `callNotesManage` for
+  managers). Pinned by the digest-chrome Node test. New in the mail: a green CTA
   button on the emails that ask for an action, so the missed-clock-out reminder
   finally links to the app. **Post-deploy: send yourself one** (approve a test
   PTO request, or run `sendDailyMissedPunchAlerts` from the editor) and confirm
   the UMS logo loads in your client — the HTML-email restyle is the one thing
   CI cannot verify, and it is the standing spot-check for any email change.
+- **The 2026-08-13 settings/speed round adds NO operator state to set up** —
+  no Script Properties, triggers, migrations, or CONFIG constants; two new
+  per-browser localStorage keys (`umsTzWarnedDay`, `umsDashMetrics` — count
+  now sixteen) and one new server-side CacheService entry
+  (`team_metrics_v1:<from>:<to>`, self-managing). **ONE OPERATOR ACTION from
+  the 9:30 PM note report: open the Employees sheet and set YOUR OWN row's
+  Timezone cell to `America/Chicago`** — a blank cell falls back to
+  `CONFIG.TIMEZONE` (Asia/Kolkata), which is why a note logged mid-morning
+  CST carried a 9:30 PM (IST) stamp and yesterday's note appeared in today's
+  Log. Existing rows keep their as-written stamps; new writes are correct the
+  moment the cell is fixed (the roster cache refreshes within 5 min).
+  Behaviour changes to expect post-deploy: (a) the sidebar's Theme / Palette /
+  Alerts rows are consolidated behind a **Settings gear** (sidebar + mobile
+  header) opening a small flyout; (b) admins get a **View as** row in that
+  flyout (Me / Manager / Spanish CSR / CSR) — a session-only preview of each
+  role's tabs with a blue banner + Exit; data still loads with the admin's
+  real access; (c) anyone whose browser timezone disagrees with their roster
+  timezone sees a once-a-day sticky warning naming both zones — that is the
+  9:30 PM class being surfaced, not a new fault; (d) My Stats / Team Metrics /
+  Spanish Inbox re-enters paint instantly from the last load and refresh
+  behind the "Refreshing…" pill; Team Metrics is also server-cached ≤5 min
+  (org-wide per range); (e) the Dashboard holds its full 4-card layout from
+  the first frame (no more Spanish/Requests pop-in), the extras RPCs start in
+  parallel with the metrics RPCs, and a same-day reload paints the metric
+  cards instantly from the local blob while refreshing in the background.
+  **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-13 pre-pilot observability round adds NO operator state to set
+  up** — no Script Properties, no triggers, no migrations, no CONFIG values to
+  choose. ONE auto-managed sheet tab appears: **`ViewUsage`** in the ADP
+  spreadsheet (like `ClientErrors` — PHI-free Timestamp/EmployeeId/View/Mode
+  rows, auto-provisioned on the first view-enter after deploy; grows slowly,
+  rate-capped 120/hr/rep, no purge — trim manually if it ever bothers you).
+  Behaviour changes to expect post-deploy, all of them the point of the round:
+  (a) **you may start receiving a "Client errors spiking" email** — sent only
+  when ≥5 errors land within an hour, at most one email per 6h; a lone error
+  still emails no one; (b) the Manage health dot / daily failure digest can
+  now carry a "N client error(s) in the last 24h" line (threshold 10); (c)
+  warn cards reps see (failed loads) now count in Admin → Automation Health →
+  Client errors — an uptick after deploy is VISIBILITY of failures that were
+  always happening, not new faults; (d) the three Call Notes digests (EOD /
+  weekly queues / Urgent) arrive in the branded chrome with real buttons —
+  the standing email spot-check applies (send yourself one); (e) Admin →
+  Overview gains a **Feature usage** panel (per-tab opens 7d/30d + distinct
+  reps + most-active reps) — this is the "what parts are priorities" answer,
+  and it starts empty until reps navigate. View-as previews never count.
+  **Post-deploy: run `runAllTests()`** as usual.
 - **The 2026-08-13 follow-up round (image fallback + warehouse map) adds NO
   operator state to set up** — no triggers, no migrations, no API key, and
   deliberately NO billing (the operator constraint): the map block's whole geo
@@ -5451,7 +5615,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 41 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 42 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -5802,6 +5966,22 @@ manually for a fresh deploy or environment:
   of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
   with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
   Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
+  **A FOURTH consequence bit in pilot (operator 2026-08-13): a BLANK roster
+  Timezone cell falls back to `CONFIG.TIMEZONE` (Asia/Kolkata), so everything
+  that rep writes — punches, note timestamps, `DateLocal` — is silently
+  stamped in IST.** The reported symptom was a CST rep's note showing 9:30 PM
+  and yesterday's note sitting in today's Log: +5:30 is the only offset that
+  puts a :30 on a whole-hour zone, which is how it was diagnosed. The fix is
+  the roster cell (`America/Chicago` in the rep's row — the Team Members
+  panel's tz chip flags blank/malformed cells); existing rows keep their
+  as-written stamps. The code half is `tzMismatchCheck_` (`script_core.html`):
+  at boot the client compares the browser's real UTC OFFSET against the
+  roster timezone's (offsets, never ids — `America/Chicago` vs `US/Central`
+  must not warn; an Intl sanity-probe of UTC gates the check so a broken
+  browser can't nag) and shows a STICKY warn toast at most once per
+  browser-local day (`umsTzWarnedDay`) naming both zones and where to fix it.
+  The server cannot detect this class — only the browser knows where the rep
+  actually sits.
 - **`CONFIG.COVERAGE_MIN_STAFF`** (this deploy: **6**) + **`CONFIG.COVERAGE_STAFF_GOOD`**
   (this deploy: **7**) set the manager Coverage planner's three bands (#3): a
   manager-tz business hour with **≥ GOOD** confirmed reps renders green ("good"),
@@ -5994,6 +6174,15 @@ manually for a fresh deploy or environment:
   7-day window). Grows slowly (client dedupes + caps 5/session; server caps
   20/hour/rep); no purge — trim manually if it ever bothers you. The
   `runAllTests` beacon test deletes its own `TEST_` rows.
+- **`ViewUsage` sheet tab** (auto-provisioned in the ADP spreadsheet on the
+  first view-enter after the 2026-08-13 observability deploy). PHI-free
+  feature-usage telemetry — Timestamp / EmployeeId / View / Mode per row,
+  never content. Written by `recordViewEnter` (rep-gated, USER lock,
+  rate-capped 120/hr/rep; the client throttles to one send per view per
+  5 min and skips View-as previews); read by the admin-gated
+  `getViewUsageStats` behind the Admin → Overview "Feature usage" panel
+  (bounded 8000-row tail, 7d/30d windows). Grows slowly; no purge — trim
+  manually if it ever bothers you.
 - **Script Property `WHATSNEW_KB_ID`** (optional — the "What's new" panel,
   INV-152). Set it to the ID of a PUBLISHED Reference **article** (create a
   "What's new" article in the Reference tool, copy its id from the KB sheet
@@ -6556,7 +6745,39 @@ quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
 exactly ONE property write (the coordinate cache), placed BEFORE the query
 geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
 `UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
-The colour palettes added seven more → **507**
+The 2026-08-13 pre-pilot observability round added five more → **532**
+(the digest-chrome pin — all three Call Notes digests through
+`buildBrandedEmailHtml_` with real `safeWebAppUrl_` CTAs and per-digest
+tones; the errorState-beacon pin — `errorStateHtml_` fires `errBeaconSend_`
+with the new three-value source enum accepted by BOTH normalizers; the
+spike-alert pin — called post-`releaseLock` (M-7), threshold + window +
+cooldown constants asserted from source, recent-messages escaped, and the
+`automationProblems_` (g) entry + `last24h` cutoff; the
+`viewUsageAggregate_` behavioural pin — vm-driven with real events across
+the 7d/30d windows, distinct-rep counts, top-view resolution, and the
+malformed-event guard; and the usage-beacon wiring pin — server gate +
+shape regex + rate cap + USER lock, client 5-min throttle +
+`VIEW_AS.active` skip, panel esc()/A12/A2 asserts — 9 mutations
+bite-checked, with one matcher lesson worth keeping: the bite-check
+harness must match on the TEST NAME in the ✗ line, not a section-header
+console string, or a biting mutation reads as NO-BITE).
+The 2026-08-13 settings/speed round added seven more → **527** (the settings
+flyout — attribute-keyed gears, capture-phase Esc + stopPropagation, all
+three control groups inside the panel, the `[hidden]` display companion, and
+the single-render-site + shell-root-mount contract folded into the rewritten
+palette-picker pin; view-as — `viewAsFlags_` behavioural per role,
+admin-gate, no-localStorage session-only, all four `empState`-refresh
+reapply sites, banner + real-role row; `tzOffsetMinAt_` behavioural
+(CDT −300 / IST +330 / unknown → null) + the offset-not-id compare, UTC
+sanity probe, once-a-day key and sticky toast; the dashboard first-frame
+4-card skeleton + parallel extras kick + `extraBusy` guard;
+`clkDashSeedFromLs_` behavioural — same-day complete rounds only, freshness
+never inherited, partial rounds never persisted; the three slow tabs'
+paint-any-cache + Spanish head-only refresh + background last-good; and the
+`getTeamMetrics` endpoint cache — read after the gate, put gated on a clean
+round, test-override bypass — 12 mutations bite-checked; two pins updated
+for the deliberate layout/contract changes rather than the code, both
+verified to still bite). The colour palettes added seven more → **507**
 (all seven are DERIVED, so adding the fifth palette (Sage) required no test
 edit at all — the AA, constant-luminance, contract, swatch, key-list,
 specificity and hue-drift pins all swept it in, which is the INV-179 promise
@@ -6734,7 +6955,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
@@ -6883,7 +7104,7 @@ INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
-INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **41 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
+INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **42 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config), and `getViewUsageStats` (the pre-pilot feature-usage aggregate, operator 2026-08-13). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
 
 INV-137 | **Automation-failure manager digest.** `sendAutomationHealthDigest` is a top-level TRIGGER handler (daily manager-tz 9am) reachable via `google.script.run`, so it carries the MANAGER_EMAILS `assertManagerCaller_` gate (INV-44 family, NOT `emp.isAdmin` — it runs as the installer; pinned by the trigger-gate Node tripwire + `test_triggerGate_automationHealthDigest_nonManagerThrows`) and is best-effort (INV-14 — try/catch, never throws past the catch). It reuses `computeAutomationHealth_()` — the UN-gated body factored out of `getAutomationHealth` so the push and the Admin panel share ONE computation (no parallel-source drift; the gate stays in the `getAutomationHealth` wrapper) — and emails `MANAGER_EMAILS` ONLY when a check is failing: a **stale digest heartbeat**, a **stale nightly reconcile** (the F1 class — `automationLastRuns[].last.ms`, the additive raw-ms field, older than 30h; reconcile is the one unconditional daily job that writes a row every run, so a stale last-run = a silently-dead trigger), or **personal-sheet sync-fails** — plus (Turn C) any **dead detector** from `automationDetectorChecks_()` (a failing writer↔parser round-trip or missing diagnostic channel — the failure class the other checks can't see). A HEALTHY system is silent (no daily nag), and "never ran yet" (no heartbeat / no reconcile row) is NOT flagged (fresh-deploy / not-yet-installed posture, matching the panel). CDR reachability is deliberately NOT pushed (it isn't a trigger; an unset `CDR_SS_ID` reads as unreachable and would false-nag a non-CDR deployment — the panels already surface it). PHI-free (counts + job names, all `esc_`'d via `buildBrandedEmailHtml_`, tone warn). The watcher writes no audit row + has no heartbeat of its own (verify it from the trigger list). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). | Subsystem: Server
 
@@ -6902,7 +7123,7 @@ INV-147 | Draft KB items (INV-140) are excluded from EVERY rep-reaching surface 
 INV-148 | Debounced client draft persisters are TEARDOWN-SAFE: the deferred save/persist SKIPS when its form root is gone from the DOM (intake `intakeDraftSaveNow_` root-guard; CN `cnPersistActiveFormDraft_` root-guard — a post-teardown fire read every field as '' and REMOVED the sticky draft), and intake additionally FLUSHES a pending debounce synchronously at the top of `showView` (`intakeFlushDraftNow_`, typeof-guarded + try/catch'd — a throw must never block navigation) while the outgoing DOM is intact; `intakeClearDraft_` cancels a pending timer for its form. Any NEW debounced persister must follow the same pattern. Pinned by the M-2 + Turn-A DOM tests and the cross-partial hook tripwire (`script_core` references + intake defines `intakeFlushDraftNow_`) | Subsystem: Client (Intake views) + Client (Call Notes views) + Client (shell)
 
 INV-149 | **Per-rep shift override (Turn D).** Employees column O `Schedule` (`EMP.SCHEDULE=14`; `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` per INV-28) holds an optional `H:mm-H:mm` override in the REP's own timezone, parsed by the pure `parseShiftOverride_` (bare hours OK; blank/garbage/overnight/out-of-range → null — FAIL-SAFE to the per-tz schedule, so a typo'd cell can never break the ribbon/coverage/punctuality; overnight shifts deliberately unsupported). `empShiftSchedule_(empLike, tz)` is the ONLY schedule resolver consumers may call: a valid override supplies start/length (flagged `override:true`) while breaks + the break reminder ALWAYS come from the per-tz `CONFIG.SHIFT_SCHEDULE`; `getShiftSchedule_` is called ONLY by the resolver. Consumers: `getEmployeeState` (ships `schedule` → `CLK_SCHEDULE`, the ribbon/countdown/next-break), `getCoveragePlan`, `getPunctualityReport`. `getEmployeeInfo_`/`lookupEmployeeById_` carry the raw cell as `scheduleRaw`. Pinned by the `parseShiftOverride_` Node cases + a source tripwire (all three consumers use `empShiftSchedule_`, zero bare `getShiftSchedule_` calls outside it) + `test_perRepSchedule_overrideAndFallback` (editor — override drives `getEmployeeState`, invalid cell falls back, breaks inherited) | Subsystem: Server + Client (Time Clock views)
-INV-150 | **Client error beacon is PHI-safe by construction, gated, bounded, and rate-capped.** The shell's `window.onerror` + `unhandledrejection` hooks (`script_core.html`) post ONLY exception metadata — `{message, stack, view, source}`, the payload shape is CLOSED (a Node test pins the exact four keys) — never form-field values, note content, or DOM text; both sides truncate (client `errBeaconPayload_` mirrors the server `CLIENT_ERR_MSG_MAX`=400 / `CLIENT_ERR_STACK_MAX`=1500). The client dedupes identical messages and hard-caps `ERR_BEACON_MAX_PER_SESSION`=5 per session; `recordClientError` requires `getEmployeeInfo_` (NOT a public endpoint), acquires the USER lock (batch K-B — `getUserLock()`, not the global script lock: a diagnostics append must never stall punch writes; finally-release unchanged. It appends to the `ClientErrors` tab in the ADP spreadsheet, auto-provisioned by `getOrCreateClientErrorsSheet_`), and rate-caps `CLIENT_ERR_RATE_MAX_PER_HOUR`=20 per rep via CacheService. The beacon is fire-and-forget end to end — the send path is wrapped so it can never throw inside an error handler, and every server rejection returns quietly. Surfaced read-only in Admin → Automation Health via `clientErrorsSummary_` (bounded `CLIENT_ERR_SCAN_MAX`=2000 tail, 7-day window whose cutoff is formatted in `CONFIG.TIMEZONE` — the tz the rows are STAMPED in, cycle-9 L-15; a manager-tz cutoff over-included ~a day) on `computeAutomationHealth_().clientErrors`; deliberately NOT pushed by the failure digest (a single benign browser quirk must not nag daily). Pinned by the `errBeaconPayload_` Node cases + the recordClientError/wiring source tripwires + the DOM dedupe/cap tests + `test_recordClientError_authBoundsAndAppend` (editor) | Subsystem: Server + Client (shell)
+INV-150 | **Client error beacon is PHI-safe by construction, gated, bounded, and rate-capped.** The shell's `window.onerror` + `unhandledrejection` hooks (`script_core.html`) post ONLY exception metadata — `{message, stack, view, source}`, the payload shape is CLOSED (a Node test pins the exact four keys) — never form-field values, note content, or DOM text; both sides truncate (client `errBeaconPayload_` mirrors the server `CLIENT_ERR_MSG_MAX`=400 / `CLIENT_ERR_STACK_MAX`=1500). The client dedupes identical messages and hard-caps `ERR_BEACON_MAX_PER_SESSION`=5 per session; `recordClientError` requires `getEmployeeInfo_` (NOT a public endpoint), acquires the USER lock (batch K-B — `getUserLock()`, not the global script lock: a diagnostics append must never stall punch writes; finally-release unchanged. It appends to the `ClientErrors` tab in the ADP spreadsheet, auto-provisioned by `getOrCreateClientErrorsSheet_`), and rate-caps `CLIENT_ERR_RATE_MAX_PER_HOUR`=20 per rep via CacheService. The beacon is fire-and-forget end to end — the send path is wrapped so it can never throw inside an error handler, and every server rejection returns quietly. Surfaced read-only in Admin → Automation Health via `clientErrorsSummary_` (bounded `CLIENT_ERR_SCAN_MAX`=2000 tail, 7-day window whose cutoff is formatted in `CONFIG.TIMEZONE` — the tz the rows are STAMPED in, cycle-9 L-15; a manager-tz cutoff over-included ~a day) on `computeAutomationHealth_().clientErrors`. **AMENDED for the pre-pilot observability round (2026-08-13):** (a) the beacon now ALSO fires from `errorStateHtml_` (source `errorState`) — the one choke point every A12/INV-175 call site routes through, so a HANDLED failure (an RPC that returned `{error}` and rendered a warn card the rep can see) reaches the operator too, not only uncaught exceptions; the `source` field is now a three-value enum (`onerror` / `unhandledrejection` / `errorState`), normalized identically on both sides. (b) The original "deliberately NOT pushed by the failure digest" stance is now THRESHOLDED rather than absolute — the rationale (a single benign browser quirk must not nag daily) is preserved by the thresholds, not reversed: `clientErrSpikeAlert_` (called AFTER `lock.releaseLock()` in `recordClientError` — the M-7 no-mail-in-lock rule) sends managers ONE immediate branded danger alert when ≥`CLIENT_ERR_ALERT_MIN` (5) errors land within the rolling hour (`CLIENT_ERR_ALERT_WINDOW_SEC`), cooldown-deduped to one email per `CLIENT_ERR_ALERT_COOLDOWN_SEC` (6h) via CacheService, best-effort end to end (its own try/catch — a failed alert never affects the beacon response); and `automationProblems_` gained entry (g): ≥`CLIENT_ERR_PROBLEM_MIN` (10) errors in the last 24h (`clientErrorsSummary_`'s additive `last24h` field) rides the shell health dot + the daily failure digest. A lone error still emails no one. Pinned by the `errBeaconPayload_` Node cases + the recordClientError/wiring source tripwires + the DOM dedupe/cap tests + the observability-round pins (errorState fire, post-lock spike alert, threshold/cooldown, problems entry) + `test_recordClientError_authBoundsAndAppend` (editor) | Subsystem: Server + Client (shell)
 INV-151 | **Consolidated manager daily brief (flag-gated, suppression-symmetric).** `sendManagerDailyBrief` is a trigger handler (daily manager-tz 8am; INV-44 gate) behind the `managerDailyBrief` feature flag — the registry's first pure-`server`-scope flag, default OFF so a fresh deploy is a behavioral no-op. It stamps its `managerBrief` heartbeat BEFORE the flag check (trigger liveness stays observable while the feature is off) and, when on, builds ONE branded morning email PER MANAGER (docs + coaching are team-scoped, INV-122/134 — the sendTrainingOverdueDigest model) from the SAME factored computations the standalone digests use (`computeMissedClockOuts_`, `managerAggregateUrgent_`, `trainOverdueForRoster_`, `empDocsOverdueAll_`, `coachUnackedAll_`, `deptRequestsOverdueOpen_` — no parallel source to drift), with every data source individually try/catch'd and coaching rows PHI-minimal (INV-134). Exactly FOUR handlers suppress their separate MANAGER emails — `sendDailyMissedPunchAlerts` (manager summary only; employee reminders always send), `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest` (manager loop only; employee doc nudges always send), `sendDeptRequestReminderDigest` — each still stamping its heartbeat. **Suppression gates on `managerBriefSuppressionActive_({checkTrigger:true})` at the four digest call sites (cycle-8 M-11 + cycle-9 L-18), NEVER the bare flag: the flag must be ON, the `managerBrief` heartbeat fresh (<26h), AND a live `sendManagerDailyBrief` trigger must exist** — the heartbeat proves "the handler ran", not "a trigger exists", so a manual editor run used to open a ~26h window where the digests suppressed but no 8am brief would ever fire (invisible to the `briefConfig` detector, which reads suppression as active). The trigger check runs only at the DIGEST sites (in their trigger context the runner IS the installer, so `ScriptApp.getProjectTriggers()` sees the brief trigger); the PANEL detector calls the helper ARGLESS (a viewing manager isn't the installer — the check would false-alarm there). Fail direction on any check miss/error: NOT suppressed. Deliberate tradeoff: a digest run MANUALLY by a non-installer now double-emails for that run (a doubled email beats a silent outage — the M-11 decision). Flipping the flag without re-running `installAutomationTriggers()` used to silently stop EVERY daily manager notification (the brief never fired; the watchdog deliberately ignores a never-stamped heartbeat); now a missing/stale heartbeat FAILS SAFE (the individual digests keep sending — a doubled email beats a silent outage) and the `briefConfig` detector check surfaces the misconfiguration in the panel + failure digest; `sendCallNotesWeeklyDigests` (weekly cadence) and `sendAutomationHealthDigest` (the independent watchdog that reports a dead brief trigger — consolidating it would be circular) NEVER consult the flag. An all-clear morning sends nothing. The pure `managerBriefSections_` drives section order/counts/send-decision. Pinned by the `managerBriefSections_` + suppression-set + registry-flag Node tests, the auto-covering TARGETS/gate-type/DIGEST_LABELS tripwires, and `test_triggerGate_managerDailyBrief_nonManagerThrows` (editor) | Subsystem: Server
 INV-152 | **"What's new" panel is a dormant-until-configured broadcast of ONE published KB article.** `getWhatsNew` is rep-callable (requires `getEmployeeInfo_`), read-only, and returns `{none:true}` on EVERY quiet-failure path (unset `WHATSNEW_KB_ID` Script Property, missing item, non-article, any throw) so it can never break boot; a DRAFT article is invisible to EVERYONE including admins (INV-140/147 — a broadcast surface has no preview tier; admins preview in Reference). The returned `stamp` is the article's edit time (`kbCellTs_`, KB-sheet-tz recovered). **Surfacing (operator feedback 2026-07-09): the panel does NOT auto-open** — the article's list items rotate as upward-carousel slides in the Dashboard greeting bar (the pure Node-pinned `whatsNewItems_` extracts plain-text lines; `clkGreetRot*` in `tc/script_clock.html` rotates status-sentence ↔ update slides every 8s, hover-holds, ties to the startClock/stopClock lifecycle, reuses the world-clock slide-up animation and its reduced-motion neutralization). `whatsNewShouldShow_` (vs `localStorage.umsWhatsNew`; corrupt blob = never seen) now gates the NEW accent on those slides; clicking a slide or the sidebar star opens the full panel. The overlay is `ensureOverlay`-created (its `onClose` hook `whatsNewClose_` stamps seen on EVERY dismissal path) and renders the body via `kbMd_` — the same escape boundary as every Reference article; the title routes through `esc()`; never fetched in the compact pop-out. Pinned by the `whatsNewShouldShow_`/`getWhatsNew` Node cases, the DOM render/Esc-stamp tests, and `test_whatsNew_propertyGateAndDraftHidden` (editor) | Subsystem: Server + Client (shell)
 INV-153 | **Timesheet cold-archive is MOVE-ONLY (payroll is keep-forever) with a clamped safety floor.** `archiveOldTimesheetRows` is a trigger handler (daily manager-tz 6pm — cycle-8 moved it off 1am, which is IST/PHT mid-shift; INV-44 `assertManagerCaller_` gate; INV-01 locked — it mutates the payroll tab, and holding the lock makes concurrent punch writes wait out the move). It MOVES Timesheet rows whose `ADP.DATE` is older than the window into a `TimesheetArchive` tab in the SAME ADP spreadsheet (created on first use by COPYING the live tab's two-row header) via the shared `archiveSheetRowsOlderThan_` — now parameterized with `opts {headerRows, width}` whose DEFAULTS (`headerRows:1`, `CN_HEADERS.length`) keep the CN call sites byte-identical; the Timesheet passes `headerRows:2` + its own width. There is deliberately NO purge tier for the Timesheet (unlike the CN 3-tier model) — nothing ever deletes from `TimesheetArchive`. Window: Script Property `TIMESHEET_ARCHIVE_DAYS` → `CONFIG.TIMESHEET_ARCHIVE_DAYS` (default **0 = disabled**); a value in `(0, TIMESHEET_ARCHIVE_MIN_DAYS=120)` **clamps UP to the floor** (never down), so an operator typo can never rip active-window payroll rows (adjust 30d, current export period ≤~31d, dashboard trends 14d) out of the live tab; garbage/negative → disabled. The helper scans data rows in sheet order (the Timesheet is APPEND order, not date order — back-fills land late) and append-then-deletes with a flush between (a mid-run failure can only duplicate into the archive, never lose a payroll row). **Cycle-12 F3 — the move is BOUNDED per run** (`opts.maxRows`, set to `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`=2000; absent ⇒ unbounded, so a caller that wants no bound is unchanged — **cycle-12 F3-sibling then bounded the CN twin too**: `archiveOldCallNotes` passes a WHOLE-RUN budget `CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN`=2000 shared across reps and STOPS the rep loop when it is spent, because that walk calls the mover once per rep inside one execution + one global lock, so a per-rep cap would not bound the run; reps drain in roster order over successive nights and a capped run stamps `hitPerRunCap=` in its `CallNotesArchive` audit row). Without it a large first enable (~20k rows for a year at this team's volume) could never finish inside the 6-minute ceiling, and because the append is flushed FIRST every killed run RE-APPENDED the rows it failed to delete — duplicating payroll into the archive run after run while the live tab barely shrank. Capped runs are finite and monotonic, so a multi-year backlog drains over a couple of weeks of quiet 6pm runs; a run that hits the cap stamps `hitPerRunCap=` in its audit row so a draining backlog doesn't look like a normal small run. **Archived rows leave MOST in-app surfaces** (old-month calendar/timesheet views, `getPunctualityReport`, and `tsDoctorScan_` read the live tab only) **but the ADP EXPORT reads through** (cycle-12 F1 — see the export note below): `generateExportSheet_` consults `TimesheetArchive` whenever the requested range predates the live tab's oldest row, so a retroactive payroll export is complete rather than silently short. Before F1 the archive tab had NO reader anywhere. Writes a PHI-free `TimesheetArchive` audit row on every enabled run (the Automation-Health last-seen heartbeat; in `AUTOMATION_AUDIT_ACTIONS` + the client `CN_HEALTH_RUN_LABELS`, pinned by the coupling registry). Pinned by the move-only/floor/CN-defaults Node tests + `test_triggerGate_timesheetArchive_nonManagerThrows` + `test_timesheetArchive_windowFloorAndDefault` (editor) | Subsystem: Server

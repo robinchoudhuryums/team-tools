@@ -312,6 +312,24 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     kbGetContentRequests: { open: [], resolved: [], openCount: 0 },
     kbGetRelated: { items: [] },
     kbRecordView: { ok: true },
+    // Pre-pilot observability (operator 2026-08-13) — fire-and-forget beacons
+    // + the Admin Overview usage aggregate (INV-185: field names mirror the
+    // server's viewUsageAggregate_ / getViewUsageStats shapes).
+    recordClientError: { success: true },
+    recordViewEnter: { success: true },
+    getViewUsageStats: { url: '', truncated: false, stats: {
+      views: [
+        { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },
+        { view: 'clock', n7: 44, n30: 180, reps30: 8 },
+        { view: 'metricsMyStats', n7: 12, n30: 55, reps30: 6 },
+        { view: 'timeoff', n7: 8, n30: 31, reps30: 5 },
+      ],
+      reps: [
+        { empId: 'E-101', n30: 88, topView: 'callNotes' },
+        { empId: 'E-102', n30: 64, topView: 'clock' },
+      ],
+      totals: { n7: 125, n30: 506, reps7: 8, reps30: 8 },
+    } },
     getCoachingDashboard: { items: [
       { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',

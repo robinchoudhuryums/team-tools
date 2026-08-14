@@ -296,6 +296,7 @@ function clkRefreshState_() {
     .withSuccessHandler(function (state) {
       if (!state || state.error) return;
       empState = state;
+      if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
       adjustWindowDays = state.adjustWindowDays || 30;
       _clkLastDay = isoDateTz(empTz());
       if (currentView === 'clock') {
@@ -457,7 +458,7 @@ var CLK_DASH_LABELS = ['Yesterday', 'MTD', 'YTD'];
 // adjacent cards opening on different periods reads as a bug rather than a
 // default. Derived from the period list so a reorder can't silently repoint it.
 var CLK_DASH_DEFAULT_IDX = CLK_DASH_PERIODS.indexOf('mtd');
-var CLK_DASH = { mine: CLK_DASH_DEFAULT_IDX, team: CLK_DASH_DEFAULT_IDX, data: {}, isMgr: false, loadedDay: '', loadedAt: 0, extra: null, extraDay: '', extraAt: 0, spIdx: 0 };
+var CLK_DASH = { mine: CLK_DASH_DEFAULT_IDX, team: CLK_DASH_DEFAULT_IDX, data: {}, isMgr: false, loadedDay: '', loadedAt: 0, extra: null, extraDay: '', extraAt: 0, extraBusy: false, spIdx: 0 };
 // Stale-while-revalidate freshness window: a re-render within this of the last
 // load renders from cache with NO loader and NO refetch; older renders still
 // paint the cache instantly, then refresh in the background (silent swap). This
@@ -483,12 +484,55 @@ function clkDashSkelCard_() {
     clkDashSkelKpis_() +
   '</div>';
 }
+/** A shorter skeleton shaped like an extras card (label + KPI tiles — no
+ *  segmented chip or hero numeral). */
+function clkDashSkelExtra_() {
+  return '<div class="dash-card" aria-hidden="true">' +
+    '<span class="skel dash-skel-label"></span>' +
+    clkDashSkelKpis_() +
+  '</div>';
+}
 /** The initial #dash-cards loading state — a 2-up pair mimicking the two
- *  metric carousels (label + segmented chip + hero value + KPI tiles). */
+ *  metric carousels (label + segmented chip + hero value + KPI tiles), PLUS a
+ *  second pair shaped like the extras row (operator 2026-08-13: the
+ *  Spanish/Training and Requests cards used to POP IN below the metrics pair
+ *  when their RPCs returned — the first frame now holds the full 4-card
+ *  layout, so arrivals swap content without moving anything). */
 function clkDashSkeleton_() {
   return '<div class="dash-pair" role="status" aria-label="Loading dashboard">' +
     clkDashSkelCard_() + clkDashSkelCard_() +
+  '</div>' +
+  '<div class="dash-pair" aria-hidden="true">' +
+    clkDashSkelExtra_() + clkDashSkelExtra_() +
   '</div>';
+}
+
+// ── Same-day localStorage SWR for the metric payloads (operator 2026-08-13:
+// "the metrics cards are also still taking a while") ─────────────────────────
+// The in-memory cache dies with the page, so every reload/tab-open re-paid the
+// cold 3-RPC round even when the server had answered minutes earlier. A
+// COMPLETE, fully-successful round is written through to localStorage; a cold
+// boot the same rep-local day seeds from it and paints instantly, then the
+// normal refetch runs in the background (loadedAt stays 0, so freshness is
+// never inherited from the blob — the INV-156 "never stamp a failed/stale
+// round fresh" posture). Aggregate call metrics only — no PHI. Corrupt blob /
+// different day / partial round → cold path, exactly as before.
+var CLK_DASH_LS_KEY = 'umsDashMetrics';
+function clkDashSaveLs_() {
+  try {
+    localStorage.setItem(CLK_DASH_LS_KEY, JSON.stringify({ day: CLK_DASH.loadedDay, data: CLK_DASH.data }));
+  } catch (e) { /* privacy mode / quota — the cache is a convenience */ }
+}
+function clkDashSeedFromLs_(today) {
+  try {
+    var blob = JSON.parse(localStorage.getItem(CLK_DASH_LS_KEY) || 'null');
+    if (!blob || blob.day !== today || !blob.data) return false;
+    var ok = CLK_DASH_PERIODS.every(function (pk) { return blob.data[pk] && !blob.data[pk].error; });
+    if (!ok) return false;
+    CLK_DASH.data = blob.data;
+    CLK_DASH.loadedDay = today;
+    return true;
+  } catch (e) { return false; }
 }
 
 /** Fetch all three periods up front (server-cached per (emp,period)); render the
@@ -505,6 +549,7 @@ function clkLoadDashboard_(isMgr) {
   if (!host) return;
   var today = isoDateTz(empTz());
   var need = CLK_DASH_PERIODS.length;
+  var seeded = false;
   var hasCache = CLK_DASH.data && Object.keys(CLK_DASH.data).length >= need && CLK_DASH.loadedDay === today;
   // Cache present → paint it instantly (replaces the loader renderClockView just
   // set, in the SAME tick, so nothing flashes). Skip the refetch when it's fresh.
@@ -517,6 +562,19 @@ function clkLoadDashboard_(isMgr) {
     // rather than yesterday's numbers (per-arrival stores fill this back in).
     CLK_DASH.mine = CLK_DASH_DEFAULT_IDX; CLK_DASH.team = CLK_DASH_DEFAULT_IDX;
     CLK_DASH.data = {};
+    // Same-day localStorage seed: a reload/tab-reopen paints the last complete
+    // round instantly; the refetch below still runs (loadedAt stays 0), and
+    // its arrivals PATCH slides in place rather than re-rendering the pair.
+    seeded = clkDashSeedFromLs_(today);
+    if (seeded) clkRenderDashboard_();
+    // Kick the extras fetches NOW, in parallel with the metrics RPCs — they
+    // used to start only when the first metrics response painted the real
+    // dashboard, serializing the Spanish/Training/Requests cards behind the
+    // slowest part of the page (operator 2026-08-13 pop-in report). Their
+    // render no-ops until #dash-extra exists; clkRenderDashboard_'s own call
+    // then paints whatever has already arrived (the extraBusy guard stops the
+    // second call from double-fetching).
+    clkLoadDashboardExtras_();
   }
   // Operator 2026-08-13 ("the cards take a while to load initially"): render
   // on the FIRST response instead of waiting for all three periods — the
@@ -526,7 +584,7 @@ function clkLoadDashboard_(isMgr) {
   // INV-187); each later arrival PATCHES its own slides in place, which
   // avoids re-running the extras loader (whose in-flight RPCs would duplicate
   // on a full re-render) and never disturbs the segmented chips.
-  var requestedView = currentView, got = {}, done = 0, anyFail = false, painted = hasCache;
+  var requestedView = currentView, got = {}, done = 0, anyFail = false, painted = hasCache || seeded;
   var finish = function (pk, res) {
     var ok = !!(res && !res.error);
     // D2a (cycle 10): a failed refetch keeps the LAST-GOOD payload for that
@@ -549,6 +607,10 @@ function clkLoadDashboard_(isMgr) {
     // a transient blip read as confident no-data. A stale stamp makes the
     // next re-render (focus / nav-back) retry quietly.
     CLK_DASH.loadedAt = anyFail ? 0 : Date.now();
+    // Write-through ONLY a complete, fully-successful round — a partial blob
+    // would seed tomorrow's boot with a mix of periods (INV-129's
+    // cache-only-on-success rule, applied to the localStorage tier).
+    if (!anyFail) clkDashSaveLs_();
   };
   CLK_DASH_PERIODS.forEach(function (pk) {
     google.script.run
@@ -841,6 +903,12 @@ function clkLoadDashboardExtras_() {
   var hasCache = CLK_DASH.extra && CLK_DASH.extraDay === today;
   if (hasCache) clkRenderDashboardExtras_();
   if (hasCache && Date.now() - (CLK_DASH.extraAt || 0) < CLK_DASH_FRESH_MS) return;
+  // Operator 2026-08-13: the extras round now ALSO starts from clkLoadDashboard_'s
+  // cold branch (parallel with the metrics RPCs), and clkRenderDashboard_ calls
+  // here again when it paints — this guard makes the second call render-only, so
+  // one enter can never fire the Spanish/Training/Requests RPCs twice.
+  if (CLK_DASH.extraBusy) return;
+  CLK_DASH.extraBusy = true;
   if (!hasCache) {
     CLK_DASH.extra = { spanish: undefined, requests: undefined, spanishPending: undefined, training: undefined };
     CLK_DASH.spIdx = 0;
@@ -862,7 +930,11 @@ function clkLoadDashboardExtras_() {
   // failed. Same shape as the metrics loader's anyFail -> loadedAt=0.
   var expected = canSp ? 3 : 2;
   var anyFail = false;
-  var settle = function () { if (--expected === 0 && !anyFail) CLK_DASH.extraAt = Date.now(); };
+  var settle = function () {
+    if (--expected !== 0) return;
+    CLK_DASH.extraBusy = false;
+    if (!anyFail) CLK_DASH.extraAt = Date.now();
+  };
   var fresh = function () { settle(); };
   var failSet = function (key, val) {   // keep last-good; placeholder only on a cold miss
     anyFail = true; settle();
@@ -1836,6 +1908,7 @@ function cnDoSelfUndo_(btn, date, time, type) {
           google.script.run
             .withSuccessHandler(state => {
               empState = state;
+      if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
               // Round 2 · 8b — re-renders target view-area directly now
               // that the Clock view no longer hosts a timesheet section
               // below. getClockArea_ still resolves to view-area.
@@ -2144,6 +2217,7 @@ function submitPunch(punchType, custom) {
       google.script.run
         .withSuccessHandler(state => {
           empState = state;
+      if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
           adjustWindowDays = state.adjustWindowDays || 30;
           // Round 2 · 8b — re-renders target view-area directly now that
           // the Clock view no longer hosts a timesheet section below.

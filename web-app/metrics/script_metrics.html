@@ -637,12 +637,16 @@ function mLoadMyStats_(opts) {
   // paint the wrong day from cache).
   var isRange = (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo);
   var key = isRange ? ('range:' + M_STATE.myFrom + ':' + M_STATE.myTo) : ('day:' + M_STATE.myDate);
-  // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
-  // the caller forced a fetch, e.g. the Refresh button), then refresh quietly.
+  // Stale-while-revalidate: instant repaint from ANY same-key cached payload
+  // (operator 2026-08-13 "My Stats takes a while" — the old fresh-only paint
+  // showed the loader again once the 45s TTL lapsed, which is almost every
+  // re-enter; the key is the exact query, so an old payload is never the
+  // WRONG data, just yesterday's-minute data). The refetch below always runs;
+  // the caller can force past the paint (the Refresh button).
   M_STATE.myCache = M_STATE.myCache || {};
   var cached = M_STATE.myCache[key];
   var painted = false;
-  if (!opts.force && cached && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(cached.entry)) {
+  if (!opts.force && cached) {
     mRenderMyStats_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -1341,12 +1345,14 @@ function mLoadTeamMetrics_(opts) {
   M_STATE.teamSeq = (M_STATE.teamSeq || 0) + 1;
   var seq = M_STATE.teamSeq;
 
-  // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
-  // forced via the Refresh button), then refresh quietly behind the pill.
+  // Stale-while-revalidate: instant repaint from ANY same-key cached payload
+  // (operator 2026-08-13 — see mLoadMyStats_; the fresh-only paint re-showed
+  // the loader on almost every re-enter), then refresh quietly behind the
+  // pill. The key is the exact range, so cache never paints the wrong dates.
   M_STATE.teamCache = M_STATE.teamCache || {};
   var cached = M_STATE.teamCache[key];
   var painted = false;
-  if (!opts.force && cached && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(cached.entry)) {
+  if (!opts.force && cached) {
     mRenderTeamMetrics_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -1833,21 +1839,49 @@ function enterSpanishInboxView(area) {
 
 function spanishLoad_() {
   var body = document.getElementById('spanish-body'); if (!body) return;
-  body.innerHTML = loSweep();
+  // SWR (operator 2026-08-13 — the tab is three Gmail-scanning RPCs, so every
+  // enter used to sit on a loader): the last complete round (stats + both
+  // lists, keyed by the days window) paints instantly and every part refreshes
+  // in the background. A background stats arrival swaps ONLY #spanish-head so
+  // the painted list (and its own in-flight refresh) is never disturbed.
+  SPANISH_STATE.cache = SPANISH_STATE.cache || {};
+  var days = SPANISH_STATE.days;
+  var cached = SPANISH_STATE.cache[days];
   // M-6 (cycle 10): seq token so a slow 30-day response can't overwrite a
   // just-loaded 7-day view after a quick window-select double-change.
   SPANISH_STATE.seq = (SPANISH_STATE.seq || 0) + 1;
   var seq = SPANISH_STATE.seq;
+  var painted = false;
+  if (cached && cached.stats && cached.pending && cached.resolved) {
+    SPANISH_STATE.pendingRes = cached.pending; SPANISH_STATE.resolvedRes = cached.resolved;
+    SPANISH_STATE.pendingErr = null; SPANISH_STATE.resolvedErr = null;
+    spanishRender_(cached.stats, { seeded: true });
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  } else {
+    body.innerHTML = loSweep();
+  }
   google.script.run
     .withSuccessHandler(function (d) {
       if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
+      if (d && !d.error) (SPANISH_STATE.cache[days] = SPANISH_STATE.cache[days] || {}).stats = d;
+      if (painted) {
+        if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+        if (d && !d.error) {
+          var h = document.getElementById('spanish-head');
+          if (h) h.innerHTML = spanishHeadHtml_(d);
+        }
+        return;   // a failed refresh keeps the painted round (last-good)
+      }
       spanishRender_(d);
     })
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+      if (painted) { showToast('Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn'); return; }
       body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load');   // A12
     })
-    .getSpanishInboxStats(SPANISH_STATE.days);
+    .getSpanishInboxStats(days);
 }
 
 function spanishFmtDur_(mins) {
@@ -1868,9 +1902,10 @@ function spanishTruncNote_(d) {
   return ' · <span style="color:var(--warning-deep)">scan capped at 200 threads — figures may be incomplete; narrow the window</span>';
 }
 
-function spanishRender_(d) {
-  var body = document.getElementById('spanish-body'); if (!body) return;
-  if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
+/** The stats note + telemetry strip + filter tabs — extracted so a background
+ *  SWR stats refresh can swap the head alone (#spanish-head) without touching
+ *  the list below it. */
+function spanishHeadHtml_(d) {
   var total = d.resolved + d.pending;
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Inbox <b>' + esc(d.address) + '</b> · ' +
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
@@ -1893,9 +1928,18 @@ function spanishRender_(d) {
     '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:2px 0 10px">' +
       mkTab('all', 'All') + mkTab('pending', 'Pending') + mkTab('resolved', 'Resolved') +
     '</div>';
-  var list = '<div id="spanish-list" style="margin-top:2px">' + loSweep() + '</div>';
-  body.innerHTML = note + strip + toggle + list;
-  spanishLoadList_();
+  return note + strip + toggle;
+}
+
+function spanishRender_(d, opts) {
+  opts = opts || {};
+  var body = document.getElementById('spanish-body'); if (!body) return;
+  if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
+  body.innerHTML = '<div id="spanish-head">' + spanishHeadHtml_(d) + '</div>' +
+    '<div id="spanish-list" style="margin-top:2px">' + (opts.seeded ? '' : loSweep()) + '</div>';
+  // Seeded (SWR) renders paint the cached lists immediately inside
+  // spanishLoadList_ and refresh them silently; cold renders show the loader.
+  spanishLoadList_(opts.seeded ? { background: true } : undefined);
 }
 
 /** Filter the combined list in place (both lists are already fetched — a chip
@@ -1917,45 +1961,60 @@ function spanishSetTab_(tab) {
  *  round-1 response landing after round 2 rendered must not overwrite one
  *  list. Each half degrades independently: a failed half renders its own
  *  error card inside the combined view while the other half still shows. */
-function spanishLoadList_() {
+function spanishLoadList_(opts) {
+  opts = opts || {};
   var slot = document.getElementById('spanish-list'); if (!slot) return;
-  slot.innerHTML = loSweep();
+  var days = SPANISH_STATE.days;
   SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;
   var seq = SPANISH_STATE.listSeq;
-  SPANISH_STATE.pendingRes = null; SPANISH_STATE.resolvedRes = null;
-  SPANISH_STATE.pendingErr = null; SPANISH_STATE.resolvedErr = null;
+  if (opts.background) {
+    // SWR: the seeded (cached) lists paint NOW; the refetch swaps them
+    // silently when it lands. State is NOT nulled — it is the painted content.
+    spanishRenderList_();
+  } else {
+    slot.innerHTML = loSweep();
+    SPANISH_STATE.pendingRes = null; SPANISH_STATE.resolvedRes = null;
+    SPANISH_STATE.pendingErr = null; SPANISH_STATE.resolvedErr = null;
+  }
   var got = 0;
   var done = function () {
     got++;
     if (got < 2 || currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.listSeq) return;
     spanishRenderList_();
   };
+  var cacheHalf = function (half, d) {
+    SPANISH_STATE.cache = SPANISH_STATE.cache || {};
+    (SPANISH_STATE.cache[days] = SPANISH_STATE.cache[days] || {})[half] = d;
+  };
   google.script.run
     .withSuccessHandler(function (d) {
       if (seq !== SPANISH_STATE.listSeq) return;
-      if (!d || d.error) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
-      else SPANISH_STATE.pendingRes = d;
+      if (!d || d.error) {
+        // A background refresh failing keeps the painted last-good half.
+        if (!opts.background) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
+      } else { SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d); }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
-      SPANISH_STATE.pendingErr = (e && e.message) || 'Could not load pending';
+      if (!opts.background) SPANISH_STATE.pendingErr = (e && e.message) || 'Could not load pending';
       done();
     })
-    .getSpanishInboxPending(SPANISH_STATE.days);
+    .getSpanishInboxPending(days);
   google.script.run
     .withSuccessHandler(function (d) {
       if (seq !== SPANISH_STATE.listSeq) return;
-      if (!d || d.error) SPANISH_STATE.resolvedErr = (d && d.error) || 'Could not load resolved';
-      else SPANISH_STATE.resolvedRes = d;
+      if (!d || d.error) {
+        if (!opts.background) SPANISH_STATE.resolvedErr = (d && d.error) || 'Could not load resolved';
+      } else { SPANISH_STATE.resolvedRes = d; SPANISH_STATE.resolvedErr = null; cacheHalf('resolved', d); }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
-      SPANISH_STATE.resolvedErr = (e && e.message) || 'Could not load resolved';
+      if (!opts.background) SPANISH_STATE.resolvedErr = (e && e.message) || 'Could not load resolved';
       done();
     })
-    .getSpanishInboxResolved(SPANISH_STATE.days);
+    .getSpanishInboxResolved(days);
 }
 
 /** The combined, color-coded list: pending first (oldest at the top — the most
