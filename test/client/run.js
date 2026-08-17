@@ -9452,6 +9452,18 @@ test('a punch confirms in ONE round trip — state rides the response, computed 
   assert.ok(/Working…/.test(sub), 'the instant in-flight loader on the clicked button stays');
 });
 
+test('getCallNotesAmbient derives both ends of its week window in the REP tz (tz-audit S2)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const amb = nc(extractRawFunction('Code.js', 'getCallNotesAmbient'));
+  // The window START is derived FROM the rep-local `today` string with a
+  // UTC-noon anchor — never a script-tz setDate() subtraction whose result is
+  // then formatted in empTz (the two ends of one window in different zones,
+  // a day off in the 00:00–00:59 rep-local hour on US DST-transition days).
+  assert.ok(/new Date\(today \+ 'T12:00:00Z'\)/.test(amb), 'week start anchors on the rep-local today');
+  assert.ok(/setUTCDate\(/.test(amb) && !/weekStartDate\.setDate\(/.test(amb),
+    'the subtraction is UTC calendar math, not script-tz setDate');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed

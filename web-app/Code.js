@@ -3146,9 +3146,16 @@ function getCallNotesAmbient() {
     const empTz = empTz_(emp);
     const today = Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
     // 7-day inclusive window for weekTotal (today and the 6 prior days).
-    const weekStartDate = new Date();
-    weekStartDate.setDate(weekStartDate.getDate() - 6);
-    const weekStart = Utilities.formatDate(weekStartDate, empTz, 'yyyy-MM-dd');
+    // Tz-audit 2026-08-17 (S2): derive the window's start FROM the rep-local
+    // `today` with a UTC-noon anchor (the client mDaysAgo_ idiom) — the old
+    // `new Date().setDate(-6)` subtracted in the SCRIPT tz (America/Chicago,
+    // DST-observing) and then formatted in empTz, so on the two US
+    // DST-transition days the window start landed a day off for reps whose
+    // local time sat in the 00:00–00:59 hour. Cosmetic, but the two ends of
+    // one window must not be derived in different zones.
+    const weekStartDate = new Date(today + 'T12:00:00Z');
+    weekStartDate.setUTCDate(weekStartDate.getUTCDate() - 6);
+    const weekStart = weekStartDate.toISOString().substring(0, 10);
 
     const sheet = getCallNotesSheet_(emp);
     let unresolvedActionCount = 0;
