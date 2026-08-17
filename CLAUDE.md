@@ -506,7 +506,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v8`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v9`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -2623,6 +2623,29 @@ this section before touching the relevant area.
   into the CRM before the network has acknowledged anything. Email
   and edit actions stay pessimistic — they need a server-issued noteId
   and can't easily undo.
+- **Pay statement — own-data payroll self-check (operator 2026-08-17).**
+  Time / PTO → Timesheet mode → **"View pay statement"** opens a per-period
+  modal: every day's punches (missing weekdays SHOWN — a silently absent day
+  is the discrepancy the view exists to catch), computed hours with
+  INV-176 incomplete-day flags (never silently zeroed), approved PTO with
+  `getLeaveDeduction_` days, period totals, and — when roster column P
+  carries an hourly rate — an **estimated gross** (worked hours × rate),
+  explicitly labeled an estimate ("excludes PTO pay, overtime rules, and
+  payroll adjustments — not a payslip"); no rate on file → hours-only,
+  stated. `getMyPayStatement(offset, repEmpId?)` is caller-scoped; the
+  repEmpId branch (a manager/admin viewing any rep — the operator's
+  own-data rule) is manager-gated (omnibus-pinned; note the gate case
+  targets the PH id because the omnibus runs AS the India rep — a self-view
+  legitimately succeeds). Periods resolve via the pure `payPeriodRange_`
+  (biweekly = the org-anchor boundary the ADP export uses per INV-18,
+  shifted 14 days per period; monthly = calendar arithmetic; offset clamped
+  0..6) and the day data reuses `buildTimesheetForEmployee_` wholesale. The
+  statement reads the LIVE Timesheet tab only, so with INV-153 archiving
+  enabled an old period past the window carries `archiveNote` and the modal
+  says rows may be missing (INV-187) — ask a manager for an export, which
+  DOES read through the archive. The rate never leaves its one reader —
+  see the column-P checklist entry. Manager-facing statement UI is a
+  follow-on (the server branch already supports it).
 - **Time / PTO merge (Round 2 · 8b).** The Phase-2 "Combined Clock +
   Timesheet" combined view was deliberately dismantled here. The Clock
   tab is now standalone (hero + actions + ribbon + cov + 3-cell ledger
@@ -5196,6 +5219,20 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-17 SECOND round (pay statement + Spanish share chart) adds ONE
+  operator data column and no other state** — no Script Properties, triggers,
+  or migrations. **Operator action: fill `Employees` column P (`PayRate`)**
+  with each rep's hourly rate (plain number; blank = that rep's statement
+  shows hours only — nothing breaks). `ROSTER_CACHE_KEY` bumped v8→v9, so
+  stale roster cache entries expire within 5 min of deploy. Behaviour changes
+  to expect: (a) Time / PTO → Timesheet mode gains a **"View pay statement"**
+  button — per-period punches/hours/PTO with an estimated-gross line once a
+  rate is on file (labeled an estimate, never a payslip); managers can pull
+  any rep's statement server-side (UI follow-on); (b) the **Spanish Inbox tab
+  gains a Resolution-share chart** — one bar per bilingual member incl. ZERO
+  bars for members who resolved nothing, with a dashed even-split marker and
+  no verdict colour (the judgement stays yours). **Post-deploy: run
+  `runAllTests()`** — including the new `getMyPayStatement(other)` gate case.
 - **The 2026-08-17 post-deploy operator round adds NO operator state** — no
   Script Properties, triggers, migrations, or CONFIG constants; one new
   per-browser localStorage key (`umsRemindFired`, count now seventeen).
@@ -5726,6 +5763,16 @@ manually for a fresh deploy or environment:
   half only. The `.sp-task` card CSS is SHARED in `styles.html` (the Dept
   Requests page consumes the same vocabulary — INV-185-adjacent: one
   component, two views, no drift). Endpoints/gates unchanged.
+  **Resolution-share chart (operator 2026-08-17):** between the KPI strip and
+  the list, one accent bar per resolver over the already-fetched resolved
+  list (count + % direct-labeled; manual mark-resolves attributed to the
+  clicker; an `(unattributed)` bucket stays visible). `getSpanishInboxResolved`
+  now ships `members` (the configured SPANISH_INBOX_MEMBERS, same gate) so a
+  member who resolved NOTHING renders as a ZERO bar — the "completed equally"
+  check is exactly about them. FACTS ONLY per the Coverage rule: no verdict
+  tone (a member may be part-time; the judgement is the operator's); a dashed
+  neutral marker shows the even-split share, and a capped scan is named. The
+  pure `spanishResolverShares_` is Node-pinned.
 - **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
   **AUTOMATIC**: every department email an agent sends from Call Notes
   (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
@@ -6128,11 +6175,23 @@ manually for a fresh deploy or environment:
   deployer needs edit access. NEVER point a retention purge at it —
   HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
   auto-managed test fixture twin (created on first `runAllTests`).
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v8'`** — bumped when the
-  `Schedule` column (O, Turn D per-rep shift override) landed (previously v7
-  for Departments/DeptRequests v2, v6 for `ManagerEmail`/T3, v5 for
-  CallNotesSheetId). After deploying, stale v7 cache entries expire naturally
-  within 5 min (or run `clearCaches_()` from the editor).
+- **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
+  OPTIONAL hourly pay rate per rep (plain number; `$18.50`-style entries
+  parse too). Drives the **estimated gross** line on the rep-facing pay
+  statement (Time / PTO → Timesheet mode → "View pay statement"); BLANK =
+  the statement shows hours only and says the rate is not on file. Read in
+  exactly ONE place (`empPayRate_` behind `getMyPayStatement` — the
+  INV-167/F14 boundary, Node-pinned) and never spread onto emp objects, so
+  no other endpoint can leak a rate to a teammate surface. Fill it by hand
+  in the sheet (the onboarding form deliberately doesn't ask — a rate is a
+  payroll decision, not an onboarding field); `ROSTER_CACHE_KEY` was bumped
+  to v9 for this column, so stale cache entries expire within 5 min.
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v9'`** — bumped for the `PayRate`
+  column (P, pay statement, 2026-08-17); previously v8 for the `Schedule`
+  column (O, Turn D per-rep shift override), v7 for Departments/DeptRequests
+  v2, v6 for `ManagerEmail`/T3, v5 for CallNotesSheetId. After deploying,
+  stale v8 cache entries expire naturally within 5 min (or run
+  `clearCaches_()` from the editor).
 - **Call-notes department list + state tax rates** are read by
   `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
   Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`)
@@ -6785,6 +6844,21 @@ quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
 exactly ONE property write (the coordinate cache), placed BEFORE the query
 geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
 `UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
+The 2026-08-17 SECOND round (pay statement + Spanish share) added three more
+→ **542** (the pay-statement pure pin — `payPeriodRange_` biweekly shift /
+clamp / monthly year-wrap + Feb length, `empPayRate_` tolerant-parse +
+legacy-15-col null; the rate-boundary pin — EVERY `[EMP.PAY_RATE]` read
+lives inside `empPayRate_`, emp objects never carry a rate, the other-rep
+branch is manager-gated, PTO status normalized, `archiveNote` wired, both
+client failure shapes render the error card, the money line labeled an
+estimate; and the Spanish share pin — zero-bars for idle members driven
+behaviourally, manual attribution, case-insensitive keying, the
+`(unattributed)` bucket, the server shipping `members`, the render slot on
+the fan-in path, and a NO-VERDICT-TONE scan over the chart renderer — 5
+mutations bite-checked; the rate-leak bite was reverted with `git checkout`
+and WIPED the uncommitted server block, re-applied from context — the
+batch-⑥ lesson re-learned: bites revert via python inverse edits ONLY, and
+the unit commits BEFORE its bite-checks where possible).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7042,7 +7116,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v8`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v9` — the PayRate column P) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the five Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`/`resolveSpanishThread`) are NO LONGER pure-manager-gated — they gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). `resolveSpanishThread` (operator feedback 2026-07-09) is the MANUAL mark-resolved for requests handled outside the thread: scope-guarded like `ThreadBody` (the thread must be addressed to the configured inbox — since cycle 8 an EXACT parsed-address match via `spanishAddrListIncludes_`, Node-pinned, not the old raw substring `indexOf` which passed `xspanishcalls@…`; and the Gmail scans use `spanishSearchQuery_`'s `{to: cc:}` brace-OR so Cc'd requests enter stats/pending/resolved too), locked (INV-01), idempotent, PHI-FREE (append-only `SpanishManualResolved` tab on the ADP sheet — threadId + resolver + ms only, the ms as a NUMBER cell so no date coercion; `SpanishInboxResolve` audit row carries the threadId only). All three readers consult `spanishManualResolvedMap_` (bounded 1000-row tail): pending drops the thread immediately (live-read), stats/resolved count it as resolved (in-thread reply wins when both exist; stats reflect within the 5-min cache TTL — the INV-43 posture). **Cycle-17 batch ⑥: all three readers scan via the named `SPANISH_THREAD_SCAN_MAX` (200 — the silent GmailApp.search bound) and return `truncated` (threads.length ≥ cap ⇒ possibly more; the INV-169 class)**; the Spanish tab renders "scan capped at 200 threads — figures may be incomplete; narrow the window" on the stats note and both list tabs (`spanishTruncNote_`). The Dashboard Spanish card deliberately omits the note (space); the field is additive. The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error on all five; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server

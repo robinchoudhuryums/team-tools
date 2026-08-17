@@ -453,6 +453,28 @@ Phase: idle (post-reflect) + operator-requested feature work:
   operator's call). Pure 532→539 (7 new pins + 2 updated for deliberate
   contract changes), DOM 71, 10 bite-checks. No stylesheet changes — no
   re-shoot owed. Docs synced same-commit per unit.
+- SECOND ROUND 2026-08-17 (operator follow-up — both built): (1) **Pay
+  statement** (operator approved storing pay rates): roster column P
+  `PayRate` (EMP.PAY_RATE, ROSTER_CACHE_KEY v8→v9/INV-28; read in exactly
+  ONE place — empPayRate_/empPayRateById_, the INV-167/F14 boundary,
+  pinned — never on emp objects); getMyPayStatement(offset, repEmpId?)
+  caller-scoped with a manager-gated other-rep branch (omnibus case
+  targets the PH id — the omnibus runs AS the India rep); pure
+  payPeriodRange_ (biweekly = INV-18 org-anchor −14d/period, monthly
+  calendar math, clamp 0..6); reuses buildTimesheetForEmployee_;
+  estimated gross ONLY with a rate, labeled estimate; archiveNote for
+  INV-153-archived periods (INV-187). Client modal off the Time/PTO
+  Timesheet rail (seq-guarded nav, A12 error cards, missing weekdays
+  SHOWN). (2) **Spanish resolution-share chart**: spanishResolverShares_
+  (pure, pinned) over the already-fetched resolved list; server ships
+  `members` so idle members render ZERO bars; facts-only (no verdict
+  tone, dashed even-split marker); scenario SHOT + eyeballed. Pure
+  539→542 (3 pins, 5 bite-checks), fixture updated, spanish-light-wide
+  re-shot 0/0. PROCESS: a `git checkout` bite-revert wiped the
+  uncommitted pay-statement server block (the batch-⑥ accident class
+  AGAIN) — re-applied from context; python inverse edits only, and
+  commit the unit before its bite-checks. OPERATOR ACTION: fill
+  Employees column P with hourly rates.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
