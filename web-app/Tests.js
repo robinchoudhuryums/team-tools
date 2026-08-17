@@ -4525,8 +4525,12 @@ function test_publicForm_tokenLifecycle() {
     _assertNull(getFormByToken(token).error, 'token still pending after consent rejection');
 
     // Size cap: an oversized signature gets a specific, actionable error and
-    // the token stays pending for retry (INV-96).
-    const bigSig = new Array(45002).join('x');   // > FORM_CELL_CHAR_LIMIT
+    // the token stays pending for retry (INV-96). The payload must carry the
+    // data:image/ prefix — the C17 batch-5 shape guard (a signature must BE a
+    // signature) correctly runs FIRST, so a bare 'xxx…' blob never reaches the
+    // size cap; this fixture predated the guard and surfaced as the one
+    // failure of the operator's 2026-08-17 full run.
+    const bigSig = 'data:image/png;base64,' + new Array(45002).join('x');   // > FORM_CELL_CHAR_LIMIT
     const tooBig = submitFormByToken(token, {
       q1: 'answer', signature: bigSig,
       _meta: { consentAgreed: true, openedAt: '2026-01-01T00:00:00' },
