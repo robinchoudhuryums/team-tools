@@ -9464,6 +9464,72 @@ test('getCallNotesAmbient derives both ends of its week window in the REP tz (tz
     'the subtraction is UTC calendar math, not script-tz setDate');
 });
 
+test('pay statement: pure period math + rate boundary (operator 2026-08-17)', () => {
+  const ctx = { EMP: { PAY_RATE: 15 } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'payPeriodRange_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'empPayRate_'), ctx);
+  const cur = { start: '2026-08-10', end: '2026-08-23' };
+  // Biweekly: offset shifts the CURRENT org-anchor range back 14d per period.
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 0).start, e: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 0).end },
+    { s: '2026-08-10', e: '2026-08-23' }, 'offset 0 is the current period');
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 1).start, e: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 1).end },
+    { s: '2026-07-27', e: '2026-08-09' }, 'offset 1 = 14 days back');
+  assert.strictEqual(ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 99).offset, 6, 'offset clamps at 6');
+  assert.strictEqual(ctx.payPeriodRange_('Biweekly', null, '2026-08-17', 0), null, 'no anchor range → null (friendly error upstream)');
+  // Monthly: calendar arithmetic, year wrap, real month lengths.
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Monthly', null, '2026-08-17', 0).start, e: ctx.payPeriodRange_('Monthly', null, '2026-08-17', 0).end },
+    { s: '2026-08-01', e: '2026-08-31' });
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Monthly', null, '2026-02-10', 3).start, e: ctx.payPeriodRange_('Monthly', null, '2026-02-10', 3).end },
+    { s: '2025-11-01', e: '2025-11-30' }, 'year wrap');
+  assert.strictEqual(ctx.payPeriodRange_('Monthly', null, '2026-03-05', 1).end, '2026-02-28', 'February length');
+  // Rate reader: tolerant parse, null on anything non-positive/unreadable —
+  // incl. a 15-col legacy row where column P does not exist yet.
+  const row = []; row[15] = '$18.50';
+  assert.strictEqual(ctx.empPayRate_(row), 18.5);
+  row[15] = '18.50/hr'; assert.strictEqual(ctx.empPayRate_(row), 18.5);
+  row[15] = '0';   assert.strictEqual(ctx.empPayRate_(row), null);
+  row[15] = 'abc'; assert.strictEqual(ctx.empPayRate_(row), null);
+  assert.strictEqual(ctx.empPayRate_(['a@b.c', 'ID1']), null, 'legacy 15-col row reads as no rate');
+});
+
+test('pay statement: the rate never leaves its one reader; other-rep view is manager-gated', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/Code.js'), 'utf8'));
+  // The INV-167/F14 boundary shape: column P is read in exactly ONE place
+  // (empPayRate_), so no endpoint can spread a rate onto emp objects and leak
+  // it to a teammate surface (the INV-24 discipline).
+  const reads = (code.match(/\[EMP\.PAY_RATE\]/g) || []).length;
+  const readerBody = nc(extractRawFunction('Code.js', 'empPayRate_'));
+  const readerReads = (readerBody.match(/\[EMP\.PAY_RATE\]/g) || []).length;
+  assert.ok(reads > 0, 'column P is read somewhere');
+  assert.strictEqual(reads, readerReads,
+    'EVERY read of roster column P lives inside empPayRate_ — the one reader');
+  assert.ok(!/payRate/.test(nc(extractRawFunction('Code.js', 'getEmployeeInfo_'))) &&
+            !/payRate/.test(nc(extractRawFunction('Code.js', 'lookupEmployeeById_'))),
+    'emp objects never carry the rate');
+  const stmt = nc(extractRawFunction('Code.js', 'getMyPayStatement'));
+  assert.ok(/if \(!caller\.isManager\) return \{ error: 'Manager access required\.' \};/.test(stmt),
+    'viewing another rep requires isManager (own-data rule)');
+  assert.ok(/empPayRateById_\(target\.id\)/.test(stmt), 'the rate resolves for the TARGET, via the one lookup path');
+  assert.ok(/toLowerCase\(\) !== 'approved'/.test(stmt), 'PTO status compared normalized (INV-183)');
+  assert.ok(/getTimesheetArchiveDays_\(\)/.test(stmt) && /archiveNote/.test(stmt),
+    'an archived-away period says so instead of presenting a short total as complete (INV-153/187)');
+  assert.ok(/estGross: rate != null \?/.test(stmt), 'gross only when a rate is on file');
+  // Client: both failure shapes render the error card; the nav is seq-guarded.
+  const load = nc(extractFunction('tc/script_timeoff.html', 'payStmtLoad_'));
+  assert.strictEqual((load.match(/errorStateHtml_\(/g) || []).length, 2, 'both failure shapes render errorStateHtml_ (A12)');
+  assert.ok(/seq !== PAY_STMT\.seq/.test(load), 'INV-156 seq guard on the period nav');
+  const html = nc(extractFunction('tc/script_timeoff.html', 'payStmtHtml_'));
+  assert.ok(/Estimate only/.test(html) && /Not a payslip/.test(html),
+    'the money line is labeled an estimate, never a payslip');
+  assert.ok(/Pay rate not on file/.test(html), 'a missing rate degrades to hours-only, stated');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed

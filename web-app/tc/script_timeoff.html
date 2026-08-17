@@ -494,10 +494,147 @@ function renderTimesheetSideRail_(d) {
         <span>${incompleteHtml}</span>
       </div>
     </div>
+    <button type="button" onclick="openPayStatement_(0)"
+      style="width:100%;margin-top:10px;padding:9px 12px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);color:var(--info-deep);cursor:pointer;text-align:center">
+      View pay statement &rarr;</button>
     <div class="card" style="margin-top:14px">
       <h2 class="card-label">Recent activity</h2>
       ${recentHtml}
     </div>`;
+}
+
+// ── PAY STATEMENT (operator 2026-08-17) ────────────────────────────────────
+// A per-period, own-data-only statement so a rep can check their hours for
+// discrepancies: every day's punches, computed hours (incomplete days flagged,
+// never silently zeroed — INV-176), approved PTO with deductions, period
+// totals, and — when roster column P carries an hourly rate — an ESTIMATED
+// gross, labeled as an estimate (worked hours × rate; no PTO pay / OT /
+// payroll adjustments). The server (getMyPayStatement) is caller-scoped; the
+// optional repEmpId branch is manager-gated for the manager/admin view.
+var PAY_STMT = { offset: 0 };
+
+function openPayStatement_(offset) {
+  PAY_STMT.offset = Math.max(0, Math.min(6, parseInt(offset, 10) || 0));
+  const ov = ensureOverlay('pay-stmt-overlay', { onClose: function () {
+    const el = document.getElementById('pay-stmt-overlay');
+    if (el) el.classList.remove('open');   // idempotent — no module state to tear down
+  }});
+  ov.innerHTML = '<div class="modal" style="max-width:660px;width:min(94vw,660px);max-height:86vh;overflow-y:auto">' +
+    '<h3 style="margin:0 0 8px">Pay statement</h3>' +
+    '<div id="pay-stmt-body">' + loSweep() + '</div></div>';
+  payStmtLoad_();
+}
+
+function payStmtNav_(delta) {
+  const next = PAY_STMT.offset + delta;
+  if (next < 0 || next > (PAY_STMT.maxOffset != null ? PAY_STMT.maxOffset : 6)) return;
+  PAY_STMT.offset = next;
+  payStmtLoad_();
+}
+
+function payStmtLoad_() {
+  const body = document.getElementById('pay-stmt-body');
+  if (!body) return;
+  body.innerHTML = loSweep();
+  PAY_STMT.seq = (PAY_STMT.seq || 0) + 1;
+  const seq = PAY_STMT.seq;   // INV-156 — a slow older-period response must not
+                              // overwrite a newer nav's render
+  google.script.run
+    .withSuccessHandler(function (d) {
+      if (seq !== PAY_STMT.seq) return;
+      const slot = document.getElementById('pay-stmt-body');
+      if (!slot) return;
+      if (!d || d.error) { slot.innerHTML = errorStateHtml_((d && d.error) || 'No data returned.'); return; }   // A12
+      PAY_STMT.maxOffset = d.maxOffset != null ? d.maxOffset : 6;
+      slot.innerHTML = payStmtHtml_(d);
+    })
+    .withFailureHandler(function (e) {
+      if (seq !== PAY_STMT.seq) return;
+      const slot = document.getElementById('pay-stmt-body');
+      if (slot) slot.innerHTML = errorStateHtml_('Failed to load the statement: ' + ((e && e.message) || e));   // A12
+    })
+    .getMyPayStatement(PAY_STMT.offset);
+}
+
+function payStmtFmtMoney_(n) {
+  try { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  catch (_) { return '$' + Number(n).toFixed(2); }
+}
+
+function payStmtHtml_(d) {
+  const off = d.period.offset || 0;
+  const maxOff = d.maxOffset != null ? d.maxOffset : 6;
+  const ptoByDate = {};
+  (d.pto || []).forEach(p => { ptoByDate[p.date] = p; });
+  const nav =
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <button type="button" class="month-nav-btn" onclick="payStmtNav_(1)" ${off >= maxOff ? 'disabled' : ''} aria-label="Older period">${icon('chevronLeft', 14)}</button>
+      <div style="flex:1;text-align:center;font-size:13px">
+        <b>${esc(d.period.start)} &rarr; ${esc(d.period.end)}</b>
+        <span style="color:var(--muted)"> · ${esc(d.period.cycle)}${off ? ' · ' + off + ' back' : ' · current'}</span>
+      </div>
+      <button type="button" class="month-nav-btn" onclick="payStmtNav_(-1)" ${off <= 0 ? 'disabled' : ''} aria-label="Newer period">${icon('chevronRight', 14)}</button>
+    </div>` +
+    (d.viewingOther ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Viewing: <b>${esc(d.viewingOther.name)}</b> (${esc(d.viewingOther.id)})</div>` : '');
+
+  // Day rows: every non-future weekday + any day with data. A weekday with NO
+  // punches renders muted — a silently missing day IS the discrepancy this
+  // view exists to catch.
+  let rows = '';
+  (d.days || []).forEach(x => {
+    if (x.isFuture) return;
+    const pto = ptoByDate[x.date];
+    if (x.isWeekend && !x.hasData && !pto) return;
+    const inOut = (x.clockIn && x.clockOut) ? `${dispTime(x.clockIn)} – ${dispTime(x.clockOut)}`
+      : (x.clockIn ? `${dispTime(x.clockIn)} – —` : '—');
+    const lunch = (x.lunchOut && x.lunchIn) ? ` · lunch ${dispTime(x.lunchOut)}–${dispTime(x.lunchIn)}` : '';
+    const adj = (x.adjClockIn || x.adjClockOut || x.adjLunchOut || x.adjLunchIn)
+      ? ' <span style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 3px">ADJ</span>' : '';
+    let right;
+    if (typeof x.hoursWorked === 'number') right = `<b>${fmtHrs(x.hoursWorked)}</b>`;
+    else if (x.inProgress) right = '<span style="color:var(--muted)">in progress</span>';
+    else if (x.isIncomplete) right = '<span style="color:var(--warning-deep)">incomplete</span>';
+    else if (pto) right = '';
+    else right = '<span style="color:var(--muted-3)">—</span>';
+    const ptoBit = pto
+      ? `<span style="color:var(--info-deep)">PTO · ${esc(pto.type)}${pto.days ? ' (' + esc(String(pto.days)) + 'd)' : ''}</span>`
+      : '';
+    rows += `<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">
+      <span style="flex:0 0 84px;color:var(--muted)">${esc(x.dayLabel)}</span>
+      <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
+      <span style="flex:0 0 auto">${right}</span>
+    </div>`;
+  });
+  if (!rows) rows = '<div class="no-data" style="padding:14px 0">No activity in this period yet</div>';
+
+  const ptoDays = (d.pto || []).reduce((s, p) => s + (Number(p.days) || 0), 0);
+  const totals =
+    `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:13px">
+      <span><b>${fmtHrs(Number(d.totalHours) || 0)}</b> <span style="color:var(--muted)">total</span></span>
+      <span><b>${esc(String(d.daysWorked || 0))}</b> <span style="color:var(--muted)">days worked</span></span>
+      ${d.incompleteCount ? `<span style="color:var(--warning-deep)"><b>${esc(String(d.incompleteCount))}</b> incomplete</span>` : ''}
+      ${ptoDays ? `<span><b>${esc(String(ptoDays))}</b> <span style="color:var(--muted)">PTO day(s)</span></span>` : ''}
+    </div>`;
+
+  // The money line is explicit about being an ESTIMATE and about what it
+  // excludes — this is a self-check surface, never a payslip.
+  const gross = (d.rate != null && d.estGross != null)
+    ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2);font-size:13px">
+         Estimated gross: <b>${payStmtFmtMoney_(d.estGross)}</b>
+         <span style="color:var(--muted)">(${fmtHrs(Number(d.totalHours) || 0)} × ${payStmtFmtMoney_(d.rate)}/h)</span>
+         <div style="font-size:11px;color:var(--muted);margin-top:3px">Estimate only — excludes PTO pay, overtime rules, and payroll adjustments. Not a payslip.</div>
+       </div>`
+    : `<div style="margin-top:10px;font-size:12px;color:var(--muted)">Pay rate not on file — hours shown only. Ask your manager if you expected a rate here.</div>`;
+
+  const archive = d.archiveNote
+    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">Part of this period may have been moved to the timesheet archive — older rows can be missing here. Ask a manager for an export if the totals look short.</div>`
+    : '';
+
+  const incomplete = d.incompleteCount
+    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">Incomplete days are NOT counted in the total — use Adjust (or ask your manager) to fix the missing punch.</div>`
+    : '';
+
+  return nav + rows + totals + gross + incomplete + archive;
 }
 
 // ── DAY DETAILS MODAL ─────────────────────────────────────────────────────

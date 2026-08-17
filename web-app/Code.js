@@ -334,6 +334,7 @@ const EMP = {
   MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
+  PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
 };
 /**
  * The ONE roster-INCLUSION predicate: a row counts as a CURRENT employee iff
@@ -618,7 +619,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v8';   // bumped: Schedule column O (per-rep shift override, Turn D)
+const ROSTER_CACHE_KEY = 'employee_roster_v9';   // bumped: PayRate column P (pay statement, operator 2026-08-17)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -1028,6 +1029,120 @@ function getCalendarData(year, month) {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     return buildCalendarForEmployee_(emp, year, month);
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Pay statement (operator 2026-08-17) ────────────────────────────────────
+// Detailed per-period payroll data so an agent can check their own hours for
+// discrepancies without asking payroll. Own-data-only by construction (the
+// caller's identity resolves the target); a manager/admin may view any rep via
+// the optional repEmpId (the getEmployeeTimesheetForManager posture). Hourly
+// pay rates live in roster column P (EMP.PAY_RATE) and are read ONLY here —
+// never spread onto emp objects, so no other endpoint can leak a rate.
+
+/** The ONE reader of roster column P: positive finite hourly rate, or null.
+ *  Tolerates "$18.50" / "18.50/hr" (strips everything but digits + dot);
+ *  a 15-col legacy row (no column P yet) reads as undefined → null. */
+function empPayRate_(row) {
+  const raw = String(row && row[EMP.PAY_RATE] != null ? row[EMP.PAY_RATE] : '').replace(/[^0-9.]/g, '');
+  const v = parseFloat(raw);
+  return (isFinite(v) && v > 0) ? v : null;
+}
+
+/** Rate lookup by employee id — the single consumer path for column P. */
+function empPayRateById_(empId) {
+  const rows = getEmployeeRosterRows_();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === String(empId).trim()) return empPayRate_(rows[i]);
+  }
+  return null;
+}
+
+/** PURE — the pay period `offset` periods before the current one (0 = current,
+ *  clamped 0..6). Biweekly shifts the CURRENT range (the org-anchor boundary
+ *  getCurrentBiweeklyRange_ resolves — INV-18: the same boundary the ADP
+ *  export uses) back 14 days per period; monthly is calendar-month arithmetic
+ *  off todayStr (UTC-noon anchors — DST-safe, year wrap handled). */
+function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
+  let off = parseInt(offset, 10);
+  if (isNaN(off) || off < 0) off = 0;
+  if (off > 6) off = 6;
+  if (String(cycle || '').toLowerCase() === 'biweekly') {
+    if (!currentBiweekly || !currentBiweekly.start || !currentBiweekly.end) return null;
+    const shift = function (iso) {
+      const d = new Date(iso + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() - off * 14);
+      return d.toISOString().substring(0, 10);
+    };
+    return { start: shift(currentBiweekly.start), end: shift(currentBiweekly.end), offset: off };
+  }
+  const y = parseInt(String(todayStr).substring(0, 4), 10);
+  const m = parseInt(String(todayStr).substring(5, 7), 10);
+  if (!y || !m) return null;
+  const first = new Date(Date.UTC(y, m - 1 - off, 1, 12));
+  const last  = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0, 12));
+  return { start: first.toISOString().substring(0, 10), end: last.toISOString().substring(0, 10), offset: off };
+}
+
+function getMyPayStatement(offset, repEmpId) {
+  try {
+    const caller = getEmployeeInfo_();
+    if (!caller) return { error: 'Employee not found.' };
+    let target = caller, viewingOther = null;
+    const reqId = String(repEmpId || '').trim();
+    if (reqId && reqId !== caller.id) {
+      // Only the rep themself, a manager, or an admin sees a statement — the
+      // operator's own-data rule. (isAdmin ⊆ isManager, so one check covers both.)
+      if (!caller.isManager) return { error: 'Manager access required.' };
+      target = lookupEmployeeById_(reqId);
+      if (!target) return { error: 'Employee not found.' };
+      viewingOther = { id: target.id, name: target.name };
+    }
+    const empTz = empTz_(target);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    const cycle = target.payCycle || 'Monthly';
+    const currentBiweekly = String(cycle).toLowerCase() === 'biweekly'
+      ? getCurrentBiweeklyRange_(todayStr) : null;
+    if (String(cycle).toLowerCase() === 'biweekly' && !currentBiweekly)
+      return { error: 'No biweekly pay anchor is configured — ask your manager.' };
+    const range = payPeriodRange_(cycle, currentBiweekly, todayStr, offset);
+    if (!range) return { error: 'Could not resolve the pay period.' };
+
+    const ts = buildTimesheetForEmployee_(target, range.start, range.end);
+    if (ts.error) return { error: ts.error };
+
+    // Approved PTO in the period (deduction days via getLeaveDeduction_ — the
+    // INV-72 authoritative map; status compared NORMALIZED, INV-183).
+    const pto = [];
+    const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    for (let i = 1; i < toRows.length; i++) {
+      if (String(toRows[i][TO.EMP_ID]).trim() !== target.id) continue;
+      if (String(toRows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
+      const d = normalizeDate_(toRows[i][TO.DATE]);
+      if (d < range.start || d > range.end) continue;
+      const type = String(toRows[i][TO.TYPE] || '');
+      pto.push({ date: d, type: type, days: getLeaveDeduction_(type).days });
+    }
+    pto.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+
+    const rate = empPayRateById_(target.id);
+    // INV-153 honesty: buildTimesheetForEmployee_ reads the LIVE tab only, so
+    // with archiving enabled an old period may be partially archived — say so
+    // rather than presenting a short statement as complete (INV-187).
+    const archiveDays = getTimesheetArchiveDays_();
+    const archiveNote = !!(archiveDays > 0 &&
+      daysBetween_(range.start, todayStr) > archiveDays);
+    return {
+      period: { start: ts.startDate, end: ts.endDate, cycle: cycle, offset: range.offset },
+      days: ts.days, totalHours: ts.totalHours, daysWorked: ts.daysWorked,
+      incompleteCount: ts.incompleteCount, timezone: ts.timezone,
+      pto: pto,
+      rate: rate,
+      estGross: rate != null ? Math.round(ts.totalHours * rate * 100) / 100 : null,
+      archiveNote: archiveNote,
+      maxOffset: 6,
+      viewingOther: viewingOther,
+    };
   } catch (err) { return { error: err.message }; }
 }
 
