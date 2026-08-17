@@ -1938,10 +1938,33 @@ function remindersSchedule_() {
   return (empState && empState.schedule) || (typeof CLK_SCHEDULE !== 'undefined' ? CLK_SCHEDULE : null);
 }
 
-/** Fires each reminder at most once per rep-local day. */
+/** Cross-window fired-set (operator 2026-08-17: main window + pinned pop-out
+ *  each run the shell ticker, so every reminder toasted+chimed TWICE).
+ *  localStorage is shared origin-wide — the same property that lets umsNotify
+ *  set in the main window govern the pop-out — so a key fired in ANY window
+ *  marks it for all. Blob shape {day, keys}; a different day resets it (the
+ *  in-memory set's own rollover rule). Privacy-mode browsers that throw on
+ *  localStorage degrade to per-window dedupe — the pre-fix behavior. */
+function remindFiredShared_(day) {
+  try {
+    var blob = JSON.parse(localStorage.getItem('umsRemindFired') || 'null');
+    if (blob && blob.day === day && blob.keys && typeof blob.keys === 'object') return blob;
+  } catch (e) {}
+  return { day: day, keys: {} };
+}
+
+/** Fires each reminder at most once per rep-local day — across EVERY open
+ *  window (main + per-tool pop-outs), not once per window. The two ticker
+ *  intervals are started seconds apart per window, so concurrent same-minute
+ *  ticks read the shared set before the other writes only in a sub-second
+ *  race — and that worst case is the pre-fix behavior, never worse. */
 function remindOnce_(key, msg, tone) {
   if (_remindFired[key]) return false;
+  var shared = remindFiredShared_(_remindDay);
+  if (shared.keys[key]) { _remindFired[key] = true; return false; }   // another window already fired it
   _remindFired[key] = true;
+  shared.keys[key] = true;
+  try { localStorage.setItem('umsRemindFired', JSON.stringify(shared)); } catch (e) {}
   notifyRemind_(msg, tone);
   return true;
 }

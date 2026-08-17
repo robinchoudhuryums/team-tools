@@ -7110,9 +7110,12 @@ const mopFn = (src, name, nextName) => {
 test('#1: range mode fills the you-vs-team section instead of dropping it', () => {
   assert.ok(/id="m-my-trends"/.test(mopPartial), 'range render emits the placeholder');
   const fill = mopFn(mopPartial, 'mFillRangeTrends_', 'mBestWorstDays_');
-  assert.ok(/viewCacheFresh_/.test(fill), 'cache-first — the Today preset already warmed the SWR cache');
+  assert.ok(/viewCacheFresh_/.test(fill), 'cache-first — the Yesterday preset already warmed the SWR cache');
   assert.ok(/seq !== M_STATE\.mySeq/.test(fill), 'a stale background response is dropped (INV-156)');
-  assert.ok(/getMyMetrics\(today\)/.test(fill), 'the fill source is the single-day Today payload');
+  // Operator 2026-08-17: the single-day preset moved to the previous workday,
+  // and the fill follows it so cache reuse holds (fetching today would be a
+  // second cold read of a day that has no CDR data anyway).
+  assert.ok(/getMyMetrics\(day\)/.test(fill), 'the fill source is the previous-workday payload');
   assert.ok(/rangeMode: true/.test(fill), 'the section heading names its own (trailing-30d) window');
 });
 
@@ -9340,6 +9343,94 @@ test('usage beacon: gated + capped server, throttled + preview-skipping client',
   const cn = fs.readFileSync(path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   assert.ok(/@media \(max-width: 700px\) \{\s*\n\s*\.cn-usage-row \{ grid-template-columns: minmax\(0, 1fr\) 44px 62px; \}/.test(cn),
     'the usage grid stacks its fixed tracks on a phone');
+});
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-17 — post-pilot-deploy notes.
+console.log('\noperator 2026-08-17: yesterday preset, cross-window reminder dedupe');
+
+test('mPrevWorkdayIso_ behavioral — Monday lands on Friday, weekends step back', () => {
+  // Pure over its argument (the empTz default is the zero-arg convenience).
+  const ctx = { isoDateTz: () => '2026-08-17', empTz: () => 'America/Chicago' };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mPrevWorkdayIso_'), ctx);
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-17'), '2026-08-14',   // Mon → Fri
+    'Monday\'s previous workday is Friday, not Sunday — CDR has no weekend rows');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-16'), '2026-08-14', 'Sunday → Friday');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-15'), '2026-08-14', 'Saturday → Friday');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-19'), '2026-08-18', 'midweek steps back one day');
+  assert.strictEqual(ctx.mPrevWorkdayIso_(), '2026-08-14', 'zero-arg defaults to the employee-tz today');
+});
+
+test('My Stats lands on the previous workday; Team Metrics deliberately keeps Today', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  // The rep-facing preset row: renamed AND repointed (CDR data is never
+  // same-day, so a Today preset always showed an empty day).
+  assert.ok(/mMyPresetBtn_\('Yesterday', 'yesterday'\)/.test(m), 'the single-day preset is labeled Yesterday');
+  assert.ok(!/mMyPresetBtn_\('Today'/.test(m), 'no Today preset remains on My Stats');
+  assert.ok(/M_STATE\.myDate = M_STATE\.myDate \|\| mPrevWorkdayIso_\(\);/.test(m),
+    'the default landing is the previous workday too');
+  const preset = nc(extractFunction('metrics/script_metrics.html', 'mMyPreset_'));
+  assert.ok(/key === 'yesterday'.*mPrevWorkdayIso_\(\)/.test(preset), 'the preset sets the previous workday');
+  // The range-mode trend fill reuses the SAME warmed cache key.
+  const fill = nc(extractFunction('metrics/script_metrics.html', 'mFillRangeTrends_'));
+  assert.ok(/mPrevWorkdayIso_\(\)/.test(fill) && !/mTodayIso_\(\)/.test(fill),
+    'the range-trend fill fetches the previous workday — the key the Yesterday preset warms');
+  // The manager tab keeps Today by operator decision (same-day note counts).
+  assert.ok(/mTeamPresetBtn_\('Today', 'today'\)/.test(m), 'Team Metrics keeps its Today preset');
+  // The single-day hero label is honest about which day it shows.
+  assert.ok(/data\.date === mPrevWorkdayIso_\(\) \? 'Yesterday'/.test(m),
+    'the hero period label says Yesterday only when the date IS the previous workday');
+});
+
+test('reminders dedupe across windows via the shared localStorage fired-set', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed
+  // localStorage — window A fires and writes; window B (fresh in-memory set,
+  // same storage) must NOT fire the same key; a day rollover resets.
+  const store = {};
+  const mkWin = () => {
+    const ctx = {
+      localStorage: {
+        getItem: (k) => (k in store ? store[k] : null),
+        setItem: (k, v) => { store[k] = String(v); },
+      },
+      JSON: JSON,
+      fired: [],
+      _remindFired: {},
+      _remindDay: '2026-08-17',
+    };
+    ctx.notifyRemind_ = (msg) => ctx.fired.push(msg);
+    vm.createContext(ctx);
+    vm.runInContext(extractFunction('script_core.html', 'remindFiredShared_'), ctx);
+    vm.runInContext(extractFunction('script_core.html', 'remindOnce_'), ctx);
+    return ctx;
+  };
+  const winA = mkWin(), winB = mkWin();
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:600', 'Break in 10 min')", winA), true,
+    'the first window fires the reminder');
+  assert.strictEqual(winA.fired.length, 1);
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:600', 'Break in 10 min')", winB), false,
+    'a second window sees the shared fired-set and stays quiet — the double-notify fix');
+  assert.strictEqual(winB.fired.length, 0, 'no toast/chime from the second window');
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:out', 'Clock out')", winB), true,
+    'a DIFFERENT key still fires normally');
+  // Day rollover: a next-day set ignores yesterday's blob.
+  const winC = mkWin(); winC._remindDay = '2026-08-18';
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-18:brk:600', 'Break in 10 min')", winC), true,
+    'a new day resets the shared set (the in-memory rollover rule)');
+  // Corrupt blob degrades to a fresh set, never a throw.
+  store.umsRemindFired = '{not json';
+  const winD = mkWin();
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:900', 'B2')", winD), true,
+    'a corrupt blob reads as a fresh set — per-window dedupe, the pre-fix behavior');
+  // Source: the write happens on the FIRE path only (a skip must not re-write).
+  const once = nc(extractFunction('script_core.html', 'remindOnce_'));
+  assert.ok(/umsRemindFired/.test(nc(extractFunction('script_core.html', 'remindFiredShared_'))),
+    'the shared set lives under the documented umsRemindFired key');
+  assert.ok(/shared\.keys\[key\]\) \{ _remindFired\[key\] = true; return false;/.test(once),
+    'another window\'s fire marks the in-memory set and returns without notifying');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
