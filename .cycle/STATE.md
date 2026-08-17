@@ -425,6 +425,34 @@ Phase: idle (post-reflect) + operator-requested feature work:
   entries, test narrative →532). CONTAINER ROLLED BACK TWICE this session
   (recovered via fetch+reset; the digest edits survived as a patch re-applied
   onto origin) — commit+push per unit, never batch.
+- POST-DEPLOY OPERATOR ROUND 2026-08-17 (seven notes; five implemented +
+  committed per-unit, one audited, one proposed): (1) My Stats single-day
+  preset renamed Today→Yesterday and repointed at the PREVIOUS WORKDAY
+  (mPrevWorkdayIso_, Monday→Friday; default landing + range-trend fill
+  follow; Team Metrics keeps Today by operator decision) — 74d558f.
+  (2) Cross-window reminder dedupe via the shared umsRemindFired
+  localStorage fired-set (main + pop-out each ran the ticker → double
+  toast+chime; INV-190 amended; keys 16→17) — 11e1c9f. (3) PPD send footer
+  gained Custom email… (the shared resolver validated kind:'custom' all
+  along; PMD/PAP parity) — 3cdb6f2. (4) Punch confirms in ONE round trip:
+  recordPunch is a thin wrapper attaching state=getEmployeeState() AFTER
+  recordPunchCore_'s lock released (M-1 contract intact in the core; client
+  applies the riding state, fallback refetch kept for deploy skew) —
+  a0fa90c. (5) kbSearchScore_ rebalanced (density +1/extra occurrence cap 2,
+  coverage (matched−1)×3, title bonus capped +4/section — the flooding
+  mechanism behind "my result was further down"; phrase +3; doc-level
+  title-only hits stay uncapped) — a37d8e2. (6) TZ AUDIT (Explore agent,
+  full sweep): the mass-punch-adjustment path is CLEAN end to end; one fix
+  shipped (S2 — getCallNotesAmbient's week window start was script-tz math
+  formatted in empTz; now rep-local UTC-noon anchored) — 0c4d4f7; S1
+  (training digest's manager-tz today reaching the rep-facing nudge —
+  defensible, fires when zones agree) and S3 (getMonthRange_ correct by
+  coincidence, Chicago always behind Kolkata) documented below as latent.
+  (7) Payroll self-view: PROPOSED to the operator, not built (hours-only
+  statement mirroring the ADP export derivation vs storing pay rates is the
+  operator's call). Pure 532→539 (7 new pins + 2 updated for deliberate
+  contract changes), DOM 71, 10 bite-checks. No stylesheet changes — no
+  re-shoot owed. Docs synced same-commit per unit.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
@@ -585,6 +613,19 @@ Updated: 2026-08-11
 - CARRIED (cycle-13 A5), DEV PROJECT ONLY: set `INSTANCE_IS_PROD=false`.
 
 ## Open follow-on items
+- TZ-audit 2026-08-17 latents (documented, deliberately unfixed): S1 —
+  sendTrainingOverdueDigest's manager-tz todayIso reaches the rep-facing
+  overdue-docs nudge + trainDeriveStatus_, so between rep-midnight and CST
+  midnight a rep's tab and the manager dashboard can disagree on "overdue"
+  (emails fire at 7am CST when the zones agree — cosmetic); S3 —
+  getMonthRange_ reads script-tz (Chicago) calendar fields inside a
+  CONFIG.TIMEZONE (Kolkata) caller — correct only because Chicago is always
+  behind Kolkata; revisit if AUTO_EXPORT_HOUR_IST or the script tz changes.
+- TZ-audit non-tz note: updatePunchAdjustStatus re-checks ADJUST_WINDOW_DAYS
+  at approval (INV-107) but NOT the OLD_ADJUST_ALERT_DAYS reason
+  requirement — a no-reason request filed at daysBack ≤ 7 that AGES in the
+  queue past 7 approves without a reason. Policy call (deny-and-ask vs
+  approve; rejecting punishes the rep for manager latency) — operator's.
 - NEW (batch ⑦ error scenario surfaced it): when getReferenceTree fails, the
   Reference LANDING pane renders an indefinite loSweep loader below the
   tree's error card (no failure branch of its own) — Low, photographed in
