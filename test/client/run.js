@@ -9574,6 +9574,28 @@ test('Spanish resolution share: zero-bars for idle members, facts only, no verdi
   assert.ok(/scan capped/.test(chart), 'a truncated scan is named (INV-169) rather than presenting shares as complete');
 });
 
+test('test accounts: setup re-onboards, cleanup re-offboards (the INV-183 corollary on our own rows)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // The operator offboarded the TEST accounts in the app (email cleared, ID
+  // kept — INV-183) so they stop rendering beside real agents; the old
+  // ID-keyed dedupe then never repaired them and 119 integration tests
+  // cascaded to "Employee not found." Setup must RESTORE the canonical email
+  // on an existing row, not merely skip it.
+  const setup = nc(extractRawFunction('Tests.js', 'setupTestEnvironment'));
+  assert.ok(!/existingIds\.has\(/.test(setup), 'the skip-if-ID-exists dedupe is gone');
+  assert.ok(/rowIndexById/.test(setup) &&
+            /sheet\.getRange\(at \+ 1, EMP\.EMAIL \+ 1\)\.setValue\(row\[EMP\.EMAIL\]\)/.test(setup),
+    'an existing TEST row with a wrong/blank email gets its canonical email restored');
+  // And cleanup leaves the suite's rows OFFBOARDED again, so between runs the
+  // test accounts are invisible on every empRosterEmail_-guarded surface.
+  const cleanup = nc(extractRawFunction('Tests.js', 'cleanupTestData'));
+  assert.ok(/indexOf\('TEST_'\) !== 0\) continue;[\s\S]{0,300}EMP\.EMAIL \+ 1\)\.setValue\(''\)/.test(cleanup),
+    'cleanup clears every TEST_ row\'s email (offboard-style — ID/name/balances/fixture id kept)');
+  const off = cleanup.indexOf(".setValue('')");
+  const inval = cleanup.lastIndexOf('invalidateRosterCache_();');
+  assert.ok(off >= 0 && inval > off, 'the roster cache is invalidated AFTER the re-offboard');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed

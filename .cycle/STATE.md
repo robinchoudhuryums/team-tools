@@ -479,6 +479,16 @@ Phase: idle (post-reflect) + operator-requested feature work:
   currency, S79/S80 scenarios, tz-latents note) are MERGED to main as
   **PR #169** (cac2c0d, CI green both runs); branch restarted from main.
   Deploy remains ONE operator action.
+- POST-#169 OPERATOR TEST RUN (2026-08-17): runAllTests reported 119
+  failures — ROOT CAUSE was operator data, not code: they had OFFBOARDED
+  the TEST accounts in the app (real agents starting; test rows rendered
+  beside them on team surfaces), which clears ONLY the email (INV-183),
+  and setupTestEnvironment's ID-keyed dedupe never repaired the rows →
+  every email-keyed impersonation nulled and cascaded. FIX (5e4e6af +
+  pin): setup re-onboards its rows (canonical email restored), cleanup
+  re-offboards at the end of every run — self-healing + invisible to
+  agents between runs. Pure 543 (1 pin, 2 bite-checks). Docs: gotcha,
+  INV-21 amendment, S2. Operator to REDEPLOY + re-run runAllTests.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
