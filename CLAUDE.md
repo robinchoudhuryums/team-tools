@@ -7091,7 +7091,7 @@ every prior cycle shipped blind. The CI workflow runs it as a second step
 
 A third, **static-render VISUAL harness** lives in `test/visual/` (adopted from
 the cycle-11 visual audit): `node build.mjs` inlines the production partials
-into a standalone `page.html`, and `node shoot.mjs` renders a 39-scenario
+into a standalone `page.html`, and `node shoot.mjs` renders a 40-scenario
 matrix (tool × wide/compact/mobile × light/dark) in headless Chromium with a
 fixture-backed `google.script.run` mock, writing `shots/*.png` + `report.json`.
 It is **manual / on-demand like the editor suite — NOT in CI** (needs a
@@ -7400,7 +7400,7 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
-3. Actually OPEN the 39 PNGs. Compare light vs dark and wide vs compact vs
+3. Actually OPEN the 40 PNGs. Compare light vs dark and wide vs compact vs
    mobile for the same scenario; that pairing is what surfaces theme and
    breakpoint defects. **Every rep-facing tool has a mobile scenario since
    cycle-16 Batch 4** — before that the matrix shot five of nine tools at ONE
@@ -7418,7 +7418,10 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    (the Reference LANDING pane hangs on a loader when the tree fetch fails).
    The operator-feedback round (2026-08-06) added the two redesigned status
    views — `spanish-light-wide` + `deptreq-light-wide` (fixtures cover all
-   four DR tones + an overdue Spanish card) — taking the matrix to **39**.
+   four DR tones + an overdue Spanish card) — and the 2026-08-17
+   full-width round added `spanish-light-mobile` (the new `.sp-top` head+chart
+   grid stacks <1024px — the breakpoint is on camera), taking the matrix to
+   **40**.
    **Still uncovered: Manage → Coverage/Punctuality, Sent Forms, EmpDocs
    My Docs, and modal/overlay states** (the matrix shoots tab landings only),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile

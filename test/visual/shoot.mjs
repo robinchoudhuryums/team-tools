@@ -94,6 +94,9 @@ const SCENARIOS = [
   // pending card, so the tone vocabulary itself is on camera.
   ['spanish-light-wide',   { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', ''],
   ['deptreq-light-wide',   { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
+  // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
+  // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
+  ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
