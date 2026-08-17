@@ -17876,19 +17876,45 @@ function kbChunkTruncate_(md, cap) {
 /** PURE: weighted token score for one section. 0 unless the section's own
  *  text (heading or body) matches at least one token — a title-only match
  *  must NOT flood every section of that doc into the results (the caller
- *  emits a single doc-level hit for that case instead). Heading hits (2)
- *  outrank body hits (1); title hits add 3 per token on qualifying sections;
- *  an exact-phrase hit adds 2. */
+ *  emits a single doc-level hit for that case instead).
+ *  Weights (operator 2026-08-17 rebalance — with a growing KB the old flat
+ *  weights let every section of a title-matching doc outrank the one section
+ *  actually ABOUT the query; a 2-token title bonus alone, +6 on each of its
+ *  sections, tied or beat a section matching the whole query in its text):
+ *   - per token, best location: heading +2, body +1 (unchanged)
+ *   - DENSITY: extra body occurrences +1 each, capped +2 per token — a
+ *     section about the topic outranks one mentioning it in passing
+ *   - COVERAGE: (distinct section-matched tokens − 1) × 3 — matching MORE of
+ *     the query dominates matching one word anywhere (deliberately counts
+ *     matched tokens rather than requiring the full set, so synonym-expanded
+ *     tokens the author never typed can't make full coverage unreachable)
+ *   - title: +3 per matching token CAPPED at +4 total — a doc-level signal,
+ *     not a per-section one (the uncapped form was the flooding mechanism;
+ *     the doc-level title-only hit in searchReference stays uncapped, since
+ *     "the doc named exactly this" belongs at the top)
+ *   - exact phrase in heading/body: +3 (was +2 — a typed phrase appearing
+ *     verbatim is the strongest content signal the scorer sees) */
 function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
   let score = 0;
-  let sectionHit = false;
+  let matched = 0;
   tokens.forEach(function (t) {
-    if (headLc.indexOf(t) >= 0) { score += 2; sectionHit = true; }
-    else if (bodyLc.indexOf(t) >= 0) { score += 1; sectionHit = true; }
+    // Bounded occurrence count in the body (cap 4 — density tops out below).
+    let cnt = 0, at = bodyLc.indexOf(t);
+    while (at >= 0 && cnt < 4) { cnt++; at = bodyLc.indexOf(t, at + t.length); }
+    const headHit = headLc.indexOf(t) >= 0;
+    if (headHit) { score += 2; matched++; }
+    else if (cnt > 0) { score += 1; matched++; }
+    else return;
+    // A heading-matched token's body occurrences are ALL extra signal; a
+    // body-matched token's first occurrence already scored above.
+    score += Math.min(headHit ? cnt : cnt - 1, 2);
   });
-  if (!sectionHit) return 0;
-  tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) score += 3; });
-  if (q.length >= 4 && (headLc.indexOf(q) >= 0 || bodyLc.indexOf(q) >= 0)) score += 2;
+  if (!matched) return 0;
+  score += (matched - 1) * 3;
+  let title = 0;
+  tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) title += 3; });
+  score += Math.min(title, 4);
+  if (q.length >= 4 && (headLc.indexOf(q) >= 0 || bodyLc.indexOf(q) >= 0)) score += 3;
   return score;
 }
 

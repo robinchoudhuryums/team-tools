@@ -2765,15 +2765,40 @@ test('kbSearchScore_: section-text hit required; heading > body; title + phrase 
   assert.strictEqual(kbSearchScore_(['war'], 'war', '', '', 'warranty info'), 1, 'body hit = 1');
   assert.strictEqual(kbSearchScore_(['war'], 'war', '', 'warranty terms', 'x'), 2, 'heading hit = 2');
   assert.strictEqual(kbSearchScore_(['war'], 'war', 'warranty guide', '', 'warranty info'), 4, 'body 1 + title 3');
-  // a 4+ char single-token query that matches IS its own exact phrase (+2)
-  assert.strictEqual(kbSearchScore_(['warranty'], 'warranty', '', '', 'warranty info'), 3, 'body 1 + phrase 2');
-  // multi-token: each distinct token scores its best location (no phrase
-  // bonus here — the exact phrase appears in neither heading nor body)
+  // a 4+ char single-token query that matches IS its own exact phrase (+3)
+  assert.strictEqual(kbSearchScore_(['warranty'], 'warranty', '', '', 'warranty info'), 4, 'body 1 + phrase 3');
+  // multi-token: each distinct token scores its best location, and matching
+  // MORE of the query earns the coverage bonus ((matched−1)×3)
   assert.strictEqual(kbSearchScore_(['wheelchair', 'repair'], 'wheelchair repair', '', 'repair process', 'wheelchair steps'),
-    3, 'heading hit 2 + body hit 1');
+    2 + 1 + 3, 'heading hit 2 + body hit 1 + coverage 3');
   // exact-phrase bonus when the full query appears
   assert.strictEqual(kbSearchScore_(['return', 'policy'], 'return policy', '', '', 'our return policy is simple'),
-    1 + 1 + 2, 'two body hits + phrase bonus');
+    1 + 1 + 3 + 3, 'two body hits + coverage + phrase bonus');
+});
+test('kbSearchScore_ rebalance (operator 2026-08-17): density counts, the title bonus caps, coverage beats flooding', () => {
+  // DENSITY — a section about the topic outranks one mentioning it once
+  // (extra body occurrences +1 each, capped +2 per token).
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', '', 'war war war war zzz'), 1 + 2,
+    'body 1 + density capped at 2');
+  assert.ok(kbSearchScore_(['war'], 'war', '', '', 'war war zzz') >
+            kbSearchScore_(['war'], 'war', '', '', 'war zzz'), 'twice beats once');
+  // A heading-matched token's body occurrences are ALL extra signal.
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', 'warranty', 'war zzz'), 2 + 1,
+    'heading 2 + one body occurrence as density');
+  // TITLE CAP — a doc-level signal, not per-section: 2 title tokens are +4,
+  // not +6 (the flooding mechanism).
+  assert.strictEqual(
+    kbSearchScore_(['return', 'policy'], 'return policy', 'return policy doc', '', 'our return policy is simple'),
+    1 + 1 + 3 + 4 + 3, 'two body hits + coverage + CAPPED title + phrase');
+  // THE MOTIVATING SCENARIO: the section actually ABOUT the query must beat a
+  // stray section of a doc whose TITLE matches. Under the old flat weights
+  // these TIED at 7 — which is exactly "the info I wanted was further down".
+  const wanted = kbSearchScore_(['cpap', 'cleaning'], 'cpap cleaning',
+    'cpap basics', 'cleaning your cpap', 'rinse the cpap hose weekly');
+  const flooded = kbSearchScore_(['cpap', 'cleaning'], 'cpap cleaning',
+    'cpap cleaning guide', 'warranty', 'cleaning mentioned once');
+  assert.ok(wanted > flooded,
+    'full-coverage heading section outranks a title-flooded stray section (' + wanted + ' vs ' + flooded + ')');
 });
 
 console.log('\nkb — drawer pure helpers (recents list + title-match suggestions)');
