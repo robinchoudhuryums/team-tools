@@ -1327,6 +1327,26 @@ function animateListSwap_(container, selector) {
   } catch (_) { /* decoration only */ }
 }
 
+/* ── Display-capped card list (operator 2026-08-17) ──────────────────────
+   A long-lived deployment's request-tracking card lists (Spanish Inbox +
+   Dept Requests — the shared .sp-tasks vocabulary) grow without bound, so a
+   section renders at most `shown` cards plus a real "Show more" <button>
+   (INV-173) that reveals the next SP_TASKS_PAGE. The cap changes what is
+   RENDERED, never what is REPORTED — section headers keep the full counts
+   (INV-169), and the button itself states how many are not shown. */
+var SP_TASKS_CAP = 12;    // initial cards per section
+var SP_TASKS_PAGE = 24;   // revealed per "Show more" click
+function spCappedTasksHtml_(cards, shown, onclick, extraStyle) {
+  var cap = Math.max(1, Number(shown) || SP_TASKS_CAP);
+  var hidden = Math.max(0, cards.length - cap);
+  var more = hidden
+    ? '<div class="sp-more-row"><button type="button" class="toolbar-tab" onclick="' + onclick + '">Show ' +
+      Math.min(hidden, SP_TASKS_PAGE) + ' more · ' + hidden + ' not shown</button></div>'
+    : '';
+  return '<div class="sp-tasks"' + (extraStyle ? ' style="' + extraStyle + '"' : '') + '>' +
+    cards.slice(0, cap).join('') + '</div>' + more;
+}
+
 /** 2nd-pass motion §6 — settle a row in place on a mutation (mark-complete /
  *  resolve / accept): dim + tint, strike the label, draw a check. Keeps the row
  *  (good for context / undo affordance). Options:

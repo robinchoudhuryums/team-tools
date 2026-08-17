@@ -1967,6 +1967,7 @@ function spanishHeadHtml_(d) {
 function spanishRender_(d, opts) {
   opts = opts || {};
   var body = document.getElementById('spanish-body'); if (!body) return;
+  SPANISH_STATE.shown = {};   // display cap resets on every full render
   if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
   // Operator 2026-08-17 — full-width layout: the summary head (note + strip +
   // filter chips) and the resolution-share chart sit SIDE BY SIDE at wide
@@ -2123,6 +2124,15 @@ function spanishShareHtml_() {
   return html + '</div>';
 }
 
+/** Operator 2026-08-17 — display cap: reveal the next SP_TASKS_PAGE cards of a
+ *  section. Per-section state; reset on every full render (enter / days
+ *  change) so a stale expansion never pins a huge DOM across windows. */
+function spanishShowMore_(key) {
+  SPANISH_STATE.shown = SPANISH_STATE.shown || {};
+  SPANISH_STATE.shown[key] = ((SPANISH_STATE.shown[key] || SP_TASKS_CAP)) + SP_TASKS_PAGE;
+  spanishRenderList_();
+}
+
 function spanishRenderShare_() {
   var slot = document.getElementById('spanish-share');
   if (slot) slot.innerHTML = spanishShareHtml_();
@@ -2146,7 +2156,8 @@ function spanishRenderList_() {
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
           spanishTruncNote_(pd) + '</div>' +
-          '<div class="sp-tasks" style="margin-bottom:16px">' + pending.map(spanishTaskCard_).join('') + '</div>';
+          spCappedTasksHtml_(pending.map(spanishTaskCard_), (SPANISH_STATE.shown || {}).pending,
+            "spanishShowMore_('pending')", 'margin-bottom:16px');
       }
     }
   }
@@ -2162,7 +2173,8 @@ function spanishRenderList_() {
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + resolved.length +
           spanishTruncNote_(rd) + '</div>' +
-          '<div class="sp-tasks">' + resolved.map(spanishResolvedCard_).join('') + '</div>';
+          spCappedTasksHtml_(resolved.map(spanishResolvedCard_), (SPANISH_STATE.shown || {}).resolved,
+            "spanishShowMore_('resolved')");
       }
     }
   }

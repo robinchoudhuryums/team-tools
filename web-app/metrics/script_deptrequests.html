@@ -14,6 +14,7 @@ const DR_STATE = { data: null };
 
 function enterDeptRequestsView(area) {
   stopClock();
+  DR_SHOWN = {};   // display cap resets on view enter
   const requestedView = currentView;
   renderLoading(area, 'Loading requests…', 'outbox');
   google.script.run
@@ -41,6 +42,16 @@ var DR_LAST_DATA = null;
 // chip toggles its department in/out; the "All departments" chip clears.
 // Client-side over the cached payload, like the status chips — no refetch.
 var DR_DEPT_FILTER = [];
+
+// Operator 2026-08-17 — display cap: per-section shown counts (mine /
+// incoming / team). Reset on view enter; "Show more" bumps by SP_TASKS_PAGE.
+var DR_SHOWN = {};
+
+function drShowMore_(key) {
+  DR_SHOWN[key] = (DR_SHOWN[key] || SP_TASKS_CAP) + SP_TASKS_PAGE;
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) drRender_(area, DR_LAST_DATA, null);
+}
 
 function drSetFilter_(f) {
   DR_FILTER = (f === 'open' || f === 'resolved') ? f : 'all';
@@ -174,7 +185,7 @@ function drRender_(area, data, errorMsg) {
       '</div>'
     : '';
   const mineHtml = mine.length
-    ? '<div class="sp-tasks">' + mine.map(drRequestCardHtml_).join('') + '</div>'
+    ? spCappedTasksHtml_(mine.map(drRequestCardHtml_), DR_SHOWN.mine, "drShowMore_('mine')")
     : (mineAll.length
         ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + ' in this list.</div>'
         : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
@@ -190,7 +201,7 @@ function drRender_(area, data, errorMsg) {
   if (data && data.myDepts && data.myDepts.length) {
     const inc = (data.incoming || []).filter(drDeptMatch_);
     const incHtml = inc.length
-      ? '<div class="sp-tasks">' + inc.map(drRequestCardHtml_).join('') + '</div>'
+      ? spCappedTasksHtml_(inc.map(drRequestCardHtml_), DR_SHOWN.incoming, "drShowMore_('incoming')")
       : '<div class="dr-empty">No open requests to your department right now.</div>';
     incomingSection =
       '<div class="day-section-label" style="margin:14px 0 8px">Incoming · ' + esc(data.myDepts.join(', ')) + ' · ' + inc.length +
@@ -280,7 +291,7 @@ function drManagerSectionHtml_(data) {
   const open = openAllTeam.filter(drDeptMatch_);
   const openCount = DR_DEPT_FILTER.length ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
-    ? '<div class="sp-tasks">' + open.map(drRequestCardHtml_).join('') + '</div>'
+    ? spCappedTasksHtml_(open.map(drRequestCardHtml_), DR_SHOWN.team, "drShowMore_('team')")
     : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
   return '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +

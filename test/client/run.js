@@ -9679,5 +9679,51 @@ test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', ()
     'the share card fills its .sp-top column');
 });
 
+test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: the shared helper renders at most `shown` cards and a REAL
+  // <button> (INV-173) naming both the reveal step and the hidden count.
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext('var SP_TASKS_CAP = 12; var SP_TASKS_PAGE = 24;', ctx);
+  vm.runInContext(extractFunction('script_core.html', 'spCappedTasksHtml_'), ctx);
+  const cards = [];
+  for (let i = 0; i < 50; i++) cards.push('<div class="sp-task">c' + i + '</div>');
+  const h = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ')', ctx);
+  assert.strictEqual((h.match(/class="sp-task"/g) || []).length, 12, 'default cap renders exactly SP_TASKS_CAP cards');
+  assert.ok(/<button type="button"[^>]*>Show 24 more · 38 not shown<\/button>/.test(h),
+    'the Show-more control is a real button (INV-173) stating step + hidden count (INV-169)');
+  const h2 = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ', 36)', ctx);
+  assert.strictEqual((h2.match(/class="sp-task"/g) || []).length, 36, 'a bumped shown count renders more');
+  assert.ok(/Show 14 more · 14 not shown/.test(h2), 'the final page reveals only what remains');
+  const h3 = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards.slice(0, 5)) + ')', ctx);
+  assert.strictEqual((h3.match(/class="sp-task"/g) || []).length, 5, 'a short list renders whole');
+  assert.ok(!/button/.test(h3), 'no Show-more when nothing is hidden');
+  assert.ok(/style="margin-bottom:16px"/.test(
+    vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ', 12, "x()", "margin-bottom:16px")', ctx)),
+    'extraStyle passes through to the grid');
+  // Wiring: every .sp-tasks card list on BOTH pages routes through the helper
+  // with a distinct per-section key, and each page RESETS its shown-state on a
+  // full render so a stale expansion never pins a huge DOM.
+  const met = nc(extractScript('metrics/script_metrics.html'));
+  assert.ok(/spCappedTasksHtml_\(pending\.map\(spanishTaskCard_\)[\s\S]{0,120}spanishShowMore_\('pending'\)/.test(met) &&
+            /spCappedTasksHtml_\(resolved\.map\(spanishResolvedCard_\)[\s\S]{0,120}spanishShowMore_\('resolved'\)/.test(met),
+    'both Spanish sections are capped with their own keys');
+  assert.ok(/SPANISH_STATE\.shown = \{\};/.test(nc(extractFunction('metrics/script_metrics.html', 'spanishRender_'))),
+    'Spanish resets the cap on every full render');
+  const drs = nc(extractScript('metrics/script_deptrequests.html'));
+  ['mine', 'incoming', 'team'].forEach((k) => {
+    assert.ok(new RegExp("spCappedTasksHtml_\\([\\s\\S]{0,80}drShowMore_\\('" + k + "'\\)").test(drs),
+      'DR ' + k + ' list is capped with its own key');
+  });
+  assert.ok(/DR_SHOWN = \{\};/.test(nc(extractFunction('metrics/script_deptrequests.html', 'enterDeptRequestsView'))),
+    'DR resets the cap on view enter');
+  assert.ok(!/'<div class="sp-tasks"[^']*'\s*\+\s*(pending|resolved|mine|inc|open)\.map/.test(met + drs),
+    'no uncapped .sp-tasks card list remains on either page');
+  // INV-169 — the section headers still report the FULL counts beside the cap.
+  assert.ok(/Pending · ' \+ pending\.length/.test(met) && /Resolved · ' \+ resolved\.length/.test(met),
+    'Spanish headers keep full counts');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
