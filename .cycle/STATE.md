@@ -475,6 +475,10 @@ Phase: idle (post-reflect) + operator-requested feature work:
   AGAIN) — re-applied from context; python inverse edits only, and
   commit the unit before its bite-checks. OPERATOR ACTION: fill
   Employees column P with hourly rates.
+  Both 2026-08-17 rounds + the /sync-docs pass (README four-tab Metrics
+  currency, S79/S80 scenarios, tz-latents note) are MERGED to main as
+  **PR #169** (cac2c0d, CI green both runs); branch restarted from main.
+  Deploy remains ONE operator action.
 - NEXT (unbuilt, from the same enhancement list): Offerings reference view (the
   Intake catalog is currently unreachable without running a 46-question intake),
   print stylesheet, per-article owner, inline knowledge check. Operator was
