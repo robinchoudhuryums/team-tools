@@ -708,6 +708,27 @@ Updated: 2026-08-11
   `test_updateTimeOff_mixedCaseStatusCell` editor case is noted as a
   follow-on to write AND run at next deploy.
 
+## Operator round — 2026-08-17 THIRD (post-285/286 re-run)
+- The one remaining editor failure (`publicForm_tokenLifecycle`) was a
+  FIXTURE artifact: its oversized signature lacked the `data:image/` prefix
+  the C17-⑤ shape guard (correctly) rejects before the size cap. Fixture
+  fixed (729e99d); next `runAllTests()` should be 286/286. Guard order
+  verified correct — do NOT reorder the guards to satisfy a fixture.
+- Full-width Spanish Inbox + Dept Requests (fcab21e): `.sp-tasks` 920px cap
+  dropped; both views widen to 1480px via `:has(#spanish-body)` /
+  `:has(#dr-body)` in their OWN partials (drRender_ wraps BOTH branches);
+  Spanish head + share chart side-by-side in `.sp-top` (stacks <1024px, no
+  compact override owed — the breakpoint covers the 480px pop-out); inline
+  660px telemetry/share caps dropped. Pin + 3 bites.
+- Display cap (8b3fbee): `spCappedTasksHtml_` in script_core — 12 cards per
+  section + "Show 24 more · N not shown" real button; all five card sections
+  (Spanish pending/resolved, DR mine/incoming/team) capped with per-section
+  shown-state reset on full render/enter. INV-169 counts stay in headers.
+  Pin + 4 bites. Pure 545, DOM 71.
+- Operator note to relay: screenshot showed "no member list set — counting
+  any reply as resolved" → set SPANISH_INBOX_MEMBERS for member-accurate
+  share attribution + zero bars.
+
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
 improvements #1–#10 are implemented AND doc-synced; the operator authorized

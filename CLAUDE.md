@@ -5231,6 +5231,21 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-17 THIRD round (full-width request pages + display cap +
+  the one-test fixture fix) adds NO operator state** — no Script Properties,
+  triggers, migrations, or CONFIG constants; two client-code constants
+  (`SP_TASKS_CAP`=12, `SP_TASKS_PAGE`=24) bound the card lists. Behaviour
+  changes to expect post-deploy: (a) **Spanish Inbox and Dept Requests use
+  the full monitor width** (view widens to 1480px like the Dashboard; the
+  card grid reflows to up to 4-up; Spanish puts the summary strip and the
+  resolution-share chart side by side, stacking below 1024px); (b) **each
+  card section renders at most 12 cards** with a "Show N more · M not shown"
+  button revealing 24 per click — section headers keep the full counts, so
+  nothing is hidden from the numbers, only from the initial DOM; (c) the one
+  failing editor test (`publicForm_tokenLifecycle`) was a test-fixture
+  artifact — its oversized signature lacked the `data:image/` prefix the
+  cycle-17 shape guard (correctly) rejects first; **the next `runAllTests()`
+  should be 286/286**.
 - **The 2026-08-17 SECOND round (pay statement + Spanish share chart) adds ONE
   operator data column and no other state** — no Script Properties, triggers,
   or migrations. **Operator action: fill `Employees` column P (`PayRate`)**
@@ -5785,6 +5800,24 @@ manually for a fresh deploy or environment:
   tone (a member may be part-time; the judgement is the operator's); a dashed
   neutral marker shows the even-split share, and a capped scan is named. The
   pure `spanishResolverShares_` is Node-pinned.
+  **Full-width + display cap (operator 2026-08-17, third round):** both
+  request-tracking views widen to 1480px via the Dashboard `:has()` precedent
+  (`.view-area:has(#spanish-body)` in the metrics partial;
+  `.view-area:has(#dr-body)` in the DR partial — `drRender_` wraps BOTH
+  branches in the `#dr-body` anchor so an error render keeps the width);
+  `.sp-tasks` lost its 920px cap (the auto-fill grid reflows to up to 4-up),
+  and Spanish's summary head + share chart sit side by side in the shared
+  `.sp-top` 2-col grid (stacks <1024px — that breakpoint also covers the
+  480px pop-out, so no `data-compact` override is owed; the SWR head-swap
+  still targets only `#spanish-head`, which keeps its own slot in the grid).
+  Every `.sp-tasks` card section on both pages renders through
+  **`spCappedTasksHtml_`** (`script_core.html`): at most `SP_TASKS_CAP` (12)
+  cards + a real Show-more `<button>` (INV-173) revealing `SP_TASKS_PAGE`
+  (24) per click and stating the hidden count — the cap changes what is
+  RENDERED, never what is REPORTED (INV-169: section headers keep the full
+  counts). Per-section shown-state (`SPANISH_STATE.shown` / `DR_SHOWN`)
+  resets on every full render / view enter so a stale expansion never pins a
+  huge DOM in a long-lived window.
 - **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
   **AUTOMATIC**: every department email an agent sends from Call Notes
   (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
@@ -6879,6 +6912,20 @@ mutations bite-checked; the rate-leak bite was reverted with `git checkout`
 and WIPED the uncommitted server block, re-applied from context — the
 batch-⑥ lesson re-learned: bites revert via python inverse edits ONLY, and
 the unit commits BEFORE its bite-checks where possible).
+The self-healing test-accounts fix added one more → **543** (setup restores
+the canonical email on an existing TEST row instead of skipping it; cleanup
+re-offboards every TEST_ row with the cache invalidated AFTER — the INV-183
+corollary applied to the suite's own rows). The 2026-08-17 THIRD round
+(full-width + display cap) added two more → **545** (the full-width pin —
+`.sp-tasks` carries no max-width, both 1480px `:has()` widen rules live in
+their own partials, `drRender_` emits `#dr-body` on BOTH branches, `.sp-top`
+is a 2-col grid with a real viewport breakpoint (A2) and the 660px inline
+caps are gone; and the display-cap pin — `spCappedTasksHtml_` driven
+behaviourally (cap, step, final-page reveal, no button when complete,
+extraStyle pass-through, real `<button>` per INV-173) plus wiring: all five
+card sections capped with distinct keys, both shown-state resets, no
+uncapped `.sp-tasks` list left, headers keep full counts per INV-169 — 7
+mutations bite-checked).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
