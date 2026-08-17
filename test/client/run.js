@@ -4323,7 +4323,10 @@ test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
 // M-1 source pins: the live-punch path enforces the client's own state
 // machine, and the two manager write paths agree on which duplicate row wins.
 test('recordPunch live path enforces getNextActions_; findExistingPunch_ is last-match (M-1)', () => {
-  const rp = extractRawFunction('Code.js', 'recordPunch');
+  // 2026-08-17: the guarded body moved to recordPunchCore_ so the public
+  // wrapper can attach the fresh state AFTER the lock releases (see the
+  // one-round-trip pin) — the M-1 contract lives in the core now.
+  const rp = extractRawFunction('Code.js', 'recordPunchCore_');
   assert.ok(/getNextActions_\(todayPunches\)/.test(rp),
     'recordPunch validates live punches against getNextActions_');
   // Guard must sit INSIDE the !isAdj branch (adjust back-fills bypass) and
@@ -9400,6 +9403,28 @@ test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)',
   const resolver = nc(extractRawFunction('Code.js', 'intakeResolveRecipient_'));
   assert.ok(/spec\.kind === 'custom'/.test(resolver) && /intakeValidateEmail_\(em\)/.test(resolver),
     'one resolver, custom validated server-side (INV-111 recipient discipline)');
+});
+
+test('a punch confirms in ONE round trip — state rides the response, computed post-lock', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const wrap = nc(extractRawFunction('Code.js', 'recordPunch'));
+  // The wrapper computes state AFTER recordPunchCore_'s finally has released
+  // the global ScriptLock — a reads-only assembly must not extend the one
+  // write lock every concurrent punch waits on (the INV-153 reasoning).
+  assert.ok(!/waitLock\(/.test(wrap), 'the wrapper holds NO lock — the core does');
+  assert.ok(/result\.state = getEmployeeState\(\)/.test(wrap), 'the fresh state rides the punch response');
+  assert.ok(/if \(result && result\.success\)/.test(wrap), 'state is attached only to a SUCCESSFUL punch');
+  assert.ok(/try \{ result\.state = getEmployeeState\(\); \} catch \(e\)/.test(wrap),
+    'a state-assembly failure degrades to the client refetch, never fails the recorded punch');
+  const core = nc(extractRawFunction('Code.js', 'recordPunchCore_'));
+  assert.ok(/waitLock\(15000\)/.test(core) && /finally/.test(core), 'the core keeps the INV-01 lock shape');
+  // Client: the inline state renders immediately; the refetch survives as the
+  // deploy-skew fallback (an older server ships no state field).
+  const sub = nc(extractFunction('tc/script_clock.html', 'submitPunch'));
+  assert.ok(/if \(result\.state && !result\.state\.error\) \{ applyState\(result\.state\); return; \}/.test(sub),
+    'the client applies the riding state without a second round trip');
+  assert.ok(/\.getEmployeeState\(\);/.test(sub), 'the fallback refetch remains for deploy skew');
+  assert.ok(/Working…/.test(sub), 'the instant in-flight loader on the clicked button stays');
 });
 
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {

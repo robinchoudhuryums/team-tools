@@ -870,6 +870,24 @@ function getEmployeeState() {
 }
 
 function recordPunch(punchType, custom) {
+  // Operator 2026-08-17 ("noticeable delay before the confirmation toast and
+  // the buttons change"): the client used to make TWO sequential round trips —
+  // the punch write, then a full getEmployeeState refetch — before anything on
+  // screen moved. The fresh state now RIDES the punch response, computed here
+  // in the wrapper AFTER the core's finally has released the global ScriptLock
+  // (state assembly is reads-only — mostly the cached roster + one bounded
+  // today-punches read — and holding the write lock through it would tax every
+  // concurrent punch, the INV-153 starvation reasoning). Additive field: an
+  // old client ignores it and refetches as before; a state-assembly failure
+  // degrades the same way (the client falls back to its own refetch).
+  const result = recordPunchCore_(punchType, custom);
+  if (result && result.success) {
+    try { result.state = getEmployeeState(); } catch (e) { /* client refetches */ }
+  }
+  return result;
+}
+
+function recordPunchCore_(punchType, custom) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let alertPayload = null;
