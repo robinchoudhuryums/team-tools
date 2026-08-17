@@ -545,7 +545,19 @@ this section before touching the relevant area.
 - **`TEST_` prefix is the cleanup key.** `cleanupTestData()` deletes
   every row in Timesheet / TimeOffRequests / AuditLog whose
   employee ID starts with `TEST_`. Production employee IDs must
-  never start with `TEST_`.
+  never start with `TEST_`. **The test ACCOUNTS live offboarded between
+  runs (operator 2026-08-17):** with real agents on the app, an enrolled
+  TEST_ account renders beside them on every team surface, so the operator
+  offboarded them in the app — which clears ONLY the email (INV-183), and
+  `setupTestEnvironment`'s old ID-keyed dedupe then never repaired them:
+  every email-keyed impersonation resolved to null and 119 integration
+  tests cascaded to "Employee not found." Now SYMMETRIC and self-healing:
+  setup RE-ONBOARDS its rows (restores the canonical email when the cell
+  disagrees) and cleanup RE-OFFBOARDS them at the end of every run, so the
+  test accounts exist for the ~6 minutes of a run and are invisible
+  everywhere `empRosterEmail_` guards otherwise. Offboarding them by hand
+  is therefore always safe — the next run repairs itself. Pinned by the
+  re-onboard/re-offboard Node pin.
 - **Manager-only operations check `callerEmp.isManager`.** Any new
   manager-gated endpoint MUST start with the same check used by
   `getManagerDashboard`, `updateTimeOffStatus`, `deletePunch`,
@@ -7117,7 +7129,7 @@ INV-17 | `getLeaveDeduction_` is case-insensitive and trims whitespace; unknown 
 INV-18 | Bi-weekly period boundaries are computed from the FIRST `'biweekly'` row in the Employees sheet **that also carries a non-empty `PAY_ANCHOR`** (cycle-11 doc fix — a blank-anchor biweekly row is silently skipped and a later anchored row wins) via the anchor-floor formula in `getCurrentBiweeklyRange_` | Subsystem: Server
 INV-19 | US holiday observance shift: Saturday → previous Friday, Sunday → following Monday (handled by `fixedHoliday_`) | Subsystem: Server
 INV-20 | Test impersonation uses `_TEST_OVERRIDE_EMAIL`, consumed only by `getActiveUserEmail_()`, and is cleared in `finally` by every entry point | Subsystem: Test Suite
-INV-21 | `cleanupTestData()` removes every row whose employee ID starts with `TEST_` across Timesheet, TimeOffRequests, and AuditLog; production IDs must never start with `TEST_`. Cycle-11 M-2/M-3 extensions: it ALSO sweeps `FormSubmissionReceived` witness rows + FormTokens/FormSubmissions orphans by the reserved test recipient domain `example.invalid` (the witness actor is `EXTERNAL`, not `TEST_`-matchable), and the KB store's Quizzes tab by `TEST_`-prefixed title (live + fixture, incl. fixture QuizAttempts) | Subsystem: Test Suite
+INV-21 | `cleanupTestData()` removes every row whose employee ID starts with `TEST_` across Timesheet, TimeOffRequests, and AuditLog; production IDs must never start with `TEST_`. **AMENDED (operator 2026-08-17): cleanup also RE-OFFBOARDS the test roster rows** (clears their emails, keeping ID/name/balances/fixture-sheet id — the INV-183 convention) and `setupTestEnvironment` re-onboards them at the start of the next run, so between runs the test accounts never render beside real agents on team surfaces; the old ID-keyed setup dedupe could not repair a hand-offboarded row and cascaded 119 failures. Cycle-11 M-2/M-3 extensions: it ALSO sweeps `FormSubmissionReceived` witness rows + FormTokens/FormSubmissions orphans by the reserved test recipient domain `example.invalid` (the witness actor is `EXTERNAL`, not `TEST_`-matchable), and the KB store's Quizzes tab by `TEST_`-prefixed title (live + fixture, incl. fixture QuizAttempts) | Subsystem: Test Suite
 INV-22 | Live (non-adjustment) punches in `recordPunch` are rejected if within `CONFIG.MIN_PUNCH_INTERVAL_SECONDS` (30s) of the previous punch; adjustments bypass this check | Subsystem: Server
 INV-23 | `selfDeletePunch` only deletes punches that are (a) dated today OR yesterday in the rep's tz, (b) within `CONFIG.SELF_UNDO_WINDOW_SECONDS` (300s) of REAL elapsed time — computed from the punch's rep-local datetime in ms (cycle-8: the old same-day string-diff check rejected the documented midnight wrap twice over, so "punch 23:58, undo 00:02" never worked server-side; the yesterday allowance is bounded by the same 5-minute elapsed window, and an unparseable time fails closed) — and (c) not adjustments; it writes a `PunchSelfUndo` audit row for the deletion (cycle-11 doc fix: the row delete lands FIRST, then the audit row, inside the same lock — matching `cancelTimeOffRequest`'s ordering; a crash between the two loses the trail, accepted) | Subsystem: Server
 INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }` per teammate — no emails, IDs, last-punch times, or timezones leak to non-managers | Subsystem: Server
@@ -7401,7 +7413,7 @@ S2 | Full integration test suite | Subsystem: Test Suite
     - Confirm the editor is pointing at a TEST copy of `CONFIG.ADP_SS_ID` (or accept that production gets `TEST_*` rows that auto-clean)
     - Select `runAllTests` and click ▶
     - Wait for Logger output
-  Expected: `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end and resets test-employee balances to 15 annual / 10 sick.
+  Expected: `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end, resets test-employee balances to 15 annual / 10 sick, and RE-OFFBOARDS the test accounts (emails cleared) so they stay invisible to real agents between runs; the next run's setup restores the emails itself.
 
 S3 | Employee golden path: clock in → lunch → clock out | Subsystem: Server, Client
   Steps:

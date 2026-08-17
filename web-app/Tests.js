@@ -371,9 +371,9 @@ function setupTestEnvironment() {
   }
 
   const rows = sheet.getDataRange().getValues();
-  const existingIds = new Set();
+  const rowIndexById = {};
   for (let i = 1; i < rows.length; i++) {
-    existingIds.add(String(rows[i][EMP.ID]).trim());
+    rowIndexById[String(rows[i][EMP.ID]).trim()] = i;
   }
   // Email | EmployeeId | EmployeeName | IndividualSheetId | PayCycle | PayCycleAnchor | IsManager | Timezone | AnnualLeaveBalance | SickLeaveBalance
   const testEmps = [
@@ -381,9 +381,23 @@ function setupTestEnvironment() {
     [_TEST_PH_EMAIL,    _TEST_PH_ID,    'Test PH User',       '', 'Biweekly', '2026-01-02',  'FALSE', 'Asia/Manila',     _TEST_INITIAL_ANNUAL, _TEST_INITIAL_SICK],
     [_TEST_MGR_EMAIL,   _TEST_MGR_ID,   'Test US Manager',    '', 'Biweekly', '2026-01-02',  'TRUE',  'America/Chicago', _TEST_INITIAL_ANNUAL, _TEST_INITIAL_SICK],
   ];
-  let added = 0;
+  let added = 0, restored = 0;
   testEmps.forEach(row => {
-    if (!existingIds.has(row[EMP.ID])) { sheet.appendRow(row); added++; }
+    const at = rowIndexById[row[EMP.ID]];
+    if (at === undefined) { sheet.appendRow(row); added++; return; }
+    // Operator 2026-08-17: the test accounts were OFFBOARDED in the app so
+    // they stop rendering beside real agents on team surfaces — which clears
+    // ONLY the email while the ID stays reserved (INV-183). The old ID-keyed
+    // dedupe here then skipped the append forever, every email-keyed
+    // impersonation resolved to null, and 119 integration tests cascaded to
+    // "Employee not found." Setup now RE-ONBOARDS its own rows (restore the
+    // canonical email when the cell disagrees); cleanupTestData re-offboards
+    // at the end of the run, so BETWEEN runs the test accounts stay invisible
+    // everywhere the empRosterEmail_ predicate guards.
+    if (String(rows[at][EMP.EMAIL]).trim().toLowerCase() !== String(row[EMP.EMAIL]).toLowerCase()) {
+      sheet.getRange(at + 1, EMP.EMAIL + 1).setValue(row[EMP.EMAIL]);
+      restored++;
+    }
   });
 
   // Provision a test call-notes Sheet for the India test employee. Creates
@@ -443,7 +457,7 @@ function setupTestEnvironment() {
   catch (e) { Logger.log('  Intake fixture setup skipped: ' + e.message); }
 
   invalidateRosterCache_();
-  Logger.log(`setupTestEnvironment: ${added} test employee row(s) added (existing left unchanged).`);
+  Logger.log(`setupTestEnvironment: ${added} test employee row(s) added, ${restored} re-onboarded (email restored).`);
   if (_TEST_CN_SS_ID) Logger.log('  Call-notes test Sheet ID: ' + _TEST_CN_SS_ID);
   if (_TEST_CDR_SS_ID) Logger.log('  CDR fixture Sheet ID: ' + _TEST_CDR_SS_ID);
 }
@@ -725,6 +739,27 @@ function cleanupTestData() {
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TPL_TAB), 'TEST_', EDT.NAME, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
+
+  // Operator 2026-08-17: real agents use the app now, and an ENROLLED TEST_
+  // account renders beside them on every team surface (dashboard team card,
+  // teammate status, coverage) — the reason the operator offboarded them by
+  // hand. Cleanup therefore leaves the suite's own roster rows OFFBOARDED
+  // (email cleared; ID, name, balances, and the column-L fixture-sheet id all
+  // KEPT — the app's own offboarding convention, INV-183), and
+  // setupTestEnvironment restores the emails at the start of the next run.
+  // Between runs the test accounts are invisible everywhere the
+  // empRosterEmail_ predicate guards; during a run they exist for ~6 minutes.
+  try {
+    let offboarded = 0;
+    for (let i = 1; i < empRows.length; i++) {
+      if (String(empRows[i][EMP.ID]).trim().indexOf('TEST_') !== 0) continue;
+      if (String(empRows[i][EMP.EMAIL]).trim()) {
+        empSheet.getRange(i + 1, EMP.EMAIL + 1).setValue('');
+        offboarded++;
+      }
+    }
+    if (offboarded) Logger.log('cleanupTestData: ' + offboarded + ' test account(s) re-offboarded (emails cleared).');
+  } catch (e) { Logger.log('cleanupTestData: test-account offboard skipped: ' + e.message); }
 
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
