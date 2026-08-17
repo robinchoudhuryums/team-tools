@@ -504,6 +504,21 @@ function mDaysAgo_(n) {
   } catch (_) { return ''; }
 }
 
+/** The previous WORKDAY before baseIso (default: employee-tz today) — CDR data
+ *  is never populated same-day (operator 2026-08-17), so the My Stats
+ *  single-day preset points here: Monday shows Friday, not Sunday. Weekends
+ *  step back to Friday; weekdays step back one day. Pure over its argument
+ *  (Node-pinned); UTC-noon anchor like mDaysAgo_. */
+function mPrevWorkdayIso_(baseIso) {
+  try {
+    var d = new Date((baseIso || isoDateTz(empTz())) + 'T12:00:00Z');
+    do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+    return d.getUTCFullYear() + '-' +
+      String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getUTCDate()).padStart(2, '0');
+  } catch (_) { return ''; }
+}
+
 
 function mCoverageBadge_(pct) {
   if (pct == null) return '';
@@ -520,19 +535,24 @@ function enterMetricsMyStatsView() {
   if (typeof stopClock === 'function') stopClock();
   var area = document.getElementById('view-area');
   if (!area) return;
-  M_STATE.myDate = M_STATE.myDate || mTodayIso_();
+  // Default landing = the previous WORKDAY (operator 2026-08-17: CDR data is
+  // never updated same-day, so "Today" always read as an empty day for reps).
+  M_STATE.myDate = M_STATE.myDate || mPrevWorkdayIso_();
 
   area.innerHTML =
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">My Call Metrics</h1>' +
     '</div>' +
     '<div class="m-controls">' +
-      // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
+      // Yesterday/7D/30D presets — Yesterday = the previous WORKDAY's rich
+      // single-day view (own-vs-team series; CDR data is never same-day, so a
+      // "Today" preset always showed an empty day — operator 2026-08-17; the
+      // manager Team Metrics tab deliberately KEEPS Today for note counts).
       // 7D/30D = server-AGGREGATED ranges (#1). A specific past day / custom
       // span lives behind the shared Custom… disclosure (operator #2 — the
       // three overlapping pickers were clutter, worst on mobile).
       '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
-        mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
+        mMyPresetBtn_('Yesterday', 'yesterday') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
         mCustomChip_('my', 'm-my-custom') +
       '</div>' +
       '<button class="refresh-btn" onclick="mLoadMyStats_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
@@ -569,7 +589,7 @@ function mMyPresetBtn_(label, key) {
 /** Which preset (if any) the current selection matches — for the pressed state. */
 function mMyActivePreset_() {
   var today = mTodayIso_();
-  if (M_STATE.myMode === 'single' && M_STATE.myDate === today) return 'today';
+  if (M_STATE.myMode === 'single' && M_STATE.myDate === mPrevWorkdayIso_()) return 'yesterday';
   if (M_STATE.myMode === 'range' && M_STATE.myTo === today) {
     if (M_STATE.myFrom === mDaysAgo_(6)) return '7d';
     if (M_STATE.myFrom === mDaysAgo_(29)) return '30d';
@@ -615,10 +635,12 @@ function mToggleCustom_(which, rowId) {
   var chip = document.querySelector('.m-custom-chip[data-custom="' + which + '"]');
   if (chip) chip.setAttribute('aria-expanded', String(next));
 }
-/** Today = single (rich); 7D/30D = aggregated ranges ending today (#1). */
+/** Yesterday = the previous workday, single (rich); 7D/30D = aggregated
+ *  ranges ending today (#1 — today contributes nothing to the aggregate since
+ *  CDR data is never same-day, but the window label stays honest). */
 function mMyPreset_(key) {
   var today = mTodayIso_();
-  if (key === 'today') { M_STATE.myMode = 'single'; M_STATE.myDate = today; }
+  if (key === 'yesterday') { M_STATE.myMode = 'single'; M_STATE.myDate = mPrevWorkdayIso_(); }
   else { M_STATE.myMode = 'range'; M_STATE.myTo = today; M_STATE.myFrom = mDaysAgo_(key === '7d' ? 6 : 29); }
   mMyStatsSyncPresets_();
   mLoadMyStats_();
@@ -708,7 +730,12 @@ function mRenderMyStats_(data) {
     var arr = series[k]; if (!Array.isArray(arr)) return null;
     return arr.map(function (p) { return p ? p.own : null; });
   };
-  var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to)) : 'Today';
+  // Single-day label is honest about WHICH day (the preset now lands on the
+  // previous workday, and Custom can pick any day — a hardcoded 'Today' lied).
+  var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to))
+    : (data.date === mTodayIso_() ? 'Today'
+      : data.date === mPrevWorkdayIso_() ? 'Yesterday'
+      : esc(data.date || ''));
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
@@ -843,16 +870,17 @@ function mCoverageCta_() {
   if (typeof enterTool === 'function') enterTool('callNotes');
 }
 
-/** #1 — fill the range-mode trend placeholder from the single-day Today
- *  payload: cache-first (the SWR cache the Today preset already warms), else
- *  one background getMyMetrics(today) guarded by the SAME seq/view tokens as
+/** #1 — fill the range-mode trend placeholder from the single-day payload:
+ *  cache-first (the SWR cache the Yesterday preset already warms — it lands on
+ *  the previous workday, so the same key is reused), else one background
+ *  getMyMetrics(prevWorkday) guarded by the SAME seq/view tokens as
  *  the primary load (INV-156 — a stale response must not write into a newer
  *  render). Best-effort: on failure the section is simply absent, which is
  *  the pre-#1 shape — an ancillary enrichment, never an error state. */
 function mFillRangeTrends_() {
   if (!document.getElementById('m-my-trends')) return;
-  var today = mTodayIso_();
-  var key = 'day:' + today;
+  var day = mPrevWorkdayIso_();
+  var key = 'day:' + day;
   var inject = function (data) {
     var slot = document.getElementById('m-my-trends');
     if (!slot || !data || data.error) return;
@@ -873,7 +901,7 @@ function mFillRangeTrends_() {
       inject(data);
     })
     .withFailureHandler(function () { /* section absent — ancillary (see docstring) */ })
-    .getMyMetrics(today);
+    .getMyMetrics(day);
 }
 
 /** #7 — best/worst day by pctAnswered over a range trend. Pure (Node-pinned):
@@ -918,10 +946,11 @@ function mRenderTrendSection_(data, opts) {
   }
   if (!cards) return '';
   var minN = data.kpiMinCohort || 3;
-  // #1 — in range mode the section is filled from the TODAY payload, so the
-  // heading says exactly what window it shows (independent of the range).
+  // #1 — in range mode the section is filled from the previous-workday
+  // payload (the day the Yesterday preset warms), so the heading says exactly
+  // what window it shows (independent of the range).
   var head = (opts && opts.rangeMode)
-    ? 'Trends · you vs team avg (trailing 30 days ending today)'
+    ? 'Trends · you vs team avg (trailing 30 days ending ' + esc(mPrevWorkdayIso_()) + ')'
     : 'Trends · you vs team avg (30 days)';
   return '<div class="m-trends">' +
     '<div class="m-trends-head">' + head + '</div>' +
