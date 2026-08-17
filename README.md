@@ -20,7 +20,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
     reminders fire from the shell, so they reach whichever tab or
     pop-out window is open; each shows a toast plus an optional chime
     (on by default, toggled by the sidebar bell) and, where the browser
-    permits it, a desktop notification.
+    permits it, a desktop notification. A per-period pay statement
+    (Time / PTO → Timesheet mode) lets each rep check their own
+    punches, hours, PTO, and — when a pay rate is on the roster — an
+    estimated gross, clearly labeled an estimate.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
@@ -31,11 +34,15 @@ Script project synced via [clasp](https://github.com/google/clasp).
     issue types are spiking), department/tax config, and compliance
     audit.
   - **Metrics** — CDR integration reading DQE Historical Data from
-    the CDR Report spreadsheet. Two tabs: "My Stats" (self-view —
-    today's KPIs, 30-day % Answered trend, note-to-call coverage)
-    and "Team Metrics" (manager-only — per-rep table with date-range
-    and preset chips). CDR metrics also enrich the Call Notes Stats
-    tab via a best-effort overlay.
+    the CDR Report spreadsheet. Four tabs: "My Stats" (self-view —
+    the previous workday's KPIs, 30-day % Answered trend,
+    note-to-call coverage; CDR data is never same-day), "Team
+    Metrics" (manager-only — per-rep table with date-range and
+    preset chips), "Spanish Inbox" (bilingual-assistance request
+    tracking with a per-member resolution-share chart), and "Dept
+    Requests" (inter-department request tracking with SLA status).
+    CDR metrics also enrich the Call Notes Stats tab via a
+    best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound
     `form-generator` Apps Script. PPD (a 46-item intake driving a
     clinical HCPCS recommendation engine) plus PMD/PAP account-creation

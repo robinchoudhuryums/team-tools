@@ -6053,6 +6053,14 @@ manually for a fresh deploy or environment:
   of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
   with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
   Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
+  **Audited 2026-08-17 (pre-pilot sweep):** the mass-punch-adjustment path is
+  clean end to end (every guard in the target's own tz); two DOCUMENTED
+  latents remain — `sendTrainingOverdueDigest`'s manager-tz "today" reaches
+  the rep-facing overdue-docs nudge (dashboards can disagree between
+  rep-midnight and CST midnight; emails fire when the zones agree), and
+  `getMonthRange_` reads script-tz (Chicago) calendar fields inside a
+  Kolkata-anchored caller — correct ONLY because Chicago is always behind
+  Kolkata; revisit if `AUTO_EXPORT_HOUR_IST` or the script tz ever changes.
   **A FOURTH consequence bit in pilot (operator 2026-08-13): a BLANK roster
   Timezone cell falls back to `CONFIG.TIMEZONE` (Asia/Kolkata), so everything
   that rep writes — punches, note timestamps, `DateLocal` — is silently
@@ -8115,6 +8123,26 @@ S78 | Pop-out has no repeated header strip (operator 2026-08-11) | Subsystem: Cl
     - In the Manage Time pop-out, click the refresh control and confirm the dashboard reloads
     - Shrink the pop-out as far as it will go and confirm nothing needs scrolling past to do it
   Expected: No tool renders the retired `.compact-header`. The pop-out window's own title already names the tool and the tab bar names the view, so the strip was pure repetition at the top of the smallest window in the app. The manager refresh button survived the retirement on its own right-aligned row and still works. The Call Notes pop-out self-sizes ~44px shorter than before.
+
+S79 | Pay statement — own-data self-check with estimated gross | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - In the Employees sheet, set column P (`PayRate`) for a test rep (e.g. `18.50`) and leave it BLANK for another
+    - As the rated rep: Time / PTO → Timesheet mode → click "View pay statement"
+    - Read the modal: period label + ‹ › nav; day rows (punches, hours, ADJ badges); a weekday with no punches; any incomplete day; approved PTO rows; totals; the estimated-gross box
+    - Navigate ‹ two periods back and forward again; try to go past the current period
+    - As the BLANK-rate rep, open the statement
+    - As a non-manager, call `google.script.run...getMyPayStatement(0, '<another rep id>')` from the console; as a manager, the same call
+    - If timesheet archiving is enabled, open a period older than the archive window
+  Expected: The rated rep sees "Estimated gross: $X (Yh × $R/h)" with the "Estimate only … Not a payslip" disclaimer; the blank-rate rep sees the same statement hours-only with "Pay rate not on file". A weekday with no punches renders "no punches" (visible — a missing day IS the discrepancy); incomplete days are amber, EXCLUDED from the total, and the foot note says to fix them via Adjust. Period boundaries match the ADP export (org biweekly anchor / calendar month); the ‹ › nav is bounded 0..6 and a slow older-period response never overwrites a newer one (seq-guarded). The non-manager cross-rep call returns "Manager access required."; the manager call returns the target's statement with a "Viewing: <name>" line. An archived-away period shows the "may have been moved to the timesheet archive" warning instead of presenting a short total as complete. The rate value appears NOWHERE outside this modal (teammate status, dashboards, and exports are unchanged).
+
+S80 | Spanish Inbox — resolution-share chart | Subsystem: Server, Client (Metrics views)
+  Steps:
+    - Ensure `SPANISH_INBOX_MEMBERS` lists ≥2 members, at least one of whom has resolved nothing in the window
+    - As a manager (or listed member), open Metrics → Spanish Inbox
+    - Read the "Resolution share" card between the KPI strip and the request list
+    - Mark a pending request resolved manually and refresh after the cache TTL
+    - Switch the window (Last 7 / 30 / 90 days)
+  Expected: One bar per resolver, count + % direct-labeled, sorted most-resolved first; a configured member with ZERO resolutions shows as a zero bar (never vanishes — the "completed equally" check is about them); a dashed neutral marker sits at the even-split share with a foot note naming it; manual resolves count toward whoever clicked, with an "N manual" suffix. NO verdict coloring anywhere on the chart — bars stay accent-toned regardless of share (the judgement is the operator's). A capped scan appends "shares may be incomplete". The chart re-renders with the window change and with background refreshes, and renders nothing (no empty card) when the window has no resolutions.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
