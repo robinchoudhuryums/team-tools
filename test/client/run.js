@@ -2765,15 +2765,40 @@ test('kbSearchScore_: section-text hit required; heading > body; title + phrase 
   assert.strictEqual(kbSearchScore_(['war'], 'war', '', '', 'warranty info'), 1, 'body hit = 1');
   assert.strictEqual(kbSearchScore_(['war'], 'war', '', 'warranty terms', 'x'), 2, 'heading hit = 2');
   assert.strictEqual(kbSearchScore_(['war'], 'war', 'warranty guide', '', 'warranty info'), 4, 'body 1 + title 3');
-  // a 4+ char single-token query that matches IS its own exact phrase (+2)
-  assert.strictEqual(kbSearchScore_(['warranty'], 'warranty', '', '', 'warranty info'), 3, 'body 1 + phrase 2');
-  // multi-token: each distinct token scores its best location (no phrase
-  // bonus here — the exact phrase appears in neither heading nor body)
+  // a 4+ char single-token query that matches IS its own exact phrase (+3)
+  assert.strictEqual(kbSearchScore_(['warranty'], 'warranty', '', '', 'warranty info'), 4, 'body 1 + phrase 3');
+  // multi-token: each distinct token scores its best location, and matching
+  // MORE of the query earns the coverage bonus ((matched−1)×3)
   assert.strictEqual(kbSearchScore_(['wheelchair', 'repair'], 'wheelchair repair', '', 'repair process', 'wheelchair steps'),
-    3, 'heading hit 2 + body hit 1');
+    2 + 1 + 3, 'heading hit 2 + body hit 1 + coverage 3');
   // exact-phrase bonus when the full query appears
   assert.strictEqual(kbSearchScore_(['return', 'policy'], 'return policy', '', '', 'our return policy is simple'),
-    1 + 1 + 2, 'two body hits + phrase bonus');
+    1 + 1 + 3 + 3, 'two body hits + coverage + phrase bonus');
+});
+test('kbSearchScore_ rebalance (operator 2026-08-17): density counts, the title bonus caps, coverage beats flooding', () => {
+  // DENSITY — a section about the topic outranks one mentioning it once
+  // (extra body occurrences +1 each, capped +2 per token).
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', '', 'war war war war zzz'), 1 + 2,
+    'body 1 + density capped at 2');
+  assert.ok(kbSearchScore_(['war'], 'war', '', '', 'war war zzz') >
+            kbSearchScore_(['war'], 'war', '', '', 'war zzz'), 'twice beats once');
+  // A heading-matched token's body occurrences are ALL extra signal.
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', 'warranty', 'war zzz'), 2 + 1,
+    'heading 2 + one body occurrence as density');
+  // TITLE CAP — a doc-level signal, not per-section: 2 title tokens are +4,
+  // not +6 (the flooding mechanism).
+  assert.strictEqual(
+    kbSearchScore_(['return', 'policy'], 'return policy', 'return policy doc', '', 'our return policy is simple'),
+    1 + 1 + 3 + 4 + 3, 'two body hits + coverage + CAPPED title + phrase');
+  // THE MOTIVATING SCENARIO: the section actually ABOUT the query must beat a
+  // stray section of a doc whose TITLE matches. Under the old flat weights
+  // these TIED at 7 — which is exactly "the info I wanted was further down".
+  const wanted = kbSearchScore_(['cpap', 'cleaning'], 'cpap cleaning',
+    'cpap basics', 'cleaning your cpap', 'rinse the cpap hose weekly');
+  const flooded = kbSearchScore_(['cpap', 'cleaning'], 'cpap cleaning',
+    'cpap cleaning guide', 'warranty', 'cleaning mentioned once');
+  assert.ok(wanted > flooded,
+    'full-coverage heading section outranks a title-flooded stray section (' + wanted + ' vs ' + flooded + ')');
 });
 
 console.log('\nkb — drawer pure helpers (recents list + title-match suggestions)');
@@ -4323,7 +4348,10 @@ test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
 // M-1 source pins: the live-punch path enforces the client's own state
 // machine, and the two manager write paths agree on which duplicate row wins.
 test('recordPunch live path enforces getNextActions_; findExistingPunch_ is last-match (M-1)', () => {
-  const rp = extractRawFunction('Code.js', 'recordPunch');
+  // 2026-08-17: the guarded body moved to recordPunchCore_ so the public
+  // wrapper can attach the fresh state AFTER the lock releases (see the
+  // one-round-trip pin) — the M-1 contract lives in the core now.
+  const rp = extractRawFunction('Code.js', 'recordPunchCore_');
   assert.ok(/getNextActions_\(todayPunches\)/.test(rp),
     'recordPunch validates live punches against getNextActions_');
   // Guard must sit INSIDE the !isAdj branch (adjust back-fills bypass) and
@@ -7110,9 +7138,12 @@ const mopFn = (src, name, nextName) => {
 test('#1: range mode fills the you-vs-team section instead of dropping it', () => {
   assert.ok(/id="m-my-trends"/.test(mopPartial), 'range render emits the placeholder');
   const fill = mopFn(mopPartial, 'mFillRangeTrends_', 'mBestWorstDays_');
-  assert.ok(/viewCacheFresh_/.test(fill), 'cache-first — the Today preset already warmed the SWR cache');
+  assert.ok(/viewCacheFresh_/.test(fill), 'cache-first — the Yesterday preset already warmed the SWR cache');
   assert.ok(/seq !== M_STATE\.mySeq/.test(fill), 'a stale background response is dropped (INV-156)');
-  assert.ok(/getMyMetrics\(today\)/.test(fill), 'the fill source is the single-day Today payload');
+  // Operator 2026-08-17: the single-day preset moved to the previous workday,
+  // and the fill follows it so cache reuse holds (fetching today would be a
+  // second cold read of a day that has no CDR data anyway).
+  assert.ok(/getMyMetrics\(day\)/.test(fill), 'the fill source is the previous-workday payload');
   assert.ok(/rangeMode: true/.test(fill), 'the section heading names its own (trailing-30d) window');
 });
 
@@ -9340,6 +9371,256 @@ test('usage beacon: gated + capped server, throttled + preview-skipping client',
   const cn = fs.readFileSync(path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   assert.ok(/@media \(max-width: 700px\) \{\s*\n\s*\.cn-usage-row \{ grid-template-columns: minmax\(0, 1fr\) 44px 62px; \}/.test(cn),
     'the usage grid stacks its fixed tracks on a phone');
+});
+
+// ---------------------------------------------------------------------------
+// Operator round 2026-08-17 — post-pilot-deploy notes.
+console.log('\noperator 2026-08-17: yesterday preset, cross-window reminder dedupe');
+
+test('mPrevWorkdayIso_ behavioral — Monday lands on Friday, weekends step back', () => {
+  // Pure over its argument (the empTz default is the zero-arg convenience).
+  const ctx = { isoDateTz: () => '2026-08-17', empTz: () => 'America/Chicago' };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mPrevWorkdayIso_'), ctx);
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-17'), '2026-08-14',   // Mon → Fri
+    'Monday\'s previous workday is Friday, not Sunday — CDR has no weekend rows');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-16'), '2026-08-14', 'Sunday → Friday');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-15'), '2026-08-14', 'Saturday → Friday');
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-08-19'), '2026-08-18', 'midweek steps back one day');
+  assert.strictEqual(ctx.mPrevWorkdayIso_(), '2026-08-14', 'zero-arg defaults to the employee-tz today');
+});
+
+test('My Stats lands on the previous workday; Team Metrics deliberately keeps Today', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  // The rep-facing preset row: renamed AND repointed (CDR data is never
+  // same-day, so a Today preset always showed an empty day).
+  assert.ok(/mMyPresetBtn_\('Yesterday', 'yesterday'\)/.test(m), 'the single-day preset is labeled Yesterday');
+  assert.ok(!/mMyPresetBtn_\('Today'/.test(m), 'no Today preset remains on My Stats');
+  assert.ok(/M_STATE\.myDate = M_STATE\.myDate \|\| mPrevWorkdayIso_\(\);/.test(m),
+    'the default landing is the previous workday too');
+  const preset = nc(extractFunction('metrics/script_metrics.html', 'mMyPreset_'));
+  assert.ok(/key === 'yesterday'.*mPrevWorkdayIso_\(\)/.test(preset), 'the preset sets the previous workday');
+  // The range-mode trend fill reuses the SAME warmed cache key.
+  const fill = nc(extractFunction('metrics/script_metrics.html', 'mFillRangeTrends_'));
+  assert.ok(/mPrevWorkdayIso_\(\)/.test(fill) && !/mTodayIso_\(\)/.test(fill),
+    'the range-trend fill fetches the previous workday — the key the Yesterday preset warms');
+  // The manager tab keeps Today by operator decision (same-day note counts).
+  assert.ok(/mTeamPresetBtn_\('Today', 'today'\)/.test(m), 'Team Metrics keeps its Today preset');
+  // The single-day hero label is honest about which day it shows.
+  assert.ok(/data\.date === mPrevWorkdayIso_\(\) \? 'Yesterday'/.test(m),
+    'the hero period label says Yesterday only when the date IS the previous workday');
+});
+
+test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const intake = nc(extractScript('intake/script_intake.html'));
+  // The footer renders the option + the reveal-on-choose input.
+  assert.ok(/id="intk-ppd-custom"/.test(intake), 'the PPD footer carries the custom-email input');
+  assert.ok(/'<option value="custom">Custom email&hellip;<\/option>'/.test(intake),
+    'the PPD picker offers Custom email…');
+  const send = nc(extractFunction('intake/script_intake.html', 'intakePpdSend_'));
+  assert.ok(/kind: 'custom', email: custom \? custom\.value\.trim\(\) : ''/.test(send),
+    'the send builds the kind:custom spec the shared resolver already validates');
+  assert.ok(/Enter a recipient email\./.test(send), 'an empty custom email is refused client-side');
+  // The server side was never the gap: the SHARED resolver validates custom for
+  // every form type — pin that so a PPD-only fork never appears.
+  const resolver = nc(extractRawFunction('Code.js', 'intakeResolveRecipient_'));
+  assert.ok(/spec\.kind === 'custom'/.test(resolver) && /intakeValidateEmail_\(em\)/.test(resolver),
+    'one resolver, custom validated server-side (INV-111 recipient discipline)');
+});
+
+test('a punch confirms in ONE round trip — state rides the response, computed post-lock', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const wrap = nc(extractRawFunction('Code.js', 'recordPunch'));
+  // The wrapper computes state AFTER recordPunchCore_'s finally has released
+  // the global ScriptLock — a reads-only assembly must not extend the one
+  // write lock every concurrent punch waits on (the INV-153 reasoning).
+  assert.ok(!/waitLock\(/.test(wrap), 'the wrapper holds NO lock — the core does');
+  assert.ok(/result\.state = getEmployeeState\(\)/.test(wrap), 'the fresh state rides the punch response');
+  assert.ok(/if \(result && result\.success\)/.test(wrap), 'state is attached only to a SUCCESSFUL punch');
+  assert.ok(/try \{ result\.state = getEmployeeState\(\); \} catch \(e\)/.test(wrap),
+    'a state-assembly failure degrades to the client refetch, never fails the recorded punch');
+  const core = nc(extractRawFunction('Code.js', 'recordPunchCore_'));
+  assert.ok(/waitLock\(15000\)/.test(core) && /finally/.test(core), 'the core keeps the INV-01 lock shape');
+  // Client: the inline state renders immediately; the refetch survives as the
+  // deploy-skew fallback (an older server ships no state field).
+  const sub = nc(extractFunction('tc/script_clock.html', 'submitPunch'));
+  assert.ok(/if \(result\.state && !result\.state\.error\) \{ applyState\(result\.state\); return; \}/.test(sub),
+    'the client applies the riding state without a second round trip');
+  assert.ok(/\.getEmployeeState\(\);/.test(sub), 'the fallback refetch remains for deploy skew');
+  assert.ok(/Working…/.test(sub), 'the instant in-flight loader on the clicked button stays');
+});
+
+test('getCallNotesAmbient derives both ends of its week window in the REP tz (tz-audit S2)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const amb = nc(extractRawFunction('Code.js', 'getCallNotesAmbient'));
+  // The window START is derived FROM the rep-local `today` string with a
+  // UTC-noon anchor — never a script-tz setDate() subtraction whose result is
+  // then formatted in empTz (the two ends of one window in different zones,
+  // a day off in the 00:00–00:59 rep-local hour on US DST-transition days).
+  assert.ok(/new Date\(today \+ 'T12:00:00Z'\)/.test(amb), 'week start anchors on the rep-local today');
+  assert.ok(/setUTCDate\(/.test(amb) && !/weekStartDate\.setDate\(/.test(amb),
+    'the subtraction is UTC calendar math, not script-tz setDate');
+});
+
+test('pay statement: pure period math + rate boundary (operator 2026-08-17)', () => {
+  const ctx = { EMP: { PAY_RATE: 15 } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'payPeriodRange_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'empPayRate_'), ctx);
+  const cur = { start: '2026-08-10', end: '2026-08-23' };
+  // Biweekly: offset shifts the CURRENT org-anchor range back 14d per period.
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 0).start, e: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 0).end },
+    { s: '2026-08-10', e: '2026-08-23' }, 'offset 0 is the current period');
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 1).start, e: ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 1).end },
+    { s: '2026-07-27', e: '2026-08-09' }, 'offset 1 = 14 days back');
+  assert.strictEqual(ctx.payPeriodRange_('Biweekly', cur, '2026-08-17', 99).offset, 6, 'offset clamps at 6');
+  assert.strictEqual(ctx.payPeriodRange_('Biweekly', null, '2026-08-17', 0), null, 'no anchor range → null (friendly error upstream)');
+  // Monthly: calendar arithmetic, year wrap, real month lengths.
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Monthly', null, '2026-08-17', 0).start, e: ctx.payPeriodRange_('Monthly', null, '2026-08-17', 0).end },
+    { s: '2026-08-01', e: '2026-08-31' });
+  assert.deepStrictEqual(
+    { s: ctx.payPeriodRange_('Monthly', null, '2026-02-10', 3).start, e: ctx.payPeriodRange_('Monthly', null, '2026-02-10', 3).end },
+    { s: '2025-11-01', e: '2025-11-30' }, 'year wrap');
+  assert.strictEqual(ctx.payPeriodRange_('Monthly', null, '2026-03-05', 1).end, '2026-02-28', 'February length');
+  // Rate reader: tolerant parse, null on anything non-positive/unreadable —
+  // incl. a 15-col legacy row where column P does not exist yet.
+  const row = []; row[15] = '$18.50';
+  assert.strictEqual(ctx.empPayRate_(row), 18.5);
+  row[15] = '18.50/hr'; assert.strictEqual(ctx.empPayRate_(row), 18.5);
+  row[15] = '0';   assert.strictEqual(ctx.empPayRate_(row), null);
+  row[15] = 'abc'; assert.strictEqual(ctx.empPayRate_(row), null);
+  assert.strictEqual(ctx.empPayRate_(['a@b.c', 'ID1']), null, 'legacy 15-col row reads as no rate');
+});
+
+test('pay statement: the rate never leaves its one reader; other-rep view is manager-gated', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/Code.js'), 'utf8'));
+  // The INV-167/F14 boundary shape: column P is read in exactly ONE place
+  // (empPayRate_), so no endpoint can spread a rate onto emp objects and leak
+  // it to a teammate surface (the INV-24 discipline).
+  const reads = (code.match(/\[EMP\.PAY_RATE\]/g) || []).length;
+  const readerBody = nc(extractRawFunction('Code.js', 'empPayRate_'));
+  const readerReads = (readerBody.match(/\[EMP\.PAY_RATE\]/g) || []).length;
+  assert.ok(reads > 0, 'column P is read somewhere');
+  assert.strictEqual(reads, readerReads,
+    'EVERY read of roster column P lives inside empPayRate_ — the one reader');
+  assert.ok(!/payRate/.test(nc(extractRawFunction('Code.js', 'getEmployeeInfo_'))) &&
+            !/payRate/.test(nc(extractRawFunction('Code.js', 'lookupEmployeeById_'))),
+    'emp objects never carry the rate');
+  const stmt = nc(extractRawFunction('Code.js', 'getMyPayStatement'));
+  assert.ok(/if \(!caller\.isManager\) return \{ error: 'Manager access required\.' \};/.test(stmt),
+    'viewing another rep requires isManager (own-data rule)');
+  assert.ok(/empPayRateById_\(target\.id\)/.test(stmt), 'the rate resolves for the TARGET, via the one lookup path');
+  assert.ok(/toLowerCase\(\) !== 'approved'/.test(stmt), 'PTO status compared normalized (INV-183)');
+  assert.ok(/getTimesheetArchiveDays_\(\)/.test(stmt) && /archiveNote/.test(stmt),
+    'an archived-away period says so instead of presenting a short total as complete (INV-153/187)');
+  assert.ok(/estGross: rate != null \?/.test(stmt), 'gross only when a rate is on file');
+  // Client: both failure shapes render the error card; the nav is seq-guarded.
+  const load = nc(extractFunction('tc/script_timeoff.html', 'payStmtLoad_'));
+  assert.strictEqual((load.match(/errorStateHtml_\(/g) || []).length, 2, 'both failure shapes render errorStateHtml_ (A12)');
+  assert.ok(/seq !== PAY_STMT\.seq/.test(load), 'INV-156 seq guard on the period nav');
+  const html = nc(extractFunction('tc/script_timeoff.html', 'payStmtHtml_'));
+  assert.ok(/Estimate only/.test(html) && /Not a payslip/.test(html),
+    'the money line is labeled an estimate, never a payslip');
+  assert.ok(/Pay rate not on file/.test(html), 'a missing rate degrades to hours-only, stated');
+});
+
+test('Spanish resolution share: zero-bars for idle members, facts only, no verdict', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'spanishResolverShares_'), ctx);
+  const resolved = [
+    { resolver: 'maria@x.com' }, { resolver: 'maria@x.com', manual: true },
+    { resolver: 'Luis@x.com' },  { resolver: '' },
+  ];
+  const sh = ctx.spanishResolverShares_(resolved, ['maria@x.com', 'luis@x.com', 'ana@x.com']);
+  assert.strictEqual(sh.total, 4);
+  // The fairness check is exactly about the member who resolved NOTHING —
+  // ana must render as a zero bar, not vanish.
+  const ana = sh.rows.filter(r => r.resolver === 'ana@x.com')[0];
+  assert.ok(ana && ana.n === 0 && ana.pct === 0, 'a configured member with zero resolutions gets a zero row');
+  const maria = sh.rows[0];
+  assert.strictEqual(maria.resolver, 'maria@x.com', 'sorted most-resolved first');
+  assert.strictEqual(maria.n, 2);
+  assert.strictEqual(maria.manual, 1, 'manual mark-resolves attributed to the clicker');
+  assert.strictEqual(maria.pct, 50);
+  // Case-insensitive resolver keying; an attributed-to-nobody thread buckets
+  // visibly instead of silently dropping (INV-187).
+  const luis = sh.rows.filter(r => r.resolver === 'luis@x.com')[0];
+  assert.strictEqual(luis.n, 1, 'Luis@ and luis@ are one person');
+  assert.ok(sh.rows.some(r => r.resolver === '(unattributed)'), 'unattributed resolutions stay visible');
+  // Server ships the member list on the resolved payload (same gate).
+  const srv = nc(extractRawFunction('Code.js', 'getSpanishInboxResolved'));
+  assert.ok(/members: Object\.keys\(members\)/.test(srv), 'getSpanishInboxResolved ships the configured members');
+  // Wiring: the slot renders between head and list, and rides every resolved
+  // update (the fan-in's single render path).
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  assert.ok(/id="spanish-share"/.test(m), 'the share slot is emitted');
+  assert.ok(/^function spanishRenderList_[\s\S]{0,200}spanishRenderShare_\(\);/m.test(m),
+    'the chart re-renders with the list (seeded paints + background swaps included)');
+  // FACTS ONLY — the Coverage rule: no verdict tone anywhere in the chart
+  // (deviation from an even split is the operator's judgement, not the
+  // chart's); the even-split marker + numbers carry the comparison.
+  const chart = nc(extractFunction('metrics/script_metrics.html', 'spanishShareHtml_'));
+  assert.ok(!/st-overdue|--warn|--destructive|warning-deep|--danger/.test(chart),
+    'no verdict tones — bars are accent-on-surface, judgement stays the operator\'s');
+  assert.ok(/dashed/.test(chart) && /Even share/.test(chart), 'the even-split reference is a neutral marker');
+  assert.ok(/scan capped/.test(chart), 'a truncated scan is named (INV-169) rather than presenting shares as complete');
+});
+
+test('reminders dedupe across windows via the shared localStorage fired-set', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed
+  // localStorage — window A fires and writes; window B (fresh in-memory set,
+  // same storage) must NOT fire the same key; a day rollover resets.
+  const store = {};
+  const mkWin = () => {
+    const ctx = {
+      localStorage: {
+        getItem: (k) => (k in store ? store[k] : null),
+        setItem: (k, v) => { store[k] = String(v); },
+      },
+      JSON: JSON,
+      fired: [],
+      _remindFired: {},
+      _remindDay: '2026-08-17',
+    };
+    ctx.notifyRemind_ = (msg) => ctx.fired.push(msg);
+    vm.createContext(ctx);
+    vm.runInContext(extractFunction('script_core.html', 'remindFiredShared_'), ctx);
+    vm.runInContext(extractFunction('script_core.html', 'remindOnce_'), ctx);
+    return ctx;
+  };
+  const winA = mkWin(), winB = mkWin();
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:600', 'Break in 10 min')", winA), true,
+    'the first window fires the reminder');
+  assert.strictEqual(winA.fired.length, 1);
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:600', 'Break in 10 min')", winB), false,
+    'a second window sees the shared fired-set and stays quiet — the double-notify fix');
+  assert.strictEqual(winB.fired.length, 0, 'no toast/chime from the second window');
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:out', 'Clock out')", winB), true,
+    'a DIFFERENT key still fires normally');
+  // Day rollover: a next-day set ignores yesterday's blob.
+  const winC = mkWin(); winC._remindDay = '2026-08-18';
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-18:brk:600', 'Break in 10 min')", winC), true,
+    'a new day resets the shared set (the in-memory rollover rule)');
+  // Corrupt blob degrades to a fresh set, never a throw.
+  store.umsRemindFired = '{not json';
+  const winD = mkWin();
+  assert.strictEqual(vm.runInContext("remindOnce_('2026-08-17:brk:900', 'B2')", winD), true,
+    'a corrupt blob reads as a fresh set — per-window dedupe, the pre-fix behavior');
+  // Source: the write happens on the FIRE path only (a skip must not re-write).
+  const once = nc(extractFunction('script_core.html', 'remindOnce_'));
+  assert.ok(/umsRemindFired/.test(nc(extractFunction('script_core.html', 'remindFiredShared_'))),
+    'the shared set lives under the documented umsRemindFired key');
+  assert.ok(/shared\.keys\[key\]\) \{ _remindFired\[key\] = true; return false;/.test(once),
+    'another window\'s fire marks the in-memory set and returns without notifying');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

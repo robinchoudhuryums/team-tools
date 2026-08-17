@@ -56,7 +56,11 @@ Apps Script project under its own directory, synced via `clasp`.
      replaces only those functions. CDR metrics also enrich the
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
      try/catch overlay — CDR failure never breaks existing stats.
-     My Stats has Today / 7D / 30D range presets (server-aggregated via
+     My Stats has Yesterday / 7D / 30D range presets — Yesterday = the previous
+     WORKDAY (Monday shows Friday; operator 2026-08-17: CDR data is never
+     populated same-day, so a Today preset always showed an empty day; the
+     manager Team Metrics tab deliberately keeps Today for same-day note
+     counts) — (server-aggregated via
      `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
      line/series), rail-row sparklines, and a sortable + sticky-header team
      table with tri-tone % cells (the table renders via the shared
@@ -455,8 +459,10 @@ this section before touching the relevant area.
   by time (or reuse `getTodayPunches_`) — never derive order from raw
   row position. Pinned by `test_getTodayPunches_sortsOutOfOrderBackfill`.
 - **The live punch path enforces the client's own state machine; Day Edit
-  reconciles duplicates (cycle-10 M-1).** `recordPunch`'s live (non-adjust)
-  path validates the punch type against `getNextActions_(todayPunches)` —
+  reconciles duplicates (cycle-10 M-1).** `recordPunchCore_`'s live (non-adjust)
+  path (the guarded body behind the public `recordPunch` wrapper since
+  2026-08-17 — the wrapper attaches a fresh `state` AFTER the lock releases so
+  a punch confirms in ONE round trip) validates the punch type against `getNextActions_(todayPunches)` —
   the SAME function the client renders its buttons from — so a STALE window
   (second browser / pinned pop-out that missed a punch made elsewhere, or a
   direct RPC) can no longer append a duplicate ClockIn/ClockOut or an
@@ -500,7 +506,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v8`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v9`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -1788,7 +1794,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Sixteen client-side localStorage keys total.** All per-browser, all
+- **Seventeen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1892,7 +1898,15 @@ this section before touching the relevant area.
     cold boot so a reload paints instantly; the refetch still runs
     (freshness is never inherited — INV-156), and partial/failed rounds
     are never persisted (INV-129). Aggregate call metrics only — no PHI.
-  Clearing browser data wipes all sixteen. (`umsCallNotesLastDept` — the
+  - `umsRemindFired` — the reminder ticker's CROSS-WINDOW fired-set
+    (`{day, keys}`, operator 2026-08-17: the main window and a pinned
+    pop-out each run `remindersTick_`, so every break/clock-out reminder
+    toasted + chimed TWICE). `remindOnce_` checks + writes it, so a
+    reminder fired in ANY window is marked for all; a different `day`
+    resets it (the in-memory set's own rollover rule), and a
+    localStorage-throwing privacy-mode browser degrades to per-window
+    dedupe — the pre-fix behavior, never worse.
+  Clearing browser data wipes all seventeen. (`umsCallNotesLastDept` — the
   composer's last-dept default — was REMOVED by operator decision 2026-08-13:
   pre-selecting the previous note's departments on an unrelated note invites a
   mis-send, and the failure mode is an email leaving the building rather than
@@ -2575,7 +2589,7 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Sixteen client-side localStorage keys total" entry in
+  authoritative "Seventeen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
@@ -2595,7 +2609,8 @@ this section before touching the relevant area.
   net 14 — the colour palettes added `umsTheme`, net 15 — the operator
   removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14 —
   and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
-  `umsDashMetrics`, net 16.)
+  `umsDashMetrics`, net 16 — and the 2026-08-17 cross-window reminder dedupe
+  added `umsRemindFired`, net 17.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2608,6 +2623,29 @@ this section before touching the relevant area.
   into the CRM before the network has acknowledged anything. Email
   and edit actions stay pessimistic — they need a server-issued noteId
   and can't easily undo.
+- **Pay statement — own-data payroll self-check (operator 2026-08-17).**
+  Time / PTO → Timesheet mode → **"View pay statement"** opens a per-period
+  modal: every day's punches (missing weekdays SHOWN — a silently absent day
+  is the discrepancy the view exists to catch), computed hours with
+  INV-176 incomplete-day flags (never silently zeroed), approved PTO with
+  `getLeaveDeduction_` days, period totals, and — when roster column P
+  carries an hourly rate — an **estimated gross** (worked hours × rate),
+  explicitly labeled an estimate ("excludes PTO pay, overtime rules, and
+  payroll adjustments — not a payslip"); no rate on file → hours-only,
+  stated. `getMyPayStatement(offset, repEmpId?)` is caller-scoped; the
+  repEmpId branch (a manager/admin viewing any rep — the operator's
+  own-data rule) is manager-gated (omnibus-pinned; note the gate case
+  targets the PH id because the omnibus runs AS the India rep — a self-view
+  legitimately succeeds). Periods resolve via the pure `payPeriodRange_`
+  (biweekly = the org-anchor boundary the ADP export uses per INV-18,
+  shifted 14 days per period; monthly = calendar arithmetic; offset clamped
+  0..6) and the day data reuses `buildTimesheetForEmployee_` wholesale. The
+  statement reads the LIVE Timesheet tab only, so with INV-153 archiving
+  enabled an old period past the window carries `archiveNote` and the modal
+  says rows may be missing (INV-187) — ask a manager for an export, which
+  DOES read through the archive. The rate never leaves its one reader —
+  see the column-P checklist entry. Manager-facing statement UI is a
+  follow-on (the server branch already supports it).
 - **Time / PTO merge (Round 2 · 8b).** The Phase-2 "Combined Clock +
   Timesheet" combined view was deliberately dismantled here. The Clock
   tab is now standalone (hero + actions + ribbon + cov + 3-cell ledger
@@ -3805,9 +3843,17 @@ this section before touching the relevant area.
   native articles over time. **Search is section-aware:** `searchReference`
   splits each article into heading-delimited sections (`kbSplitSections_`,
   fence-masked, pure), scores them with weighted distinct-token matching
-  (`kbSearchScore_`: heading 2 / body 1 per token, +3 per title token on
-  qualifying sections, +2 exact phrase — a title-ONLY match emits a single
-  doc-level hit instead of flooding every section in), and returns the top 20
+  (`kbSearchScore_`, rebalanced 2026-08-17: heading 2 / body 1 per token,
+  +1 per extra body occurrence capped +2/token (density — about-the-topic
+  beats mentioned-in-passing), (matched−1)×3 coverage bonus (matching MORE
+  of the query dominates; counts matched tokens so synonym-expanded tokens
+  can't make it unreachable), title +3/token CAPPED at +4 total (a
+  doc-level signal — uncapped, every section of a title-matching doc
+  outranked the one section actually about the query, the "my result was
+  further down" report), +3 exact phrase — a title-ONLY match emits a single
+  doc-level hit instead of flooding every section in, and that doc-level
+  hit's title score stays uncapped since "the doc named exactly this"
+  belongs at the top), and returns the top 20
   CHUNKS (≤3 per doc, ≤1200 chars each, paragraph-boundary truncated with
   odd-fence repair) with a `heading` + `anchor`. Both the Reference tab
   (compiled view in the main panel + doc/section nav in the tree column) and
@@ -5173,6 +5219,37 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-17 SECOND round (pay statement + Spanish share chart) adds ONE
+  operator data column and no other state** — no Script Properties, triggers,
+  or migrations. **Operator action: fill `Employees` column P (`PayRate`)**
+  with each rep's hourly rate (plain number; blank = that rep's statement
+  shows hours only — nothing breaks). `ROSTER_CACHE_KEY` bumped v8→v9, so
+  stale roster cache entries expire within 5 min of deploy. Behaviour changes
+  to expect: (a) Time / PTO → Timesheet mode gains a **"View pay statement"**
+  button — per-period punches/hours/PTO with an estimated-gross line once a
+  rate is on file (labeled an estimate, never a payslip); managers can pull
+  any rep's statement server-side (UI follow-on); (b) the **Spanish Inbox tab
+  gains a Resolution-share chart** — one bar per bilingual member incl. ZERO
+  bars for members who resolved nothing, with a dashed even-split marker and
+  no verdict colour (the judgement stays yours). **Post-deploy: run
+  `runAllTests()`** — including the new `getMyPayStatement(other)` gate case.
+- **The 2026-08-17 post-deploy operator round adds NO operator state** — no
+  Script Properties, triggers, migrations, or CONFIG constants; one new
+  per-browser localStorage key (`umsRemindFired`, count now seventeen).
+  Behaviour changes to expect post-deploy: (a) **My Stats lands on
+  "Yesterday" — the previous WORKDAY** (Monday shows Friday) instead of an
+  always-empty Today; Team Metrics keeps its Today preset; (b) the PPD send
+  footer offers **Custom email…** like PMD/PAP; (c) **a punch confirms in
+  one round trip** — the toast and the button change land together,
+  noticeably sooner; (d) **Reference search result ORDER changes** — the
+  section actually about the query now outranks stray sections of
+  title-matching docs (density + coverage weights, title bonus capped); if
+  a familiar query surfaces different top results, that is the rebalance,
+  not lost content; (e) **reminders no longer double-notify** when the main
+  window and a pop-out are both open; (f) the timezone audit passed for the
+  mass-adjustment path — one DST-transition cosmetic window fix shipped
+  (Call Notes ambient week count). **Post-deploy: run `runAllTests()`** as
+  usual.
 - **The 2026-08-13 pre-pilot observability round adds NO operator state to set
   up** — no Script Properties, no triggers, no migrations, no CONFIG values to
   choose. ONE auto-managed sheet tab appears: **`ViewUsage`** in the ADP
@@ -5686,6 +5763,16 @@ manually for a fresh deploy or environment:
   half only. The `.sp-task` card CSS is SHARED in `styles.html` (the Dept
   Requests page consumes the same vocabulary — INV-185-adjacent: one
   component, two views, no drift). Endpoints/gates unchanged.
+  **Resolution-share chart (operator 2026-08-17):** between the KPI strip and
+  the list, one accent bar per resolver over the already-fetched resolved
+  list (count + % direct-labeled; manual mark-resolves attributed to the
+  clicker; an `(unattributed)` bucket stays visible). `getSpanishInboxResolved`
+  now ships `members` (the configured SPANISH_INBOX_MEMBERS, same gate) so a
+  member who resolved NOTHING renders as a ZERO bar — the "completed equally"
+  check is exactly about them. FACTS ONLY per the Coverage rule: no verdict
+  tone (a member may be part-time; the judgement is the operator's); a dashed
+  neutral marker shows the even-split share, and a capped scan is named. The
+  pure `spanishResolverShares_` is Node-pinned.
 - **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
   **AUTOMATIC**: every department email an agent sends from Call Notes
   (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
@@ -5966,6 +6053,14 @@ manually for a fresh deploy or environment:
   of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
   with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
   Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
+  **Audited 2026-08-17 (pre-pilot sweep):** the mass-punch-adjustment path is
+  clean end to end (every guard in the target's own tz); two DOCUMENTED
+  latents remain — `sendTrainingOverdueDigest`'s manager-tz "today" reaches
+  the rep-facing overdue-docs nudge (dashboards can disagree between
+  rep-midnight and CST midnight; emails fire when the zones agree), and
+  `getMonthRange_` reads script-tz (Chicago) calendar fields inside a
+  Kolkata-anchored caller — correct ONLY because Chicago is always behind
+  Kolkata; revisit if `AUTO_EXPORT_HOUR_IST` or the script tz ever changes.
   **A FOURTH consequence bit in pilot (operator 2026-08-13): a BLANK roster
   Timezone cell falls back to `CONFIG.TIMEZONE` (Asia/Kolkata), so everything
   that rep writes — punches, note timestamps, `DateLocal` — is silently
@@ -6088,11 +6183,23 @@ manually for a fresh deploy or environment:
   deployer needs edit access. NEVER point a retention purge at it —
   HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
   auto-managed test fixture twin (created on first `runAllTests`).
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v8'`** — bumped when the
-  `Schedule` column (O, Turn D per-rep shift override) landed (previously v7
-  for Departments/DeptRequests v2, v6 for `ManagerEmail`/T3, v5 for
-  CallNotesSheetId). After deploying, stale v7 cache entries expire naturally
-  within 5 min (or run `clearCaches_()` from the editor).
+- **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
+  OPTIONAL hourly pay rate per rep (plain number; `$18.50`-style entries
+  parse too). Drives the **estimated gross** line on the rep-facing pay
+  statement (Time / PTO → Timesheet mode → "View pay statement"); BLANK =
+  the statement shows hours only and says the rate is not on file. Read in
+  exactly ONE place (`empPayRate_` behind `getMyPayStatement` — the
+  INV-167/F14 boundary, Node-pinned) and never spread onto emp objects, so
+  no other endpoint can leak a rate to a teammate surface. Fill it by hand
+  in the sheet (the onboarding form deliberately doesn't ask — a rate is a
+  payroll decision, not an onboarding field); `ROSTER_CACHE_KEY` was bumped
+  to v9 for this column, so stale cache entries expire within 5 min.
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v9'`** — bumped for the `PayRate`
+  column (P, pay statement, 2026-08-17); previously v8 for the `Schedule`
+  column (O, Turn D per-rep shift override), v7 for Departments/DeptRequests
+  v2, v6 for `ManagerEmail`/T3, v5 for CallNotesSheetId. After deploying,
+  stale v8 cache entries expire naturally within 5 min (or run
+  `clearCaches_()` from the editor).
 - **Call-notes department list + state tax rates** are read by
   `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
   Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`)
@@ -6745,6 +6852,38 @@ quoting + %26-not-&amp; URLs + real controls + honest copy, fence inertness
 exactly ONE property write (the coordinate cache), placed BEFORE the query
 geocode, hashed keys, no audit/log line, and `Maps.newGeocoder()` with zero
 `UrlFetchApp` so there is nothing to bill — 8 mutations bite-checked).
+The 2026-08-17 SECOND round (pay statement + Spanish share) added three more
+→ **542** (the pay-statement pure pin — `payPeriodRange_` biweekly shift /
+clamp / monthly year-wrap + Feb length, `empPayRate_` tolerant-parse +
+legacy-15-col null; the rate-boundary pin — EVERY `[EMP.PAY_RATE]` read
+lives inside `empPayRate_`, emp objects never carry a rate, the other-rep
+branch is manager-gated, PTO status normalized, `archiveNote` wired, both
+client failure shapes render the error card, the money line labeled an
+estimate; and the Spanish share pin — zero-bars for idle members driven
+behaviourally, manual attribution, case-insensitive keying, the
+`(unattributed)` bucket, the server shipping `members`, the render slot on
+the fan-in path, and a NO-VERDICT-TONE scan over the chart renderer — 5
+mutations bite-checked; the rate-leak bite was reverted with `git checkout`
+and WIPED the uncommitted server block, re-applied from context — the
+batch-⑥ lesson re-learned: bites revert via python inverse edits ONLY, and
+the unit commits BEFORE its bite-checks where possible).
+The 2026-08-17 post-deploy operator round added seven more → **539**
+(the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
+step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
+Yesterday preset + previous-workday default + the range-trend fill following
+the warmed key, with Team Metrics' Today asserted KEPT; the PPD
+custom-recipient pin — footer option + empty-guard + the SHARED server
+resolver validating custom for every form type; the one-round-trip punch pin
+— lock-free wrapper, state attached only to success, try/caught assembly,
+client inline-apply + surviving fallback refetch (the M-1 pin repointed at
+`recordPunchCore_`); the cross-window reminder-dedupe pin — vm-driven with
+two windows over one stubbed localStorage, day rollover, corrupt-blob
+degradation; the tz-audit S2 pin — both ends of the ambient week window in
+the rep tz; and the `kbSearchScore_` rebalance pin — density, title cap, and
+the motivating tied-at-7 flooding case — 10 mutations bite-checked; the
+in-lock wrapper mutation was ALSO caught by the M-7 transitive mail scan,
+and the old #1 range-fill pin was updated for the deliberate
+previous-workday fill source and re-bitten).
 The 2026-08-13 pre-pilot observability round added five more → **532**
 (the digest-chrome pin — all three Call Notes digests through
 `buildBrandedEmailHtml_` with real `safeWebAppUrl_` CTAs and per-digest
@@ -6985,7 +7124,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v8`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v9` — the PayRate column P) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the five Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`/`resolveSpanishThread`) are NO LONGER pure-manager-gated — they gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). `resolveSpanishThread` (operator feedback 2026-07-09) is the MANUAL mark-resolved for requests handled outside the thread: scope-guarded like `ThreadBody` (the thread must be addressed to the configured inbox — since cycle 8 an EXACT parsed-address match via `spanishAddrListIncludes_`, Node-pinned, not the old raw substring `indexOf` which passed `xspanishcalls@…`; and the Gmail scans use `spanishSearchQuery_`'s `{to: cc:}` brace-OR so Cc'd requests enter stats/pending/resolved too), locked (INV-01), idempotent, PHI-FREE (append-only `SpanishManualResolved` tab on the ADP sheet — threadId + resolver + ms only, the ms as a NUMBER cell so no date coercion; `SpanishInboxResolve` audit row carries the threadId only). All three readers consult `spanishManualResolvedMap_` (bounded 1000-row tail): pending drops the thread immediately (live-read), stats/resolved count it as resolved (in-thread reply wins when both exist; stats reflect within the 5-min cache TTL — the INV-43 posture). **Cycle-17 batch ⑥: all three readers scan via the named `SPANISH_THREAD_SCAN_MAX` (200 — the silent GmailApp.search bound) and return `truncated` (threads.length ≥ cap ⇒ possibly more; the INV-169 class)**; the Spanish tab renders "scan capped at 200 threads — figures may be incomplete; narrow the window" on the stats note and both list tabs (`spanishTruncNote_`). The Dashboard Spanish card deliberately omits the note (space); the field is additive. The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error on all five; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server
@@ -7092,7 +7231,7 @@ INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gat
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's shift via `empShiftSchedule_` (roster column-O per-rep override wins, else the per-tz schedule — the v1 per-tz-only limitation was removed in Turn D, INV-149) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Since cycle 9 (L-2) the roster walk skips rows with no EMAIL (sibling parity with `getManagerDashboard`/`getTeammateStatus`/`getEmployeesList`) — a name-only offboarded/placeholder row used to count as a full working shift every day, inflating the confirmed band. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped), and a rep row whose shift STARTS on the previous manager-tz day carries `startsPrevDay` → the client renders "(from prev. day)" (cycle-8 — a bare "9:30 PM – 6:30 AM" on an IST rep's card read as THIS day's evening coverage). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab in the **Manage** module (moved from Time Clock; `enterCoverageView` in `tc/script_manager.html`, tab key unchanged); every server string `esc()`'d. **The PTO overlay read is best-effort, and since cycle-16 F4 its failure is REPORTED: the response carries `ptoUnavailable` (additive), the client renders a `role="alert"` banner naming the bands as an upper bound, and the green all-clear is downgraded — with the overlay empty every rep counts as working, so silence made the planner report full staffing on a day half the team is off.** Pinned by the `coverageBucketHours_` Node tests + the F4 pin + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). SCOPE precision (cycle-10 audit note): the implementation builds its defined-token set from ALL shared HTML files, not the token partial alone — so a token declared only in a tool partial passes (behaviorally-correct CSS; weaker than the single-source rule this entry implies — e.g. the two `--lo-*` loader aliases live in `styles.html`). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
-INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). **Operator #5 (2026-08-06) added the transfer read to the same set:** a THROWN `getCsrTransferPerRepDaily_` read in `getMyMetricsRange` degrades to `transfer: null` and skips the put (`!transferThrew` joins the guard); a reader-returned `meta.error` (Transfer tab absent — a steady CONFIG state, not transient) also yields null but stays cacheable, per the documented "Transfer trend simply absent" posture. Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
+INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Yesterday/7D/30D range presets (Yesterday = the previous workday since 2026-08-17). Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). **Operator #5 (2026-08-06) added the transfer read to the same set:** a THROWN `getCsrTransferPerRepDaily_` read in `getMyMetricsRange` degrades to `transfer: null` and skips the put (`!transferThrew` joins the guard); a reader-returned `meta.error` (Transfer tab absent — a steady CONFIG state, not transient) also yields null but stays cacheable, per the documented "Transfer trend simply absent" posture. Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
 INV-131 | The `emailFromCallNote` dept-request auto-log is IDEMPOTENT per open `(noteId, deptLabel)` request (A5): before send, `drFindOpenRequest_(noteId, deptLabel)` (bounded tail of `DR_MAX_SCAN` rows, newest-first) reuses an existing OPEN row's `ReqId` as the resolve token and the post-send block SKIPS the append (auditing `resend`), so re-sending the same note to the same dept re-notifies without opening a second request. The lookup is best-effort (any throw → fresh token, never fails the send) and hash-safe (the token rides the CTA appended AFTER the INV-41 check; only the token VALUE changes). The `DR.NOTE_ID` column (col 11) is a back-compat trailing add (`DR_HEADERS` 11→12, the `CN_HEADERS`/`FS_HEADERS` posture — legacy rows read `''` and never dedupe). The resolve-by-token scans (`resolveDeptRequest`/`markDeptRequestResolved_`) stay FULL and don't read `NOTE_ID`. Pinned by `test_deptReq_resendDedupLookup` | Subsystem: Server + Client (Call Notes views)
 
@@ -7128,7 +7267,7 @@ INV-151 | **Consolidated manager daily brief (flag-gated, suppression-symmetric)
 INV-152 | **"What's new" panel is a dormant-until-configured broadcast of ONE published KB article.** `getWhatsNew` is rep-callable (requires `getEmployeeInfo_`), read-only, and returns `{none:true}` on EVERY quiet-failure path (unset `WHATSNEW_KB_ID` Script Property, missing item, non-article, any throw) so it can never break boot; a DRAFT article is invisible to EVERYONE including admins (INV-140/147 — a broadcast surface has no preview tier; admins preview in Reference). The returned `stamp` is the article's edit time (`kbCellTs_`, KB-sheet-tz recovered). **Surfacing (operator feedback 2026-07-09): the panel does NOT auto-open** — the article's list items rotate as upward-carousel slides in the Dashboard greeting bar (the pure Node-pinned `whatsNewItems_` extracts plain-text lines; `clkGreetRot*` in `tc/script_clock.html` rotates status-sentence ↔ update slides every 8s, hover-holds, ties to the startClock/stopClock lifecycle, reuses the world-clock slide-up animation and its reduced-motion neutralization). `whatsNewShouldShow_` (vs `localStorage.umsWhatsNew`; corrupt blob = never seen) now gates the NEW accent on those slides; clicking a slide or the sidebar star opens the full panel. The overlay is `ensureOverlay`-created (its `onClose` hook `whatsNewClose_` stamps seen on EVERY dismissal path) and renders the body via `kbMd_` — the same escape boundary as every Reference article; the title routes through `esc()`; never fetched in the compact pop-out. Pinned by the `whatsNewShouldShow_`/`getWhatsNew` Node cases, the DOM render/Esc-stamp tests, and `test_whatsNew_propertyGateAndDraftHidden` (editor) | Subsystem: Server + Client (shell)
 INV-153 | **Timesheet cold-archive is MOVE-ONLY (payroll is keep-forever) with a clamped safety floor.** `archiveOldTimesheetRows` is a trigger handler (daily manager-tz 6pm — cycle-8 moved it off 1am, which is IST/PHT mid-shift; INV-44 `assertManagerCaller_` gate; INV-01 locked — it mutates the payroll tab, and holding the lock makes concurrent punch writes wait out the move). It MOVES Timesheet rows whose `ADP.DATE` is older than the window into a `TimesheetArchive` tab in the SAME ADP spreadsheet (created on first use by COPYING the live tab's two-row header) via the shared `archiveSheetRowsOlderThan_` — now parameterized with `opts {headerRows, width}` whose DEFAULTS (`headerRows:1`, `CN_HEADERS.length`) keep the CN call sites byte-identical; the Timesheet passes `headerRows:2` + its own width. There is deliberately NO purge tier for the Timesheet (unlike the CN 3-tier model) — nothing ever deletes from `TimesheetArchive`. Window: Script Property `TIMESHEET_ARCHIVE_DAYS` → `CONFIG.TIMESHEET_ARCHIVE_DAYS` (default **0 = disabled**); a value in `(0, TIMESHEET_ARCHIVE_MIN_DAYS=120)` **clamps UP to the floor** (never down), so an operator typo can never rip active-window payroll rows (adjust 30d, current export period ≤~31d, dashboard trends 14d) out of the live tab; garbage/negative → disabled. The helper scans data rows in sheet order (the Timesheet is APPEND order, not date order — back-fills land late) and append-then-deletes with a flush between (a mid-run failure can only duplicate into the archive, never lose a payroll row). **Cycle-12 F3 — the move is BOUNDED per run** (`opts.maxRows`, set to `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`=2000; absent ⇒ unbounded, so a caller that wants no bound is unchanged — **cycle-12 F3-sibling then bounded the CN twin too**: `archiveOldCallNotes` passes a WHOLE-RUN budget `CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN`=2000 shared across reps and STOPS the rep loop when it is spent, because that walk calls the mover once per rep inside one execution + one global lock, so a per-rep cap would not bound the run; reps drain in roster order over successive nights and a capped run stamps `hitPerRunCap=` in its `CallNotesArchive` audit row). Without it a large first enable (~20k rows for a year at this team's volume) could never finish inside the 6-minute ceiling, and because the append is flushed FIRST every killed run RE-APPENDED the rows it failed to delete — duplicating payroll into the archive run after run while the live tab barely shrank. Capped runs are finite and monotonic, so a multi-year backlog drains over a couple of weeks of quiet 6pm runs; a run that hits the cap stamps `hitPerRunCap=` in its audit row so a draining backlog doesn't look like a normal small run. **Archived rows leave MOST in-app surfaces** (old-month calendar/timesheet views, `getPunctualityReport`, and `tsDoctorScan_` read the live tab only) **but the ADP EXPORT reads through** (cycle-12 F1 — see the export note below): `generateExportSheet_` consults `TimesheetArchive` whenever the requested range predates the live tab's oldest row, so a retroactive payroll export is complete rather than silently short. Before F1 the archive tab had NO reader anywhere. Writes a PHI-free `TimesheetArchive` audit row on every enabled run (the Automation-Health last-seen heartbeat; in `AUTOMATION_AUDIT_ACTIONS` + the client `CN_HEALTH_RUN_LABELS`, pinned by the coupling registry). Pinned by the move-only/floor/CN-defaults Node tests + `test_triggerGate_timesheetArchive_nonManagerThrows` + `test_timesheetArchive_windowFloorAndDefault` (editor) | Subsystem: Server
 INV-154 | **Every AuditLog READ routes through the `AUDIT` enum + the typed `auditRowObj_(row)` reader — the coercion-recovery boundary (Batch 3, cycle-8).** The shared AuditLog (ADP-spreadsheet tab) was the one core sheet with NO named column enum, so its Sheets-coerced cells were read by bare numeric index (`auditData[i][5]`) — untrippable by a source scan, which is exactly why the F1 raw-PunchDate read slipped every per-function tripwire (M-3/M-4/F1 are one class on this sheet). The named `AUDIT` enum (`{ TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 }` — the `writeAuditLog_`/`getOrCreateAuditSheet_` header order) + the typed `auditRowObj_(row)` are now the SINGLE coercion-recovery point: `auditRowObj_` recovers TS via `normalizeAuditTs_`, PUNCH_DATE via `normalizeDate_`, PUNCH_TIME via `normalizeTime_`, and IS_ADJUSTMENT via a case-insensitive `=== 'TRUE'` — ONCE — and returns canonical fields; callers add their own display/derived fields (`timestampMgr` via `convertAuditTs_`, the `dateLocal` alias, `noteId` from `notes`). All four AuditLog readers route through it: the two coerced-column readers (`getManagerDashboard` recent-audits, `cnReadCallNoteAuditRows_`) build via `auditRowObj_`; the two non-coerced readers (`computeAutomationHealth_`, `adminSheetView`) use `AUDIT.*` for TS/ACTION/EMP_*/NOTES. A NEW AuditLog read MUST go through `auditRowObj_` (or `AUDIT.*` for non-coerced cols), never a bare index. Pinned by a GLOBAL Node tripwire (the INV-142 pattern) that fails CI on ANY raw read of a coerced `AUDIT` column (PUNCH_DATE/PUNCH_TIME/IS_ADJUSTMENT) outside `auditRowObj_`, a reader-delegation check (both object-readers reference `auditRowObj_`), a helper-usage check (`auditRowObj_` recovers each coerced col via its normalize helper), and 2 runtime recovery tests (a coerced-Date PunchDate + a native-boolean IsAdjustment). The AuditLog schema is UNCHANGED — the enum only names existing columns; behavior is byte-preserving vs. the prior inline reads. (ClientErrors + KbViews are DIFFERENT sheets with their own `instanceof Date` guards — out of this boundary.) Generalizes the retired dashboard M-3/M-4 pin (INV-92 still holds; this is its structural backstop) | Subsystem: Server
-INV-155 | **Live punches obey the server-enforced next-action state machine (cycle-10 M-1).** `recordPunch`'s live path validates `punchType` against `getNextActions_` over today's time-sorted punches — the same function the client's buttons render from, so a fresh client is never rejected and a stale window / direct RPC cannot append a duplicate ClockIn/ClockOut or an out-of-sequence lunch row. **Cycle-17 batch ⑥: `getNextActions_` derives the state from the last RECOGNIZED punch type** (`PUNCH_LABELS_` membership, scanning backward) — a hand-edited/garbage COMMENTS value is not a state; it previously became `last`, fell through to `['Adjust']`, and this very guard then locked the rep out of live punching for the rest of the day. A garbage-only day reads as not-clocked-in; all known-type transitions are byte-identical (behavioral pin). Guard order: min-interval first (INV-22 keeps its friendlier error), sequence guard second; adjustments bypass (their own INV-06 window/format guards apply); multi-lunch stays legal. The manager write paths are duplicate-TOLERANT for pre-guard rows: `findExistingPunch_` returns the LAST match (agreeing with `managerSaveDay`'s last-row-wins snapshot), and `managerSaveDay` snapshots ALL rows per type — a blank slot deletes every row of the type, a kept slot collapses extras to the displayed row (`duplicate collapsed` PunchDelete audit rows; the personal-sheet mirror is cleared only on full deletes). Pinned by `test_recordPunch_liveSequenceGuard`, `test_managerSaveDay_collapsesDuplicateRows`, and the M-1 Node source pins | Subsystem: Server
+INV-155 | **Live punches obey the server-enforced next-action state machine (cycle-10 M-1).** `recordPunchCore_`'s live path (the guarded body behind the public `recordPunch` wrapper since 2026-08-17 — the wrapper attaches `state: getEmployeeState()` to a successful result AFTER the core's finally released the ScriptLock, so the client confirms in ONE round trip; a state-assembly failure degrades to the client's fallback refetch) validates `punchType` against `getNextActions_` over today's time-sorted punches — the same function the client's buttons render from, so a fresh client is never rejected and a stale window / direct RPC cannot append a duplicate ClockIn/ClockOut or an out-of-sequence lunch row. **Cycle-17 batch ⑥: `getNextActions_` derives the state from the last RECOGNIZED punch type** (`PUNCH_LABELS_` membership, scanning backward) — a hand-edited/garbage COMMENTS value is not a state; it previously became `last`, fell through to `['Adjust']`, and this very guard then locked the rep out of live punching for the rest of the day. A garbage-only day reads as not-clocked-in; all known-type transitions are byte-identical (behavioral pin). Guard order: min-interval first (INV-22 keeps its friendlier error), sequence guard second; adjustments bypass (their own INV-06 window/format guards apply); multi-lunch stays legal. The manager write paths are duplicate-TOLERANT for pre-guard rows: `findExistingPunch_` returns the LAST match (agreeing with `managerSaveDay`'s last-row-wins snapshot), and `managerSaveDay` snapshots ALL rows per type — a blank slot deletes every row of the type, a kept slot collapses extras to the displayed row (`duplicate collapsed` PunchDelete audit rows; the personal-sheet mirror is cleared only on full deletes). Pinned by `test_recordPunch_liveSequenceGuard`, `test_managerSaveDay_collapsesDuplicateRows`, and the M-1 Node source pins | Subsystem: Server
 INV-156 | **SWR loaders carry same-view seq tokens and never stamp a failed round fresh (cycle-10 M-6/D2a — the `_covSeq` class generalized).** Any loader whose responses can arrive out of order for the SAME view key must bump-and-check a seq token in BOTH handlers (view-identity alone can't stop a same-view stale-range race): `mLoadMyStats_` (`M_STATE.mySeq`), `mLoadTeamMetrics_` (`M_STATE.teamSeq`), `spanishLoad_` (`SPANISH_STATE.seq`), plus the earlier `_covSeq`/`_punctSeq` and CN sites (INV-146). **Cycle-17 batch ⑥ extended the family to the three manager FAN-INS** — `trainLoadMgr_` (`TRAIN_STATE.mgrSeq`, 5 RPCs), `edLoadMgr_` (`ED_STATE.mgrSeq`, 3), `coachLoadMgr_` (`COACH_STATE.mgrSeq`, 2) — with one sharpening: a fan-in's token guards **every STATE WRITE, not just the render**, because the RPCs write into shared TRAIN/ED/COACH_STATE fields and a stale round-1 response landing after round 2 rendered overwrote one field last-writer-wins (the view guard alone can't stop it — currentView never changed on a post-mutation refresh). Pinned by the batch-⑥ fan-in pin (per-handler guard counts). Cache writes stay key-exact and may land before the seq check (a stale response warms its own key); only the RENDER is dropped. Companion posture: an SWR cache must never stamp a FAILED round as fresh — the Clock dashboard keeps last-good per period and sets `loadedAt=0` on any failure (retry on next re-render), and the extras row stamps freshness per-success with last-good kept on failure. A new SWR loader gets BOTH halves. Pinned by the M-6 + batch-D Node pins | Subsystem: Client (Metrics views) + Client (Time Clock views)
 INV-157 | **The intake PHI store is integrity-guarded around the send (cycle-10 M-5).** `intakeSendPPD`/`intakeSendAcct_` size-cap every store cell BEFORE `MailApp.sendEmail` (`intakeStoreOversizeError_`, `INTAKE_STORE_CELL_MAX`=45000 — INV-96 spirit; reject pre-send so no email ever lacks a record) and treat a post-send append failure as LOUD: `intakeStoreFailWarn_` writes a PHI-free `IntakeStoreFail` audit row (`type + submissionId + trimmed err`) and the response carries `storeWarning`, which the client surfaces as a warn toast in place of the success toast. The store append remains deliberately best-effort AFTER a successful send (the email can't be unsent) — the guarantee is visibility, not atomicity. Pinned by the `intakeStoreOversizeError_` behavioral Node test + the wiring pins (cap-before-send, storeWarning in both returns) | Subsystem: Server + Client (Intake views)
 INV-158 | **Witness-class audit rows are loss-visible (cycle-10 C4).** The three tamper-witness audit rows (`FormSubmissionReceived` INV-113; `EmpDocSigned`/`EmpDocCompleted` INV-122/135) are written via `writeWitnessAuditLog_`: one retry, then a best-effort `WITNESS_AUDIT_FAILS` Script Property stamp (`{count, lastAt, lastAction}` — a same-store signal can't work when the witness store itself failed, the PersonalSheetSyncFail posture). `writeAuditLog_` returns its outcome (all other callers ignore it). Surfacing: `computeAutomationHealth_` returns `witnessFails` (+`recent` = a loss in the last 48h), the Admin Automation panel renders the total, and `sendAutomationHealthDigest` pushes only a RECENT loss (an old blip never nags daily). A NEW witness-class row (one documented as independent tamper evidence) must use the wrapper, not bare `writeAuditLog_`. Pinned by the batch-C Node wiring pins | Subsystem: Server
@@ -7170,7 +7309,7 @@ INV-186 | **Before toning a health indicator off a count, ask what that count re
 INV-187 | **A surface that aggregates or draws a JUDGEMENT from a best-effort read must carry the read OUTCOME, and every judgement derived from it must be suppressed when that outcome is degraded.** Three cycles fixed instances of this one at a time before it was named: cycle-12 F5 (a swallowed per-rep read rendered as a confident 0%, telling reps to re-file work they had already filed), cycle-16 F1 (`managerGetShiftStats` pushed a rep with an unreadable Sheet onto the manager's END-OF-SHIFT PERFORMANCE table with `totalNotes:0` and a CRIT-toned 0% badge), F5 (`getTeamMetrics` nulled the per-rep coverage but computed the TEAM total anyway, so the rail said "partial" while the hint below drew a confident below-80% judgement from the same contaminated numerator) and F4 (`getCoveragePlan` swallowed a failed PTO read, and with the overlay empty EVERY REP COUNTS AS WORKING — so an understaffing planner returned a green all-clear on a day half the team is off). **The test that generalizes them: if the DEGRADED output is MORE reassuring than the healthy one, silence is not an option.** A number can be nulled; a judgement (a percentage, a staffing band, an all-clear, a threshold hint) must be actively suppressed and the degradation named to the user, because a missing judgement reads as "fine" rather than "unknown". Note the reason this class keeps escaping sweeps: an aggregate is a coverage surface even when it never calls the shared helper — `managerGetShiftStats` counts INLINE (it needs flags, emails and a median off the same read) and so appeared in no search for `cnCountNotesResult_`. **Ask what a function DERIVES from a best-effort read, not which helper it calls.** **Cycle-17 completed the class:** the export (C17-6 `skippedReps` + INCOMPLETE audit marker), the CN loaders (C17-5 preserve-last-good + failed-round-never-fresh), the three manager lazy cards (C17-7), and batch ② — the flagged/urgent digest aggregates, manager search, tag taxonomy/trends (`skippedReps`, partial-rounds-uncached), the unresolved-action count (`{count, partial}`, undercount never cached, `≥ N` badge), the extras SWR whole-round stamp, the no-CDR Notes-Filed branch, and the timesheet side rail. Verify: for each of `managerGetShiftStats`, `getCoveragePlan`, `getTeamMetrics`, `getMyMetrics` — and the batch-2 pin for the five walks — assert the response carries an outcome flag AND that the derived judgement is gated on it — not merely that the number is nulled | Subsystem: Server + Client (all manager aggregates)
 INV-188 | **A source-scanning tripwire must STRIP COMMENTS before matching.** The fix comment that explains what was removed quotes the removed code, so a naive scan trips on its own rationale — and the failure mode is a pin that looks like it caught a regression on the very commit that fixed one. It has now bitten twice in two cycles: cycle-15's F1 tripwire failed on its own allowlist because it searched a comment-stripped body for a marker that lives in a comment, and cycle-16's F8 pin reported `3 !== 1` raw `DR.STATUS` reads when two of the three were inside the comment explaining the fix. The related trap in the same family: slice from the RIGHT occurrence — cycle-16's F6 pin anchored on the first `ui-dialog-err`, which is the id CONSTANT, not the div it was checking. Verify: any pin asserting "N occurrences of X" strips `//` and `/* */` before counting, and fails on a file whose comment mentions X | Subsystem: Test Suite
 INV-189 | **A best-effort read that BLOCKS a cheap one belongs in its own endpoint.** `getOnboardingPanel` computed CDR readiness inline, so the whole Admin → Team Members panel — everything else in it coming off the 5-min-cached roster — waited on a 7-day read of a foreign spreadsheet (operator: "takes some time to load"). The split is `getOnboardingCdrReadiness` (same admin gate, same INV-67 posture): the client paints the roster panel, then patches each rep's chip via `data-cdr-name`. THREE properties make the split safe rather than merely faster: (a) the panel's `cdr: {deferred:true}` is DISTINCT from `ok:false` — "not read yet" renders "checking…", "read and failed" renders "unknown", and neither is ever "no calls in 7d", because an unread name is not an absent one (INV-187); (b) first render and the patch share ONE chip builder, so the states cannot drift; (c) the patch is DOM surgery keyed off an attribute, not a whole-panel re-render, so it cannot clobber a form the admin has begun filling in. The general rule: when one part of a response is an order of magnitude slower than the rest AND is decoration on top of it, splitting is not premature optimization — it is the difference between a panel that appears and one that hangs. Verify: the operator-2026-08-11 split pins (no CDR call in the panel; deferred marker; gate + best-effort on the split; paint-before-patch ordering; shared chip builder) | Subsystem: Server + Client (Call Notes views)
-INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. Each reminder fires at most once per key per REP-LOCAL day (the fired-set resets on that rollover, so it cannot grow in a long-lived pop-out). Apps Script has no background push: a closed browser still gets nothing. **AMENDMENT (operator 2026-08-12): the reminder toast is STICKY** — `notifyRemind_` passes `{sticky:true}` to `showToast`, which then skips the 3.5s auto-dismiss and renders a real, `aria-label`led × button (INV-173). The chime does its job from another window, and by the time the rep gets back to the one that fired it a 3.5s toast is long gone — a reminder is the one toast class that must wait for its reader. Two consequences the pins hold: the stack cap evicts the oldest NON-sticky toast first (a reminder the rep has not read must not be pushed off by routine toasts) while staying a real bound, and every existing 2-arg `showToast` caller is untouched. Verify: the reminder-channel + shell-ticker pins, the sticky-toast source pin, and the DOM lifecycle pair (survives the auto-dismiss window; × dismisses; cap evicts routine first) | Subsystem: Client (shell) + Client (Time Clock views)
+INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. Each reminder fires at most once per key per REP-LOCAL day — **across EVERY open window, not once per window (operator 2026-08-17):** the main window and a pinned pop-out each run the ticker, so before the fix every reminder toasted + chimed twice. `remindOnce_` now consults + writes a shared localStorage fired-set (`umsRemindFired`, `{day, keys}` — the same origin-wide-sharing property that lets `umsNotify` govern the pop-out); a different day resets it (the in-memory set's rollover rule, so it cannot grow in a long-lived pop-out), and a localStorage-throwing privacy-mode browser degrades to per-window dedupe — the pre-fix behavior, never worse. The sub-second race where two windows tick simultaneously before either writes is accepted: its worst case IS the pre-fix behavior. Apps Script has no background push: a closed browser still gets nothing. **AMENDMENT (operator 2026-08-12): the reminder toast is STICKY** — `notifyRemind_` passes `{sticky:true}` to `showToast`, which then skips the 3.5s auto-dismiss and renders a real, `aria-label`led × button (INV-173). The chime does its job from another window, and by the time the rep gets back to the one that fired it a 3.5s toast is long gone — a reminder is the one toast class that must wait for its reader. Two consequences the pins hold: the stack cap evicts the oldest NON-sticky toast first (a reminder the rep has not read must not be pushed off by routine toasts) while staying a real bound, and every existing 2-arg `showToast` caller is untouched. Verify: the reminder-channel + shell-ticker pins, the sticky-toast source pin, and the DOM lifecycle pair (survives the auto-dismiss window; × dismisses; cap evicts routine first) | Subsystem: Client (shell) + Client (Time Clock views)
 INV-191 | **A writer keyed on a CLASS silently clobbers anything else that borrows the class for its looks.** `index.html`'s boot theme reflector wrote `aria-pressed` across every `.sb-theme-btn`; the moment the reminder-alert toggles reused that class for its appearance, they rendered `aria-pressed="true"` in markup and read `false` in the live DOM on every load — the sound toggle silently reset itself each session. The selector is now `.sb-theme-btn[data-theme-target]`: the attribute that actually MEANS "this is a theme button". Reusing a class for appearance is normal and cheap; what is not safe is a writer that treats class membership as identity. This is invisible to source review — the markup is correct — and was caught only by reading the attribute back in a real browser, which is the general lesson: **for any state an element renders AND some other code writes, verify by measuring the live attribute, not by reading the template.** Sibling shape: two rendered copies of one control cannot share an `id`, so `notifySyncToggles_` selects by `data-remind`. Verify: the theme-reflector scope pin + the no-duplicate-ids pin | Subsystem: Client (shell)
 
 
@@ -7573,9 +7712,9 @@ S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem
 S41 | Metrics — My Stats self-view with sparkline | Subsystem: Server, Client (Metrics views)
   Steps:
     - As an enrolled rep, open Metrics → My Stats
-    - Confirm the default is the Today preset; the hero + rail render if CDR data exists for today
+    - Confirm the default is the **Yesterday** preset landing on the previous WORKDAY (on a Monday it shows Friday — operator 2026-08-17; CDR data is never same-day) and the hero label reads 'Yesterday'
     - Click **Custom…** → the Day + Range inputs reveal; change the Day to a prior working day with known CDR activity
-    - Click the 7D preset → confirm the aggregate hero AND that the "Trends · you vs team avg" section STAYS rendered (headed "trailing 30 days ending today") plus Best/Worst day chips under the delta
+    - Click the 7D preset → confirm the aggregate hero AND that the "Trends · you vs team avg" section STAYS rendered (headed "trailing 30 days ending <previous workday>") plus Best/Worst day chips under the delta
     - Inspect the hero sparkline (dashed avg baseline + dashed warn-toned target line) and the delta line's "· target 85%"
     - Check the rail's **Transfers** row (count + % of calls + sparkline in Today mode)
     - If coverage < 80% today, click "File them in Call Notes →" in the hint
@@ -7984,6 +8123,26 @@ S78 | Pop-out has no repeated header strip (operator 2026-08-11) | Subsystem: Cl
     - In the Manage Time pop-out, click the refresh control and confirm the dashboard reloads
     - Shrink the pop-out as far as it will go and confirm nothing needs scrolling past to do it
   Expected: No tool renders the retired `.compact-header`. The pop-out window's own title already names the tool and the tab bar names the view, so the strip was pure repetition at the top of the smallest window in the app. The manager refresh button survived the retirement on its own right-aligned row and still works. The Call Notes pop-out self-sizes ~44px shorter than before.
+
+S79 | Pay statement — own-data self-check with estimated gross | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - In the Employees sheet, set column P (`PayRate`) for a test rep (e.g. `18.50`) and leave it BLANK for another
+    - As the rated rep: Time / PTO → Timesheet mode → click "View pay statement"
+    - Read the modal: period label + ‹ › nav; day rows (punches, hours, ADJ badges); a weekday with no punches; any incomplete day; approved PTO rows; totals; the estimated-gross box
+    - Navigate ‹ two periods back and forward again; try to go past the current period
+    - As the BLANK-rate rep, open the statement
+    - As a non-manager, call `google.script.run...getMyPayStatement(0, '<another rep id>')` from the console; as a manager, the same call
+    - If timesheet archiving is enabled, open a period older than the archive window
+  Expected: The rated rep sees "Estimated gross: $X (Yh × $R/h)" with the "Estimate only … Not a payslip" disclaimer; the blank-rate rep sees the same statement hours-only with "Pay rate not on file". A weekday with no punches renders "no punches" (visible — a missing day IS the discrepancy); incomplete days are amber, EXCLUDED from the total, and the foot note says to fix them via Adjust. Period boundaries match the ADP export (org biweekly anchor / calendar month); the ‹ › nav is bounded 0..6 and a slow older-period response never overwrites a newer one (seq-guarded). The non-manager cross-rep call returns "Manager access required."; the manager call returns the target's statement with a "Viewing: <name>" line. An archived-away period shows the "may have been moved to the timesheet archive" warning instead of presenting a short total as complete. The rate value appears NOWHERE outside this modal (teammate status, dashboards, and exports are unchanged).
+
+S80 | Spanish Inbox — resolution-share chart | Subsystem: Server, Client (Metrics views)
+  Steps:
+    - Ensure `SPANISH_INBOX_MEMBERS` lists ≥2 members, at least one of whom has resolved nothing in the window
+    - As a manager (or listed member), open Metrics → Spanish Inbox
+    - Read the "Resolution share" card between the KPI strip and the request list
+    - Mark a pending request resolved manually and refresh after the cache TTL
+    - Switch the window (Last 7 / 30 / 90 days)
+  Expected: One bar per resolver, count + % direct-labeled, sorted most-resolved first; a configured member with ZERO resolutions shows as a zero bar (never vanishes — the "completed equally" check is about them); a dashed neutral marker sits at the even-split share with a foot note naming it; manual resolves count toward whoever clicked, with an "N manual" suffix. NO verdict coloring anywhere on the chart — bars stay accent-toned regardless of share (the judgement is the operator's). A capped scan appends "shares may be incomplete". The chart re-renders with the window change and with background refreshes, and renders nothing (no empty card) when the window has no resolutions.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

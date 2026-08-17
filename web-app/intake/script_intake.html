@@ -1502,8 +1502,12 @@ function intakeBuildPpdModal_(html, recs) {
       }).join('')
     : '<p style="color:var(--muted);font-style:italic;">No products matched the provided answers.</p>';
 
+  // Custom email… mirrors the PMD/PAP picker (operator 2026-08-17): the shared
+  // server resolver has accepted kind:'custom' (validated) all along — this
+  // footer was the one send surface that never offered it.
   var agentOpts = '<option value="all">All Agents</option>' +
-    (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
+    (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') +
+    '<option value="custom">Custom email&hellip;</option>';
 
   // Recommendations first (the agent shares these with the patient — image to
   // text, code to open the brochure), email-body preview below.
@@ -1515,11 +1519,22 @@ function intakeBuildPpdModal_(html, recs) {
     '<div class="intk-foot">' +
       '<label><strong>Send to:</strong></label>' +
       '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
+      '<input type="email" id="intk-ppd-custom" placeholder="recipient@&hellip;" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
       '<button class="intk-btn primary" id="intk-ppd-send" onclick="intakePpdSend_()">' + icon('send', 14) + ' Send Email</button>' +
     '</div>';
   intakeOpenModal_('PPD Preview & Send', body);
+
+  // The custom input reveals only when chosen — the intk-acct picker's pattern.
+  var recSel = document.getElementById('intk-ppd-recipient');
+  if (recSel) recSel.addEventListener('change', function () {
+    var c = document.getElementById('intk-ppd-custom');
+    if (c) {
+      c.style.display = this.value === 'custom' ? 'inline-block' : 'none';
+      if (this.value === 'custom') c.focus();
+    }
+  });
 }
 
 function intakeToggleStar_(el) {
@@ -1601,7 +1616,13 @@ function intakePpdSend_() {
   if (!st || st.formType !== 'PPD') { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
   var recEl = document.getElementById('intk-ppd-recipient');
   var val = recEl ? recEl.value : 'all';
-  var spec = val === 'all' ? { kind: 'all' } : { kind: 'agent', id: val.replace(/^agent:/, '') };
+  var spec;
+  if (val === 'all') spec = { kind: 'all' };
+  else if (val === 'custom') {
+    var custom = document.getElementById('intk-ppd-custom');
+    spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
+    if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
+  } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
   st.payload.selections = intakeGatherSelections_();
   var btn = document.getElementById('intk-ppd-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }

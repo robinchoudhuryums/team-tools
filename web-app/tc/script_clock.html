@@ -2214,16 +2214,22 @@ function submitPunch(punchType, custom) {
       }
       const tag = result.isAdjustment ? ' (adj)' : '';
       showToast(`${PUNCH_META[punchType].label}${tag} at ${result.displayTime}`, 'toast-success');
+      const applyState = state => {
+        empState = state;
+        if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
+        adjustWindowDays = state.adjustWindowDays || 30;
+        // Round 2 · 8b — re-renders target view-area directly now that
+        // the Clock view no longer hosts a timesheet section below.
+        const area = getClockArea_();
+        if (area && currentView === 'clock') { renderClockView(area); startClock(); }
+      };
+      // Operator 2026-08-17: the fresh state rides the punch response now, so
+      // the toast AND the button change land together after ONE round trip.
+      // The refetch below survives as the deploy-skew / state-assembly-failure
+      // fallback (an older server ships no `state` field).
+      if (result.state && !result.state.error) { applyState(result.state); return; }
       google.script.run
-        .withSuccessHandler(state => {
-          empState = state;
-      if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
-          adjustWindowDays = state.adjustWindowDays || 30;
-          // Round 2 · 8b — re-renders target view-area directly now that
-          // the Clock view no longer hosts a timesheet section below.
-          const area = getClockArea_();
-          if (area && currentView === 'clock') { renderClockView(area); startClock(); }
-        })
+        .withSuccessHandler(applyState)
         .withFailureHandler(() => {
           // D2b (cycle 10): the punch SUCCEEDED but the state refresh died —
           // the buttons were already re-enabled while the clicked one still

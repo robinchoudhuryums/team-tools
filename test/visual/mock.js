@@ -246,6 +246,9 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      // Resolution-share chart (2026-08-17): members incl. one who resolved
+      // nothing, so the zero-bar row is on camera.
+      members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       truncated: false },
     getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 2, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 14, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
