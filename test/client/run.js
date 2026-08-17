@@ -9645,5 +9645,39 @@ test('reminders dedupe across windows via the shared localStorage fired-set', ()
     'another window\'s fire marks the in-memory set and returns without notifying');
 });
 
+test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const st = nc(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  // The shared card grid flows to the view width — the 920px cap that left
+  // half a wide monitor empty must not come back.
+  const grid = st.match(/\.sp-tasks\s*\{[^}]*\}/);
+  assert.ok(grid && !/max-width/.test(grid[0]), '.sp-tasks carries no max-width (auto-fill does the reflow)');
+  // Both views widen past --content-max via the Dashboard :has() precedent,
+  // each rule living in ITS OWN partial's style block.
+  const met = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  const dr = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  assert.ok(/\.view-area:has\(#spanish-body\)\s*\{\s*max-width:\s*1480px/.test(met), 'Spanish widens to 1480px');
+  assert.ok(/\.view-area:has\(#dr-body\)\s*\{\s*max-width:\s*1480px/.test(dr), 'Dept Requests widens to 1480px');
+  // The DR anchor wraps BOTH render branches — an error render must not snap
+  // the view back to the narrow width mid-session.
+  const render = nc(extractFunction('metrics/script_deptrequests.html', 'drRender_'));
+  assert.strictEqual((render.match(/id="dr-body"/g) || []).length, 2, 'both drRender_ branches emit #dr-body');
+  // The Spanish top row: head + share side by side in .sp-top, whose base
+  // multi-column grid carries a real viewport breakpoint (the A2 rule) — the
+  // 480px pop-out rides the same breakpoint, so no data-compact override.
+  const spRender = nc(extractFunction('metrics/script_metrics.html', 'spanishRender_'));
+  assert.ok(/class="sp-top"[\s\S]*id="spanish-head"[\s\S]*id="spanish-share"/.test(spRender),
+    'head + share render inside the .sp-top grid (the SWR head-swap slot is preserved)');
+  const top = st.match(/\.sp-top\s*\{[^}]*\}/);
+  assert.ok(top && /grid-template-columns:\s*minmax\(0, 1\.05fr\) minmax\(0, 1fr\)/.test(top[0]), '.sp-top is a 2-col grid');
+  assert.ok(/@media \(max-width: 1023px\)\s*\{\s*\.sp-top\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/.test(st),
+    '.sp-top stacks at a real viewport breakpoint (A2)');
+  // The inline 660px caps are gone — the strips + share card fill their
+  // columns (the manager dashboard's full-width .telemetry posture).
+  assert.ok(!/telemetry" style="max-width:660px/.test(met + dr), 'no 660px cap on either telemetry strip');
+  assert.ok(!/max-width:660px/.test(nc(extractFunction('metrics/script_metrics.html', 'spanishShareHtml_'))),
+    'the share card fills its .sp-top column');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

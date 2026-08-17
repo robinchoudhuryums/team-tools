@@ -3,6 +3,10 @@
    now SHARED by the Spanish Inbox and Dept Requests views (operator feedback
    2026-08-06: the two pages use one card language). Spanish-only styles
    (.sp-suggest*, .sp-resolved-when, sp-body expand) stay below. */
+/* Operator 2026-08-17 — the Spanish Inbox is an app surface, not prose: widen
+   its view past --content-max so the card grid + side-by-side top row use the
+   monitor (the .view-area:has(#dash-grid) Dashboard precedent). */
+.view-area:has(#spanish-body) { max-width: 1480px; }
 /* Content-aware tool suggestions on a Spanish-inbox task (heuristic; deep-links
    to the relevant Intake form / Call Notes log). */
 .sp-suggest-wrap:empty { display: none; }
@@ -1940,7 +1944,7 @@ function spanishHeadHtml_(d) {
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
     (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') +
     spanishTruncNote_(d) + '</div>';
-  var strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
+  var strip = '<div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + esc(String(d.resolved)) + '</div><div class="tel-sub">of ' + esc(String(total)) + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + esc(String(d.pending)) + '</div><div class="tel-sub">awaiting reply</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
@@ -1964,8 +1968,15 @@ function spanishRender_(d, opts) {
   opts = opts || {};
   var body = document.getElementById('spanish-body'); if (!body) return;
   if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
-  body.innerHTML = '<div id="spanish-head">' + spanishHeadHtml_(d) + '</div>' +
-    '<div id="spanish-share"></div>' +
+  // Operator 2026-08-17 — full-width layout: the summary head (note + strip +
+  // filter chips) and the resolution-share chart sit SIDE BY SIDE at wide
+  // widths (.sp-top, stacks <1024px); the card list below flows full-width.
+  // The SWR head-swap contract is unchanged — a background stats arrival still
+  // swaps ONLY #spanish-head, which keeps its own slot inside the grid.
+  body.innerHTML = '<div class="sp-top">' +
+      '<div id="spanish-head">' + spanishHeadHtml_(d) + '</div>' +
+      '<div id="spanish-share"></div>' +
+    '</div>' +
     '<div id="spanish-list" style="margin-top:2px">' + (opts.seeded ? '' : loSweep()) + '</div>';
   // Seeded (SWR) renders paint the cached lists immediately inside
   // spanishLoadList_ and refresh them silently; cold renders show the loader.
@@ -2089,7 +2100,7 @@ function spanishShareHtml_() {
   var sh = spanishResolverShares_(rd.resolved || [], rd.members || []);
   if (!sh.rows.length || !sh.total) return '';
   var evenPct = sh.rows.length > 1 ? Math.round(100 / sh.rows.length) : null;
-  var html = '<div class="card" style="margin:0 0 16px;max-width:660px;padding:14px 16px">' +
+  var html = '<div class="card" style="margin:0 0 16px;padding:14px 16px">' +
     '<h2 class="card-label" style="margin-top:0">Resolution share · last ' + esc(String(SPANISH_STATE.days)) + ' days</h2>';
   sh.rows.forEach(function (r) {
     var name = r.resolver.indexOf('@') > 0 ? r.resolver.split('@')[0] : r.resolver;

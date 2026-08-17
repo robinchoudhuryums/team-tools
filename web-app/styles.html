@@ -1302,7 +1302,18 @@
      Spanish tones ride SPANISH_OVERDUE_HOURS; DR tones ride the per-dept SLA
      machinery (drRowToneCls_). Moved here from the metrics partial when Dept
      Requests adopted the vocabulary. */
-  .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: 920px; }
+  /* Operator 2026-08-17 — full-width: the grid flows to the view's width (the
+     auto-fill minmax reflows 1..4-up on its own; the old 920px cap left the
+     right half of a wide monitor empty on both request-tracking pages). */
+  .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  /* The wide top row (Spanish): summary strip + note on the left, the
+     resolution-share chart on the right. Stacks below 1024px — the same
+     viewport also covers the 480px compact pop-out, so no data-compact
+     override is needed (A2: the media query IS the reflow). */
+  .sp-top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 0 22px; align-items: start; }
+  @media (max-width: 1023px) { .sp-top { grid-template-columns: minmax(0, 1fr); } }
+  /* Show-more row under a display-capped card list (operator 2026-08-17). */
+  .sp-more-row { margin: 10px 0 16px; }
   /* List-swap motion (operator 2026-08-06) — see animateListSwap_ in
      script_core.html. Transform/opacity only; one-shot via `both`; per-item
      stagger rides the inline --d; the global prefers-reduced-motion block

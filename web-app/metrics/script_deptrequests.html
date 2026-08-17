@@ -108,7 +108,10 @@ function drRender_(area, data, errorMsg) {
   // role="alert"), never .dr-empty — that is the same quiet muted card used
   // below for "No tracked requests yet", so a failed RPC read as "you have no
   // requests". errorStateHtml_ escapes internally, so NO outer esc() here.
-  if (errorMsg) { area.innerHTML = head + errorStateHtml_(errorMsg); return; }
+  // #dr-body is the widen anchor (.view-area:has(#dr-body) in the style block
+  // below — the Dashboard #dash-grid precedent) so BOTH branches wrap in it;
+  // the error render must not snap the view back to the narrow width.
+  if (errorMsg) { area.innerHTML = '<div id="dr-body">' + head + errorStateHtml_(errorMsg) + '</div>'; return; }
 
   const intro = '<div class="dr-note">' + icon('outbox', 13) +
     ' Every department email you send from Call Notes is logged here. Resolve a request with the button below, ' +
@@ -128,7 +131,7 @@ function drRender_(area, data, errorMsg) {
   const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
   const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
-  const strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
+  const strip = '<div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
@@ -199,7 +202,7 @@ function drRender_(area, data, errorMsg) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + trunc + strip + deptBar + incomingSection + mineSection + mgrSection;
+  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + strip + deptBar + incomingSection + mineSection + mgrSection + '</div>';
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -337,6 +340,9 @@ function drFmtMin_(min) {
      styles.html (operator feedback 2026-08-06 — this view mirrors the Spanish
      Inbox). Only the DR-specific pieces remain below: the stats-table card,
      the SLA tag, notes/empties, and the table itself. */
+  /* Operator 2026-08-17 — full-width: widen the view past --content-max so the
+     card grid + telemetry strip use the monitor (the Dashboard precedent). */
+  .view-area:has(#dr-body) { max-width: 1480px; }
   .dr-section { background: var(--paper-card); border: 1px solid var(--line);
     border-radius: var(--radius-md); padding: 16px; margin-bottom: 14px; }
   /* F18 — the "showing N of M" suffix on a payload-capped list. */
