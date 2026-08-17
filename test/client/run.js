@@ -9530,6 +9530,50 @@ test('pay statement: the rate never leaves its one reader; other-rep view is man
   assert.ok(/Pay rate not on file/.test(html), 'a missing rate degrades to hours-only, stated');
 });
 
+test('Spanish resolution share: zero-bars for idle members, facts only, no verdict', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'spanishResolverShares_'), ctx);
+  const resolved = [
+    { resolver: 'maria@x.com' }, { resolver: 'maria@x.com', manual: true },
+    { resolver: 'Luis@x.com' },  { resolver: '' },
+  ];
+  const sh = ctx.spanishResolverShares_(resolved, ['maria@x.com', 'luis@x.com', 'ana@x.com']);
+  assert.strictEqual(sh.total, 4);
+  // The fairness check is exactly about the member who resolved NOTHING —
+  // ana must render as a zero bar, not vanish.
+  const ana = sh.rows.filter(r => r.resolver === 'ana@x.com')[0];
+  assert.ok(ana && ana.n === 0 && ana.pct === 0, 'a configured member with zero resolutions gets a zero row');
+  const maria = sh.rows[0];
+  assert.strictEqual(maria.resolver, 'maria@x.com', 'sorted most-resolved first');
+  assert.strictEqual(maria.n, 2);
+  assert.strictEqual(maria.manual, 1, 'manual mark-resolves attributed to the clicker');
+  assert.strictEqual(maria.pct, 50);
+  // Case-insensitive resolver keying; an attributed-to-nobody thread buckets
+  // visibly instead of silently dropping (INV-187).
+  const luis = sh.rows.filter(r => r.resolver === 'luis@x.com')[0];
+  assert.strictEqual(luis.n, 1, 'Luis@ and luis@ are one person');
+  assert.ok(sh.rows.some(r => r.resolver === '(unattributed)'), 'unattributed resolutions stay visible');
+  // Server ships the member list on the resolved payload (same gate).
+  const srv = nc(extractRawFunction('Code.js', 'getSpanishInboxResolved'));
+  assert.ok(/members: Object\.keys\(members\)/.test(srv), 'getSpanishInboxResolved ships the configured members');
+  // Wiring: the slot renders between head and list, and rides every resolved
+  // update (the fan-in's single render path).
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  assert.ok(/id="spanish-share"/.test(m), 'the share slot is emitted');
+  assert.ok(/^function spanishRenderList_[\s\S]{0,200}spanishRenderShare_\(\);/m.test(m),
+    'the chart re-renders with the list (seeded paints + background swaps included)');
+  // FACTS ONLY — the Coverage rule: no verdict tone anywhere in the chart
+  // (deviation from an even split is the operator's judgement, not the
+  // chart's); the even-split marker + numbers carry the comparison.
+  const chart = nc(extractFunction('metrics/script_metrics.html', 'spanishShareHtml_'));
+  assert.ok(!/st-overdue|--warn|--destructive|warning-deep|--danger/.test(chart),
+    'no verdict tones — bars are accent-on-surface, judgement stays the operator\'s');
+  assert.ok(/dashed/.test(chart) && /Even share/.test(chart), 'the even-split reference is a neutral marker');
+  assert.ok(/scan capped/.test(chart), 'a truncated scan is named (INV-169) rather than presenting shares as complete');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed

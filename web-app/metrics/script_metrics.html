@@ -1965,6 +1965,7 @@ function spanishRender_(d, opts) {
   var body = document.getElementById('spanish-body'); if (!body) return;
   if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
   body.innerHTML = '<div id="spanish-head">' + spanishHeadHtml_(d) + '</div>' +
+    '<div id="spanish-share"></div>' +
     '<div id="spanish-list" style="margin-top:2px">' + (opts.seeded ? '' : loSweep()) + '</div>';
   // Seeded (SWR) renders paint the cached lists immediately inside
   // spanishLoadList_ and refresh them silently; cold renders show the loader.
@@ -2051,7 +2052,73 @@ function spanishLoadList_(opts) {
  *  order). Row tones: st-overdue (pending >= SPANISH_OVERDUE_HOURS) /
  *  st-pending / st-resolved. A failed HALF renders as an error card in place
  *  of its section — never as "nothing pending" (A12/INV-175/187). */
+/** PURE — resolution share per resolver over the resolved list, with ZERO
+ *  rows for configured members who resolved nothing (the operator's fairness
+ *  check — "are tasks completed equally" — is exactly about them). Manual
+ *  mark-resolves count toward the resolver who clicked. Rows sort
+ *  most-resolved first, ties alphabetical (stable across refreshes). */
+function spanishResolverShares_(resolved, members) {
+  var by = {}, total = 0;
+  (members || []).forEach(function (m) {
+    var k = String(m || '').toLowerCase().trim();
+    if (k && !by[k]) by[k] = { resolver: k, n: 0, manual: 0 };
+  });
+  (resolved || []).forEach(function (r) {
+    var k = String((r && r.resolver) || '').toLowerCase().trim() || '(unattributed)';
+    if (!by[k]) by[k] = { resolver: k, n: 0, manual: 0 };
+    by[k].n++;
+    if (r && r.manual) by[k].manual++;
+    total++;
+  });
+  var rows = Object.keys(by).map(function (k) { return by[k]; });
+  rows.sort(function (a, b) { return b.n - a.n || (a.resolver < b.resolver ? -1 : 1); });
+  rows.forEach(function (r) { r.pct = total ? Math.round((r.n / total) * 100) : 0; });
+  return { rows: rows, total: total };
+}
+
+/** The share chart (operator 2026-08-17): one bar per resolver, count + %
+ *  direct-labeled, a dashed marker at the even-split share. FACTS ONLY — no
+ *  verdict tone (the Coverage rule: deviation from even is the operator's
+ *  judgement, not the chart's; a member may be part-time). Renders nothing
+ *  until the resolved list has landed; a failed resolved half renders its
+ *  error card in the list below, so this stays quiet rather than doubling it. */
+function spanishShareHtml_() {
+  if (SPANISH_STATE.resolvedErr) return '';
+  var rd = SPANISH_STATE.resolvedRes;
+  if (!rd) return '';
+  var sh = spanishResolverShares_(rd.resolved || [], rd.members || []);
+  if (!sh.rows.length || !sh.total) return '';
+  var evenPct = sh.rows.length > 1 ? Math.round(100 / sh.rows.length) : null;
+  var html = '<div class="card" style="margin:0 0 16px;max-width:660px;padding:14px 16px">' +
+    '<h2 class="card-label" style="margin-top:0">Resolution share · last ' + esc(String(SPANISH_STATE.days)) + ' days</h2>';
+  sh.rows.forEach(function (r) {
+    var name = r.resolver.indexOf('@') > 0 ? r.resolver.split('@')[0] : r.resolver;
+    html += '<div style="margin:7px 0">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;margin-bottom:3px">' +
+        '<span title="' + esc(r.resolver) + '" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(name) + '</span>' +
+        '<span style="flex:0 0 auto;color:var(--muted)"><b style="color:var(--ink)">' + esc(String(r.n)) + '</b> · ' + esc(String(r.pct)) + '%' +
+          (r.manual ? ' · ' + esc(String(r.manual)) + ' manual' : '') + '</span>' +
+      '</div>' +
+      '<div style="position:relative;height:8px;border-radius:999px;background:var(--paper-2)">' +
+        '<div style="position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:var(--accent);width:' + (r.n > 0 ? Math.max(1.5, r.pct) : 0) + '%"></div>' +
+        (evenPct != null ? '<div title="Even share ≈ ' + evenPct + '%" style="position:absolute;top:0;bottom:0;left:' + evenPct + '%;width:0;border-left:2px dashed var(--muted-3)"></div>' : '') +
+      '</div>' +
+    '</div>';
+  });
+  html += '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">' +
+    esc(String(sh.total)) + ' resolved in the window' +
+    (evenPct != null ? ' · dashed marker = an even split (&approx;' + evenPct + '% each across ' + esc(String(sh.rows.length)) + ' resolvers)' : '') +
+    (rd.truncated ? ' · scan capped — shares may be incomplete' : '') + '.</div>';
+  return html + '</div>';
+}
+
+function spanishRenderShare_() {
+  var slot = document.getElementById('spanish-share');
+  if (slot) slot.innerHTML = spanishShareHtml_();
+}
+
 function spanishRenderList_() {
+  spanishRenderShare_();   // the share chart rides the same resolved data
   var s = document.getElementById('spanish-list'); if (!s) return;
   var tab = SPANISH_STATE.tab;
   var html = '';

@@ -12942,7 +12942,12 @@ function getSpanishInboxResolved(days) {
       });
     });
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
-    return { address: addr, days: d, resolved: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
+    // Resolution-share chart (operator 2026-08-17): ship the configured member
+    // list so a member who resolved NOTHING renders as a zero bar — the
+    // fairness check is exactly about them. Internal team emails, behind the
+    // same canSeeSpanishInbox_ gate as everything else here.
+    return { address: addr, days: d, resolved: out, members: Object.keys(members),
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
