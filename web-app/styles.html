@@ -1311,6 +1311,10 @@
      viewport also covers the 480px compact pop-out, so no data-compact
      override is needed (A2: the media query IS the reflow). */
   .sp-top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 0 22px; align-items: start; }
+  /* No chart yet (share slot empty — resolved list still loading, or nothing
+     resolved): collapse to one column so the head doesn't sit beside a dead
+     half-width gap. */
+  .sp-top:has(#spanish-share:empty) { grid-template-columns: minmax(0, 1fr); }
   @media (max-width: 1023px) { .sp-top { grid-template-columns: minmax(0, 1fr); } }
   /* Show-more row under a display-capped card list (operator 2026-08-17). */
   .sp-more-row { margin: 10px 0 16px; }

@@ -9672,6 +9672,8 @@ test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', ()
   assert.ok(top && /grid-template-columns:\s*minmax\(0, 1\.05fr\) minmax\(0, 1fr\)/.test(top[0]), '.sp-top is a 2-col grid');
   assert.ok(/@media \(max-width: 1023px\)\s*\{\s*\.sp-top\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/.test(st),
     '.sp-top stacks at a real viewport breakpoint (A2)');
+  assert.ok(/\.sp-top:has\(#spanish-share:empty\)\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/.test(st),
+    'an empty share slot collapses the grid — no dead half-width column while the chart has nothing');
   // The inline 660px caps are gone — the strips + share card fill their
   // columns (the manager dashboard's full-width .telemetry posture).
   assert.ok(!/telemetry" style="max-width:660px/.test(met + dr), 'no 660px cap on either telemetry strip');
