@@ -9384,6 +9384,24 @@ test('My Stats lands on the previous workday; Team Metrics deliberately keeps To
     'the hero period label says Yesterday only when the date IS the previous workday');
 });
 
+test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const intake = nc(extractScript('intake/script_intake.html'));
+  // The footer renders the option + the reveal-on-choose input.
+  assert.ok(/id="intk-ppd-custom"/.test(intake), 'the PPD footer carries the custom-email input');
+  assert.ok(/'<option value="custom">Custom email&hellip;<\/option>'/.test(intake),
+    'the PPD picker offers Custom email…');
+  const send = nc(extractFunction('intake/script_intake.html', 'intakePpdSend_'));
+  assert.ok(/kind: 'custom', email: custom \? custom\.value\.trim\(\) : ''/.test(send),
+    'the send builds the kind:custom spec the shared resolver already validates');
+  assert.ok(/Enter a recipient email\./.test(send), 'an empty custom email is refused client-side');
+  // The server side was never the gap: the SHARED resolver validates custom for
+  // every form type — pin that so a PPD-only fork never appears.
+  const resolver = nc(extractRawFunction('Code.js', 'intakeResolveRecipient_'));
+  assert.ok(/spec\.kind === 'custom'/.test(resolver) && /intakeValidateEmail_\(em\)/.test(resolver),
+    'one resolver, custom validated server-side (INV-111 recipient discipline)');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed
