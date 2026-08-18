@@ -335,7 +335,8 @@ const EMP = {
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
-  PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate in DAYS PER MONTH (operator 2026-08-18; e.g. 1.25). DISPLAY-ONLY: it reframes the rep's annual-leave tile as a growing accrued balance + year-end projection. The BALANCE (col I) stays the hand-maintained source of truth — the system never credits accruals itself (auto-crediting would double-count against manual balance edits). Blank/garbage = the fixed-allotment tile, exactly as before.
+  PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate in DAYS PER MONTH (operator 2026-08-18; e.g. 1.25). Drives BOTH the accrual tile framing AND — since the same day's follow-up — the AUTOMATED monthly credit: creditMonthlyPtoAccruals (daily trigger) adds rate × completed-months into the col-I balance, in arrears, idempotent via col R. Blank/garbage = no accrual (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
+  ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank = SEEDS on the next run (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
 };
 
 /** Parse the optional column-Q accrual rate: a finite positive days/month
@@ -344,6 +345,102 @@ const EMP = {
 function empPtoAccrual_(cell) {
   const n = parseFloat(String(cell == null ? '' : cell).replace(/[^0-9.]/g, ''));
   return (isFinite(n) && n > 0 && n <= 31) ? n : null;
+}
+
+/** Coercion-safe read of the column-R 'yyyy-MM' stamp: Sheets may coerce it
+ *  to a Date (the normalizeDate_ class), and a coerced-then-cached copy reads
+ *  back as 'yyyy-MM-dd' — both recover to the leading yyyy-MM. Garbage → ''. */
+function accrualStampYm_(cell) {
+  if (cell instanceof Date) return normalizeDate_(cell).slice(0, 7);
+  const m = /^(\d{4}-\d{2})/.exec(String(cell == null ? '' : cell).trim());
+  return m ? m[1] : '';
+}
+
+/** Pure month arithmetic for the accrual credit (Node-pinned). IN ARREARS:
+ *  month M's accrual is owed on/after the 1st of M+1, so a run in nowYm owes
+ *  the months stamp+1 .. nowYm-1. A blank/garbage/future stamp SEEDS — owes
+ *  nothing and restamps to nowYm-1 (the hand-maintained balance is presumed
+ *  current through the end of last month at enable time, so enabling never
+ *  dumps a surprise back-credit). Catch-up caps at
+ *  PTO_ACCRUAL_CATCHUP_MAX_MONTHS with the overflow RETURNED, not silently
+ *  absorbed (INV-187 — the audit row names what the cap dropped). */
+const PTO_ACCRUAL_CATCHUP_MAX_MONTHS = 12;
+function accrualMonthsToCredit_(stampYm, nowYm) {
+  const idx = (ym) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(ym == null ? '' : ym));
+    if (!m) return null;
+    const mo = +m[2];
+    return (mo >= 1 && mo <= 12) ? (+m[1] * 12 + (mo - 1)) : null;
+  };
+  const now = idx(nowYm);
+  if (now === null) return null;
+  const prev = now - 1;
+  const ymOf = (i) => Math.floor(i / 12) + '-' + String((i % 12) + 1).padStart(2, '0');
+  const st = idx(stampYm);
+  if (st === null || st > prev) return { months: 0, newStamp: ymOf(prev), capped: 0, seeded: st === null };
+  const owed = prev - st;
+  return { months: Math.min(owed, PTO_ACCRUAL_CATCHUP_MAX_MONTHS),
+           newStamp: ymOf(prev),
+           capped: Math.max(0, owed - PTO_ACCRUAL_CATCHUP_MAX_MONTHS),
+           seeded: false };
+}
+
+/** TRIGGER HANDLER (daily, manager-tz — the automation anchor): credits each
+ *  accruing rep's monthly PTO into the col-I balance, in arrears. Top-level →
+ *  reachable via google.script.run, so it carries the INV-44 MANAGER_EMAILS
+ *  gate; locked (INV-01 — it mutates the payroll-adjacent Employees sheet).
+ *  IDEMPOTENT via the col-R stamp: a re-run (or the daily cadence between
+ *  month boundaries) owes nothing. ORDER IS DELIBERATE — the credit (via
+ *  adjustLeaveBalance_, THE balance mutator, so the INV-27 per-row gate and
+ *  cache invalidation ride along) and its audit row land BEFORE the stamp
+ *  advances: a mid-run failure re-credits next run, failing toward a VISIBLE
+ *  over-credit (two audit rows for one month — investigable) rather than a
+ *  silent lost month (the archive mover's duplicate-not-lose posture). */
+function creditMonthlyPtoAccruals() {
+  assertManagerCaller_('creditMonthlyPtoAccruals');
+  if (!getFlag_('enablePtoTracking')) return { success: true, skipped: 'PTO tracking disabled' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
+    const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+    const rows = sheet.getDataRange().getValues();
+    let credited = 0, seeded = 0;
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;   // INV-183 — the ONE inclusion predicate
+      const rate = empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]);
+      if (rate === null) continue;
+      // Per-row PTO gate (INV-27) — adjustLeaveBalance_ re-checks it, but a
+      // FALSE rep must not have their stamp advanced either: with the stamp
+      // frozen, flipping them back on credits the (capped) missed months
+      // instead of silently swallowing them.
+      const ptoVal = rows[i][EMP.PTO_ENABLED];
+      const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+        ? '' : String(ptoVal).trim().toLowerCase();
+      if (ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0') continue;
+      const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
+      const plan = accrualMonthsToCredit_(stamp, nowYm);
+      if (!plan) continue;
+      const empLike = { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) };
+      if (plan.months > 0) {
+        const days = +(rate * plan.months).toFixed(2);
+        const newBal = adjustLeaveBalance_(empLike.id, 'annual', days);
+        if (newBal === null) continue;   // gated away mid-run — leave the stamp for a clean retry
+        writeAuditLog_(empLike, 'PtoAccrualCredit', '', '', false, 0,
+          'rate=' + rate + '/mo; months=' + plan.months + '; days=' + days +
+          '; through=' + plan.newStamp + '; balance=' + newBal +
+          (plan.capped ? '; CAPPED — ' + plan.capped + ' older month(s) NOT credited (stamp advanced past them; hand-adjust if owed)' : ''));
+        credited++;
+      }
+      if (stamp !== plan.newStamp) {
+        sheet.getRange(i + 1, EMP.ACCRUED_THROUGH + 1).setValue(plan.newStamp);
+        if (plan.seeded) seeded++;
+      }
+    }
+    if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
+    return { success: true, credited: credited, seeded: seeded };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 /**
  * The ONE roster-INCLUSION predicate: a row counts as a CURRENT employee iff
@@ -628,7 +725,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v10';   // bumped: PtoAccrual column Q (accrual-aware PTO tile, operator 2026-08-18)
+const ROSTER_CACHE_KEY = 'employee_roster_v11';   // bumped: AccruedThrough column R (automated accrual credits, operator 2026-08-18)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -5726,6 +5823,7 @@ function clientErrorsSummary_(mgrTz) {
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
   'CallNotesArchive', 'CallNotesArchivePurge', 'TimesheetArchive',
+  'PtoAccrualCredit',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -10373,6 +10471,7 @@ function installAutomationTriggers() {
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
+    'creditMonthlyPtoAccruals',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -10481,6 +10580,15 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runNightlySelfTest')
     .timeBased().atHour(1).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 6am
+  // (staggered off the 5am reconcile; both take the global lock briefly).
+  // Daily-with-idempotence rather than a monthly trigger: if the 1st's run is
+  // missed (dead trigger, quota), the next day's run catches up via the col-R
+  // stamp instead of silently losing the month. No-ops for reps with a blank
+  // column-Q rate, so installing it is harmless on a roster with no accruers.
+  ScriptApp.newTrigger('creditMonthlyPtoAccruals')
+    .timeBased().atHour(6).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -10531,6 +10639,7 @@ function removeAutomationTriggers() {
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
+    'creditMonthlyPtoAccruals',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);

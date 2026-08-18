@@ -1215,6 +1215,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
   _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
+  _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
+  _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
@@ -4084,6 +4086,72 @@ function test_triggerGate_selfTest_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runNightlySelfTest(); });
   }, 'manager access required');
+}
+
+// ── creditMonthlyPtoAccruals (operator 2026-08-18, automated accrual) ──
+function test_triggerGate_ptoAccrual_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { creditMonthlyPtoAccruals(); });
+  }, 'manager access required');
+}
+
+// Seed (blank stamp → restamp only, no credit), one in-arrears credit,
+// idempotent re-run, and the pto-disabled skip that FREEZES the stamp (so a
+// re-enabled rep gets the capped catch-up instead of silently losing months).
+// Balance restored ABSOLUTELY in finally (never a relative un-credit — a
+// partial failure before the credit would otherwise corrupt the fixture).
+function test_creditPtoAccrual_seedCreditIdempotent() {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = sheet.getDataRange().getValues();
+  let rowIdx = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === _TEST_INDIA_ID) { rowIdx = i + 1; break; }
+  }
+  if (rowIdx < 0) { _skipTest('India test employee not on roster'); }
+  const qCell = sheet.getRange(rowIdx, EMP.PTO_ACCRUAL + 1);
+  const rCell = sheet.getRange(rowIdx, EMP.ACCRUED_THROUGH + 1);
+  const ptoCell = sheet.getRange(rowIdx, EMP.PTO_ENABLED + 1);
+  const balCell = sheet.getRange(rowIdx, EMP.ANNUAL_LEAVE + 1);
+  const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
+  const balBefore = parseFloat(balCell.getValue()) || 0;
+  const props = PropertiesService.getScriptProperties();
+  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
+  try {
+    const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
+    const lastYm = accrualMonthsToCredit_('', nowYm).newStamp;
+    const lp = lastYm.split('-');
+    const backYm = lp[1] === '01' ? (parseInt(lp[0], 10) - 1) + '-12'
+      : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
+    let res;
+    // 1. SEED — rate on, stamp blank: restamps to last month, credits nothing.
+    qCell.setValue(1.25); rCell.setValue(''); invalidateRosterCache_();
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'seeded through last month');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore, 0.001, 'seeding credits nothing');
+    // 2. CREDIT — stamp one month further back: exactly one in-arrears credit.
+    rCell.setValue(backYm); invalidateRosterCache_();
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'one month credited in arrears');
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'stamp advanced with the credit');
+    // 3. IDEMPOTENT — a re-run owes nothing.
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'idempotent re-run credits nothing');
+    // 4. PTO-DISABLED — no credit AND the stamp stays frozen.
+    ptoCell.setValue('FALSE'); rCell.setValue(backYm); invalidateRosterCache_();
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'disabled rep not credited');
+    _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'disabled rep stamp frozen');
+  } finally {
+    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
+    rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
+    ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
+    balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
+    invalidateRosterCache_();
+  }
 }
 
 // INV-153 — the archive window resolver: disabled by default; sub-floor values

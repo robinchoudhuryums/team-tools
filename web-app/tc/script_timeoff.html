@@ -145,13 +145,15 @@ function renderTimeOffView(area, data) {
       : 'nothing planned';
     // ACCRUAL variant (operator 2026-08-18, roster column Q): reps who accrue
     // PTO over the year get a GROWING framing instead of the depleting
-    // /15-days bar — big number stays the current available balance (the
-    // hand-maintained column-I truth; the app never credits accruals itself),
-    // the denominator becomes a ≈year-end projection (balance + rate × full
-    // months REMAINING AFTER the current one — conservative: exact if this
-    // month's accrual has already been credited), and the bar fills as
-    // accruals land (balance / projected). Blank column Q = the fixed-
-    // allotment tile below, byte-identical to before.
+    // /15-days bar — big number stays the current available balance (column
+    // I, which the SYSTEM now credits monthly IN ARREARS via the
+    // creditMonthlyPtoAccruals trigger: month M's rate lands on/after the 1st
+    // of M+1, idempotent via the col-R stamp), the denominator becomes a
+    // ≈year-end projection (balance + rate × the 12−month credits still
+    // landing before Dec 31 — Aug: Sep 1, Oct 1, Nov 1, Dec 1 = 4 — exactly
+    // the in-arrears schedule, so the formula needs no convention slack),
+    // and the bar fills as credits land (balance / projected). Blank column
+    // Q = the fixed-allotment tile below, byte-identical to before.
     const accrual = (typeof data.ptoAccrualPerMonth === 'number' && data.ptoAccrualPerMonth > 0)
       ? data.ptoAccrualPerMonth : null;
     if (accrual) {
@@ -162,7 +164,7 @@ function renderTimeOffView(area, data) {
       const projected = Math.round((annual + accrual * monthsAfter) * 10) / 10;
       const apct = projected > 0 ? Math.min(100, Math.max(0, (annual / projected) * 100)) : 0;
       balanceCardHtml = `
-      <div class="pto-tile" title="Your balance grows as PTO accrues (${rateStr}d/month). The bar shows how much of your projected Dec 31 total is available now.">
+      <div class="pto-tile" title="Your balance grows automatically — ${rateStr}d is credited on the 1st of each month for the month just worked. The bar shows how much of your projected Dec 31 total is available now.">
         <div class="head">
           <span class="lbl">Annual leave</span>
           <span class="meta">ACCRUING ${rateStr}D/MO</span>
