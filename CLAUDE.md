@@ -1810,7 +1810,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Seventeen client-side localStorage keys total.** All per-browser, all
+- **Sixteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1829,9 +1829,6 @@ this section before touching the relevant area.
     on submit.
   - `umsSidebarW` — sidebar width in px (Round 2 · 8a); range-checked
     on restore (56–280px). Default 168px when absent or out of range.
-  - `umsMergeMode` — Time / PTO mode (Round 2 · 8b): `'timeoff'`
-    (default) or `'timesheet'`. Picks the side-rail content + the
-    segmented toggle's active state.
   - `umsKbPanel` — KB drawer preferences as ONE JSON blob:
     `recents[]` ({id, title}, capped 5, deduped) + `suggest` (bool,
     default true — the context-suggestions toggle) + `aiSeen`
@@ -1922,7 +1919,10 @@ this section before touching the relevant area.
     resets it (the in-memory set's own rollover rule), and a
     localStorage-throwing privacy-mode browser degrades to per-window
     dedupe — the pre-fix behavior, never worse.
-  Clearing browser data wipes all seventeen. (`umsCallNotesLastDept` — the
+  Clearing browser data wipes all sixteen. (`umsMergeMode` — the Time/PTO
+  Time Off ⇄ Timesheet mode — was RETIRED with the 2026-08-18 consolidation:
+  the two modes were one page with a swapped 240px rail, so the rail now
+  stacks both; a stale stored value is simply ignored.) (`umsCallNotesLastDept` — the
   composer's last-dept default — was REMOVED by operator decision 2026-08-13:
   pre-selecting the previous note's departments on an unrelated note invites a
   mis-send, and the failure mode is an email leaving the building rather than
@@ -2608,7 +2608,7 @@ this section before touching the relevant area.
   authoritative "Seventeen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
-  `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
+  `umsCallNotesFormStartedAt`, `umsSidebarW`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
   `umsIntakeDrafts`, `umsCoachingMode`, `umsWhatsNew`,
   `umsNotify`) — all per-browser, all try/catch-wrapped.
@@ -2626,7 +2626,8 @@ this section before touching the relevant area.
   removed the composer's `umsCallNotesLastDept` default (2026-08-13), net 14 —
   and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
   `umsDashMetrics`, net 16 — and the 2026-08-17 cross-window reminder dedupe
-  added `umsRemindFired`, net 17.)
+  added `umsRemindFired`, net 17 — and the 2026-08-18 Time/PTO consolidation
+  RETIRED `umsMergeMode`, net 16.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2640,7 +2641,8 @@ this section before touching the relevant area.
   and edit actions stay pessimistic — they need a server-issued noteId
   and can't easily undo.
 - **Pay statement — own-data payroll self-check (operator 2026-08-17).**
-  Time / PTO → Timesheet mode → **"View pay statement"** opens a per-period
+  Time / PTO (side-rail pay-period block since the 2026-08-18 consolidation)
+  → **"View pay statement"** opens a per-period
   modal: every day's punches (missing weekdays SHOWN — a silently absent day
   is the discrepancy the view exists to catch), computed hours with
   INV-176 incomplete-day flags (never silently zeroed), approved PTO with
@@ -2659,22 +2661,42 @@ this section before touching the relevant area.
   statement reads the LIVE Timesheet tab only, so with INV-153 archiving
   enabled an old period past the window carries `archiveNote` and the modal
   says rows may be missing (INV-187) — ask a manager for an export, which
-  DOES read through the archive. The rate never leaves its one reader —
+  DOES read through the archive. **Click-through (operator 2026-08-18):**
+  an incomplete or empty (weekday, no punches, no PTO) day row carries a
+  "Request edit" button into the #4a adjust flow, prefilled to that date —
+  gated to the employee adjust window (older days name the manager path)
+  and suppressed entirely on a manager's view of ANOTHER rep's statement
+  (the adjust modal submits for the CALLER); the statement modal closes
+  BEFORE Adjust opens (the ensureOverlay node sits later in DOM order at
+  the same z-index and would paint over it). `openAdjustModal(prefillDate)`
+  honors the prefill only inside its own [min, today] picker bounds.
+  The rate never leaves its one reader —
   see the column-P checklist entry. Manager-facing statement UI is a
   follow-on (the server branch already supports it).
-- **Time / PTO merge (Round 2 · 8b).** The Phase-2 "Combined Clock +
-  Timesheet" combined view was deliberately dismantled here. The Clock
-  tab is now standalone (hero + actions + ribbon + cov + 3-cell ledger
-  + today's punches + teammate); the timesheet section moved into the
-  renamed **Time / PTO** tab as a mode toggle (Time Off ↔ Timesheet).
-  Default mode = `timeoff`; persisted to `localStorage.umsMergeMode`.
-  The calendar is shared between modes (always shows worked-hours +
-  PTO badges); the side rail swaps content: Time Off mode renders the
-  rectangular `.pto-tile` + upcoming-request context, Timesheet mode
-  lazy-loads tsData via `loadTimesheetSideRail_` (its own
+- **Time / PTO merge (Round 2 · 8b) → ONE page (operator 2026-08-18).**
+  The Phase-2 "Combined Clock + Timesheet" combined view was deliberately
+  dismantled here. The Clock tab is now standalone (hero + actions +
+  ribbon + cov + 3-cell ledger + today's punches + teammate); the
+  timesheet section moved into the renamed **Time / PTO** tab — first as
+  a Time Off ↔ Timesheet MODE TOGGLE, then **consolidated to one page**
+  when the operator observed the two modes were nearly identical (the
+  app-bar, month nav, calendar, legend, and request list were all
+  shared; only the 240px side rail swapped). The toggle + its
+  `umsMergeMode` localStorage key are RETIRED (`.mp-modes`/`.mp-mode`
+  CSS deleted with the markup, INV-184; a stale stored value is
+  ignored). The rail now stacks, top to bottom: the **quick-actions
+  card** (`toActionsCardHtml_` — the operator-asked clear affordance:
+  a date picker floored at today + "Request" opening the SAME pinned
+  day modal a calendar tap opens via `openRequestForDate_` — same
+  month directly, another month via the `TO_PENDING_DAY_OPEN` handoff
+  through `calNavTo_`, consumed at the end of `renderTimeOffView`
+  gated to the rendered month; plus "Request punch edit" →
+  `openAdjustModal()`), the annual-leave `.pto-tile`, and the
+  pay-period block (`#ts-side-rail` — pay-period tile + "View pay
+  statement" + recent activity, lazy-loaded via
+  `loadTimesheetSideRail_` on EVERY render now, its own
   `getTimesheetData` call — the legacy `loadTimesheet` render cluster
-  was deleted in Cycle 2 · L11, see INV-74) and renders
-  a pay-period `.pto-tile` mirror + recent-activity list. TOOLS
+  was deleted in Cycle 2 · L11, see INV-74). TOOLS
   registry tab key stays `timeoff` so `?tool=timeoff` deep-links +
   `currentView === 'timeoff'` guards across the codebase keep working;
   only the visible label changed.
@@ -5270,6 +5292,21 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-18 Time/PTO consolidation round adds NO operator state** — no
+  Script Properties, triggers, migrations, CONFIG constants, or endpoints
+  (client-only + one optional client arg on `openAdjustModal`). Behaviour
+  changes to expect post-deploy: (a) **the Time / PTO page loses its
+  Time Off ⇄ Timesheet toggle** — one page now, with the right rail stacking
+  a new **Requests card** (date picker + "Request" opening the same day
+  modal a calendar tap opens; "Request punch edit" opening the adjustment
+  modal), the Annual-leave tile, and the Pay-period block + "View pay
+  statement" + Recent activity; a rep's remembered mode preference is
+  simply ignored (the `umsMergeMode` browser key is retired — nothing to
+  clean up); (b) **the pay statement's incomplete/empty days carry a
+  "Request edit" button** (within the 30-day adjust window) that closes the
+  statement and opens the Adjust modal pre-filled to that day — older days
+  still say to ask a manager, and a manager viewing another rep's statement
+  sees no buttons. **Post-deploy: run `runAllTests()`** as usual.
 - **The 2026-08-18 operator round (width sweep + Spanish members editor +
   load-time sweep round 1) adds NO operator state to SET UP** — no new Script
   Properties to create, no triggers, no migrations; `SPANISH_INBOX_MEMBERS`
@@ -6308,7 +6345,8 @@ manually for a fresh deploy or environment:
 - **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
   OPTIONAL hourly pay rate per rep (plain number; `$18.50`-style entries
   parse too). Drives the **estimated gross** line on the rep-facing pay
-  statement (Time / PTO → Timesheet mode → "View pay statement"); BLANK =
+  statement (Time / PTO → "View pay statement" in the pay-period rail
+  block); BLANK =
   the statement shows hours only and says the rate is not on file. Read in
   exactly ONE place (`empPayRate_` behind `getMyPayStatement` — the
   INV-167/F14 boundary, Node-pinned) and never spread onto emp objects, so
@@ -7033,7 +7071,18 @@ block — brace-matched extraction, all six rules, compact scope on every
 rule, the load-bearing source order, `.cn-card-time` hidden EXACTLY once,
 plus a tzMismatchCheck_-declared-once guard against the duplicate-hoisting
 near-miss this very round caught — 4 mutations bite-checked; stacked layout
-verified by MEASUREMENT at 300/360, byte-identical at 480).
+verified by MEASUREMENT at 300/360, byte-identical at 480). The Time/PTO
+consolidation round (same day) added one more → **553** (the toggle + key
+retired from CODE — comment-stripped scans per INV-188; the rail composed
+unconditionally + the unconditional pay-period fetch; the quick-actions
+card's real buttons, today-floored picker, same-month vs pending-nav
+branches and rendered-month guard; the pay-statement fix button's
+fixable+in-window+own-statement gate, data-*+bound handler,
+close-before-open order; and the openAdjustModal prefill bounds — 5
+mutations bite-checked). The visual mock gained a `getTimesheetData`
+fixture and the calendar fixture's `hoursByDate` → `workedHoursByDate`
+INV-185 shape fix (the corner hour badges had never rendered in any
+timeoff screenshot).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7343,7 +7392,7 @@ INV-76 | `appendCallNoteFeedback(noteId, message, kind)` (Round 2 · 8g) is rep-
 INV-77 | `setCallNoteFlag(noteId, flagType)` accepts `'urgent'` as a card-level toggle (Round 2 deferred 8e). Urgent bypasses the `FlagType` column entirely (`sanitizeFlagType_` still rejects it, INV-37 preserved) — toggles membership in `subformData.flags` only. `action`/`training`/`review`/`''` paths still flow through `FlagType` + reset `Resolved` on transition (INV-40); after writing `FlagType` the new primary value is also mirrored into `subformData.flags` (pruning conflicting `CN_FLAG_TYPES` entries but preserving `'urgent'`) so the form's multi-flag state stays consistent with the column | Subsystem: Server
 INV-78 | URL query params (`?compact=1`, `?tool=<tabKey>`, `?prefill=...`) are passed from `doGet` to the client via template evaluation (`tpl.serverQueryParams = e.parameter`) and exposed as `window.SERVER_QUERY_PARAMS` in `index.html`'s `<head>`. `__URL_PARAMS` in `script_core.html` reads from `SERVER_QUERY_PARAMS` first, falls back to `window.location.search` for local dev. Required because Apps Script's HtmlService iframe sandboxes `window.location.search` to the iframe's own URL — the user-facing deploy URL's query string is never visible to client JS through that path. The injected JSON is `<` → `<` escaped to prevent XSS via attacker-controlled query values containing `</script>`. Also applies to `form_public.html`'s `FORM_TOKEN` injection via `serveExternalForm_` (`tpl.formToken`): it uses the same unescaped `<?!=` print with the `<`→`<` guard — the escaping `<?=` mangles the token's JSON quotes, breaking the public form ("Form not found"). A related foot-gun: the literal scriptlet delimiters (`<?`/`?>`) or a literal `</script>` written inside a JS *comment* in these templates open a spurious scriptlet at `tpl.evaluate()` (the template engine ignores JS-comment boundaries), throwing a server-side "Unexpected token" — so comments must not contain those literals. The same injection path now also carries `window.SERVER_WEB_APP_URL` (the canonical `/exec` base from `getWebAppExecUrl_`) — `window.location.origin+pathname` inside the iframe is the session-bound googleusercontent URL, which renders BLANK as a top-level window and broke the pop-out until fixed; `popOutCurrentView` must use `SERVER_WEB_APP_URL` (Node-pinned). Pinned by `test_tpl_formToken_usesUnescapedScriptlet` + `test_tpl_noEscapedJsonInjection` + `test_tpl_formPublic_evaluatesWithoutError` (the last actually `.evaluate()`s the template, catching the comment-delimiter case) | Subsystem: Server + Client (shell)
 INV-79 | Resizable sidebar width persists to `localStorage.umsSidebarW` (range 56–280px on restore — out-of-range values fall back to the default). Default 168px; snap threshold 100px determines the collapsed (icon-only) state. `initResizableSidebar_` sets `--sidebar-w` on both the `.sidebar` element AND `documentElement` so the `.app-shell` grid template recomputes. `.sidebar.collapsed` hides `.sb-lbl` labels + brand sub-name + user info text + section labels via CSS | Subsystem: Client (shell)
-INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster was deleted in Cycle 2 · L11 — INV-74) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
+INV-80 | **AMENDED (operator 2026-08-18): the Time/PTO mode toggle is RETIRED — one consolidated page.** The original invariant (persisted `umsMergeMode` picking which side rail renders) is void: the two modes were one page with a swapped 240px rail, so the rail now stacks the quick-actions card + the annual-leave `.pto-tile` + the pay-period block unconditionally, and `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster was deleted in Cycle 2 · L11 — INV-74) runs on every render. `umsMergeMode` is retired (a stale stored value is ignored; localStorage count 17→16) and the `.mp-mode` selectors are deleted (INV-184). What SURVIVES of the invariant: the TOOLS registry tab key stays `'timeoff'` even though the label is `'Time / PTO'`, so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working. Verify: the consolidation pin (no `umsMergeMode`/`mp-mode` in code; rail composed unconditionally; unconditional rail fetch) | Subsystem: Client (Time Clock views)
 INV-81 | The Clock view's coverage-strip "File N missing" CTA fires `fileMissingCalls_(date, missingCount)` which sets `window.CLK_NAV_HINT { source: 'coverageStrip', date, missingCount }` before calling `enterTool('callNotes')`. `cnConsumeNavHint_` on Log-view enter reads + nulls the hint and surfaces a confirmation toast. Per-call CDR data doesn't exist today (DQE Historical Data is per-(agent, date) aggregated only), so unmatched call IDs can't be passed via the hint yet — when a per-call source lands, extend the hint with `hint.calls[]` for prefill | Subsystem: Client (Time Clock views) + Client (Call Notes views)
 INV-82 | Tag taxonomy admin endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) are manager-gated (INV-02) and acquire `LockService.getScriptLock` with `waitLock(15000)` (INV-01). Rename and merge use `applyTagTransformAcrossReps_` to iterate every enrolled rep's per-rep Sheet and rewrite `subformData.tags[]` in place; dedupe handles the case where the target tag is already present on a note. Archive only mutates the `CN_ARCHIVED_TAGS` Script Property (JSON-encoded array of lowercase tags) — existing note tags are unchanged, so archive does NOT remove the tag from cards already in production. All three write a `CallNoteTagAdmin` audit row (INV-32 extension) with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` summary. Per-rep Sheet failures are isolated via try/catch in the loop so one broken Sheet doesn't fail the whole rename. All three call `invalidateCnTaxonomyCache_()` after their audit write so the Admin table reflects the change immediately. `getCallNotesTagTaxonomy` returns the `archived` flag on each in-use tag plus an `archivedOnlyTags[]` array for archived tags no longer in active use, and is itself whole-result cached (`CN_TAXONOMY_CACHE_KEY`, 5 min). **Cycle-17 batch ②:** the taxonomy walk carries `skippedReps` (reps whose Sheets could not be read — the Admin merged table renders the warn note) and a PARTIAL round is never cached (INV-129/187); same contract on the trends sibling (INV-125) | Subsystem: Server
 INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 14 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on a confirm fires OK unless the Cancel button is focused (a keyboard user who Tabs to Cancel and presses Enter gets cancel — confirming from Cancel fired destructive actions until fixed); Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. **That inline error must be ANNOUNCED, and the input must be NAMED (cycle-16 F6).** `uiPrompt` is the one dialog in the app that validates, and its input carried no accessible name (the title and message held the meaning but were not associated with the field, and a `placeholder` is not a name — it is not reliably announced and vanishes on first keystroke) while `.ui-dialog-err` was an ordinary div. A screen-reader user therefore heard "edit, blank", typed, was refused, and heard nothing at all — the dialog read as one that simply will not close. The input now carries `aria-labelledby` (the title) and `aria-describedby` (message + error slot, the error id ALWAYS present and only the message half conditional), and the error slot carries `role="alert"`. `uiConfirm` needs neither — no field, no validation — which is why the fix is `uiPrompt`-only rather than a rule over both. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. **Cycle-9 L-32: an Enter whose `e.target` is inside `#kb-drawer` is IGNORED by the confirm's key handler** — the drawer is exempt from the dialog focus trap (z-55, above the dialog) and Ctrl/⌘+K still opens it while a dialog is up, so an Enter aimed at the drawer's search box used to confirm a danger dialog it never targeted. **Stacked dialogs (cycle-8): each dialog's document-level CAPTURE keydown acts only when its own overlay is the TOPMOST `.overlay.open.ui-dialog`, and handles via `stopImmediatePropagation()`** — `stopPropagation` can't stop same-node-same-phase siblings, so one Escape used to resolve BOTH stacked dialogs (the bottom one with `false`, cancelling its flow). Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
@@ -7865,8 +7914,8 @@ S39 | Clock view layout (Round 2 · 8b — replaces "Combined Clock+Timesheet") 
     - Verify the view shows, top to bottom: hero (greet + status sentence + live clock) → actions row → day ribbon → cov strip (when call activity present) → 3-cell ledger (Annual / Sick / Hours today) → Today's Punches card → teammate status card
     - Confirm NO timesheet section / "Your Timesheet" divider below
     - Click Clock In / Lunch Out / etc.
-    - Switch to Time / PTO tab → toggle Timesheet mode → confirm the timesheet content (pay-period tile + recent-activity list) now lives in the side rail there
-  Expected: The Clock view is timesheet-free post-8b. Punch interactions re-render the whole view-area cleanly (no #clk-section split anymore). The pay-period view lives in Time / PTO → Timesheet mode. Compact pop-out renders the same layout, narrower.
+    - Switch to Time / PTO tab → confirm the timesheet content (pay-period tile + recent-activity list) lives in the consolidated side rail there (below the quick-actions card + annual-leave tile — the 2026-08-18 consolidation retired the mode toggle)
+  Expected: The Clock view is timesheet-free post-8b. Punch interactions re-render the whole view-area cleanly (no #clk-section split anymore). The pay-period view lives in the Time / PTO rail. Compact pop-out renders the same layout, narrower.
 
 S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem: Client (Call Notes views), Server
   Steps:
@@ -7931,15 +7980,15 @@ S45 | Resizable sidebar (Round 2 · 8a) | Subsystem: Client (shell)
     - Clear `localStorage.umsSidebarW` in DevTools; refresh; confirm default 168px
   Expected: Drag is real-time; snap happens at the 100px threshold; persistence round-trips. Out-of-range stored values (< 56 or > 280) fall back to default. The `.app-shell` grid template recomputes correctly because `--sidebar-w` is set on documentElement too.
 
-S46 | Time / PTO mode toggle (Round 2 · 8b) | Subsystem: Client (Time Clock views)
+S46 | Consolidated Time / PTO page + quick-actions card (operator 2026-08-18; replaces the retired mode toggle) | Subsystem: Client (Time Clock views)
   Steps:
-    - Open Time / PTO (renamed from "Time Off"); confirm tab label
-    - Click the "Timesheet" segmented button in the app-bar; confirm the side rail swaps from PTO tile + upcoming requests to pay-period tile + recent-activity list
-    - Click "Time Off" to swap back
-    - Refresh; confirm the last-chosen mode persists
-    - In DevTools, set `localStorage.umsMergeMode = 'timesheet'`; refresh; confirm Timesheet mode loads by default
-    - Confirm the calendar itself is unchanged across modes (worked-hours badges + PTO state both render)
-  Expected: Mode toggle is instant (no calendar reload); persistence to `localStorage.umsMergeMode`. Timesheet-mode side rail lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster no longer exists — INV-74).
+    - Open Time / PTO; confirm ONE page — no Time Off ⇄ Timesheet segmented toggle anywhere — with the right rail stacking, top to bottom: the Requests quick-actions card, the Annual-leave tile (ptoEnabled reps), and the Pay-period tile + "View pay statement" + Recent activity
+    - In the quick-actions card, confirm the date picker defaults to the next weekday and is floored at today; pick a date IN the displayed month → click Request → the pinned day modal opens for that date with the request form
+    - Pick a date in ANOTHER month (within the +3-month horizon) → Request → the calendar navigates to that month and the pinned day modal opens there
+    - Click "Request punch edit" → the #4a adjustment-request modal opens (its own bounded date picker)
+    - In DevTools, set a stale `localStorage.umsMergeMode = 'timesheet'`; refresh → no effect (the key is retired and ignored)
+    - Confirm the calendar renders worked-hours corner badges + PTO dots as before
+  Expected: One page; the rail's pay-period block lazy-loads via `loadTimesheetSideRail_` on every render (a failed load renders the error card in that slot only). The PTO path is the SAME day-modal submit flow a calendar tap uses (one submit path); closing/submitting the modal behaves per S47/S4. No `.mp-mode` markup or `umsMergeMode` read/write remains (pinned).
 
 S47 | Hover-triggered day modal (Round 2 · 8c) | Subsystem: Client (Time Clock views)
   Steps:
@@ -8301,13 +8350,14 @@ S78 | Pop-out has no repeated header strip (operator 2026-08-11) | Subsystem: Cl
 S79 | Pay statement — own-data self-check with estimated gross | Subsystem: Server, Client (Time Clock views)
   Steps:
     - In the Employees sheet, set column P (`PayRate`) for a test rep (e.g. `18.50`) and leave it BLANK for another
-    - As the rated rep: Time / PTO → Timesheet mode → click "View pay statement"
+    - As the rated rep: Time / PTO → click "View pay statement" in the side rail's pay-period block
     - Read the modal: period label + ‹ › nav; day rows (punches, hours, ADJ badges); a weekday with no punches; any incomplete day; approved PTO rows; totals; the estimated-gross box
     - Navigate ‹ two periods back and forward again; try to go past the current period
     - As the BLANK-rate rep, open the statement
     - As a non-manager, call `google.script.run...getMyPayStatement(0, '<another rep id>')` from the console; as a manager, the same call
     - If timesheet archiving is enabled, open a period older than the archive window
-  Expected: The rated rep sees "Estimated gross: $X (Yh × $R/h)" with the "Estimate only … Not a payslip" disclaimer; the blank-rate rep sees the same statement hours-only with "Pay rate not on file". A weekday with no punches renders "no punches" (visible — a missing day IS the discrepancy); incomplete days are amber, EXCLUDED from the total, and the foot note says to fix them via Adjust. Period boundaries match the ADP export (org biweekly anchor / calendar month); the ‹ › nav is bounded 0..6 and a slow older-period response never overwrites a newer one (seq-guarded). The non-manager cross-rep call returns "Manager access required."; the manager call returns the target's statement with a "Viewing: <name>" line. An archived-away period shows the "may have been moved to the timesheet archive" warning instead of presenting a short total as complete. The rate value appears NOWHERE outside this modal (teammate status, dashboards, and exports are unchanged).
+    - **(click-through, operator 2026-08-18)** On an INCOMPLETE day and on an empty weekday within the adjust window, click the row's "Request edit" button → the statement closes and the Adjust modal opens PRE-FILLED to that date (reason label tracks the date's age); an incomplete day OLDER than the adjust window shows NO button; as a MANAGER viewing another rep's statement, confirm NO "Request edit" buttons render anywhere (the adjust modal submits for the caller, not the viewed rep)
+  Expected: The rated rep sees "Estimated gross: $X (Yh × $R/h)" with the "Estimate only … Not a payslip" disclaimer; the blank-rate rep sees the same statement hours-only with "Pay rate not on file". A weekday with no punches renders "no punches" (visible — a missing day IS the discrepancy); incomplete days are amber, EXCLUDED from the total, and the foot note points at the per-day "Request edit" buttons (in-window) or the manager for older days. Period boundaries match the ADP export (org biweekly anchor / calendar month); the ‹ › nav is bounded 0..6 and a slow older-period response never overwrites a newer one (seq-guarded). The non-manager cross-rep call returns "Manager access required."; the manager call returns the target's statement with a "Viewing: <name>" line. An archived-away period shows the "may have been moved to the timesheet archive" warning instead of presenting a short total as complete. The rate value appears NOWHERE outside this modal (teammate status, dashboards, and exports are unchanged).
 
 S80 | Spanish Inbox — resolution-share chart | Subsystem: Server, Client (Metrics views)
   Steps:

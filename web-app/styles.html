@@ -863,28 +863,42 @@
     width: 2px; height: 10px; background: var(--accent);
   }
 
-  /* ─── ROUND 2 · 8b TIME / PTO MERGE ───────────────────────────
-     Mode toggle ("Time Off" ↔ "Timesheet") in the app-bar right.
-     Single-pill segmented control matching the toolbar-tabs pattern
-     in the design tokens partial, just sized smaller for the bar. */
-  .mp-modes {
-    display: inline-flex; align-items: center; gap: 0;
-    border: 1px solid var(--line); border-radius: var(--radius-pill);
-    padding: 3px; background: var(--paper-card);
+  /* ─── TIME / PTO CONSOLIDATION (operator 2026-08-18) ───────────
+     The Round 2 · 8b Time Off ⇄ Timesheet mode toggle (.mp-modes /
+     .mp-mode) is RETIRED — one page now (INV-184: dead selectors
+     deleted with their markup). The rail gains a quick-actions card:
+     request time off (date → the pinned day modal) and request a
+     punch edit (the #4a adjust modal). Fits the 240px rail; the
+     input+button row wraps rather than overflowing. */
+  .to-actions { margin-bottom: 14px; }
+  .to-act-lbl { display: block; font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
+  .to-act-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .to-act-row input[type="date"] {
+    flex: 1 1 110px; min-width: 0; font: inherit; font-size: 12px;
+    padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--paper-card); color: var(--ink);
   }
-  .mp-mode {
-    appearance: none; cursor: pointer; border: none; background: transparent;
-    font-family: var(--mono); font-size: 11px; font-weight: 600;
-    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
-    padding: 5px 12px; border-radius: var(--radius-pill);
-    display: inline-flex; align-items: center; gap: 6px;
-    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+  .to-act-go {
+    flex: 0 0 auto; appearance: none; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+    /* The canonical primary recipe (.actions .prime — V-8): ink comes from
+       --paper-card so dark mode gets dark-on-light-green, never #fff on a
+       light accent (measured illegible in the first dark shot). */
+    background: var(--accent); color: var(--paper-card);
   }
-  .mp-mode:hover { color: var(--ink); }
-  .mp-mode.on { background: var(--ink); color: var(--paper); }
-  .mp-mode svg { width: 13px; height: 13px; }
+  .to-act-go:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .to-act-div { border-top: 1px dashed var(--line); margin: 12px 0 2px; }
+  .to-act-btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; appearance: none; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 600;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--paper-card); color: var(--ink);
+  }
+  .to-act-btn:hover { border-color: var(--border-strong); }
 
-  /* Recent-activity list in the Timesheet-mode side rail. */
+  /* Recent-activity list in the pay-period side-rail block. */
   .ts-recent-list {
     display: flex; flex-direction: column; gap: 6px;
     margin-top: 4px;
@@ -915,8 +929,6 @@
     color: var(--warning-deep); margin-left: 6px;
     text-transform: uppercase; letter-spacing: .08em;
   }
-  /* Compact-mode: stack the mode toggle below the app-bar title */
-  :root[data-compact="1"] .mp-modes { margin-top: 6px; }
   :root[data-compact="1"] .ts-recent-row { grid-template-columns: 1fr auto; }
   :root[data-compact="1"] .ts-recent-mid { grid-column: 1 / -1; }
 

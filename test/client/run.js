@@ -9963,5 +9963,69 @@ test('CN pop-out narrow stacking: <=400px compact yields — one-column trio/row
     'tzMismatchCheck_ declared exactly once');
 });
 
+test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit click-through (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const to = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  const clk = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const styles = nc(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  // ── Consolidation: the mode toggle and its key are GONE from code (comments
+  // may still narrate the retirement — hence the comment strip). One rail,
+  // always: actions card + balance tile + the pay-period slot, and the
+  // pay-period fetch runs UNCONDITIONALLY (no mergeMode branch left to skip it).
+  [to, clk, styles].forEach((src) => {
+    assert.ok(!/umsMergeMode/.test(src), 'umsMergeMode is retired from code');
+    assert.ok(!/mp-mode/.test(src), 'the .mp-mode toggle selectors/markup are gone (INV-184)');
+  });
+  assert.ok(!/mergeMode/.test(to), 'no mergeMode branching remains in the timeoff partial');
+  assert.ok(/const sideRailHtml =\s*toActionsCardHtml_\(todayIso\) \+\s*balanceCardHtml \+\s*`<div id="ts-side-rail">/.test(to),
+    'the rail stacks actions card + balance tile + pay-period slot unconditionally');
+  assert.ok(/bindCalHover_\(\);[\s\S]{0,1600}?loadTimesheetSideRail_\(\);/.test(to) &&
+            !/if\s*\([^)]*\)\s*\{\s*loadTimesheetSideRail_\(\);/.test(to),
+    'loadTimesheetSideRail_ runs on every render, not behind a condition');
+  // ── Quick-actions card: real <button>s (INV-173), picker floored at today,
+  // and the PTO path reuses the ONE existing submit flow — same-month opens
+  // the pinned day modal directly; cross-month hands off through calNavTo_
+  // and renderTimeOffView consumes the pending open (both async paths land
+  // there, so one handoff variable covers cache-hit and load alike).
+  assert.ok(/<button type="button" class="to-act-go" id="to-req-go">/.test(to), 'Request PTO is a real button');
+  assert.ok(/<button type="button" class="to-act-btn" id="to-adj-open">/.test(to), 'Request punch edit is a real button');
+  assert.ok(/<input type="date" id="to-req-date" value="\$\{def\}" min="\$\{todayIso\}"/.test(to),
+    'the request date picker is floored at today');
+  const orf = to.match(/function openRequestForDate_\(dateStr\) \{[\s\S]*?\n\}/);
+  assert.ok(orf, 'openRequestForDate_ exists');
+  assert.ok(/calData\.year === y && calData\.month === m/.test(orf[0]) && /openPinnedDayModal_\(dateStr\)/.test(orf[0]),
+    'same displayed month opens the pinned day modal directly');
+  assert.ok(/TO_PENDING_DAY_OPEN = dateStr;\s*calNavTo_\(y, m\);/.test(orf[0]),
+    'another month hands off via the pending variable + calNavTo_');
+  assert.ok(/if \(TO_PENDING_DAY_OPEN\) \{[\s\S]{0,500}?openPinnedDayModal_\(pend\)/.test(to),
+    'renderTimeOffView consumes the pending cross-month open');
+  assert.ok(/pend\.slice\(0, 7\) === `\$\{data\.year\}-\$\{String\(data\.month\)\.padStart\(2, '0'\)\}`/.test(to),
+    'the pending open is guarded to the month actually rendered');
+  // ── Pay-statement click-through: the Request-edit button renders ONLY on a
+  // fixable day (incomplete, or an empty non-weekend non-PTO day), ONLY
+  // within the employee adjust window, and NEVER on a manager's view of
+  // another rep (the adjust modal submits for the CALLER). data-* + bound
+  // handler, not inline interpolation.
+  assert.ok(/needsFix && inWindow && !d\.viewingOther/.test(to), 'fix button gated on fixable + in-window + own statement');
+  assert.ok(/daysBetweenIso\(x\.date, stmtToday\) <= adjWin/.test(to), 'the window gate uses the shared adjust window');
+  assert.ok(/querySelectorAll\('\.pay-stmt-fix'\)/.test(to) && /data-adj-date/.test(to),
+    'buttons carry data-adj-date and are bound after injection');
+  // Order is load-bearing: the ensureOverlay statement modal sits later in
+  // DOM order than the static adjust overlay (same z-index), so it must
+  // CLOSE before Adjust opens or it paints over it.
+  const pre = to.match(/function payStmtRequestEdit_\(dateStr\) \{[\s\S]*?\n\}/);
+  assert.ok(pre, 'payStmtRequestEdit_ exists');
+  assert.ok(pre[0].indexOf('closeOverlay') >= 0 &&
+            pre[0].indexOf('closeOverlay') < pre[0].indexOf('openAdjustModal'),
+    'the pay statement closes BEFORE the adjust modal opens');
+  // ── openAdjustModal prefill is bounds-guarded: only a well-formed date
+  // inside the picker's own [min, today] range pre-selects; anything else
+  // keeps today (existing argless callers are unchanged by construction).
+  const oam = clk.match(/function openAdjustModal\(prefillDate\) \{[\s\S]*?\n\}/);
+  assert.ok(oam, 'openAdjustModal takes the optional prefill');
+  assert.ok(/prefillDate >= minIso && prefillDate <= todayIso/.test(oam[0]),
+    'the prefill honors the [min, today] picker bounds');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

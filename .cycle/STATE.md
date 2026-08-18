@@ -783,7 +783,24 @@ Updated: 2026-08-11
   America/Chicago). A duplicate boot-time tzMismatchCheck_ was nearly added
   and removed; a declared-once guard now pins it. shoot.mjs seeds
   umsTzWarnedDay so the sticky toast stops covering every screenshot.
-- Pure 552, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
+- Follow-up (operator round 5, 2026-08-18, /broad-implement): Time/PTO
+  CONSOLIDATION — the Time Off ⇄ Timesheet mode toggle retired (the two
+  modes were one page with a swapped 240px rail; umsMergeMode retired,
+  17→16 keys; .mp-mode CSS deleted per INV-184; INV-80 amended); the rail
+  stacks a NEW quick-actions card (date→the same pinned day modal via
+  openRequestForDate_/TO_PENDING_DAY_OPEN handoff; punch-edit→
+  openAdjustModal) + annual-leave tile + the always-on pay-period block;
+  the pay statement's incomplete/empty in-window days gained a
+  "Request edit" click-through (closes the statement FIRST — ensureOverlay
+  DOM-order paint — then opens Adjust prefilled; bounds-guarded prefill;
+  suppressed on a manager's view of another rep). Mock: getTimesheetData
+  fixture added + the calendar fixture's hoursByDate→workedHoursByDate
+  INV-185 shape fix (corner hour badges had never rendered on camera).
+  Dark-mode Request button corrected to the canonical primary recipe
+  (color: var(--paper-card), measured illegible as #fff first). Pin + 5
+  bites; timeoff-light/dark-wide re-shot (0 overflow). S39/S46/S79
+  updated; block at .cycle/blocks/18pre-timeoff-consolidation-*.
+- Pure 553, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics

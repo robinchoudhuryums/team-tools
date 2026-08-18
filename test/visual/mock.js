@@ -263,12 +263,48 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       var firstDow = new Date(year, month - 1, 1).getDay();
       var lastDay = new Date(year, month, 0).getDate();
-      return { year: year, month: month, monthName: monthNames[month - 1] + ' ' + year, firstDayOfWeek: firstDow, lastDay: lastDay, today: todayLocal, hoursByDate: hours, workedDates: worked,
+      // INV-185: the client reads `workedHoursByDate` (the server's field name)
+      // — this fixture shipped as `hoursByDate` and the calendar's corner hour
+      // badges silently never rendered in any timeoff screenshot.
+      return { year: year, month: month, monthName: monthNames[month - 1] + ' ' + year, firstDayOfWeek: firstDow, lastDay: lastDay, today: todayLocal, workedHoursByDate: hours, workedDates: worked,
         timeOffRequests: [{ date: year + '-' + m2 + '-28', type: 'Full Day', status: 'Approved', submittedAt: todayLocal + ' 09:00:00', notes: 'Family visit' },
                           { date: year + '-' + m2 + '-30', type: 'Half Day - Morning', status: 'Pending', submittedAt: todayLocal + ' 10:00:00', notes: '' }],
         allRequests: [{ date: year + '-' + m2 + '-28', type: 'Full Day', status: 'Approved', submittedAt: todayLocal + ' 09:00:00' },
                       { date: year + '-' + m2 + '-30', type: 'Half Day - Morning', status: 'Pending', submittedAt: todayLocal + ' 10:00:00' }],
         teammates: [], holidays: [], annualLeave: 11.5, sickLeave: 10, ptoEnabled: true, annualLeaveMax: 15 };
+    },
+    // Pay-period side-rail block (always-on since the 2026-08-18 Time/PTO
+    // consolidation). Shape mirrors buildTimesheetForEmployee_'s return:
+    // {startDate, endDate, days[{date, dayLabel, isWeekend, isToday, isFuture,
+    // hasData, clockIn/adjClockIn, lunchOut/adjLunchOut, lunchIn/adjLunchIn,
+    // clockOut/adjClockOut, hoursWorked, isIncomplete, inProgress}],
+    // totalHours, daysWorked, incompleteCount, payCycle, payAnchor, timezone}.
+    getTimesheetData: function (startDate, endDate) {
+      var days = []; var total = 0; var worked = 0; var incomplete = 0;
+      var DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      var cur = new Date(startDate + 'T00:00:00Z');
+      var end = new Date(endDate + 'T00:00:00Z');
+      while (cur <= end) {
+        var ds = cur.toISOString().slice(0, 10);
+        var dow = cur.getUTCDay(); var wk = dow === 0 || dow === 6;
+        var future = ds > todayIso; var isToday = ds === todayIso;
+        var has = !wk && !future && !isToday;
+        var inc = has && cur.getUTCDate() % 9 === 0;   // one incomplete day on camera
+        var hrs = (has && !inc) ? 8.5 : null;
+        if (hrs != null) { total += hrs; worked++; }
+        if (inc) incomplete++;
+        days.push({ date: ds, dayLabel: DAY_ABBR[dow] + ', ' + MN[cur.getUTCMonth()] + ' ' + cur.getUTCDate(),
+          isWeekend: wk, isToday: isToday, isFuture: future, hasData: has,
+          clockIn: has ? '08:02:00' : null, adjClockIn: false,
+          lunchOut: has ? '12:00:00' : null, adjLunchOut: false,
+          lunchIn: has ? '12:30:00' : null, adjLunchIn: false,
+          clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false,
+          hoursWorked: hrs, isIncomplete: inc, inProgress: false });
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+      return { startDate: startDate, endDate: endDate, days: days, totalHours: total, daysWorked: worked,
+        incompleteCount: incomplete, payCycle: 'Monthly', payAnchor: '', timezone: 'America/Chicago' };
     },
     getManagerDashboard: (function () {
       function spark(n, base) { var a = []; for (var i = n; i >= 1; i--) a.push({ date: daysAgo(i), count: (i * base) % 4 }); return a; }
