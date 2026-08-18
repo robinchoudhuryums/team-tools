@@ -4870,6 +4870,7 @@ function test_managerGates_rejectNonManager() {
     ['saveRetentionConfig',            function () { return saveRetentionConfig({ archiveDays: 30 }); }],
     ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
     ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
+    ['saveSpanishInboxMembers',        function () { return saveSpanishInboxMembers([]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
@@ -4953,7 +4954,7 @@ function test_managerGates_rejectNonManager() {
   const ADMIN_GATED = {
     getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
-    getDeptRequestSla: 1, saveDeptRequestSla: 1,
+    getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,

@@ -9717,6 +9717,44 @@ test('Auto-tag rules editor is compact + bounded (operator 2026-08-18)', () => {
     'save still reads .cn-admin-atag-row / -tag / -kws');
 });
 
+test('Spanish members Admin editor: validated save, dual-duty copy, empty-list confirm', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive the real saveSpanishInboxMembers in a vm with stubbed
+  // services — shape-reject, lowercase+dedupe, cap, empty-list allowed.
+  const props = {};
+  const ctx = {
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'mgr@x.com' }),
+    PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; } }) },
+    writeAuditLog_: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'saveSpanishInboxMembers'), ctx);
+  const bad = ctx.saveSpanishInboxMembers(['not-an-email']);
+  assert.ok(!bad.success && /Not a valid email/.test(bad.error), 'shape-rejects before any write');
+  assert.ok(!('SPANISH_INBOX_MEMBERS' in props), 'nothing written on reject');
+  const ok = ctx.saveSpanishInboxMembers(['Ana@X.com', 'ana@x.com', ' luis@x.com ']);
+  assert.ok(ok.success, 'valid list saves');
+  assert.strictEqual(props.SPANISH_INBOX_MEMBERS, 'ana@x.com,luis@x.com', 'lowercased, trimmed, deduped, comma-joined');
+  const many = []; for (let i = 0; i < 31; i++) many.push('r' + i + '@x.com');
+  assert.ok(!ctx.saveSpanishInboxMembers(many).success, 'capped at 30');
+  assert.ok(ctx.saveSpanishInboxMembers([]).success && props.SPANISH_INBOX_MEMBERS === '',
+    'an EMPTY list is valid (managers-only + any-reply-resolves — the unset behavior)');
+  const src = nc(extractRawFunction('Code.js', 'saveSpanishInboxMembers'));
+  assert.ok(/isAdmin/.test(src) && /Admin access required/.test(src), 'admin-gated (INV-136)');
+  assert.ok(/AdminConfigChange/.test(src), 'audited (INV-57 family)');
+  // Reads ride getAdminConfig; the editor UI danger-confirms clearing the list
+  // (it revokes tab access AND stops attribution) and renders member chips
+  // with a real labeled remove button (INV-173).
+  assert.ok(/spanishMembers: Object\.keys\(getSpanishInboxMembers_\(\)\)/.test(nc(extractRawFunction('Code.js', 'getAdminConfig'))),
+    'getAdminConfig ships the current members');
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/uiConfirm\(\{ title: 'Clear all Spanish members\?'/.test(cn), 'empty-list save danger-confirms');
+  assert.ok(/saveSpanishInboxMembers\(out\)/.test(cn), 'the editor calls the save endpoint');
+  const chips = cn.match(/function cnRenderSpanishMemberChips_\(members\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(/<button type="button" aria-label="Remove/.test(chips), 'chip remove is a real labeled button (INV-173)');
+  assert.ok(/esc\(m\)/.test(chips), 'member emails are escaped before innerHTML');
+});
+
 test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: the shared helper renders at most `shown` cards and a REAL

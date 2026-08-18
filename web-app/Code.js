@@ -4850,6 +4850,7 @@ function getAdminConfig() {
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
+      spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -13528,6 +13529,41 @@ function saveDeptRequestSla(map) {
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
     return { success: true, targets: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the Spanish bilingual member
+ *  list to Script Property SPANISH_INBOX_MEMBERS (operator 2026-08-18 — the
+ *  in-app replacement for editing the property by hand). The list does DOUBLE
+ *  duty, which is why an Admin edit takes effect everywhere at once: a reply
+ *  from a member counts a thread resolved + attributes it on the
+ *  Resolution-share chart (idle members render zero bars), AND membership
+ *  gates the Spanish Inbox tab / Dashboard card via canSeeSpanishInbox_
+ *  (INV-31 amendment). An EMPTY list is valid — "any reply resolves" +
+ *  managers-only access, today's unset behavior. Validation: email shape,
+ *  lowercased + deduped, cap 30. No cache flush needed — the stats cache key
+ *  already hashes the member set (spanishCacheHash_), so a save naturally
+ *  misses the stale entry. Writes an AdminConfigChange audit row. */
+function saveSpanishInboxMembers(emails) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(emails)) return { success: false, error: 'Expected a list of member emails.' };
+    if (emails.length > 30) return { success: false, error: 'Too many members (max 30).' };
+    const seen = {};
+    const clean = [];
+    for (let i = 0; i < emails.length; i++) {
+      const e = String(emails[i] || '').trim().toLowerCase();
+      if (!e) continue;
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) {
+        return { success: false, error: 'Not a valid email: "' + e + '"' };
+      }
+      if (!seen[e]) { seen[e] = true; clean.push(e); }
+    }
+    PropertiesService.getScriptProperties().setProperty('SPANISH_INBOX_MEMBERS', clean.join(','));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated Spanish inbox members (' + clean.length + ')', emp.email);
+    return { success: true, members: clean };
   } catch (err) { return { success: false, error: err.message }; }
 }
 
