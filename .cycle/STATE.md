@@ -761,7 +761,15 @@ Updated: 2026-08-11
   operator can still ask); dashboard cards click through to My Stats / Team
   Metrics; test_metrics_getTeamMetrics_nonManagerRejected REWRITTEN as a
   shape pin (kept name); omnibus getTeamMetrics case retired with a note.
-- Pure 550, DOM 71, matrix 41 (0 missing / 0 overflow on everything shot).
+- MERGED by the operator as **PR #171** (d3f8a6b); branch restarted from main.
+- Follow-up (operator round 3, same day): CN pop-out FLUID TYPE — two clamp()
+  groups scoped :root[data-compact] (values 13→11px, labels/rail/buttons/tag
+  12→10.5px over 480→~340px; ceilings = base px so ≥480 byte-identical;
+  measured 480/400/360, overflow 0; the compact grids out-specify the ≤480
+  stacking breakpoints so the framing HOLDS while type shrinks). Pin (exact
+  formulas + no-bare-vw scan, 3 bites) + cn-log-light-compact-sm scenario
+  (matrix 42). Pure 551, DOM 71.
+- Pure 551, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics

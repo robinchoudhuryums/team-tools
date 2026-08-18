@@ -9884,5 +9884,35 @@ test('card-list display cap: capped render + real Show-more button, counts stay 
     'Spanish headers keep full counts');
 });
 
+test('CN pop-out fluid type: clamp()-scaled, floored, byte-identical at >=480px (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  // The two fluid groups, scoped to the POP-OUT only (vw = the pop-out
+  // window; the main window and phone views never scale). The clamp CEILINGS
+  // are the base rules' exact px values (13 / 12), so at the 480px launch
+  // width and above these resolve byte-identically — MEASURED: 13/12px at
+  // 480, 11.28/10.75px at 360, overflow 0 throughout. The FLOORS are the "to
+  // a certain extent": the shrink stops at readable sizes, never trailing off
+  // with the window.
+  const valGroup = cn.match(/:root\[data-compact\] \.cnv-row input,[\s\S]{0,300}?\{ font-size: ([^;]+); \}/);
+  assert.ok(valGroup, 'the field-value fluid group exists');
+  assert.strictEqual(valGroup[1], 'clamp(11px, calc(6.1px + 1.44vw), 13px)',
+    'values scale 13px→11px over 480→340px (ceiling = the base 13px)');
+  assert.ok(/:root\[data-compact\] \.cnv-trio \.ce \{ font-size: clamp\(11px/.test(cn), 'trio values ride the same clamp');
+  const lblGroup = cn.match(/:root\[data-compact\] \.cnv-row \.lbl,[\s\S]{0,400}?\{ font-size: ([^;]+); \}/);
+  assert.ok(lblGroup, 'the label/rail/button fluid group exists');
+  assert.strictEqual(lblGroup[1], 'clamp(10.5px, calc(6.9px + 1.07vw), 12px)',
+    'labels/rail headings/save buttons/tag input scale 12px→10.5px (ceiling = the base 12px)');
+  ['.rail-card h4', '.rail-tag-input', '.cn-action-prime', '.cn-action-sec', '.cn-form-clear-btn']
+    .forEach((sel) => assert.ok(cn.indexOf(':root[data-compact] ' + (sel.startsWith('.rail-actions') ? sel : sel.startsWith('.cn-') ? '.rail-actions ' + sel : sel)) >= 0 ||
+                                 new RegExp(':root\\[data-compact\\][^{]*' + sel.replace(/[.\[\]]/g, '\\$&')).test(cn),
+      sel + ' is in a fluid group'));
+  // Floor discipline: any viewport-relative font-size in this partial must
+  // sit inside a clamp() — a bare Xvw size trails off with the window and has
+  // no floor, which is exactly what "to a certain extent" forbids.
+  const bare = cn.match(/font-size:\s*[^;{}]*vw[^;{}]*;/g) || [];
+  bare.forEach((m) => assert.ok(/clamp\(/.test(m), 'viewport-relative font-size outside clamp(): ' + m));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

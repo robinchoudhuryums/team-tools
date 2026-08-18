@@ -3587,6 +3587,22 @@ this section before touching the relevant area.
   `adjustWindowDays` field (falls back to 30 only if absent), so the
   picker tracks the real window if the CONFIG changes. The server stays
   authoritative regardless.
+- **The Call Notes pop-out's type is FLUID below its launch width (operator
+  2026-08-18).** An agent who likes the framing but wants an even smaller
+  window gets text that tracks the window width instead of the layout being
+  the only thing that gives: two `clamp()` groups scoped to
+  `:root[data-compact]` in the cn partial scale the form values 13px→11px and
+  the labels / rail headings / save buttons / tag input 12px→10.5px linearly
+  over 480→~340px, then STOP (the floors are the "to a certain extent" —
+  never a bare vw that trails off). The clamp CEILINGS are the base rules'
+  exact px values, so at ≥480px the pop-out is byte-identical to before —
+  MEASURED: 13/12px at 480, 11.28/10.75px at 360, page overflow 0 throughout.
+  vw only means the pop-out window because of the `data-compact` scope — the
+  main window and phone views never scale. The compact grid overrides
+  out-specify the ≤480px stacking breakpoints (the A2 precedent), so the 2-up
+  trio + 84px label column HOLD while the type shrinks: same framing, smaller.
+  Pinned (exact clamp formulas + a no-bare-vw floor scan) and on camera as
+  `cn-log-light-compact-sm`.
 - **Compact pop-out defaults to 480×800, then remembers (#4) — PER TOOL.**
   `popOutCurrentView()` opens the `umsTeamToolsCompact_<tool>` window at
   **480×800 by default** (widened from the prior 380×780 so the Call Notes
@@ -5260,7 +5276,11 @@ manually for a fresh deploy or environment:
   the mini-trendline mock was reviewed and held, the click-through is the
   bridge to the full charts; (h) the dashboard server cache was subsequently
   extended to the 6h CacheService max (operator-approved — see (c)).
-  **Post-deploy: run `runAllTests()`** — including the new
+  (i) **the Call Notes pop-out's text
+  shrinks with the window** below the 480px launch width (down to a readable
+  floor at ~340px; at 480px and above nothing changes) — shrinking the pinned
+  window past its old comfortable minimum now scales the template instead of
+  clipping it. **Post-deploy: run `runAllTests()`** — including the new
   `saveSpanishInboxMembers` gate case and the REWRITTEN
   `test_metrics_getTeamMetrics_nonManagerRejected` (now a shape pin: rep gets
   the aggregate, never `reps[]`).
@@ -6983,7 +7003,12 @@ nulls, resolve busts before re-enter), `enterTimeoffView` riding
 manager-only field CANNOT leak because nothing rides unless named — plus
 registry/client-guard/click-through wiring; the team-cache pin's gate anchor
 moved to the auth check + a both-return-paths-strip assert — 4 mutations
-bite-checked).
+bite-checked). The fluid-pop-out-type request added one more → **551** (the
+exact clamp formulas for both groups — ceilings equal the base px so ≥480px
+is byte-identical, floors carry the "to a certain extent" — plus a
+no-bare-vw font-size scan over the partial; verified by MEASUREMENT at
+480/400/360 and 3 mutations bite-checked, incl. a raised ceiling — the
+mutation that would silently change the default launch look).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7149,7 +7174,7 @@ every prior cycle shipped blind. The CI workflow runs it as a second step
 
 A third, **static-render VISUAL harness** lives in `test/visual/` (adopted from
 the cycle-11 visual audit): `node build.mjs` inlines the production partials
-into a standalone `page.html`, and `node shoot.mjs` renders a 40-scenario
+into a standalone `page.html`, and `node shoot.mjs` renders a 42-scenario
 matrix (tool × wide/compact/mobile × light/dark) in headless Chromium with a
 fixture-backed `google.script.run` mock, writing `shots/*.png` + `report.json`.
 It is **manual / on-demand like the editor suite — NOT in CI** (needs a
@@ -7458,7 +7483,7 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
-3. Actually OPEN the 40 PNGs. Compare light vs dark and wide vs compact vs
+3. Actually OPEN the 42 PNGs. Compare light vs dark and wide vs compact vs
    mobile for the same scenario; that pairing is what surfaces theme and
    breakpoint defects. **Every rep-facing tool has a mobile scenario since
    cycle-16 Batch 4** — before that the matrix shot five of nine tools at ONE
@@ -7481,7 +7506,9 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    grid stacks <1024px — the breakpoint is on camera), and the 2026-08-18
    width round added `punctuality-light-wide` (the tab had never been shot —
    which is how its 780/820px caps survived two width passes), taking the
-   matrix to **41**.
+   matrix to **41** — and the fluid-pop-out-type round added
+   `cn-log-light-compact-sm` (360×640, the shrunk-below-launch window the
+   clamp() type exists for), taking it to **42**.
    **Still uncovered: Manage → Coverage, Sent Forms, EmpDocs
    My Docs, and modal/overlay states** (the matrix shoots tab landings only),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile

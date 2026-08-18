@@ -30,6 +30,7 @@ function chromiumPath() {
 
 const WIDE = { width: 1440, height: 900 };
 const COMPACT = { width: 480, height: 800 };
+const COMPACT_SM = { width: 360, height: 640 };
 const MOBILE = { width: 390, height: 844 };
 
 // [name, {tool, tab}, viewport, mode, query]
@@ -100,6 +101,11 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
+  // Operator 2026-08-18 (fluid pop-out type): the CN pop-out shrunk BELOW its
+  // 480px launch width — the compact grids hold (2-up trio, 84px labels) while
+  // the clamp() type scales down toward its floor. This is the window shape
+  // the feature exists for, so it stays on camera.
+  ['cn-log-light-compact-sm', { tool: 'callNotes', tab: 'callNotes' }, COMPACT_SM, 'light', '?compact=1'],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
