@@ -2605,7 +2605,7 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Seventeen client-side localStorage keys total" entry in
+  authoritative "Sixteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`,
@@ -4706,8 +4706,10 @@ this section before touching the relevant area.
   call `cnCloseComposerModal_` only after the external modal is in the
   DOM. (The full one-shell consolidation is still unbuilt, but the
   observable flash is gone without it.) CSS in `styles.html`:
-  `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)`, matching
-  the Time/PTO mode-toggle segmented-pill vocabulary.
+  `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)` — the
+  segmented-pill vocabulary (originally modeled on the Time/PTO mode
+  toggle, RETIRED by the 2026-08-18 consolidation; the Coaching
+  Mine ⇄ Team toggle is the surviving sibling).
 - **Tag taxonomy rename/merge/archive batch-edits across reps.**
   Three new manager-gated endpoints in `Code.js`:
   `renameCallNoteTag(oldTag, newTag)` and
