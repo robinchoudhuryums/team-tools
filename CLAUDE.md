@@ -47,8 +47,11 @@ Apps Script project under its own directory, synced via `clasp`.
      KPIs — % Answered / Answered / Missed / Avg Talk / Transfer % —
      where the team line is **anonymized**: hidden on any day with fewer
      than 3 reporting reps, so peers can benchmark without singling
-     anyone out, INV-124) and "Team Metrics" (manager-only — per-rep
-     table with date-range support and preset chips). The CDR data layer
+     anyone out, INV-124) and "Team Metrics" (visible to EVERYONE since
+     2026-08-18: reps get the whitelist-built team AGGREGATE — totals, trend,
+     queue/department transfer folds — while the per-rep table + name
+     diagnostics stay manager-only, INV-66; date-range support and preset
+     chips; the Dashboard metric cards click through here). The CDR data layer
      (`getCdrSS_()`, `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`,
      plus `getCsrTransferPerRepDaily_()` reading the separate
      `CSR Transfer Historical Data` tab for the Transfer KPI) is isolated
@@ -571,7 +574,8 @@ this section before touching the relevant area.
   `managerDeleteCallNote`,
   `getAutomationHealthBadge` (the shell health dot — batch K),
   `getTimesheetDoctor`, `fixTimesheetDuplicates` (the sheet doctor — INV-159),
-  `getTeamMetrics`, `getMetricsAmbient`, `getCoveragePlan`,
+  `getTeamMetrics` (since 2026-08-18 reps get the stripped team AGGREGATE —
+  INV-66; the per-rep rows + diagnostics remain manager-only), `getMetricsAmbient`, `getCoveragePlan`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`,
   `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`,
@@ -608,8 +612,8 @@ this section before touching the relevant area.
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
-  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **41**
-  Admin-exclusive endpoints (30 Manage-module Admin-tab config/system/roster
+  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the **43**
+  Admin-exclusive endpoints (31 Manage-module Admin-tab config/system/roster
   endpoints — incl. the 2026-08-07 team-member onboarding trio
   `addEmployee`/`offboardEmployee`/`getOnboardingPanel` — + the Reference
   content-authoring set
@@ -1955,7 +1959,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 42 Admin-exclusive endpoints (INV-136's list) gate on
+  server-side** — the 43 Admin-exclusive endpoints (INV-136's list) gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -3243,7 +3247,7 @@ this section before touching the relevant area.
   "nobody reported at all"; INV-124's per-day My Stats series guard is
   UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
   `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
-  cache key `dash_metrics_v3` — it bumps with every payload-semantics change).
+  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
   **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
   DERIVED from the period list so a reorder can't repoint it). Asked for on the
   Department card and applied to both, because they sit side by side with
@@ -5231,6 +5235,50 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-18 operator round (width sweep + Spanish members editor +
+  load-time sweep round 1) adds NO operator state to SET UP** — no new Script
+  Properties to create, no triggers, no migrations; `SPANISH_INBOX_MEMBERS`
+  is now editable IN-APP (Manage → Admin → Config → Spanish bilingual
+  members) as the recommended path, with direct property editing still
+  working. Behaviour changes to expect post-deploy: (a) **Punctuality and
+  Admin fill the page width** (their inner 780–900px caps dropped); (b) the
+  Admin **Auto-tag rules** card is a compact 2-up scrolling list that no
+  longer grows with the rule count; (c) **Dashboard metric cards are served
+  from a day-long server cache** (6h TTL — the CacheService max — with the
+  rep-local day in the key, was 5 min; operator-approved since the CDR data
+  does not change again once the daily import lands; a load BEFORE the
+  import can pin the pre-import aggregate for up to 6h, while the Metrics
+  tabs keep their 5-min caches); (d) **Dept Requests loads
+  noticeably faster** (90s per-caller server cache, invalidated by every
+  resolve/new request, + an SWR re-enter that paints instantly); (e) **Time /
+  PTO re-enters paint instantly** from the month cache with a quiet
+  background refresh. (f) **Team Metrics is
+  visible to every rep** — as the team AGGREGATE only (hero + rail + trend +
+  a "per-rep breakdown is visible to managers" note); managers see the page
+  unchanged; (g) the two **Dashboard metric cards click through** to My
+  Stats / Team Metrics ("MY STATS ›" / "TEAM METRICS ›" in the card heads) —
+  the mini-trendline mock was reviewed and held, the click-through is the
+  bridge to the full charts; (h) the dashboard server cache was subsequently
+  extended to the 6h CacheService max (operator-approved — see (c)).
+  **Post-deploy: run `runAllTests()`** — including the new
+  `saveSpanishInboxMembers` gate case and the REWRITTEN
+  `test_metrics_getTeamMetrics_nonManagerRejected` (now a shape pin: rep gets
+  the aggregate, never `reps[]`).
+- **The 2026-08-17 THIRD round (full-width request pages + display cap +
+  the one-test fixture fix) adds NO operator state** — no Script Properties,
+  triggers, migrations, or CONFIG constants; two client-code constants
+  (`SP_TASKS_CAP`=12, `SP_TASKS_PAGE`=24) bound the card lists. Behaviour
+  changes to expect post-deploy: (a) **Spanish Inbox and Dept Requests use
+  the full monitor width** (view widens to 1480px like the Dashboard; the
+  card grid reflows to up to 4-up; Spanish puts the summary strip and the
+  resolution-share chart side by side, stacking below 1024px); (b) **each
+  card section renders at most 12 cards** with a "Show N more · M not shown"
+  button revealing 24 per click — section headers keep the full counts, so
+  nothing is hidden from the numbers, only from the initial DOM; (c) the one
+  failing editor test (`publicForm_tokenLifecycle`) was a test-fixture
+  artifact — its oversized signature lacked the `data:image/` prefix the
+  cycle-17 shape guard (correctly) rejects first; **the next `runAllTests()`
+  should be 286/286**.
 - **The 2026-08-17 SECOND round (pay statement + Spanish share chart) adds ONE
   operator data column and no other state** — no Script Properties, triggers,
   or migrations. **Operator action: fill `Employees` column P (`PayRate`)**
@@ -5704,7 +5752,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 42 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 43 Admin-exclusive endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -5732,10 +5780,15 @@ manually for a fresh deploy or environment:
   inbox and times first-inbound → first-reply-from-a-member. To work:
   (1) the **deploying account must be a member** of the group
   `spanishcalls@universalmedsupply.com` (so its mailbox receives the threads);
-  (2) set Script Property **`SPANISH_INBOX_MEMBERS`** to a comma-separated list
-  of the bilingual group members' emails — "resolved" = first reply from one of
+  (2) set the bilingual member list — **since 2026-08-18 via Manage → Admin →
+  Config → "Spanish bilingual members"** (`saveSpanishInboxMembers`,
+  admin-gated INV-136, `AdminConfigChange` audit; validates email shape,
+  lowercases + dedupes, caps 30; saving an EMPTY list danger-confirms), which
+  writes Script Property **`SPANISH_INBOX_MEMBERS`** (a comma-separated list —
+  still directly editable) — "resolved" = first reply from one of
   them (with no list it falls back to "first reply from anyone but the
-  requester"). **As of the Dashboard work this property ALSO GATES FEATURE
+  requester"). No cache flush is needed on a save: the stats cache key hashes
+  the member set (`spanishCacheHash_`). **As of the Dashboard work this property ALSO GATES FEATURE
   ACCESS:** `canSeeSpanishInbox_(emp)` = `isManager OR email ∈
   SPANISH_INBOX_MEMBERS`, and the four Spanish endpoints now gate on THAT
   (not pure-manager — INV-31 amendment), so the bilingual reps get the full
@@ -5785,6 +5838,24 @@ manually for a fresh deploy or environment:
   tone (a member may be part-time; the judgement is the operator's); a dashed
   neutral marker shows the even-split share, and a capped scan is named. The
   pure `spanishResolverShares_` is Node-pinned.
+  **Full-width + display cap (operator 2026-08-17, third round):** both
+  request-tracking views widen to 1480px via the Dashboard `:has()` precedent
+  (`.view-area:has(#spanish-body)` in the metrics partial;
+  `.view-area:has(#dr-body)` in the DR partial — `drRender_` wraps BOTH
+  branches in the `#dr-body` anchor so an error render keeps the width);
+  `.sp-tasks` lost its 920px cap (the auto-fill grid reflows to up to 4-up),
+  and Spanish's summary head + share chart sit side by side in the shared
+  `.sp-top` 2-col grid (stacks <1024px — that breakpoint also covers the
+  480px pop-out, so no `data-compact` override is owed; the SWR head-swap
+  still targets only `#spanish-head`, which keeps its own slot in the grid).
+  Every `.sp-tasks` card section on both pages renders through
+  **`spCappedTasksHtml_`** (`script_core.html`): at most `SP_TASKS_CAP` (12)
+  cards + a real Show-more `<button>` (INV-173) revealing `SP_TASKS_PAGE`
+  (24) per click and stating the hidden count — the cap changes what is
+  RENDERED, never what is REPORTED (INV-169: section headers keep the full
+  counts). Per-section shown-state (`SPANISH_STATE.shown` / `DR_SHOWN`)
+  resets on every full render / view enter so a stale expansion never pins a
+  huge DOM in a long-lived window.
 - **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
   **AUTOMATIC**: every department email an agent sends from Call Notes
   (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
@@ -6879,6 +6950,40 @@ mutations bite-checked; the rate-leak bite was reverted with `git checkout`
 and WIPED the uncommitted server block, re-applied from context — the
 batch-⑥ lesson re-learned: bites revert via python inverse edits ONLY, and
 the unit commits BEFORE its bite-checks where possible).
+The self-healing test-accounts fix added one more → **543** (setup restores
+the canonical email on an existing TEST row instead of skipping it; cleanup
+re-offboards every TEST_ row with the cache invalidated AFTER — the INV-183
+corollary applied to the suite's own rows). The 2026-08-17 THIRD round
+(full-width + display cap) added two more → **545** (the full-width pin —
+`.sp-tasks` carries no max-width, both 1480px `:has()` widen rules live in
+their own partials, `drRender_` emits `#dr-body` on BOTH branches, `.sp-top`
+is a 2-col grid with a real viewport breakpoint (A2) and the 660px inline
+caps are gone; and the display-cap pin — `spCappedTasksHtml_` driven
+behaviourally (cap, step, final-page reveal, no button when complete,
+extraStyle pass-through, real `<button>` per INV-173) plus wiring: all five
+card sections capped with distinct keys, both shown-state resets, no
+uncapped `.sp-tasks` list left, headers keep full counts per INV-169 — 7
+mutations bite-checked). The 2026-08-18 operator round added four more →
+**549** (the Punctuality/Admin width pin — no 900px card caps, no
+punct-table/card caps, uncapped summary strips; the compact auto-tag-rules
+pin — no per-rule bordered box, internally-scrolling 2-up list, real labeled
+remove button, save-contract classes unchanged; the Spanish-members pin —
+the real `saveSpanishInboxMembers` driven in a vm (shape-reject before any
+write, lowercase+dedupe+cap-30, empty-list valid), admin gate + audit +
+`getAdminConfig` read + the client's empty-list danger-confirm and escaped
+chips; and the load-time pin — the per-caller `dept_req_v1` key + gen salt
+bumped at the resolve write and the auto-track append, success-only put,
+an explicit guard that `getSpanishInboxPending` STAYS uncached (the
+documented privacy decision), the DR SWR stamps (fresh-skip, failed-round
+nulls, resolve busts before re-enter), `enterTimeoffView` riding
+`calNavTo_`, and the `dash_metrics_v4` day-scoped key + `DASHBOARD_CACHE_TTL`
+— 11 mutations bite-checked across the round). The same day's follow-up
+(Team Metrics for reps) added one more → **550** (the exact-whitelist
+`teamMetricsRepView_` strip driven behaviourally — an unknown future
+manager-only field CANNOT leak because nothing rides unless named — plus
+registry/client-guard/click-through wiring; the team-cache pin's gate anchor
+moved to the auth check + a both-return-paths-strip assert — 4 mutations
+bite-checked).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7044,7 +7149,7 @@ every prior cycle shipped blind. The CI workflow runs it as a second step
 
 A third, **static-render VISUAL harness** lives in `test/visual/` (adopted from
 the cycle-11 visual audit): `node build.mjs` inlines the production partials
-into a standalone `page.html`, and `node shoot.mjs` renders a 39-scenario
+into a standalone `page.html`, and `node shoot.mjs` renders a 40-scenario
 matrix (tool × wide/compact/mobile × light/dark) in headless Chromium with a
 fixture-backed `google.script.run` mock, writing `shots/*.png` + `report.json`.
 It is **manual / on-demand like the editor suite — NOT in CI** (needs a
@@ -7139,7 +7244,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v9` — the PayRate column P) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the five Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`/`resolveSpanishThread`) are NO LONGER pure-manager-gated — they gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). `resolveSpanishThread` (operator feedback 2026-07-09) is the MANUAL mark-resolved for requests handled outside the thread: scope-guarded like `ThreadBody` (the thread must be addressed to the configured inbox — since cycle 8 an EXACT parsed-address match via `spanishAddrListIncludes_`, Node-pinned, not the old raw substring `indexOf` which passed `xspanishcalls@…`; and the Gmail scans use `spanishSearchQuery_`'s `{to: cc:}` brace-OR so Cc'd requests enter stats/pending/resolved too), locked (INV-01), idempotent, PHI-FREE (append-only `SpanishManualResolved` tab on the ADP sheet — threadId + resolver + ms only, the ms as a NUMBER cell so no date coercion; `SpanishInboxResolve` audit row carries the threadId only). All three readers consult `spanishManualResolvedMap_` (bounded 1000-row tail): pending drops the thread immediately (live-read), stats/resolved count it as resolved (in-thread reply wins when both exist; stats reflect within the 5-min cache TTL — the INV-43 posture). **Cycle-17 batch ⑥: all three readers scan via the named `SPANISH_THREAD_SCAN_MAX` (200 — the silent GmailApp.search bound) and return `truncated` (threads.length ≥ cap ⇒ possibly more; the INV-169 class)**; the Spanish tab renders "scan capped at 200 threads — figures may be incomplete; narrow the window" on the stats note and both list tabs (`spanishTruncNote_`). The Dashboard Spanish card deliberately omits the note (space); the field is additive. The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error on all five; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics` (since 2026-08-18 NOT a rejection gate — a rep gets the whitelist-built aggregate, see INV-66; the shape boundary is pinned in `test_metrics_getTeamMetrics_nonManagerRejected`), `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the five Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`/`resolveSpanishThread`) are NO LONGER pure-manager-gated — they gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). `resolveSpanishThread` (operator feedback 2026-07-09) is the MANUAL mark-resolved for requests handled outside the thread: scope-guarded like `ThreadBody` (the thread must be addressed to the configured inbox — since cycle 8 an EXACT parsed-address match via `spanishAddrListIncludes_`, Node-pinned, not the old raw substring `indexOf` which passed `xspanishcalls@…`; and the Gmail scans use `spanishSearchQuery_`'s `{to: cc:}` brace-OR so Cc'd requests enter stats/pending/resolved too), locked (INV-01), idempotent, PHI-FREE (append-only `SpanishManualResolved` tab on the ADP sheet — threadId + resolver + ms only, the ms as a NUMBER cell so no date coercion; `SpanishInboxResolve` audit row carries the threadId only). All three readers consult `spanishManualResolvedMap_` (bounded 1000-row tail): pending drops the thread immediately (live-read), stats/resolved count it as resolved (in-thread reply wins when both exist; stats reflect within the 5-min cache TTL — the INV-43 posture). **Cycle-17 batch ⑥: all three readers scan via the named `SPANISH_THREAD_SCAN_MAX` (200 — the silent GmailApp.search bound) and return `truncated` (threads.length ≥ cap ⇒ possibly more; the INV-169 class)**; the Spanish tab renders "scan capped at 200 threads — figures may be incomplete; narrow the window" on the stats note and both list tabs (`spanishTruncNote_`). The Dashboard Spanish card deliberately omits the note (space); the field is additive. The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error on all five; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -7174,7 +7279,7 @@ INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`,
 INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
 INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_`. Pinned by the CDR test fixture, which stores TTT/ATT as coerced time values (Date via `getValues()`, H:MM:SS via `getDisplayValues()`) so a `getValues()` regression fails `test_metrics_cdrFixture_durationsUseDisplayValues` + the `attSeconds` integration assertion | Subsystem: Server
 INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-only. Returns the rep's own CDR metrics for the given date + a 30-day trend array + note-to-call coverage ratio. CDR data is fetched via `getCdrDailyBreakdown_()` (single-agent filter). The trend window is the 30 days ending on the given date. Returns `cdr: null` if the agent has no DQE data (not an error) | Subsystem: Server
-INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Single-day mode returns the 30-day team trend; **multi-day mode returns a per-day TEAM trend over the SELECTED range since the operator #8 batch (2026-08-06)** — span-capped 2–92 days (getTeamMetrics has no overall span cap, so an unbounded manual range must not trigger the extra per-day scan) and BEST-EFFORT (the INV-67 posture: a thrown range-trend read leaves `trend` null, the pre-#8 shape — a missing sparkline is not a reassuring degradation). The client delta line names its comparison ("vs period daily average" multi-day / "vs 30-day team average" single-day). Also ships `alertThreshold` (#4) and `teamTotals.transferPct` with its OWN Transfer-sheet denominator (`transferCalls`, never `rung`; null without it — INV-129). `unmatchedAgents` lists CDR agent names not on the team-tools roster (cycle 7 M-11: sourced from `getCdrAgentMetrics_`'s `meta.offRosterAgents`, recorded BEFORE its roster filter — the old loop over the roster-filtered result could never find one) | Subsystem: Server
+INV-66 | `getTeamMetrics(from, to)` requires an enrolled caller; since 2026-08-18 (operator: reps should have team metrics) a NON-manager gets the whitelist-BUILT team AGGREGATE via `teamMetricsRepView_` (`repView:true`; teamTotals/trend/queue+department folds/thresholds — NEVER the per-rep `reps[]` rows or the roster↔CDR name diagnostics: INV-124's individual-numbers posture), applied on BOTH return paths since the org-wide cache stores the FULL manager payload; managers get the full response as before. Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Single-day mode returns the 30-day team trend; **multi-day mode returns a per-day TEAM trend over the SELECTED range since the operator #8 batch (2026-08-06)** — span-capped 2–92 days (getTeamMetrics has no overall span cap, so an unbounded manual range must not trigger the extra per-day scan) and BEST-EFFORT (the INV-67 posture: a thrown range-trend read leaves `trend` null, the pre-#8 shape — a missing sparkline is not a reassuring degradation). The client delta line names its comparison ("vs period daily average" multi-day / "vs 30-day team average" single-day). Also ships `alertThreshold` (#4) and `teamTotals.transferPct` with its OWN Transfer-sheet denominator (`transferCalls`, never `rung`; null without it — INV-129). `unmatchedAgents` lists CDR agent names not on the team-tools roster (cycle 7 M-11: sourced from `getCdrAgentMetrics_`'s `meta.offRosterAgents`, recorded BEFORE its roster filter — the old loop over the roster-filtered result could never find one) | Subsystem: Server
 INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server
 INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated CDR data layer. Both open the CDR Report spreadsheet via `getCdrSS_()`, read `DQE Historical Data`, filter by date range + optional roster names, skip queue-sentinel rows via `isCdrQueueSentinel_()`. Both call `validateCdrColumns_()` on first access to check header positions against `CDR_EXPECTED_HEADERS` and `getCdrNameMap_()` to resolve Agent Alias Overrides before roster matching. Designed as the Option A (direct spreadsheet read) implementation — a future swap to Neon Postgres (Option C) replaces only these two functions + `getCdrSS_()` | Subsystem: Server
 INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending submissions per day, INCLUDES today) + `missedTrend` (14 days, missed-clockout instances per day, EXCLUDES today since reps still mid-shift would always register as missed). Both computed in-memory from already-loaded `toRows` / `adpRows` (INV-13 honored — no extra Sheet reads). Used by the V4·E2 telemetry-strip sparklines on Missed + Pending cells | Subsystem: Server
@@ -7255,7 +7360,7 @@ INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
-INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **42 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla` (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config), and `getViewUsageStats` (the pre-pilot feature-usage aggregate, operator 2026-08-13). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
+INV-136 | **Admin tier (Manage module).** A distinct above-manager role gating the Manage module's **Admin** tab + its config/system endpoints. `empIsAdmin_(email, isManager)`: when Script Property `ADMIN_EMAILS` is SET (comma-separated) admins are EXACTLY that email list; when UNSET/empty EVERY manager is an admin (so a fresh deploy + the test suite behave as before — admin == manager — keyed off the SAME roster `isManager` the endpoints use, NOT the `MANAGER_EMAILS` property, avoiding the F5 mismatch). Admins are a SUBSET of managers — ENFORCED in code since cycle 7 (M-10): `empIsAdmin_` returns false for any non-manager regardless of `ADMIN_EMAILS` membership (previously the subset was an unenforced operator obligation — a non-manager email in the property became an undocumented privilege tier). Shipped on `getEmployeeInfo_` (`emp.isAdmin`) + `getEmployeeState` (`empState.isAdmin`). **Client:** the `adminOnly` tab flag → `tabVisibleForUser_` (adminOnly→isAdmin) + `toolVisibleForUser_` hides the fully-gated Manage tool from non-managers; pinned by the `tabVisibleForUser_` + registry-reorg Node tests. **Server:** these **43 Admin-exclusive endpoints** now gate on `emp.isAdmin` returning `'Admin access required.'` (NOT `'Manager access required.'`): `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `saveEmailTemplates`, `saveExternalLinks`, `saveAutoTagRules`, `getFeatureFlags`, `saveFeatureFlags`, `getRetentionConfig`, `saveRetentionConfig`, `getDeptRequestSla`, `saveDeptRequestSla`, `saveSpanishInboxMembers` (the in-app Spanish bilingual-member editor, operator 2026-08-18 — reads ride `getAdminConfig.spanishMembers`) (NOTE: `getFeatureFlags` and `getDeptRequestSla` currently have NO client caller — the Admin UI reads both via `getAdminConfig`; kept by cycle-11 decision as the symmetric read APIs since they delegate to the same helpers, no parallel logic to drift), `saveKbAiSettings`, `getStorageHealth`, `getAutomationHealth`, `getDeployReadiness`, `getAdminSheetView`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `getCallNotesEnrollment`, `provisionCallNotesSheet`, the **team-member onboarding** set `addEmployee`, `offboardEmployee`, `getOnboardingPanel`, `getOnboardingCdrReadiness` (roster management — the validated in-app replacement for hand-editing the Employees sheet; operator request 2026-08-07, pre-pilot), the **Reference (KB) content-authoring** set `kbSaveItem`, `kbDeleteItem`, `kbUploadImage`, `kbConvertDriveDoc`, `kbConvertDriveSheet`, and the **authoring-adjacent KB** set `kbGetRevisions`, `kbPublishItem`, `kbRevertItem` (INV-140) + `kbGetSearchConfig`, `kbSaveSearchConfig` (the #8 synonym config), and `getViewUsageStats` (the pre-pilot feature-usage aggregate, operator 2026-08-13). **MACHINE-CHECKED since cycle-12 F7/F9** — this list drifted four times before the machine check (24→28→30→35; 38 with the onboarding trio, 39 once the panel's CDR half split off, 40 with the Sheet→article converter — each updated in the same commit that changed the set). Two Node tripwires now enumerate the functions returning `'Admin access required.'` straight from `Code.js` source: **F7** asserts the stated count equals the enforced count AND that every enforced admin endpoint is backtick-named in THIS paragraph; **F9** asserts every gated endpoint (admin or manager) is referenced by a gate test (`test_managerGates_rejectNonManager`'s cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), with one reasoned allowlist entry for the private helper `managerAggregateFlagged_`. So adding a gated endpoint now fails CI until both the doc list and a gate test catch up — edit this list when you change the gated set, don't re-grep by hand. **`getEnrolledCallNotesReps` stays MANAGER-gated** (shared with the Team Notes Per-Rep dropdown + the audit-panel rep filter). **`reconcileCallNotes` was REVERTED to the MANAGER_EMAILS `assertManagerCaller_` trigger gate** (cycle 6 F1/F2): #102 briefly admin-gated it, but it is a daily TRIGGER handler, so `emp.isAdmin`/roster gating silently no-op'd the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer — see INV-109. All other manager surfaces (Manage Time / Coverage / Punctuality / Team Notes / Team Metrics, and the KB **review/analytics** endpoints `kbMarkReviewed` / `kbGetReviewDue` / `kbGetUsageStats`, plus Training/EmpDocs manager endpoints) stay `isManager`. **Reference client split:** `getReferenceTree` ships `isAdmin`; the Reference tool's authoring affordances (Add / Edit / Delete / Convert) gate on `KB_STATE.isAdmin`, while the manager "Most used" / "Review due" analytics blocks stay `KB_STATE.isManager`. This AMENDS the per-endpoint gating noted in INV-31/57/82/92/93/115/118/119/125/133 for the listed endpoints (manager→admin). Pinned by `test_managerGates_rejectNonManager` (the `ADMIN_GATED` set asserts `'Admin access'` — incl. the 4 KB endpoints), `test_cn_tagAdmin_nonManagerRejected`, `test_provisionCallNotesSheet_nonManagerRejected` (`test_reconcileCallNotes_nonManagerRejected` now pins the MANAGER trigger gate — see INV-109, not this admin set) | Subsystem: Server + Client (shell) + Client (Reference views)
 
 INV-137 | **Automation-failure manager digest.** `sendAutomationHealthDigest` is a top-level TRIGGER handler (daily manager-tz 9am) reachable via `google.script.run`, so it carries the MANAGER_EMAILS `assertManagerCaller_` gate (INV-44 family, NOT `emp.isAdmin` — it runs as the installer; pinned by the trigger-gate Node tripwire + `test_triggerGate_automationHealthDigest_nonManagerThrows`) and is best-effort (INV-14 — try/catch, never throws past the catch). It reuses `computeAutomationHealth_()` — the UN-gated body factored out of `getAutomationHealth` so the push and the Admin panel share ONE computation (no parallel-source drift; the gate stays in the `getAutomationHealth` wrapper) — and emails `MANAGER_EMAILS` ONLY when a check is failing: a **stale digest heartbeat**, a **stale nightly reconcile** (the F1 class — `automationLastRuns[].last.ms`, the additive raw-ms field, older than 30h; reconcile is the one unconditional daily job that writes a row every run, so a stale last-run = a silently-dead trigger), or **personal-sheet sync-fails** — plus (Turn C) any **dead detector** from `automationDetectorChecks_()` (a failing writer↔parser round-trip or missing diagnostic channel — the failure class the other checks can't see). A HEALTHY system is silent (no daily nag), and "never ran yet" (no heartbeat / no reconcile row) is NOT flagged (fresh-deploy / not-yet-installed posture, matching the panel). CDR reachability is deliberately NOT pushed (it isn't a trigger; an unset `CDR_SS_ID` reads as unreachable and would false-nag a non-CDR deployment — the panels already surface it). PHI-free (counts + job names, all `esc_`'d via `buildBrandedEmailHtml_`, tone warn). The watcher writes no audit row + has no heartbeat of its own (verify it from the trigger list). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). | Subsystem: Server
 
@@ -7353,7 +7458,7 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
-3. Actually OPEN the 39 PNGs. Compare light vs dark and wide vs compact vs
+3. Actually OPEN the 40 PNGs. Compare light vs dark and wide vs compact vs
    mobile for the same scenario; that pairing is what surfaces theme and
    breakpoint defects. **Every rep-facing tool has a mobile scenario since
    cycle-16 Batch 4** — before that the matrix shot five of nine tools at ONE
@@ -7371,8 +7476,13 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    (the Reference LANDING pane hangs on a loader when the tree fetch fails).
    The operator-feedback round (2026-08-06) added the two redesigned status
    views — `spanish-light-wide` + `deptreq-light-wide` (fixtures cover all
-   four DR tones + an overdue Spanish card) — taking the matrix to **39**.
-   **Still uncovered: Manage → Coverage/Punctuality, Sent Forms, EmpDocs
+   four DR tones + an overdue Spanish card) — and the 2026-08-17
+   full-width round added `spanish-light-mobile` (the new `.sp-top` head+chart
+   grid stacks <1024px — the breakpoint is on camera), and the 2026-08-18
+   width round added `punctuality-light-wide` (the tab had never been shot —
+   which is how its 780/820px caps survived two width passes), taking the
+   matrix to **41**.
+   **Still uncovered: Manage → Coverage, Sent Forms, EmpDocs
    My Docs, and modal/overlay states** (the matrix shoots tab landings only),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
    width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED
@@ -7742,7 +7852,7 @@ S42 | Metrics — Team Metrics date-range + presets | Subsystem: Server, Client 
     - Click a rep's NAME in the table → confirm it opens Team Notes → Per-Rep View for that rep at the range's end date (#9)
     - Click **Copy table** and paste into a spreadsheet (#10); switch to By queue / By department and copy again
     - Click "Match diagnostics (N)" below the table (#3)
-  Expected: Preset chips carry aria-pressed state; a manual range un-presses them (Custom shows pressed). Per-rep table shows Rung, Answered, Missed, % Answered (green band starts at the shipped 85 target — a rep at 80–84.9% is AMBER), ATT, Notes, Coverage, Transfers; the rail includes a Transfers row when the Transfer read succeeded. Multi-day ranges SHOW the range sparkline (single-day keeps the 30-day trend + "vs 30-day team average"). From > To auto-corrects. The copied TSV follows the current sort, has plain values only, and exports an unreadable notes Sheet as blank (never 0). The two info-tone reference lists are folded behind the diagnostics disclosure; the likely-name-mismatch warning stays visible above it. Non-manager calling `getTeamMetrics` directly gets "Manager access required."
+  Expected: Preset chips carry aria-pressed state; a manual range un-presses them (Custom shows pressed). Per-rep table shows Rung, Answered, Missed, % Answered (green band starts at the shipped 85 target — a rep at 80–84.9% is AMBER), ATT, Notes, Coverage, Transfers; the rail includes a Transfers row when the Transfer read succeeded. Multi-day ranges SHOW the range sparkline (single-day keeps the 30-day trend + "vs 30-day team average"). From > To auto-corrects. The copied TSV follows the current sort, has plain values only, and exports an unreadable notes Sheet as blank (never 0). The two info-tone reference lists are folded behind the diagnostics disclosure; the likely-name-mismatch warning stays visible above it. A non-manager opening Team Metrics (the tab is visible to everyone since 2026-08-18) sees the team hero + rail + trend with a "per-rep breakdown is visible to managers" note — and a direct `getTeamMetrics` call returns NO `reps[]`/diagnostics fields (`repView:true`).
 
 S43 | Metrics — CDR unavailable fallback | Subsystem: Server, Client (Metrics views)
   Steps:

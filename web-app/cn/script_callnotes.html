@@ -1456,12 +1456,24 @@
     color: var(--ink); line-height: 1.5;
   }
   /* §7c/#4 — Admin Overview "System status" cards */
-  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 900px; margin-bottom: 18px; }
+  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
   .cn-sys-card { padding: 12px 14px; }
   .cn-sys-card .cn-sys-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* Auto-tag rules — compact editor (operator 2026-08-18): slim hairline rows,
+     2-up at wide widths, and the LIST scrolls internally past ~8 visible rows
+     so the card never extends indefinitely as rules accumulate (cap 50). */
+  .cn-atag-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 20px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  @media (min-width: 1100px) { .cn-atag-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .cn-admin-atag-row { display: grid; grid-template-columns: minmax(0, 32%) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  .cn-admin-atag-row input { width: 100%; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+  /* Spanish bilingual members editor (operator 2026-08-18). */
+  .cn-spm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cn-spm-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px 4px 10px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); color: var(--ink); }
+  .cn-spm-chip button { appearance: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; padding: 2px; border-radius: var(--radius-pill); }
+  .cn-spm-chip button:hover { color: var(--danger-deep); background: var(--paper); }
   /* Pre-pilot observability — Feature-usage rows (Admin Overview). Fixed
      tracks, so the A2 rule applies: a real viewport breakpoint below drops
      the bar + reps columns rather than squeezing five tracks into a phone. */
@@ -7856,8 +7868,8 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-audit"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
-      '<div id="cn-admin-retention" style="max-width:900px"></div>' +
-      '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
+      '<div id="cn-admin-retention"></div>' +
+      '<div id="cn-admin-body">' + loSweep() + '</div>' +
     '</div>' +
     // Tier 2 — read-only highlighted viewer of an allowlisted, PHI-free tab.
     // Lazy-loaded on first open of this sub-tab (cnAdminTab_), so the Admin
@@ -8231,7 +8243,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
   const repsCount = tax && typeof tax.repsScanned === 'number' ? tax.repsScanned : '—';
   const unresolvedClass = (typeof unresolvedVal === 'number' && unresolvedVal > 3) ? 'crit'
     : (typeof unresolvedVal === 'number' && unresolvedVal > 0 ? 'warn' : '');
-  const kpiHtml = '<div class="telemetry" style="max-width:900px;margin-bottom:16px">'
+  const kpiHtml = '<div class="telemetry" style="margin-bottom:16px">'
     + '<div class="tel-cell"><div class="tel-label">Week notes</div><div class="tel-value">' + esc(String(weekVal)) + '</div><div class="tel-sub">across team</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(String(unresolvedVal)) + '</div><div class="tel-sub">action flags open</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Tags</div><div class="tel-value">' + esc(String(tagsCount)) + '</div><div class="tel-sub">unique in use</div></div>'
@@ -8269,7 +8281,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
     }
     const trendWeeks = trends && (trends.weeks || (trends.weekStarts ? trends.weekStarts.length : 0)) || 0;
     taxHtml =
-      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy &amp; Trends</div>'
         + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Trend + Δ cover the trailing ' + esc(String(trendWeeks)) + ' weeks (a rising tag flags an emerging issue). Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags).</div>'
         + (inUse.length > 0
@@ -8279,7 +8291,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
       + '</div>';
   } else if (tax) {
     taxHtml =
-      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
         + '<div style="font-size:12px;color:var(--muted)">No tags in use yet. Tags are free-text categorisations reps add from the Log view (Round 2 · 8e).</div>'
       + '</div>';
@@ -8515,7 +8527,7 @@ function cnLoadAuditPanel_() {
   if (!slot) return;
   var todayIso = cnAuditTodayIso_();
   slot.innerHTML =
-    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Compliance Audit</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Search the call-note audit trail across all reps. Expand a row for the note’s full history; “View note” opens it in Team Notes. The log is PHI-free — note content lives only in the per-rep view.</div>' +
       '<div class="field-row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">' +
@@ -8798,7 +8810,7 @@ function cnRenderSheetView_(res) {
       (res.mgrTzAbbr ? ' · times in ' + esc(res.mgrTzAbbr) : '') + '. Rows are highlighted by signal; click ↗ to open a row in Sheets.</div>' +
     legend;
   var trunc = res.truncated ? '<div style="font-size:11px;color:var(--warning-deep);margin-top:8px">Showing the most recent ' + rows.length + ' rows — older history is in the sheet (Open in Sheets ↗).</div>' : '';
-  return '<div style="max-width:1000px">' + head + table + trunc + '</div>';
+  return '<div>' + head + table + trunc + '</div>';
 }
 
 function cnLoadStoragePanel_() {
@@ -8901,7 +8913,7 @@ function cnRenderStoragePanel_(res) {
   var hdr = anyTzDrift
     ? '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:10px">' + icon('warning', 12) + ' A store’s timezone differs from CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ') — coerced date/time reads will drift. Set the sheet’s File → Settings → Time zone to match.</div>'
     : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ').</div>';
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Storage Health</div>' +
     hdr + rows + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
@@ -9271,7 +9283,7 @@ function cnRenderHealthPanel_(res) {
     '</div>';
   }).join('');
 
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation Health' +
       (res.auditLogUrl ? '<a href="' + esc(res.auditLogUrl) + '" target="_blank" rel="noopener" style="float:right;font-size:11px;font-weight:400">Open AuditLog ↗</a>' : '') +
     '</div>' +
@@ -9844,7 +9856,10 @@ function cnRenderAdminBody_(cfg) {
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Auto-tag rules</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">When a keyword appears in a note\'s <strong>Issue</strong> or <strong>Resolution</strong> text, its tag is added automatically (as a normal chip the rep can remove — removing it stops that rule for the rest of the note). Keywords match case-insensitively as substrings; separate several with commas. Matching happens in the rep\'s browser — note text is never sent anywhere for this.</div>' +
-      '<div id="cn-admin-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
+      ((cfg.autoTagRules || []).length
+        ? '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">' + (cfg.autoTagRules || []).length + ' rule(s)</div>'
+        : '') +
+      '<div id="cn-admin-atag-list" class="cn-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-atag">' + icon('plus', 12) + ' Add Rule</button>' +
         '<button class="btn-modal-ok" id="cn-admin-save-atags" style="margin:0">Save Rules</button>' +
@@ -9858,6 +9873,21 @@ function cnRenderAdminBody_(cfg) {
         esc(String((cfg.deptSla && cfg.deptSla.defaultHours) || 48)) + 'h). A request past its SLA shows “Overdue” on the tracker and is counted in the daily manager digest.</div>' +
       '<div id="cn-admin-sla-list">' + cnRenderDeptSlaRows_(cfg.deptSla || {}) + '</div>' +
       '<button class="btn-modal-ok" id="cn-admin-save-sla" style="margin:0;margin-top:10px">Save SLA targets</button>' +
+    '</div>' +
+
+    // Spanish bilingual members (operator 2026-08-18) — the in-app editor for
+    // Script Property SPANISH_INBOX_MEMBERS. The list does DOUBLE duty (a
+    // member's reply resolves + attributes a thread; membership gates the
+    // Spanish Inbox tab per INV-31), so the copy says both.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Spanish bilingual members</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">The reps who action the Spanish inbox. A reply from a member counts a request resolved and attributes it on the Resolution-share chart (a member with none shows a zero bar); members also get the Spanish Inbox tab and Dashboard card. <strong>With no members set</strong>, any reply counts as resolved and only managers see the tab. Use each rep’s login email exactly as on the roster.</div>' +
+      '<div id="cn-admin-spm-list" class="cn-spm-chips">' + cnRenderSpanishMemberChips_(cfg.spanishMembers || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        '<input type="email" id="cn-admin-spm-add" placeholder="rep@umsupply.com" aria-label="Member email to add" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:220px">' +
+        '<button class="refresh-btn" id="cn-admin-spm-addbtn" type="button">' + icon('plus', 12) + ' Add</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-spm-save" style="margin:0">Save Members</button>' +
+      '</div>' +
     '</div>' +
 
     // Phase A — KB AI guidance settings (cap + model; the on/off switch is
@@ -10144,6 +10174,14 @@ function cnRenderAdminBody_(cfg) {
     var wrap = document.createElement('div');
     wrap.innerHTML = cnRenderAutoTagRow_({ tag: '', keywords: [] });
     list.appendChild(wrap.firstElementChild);
+    // The list scrolls internally now — bring the fresh row into view and
+    // put the cursor in its tag field.
+    var fresh = list.lastElementChild;
+    if (fresh) {
+      if (fresh.scrollIntoView) fresh.scrollIntoView({ block: 'nearest' });
+      var inp = fresh.querySelector('.cn-admin-atag-tag');
+      if (inp) inp.focus();
+    }
   });
 
   document.getElementById('cn-admin-save-atags').addEventListener('click', function () {
@@ -10172,6 +10210,63 @@ function cnRenderAdminBody_(cfg) {
         showToast((err && err.message) || 'Save failed', 'toast-error');
       })
       .saveAutoTagRules(out);
+  });
+
+  // Spanish bilingual members (operator 2026-08-18): chips are the working
+  // list; Add validates shape + dedupes client-side (server re-validates);
+  // saving an EMPTY list danger-confirms, because it both widens resolution
+  // attribution ("any reply resolves") and revokes the reps' tab access.
+  var spmAdd = function () {
+    var inp = document.getElementById('cn-admin-spm-add');
+    var list = document.getElementById('cn-admin-spm-list');
+    if (!inp || !list) return;
+    var e = (inp.value || '').trim().toLowerCase();
+    if (!e) return;
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) { showToast('Enter a valid email address', 'toast-warn'); return; }
+    var chips = list.querySelectorAll('.cn-spm-chip');
+    for (var i = 0; i < chips.length; i++) {
+      if (chips[i].getAttribute('data-email') === e) { showToast('Already in the list', 'toast-info'); inp.value = ''; return; }
+    }
+    var none = list.querySelector('.cn-spm-none');
+    if (none) none.remove();
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cnRenderSpanishMemberChips_([e]);
+    list.appendChild(wrap.firstElementChild);
+    inp.value = ''; inp.focus();
+  };
+  var spmAddBtn = document.getElementById('cn-admin-spm-addbtn');
+  if (spmAddBtn) spmAddBtn.addEventListener('click', spmAdd);
+  var spmInput = document.getElementById('cn-admin-spm-add');
+  if (spmInput) spmInput.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); spmAdd(); }
+  });
+  var spmSaveBtn = document.getElementById('cn-admin-spm-save');
+  if (spmSaveBtn) spmSaveBtn.addEventListener('click', function () {
+    var btn = this;
+    var chips = document.querySelectorAll('#cn-admin-spm-list .cn-spm-chip');
+    var out = [];
+    for (var i = 0; i < chips.length; i++) out.push(chips[i].getAttribute('data-email'));
+    var doSave = function () {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false; btn.textContent = 'Save Members';
+          if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+          showToast('Spanish members saved (' + res.members.length + ')', 'toast-success');
+          var list = document.getElementById('cn-admin-spm-list');
+          if (list) list.innerHTML = cnRenderSpanishMemberChips_(res.members);
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false; btn.textContent = 'Save Members';
+          showToast((err && err.message) || 'Save failed', 'toast-error');
+        })
+        .saveSpanishInboxMembers(out);
+    };
+    if (!out.length) {
+      uiConfirm({ title: 'Clear all Spanish members?',
+        message: 'With no members set, ANY reply counts as resolved (attribution stops), and only managers can see the Spanish Inbox tab.',
+        confirmLabel: 'Clear members', tone: 'danger' }).then(function (ok) { if (ok) doSave(); });
+    } else { doSave(); }
   });
 
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
@@ -10238,19 +10333,34 @@ function cnRenderLinkRow_(l) {
   '</div>';
 }
 
+/** Spanish bilingual member chips (operator 2026-08-18) — the Admin editor's
+ *  current list. Chip removal is DOM-only until Save (the SLA-editor posture);
+ *  the empty state names both consequences of an empty list. */
+function cnRenderSpanishMemberChips_(members) {
+  if (!members || !members.length) {
+    return '<div class="cn-spm-none" style="font-size:12px;color:var(--warning-deep)">No members configured — any reply counts as resolved, and only managers see the Spanish Inbox.</div>';
+  }
+  return members.map(function (m) {
+    return '<span class="cn-spm-chip" data-email="' + esc(m) + '">' + esc(m) +
+      '<button type="button" aria-label="Remove ' + esc(m) + '" onclick="this.closest(\'.cn-spm-chip\').remove()">' + icon('x', 11) + '</button></span>';
+  }).join('');
+}
+
 /** Auto-tag rule editor rows (operator 2026-08-13). */
 function cnRenderAutoTagRows_(rules) {
   if (!Array.isArray(rules) || rules.length === 0) return cnRenderAutoTagRow_({ tag: '', keywords: [] });
   return rules.map(cnRenderAutoTagRow_).join('');
 }
 function cnRenderAutoTagRow_(r) {
+  // Compact format (operator 2026-08-18): one slim hairline row per rule —
+  // the old per-rule bordered box made the card grow ~54px/rule toward the
+  // 50-rule cap. The list itself is a 2-up grid at wide widths with an
+  // internal scroll (see .cn-atag-list), so the card height is bounded.
   r = r || {};
-  return '<div class="cn-admin-atag-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
-    '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
-      '<div class="field" style="flex:0 0 24%;margin:0"><input type="text" class="cn-admin-atag-tag" value="' + esc(r.tag || '') + '" placeholder="tag (kebab-case)"></div>' +
-      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-atag-kws" value="' + esc((r.keywords || []).join(', ')) + '" placeholder="keywords, comma, separated"></div>' +
-      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-atag-row\').remove()">' + icon('x', 14) + '</button>' +
-    '</div>' +
+  return '<div class="cn-admin-atag-row">' +
+    '<input type="text" class="cn-admin-atag-tag" value="' + esc(r.tag || '') + '" placeholder="tag (kebab-case)" aria-label="Tag">' +
+    '<input type="text" class="cn-admin-atag-kws" value="' + esc((r.keywords || []).join(', ')) + '" placeholder="keywords, comma, separated" aria-label="Keywords">' +
+    '<button type="button" class="cn-act-btn" title="Remove rule" aria-label="Remove rule" onclick="this.closest(\'.cn-admin-atag-row\').remove()">' + icon('x', 14) + '</button>' +
   '</div>';
 }
 

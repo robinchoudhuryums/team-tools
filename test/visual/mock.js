@@ -297,6 +297,19 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       };
     })(),
     getPtoReconciliation: { reps: [] },
+    // Punctuality (operator 2026-08-18 width round — the tab had never been
+    // shot). Shape mirrors getPunctualityReport's return block: {from, to,
+    // grace, reps[{id,name,tz,startMin,days,onTime,late,onTimePct,avgLate,
+    // worst,lunchOnTimePct}]}, least punctual first.
+    getPunctualityReport: {
+      from: daysAgo(29), to: todayIso, grace: 5,
+      reps: [
+        { id: 'E-1090', name: 'Leo Kim',     tz: 'America/Chicago', startMin: 480, days: 18, onTime: 12, late: 6, onTimePct: 67, avgLate: 14, worst: 41, lunchOnTimePct: 88 },
+        { id: 'E-1088', name: 'Sam Ortiz',   tz: 'Asia/Manila',     startMin: 510, days: 20, onTime: 17, late: 3, onTimePct: 85, avgLate: 6,  worst: 12, lunchOnTimePct: 95 },
+        { id: 'E-1042', name: 'Avery Blake', tz: 'Asia/Kolkata',    startMin: 480, days: 21, onTime: 20, late: 1, onTimePct: 95, avgLate: 4,  worst: 4,  lunchOnTimePct: null },
+        { id: 'E-1077', name: 'Nina Patel',  tz: 'America/Chicago', startMin: 480, days: 19, onTime: 19, late: 0, onTimePct: 100, avgLate: 0, worst: 0,  lunchOnTimePct: 100 },
+      ],
+    },
     managerGetPendingAdjustments: { requests: [] },
     getTimesheetDoctor: { duplicates: [], inverted: [], windowDays: 92 },
     getReferenceTree: { isManager: true, isAdmin: true, items: [

@@ -7305,10 +7305,15 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   assert.ok(/var MIN_COHORT = 1;/.test(dash),
     'the operator decision: the Dashboard card renders team data whenever anyone reported');
   // The key bumps with every payload-semantics change (v2 = cohort hide
-  // dropped; v3 = prev/thresholds added) — a stale entry must never serve the
-  // previous contract for the TTL after a deploy.
-  assert.ok(/dash_metrics_v3:/.test(dash) && !/dash_metrics_v[12]:/.test(dash),
+  // dropped; v3 = prev/thresholds added; v4 = day-scoped key + 1800s TTL,
+  // operator 2026-08-18) — a stale entry must never serve the previous
+  // contract for the TTL after a deploy. The day in the key is load-bearing
+  // at the longer TTL: a payload must never straddle the rep-local midnight.
+  assert.ok(/dash_metrics_v4:/.test(dash) && !/dash_metrics_v[123]:/.test(dash),
     'the cache key bumped with the payload semantics');
+  assert.ok(/dash_metrics_v4:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+    'the v4 key carries the rep-local day');
+  assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
   // peer-benchmark surface) keeps its N=3 guard — INV-124 proper.
   const my = strip(extractRawFunction('Code.js', 'getMyMetrics'));
@@ -9247,15 +9252,60 @@ test('the three slow tabs paint last-good instantly and refresh behind the pill'
 test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const f = nc(extractRawFunction('Code.js', 'getTeamMetrics'));
-  const gateAt = f.indexOf('Manager access required');
+  // Operator 2026-08-18: the manager GATE became an auth check + a per-role
+  // SHAPE (reps get the whitelist-built aggregate) — the invariant this pin
+  // kept is unchanged in spirit: no cache read before auth, and the cached
+  // FULL payload never reaches a rep unstripped (both return paths).
+  const gateAt = f.indexOf('Your account is not registered');
   const readAt = f.indexOf('teamMetricsCache.get(teamCacheKey)');
-  assert.ok(gateAt > 0 && readAt > gateAt, 'the cache read sits AFTER the manager gate');
+  assert.ok(gateAt > 0 && readAt > gateAt, 'the cache read sits AFTER the auth check');
+  assert.strictEqual((f.match(/callerEmp\.isManager \? \w+ : teamMetricsRepView_\(\w+\)/g) || []).length, 2,
+    'BOTH return paths (cache hit + fresh compute) strip for a non-manager');
   // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
   // a transfer-read error must not pin a degraded aggregate for the TTL.
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
   assert.ok(/team_metrics_v1:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate');
+});
+
+test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive the real strip with a full-shaped manager payload and
+  // assert the EXACT key set — whitelist-BUILT (the trainStripQuizForRep_
+  // discipline), so a new manager-only field added to teamResult later can
+  // never ride to reps by default.
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), ctx);
+  const full = {
+    from: 'a', to: 'b', date: 'a', reps: [{ repName: 'X' }], teamTotals: { rung: 1 },
+    unmatchedAgents: ['Z'], rosterWithNoCdr: ['Y'], likelyMismatches: [{}],
+    trend: [], transferMeta: { available: true }, queueRows: [], groupRows: [],
+    alertThreshold: 85, meta: { rowsScanned: 9 }, cached: true, futureManagerOnlyField: 'leak',
+  };
+  const rep = ctx.teamMetricsRepView_(full);
+  assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold'].sort().join('|'),
+    'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
+  assert.strictEqual(rep.repView, true);
+  // Registry: the tab is visible to everyone now (the server shape is the
+  // boundary); the client render treats a reps-less repView payload as the
+  // expected shape and says the breakdown is manager-only rather than
+  // rendering "no metrics".
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  const teamEntry = core.match(/metricsTeam:\s*\{[^}]*\}/)[0];
+  assert.ok(!/managerOnly/.test(teamEntry), 'metricsTeam is no longer managerOnly');
+  const render = nc(extractFunction('metrics/script_metrics.html', 'mRenderTeamMetrics_'));
+  assert.ok(/!data\.reps && !data\.repView/.test(render), 'a reps-less repView payload is not "no metrics"');
+  assert.ok(/if \(data\.repView\) \{/.test(render) && /visible to managers/.test(render),
+    'the rep view names the manager-only boundary instead of a silent short page');
+  // Dashboard click-throughs: real buttons (INV-173) landing on the right
+  // tabs; team card -> metricsTeam, own card -> metricsMyStats.
+  const car = nc(extractFunction('tc/script_clock.html', 'clkDashCarouselHtml_'));
+  assert.ok(/'mine'\) \? 'metricsMyStats' : 'metricsTeam'/.test(car), 'per-card destination tabs');
+  assert.ok(/<button type="button" class="dash-open-btn"/.test(car) && /enterTool\(\\'metrics\\'/.test(car),
+    'the click-through is a real button into the Metrics tool');
 });
 
 console.log('\nemails — the three CN digests share the branded chrome (operator 2026-08-13)');
@@ -9643,6 +9693,195 @@ test('reminders dedupe across windows via the shared localStorage fired-set', ()
     'the shared set lives under the documented umsRemindFired key');
   assert.ok(/shared\.keys\[key\]\) \{ _remindFired\[key\] = true; return false;/.test(once),
     'another window\'s fire marks the in-memory set and returns without notifying');
+});
+
+test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const st = nc(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  // The shared card grid flows to the view width — the 920px cap that left
+  // half a wide monitor empty must not come back.
+  const grid = st.match(/\.sp-tasks\s*\{[^}]*\}/);
+  assert.ok(grid && !/max-width/.test(grid[0]), '.sp-tasks carries no max-width (auto-fill does the reflow)');
+  // Both views widen past --content-max via the Dashboard :has() precedent,
+  // each rule living in ITS OWN partial's style block.
+  const met = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  const dr = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  assert.ok(/\.view-area:has\(#spanish-body\)\s*\{\s*max-width:\s*1480px/.test(met), 'Spanish widens to 1480px');
+  assert.ok(/\.view-area:has\(#dr-body\)\s*\{\s*max-width:\s*1480px/.test(dr), 'Dept Requests widens to 1480px');
+  // The DR anchor wraps BOTH render branches — an error render must not snap
+  // the view back to the narrow width mid-session.
+  const render = nc(extractFunction('metrics/script_deptrequests.html', 'drRender_'));
+  assert.strictEqual((render.match(/id="dr-body"/g) || []).length, 2, 'both drRender_ branches emit #dr-body');
+  // The Spanish top row: head + share side by side in .sp-top, whose base
+  // multi-column grid carries a real viewport breakpoint (the A2 rule) — the
+  // 480px pop-out rides the same breakpoint, so no data-compact override.
+  const spRender = nc(extractFunction('metrics/script_metrics.html', 'spanishRender_'));
+  assert.ok(/class="sp-top"[\s\S]*id="spanish-head"[\s\S]*id="spanish-share"/.test(spRender),
+    'head + share render inside the .sp-top grid (the SWR head-swap slot is preserved)');
+  const top = st.match(/\.sp-top\s*\{[^}]*\}/);
+  assert.ok(top && /grid-template-columns:\s*minmax\(0, 1\.05fr\) minmax\(0, 1fr\)/.test(top[0]), '.sp-top is a 2-col grid');
+  assert.ok(/@media \(max-width: 1023px\)\s*\{\s*\.sp-top\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/.test(st),
+    '.sp-top stacks at a real viewport breakpoint (A2)');
+  assert.ok(/\.sp-top:has\(#spanish-share:empty\)\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/.test(st),
+    'an empty share slot collapses the grid — no dead half-width column while the chart has nothing');
+  // The inline 660px caps are gone — the strips + share card fill their
+  // columns (the manager dashboard's full-width .telemetry posture).
+  assert.ok(!/telemetry" style="max-width:660px/.test(met + dr), 'no 660px cap on either telemetry strip');
+  assert.ok(!/max-width:660px/.test(nc(extractFunction('metrics/script_metrics.html', 'spanishShareHtml_'))),
+    'the share card fills its .sp-top column');
+});
+
+test('Punctuality + Admin fill the view width (operator 2026-08-18)', () => {
+  // The Admin tab was a 900px column inside a 1280px view (every card carried
+  // its own inline cap) and Punctuality hard-capped its 7-column table at
+  // 780px — ~400px dead on both manager surfaces. The caps must not return.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(!/max-width:\s*900px/.test(cn) && !/max-width:900px/.test(cn),
+    'no 900px card caps anywhere in the Admin partial');
+  assert.ok(!/'<div style="max-width:1000px">'/.test(cn), 'the Sheets viewer wrapper is uncapped');
+  const tm = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const punctTable = tm.match(/\.punct-table\s*\{[^}]*\}/);
+  const punctCard = tm.match(/\.punct-card\s*\{[^}]*\}/);
+  assert.ok(punctTable && !/max-width/.test(punctTable[0]), '.punct-table carries no max-width');
+  assert.ok(punctCard && !/max-width/.test(punctCard[0]), '.punct-card carries no max-width');
+  assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
+});
+
+test('Auto-tag rules editor is compact + bounded (operator 2026-08-18)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  // The per-rule bordered box (~54px/rule toward the 50 cap) must not return —
+  // rows are slim hairline grid rows and the LIST scrolls internally, so the
+  // Admin card's height is bounded no matter how many rules accumulate.
+  const row = cn.match(/function cnRenderAutoTagRow_\(r\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(!/border:1px solid/.test(row), 'no per-rule bordered box');
+  assert.ok(/<button type="button"[^>]*aria-label="Remove rule"/.test(row), 'remove is a real labeled button (INV-173)');
+  const list = cn.match(/\.cn-atag-list\s*\{[^}]*\}/);
+  assert.ok(list && /max-height/.test(list[0]) && /overflow-y:\s*auto/.test(list[0]),
+    'the rule list scrolls internally — the card never extends indefinitely');
+  assert.ok(/@media \(min-width: 1100px\)\s*\{\s*\.cn-atag-list\s*\{\s*grid-template-columns:\s*repeat\(2/.test(cn),
+    '2-up at wide widths (the full-width Admin has the room)');
+  // The save handler's contract is unchanged: it still reads the same row
+  // class + input classes, so the compact markup can't silently drop rules.
+  assert.ok(/querySelectorAll\('#cn-admin-atag-list \.cn-admin-atag-row'\)/.test(cn) &&
+            /cn-admin-atag-tag/.test(row) && /cn-admin-atag-kws/.test(row),
+    'save still reads .cn-admin-atag-row / -tag / -kws');
+});
+
+test('Spanish members Admin editor: validated save, dual-duty copy, empty-list confirm', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive the real saveSpanishInboxMembers in a vm with stubbed
+  // services — shape-reject, lowercase+dedupe, cap, empty-list allowed.
+  const props = {};
+  const ctx = {
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'mgr@x.com' }),
+    PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; } }) },
+    writeAuditLog_: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'saveSpanishInboxMembers'), ctx);
+  const bad = ctx.saveSpanishInboxMembers(['not-an-email']);
+  assert.ok(!bad.success && /Not a valid email/.test(bad.error), 'shape-rejects before any write');
+  assert.ok(!('SPANISH_INBOX_MEMBERS' in props), 'nothing written on reject');
+  const ok = ctx.saveSpanishInboxMembers(['Ana@X.com', 'ana@x.com', ' luis@x.com ']);
+  assert.ok(ok.success, 'valid list saves');
+  assert.strictEqual(props.SPANISH_INBOX_MEMBERS, 'ana@x.com,luis@x.com', 'lowercased, trimmed, deduped, comma-joined');
+  const many = []; for (let i = 0; i < 31; i++) many.push('r' + i + '@x.com');
+  assert.ok(!ctx.saveSpanishInboxMembers(many).success, 'capped at 30');
+  assert.ok(ctx.saveSpanishInboxMembers([]).success && props.SPANISH_INBOX_MEMBERS === '',
+    'an EMPTY list is valid (managers-only + any-reply-resolves — the unset behavior)');
+  const src = nc(extractRawFunction('Code.js', 'saveSpanishInboxMembers'));
+  assert.ok(/isAdmin/.test(src) && /Admin access required/.test(src), 'admin-gated (INV-136)');
+  assert.ok(/AdminConfigChange/.test(src), 'audited (INV-57 family)');
+  // Reads ride getAdminConfig; the editor UI danger-confirms clearing the list
+  // (it revokes tab access AND stops attribution) and renders member chips
+  // with a real labeled remove button (INV-173).
+  assert.ok(/spanishMembers: Object\.keys\(getSpanishInboxMembers_\(\)\)/.test(nc(extractRawFunction('Code.js', 'getAdminConfig'))),
+    'getAdminConfig ships the current members');
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/uiConfirm\(\{ title: 'Clear all Spanish members\?'/.test(cn), 'empty-list save danger-confirms');
+  assert.ok(/saveSpanishInboxMembers\(out\)/.test(cn), 'the editor calls the save endpoint');
+  const chips = cn.match(/function cnRenderSpanishMemberChips_\(members\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(/<button type="button" aria-label="Remove/.test(chips), 'chip remove is a real labeled button (INV-173)');
+  assert.ok(/esc\(m\)/.test(chips), 'member emails are escaped before innerHTML');
+});
+
+test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Server: getDeptRequests is result-cached (the DR store is PHI-free by
+  // design — the Spanish pending list stays DELIBERATELY uncached because it
+  // carries request content, and this pin must never be read as license to
+  // cache it). The gen salt is bumped by every mutation so a resolve/new
+  // request reaches the next read; the put is success-only (INV-129).
+  const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/dept_req_v1:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt');
+  assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
+  assert.ok(bumps >= 2, 'gen bumped at the resolve write AND the auto-track append (found ' + bumps + ')');
+  assert.ok(/drBumpCacheGen_\(\);[\s\S]{0,400}DeptRequestResolved/.test(code),
+    'the bump sits on markDeptRequestResolved_ — BOTH resolve paths route through it');
+  assert.ok(!/getSpanishInboxPending[\s\S]{0,900}cache\.put/.test(code.slice(code.indexOf('function getSpanishInboxPending'))),
+    'getSpanishInboxPending stays uncached (documented privacy decision — request content never sits in CacheService)');
+  // Client: the DR enter paints last-good + skips a fresh refetch; a failed or
+  // errored refresh NULLS the stamp (C17-5), and a resolve busts it before
+  // re-entering so the resolved card cannot repaint as open.
+  const drc = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  const enter = nc(extractFunction('metrics/script_deptrequests.html', 'enterDeptRequestsView'));
+  assert.ok(/viewCacheFresh_\(DR_STATE\.entry\)\) return;/.test(enter), 'fresh cache skips the refetch');
+  assert.strictEqual((enter.match(/DR_STATE\.entry = null;/g) || []).length, 2, 'both failure shapes null the stamp');
+  assert.ok(/DR_STATE\.entry = \{ at: Date\.now\(\) \};/.test(enter), 'only a successful round stamps freshness');
+  assert.ok(/DR_STATE\.entry = null;[\s\S]{0,200}enterDeptRequestsView\(getDeptRequestsArea_\(\)\)/.test(drc),
+    'the resolve success handler busts the stamp before re-entering');
+  // Timeoff: the enter routes through calNavTo_ (the month SWR that already
+  // existed but was never consulted on enter).
+  const to = nc(extractFunction('script_core.html', 'enterTimeoffView'));
+  assert.ok(/calNavTo_\(calYear, calMonth\); return;/.test(to), 'enterTimeoffView rides the CAL_CACHE SWR');
+});
+
+test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: the shared helper renders at most `shown` cards and a REAL
+  // <button> (INV-173) naming both the reveal step and the hidden count.
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext('var SP_TASKS_CAP = 12; var SP_TASKS_PAGE = 24;', ctx);
+  vm.runInContext(extractFunction('script_core.html', 'spCappedTasksHtml_'), ctx);
+  const cards = [];
+  for (let i = 0; i < 50; i++) cards.push('<div class="sp-task">c' + i + '</div>');
+  const h = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ')', ctx);
+  assert.strictEqual((h.match(/class="sp-task"/g) || []).length, 12, 'default cap renders exactly SP_TASKS_CAP cards');
+  assert.ok(/<button type="button"[^>]*>Show 24 more · 38 not shown<\/button>/.test(h),
+    'the Show-more control is a real button (INV-173) stating step + hidden count (INV-169)');
+  const h2 = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ', 36)', ctx);
+  assert.strictEqual((h2.match(/class="sp-task"/g) || []).length, 36, 'a bumped shown count renders more');
+  assert.ok(/Show 14 more · 14 not shown/.test(h2), 'the final page reveals only what remains');
+  const h3 = vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards.slice(0, 5)) + ')', ctx);
+  assert.strictEqual((h3.match(/class="sp-task"/g) || []).length, 5, 'a short list renders whole');
+  assert.ok(!/button/.test(h3), 'no Show-more when nothing is hidden');
+  assert.ok(/style="margin-bottom:16px"/.test(
+    vm.runInContext('spCappedTasksHtml_(' + JSON.stringify(cards) + ', 12, "x()", "margin-bottom:16px")', ctx)),
+    'extraStyle passes through to the grid');
+  // Wiring: every .sp-tasks card list on BOTH pages routes through the helper
+  // with a distinct per-section key, and each page RESETS its shown-state on a
+  // full render so a stale expansion never pins a huge DOM.
+  const met = nc(extractScript('metrics/script_metrics.html'));
+  assert.ok(/spCappedTasksHtml_\(pending\.map\(spanishTaskCard_\)[\s\S]{0,120}spanishShowMore_\('pending'\)/.test(met) &&
+            /spCappedTasksHtml_\(resolved\.map\(spanishResolvedCard_\)[\s\S]{0,120}spanishShowMore_\('resolved'\)/.test(met),
+    'both Spanish sections are capped with their own keys');
+  assert.ok(/SPANISH_STATE\.shown = \{\};/.test(nc(extractFunction('metrics/script_metrics.html', 'spanishRender_'))),
+    'Spanish resets the cap on every full render');
+  const drs = nc(extractScript('metrics/script_deptrequests.html'));
+  ['mine', 'incoming', 'team'].forEach((k) => {
+    assert.ok(new RegExp("spCappedTasksHtml_\\([\\s\\S]{0,80}drShowMore_\\('" + k + "'\\)").test(drs),
+      'DR ' + k + ' list is capped with its own key');
+  });
+  assert.ok(/DR_SHOWN = \{\};/.test(nc(extractFunction('metrics/script_deptrequests.html', 'enterDeptRequestsView'))),
+    'DR resets the cap on view enter');
+  assert.ok(!/'<div class="sp-tasks"[^']*'\s*\+\s*(pending|resolved|mine|inc|open)\.map/.test(met + drs),
+    'no uncapped .sp-tasks card list remains on either page');
+  // INV-169 — the section headers still report the FULL counts beside the cap.
+  assert.ok(/Pending · ' \+ pending\.length/.test(met) && /Resolved · ' \+ resolved\.length/.test(met),
+    'Spanish headers keep full counts');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

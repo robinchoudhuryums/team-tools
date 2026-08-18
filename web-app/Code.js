@@ -4850,6 +4850,7 @@ function getAdminConfig() {
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
+      spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -7757,6 +7758,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           // into the PHI-free store / the dept inbox / the SLA digest whole.
           String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
         ]);
+        drBumpCacheGen_();   // a new open request must reach the next list read
       }
       if (drTrackable) writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
         'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));
@@ -13238,6 +13240,7 @@ function markDeptRequestResolved_(token, byEmail) {
       sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
       sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
+      drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
       try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
         '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
       return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
@@ -13357,10 +13360,30 @@ function serveIntakeFeedbackPage_(submissionId, formType) {
 /** Inter-department requests for the caller (rep: own; manager: all) + a
  *  per-department resolution-time aggregate for managers. Manager-gated fields
  *  (the aggregate + cross-rep rows) only return for managers. */
+// Result cache for getDeptRequests (operator 2026-08-18 load-time sweep). The
+// DR store is PHI-free by design (labels + categories only), so unlike the
+// Spanish pending list — deliberately uncached because it carries request
+// content — a short CacheService result cache is safe here. Keyed per CALLER
+// (the response is caller-scoped) + a generation salt bumped by every DR
+// mutation (new auto-tracked request, either resolve path), so a resolve is
+// visible on the next read rather than aging out; the 90s TTL only bounds
+// the open-request ages' staleness (the INV-43 posture). Cache-only-on-success
+// (INV-129); an evicted gen key just means a cache miss.
+const DR_RESULT_CACHE_TTL = 90;
+function drCacheGen_() {
+  try { return CacheService.getScriptCache().get('dr_gen_v1') || '0'; } catch (_) { return '0'; }
+}
+function drBumpCacheGen_() {
+  try { CacheService.getScriptCache().put('dr_gen_v1', String(Date.now()), 21600); } catch (_) {}
+}
+
 function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Your account is not registered.' };
+    const drCache = CacheService.getScriptCache();
+    const drCacheKey = 'dept_req_v1:' + emp.id + ':' + drCacheGen_();
+    try { const hit = drCache.get(drCacheKey); if (hit) return JSON.parse(hit); } catch (_) {}
     // Bounded tail read — never the whole sheet. Rows append chronologically, so
     // the most-recent DR_MAX_SCAN rows are the relevant ones for the list/aggregate.
     // (resolveDeptRequest / markDeptRequestResolved_ keep their FULL scans so an
@@ -13482,6 +13505,10 @@ function getDeptRequests() {
       result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);
       result.allOpenTotal = allOpenSorted.length;
     }
+    try {
+      const payload = JSON.stringify(result);
+      if (payload.length <= 90000) drCache.put(drCacheKey, payload, DR_RESULT_CACHE_TTL);
+    } catch (_) {}
     return result;
   } catch (err) { return { error: err.message }; }
 }
@@ -13528,6 +13555,41 @@ function saveDeptRequestSla(map) {
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
     return { success: true, targets: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the Spanish bilingual member
+ *  list to Script Property SPANISH_INBOX_MEMBERS (operator 2026-08-18 — the
+ *  in-app replacement for editing the property by hand). The list does DOUBLE
+ *  duty, which is why an Admin edit takes effect everywhere at once: a reply
+ *  from a member counts a thread resolved + attributes it on the
+ *  Resolution-share chart (idle members render zero bars), AND membership
+ *  gates the Spanish Inbox tab / Dashboard card via canSeeSpanishInbox_
+ *  (INV-31 amendment). An EMPTY list is valid — "any reply resolves" +
+ *  managers-only access, today's unset behavior. Validation: email shape,
+ *  lowercased + deduped, cap 30. No cache flush needed — the stats cache key
+ *  already hashes the member set (spanishCacheHash_), so a save naturally
+ *  misses the stale entry. Writes an AdminConfigChange audit row. */
+function saveSpanishInboxMembers(emails) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(emails)) return { success: false, error: 'Expected a list of member emails.' };
+    if (emails.length > 30) return { success: false, error: 'Too many members (max 30).' };
+    const seen = {};
+    const clean = [];
+    for (let i = 0; i < emails.length; i++) {
+      const e = String(emails[i] || '').trim().toLowerCase();
+      if (!e) continue;
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) {
+        return { success: false, error: 'Not a valid email: "' + e + '"' };
+      }
+      if (!seen[e]) { seen[e] = true; clean.push(e); }
+    }
+    PropertiesService.getScriptProperties().setProperty('SPANISH_INBOX_MEMBERS', clean.join(','));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated Spanish inbox members (' + clean.length + ')', emp.email);
+    return { success: true, members: clean };
   } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -15562,6 +15624,14 @@ function cnCountNotesResult_(emp, from, to) {
 //  (emp, period) like getMyMetrics.
 // ════════════════════════════════════════════════════════════════════════════
 var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
+// Dashboard payload TTL (v4, operator 2026-08-18) — see the cacheKey comment
+// in getDashboardMetrics for the staleness reasoning. Raised 1800 → 21600
+// (the CacheService MAX) the same day, operator-approved: the CDR data will
+// not change for the rest of the day once the daily import lands, and the
+// day-scoped key still rolls the cache at the rep-local midnight. Worst case
+// stays the documented trade: a load BEFORE the import pins the pre-import
+// aggregate for up to 6h (the Metrics tabs keep their 5-min caches).
+var DASHBOARD_CACHE_TTL = 21600;
 
 /** Pure (Node-pinned) — resolve a period key to {from,to,label} given today's
  *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only. */
@@ -15662,12 +15732,23 @@ function getDashboardMetrics(periodKey) {
     // entries must not serve the old hidden-team payload for the TTL.
     // v3 (operator 2026-08-12): the payload gained prev/thresholds, so a stale
     // v2 entry would serve delta-less cards for the TTL after the deploy.
-    var cacheKey = 'dash_metrics_v3:' + emp.id + ':' + periodKey;
+    // v4 (operator 2026-08-18, load-time sweep): the key now carries the
+    // rep-local DAY and the TTL rose 300s → DASHBOARD_CACHE_TTL (21600s —
+    // the CacheService max, operator-approved same day). The
+    // underlying CDR data changes at most once a day (yesterday-and-earlier
+    // aggregates), so the 5-min TTL re-paid the whole-roster MTD/YTD scans
+    // ~12×/hour per rep for identical answers; the day in the key makes a new
+    // rep-local day a natural miss, so a payload can never straddle midnight.
+    // Bounded-staleness trade (INV-43 posture): a load BEFORE the daily CDR
+    // import can pin the pre-import aggregate for up to the TTL (the Metrics
+    // tabs keep their 5-min caches); after the import lands, the data does
+    // not change again that day — the operator's stated acceptance.
+    var todayIso = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
+    var cacheKey = 'dash_metrics_v4:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
 
-    var todayIso = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
     var range = dashboardPeriodRange_(periodKey, todayIso);
     if (!range) return { error: 'Unknown period.' };
     var from = range.from, to = range.to;
@@ -15774,7 +15855,7 @@ function getDashboardMetrics(periodKey) {
     // COMPARISON read is the same class: caching it would pin "no deltas" for
     // the TTL after the underlying blip cleared.
     if (useCache && !noteRes.unavailable && !prevUnavailable) {
-      try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+      try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     return result;
   } catch (err) { return { error: err.message }; }
@@ -16033,11 +16114,39 @@ function getMyMetricsRange(from, to) {
  * Accepts either a single date or from/to. Also returns a 30-day team
  * % Answered trend when viewing a single date.
  */
+/** The REP view of the team aggregate (operator 2026-08-18: "users should
+ *  have the team metrics available as well") — whitelist-BUILT, the
+ *  trainStripQuizForRep_ discipline: a field missed by a delete-key copy
+ *  can't leak here because nothing rides unless named. Reps get the
+ *  TEAM-LEVEL aggregate the Dashboard Team card already summarizes (totals,
+ *  trend, the queue/department transfer folds — queue rows carry counts,
+ *  never names) and NEVER the per-rep `reps[]` rows or the roster↔CDR name
+ *  diagnostics: INV-124's posture is that individual peers' numbers stay
+ *  manager-only (My Stats anonymizes the team line for the same reason), and
+ *  the reps table names every colleague. `repView: true` tells the client
+ *  which shape it holds. */
+function teamMetricsRepView_(full) {
+  return {
+    repView: true,
+    from: full.from, to: full.to, date: full.date,
+    teamTotals: full.teamTotals,
+    trend: full.trend,
+    transferMeta: full.transferMeta,
+    queueRows: full.queueRows,
+    groupRows: full.groupRows,
+    alertThreshold: full.alertThreshold,
+  };
+}
+
 function getTeamMetrics(dateOrFrom, to) {
   try {
     var t0 = Date.now();
     var callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // Operator 2026-08-18: enrolled REPS may read the TEAM AGGREGATE (the
+    // whitelist-built teamMetricsRepView_ above — applied on BOTH return
+    // paths, cache hit included, because the cache stores the FULL manager
+    // payload under a caller-free key). Managers keep the full response.
+    if (!callerEmp) return { error: 'Your account is not registered.' };
 
     var dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     var from, toDate;
@@ -16066,7 +16175,10 @@ function getTeamMetrics(dateOrFrom, to) {
     if (useTeamCache) {
       try {
         var cachedTeam = teamMetricsCache.get(teamCacheKey);
-        if (cachedTeam) { var cto = JSON.parse(cachedTeam); cto.cached = true; return cto; }
+        if (cachedTeam) {
+          var cto = JSON.parse(cachedTeam); cto.cached = true;
+          return callerEmp.isManager ? cto : teamMetricsRepView_(cto);
+        }
       } catch (_) {}
     }
 
@@ -16305,7 +16417,7 @@ function getTeamMetrics(dateOrFrom, to) {
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }
-    return teamResult;
+    return callerEmp.isManager ? teamResult : teamMetricsRepView_(teamResult);
   } catch (err) { return { error: err.message }; }
 }
 

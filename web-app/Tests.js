@@ -4525,8 +4525,12 @@ function test_publicForm_tokenLifecycle() {
     _assertNull(getFormByToken(token).error, 'token still pending after consent rejection');
 
     // Size cap: an oversized signature gets a specific, actionable error and
-    // the token stays pending for retry (INV-96).
-    const bigSig = new Array(45002).join('x');   // > FORM_CELL_CHAR_LIMIT
+    // the token stays pending for retry (INV-96). The payload must carry the
+    // data:image/ prefix — the C17 batch-5 shape guard (a signature must BE a
+    // signature) correctly runs FIRST, so a bare 'xxx…' blob never reaches the
+    // size cap; this fixture predated the guard and surfaced as the one
+    // failure of the operator's 2026-08-17 full run.
+    const bigSig = 'data:image/png;base64,' + new Array(45002).join('x');   // > FORM_CELL_CHAR_LIMIT
     const tooBig = submitFormByToken(token, {
       q1: 'answer', signature: bigSig,
       _meta: { consentAgreed: true, openedAt: '2026-01-01T00:00:00' },
@@ -4866,10 +4870,13 @@ function test_managerGates_rejectNonManager() {
     ['saveRetentionConfig',            function () { return saveRetentionConfig({ archiveDays: 30 }); }],
     ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
     ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
+    ['saveSpanishInboxMembers',        function () { return saveSpanishInboxMembers([]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
-    ['getTeamMetrics',                 function () { return getTeamMetrics(D); }],
+    // getTeamMetrics left the gate list 2026-08-18 — reps now get the
+    // whitelist-built team aggregate; the shape boundary is pinned in
+    // test_metrics_getTeamMetrics_nonManagerRejected (kept name, new claim).
     ['exportAdpRange',                 function () { return exportAdpRange(D, D); }],
     ['getManagerDashboard',            function () { return getManagerDashboard(); }],
     ['getEmployeesList',               function () { return getEmployeesList(); }],
@@ -4949,7 +4956,7 @@ function test_managerGates_rejectNonManager() {
   const ADMIN_GATED = {
     getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
-    getDeptRequestSla: 1, saveDeptRequestSla: 1,
+    getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -6033,11 +6040,26 @@ function test_metrics_getTeamMetrics_cdrIntegration() {
 }
 
 function test_metrics_getTeamMetrics_nonManagerRejected() {
+  // Operator 2026-08-18: a non-manager is no longer REJECTED — they get the
+  // whitelist-built TEAM AGGREGATE (teamMetricsRepView_). The boundary this
+  // test guards moved from the gate to the SHAPE: the rep payload must carry
+  // the aggregate and NEVER the per-rep rows or the roster↔CDR name
+  // diagnostics (INV-124's individual-numbers posture).
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_INDIA_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
   });
-  _assertNotNull(r.error, "non-manager should be rejected");
-  _assertContains(r.error, "Manager access required", "manager gate message");
+  _assertTrue(!r.error, "an enrolled rep gets the aggregate, not an error (got: " + (r.error || '') + ")");
+  _assertTrue(r.repView === true, "the rep payload is marked repView");
+  _assertNotNull(r.teamTotals, "team totals ride the rep payload");
+  _assertTrue(!('reps' in r), "per-rep rows never reach a rep");
+  _assertTrue(!('unmatchedAgents' in r) && !('rosterWithNoCdr' in r) && !('likelyMismatches' in r),
+    "name diagnostics never reach a rep");
+  // A manager on the SAME (cached) round still gets the full payload — the
+  // cache stores the manager shape and the strip is applied on the way out.
+  const m = _withTestCdr_(function () {
+    return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
+  });
+  _assertTrue(!m.error && Array.isArray(m.reps), "manager keeps the per-rep rows");
 }
 
 function test_metrics_getMyMetrics_cdrUnavailableErrors() {
