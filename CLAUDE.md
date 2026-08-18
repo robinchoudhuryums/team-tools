@@ -3243,7 +3243,7 @@ this section before touching the relevant area.
   "nobody reported at all"; INV-124's per-day My Stats series guard is
   UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
   `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
-  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 1800s — the CDR data changes at most daily, so the 5-min TTL re-paid the whole-roster MTD/YTD scans for identical answers; a mid-day CDR re-import reaches the dashboard within ≤30 min while the Metrics tabs keep their 5-min caches).
+  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
   **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
   DERIVED from the period list so a reorder can't repoint it). Asked for on the
   Department card and applied to both, because they sit side by side with
@@ -5240,9 +5240,11 @@ manually for a fresh deploy or environment:
   Admin fill the page width** (their inner 780–900px caps dropped); (b) the
   Admin **Auto-tag rules** card is a compact 2-up scrolling list that no
   longer grows with the rule count; (c) **Dashboard metric cards are served
-  from a 30-minute server cache** (was 5 min; the key carries the rep-local
-  day) — a mid-day CDR re-import reaches the dashboard within ≤30 min while
-  the Metrics tabs keep their 5-min caches; (d) **Dept Requests loads
+  from a day-long server cache** (6h TTL — the CacheService max — with the
+  rep-local day in the key, was 5 min; operator-approved since the CDR data
+  does not change again once the daily import lands; a load BEFORE the
+  import can pin the pre-import aggregate for up to 6h, while the Metrics
+  tabs keep their 5-min caches); (d) **Dept Requests loads
   noticeably faster** (90s per-caller server cache, invalidated by every
   resolve/new request, + an SWR re-enter that paints instantly); (e) **Time /
   PTO re-enters paint instantly** from the month cache with a quiet

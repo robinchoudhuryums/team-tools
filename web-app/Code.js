@@ -15625,8 +15625,13 @@ function cnCountNotesResult_(emp, from, to) {
 // ════════════════════════════════════════════════════════════════════════════
 var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
 // Dashboard payload TTL (v4, operator 2026-08-18) — see the cacheKey comment
-// in getDashboardMetrics for the staleness reasoning.
-var DASHBOARD_CACHE_TTL = 1800;
+// in getDashboardMetrics for the staleness reasoning. Raised 1800 → 21600
+// (the CacheService MAX) the same day, operator-approved: the CDR data will
+// not change for the rest of the day once the daily import lands, and the
+// day-scoped key still rolls the cache at the rep-local midnight. Worst case
+// stays the documented trade: a load BEFORE the import pins the pre-import
+// aggregate for up to 6h (the Metrics tabs keep their 5-min caches).
+var DASHBOARD_CACHE_TTL = 21600;
 
 /** Pure (Node-pinned) — resolve a period key to {from,to,label} given today's
  *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only. */
@@ -15728,13 +15733,16 @@ function getDashboardMetrics(periodKey) {
     // v3 (operator 2026-08-12): the payload gained prev/thresholds, so a stale
     // v2 entry would serve delta-less cards for the TTL after the deploy.
     // v4 (operator 2026-08-18, load-time sweep): the key now carries the
-    // rep-local DAY and the TTL rose 300s → DASHBOARD_CACHE_TTL (1800s). The
+    // rep-local DAY and the TTL rose 300s → DASHBOARD_CACHE_TTL (21600s —
+    // the CacheService max, operator-approved same day). The
     // underlying CDR data changes at most once a day (yesterday-and-earlier
     // aggregates), so the 5-min TTL re-paid the whole-roster MTD/YTD scans
     // ~12×/hour per rep for identical answers; the day in the key makes a new
     // rep-local day a natural miss, so a payload can never straddle midnight.
-    // Bounded-staleness trade (INV-43 posture): a mid-day CDR re-import shows
-    // on the dashboard within ≤30 min (the Metrics tabs keep their 5-min TTL).
+    // Bounded-staleness trade (INV-43 posture): a load BEFORE the daily CDR
+    // import can pin the pre-import aggregate for up to the TTL (the Metrics
+    // tabs keep their 5-min caches); after the import lands, the data does
+    // not change again that day — the operator's stated acceptance.
     var todayIso = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
     var cacheKey = 'dash_metrics_v4:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
