@@ -97,6 +97,9 @@ const SCENARIOS = [
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  // Operator 2026-08-18 (width round): Punctuality had never been shot — the
+  // inner 780/820px caps survived two width passes because of it.
+  ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

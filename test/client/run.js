@@ -9681,6 +9681,22 @@ test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', ()
     'the share card fills its .sp-top column');
 });
 
+test('Punctuality + Admin fill the view width (operator 2026-08-18)', () => {
+  // The Admin tab was a 900px column inside a 1280px view (every card carried
+  // its own inline cap) and Punctuality hard-capped its 7-column table at
+  // 780px — ~400px dead on both manager surfaces. The caps must not return.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(!/max-width:\s*900px/.test(cn) && !/max-width:900px/.test(cn),
+    'no 900px card caps anywhere in the Admin partial');
+  assert.ok(!/'<div style="max-width:1000px">'/.test(cn), 'the Sheets viewer wrapper is uncapped');
+  const tm = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const punctTable = tm.match(/\.punct-table\s*\{[^}]*\}/);
+  const punctCard = tm.match(/\.punct-card\s*\{[^}]*\}/);
+  assert.ok(punctTable && !/max-width/.test(punctTable[0]), '.punct-table carries no max-width');
+  assert.ok(punctCard && !/max-width/.test(punctCard[0]), '.punct-card carries no max-width');
+  assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
+});
+
 test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: the shared helper renders at most `shown` cards and a REAL

@@ -1456,7 +1456,7 @@
     color: var(--ink); line-height: 1.5;
   }
   /* §7c/#4 — Admin Overview "System status" cards */
-  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 900px; margin-bottom: 18px; }
+  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
   .cn-sys-card { padding: 12px 14px; }
   .cn-sys-card .cn-sys-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
@@ -7856,8 +7856,8 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-audit"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
-      '<div id="cn-admin-retention" style="max-width:900px"></div>' +
-      '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
+      '<div id="cn-admin-retention"></div>' +
+      '<div id="cn-admin-body">' + loSweep() + '</div>' +
     '</div>' +
     // Tier 2 — read-only highlighted viewer of an allowlisted, PHI-free tab.
     // Lazy-loaded on first open of this sub-tab (cnAdminTab_), so the Admin
@@ -8231,7 +8231,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
   const repsCount = tax && typeof tax.repsScanned === 'number' ? tax.repsScanned : '—';
   const unresolvedClass = (typeof unresolvedVal === 'number' && unresolvedVal > 3) ? 'crit'
     : (typeof unresolvedVal === 'number' && unresolvedVal > 0 ? 'warn' : '');
-  const kpiHtml = '<div class="telemetry" style="max-width:900px;margin-bottom:16px">'
+  const kpiHtml = '<div class="telemetry" style="margin-bottom:16px">'
     + '<div class="tel-cell"><div class="tel-label">Week notes</div><div class="tel-value">' + esc(String(weekVal)) + '</div><div class="tel-sub">across team</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(String(unresolvedVal)) + '</div><div class="tel-sub">action flags open</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Tags</div><div class="tel-value">' + esc(String(tagsCount)) + '</div><div class="tel-sub">unique in use</div></div>'
@@ -8269,7 +8269,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
     }
     const trendWeeks = trends && (trends.weeks || (trends.weekStarts ? trends.weekStarts.length : 0)) || 0;
     taxHtml =
-      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy &amp; Trends</div>'
         + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Trend + Δ cover the trailing ' + esc(String(trendWeeks)) + ' weeks (a rising tag flags an emerging issue). Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags).</div>'
         + (inUse.length > 0
@@ -8279,7 +8279,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
       + '</div>';
   } else if (tax) {
     taxHtml =
-      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
         + '<div style="font-size:12px;color:var(--muted)">No tags in use yet. Tags are free-text categorisations reps add from the Log view (Round 2 · 8e).</div>'
       + '</div>';
@@ -8515,7 +8515,7 @@ function cnLoadAuditPanel_() {
   if (!slot) return;
   var todayIso = cnAuditTodayIso_();
   slot.innerHTML =
-    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Compliance Audit</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Search the call-note audit trail across all reps. Expand a row for the note’s full history; “View note” opens it in Team Notes. The log is PHI-free — note content lives only in the per-rep view.</div>' +
       '<div class="field-row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">' +
@@ -8798,7 +8798,7 @@ function cnRenderSheetView_(res) {
       (res.mgrTzAbbr ? ' · times in ' + esc(res.mgrTzAbbr) : '') + '. Rows are highlighted by signal; click ↗ to open a row in Sheets.</div>' +
     legend;
   var trunc = res.truncated ? '<div style="font-size:11px;color:var(--warning-deep);margin-top:8px">Showing the most recent ' + rows.length + ' rows — older history is in the sheet (Open in Sheets ↗).</div>' : '';
-  return '<div style="max-width:1000px">' + head + table + trunc + '</div>';
+  return '<div>' + head + table + trunc + '</div>';
 }
 
 function cnLoadStoragePanel_() {
@@ -8901,7 +8901,7 @@ function cnRenderStoragePanel_(res) {
   var hdr = anyTzDrift
     ? '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:10px">' + icon('warning', 12) + ' A store’s timezone differs from CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ') — coerced date/time reads will drift. Set the sheet’s File → Settings → Time zone to match.</div>'
     : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ').</div>';
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Storage Health</div>' +
     hdr + rows + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
@@ -9271,7 +9271,7 @@ function cnRenderHealthPanel_(res) {
     '</div>';
   }).join('');
 
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation Health' +
       (res.auditLogUrl ? '<a href="' + esc(res.auditLogUrl) + '" target="_blank" rel="noopener" style="float:right;font-size:11px;font-weight:400">Open AuditLog ↗</a>' : '') +
     '</div>' +
