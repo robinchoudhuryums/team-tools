@@ -3243,7 +3243,7 @@ this section before touching the relevant area.
   "nobody reported at all"; INV-124's per-day My Stats series guard is
   UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
   `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
-  cache key `dash_metrics_v3` — it bumps with every payload-semantics change).
+  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 1800s — the CDR data changes at most daily, so the 5-min TTL re-paid the whole-roster MTD/YTD scans for identical answers; a mid-day CDR re-import reaches the dashboard within ≤30 min while the Metrics tabs keep their 5-min caches).
   **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
   DERIVED from the period list so a reorder can't repoint it). Asked for on the
   Department card and applied to both, because they sit side by side with
@@ -5231,6 +5231,23 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-18 operator round (width sweep + Spanish members editor +
+  load-time sweep round 1) adds NO operator state to SET UP** — no new Script
+  Properties to create, no triggers, no migrations; `SPANISH_INBOX_MEMBERS`
+  is now editable IN-APP (Manage → Admin → Config → Spanish bilingual
+  members) as the recommended path, with direct property editing still
+  working. Behaviour changes to expect post-deploy: (a) **Punctuality and
+  Admin fill the page width** (their inner 780–900px caps dropped); (b) the
+  Admin **Auto-tag rules** card is a compact 2-up scrolling list that no
+  longer grows with the rule count; (c) **Dashboard metric cards are served
+  from a 30-minute server cache** (was 5 min; the key carries the rep-local
+  day) — a mid-day CDR re-import reaches the dashboard within ≤30 min while
+  the Metrics tabs keep their 5-min caches; (d) **Dept Requests loads
+  noticeably faster** (90s per-caller server cache, invalidated by every
+  resolve/new request, + an SWR re-enter that paints instantly); (e) **Time /
+  PTO re-enters paint instantly** from the month cache with a quiet
+  background refresh. **Post-deploy: run `runAllTests()`** — including the
+  new `saveSpanishInboxMembers` gate case.
 - **The 2026-08-17 THIRD round (full-width request pages + display cap +
   the one-test fixture fix) adds NO operator state** — no Script Properties,
   triggers, migrations, or CONFIG constants; two client-code constants
@@ -5747,10 +5764,15 @@ manually for a fresh deploy or environment:
   inbox and times first-inbound → first-reply-from-a-member. To work:
   (1) the **deploying account must be a member** of the group
   `spanishcalls@universalmedsupply.com` (so its mailbox receives the threads);
-  (2) set Script Property **`SPANISH_INBOX_MEMBERS`** to a comma-separated list
-  of the bilingual group members' emails — "resolved" = first reply from one of
+  (2) set the bilingual member list — **since 2026-08-18 via Manage → Admin →
+  Config → "Spanish bilingual members"** (`saveSpanishInboxMembers`,
+  admin-gated INV-136, `AdminConfigChange` audit; validates email shape,
+  lowercases + dedupes, caps 30; saving an EMPTY list danger-confirms), which
+  writes Script Property **`SPANISH_INBOX_MEMBERS`** (a comma-separated list —
+  still directly editable) — "resolved" = first reply from one of
   them (with no list it falls back to "first reply from anyone but the
-  requester"). **As of the Dashboard work this property ALSO GATES FEATURE
+  requester"). No cache flush is needed on a save: the stats cache key hashes
+  the member set (`spanishCacheHash_`). **As of the Dashboard work this property ALSO GATES FEATURE
   ACCESS:** `canSeeSpanishInbox_(emp)` = `isManager OR email ∈
   SPANISH_INBOX_MEMBERS`, and the four Spanish endpoints now gate on THAT
   (not pure-manager — INV-31 amendment), so the bilingual reps get the full
@@ -6925,7 +6947,21 @@ behaviourally (cap, step, final-page reveal, no button when complete,
 extraStyle pass-through, real `<button>` per INV-173) plus wiring: all five
 card sections capped with distinct keys, both shown-state resets, no
 uncapped `.sp-tasks` list left, headers keep full counts per INV-169 — 7
-mutations bite-checked).
+mutations bite-checked). The 2026-08-18 operator round added four more →
+**549** (the Punctuality/Admin width pin — no 900px card caps, no
+punct-table/card caps, uncapped summary strips; the compact auto-tag-rules
+pin — no per-rule bordered box, internally-scrolling 2-up list, real labeled
+remove button, save-contract classes unchanged; the Spanish-members pin —
+the real `saveSpanishInboxMembers` driven in a vm (shape-reject before any
+write, lowercase+dedupe+cap-30, empty-list valid), admin gate + audit +
+`getAdminConfig` read + the client's empty-list danger-confirm and escaped
+chips; and the load-time pin — the per-caller `dept_req_v1` key + gen salt
+bumped at the resolve write and the auto-track append, success-only put,
+an explicit guard that `getSpanishInboxPending` STAYS uncached (the
+documented privacy decision), the DR SWR stamps (fresh-skip, failed-round
+nulls, resolve busts before re-enter), `enterTimeoffView` riding
+`calNavTo_`, and the `dash_metrics_v4` day-scoped key + `DASHBOARD_CACHE_TTL`
+— 11 mutations bite-checked across the round).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7420,9 +7456,11 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    views — `spanish-light-wide` + `deptreq-light-wide` (fixtures cover all
    four DR tones + an overdue Spanish card) — and the 2026-08-17
    full-width round added `spanish-light-mobile` (the new `.sp-top` head+chart
-   grid stacks <1024px — the breakpoint is on camera), taking the matrix to
-   **40**.
-   **Still uncovered: Manage → Coverage/Punctuality, Sent Forms, EmpDocs
+   grid stacks <1024px — the breakpoint is on camera), and the 2026-08-18
+   width round added `punctuality-light-wide` (the tab had never been shot —
+   which is how its 780/820px caps survived two width passes), taking the
+   matrix to **41**.
+   **Still uncovered: Manage → Coverage, Sent Forms, EmpDocs
    My Docs, and modal/overlay states** (the matrix shoots tab landings only),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
    width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED

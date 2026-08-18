@@ -729,6 +729,32 @@ Updated: 2026-08-11
   any reply as resolved" → set SPANISH_INBOX_MEMBERS for member-accurate
   share attribution + zero bars.
 
+## Operator round — 2026-08-18 (six items)
+- Width: Punctuality + Admin inner caps dropped (780/820/760 + all 900/1000px
+  card caps) — both fill 1280; punctuality-light-wide scenario + fixture added
+  (matrix 41). Width-sweep findings for the operator (agent-verified, ranked):
+  Intake → Sent (920px .intk-wrap on a data list), Team Training (860px strip/
+  assign beside a full-width matrix), My Training / My Docs (.tr-list 860px),
+  Reference landing (760px row list). Deliberately narrow: article reader,
+  intake forms, Time/PTO calendar (documented cap).
+- Admin Auto-tag rules → compact 2-up internally-scrolling list (bounded card).
+- Spanish members: in-app Admin editor (saveSpanishInboxMembers, INV-136 →43,
+  gate case + F7/F9 nets updated). Empty-list save danger-confirms.
+- Load-time sweep round 1 (agent inventory + fixes): getDeptRequests 90s
+  per-caller cache + gen salt (resolve write + auto-track append bump); DR tab
+  SWR enter (resolve busts the stamp); enterTimeoffView rides calNavTo_;
+  getDashboardMetrics dash_metrics_v4 day-keyed + TTL 1800. Spanish pending
+  STAYS uncached (documented privacy decision — pinned). NOT done (identified,
+  reported): manage-tab parallelize (slots don't exist until dashboard paints —
+  needs buffering), trainingManage 5-RPC round (cache getEmployeesList/
+  getQuizzes), trainingHome/coaching/myDocs/callNotesForms 6-line SWR blocks,
+  reference-tab manager blocks, callNotes cold-path config∥notes parallelize.
+- Dashboard trendline MOCK published (artifact 'Dashboard Trendlines') — %
+  Answered daily line + dashed 85 target per card, alternate volume columns;
+  build cost = per-day series in getDashboardMetrics payload. Awaiting the
+  operator's yes/no.
+- Pure 549, DOM 71, matrix 41 (0 missing / 0 overflow on everything shot).
+
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
 improvements #1–#10 are implemented AND doc-synced; the operator authorized
