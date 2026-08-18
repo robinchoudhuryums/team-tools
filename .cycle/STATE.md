@@ -753,7 +753,15 @@ Updated: 2026-08-11
   Answered daily line + dashed 85 target per card, alternate volume columns;
   build cost = per-day series in getDashboardMetrics payload. Awaiting the
   operator's yes/no.
-- Pure 549, DOM 71, matrix 41 (0 missing / 0 overflow on everything shot).
+- Follow-up (same day, operator round 2): dashboard cache TTL → 21600s (the
+  CacheService max, operator-approved); Team Metrics opened to reps as the
+  whitelist-built AGGREGATE (teamMetricsRepView_, repView marker, both return
+  paths strip — INV-66 amended; the per-rep table + diagnostics stay
+  manager-only per INV-124's posture, offered the un-gated version and the
+  operator can still ask); dashboard cards click through to My Stats / Team
+  Metrics; test_metrics_getTeamMetrics_nonManagerRejected REWRITTEN as a
+  shape pin (kept name); omnibus getTeamMetrics case retired with a note.
+- Pure 550, DOM 71, matrix 41 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
