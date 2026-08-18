@@ -761,7 +761,46 @@ Updated: 2026-08-11
   operator can still ask); dashboard cards click through to My Stats / Team
   Metrics; test_metrics_getTeamMetrics_nonManagerRejected REWRITTEN as a
   shape pin (kept name); omnibus getTeamMetrics case retired with a note.
-- Pure 550, DOM 71, matrix 41 (0 missing / 0 overflow on everything shot).
+- MERGED by the operator as **PR #171** (d3f8a6b); branch restarted from main.
+- Follow-up (operator round 3, same day): CN pop-out FLUID TYPE — two clamp()
+  groups scoped :root[data-compact] (values 13→11px, labels/rail/buttons/tag
+  12→10.5px over 480→~340px; ceilings = base px so ≥480 byte-identical;
+  measured 480/400/360, overflow 0; the compact grids out-specify the ≤480
+  stacking breakpoints so the framing HOLDS while type shrinks). Pin (exact
+  formulas + no-bare-vw scan, 3 bites) + cn-log-light-compact-sm scenario
+  (matrix 42). Pure 551, DOM 71.
+- Follow-up (operator round 4, 2026-08-18, tall-and-skinny screenshot): a
+  `@media (max-width: 400px)` compact-yield block in the CN partial — trio
+  stacks (Caller under Callback), all `.cnv-row` labels move above values,
+  save quadrant one column, note-card timestamp column hidden (operator-
+  sanctioned; time still rides the CRM copy), card action row wraps; every
+  rule :root[data-compact]-scoped so phones are untouched; source order
+  confines it to the window (measured: stacked + overflow 0 at 300/360,
+  byte-identical at 480). Pin + 4 bites; cn-log-light-compact-sm comment
+  updated (it now shows the stacked side). Timestamp-in-IST report: NOT a
+  code change — the 9c5df81 tz-mismatch detector already ships; the fix is
+  the operator's Employees-sheet Timezone cell (blank/Asia-Kolkata →
+  America/Chicago). A duplicate boot-time tzMismatchCheck_ was nearly added
+  and removed; a declared-once guard now pins it. shoot.mjs seeds
+  umsTzWarnedDay so the sticky toast stops covering every screenshot.
+- Follow-up (operator round 5, 2026-08-18, /broad-implement): Time/PTO
+  CONSOLIDATION — the Time Off ⇄ Timesheet mode toggle retired (the two
+  modes were one page with a swapped 240px rail; umsMergeMode retired,
+  17→16 keys; .mp-mode CSS deleted per INV-184; INV-80 amended); the rail
+  stacks a NEW quick-actions card (date→the same pinned day modal via
+  openRequestForDate_/TO_PENDING_DAY_OPEN handoff; punch-edit→
+  openAdjustModal) + annual-leave tile + the always-on pay-period block;
+  the pay statement's incomplete/empty in-window days gained a
+  "Request edit" click-through (closes the statement FIRST — ensureOverlay
+  DOM-order paint — then opens Adjust prefilled; bounds-guarded prefill;
+  suppressed on a manager's view of another rep). Mock: getTimesheetData
+  fixture added + the calendar fixture's hoursByDate→workedHoursByDate
+  INV-185 shape fix (corner hour badges had never rendered on camera).
+  Dark-mode Request button corrected to the canonical primary recipe
+  (color: var(--paper-card), measured illegible as #fff first). Pin + 5
+  bites; timeoff-light/dark-wide re-shot (0 overflow). S39/S46/S79
+  updated; block at .cycle/blocks/18pre-timeoff-consolidation-*.
+- Pure 553, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics

@@ -264,31 +264,23 @@ function renderTimeOffView(area, data) {
       }).join('') + '</div>';
   }
 
-  // Round 2 · 8b — Time / PTO merge. Mode toggle picks the side rail
-  // emphasis: Time Off (default) shows the PTO tile + upcoming-request
-  // context; Timesheet shows the rep's pay-period totals + recent days.
-  // Persisted to localStorage.umsMergeMode. The calendar itself is
-  // unchanged in both modes — it carries worked-hours AND PTO badges.
-  const mergeMode = (function () {
-    try {
-      const v = localStorage.getItem('umsMergeMode');
-      return v === 'timesheet' ? 'timesheet' : 'timeoff';
-    } catch (e) { return 'timeoff'; }
-  })();
-  const modeBar = `
-    <div class="mp-modes" role="tablist" aria-label="Time / PTO mode">
-      <button type="button" role="tab" class="mp-mode${mergeMode==='timeoff'?' on':''}" data-mode="timeoff" aria-selected="${mergeMode==='timeoff'}">${icon('timeoff', 13)} Time Off</button>
-      <button type="button" role="tab" class="mp-mode${mergeMode==='timesheet'?' on':''}" data-mode="timesheet" aria-selected="${mergeMode==='timesheet'}">${icon('timesheet', 13)} Timesheet</button>
-    </div>`;
-  const sideRailHtml = mergeMode === 'timesheet'
-    ? `<div id="ts-side-rail">${renderTimesheetSideRailPlaceholder_()}</div>`
-    : balanceCardHtml;
+  // CONSOLIDATED Time / PTO (operator 2026-08-18). The Round 2 · 8b Time Off ⇄
+  // Timesheet mode toggle produced two nearly identical pages — the app-bar,
+  // month nav, calendar, legend, and request list were all shared, and only
+  // the 240px side rail swapped (annual-leave tile ⇄ pay-period tile). ONE
+  // page now: the rail stacks the quick-actions card (the operator-asked clear
+  // request affordance), the annual-leave tile, and the pay-period block
+  // (which lazy-loads exactly as the Timesheet mode did). umsMergeMode is
+  // RETIRED (localStorage key count 17 → 16); a stale stored value is ignored.
+  const sideRailHtml =
+    toActionsCardHtml_(todayIso) +
+    balanceCardHtml +
+    `<div id="ts-side-rail">${renderTimesheetSideRailPlaceholder_()}</div>`;
 
   area.innerHTML = `
     ${COMPACT_MODE
       ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
-      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time / PTO</span></div><h1 class="display-title">Time / PTO</h1></div><div class="app-bar-right">${modeBar}</div></div>`}
-    ${COMPACT_MODE ? modeBar : ''}
+      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time / PTO</span></div><h1 class="display-title">Time / PTO</h1></div></div>`}
     <div class="month-nav">
       <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''} aria-label="Previous month">${icon('chevronLeft', 16)}</button>
       <span class="month-label">${esc(data.monthName)}</span>
@@ -320,25 +312,37 @@ function renderTimeOffView(area, data) {
   // Round 2 · 8c — wire hover (or tap-only on touch) for the day modal.
   bindCalHover_();
 
-  // Round 2 · 8b — mode toggle wiring. Persists to localStorage and
-  // re-renders the entire view (calendar + side rail) so the new mode's
-  // chrome shows up cleanly.
-  document.querySelectorAll('.mp-mode').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const next = btn.dataset.mode;
-      if (next === mergeMode) return;
-      try { localStorage.setItem('umsMergeMode', next); } catch (e) {}
-      // Re-render via the existing calendar render path
-      renderTimeOffView(area, data);
-    });
+  // Quick-actions card wiring (consolidation round). "Request" routes the
+  // picked date into the SAME pinned day modal a calendar tap opens — one
+  // PTO submit path, no parallel form to drift; "Request punch edit" opens
+  // the #4a adjustment-request modal (its own bounded date picker).
+  const reqGo = document.getElementById('to-req-go');
+  if (reqGo) reqGo.addEventListener('click', () => {
+    const inp = document.getElementById('to-req-date');
+    const v = inp ? inp.value : '';
+    if (!v) { showToast('Pick a date first', 'toast-warn'); return; }
+    openRequestForDate_(v);
+  });
+  const adjOpen = document.getElementById('to-adj-open');
+  if (adjOpen) adjOpen.addEventListener('click', () => {
+    if (typeof openAdjustModal === 'function') openAdjustModal();
   });
 
-  // Round 2 · 8b — if we're in Timesheet mode, fetch the rep's current
-  // pay-period data to populate the side rail. tsData lives at module
-  // scope so it stays warm across renders; the lazy fetch ensures the
-  // tile shows real numbers within a second or two of entering the tab.
-  if (mergeMode === 'timesheet') {
-    loadTimesheetSideRail_();
+  // Fetch the rep's current pay-period data to populate the rail's
+  // pay-period block (formerly Timesheet mode's rail — now always shown).
+  // tsData lives at module scope so it stays warm across renders.
+  loadTimesheetSideRail_();
+
+  // Consume a pending cross-month request-day open (quick-actions card —
+  // the calNavTo_ handoff; the mgrPendingRepDrill pattern). Guarded to the
+  // month actually rendered, so a stale pending value can't open a modal
+  // whose calData belongs to a different month.
+  if (TO_PENDING_DAY_OPEN) {
+    const pend = TO_PENDING_DAY_OPEN;
+    TO_PENDING_DAY_OPEN = null;
+    if (pend.slice(0, 7) === `${data.year}-${String(data.month).padStart(2, '0')}`) {
+      openPinnedDayModal_(pend);
+    }
   }
 
   // Cancel button wiring
@@ -386,9 +390,83 @@ function formatLeaveDays(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-// ── ROUND 2 · 8b — TIMESHEET-MODE SIDE RAIL ────────────────────────────
-// In Timesheet mode the side rail shows the rep's current pay-period
-// totals (mirror of the .pto-tile layout, tuned for hours) plus a
+// ── QUICK-ACTIONS CARD (operator 2026-08-18, consolidation round) ──────────
+// The clear request affordance beside the calendar: pick a date and request
+// time off, or open the punch-adjustment request modal. Real <button>s
+// (INV-173); the PTO path opens the SAME pinned day modal a calendar tap
+// does, so there is exactly one submit path (no parallel form to drift).
+
+/** Pure UTC day-add on a yyyy-MM-dd string (the mgrAddDaysIso_ shape). */
+function toAddDaysIso_(iso, n) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function toActionsCardHtml_(todayIso) {
+  // Default the picker to the next WEEKDAY on/after today; bound it to the
+  // calendar's own navigable horizon (today .. end of today+3 months — the
+  // month nav caps at curYM+3, and the day modal needs its month's calendar
+  // payload, so a farther date would be unreachable anyway).
+  let def = todayIso;
+  for (let i = 0; i < 7; i++) {
+    const cand = toAddDaysIso_(todayIso, i);
+    const dow = new Date(cand + 'T00:00:00Z').getUTCDay();
+    if (dow !== 0 && dow !== 6) { def = cand; break; }
+  }
+  const p = todayIso.split('-');
+  const maxY = parseInt(p[0], 10) + (parseInt(p[1], 10) + 3 > 12 ? 1 : 0);
+  const maxM = ((parseInt(p[1], 10) + 2) % 12) + 1;
+  const maxIso = `${maxY}-${String(maxM).padStart(2, '0')}-${String(new Date(maxY, maxM, 0).getDate()).padStart(2, '0')}`;
+  return `
+    <div class="card to-actions">
+      <h2 class="card-label">Requests</h2>
+      <label class="to-act-lbl" for="to-req-date">Request time off</label>
+      <div class="to-act-row">
+        <input type="date" id="to-req-date" value="${def}" min="${todayIso}" max="${maxIso}">
+        <button type="button" class="to-act-go" id="to-req-go">Request</button>
+      </div>
+      <div class="to-act-div"></div>
+      <label class="to-act-lbl" for="to-adj-open">Fix a missed or wrong punch</label>
+      <button type="button" class="to-act-btn" id="to-adj-open">${icon('adjust', 13)} Request punch edit</button>
+    </div>`;
+}
+
+// Opens the pinned day modal for an arbitrary date. Same displayed month →
+// open directly; another month → navigate the calendar there first
+// (calNavTo_, which paints from the SWR month cache or loads) and let
+// renderTimeOffView consume the pending open — the cache-hit path renders
+// synchronously and the miss path async, but BOTH end in renderTimeOffView,
+// so one handoff variable covers both (the mgrPendingRepDrill pattern).
+var TO_PENDING_DAY_OPEN = null;
+function openRequestForDate_(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return;
+  const p = dateStr.split('-');
+  const y = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (calData && calData.year === y && calData.month === m) {
+    openPinnedDayModal_(dateStr);
+  } else {
+    TO_PENDING_DAY_OPEN = dateStr;
+    calNavTo_(y, m);
+  }
+}
+
+/** Pin + center the day modal for a date (clears any hover-tether state). */
+function openPinnedDayModal_(dateStr) {
+  dayPopoverPinned = true;
+  const overlay = document.getElementById('day-overlay');
+  if (overlay) {
+    overlay.classList.remove('hover-mode');
+    const modal = overlay.querySelector('.modal');
+    if (modal) { modal.style.top = ''; modal.style.left = ''; }
+  }
+  openDayModal(dateStr);
+}
+
+// ── PAY-PERIOD SIDE-RAIL BLOCK (Round 2 · 8b; always-on since the
+// 2026-08-18 consolidation — the Timesheet MODE it belonged to is retired) ──
+// Shows the rep's current pay-period totals (mirror of the .pto-tile
+// layout, tuned for hours), the View-pay-statement link, and a
 // recent-activity list (last 5 days with data). tsData is the source
 // of truth — fetched via the existing getTimesheetData endpoint.
 
@@ -418,7 +496,7 @@ function loadTimesheetSideRail_() {
   const railFail = function (msg) {
     if (currentView !== 'timeoff') return;
     const slot = document.getElementById('ts-side-rail');
-    if (slot) slot.innerHTML = errorStateHtml_('Pay-period summary could not load — ' + msg + ' Switch modes or re-open the tab to retry.');
+    if (slot) slot.innerHTML = errorStateHtml_('Pay-period summary could not load — ' + msg + ' Re-open the tab to retry.');
   };
   google.script.run
     .withSuccessHandler(data => {
@@ -547,6 +625,11 @@ function payStmtLoad_() {
       if (!d || d.error) { slot.innerHTML = errorStateHtml_((d && d.error) || 'No data returned.'); return; }   // A12
       PAY_STMT.maxOffset = d.maxOffset != null ? d.maxOffset : 6;
       slot.innerHTML = payStmtHtml_(d);
+      // Request-edit click-through (operator 2026-08-18) — data-* + a bound
+      // handler, never inline interpolation (the L-15/data-* discipline).
+      slot.querySelectorAll('.pay-stmt-fix').forEach(function (b) {
+        b.addEventListener('click', function () { payStmtRequestEdit_(b.getAttribute('data-adj-date')); });
+      });
     })
     .withFailureHandler(function (e) {
       if (seq !== PAY_STMT.seq) return;
@@ -554,6 +637,19 @@ function payStmtLoad_() {
       if (slot) slot.innerHTML = errorStateHtml_('Failed to load the statement: ' + ((e && e.message) || e));   // A12
     })
     .getMyPayStatement(PAY_STMT.offset);
+}
+
+// Click-through from an incomplete/empty statement day into the punch-edit
+// request flow (operator 2026-08-18). Order is load-bearing: the pay
+// statement is an ensureOverlay modal appended at body-END, so with both
+// open it would PAINT OVER the static adjust overlay (same z-index, later
+// in DOM order wins) — close the statement FIRST, then open Adjust
+// prefilled to the day.
+function payStmtRequestEdit_(dateStr) {
+  const ov = document.getElementById('pay-stmt-overlay');
+  if (ov && typeof closeOverlay === 'function') closeOverlay(ov);
+  else if (ov) ov.classList.remove('open');
+  if (typeof openAdjustModal === 'function') openAdjustModal(dateStr);
 }
 
 function payStmtFmtMoney_(n) {
@@ -580,6 +676,13 @@ function payStmtHtml_(d) {
   // Day rows: every non-future weekday + any day with data. A weekday with NO
   // punches renders muted — a silently missing day IS the discrepancy this
   // view exists to catch.
+  // Click-through (operator 2026-08-18): an incomplete or empty day carries a
+  // "Request edit" button into the #4a punch-adjustment flow, prefilled to
+  // that day — but ONLY within the employee adjust window (older days need a
+  // manager, INV-06) and NEVER on a manager's view of ANOTHER rep's statement
+  // (the adjust modal submits for the CALLER, not the viewed rep).
+  const stmtToday = isoDateTz(empTz());
+  const adjWin = (typeof adjustWindowDays === 'number' && adjustWindowDays) || 30;
   let rows = '';
   (d.days || []).forEach(x => {
     if (x.isFuture) return;
@@ -599,10 +702,16 @@ function payStmtHtml_(d) {
     const ptoBit = pto
       ? `<span style="color:var(--info-deep)">PTO · ${esc(pto.type)}${pto.days ? ' (' + esc(String(pto.days)) + 'd)' : ''}</span>`
       : '';
+    const needsFix = !x.inProgress && (x.isIncomplete || (!x.hasData && !x.isWeekend && !pto));
+    const inWindow = x.date <= stmtToday && daysBetweenIso(x.date, stmtToday) <= adjWin;
+    const fixBtn = (needsFix && inWindow && !d.viewingOther)
+      ? `<button type="button" class="pay-stmt-fix" data-adj-date="${esc(x.date)}"
+           style="margin-left:8px;font:inherit;font-size:11px;color:var(--info-deep);background:none;border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer">Request edit</button>`
+      : '';
     rows += `<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">
       <span style="flex:0 0 84px;color:var(--muted)">${esc(x.dayLabel)}</span>
       <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
-      <span style="flex:0 0 auto">${right}</span>
+      <span style="flex:0 0 auto">${right}${fixBtn}</span>
     </div>`;
   });
   if (!rows) rows = '<div class="no-data" style="padding:14px 0">No activity in this period yet</div>';
@@ -631,7 +740,7 @@ function payStmtHtml_(d) {
     : '';
 
   const incomplete = d.incompleteCount
-    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">Incomplete days are NOT counted in the total — use Adjust (or ask your manager) to fix the missing punch.</div>`
+    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">Incomplete days are NOT counted in the total — use the day's "Request edit" button (within the last ${esc(String(adjWin))} days) or ask your manager for older days.</div>`
     : '';
 
   return nav + rows + totals + gross + incomplete + archive;

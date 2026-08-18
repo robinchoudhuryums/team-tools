@@ -9884,5 +9884,148 @@ test('card-list display cap: capped render + real Show-more button, counts stay 
     'Spanish headers keep full counts');
 });
 
+test('CN pop-out fluid type: clamp()-scaled, floored, byte-identical at >=480px (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  // The two fluid groups, scoped to the POP-OUT only (vw = the pop-out
+  // window; the main window and phone views never scale). The clamp CEILINGS
+  // are the base rules' exact px values (13 / 12), so at the 480px launch
+  // width and above these resolve byte-identically — MEASURED: 13/12px at
+  // 480, 11.28/10.75px at 360, overflow 0 throughout. The FLOORS are the "to
+  // a certain extent": the shrink stops at readable sizes, never trailing off
+  // with the window.
+  const valGroup = cn.match(/:root\[data-compact\] \.cnv-row input,[\s\S]{0,300}?\{ font-size: ([^;]+); \}/);
+  assert.ok(valGroup, 'the field-value fluid group exists');
+  assert.strictEqual(valGroup[1], 'clamp(11px, calc(6.1px + 1.44vw), 13px)',
+    'values scale 13px→11px over 480→340px (ceiling = the base 13px)');
+  assert.ok(/:root\[data-compact\] \.cnv-trio \.ce \{ font-size: clamp\(11px/.test(cn), 'trio values ride the same clamp');
+  const lblGroup = cn.match(/:root\[data-compact\] \.cnv-row \.lbl,[\s\S]{0,400}?\{ font-size: ([^;]+); \}/);
+  assert.ok(lblGroup, 'the label/rail/button fluid group exists');
+  assert.strictEqual(lblGroup[1], 'clamp(10.5px, calc(6.9px + 1.07vw), 12px)',
+    'labels/rail headings/save buttons/tag input scale 12px→10.5px (ceiling = the base 12px)');
+  ['.rail-card h4', '.rail-tag-input', '.cn-action-prime', '.cn-action-sec', '.cn-form-clear-btn']
+    .forEach((sel) => assert.ok(cn.indexOf(':root[data-compact] ' + (sel.startsWith('.rail-actions') ? sel : sel.startsWith('.cn-') ? '.rail-actions ' + sel : sel)) >= 0 ||
+                                 new RegExp(':root\\[data-compact\\][^{]*' + sel.replace(/[.\[\]]/g, '\\$&')).test(cn),
+      sel + ' is in a fluid group'));
+  // Floor discipline: any viewport-relative font-size in this partial must
+  // sit inside a clamp() — a bare Xvw size trails off with the window and has
+  // no floor, which is exactly what "to a certain extent" forbids.
+  const bare = cn.match(/font-size:\s*[^;{}]*vw[^;{}]*;/g) || [];
+  bare.forEach((m) => assert.ok(/clamp\(/.test(m), 'viewport-relative font-size outside clamp(): ' + m));
+});
+
+test('CN pop-out narrow stacking: <=400px compact yields — one-column trio/rows/quadrant, timestamp hidden there ONLY (operator 2026-08-18)', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(raw);
+  // The tall-and-skinny pop-out (measured: at ~300px the 2-up trio wrapped one
+  // letter per line): below 400px the compact FRAMING yields. Extract the
+  // media block by brace-matching from the query (the A2 scan's approach).
+  const qIdx = cn.indexOf('@media (max-width: 400px)');
+  assert.ok(qIdx >= 0, 'the <=400px narrow media window exists');
+  let depth = 0, i = cn.indexOf('{', qIdx), end = -1;
+  for (; i < cn.length; i++) {
+    if (cn[i] === '{') depth++;
+    else if (cn[i] === '}' && --depth === 0) { end = i; break; }
+  }
+  const blk = cn.slice(qIdx, end + 1);
+  // Every rule is :root[data-compact]-scoped — phones are untouched (the
+  // non-compact <=480px breakpoint already stacks them; this is the POP-OUT's
+  // own yield point, the A2 two-independent-triggers rule).
+  const sels = blk.match(/(^|\}|\{)\s*([^{}]+)\{/g) || [];
+  sels.slice(1).forEach((s) => assert.ok(/:root\[data-compact\]/.test(s),
+    'narrow rule not compact-scoped: ' + s.trim()));
+  // The six commitments: trio one column, rows (incl. .full) one column with
+  // labels above values, save quadrant one column, timestamp column dropped,
+  // card action row allowed to wrap.
+  assert.ok(/:root\[data-compact\] \.cnv-trio \{ grid-template-columns: 1fr;/.test(blk), 'trio stacks (Caller under Callback)');
+  assert.ok(/\.cnv-row,\s*:root\[data-compact\] \.cnv-row\.full \{ grid-template-columns: 1fr;/.test(blk), 'rows stack — labels above values, .full included');
+  assert.ok(/\.cnv-row \.lbl \{ padding-top: 0; \}/.test(blk), 'stacked labels drop the side-by-side alignment padding');
+  assert.ok(/\.rail-actions \{ grid-template-columns: 1fr; \}/.test(blk), 'save quadrant goes one column');
+  assert.ok(/\.cn-card-time \{ display: none; \}/.test(blk), 'note-card timestamp column hidden (operator-sanctioned — the time still rides the CRM copy)');
+  assert.ok(/\.cn-card-row \{ flex-wrap: wrap; \}/.test(blk), 'card action row wraps instead of overflowing');
+  // SOURCE ORDER is load-bearing: the media block sits AFTER the bare compact
+  // overrides (equal specificity — inside the window, later wins; outside it,
+  // the 2-up trio / 84px labels hold, MEASURED byte-identical at 480px).
+  const bareTrio = cn.indexOf(':root[data-compact] .cnv-trio { grid-template-columns: 1fr 1fr');
+  const bareRow = cn.indexOf(':root[data-compact] .cnv-row { grid-template-columns: 84px 1fr');
+  assert.ok(bareTrio >= 0 && bareTrio < qIdx, 'bare compact trio override precedes the narrow window');
+  assert.ok(bareRow >= 0 && bareRow < qIdx, 'bare compact row override precedes the narrow window');
+  // The timestamp hide lives ONLY in this window — a bare compact (or global)
+  // display:none on .cn-card-time would hide it at the 480px launch width too.
+  const hides = (cn.match(/\.cn-card-time[^{}]*\{[^}]*display:\s*none/g) || []).length;
+  assert.strictEqual(hides, 1, '.cn-card-time is hidden exactly once (inside the narrow window)');
+  // tzMismatchCheck_ is declared exactly ONCE — a duplicate declaration
+  // silently wins by hoisting while extractFunction pins the FIRST (the exact
+  // near-miss this round caught: a second, weaker boot-time copy).
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.strictEqual((core.match(/function tzMismatchCheck_\(/g) || []).length, 1,
+    'tzMismatchCheck_ declared exactly once');
+});
+
+test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit click-through (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const to = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  const clk = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  const styles = nc(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8'));
+  // ── Consolidation: the mode toggle and its key are GONE from code (comments
+  // may still narrate the retirement — hence the comment strip). One rail,
+  // always: actions card + balance tile + the pay-period slot, and the
+  // pay-period fetch runs UNCONDITIONALLY (no mergeMode branch left to skip it).
+  [to, clk, styles].forEach((src) => {
+    assert.ok(!/umsMergeMode/.test(src), 'umsMergeMode is retired from code');
+    assert.ok(!/mp-mode/.test(src), 'the .mp-mode toggle selectors/markup are gone (INV-184)');
+  });
+  assert.ok(!/mergeMode/.test(to), 'no mergeMode branching remains in the timeoff partial');
+  assert.ok(/const sideRailHtml =\s*toActionsCardHtml_\(todayIso\) \+\s*balanceCardHtml \+\s*`<div id="ts-side-rail">/.test(to),
+    'the rail stacks actions card + balance tile + pay-period slot unconditionally');
+  assert.ok(/bindCalHover_\(\);[\s\S]{0,1600}?loadTimesheetSideRail_\(\);/.test(to) &&
+            !/if\s*\([^)]*\)\s*\{\s*loadTimesheetSideRail_\(\);/.test(to),
+    'loadTimesheetSideRail_ runs on every render, not behind a condition');
+  // ── Quick-actions card: real <button>s (INV-173), picker floored at today,
+  // and the PTO path reuses the ONE existing submit flow — same-month opens
+  // the pinned day modal directly; cross-month hands off through calNavTo_
+  // and renderTimeOffView consumes the pending open (both async paths land
+  // there, so one handoff variable covers cache-hit and load alike).
+  assert.ok(/<button type="button" class="to-act-go" id="to-req-go">/.test(to), 'Request PTO is a real button');
+  assert.ok(/<button type="button" class="to-act-btn" id="to-adj-open">/.test(to), 'Request punch edit is a real button');
+  assert.ok(/<input type="date" id="to-req-date" value="\$\{def\}" min="\$\{todayIso\}"/.test(to),
+    'the request date picker is floored at today');
+  const orf = to.match(/function openRequestForDate_\(dateStr\) \{[\s\S]*?\n\}/);
+  assert.ok(orf, 'openRequestForDate_ exists');
+  assert.ok(/calData\.year === y && calData\.month === m/.test(orf[0]) && /openPinnedDayModal_\(dateStr\)/.test(orf[0]),
+    'same displayed month opens the pinned day modal directly');
+  assert.ok(/TO_PENDING_DAY_OPEN = dateStr;\s*calNavTo_\(y, m\);/.test(orf[0]),
+    'another month hands off via the pending variable + calNavTo_');
+  assert.ok(/if \(TO_PENDING_DAY_OPEN\) \{[\s\S]{0,500}?openPinnedDayModal_\(pend\)/.test(to),
+    'renderTimeOffView consumes the pending cross-month open');
+  assert.ok(/pend\.slice\(0, 7\) === `\$\{data\.year\}-\$\{String\(data\.month\)\.padStart\(2, '0'\)\}`/.test(to),
+    'the pending open is guarded to the month actually rendered');
+  // ── Pay-statement click-through: the Request-edit button renders ONLY on a
+  // fixable day (incomplete, or an empty non-weekend non-PTO day), ONLY
+  // within the employee adjust window, and NEVER on a manager's view of
+  // another rep (the adjust modal submits for the CALLER). data-* + bound
+  // handler, not inline interpolation.
+  assert.ok(/needsFix && inWindow && !d\.viewingOther/.test(to), 'fix button gated on fixable + in-window + own statement');
+  assert.ok(/daysBetweenIso\(x\.date, stmtToday\) <= adjWin/.test(to), 'the window gate uses the shared adjust window');
+  assert.ok(/querySelectorAll\('\.pay-stmt-fix'\)/.test(to) && /data-adj-date/.test(to),
+    'buttons carry data-adj-date and are bound after injection');
+  // Order is load-bearing: the ensureOverlay statement modal sits later in
+  // DOM order than the static adjust overlay (same z-index), so it must
+  // CLOSE before Adjust opens or it paints over it.
+  const pre = to.match(/function payStmtRequestEdit_\(dateStr\) \{[\s\S]*?\n\}/);
+  assert.ok(pre, 'payStmtRequestEdit_ exists');
+  assert.ok(pre[0].indexOf('closeOverlay') >= 0 &&
+            pre[0].indexOf('closeOverlay') < pre[0].indexOf('openAdjustModal'),
+    'the pay statement closes BEFORE the adjust modal opens');
+  // ── openAdjustModal prefill is bounds-guarded: only a well-formed date
+  // inside the picker's own [min, today] range pre-selects; anything else
+  // keeps today (existing argless callers are unchanged by construction).
+  const oam = clk.match(/function openAdjustModal\(prefillDate\) \{[\s\S]*?\n\}/);
+  assert.ok(oam, 'openAdjustModal takes the optional prefill');
+  assert.ok(/prefillDate >= minIso && prefillDate <= todayIso/.test(oam[0]),
+    'the prefill honors the [min, today] picker bounds');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

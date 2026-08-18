@@ -21,7 +21,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
     pop-out window is open; each shows a toast plus an optional chime
     (on by default, toggled by the sidebar bell) and, where the browser
     permits it, a desktop notification. A per-period pay statement
-    (Time / PTO → Timesheet mode) lets each rep check their own
+    (Time / PTO → the pay-period rail block) lets each rep check their own
     punches, hours, PTO, and — when a pay rate is on the roster — an
     estimated gross, clearly labeled an estimate.
   - **Call Notes** — rolling-note panel for CSR call logging. Each

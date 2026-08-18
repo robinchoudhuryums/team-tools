@@ -127,6 +127,47 @@
   :root[data-compact] .cnv-trio { grid-template-columns: 1fr 1fr; gap: 8px; }
   :root[data-compact] .cnv-doc-frame { padding: 10px 10px 6px; }
   :root[data-compact] .cnv-row { grid-template-columns: 84px 1fr; padding: 5px 0; }
+  /* FLUID TYPE in the pop-out (operator 2026-08-18): an agent who likes the
+     framing but wants an EVEN SMALLER window gets text that tracks the window
+     width instead of the layout being the only thing that gives. Scoped to
+     :root[data-compact] (vw = the pop-out window's width — the main window and
+     phone views never scale), and calibrated so every clamp CEILING is reached
+     at 480px: at the default launch width and above, these resolve to today's
+     exact px values, byte-identical. Below 480 the type shrinks linearly to a
+     readable floor at ~340px (values 13px→11px; labels/rail/buttons/tag input
+     12px→10.5px) and stops — "to a certain extent", not indefinitely. The
+     compact grid overrides above out-specify the ≤480px stacking breakpoints
+     (the measured A2 precedent), so the 2-up trio and the 84px label column
+     HOLD while the type shrinks: same framing, smaller. */
+  :root[data-compact] .cnv-row input,
+  :root[data-compact] .cnv-row textarea,
+  :root[data-compact] .cnv-row .ce,
+  :root[data-compact] .cnv-trio .ce { font-size: clamp(11px, calc(6.1px + 1.44vw), 13px); }
+  :root[data-compact] .cnv-row .lbl,
+  :root[data-compact] .cnv-trio .lbl,
+  :root[data-compact] .rail-card h4,
+  :root[data-compact] .rail-tag-input,
+  :root[data-compact] .rail-actions .cn-action-prime,
+  :root[data-compact] .rail-actions .cn-action-sec,
+  :root[data-compact] .rail-actions .cn-form-clear-btn { font-size: clamp(10.5px, calc(6.9px + 1.07vw), 12px); }
+  /* NARROW pop-out (operator 2026-08-18, the tall-and-skinny window): below
+     400px the compact framing itself YIELDS — fluid type alone can't carry a
+     2-up trio or side labels there (measured: at ~300px the values wrapped
+     one letter per line). Caller stacks under Callback; the Patient & TRX /
+     Issue / Resolution labels move ABOVE their values; the save quadrant goes
+     one column; note cards drop the leading timestamp column (operator-
+     sanctioned — the time still reaches the CRM copy) and let their action
+     icons wrap. Declared AFTER the bare compact overrides above, so at equal
+     specificity source order lets these win only inside the media window. */
+  @media (max-width: 400px) {
+    :root[data-compact] .cnv-trio { grid-template-columns: 1fr; gap: 6px; }
+    :root[data-compact] .cnv-row,
+    :root[data-compact] .cnv-row.full { grid-template-columns: 1fr; gap: 2px; }
+    :root[data-compact] .cnv-row .lbl { padding-top: 0; }
+    :root[data-compact] .rail-actions { grid-template-columns: 1fr; }
+    :root[data-compact] .cn-card-time { display: none; }
+    :root[data-compact] .cn-card-row { flex-wrap: wrap; }
+  }
   /* F3 (cycle 16) — the A2 rule (compact is the POP-OUT, not a breakpoint).
      Both grids above had a compact override and NO viewport breakpoint, so on
      a phone they kept their desktop tracks: MEASURED at 390px the trio was
