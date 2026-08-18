@@ -3602,7 +3602,26 @@ this section before touching the relevant area.
   out-specify the ≤480px stacking breakpoints (the A2 precedent), so the 2-up
   trio + 84px label column HOLD while the type shrinks: same framing, smaller.
   Pinned (exact clamp formulas + a no-bare-vw floor scan) and on camera as
-  `cn-log-light-compact-sm`.
+  `cn-log-light-compact-sm`. **Below 400px the framing itself YIELDS (the
+  same day's narrow round — the operator's tall-and-skinny screenshot showed
+  values wrapping one letter per line at ~300px):** a
+  `@media (max-width: 400px)` block, every rule `:root[data-compact]`-scoped
+  (phones are untouched — the non-compact ≤480px breakpoint already stacks
+  them; the A2 two-independent-triggers rule), stacks the trio to one column
+  (Caller under Callback), moves every `.cnv-row` label ABOVE its value
+  (`.full` included), takes the save quadrant to one column, lets the note-
+  card action row wrap, and **drops the note-card timestamp column**
+  (operator-sanctioned — the time still rides the CRM copy and the History
+  date-group headers). Declared AFTER the bare compact overrides so at equal
+  specificity source order confines the yield to the media window — MEASURED:
+  fully stacked with overflow 0 at 300px and 360px, byte-identical 2-up at
+  480px. Pinned (block extraction by brace-match, all six rules, compact
+  scope on every rule, source order, timestamp hidden EXACTLY once — 4
+  mutations bite-checked). `cn-log-light-compact-sm` (360×640) now shows the
+  stacked side of the boundary. The shoot harness also seeds
+  `umsTzWarnedDay` (the fixture roster tz never matches the sandbox browser,
+  so the 9c5df81 sticky tz-mismatch toast covered every screenshot's top —
+  seeding "already warned today" is the steady state, the tour-seen posture).
 - **Compact pop-out defaults to 480×800, then remembers (#4) — PER TOOL.**
   `popOutCurrentView()` opens the `umsTeamToolsCompact_<tool>` window at
   **480×800 by default** (widened from the prior 380×780 so the Call Notes
@@ -7008,7 +7027,13 @@ exact clamp formulas for both groups — ceilings equal the base px so ≥480px
 is byte-identical, floors carry the "to a certain extent" — plus a
 no-bare-vw font-size scan over the partial; verified by MEASUREMENT at
 480/400/360 and 3 mutations bite-checked, incl. a raised ceiling — the
-mutation that would silently change the default launch look).
+mutation that would silently change the default launch look). The narrow
+pop-out round (same day) added one more → **552** (the ≤400px compact-yield
+block — brace-matched extraction, all six rules, compact scope on every
+rule, the load-bearing source order, `.cn-card-time` hidden EXACTLY once,
+plus a tzMismatchCheck_-declared-once guard against the duplicate-hoisting
+near-miss this very round caught — 4 mutations bite-checked; stacked layout
+verified by MEASUREMENT at 300/360, byte-identical at 480).
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —

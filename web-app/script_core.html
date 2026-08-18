@@ -335,6 +335,10 @@ window.addEventListener('load', () => {
       // surface as Dashboard greeting slides + the star buttons; this comment
       // previously claimed auto-open and could invite a regression).
       whatsNewInit_();
+      // NOTE: the roster-vs-device timezone mismatch notice already runs via
+      // remindersStart_ → tzMismatchCheck_ (9c5df81, operator 2026-08-13 —
+      // once per browser-local day, sticky, offset-compared) — a second boot
+      // check here would be the parallel-source class.
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();

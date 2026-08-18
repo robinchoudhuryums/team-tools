@@ -101,10 +101,13 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
-  // Operator 2026-08-18 (fluid pop-out type): the CN pop-out shrunk BELOW its
-  // 480px launch width — the compact grids hold (2-up trio, 84px labels) while
-  // the clamp() type scales down toward its floor. This is the window shape
-  // the feature exists for, so it stays on camera.
+  // Operator 2026-08-18 (fluid pop-out type, then the same day's narrow
+  // round): the CN pop-out shrunk BELOW its 480px launch width. At 360px this
+  // now shows the ≤400px STACKED framing — one-column trio, labels above
+  // values, one-column save quadrant, note cards without the timestamp
+  // column — with the clamp() type near its floor. Between 401 and 480px the
+  // compact grids still hold (2-up trio, 84px labels) and only the type
+  // scales; this scenario is the stacked side of that boundary, on camera.
   ['cn-log-light-compact-sm', { tool: 'callNotes', tab: 'callNotes' }, COMPACT_SM, 'light', '?compact=1'],
 ];
 
@@ -119,7 +122,11 @@ for (const [name, nav, vp, mode, query] of SCENARIOS) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); } catch (e) {} }, mode);
+  // umsTzWarnedDay: the fixture roster tz (Asia/Kolkata) never matches the
+  // sandbox browser (UTC), so the once-a-day sticky tz-mismatch toast
+  // (9c5df81) would cover the top of EVERY screenshot. Seed "already warned
+  // today" — the steady state, same posture as the tour-seen flag.
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   const fake = new Date(); fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift
   await page.clock.install({ time: fake });
   await page.goto(PAGE + query, { waitUntil: 'load' });

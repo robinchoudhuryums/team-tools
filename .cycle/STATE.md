@@ -769,7 +769,21 @@ Updated: 2026-08-11
   stacking breakpoints so the framing HOLDS while type shrinks). Pin (exact
   formulas + no-bare-vw scan, 3 bites) + cn-log-light-compact-sm scenario
   (matrix 42). Pure 551, DOM 71.
-- Pure 551, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
+- Follow-up (operator round 4, 2026-08-18, tall-and-skinny screenshot): a
+  `@media (max-width: 400px)` compact-yield block in the CN partial — trio
+  stacks (Caller under Callback), all `.cnv-row` labels move above values,
+  save quadrant one column, note-card timestamp column hidden (operator-
+  sanctioned; time still rides the CRM copy), card action row wraps; every
+  rule :root[data-compact]-scoped so phones are untouched; source order
+  confines it to the window (measured: stacked + overflow 0 at 300/360,
+  byte-identical at 480). Pin + 4 bites; cn-log-light-compact-sm comment
+  updated (it now shows the stacked side). Timestamp-in-IST report: NOT a
+  code change — the 9c5df81 tz-mismatch detector already ships; the fix is
+  the operator's Employees-sheet Timezone cell (blank/Asia-Kolkata →
+  America/Chicago). A duplicate boot-time tzMismatchCheck_ was nearly added
+  and removed; a declared-once guard now pins it. shoot.mjs seeds
+  umsTzWarnedDay so the sticky toast stops covering every screenshot.
+- Pure 552, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
