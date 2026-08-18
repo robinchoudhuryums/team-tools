@@ -16,17 +16,39 @@ function enterDeptRequestsView(area) {
   stopClock();
   DR_SHOWN = {};   // display cap resets on view enter
   const requestedView = currentView;
-  renderLoading(area, 'Loading requests…', 'outbox');
+  // Operator 2026-08-18 (load-time sweep): SWR — the payload was already kept
+  // (DR_LAST_DATA drives every filter re-render) but never consulted on enter,
+  // so each visit re-paid the loader + RPC. Paint last-good instantly; skip
+  // the refetch entirely while fresh (viewCacheFresh_, 45s); otherwise refresh
+  // quietly behind the pill. A failed/errored refresh keeps last-good but
+  // NULLS the stamp so the next enter retries (C17-5 / INV-129: a failed
+  // round is never served as fresh).
+  const seeded = !!(DR_LAST_DATA && DR_STATE.entry);
+  if (seeded) {
+    drRender_(area, DR_LAST_DATA, null);
+    if (typeof viewCacheFresh_ === 'function' && viewCacheFresh_(DR_STATE.entry)) return;
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+  } else {
+    renderLoading(area, 'Loading requests…', 'outbox');
+  }
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (res && res.error) { drRender_(area, null, res.error); return; }
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+      if (res && res.error) {
+        DR_STATE.entry = null;
+        if (!seeded) drRender_(area, null, res.error);   // seeded: keep last-good
+        return;
+      }
       DR_STATE.data = res || {};
+      DR_STATE.entry = { at: Date.now() };
       drRender_(area, DR_STATE.data, null);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      drRender_(area, null, (err && err.message) || 'Failed to load requests.');
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+      DR_STATE.entry = null;
+      if (!seeded) drRender_(area, null, (err && err.message) || 'Failed to load requests.');
     })
     .getDeptRequests();
 }
@@ -318,6 +340,7 @@ function drResolveClick_(btn) {
     .withSuccessHandler(function (res) {
       if (res && res.success) {
         showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
+        DR_STATE.entry = null;   // bust the SWR stamp — the re-enter must refetch, not repaint the request as open
         if (currentView === requestedView) enterDeptRequestsView(getDeptRequestsArea_());
       } else {
         showToast((res && res.error) || 'Could not resolve.', 'toast-error');

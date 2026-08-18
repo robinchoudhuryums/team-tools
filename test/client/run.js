@@ -7305,10 +7305,15 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   assert.ok(/var MIN_COHORT = 1;/.test(dash),
     'the operator decision: the Dashboard card renders team data whenever anyone reported');
   // The key bumps with every payload-semantics change (v2 = cohort hide
-  // dropped; v3 = prev/thresholds added) — a stale entry must never serve the
-  // previous contract for the TTL after a deploy.
-  assert.ok(/dash_metrics_v3:/.test(dash) && !/dash_metrics_v[12]:/.test(dash),
+  // dropped; v3 = prev/thresholds added; v4 = day-scoped key + 1800s TTL,
+  // operator 2026-08-18) — a stale entry must never serve the previous
+  // contract for the TTL after a deploy. The day in the key is load-bearing
+  // at the longer TTL: a payload must never straddle the rep-local midnight.
+  assert.ok(/dash_metrics_v4:/.test(dash) && !/dash_metrics_v[123]:/.test(dash),
     'the cache key bumped with the payload semantics');
+  assert.ok(/dash_metrics_v4:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+    'the v4 key carries the rep-local day');
+  assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
   // peer-benchmark surface) keeps its N=3 guard — INV-124 proper.
   const my = strip(extractRawFunction('Code.js', 'getMyMetrics'));
@@ -9753,6 +9758,39 @@ test('Spanish members Admin editor: validated save, dual-duty copy, empty-list c
   const chips = cn.match(/function cnRenderSpanishMemberChips_\(members\) \{[\s\S]*?\n\}/)[0];
   assert.ok(/<button type="button" aria-label="Remove/.test(chips), 'chip remove is a real labeled button (INV-173)');
   assert.ok(/esc\(m\)/.test(chips), 'member emails are escaped before innerHTML');
+});
+
+test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Server: getDeptRequests is result-cached (the DR store is PHI-free by
+  // design — the Spanish pending list stays DELIBERATELY uncached because it
+  // carries request content, and this pin must never be read as license to
+  // cache it). The gen salt is bumped by every mutation so a resolve/new
+  // request reaches the next read; the put is success-only (INV-129).
+  const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/dept_req_v1:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt');
+  assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
+  assert.ok(bumps >= 2, 'gen bumped at the resolve write AND the auto-track append (found ' + bumps + ')');
+  assert.ok(/drBumpCacheGen_\(\);[\s\S]{0,400}DeptRequestResolved/.test(code),
+    'the bump sits on markDeptRequestResolved_ — BOTH resolve paths route through it');
+  assert.ok(!/getSpanishInboxPending[\s\S]{0,900}cache\.put/.test(code.slice(code.indexOf('function getSpanishInboxPending'))),
+    'getSpanishInboxPending stays uncached (documented privacy decision — request content never sits in CacheService)');
+  // Client: the DR enter paints last-good + skips a fresh refetch; a failed or
+  // errored refresh NULLS the stamp (C17-5), and a resolve busts it before
+  // re-entering so the resolved card cannot repaint as open.
+  const drc = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  const enter = nc(extractFunction('metrics/script_deptrequests.html', 'enterDeptRequestsView'));
+  assert.ok(/viewCacheFresh_\(DR_STATE\.entry\)\) return;/.test(enter), 'fresh cache skips the refetch');
+  assert.strictEqual((enter.match(/DR_STATE\.entry = null;/g) || []).length, 2, 'both failure shapes null the stamp');
+  assert.ok(/DR_STATE\.entry = \{ at: Date\.now\(\) \};/.test(enter), 'only a successful round stamps freshness');
+  assert.ok(/DR_STATE\.entry = null;[\s\S]{0,200}enterDeptRequestsView\(getDeptRequestsArea_\(\)\)/.test(drc),
+    'the resolve success handler busts the stamp before re-entering');
+  // Timeoff: the enter routes through calNavTo_ (the month SWR that already
+  // existed but was never consulted on enter).
+  const to = nc(extractFunction('script_core.html', 'enterTimeoffView'));
+  assert.ok(/calNavTo_\(calYear, calMonth\); return;/.test(to), 'enterTimeoffView rides the CAL_CACHE SWR');
 });
 
 test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {

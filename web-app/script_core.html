@@ -1455,6 +1455,11 @@ function enterTimeoffView(area) {
     calYear = parseInt(parts[0], 10);
     calMonth = parseInt(parts[1], 10);
   }
+  // Operator 2026-08-18 (load-time sweep): route the enter through calNavTo_,
+  // which already maintains a per-month SWR cache (CAL_CACHE) — a re-enter
+  // paints the cached month instantly and quietly refreshes when stale,
+  // instead of paying the full-view loader + getCalendarData on every enter.
+  if (typeof calNavTo_ === 'function') { calNavTo_(calYear, calMonth); return; }
   renderLoading(area, 'Loading calendar…', 'clock');
   loadCalendar(calYear, calMonth);
 }
