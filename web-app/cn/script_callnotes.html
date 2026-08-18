@@ -1462,6 +1462,13 @@
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* Auto-tag rules — compact editor (operator 2026-08-18): slim hairline rows,
+     2-up at wide widths, and the LIST scrolls internally past ~8 visible rows
+     so the card never extends indefinitely as rules accumulate (cap 50). */
+  .cn-atag-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 20px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  @media (min-width: 1100px) { .cn-atag-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .cn-admin-atag-row { display: grid; grid-template-columns: minmax(0, 32%) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  .cn-admin-atag-row input { width: 100%; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
   /* Pre-pilot observability — Feature-usage rows (Admin Overview). Fixed
      tracks, so the A2 rule applies: a real viewport breakpoint below drops
      the bar + reps columns rather than squeezing five tracks into a phone. */
@@ -9844,7 +9851,10 @@ function cnRenderAdminBody_(cfg) {
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Auto-tag rules</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">When a keyword appears in a note\'s <strong>Issue</strong> or <strong>Resolution</strong> text, its tag is added automatically (as a normal chip the rep can remove — removing it stops that rule for the rest of the note). Keywords match case-insensitively as substrings; separate several with commas. Matching happens in the rep\'s browser — note text is never sent anywhere for this.</div>' +
-      '<div id="cn-admin-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
+      ((cfg.autoTagRules || []).length
+        ? '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">' + (cfg.autoTagRules || []).length + ' rule(s)</div>'
+        : '') +
+      '<div id="cn-admin-atag-list" class="cn-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-atag">' + icon('plus', 12) + ' Add Rule</button>' +
         '<button class="btn-modal-ok" id="cn-admin-save-atags" style="margin:0">Save Rules</button>' +
@@ -10144,6 +10154,14 @@ function cnRenderAdminBody_(cfg) {
     var wrap = document.createElement('div');
     wrap.innerHTML = cnRenderAutoTagRow_({ tag: '', keywords: [] });
     list.appendChild(wrap.firstElementChild);
+    // The list scrolls internally now — bring the fresh row into view and
+    // put the cursor in its tag field.
+    var fresh = list.lastElementChild;
+    if (fresh) {
+      if (fresh.scrollIntoView) fresh.scrollIntoView({ block: 'nearest' });
+      var inp = fresh.querySelector('.cn-admin-atag-tag');
+      if (inp) inp.focus();
+    }
   });
 
   document.getElementById('cn-admin-save-atags').addEventListener('click', function () {
@@ -10244,13 +10262,15 @@ function cnRenderAutoTagRows_(rules) {
   return rules.map(cnRenderAutoTagRow_).join('');
 }
 function cnRenderAutoTagRow_(r) {
+  // Compact format (operator 2026-08-18): one slim hairline row per rule —
+  // the old per-rule bordered box made the card grow ~54px/rule toward the
+  // 50-rule cap. The list itself is a 2-up grid at wide widths with an
+  // internal scroll (see .cn-atag-list), so the card height is bounded.
   r = r || {};
-  return '<div class="cn-admin-atag-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
-    '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
-      '<div class="field" style="flex:0 0 24%;margin:0"><input type="text" class="cn-admin-atag-tag" value="' + esc(r.tag || '') + '" placeholder="tag (kebab-case)"></div>' +
-      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-atag-kws" value="' + esc((r.keywords || []).join(', ')) + '" placeholder="keywords, comma, separated"></div>' +
-      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-atag-row\').remove()">' + icon('x', 14) + '</button>' +
-    '</div>' +
+  return '<div class="cn-admin-atag-row">' +
+    '<input type="text" class="cn-admin-atag-tag" value="' + esc(r.tag || '') + '" placeholder="tag (kebab-case)" aria-label="Tag">' +
+    '<input type="text" class="cn-admin-atag-kws" value="' + esc((r.keywords || []).join(', ')) + '" placeholder="keywords, comma, separated" aria-label="Keywords">' +
+    '<button type="button" class="cn-act-btn" title="Remove rule" aria-label="Remove rule" onclick="this.closest(\'.cn-admin-atag-row\').remove()">' + icon('x', 14) + '</button>' +
   '</div>';
 }
 

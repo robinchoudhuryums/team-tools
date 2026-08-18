@@ -9697,6 +9697,26 @@ test('Punctuality + Admin fill the view width (operator 2026-08-18)', () => {
   assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
 });
 
+test('Auto-tag rules editor is compact + bounded (operator 2026-08-18)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  // The per-rule bordered box (~54px/rule toward the 50 cap) must not return —
+  // rows are slim hairline grid rows and the LIST scrolls internally, so the
+  // Admin card's height is bounded no matter how many rules accumulate.
+  const row = cn.match(/function cnRenderAutoTagRow_\(r\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(!/border:1px solid/.test(row), 'no per-rule bordered box');
+  assert.ok(/<button type="button"[^>]*aria-label="Remove rule"/.test(row), 'remove is a real labeled button (INV-173)');
+  const list = cn.match(/\.cn-atag-list\s*\{[^}]*\}/);
+  assert.ok(list && /max-height/.test(list[0]) && /overflow-y:\s*auto/.test(list[0]),
+    'the rule list scrolls internally — the card never extends indefinitely');
+  assert.ok(/@media \(min-width: 1100px\)\s*\{\s*\.cn-atag-list\s*\{\s*grid-template-columns:\s*repeat\(2/.test(cn),
+    '2-up at wide widths (the full-width Admin has the room)');
+  // The save handler's contract is unchanged: it still reads the same row
+  // class + input classes, so the compact markup can't silently drop rules.
+  assert.ok(/querySelectorAll\('#cn-admin-atag-list \.cn-admin-atag-row'\)/.test(cn) &&
+            /cn-admin-atag-tag/.test(row) && /cn-admin-atag-kws/.test(row),
+    'save still reads .cn-admin-atag-row / -tag / -kws');
+});
+
 test('card-list display cap: capped render + real Show-more button, counts stay honest', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: the shared helper renders at most `shown` cards and a REAL
