@@ -509,7 +509,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v9`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v10`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -666,7 +666,10 @@ this section before touching the relevant area.
   transition guard double-deducts on re-approval or fails to
   restore on revert.
 - **Time-off submit has a duplicate-date guard + leave-type
-  whitelist.** `submitTimeOffRequest` and `managerSubmitTimeOff`
+  whitelist — and the multi-day `submitTimeOffRange` shares BOTH,
+  atomically** (operator 2026-08-18: one Pending row per weekday in the
+  range, weekends skipped, a conflict on any day rejects the whole batch
+  naming the dates — see INV-94). `submitTimeOffRequest` and `managerSubmitTimeOff`
   reject a request when the employee already has a Pending or
   Approved row for that date (`hasActiveTimeOffOnDate_`) — without it
   two sibling rows for one day each pass the per-row transition guard
@@ -2690,8 +2693,16 @@ this section before touching the relevant area.
   day modal a calendar tap opens via `openRequestForDate_` — same
   month directly, another month via the `TO_PENDING_DAY_OPEN` handoff
   through `calNavTo_`, consumed at the end of `renderTimeOffView`
-  gated to the rendered month; plus "Request punch edit" →
-  `openAdjustModal()`), the annual-leave `.pto-tile`, and the
+  gated to the rendered month; **since the same day's range round the
+  card carries an optional SECOND date and the handoff is
+  `{date, through}`** — the through pre-fills the day modal's new
+  "Through (optional)" field AFTER its per-open reset; plus
+  "Request punch edit" → `openAdjustModal()`), the annual-leave
+  `.pto-tile` (**two variants since 2026-08-18: roster column Q
+  `PtoAccrual` > 0 flips it to the ACCRUAL framing — balance →
+  ≈year-end projection, a bar that fills as accruals land; blank Q =
+  the fixed-allotment /15-days tile, byte-identical** — see the column-Q
+  checklist entry; display-only, the balance never moves), and the
   pay-period block (`#ts-side-rail` — pay-period tile + "View pay
   statement" + recent activity, lazy-loaded via
   `loadTimesheetSideRail_` on EVERY render now, its own
@@ -5294,6 +5305,24 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-18 range + accrual round adds ONE optional roster column and
+  NO other operator state** — no Script Properties, triggers, or CONFIG
+  constants; one new REP-callable endpoint (`submitTimeOffRange`, guarded per
+  INV-94/95 — not manager-gated) and `ROSTER_CACHE_KEY` v10. **The one
+  operator action: put a days-per-month rate in Employees column Q
+  (`PtoAccrual`, e.g. `1.25`) for each agent who ACCRUES PTO** — their
+  annual-leave tile flips to the growing accrued-balance framing
+  (balance → ≈Dec 31 projection); reps with a blank Q keep the fixed
+  /15-days tile exactly as before. The rate is display-only: keep
+  maintaining column-I balances as accruals land, exactly as today.
+  Behaviour changes to expect post-deploy: (a) the request-time-off card
+  and day modal accept an optional SECOND date — a range writes one
+  Pending row per weekday (weekends skipped, conflicts reject the whole
+  batch naming the dates), so managers see and approve/deny each day
+  individually (bulk approve already handles the multi-row case);
+  (b) nothing else moves. **Post-deploy: run `runAllTests()`** — the new
+  `test_submitTimeOffRange_weekendSkipAtomicCaps` executes only in the
+  editor.
 - **The 2026-08-18 Time/PTO consolidation round adds NO operator state** — no
   Script Properties, triggers, migrations, CONFIG constants, or endpoints
   (client-only + one optional client arg on `openAdjustModal`). Behaviour
@@ -6356,11 +6385,27 @@ manually for a fresh deploy or environment:
   in the sheet (the onboarding form deliberately doesn't ask — a rate is a
   payroll decision, not an onboarding field); `ROSTER_CACHE_KEY` was bumped
   to v9 for this column, so stale cache entries expire within 5 min.
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v9'`** — bumped for the `PayRate`
-  column (P, pay statement, 2026-08-17); previously v8 for the `Schedule`
+- **`Employees` sheet column Q = `PtoAccrual`** (operator 2026-08-18) — an
+  OPTIONAL PTO accrual rate in DAYS PER MONTH (e.g. `1.25`; unit-annotated
+  cells like `1.25 d/mo` parse too). **DISPLAY-ONLY:** it reframes that
+  rep's Time/PTO annual-leave tile as a growing accrued balance ("ACCRUING
+  1.25D/MO", balance → ≈year-end projection, a bar that FILLS as accruals
+  land) instead of the depleting /15-days bar. The BALANCE (column I)
+  remains the hand-maintained source of truth — the app never credits
+  accruals itself (auto-crediting would double-count against manual balance
+  edits), so keep topping up column I on whatever cadence accruals land;
+  the projection assumes the current month's accrual is already in the
+  balance. BLANK/garbage/zero = the fixed-allotment tile, exactly as
+  before (`empPtoAccrual_` fail-safes to null, the `parseShiftOverride_`
+  posture). Fill it by hand in the sheet for accruing agents only; the
+  onboarding form deliberately doesn't ask. `ROSTER_CACHE_KEY` bumped to
+  v10 for this column.
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v10'`** — bumped for the
+  `PtoAccrual` column (Q, accrual tile, 2026-08-18); previously v9 for
+  `PayRate` (P, pay statement, 2026-08-17), v8 for the `Schedule`
   column (O, Turn D per-rep shift override), v7 for Departments/DeptRequests
   v2, v6 for `ManagerEmail`/T3, v5 for CallNotesSheetId. After deploying,
-  stale v8 cache entries expire naturally within 5 min (or run
+  stale v9 cache entries expire naturally within 5 min (or run
   `clearCaches_()` from the editor).
 - **Call-notes department list + state tax rates** are read by
   `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
@@ -7084,7 +7129,17 @@ close-before-open order; and the openAdjustModal prefill bounds — 5
 mutations bite-checked). The visual mock gained a `getTimesheetData`
 fixture and the calendar fixture's `hoursByDate` → `workedHoursByDate`
 INV-185 shape fix (the corner hour badges had never rendered in any
-timeoff screenshot).
+timeoff screenshot). The range + accrual round (same day) added one more →
+**554** (server: submitTimeOffRange's atomic conflicts-before-append order,
+weekend skip, named-dates rejection, notes bound, span cap, both horizon
+ends — comment-stripped per INV-188; client: the Through field's per-open
+reset + preview multiplier + dual submit routing, the countWeekdaysIso_
+BEHAVIOURAL cases, and the accrual tile — EMP.PTO_ACCRUAL declared AND
+read ×2 (the INV-184 class), ROSTER_CACHE_KEY v10 (INV-28), empPtoAccrual_
+BEHAVIOURAL fail-safe cases, variant gating with the legacy tile preserved
+— 5 mutations bite-checked incl. the atomicity order and a behavioural
+counter mutation). Editor suite +1 (`test_submitTimeOffRange_weekendSkipAtomicCaps`)
+≈ 303.
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7342,7 +7397,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v9` — the PayRate column P) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v10` — the PtoAccrual column Q) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics` (since 2026-08-18 NOT a rejection gate — a rep gets the whitelist-built aggregate, see INV-66; the shape boundary is pinned in `test_metrics_getTeamMetrics_nonManagerRejected`), `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the five Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`/`resolveSpanishThread`) are NO LONGER pure-manager-gated — they gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). `resolveSpanishThread` (operator feedback 2026-07-09) is the MANUAL mark-resolved for requests handled outside the thread: scope-guarded like `ThreadBody` (the thread must be addressed to the configured inbox — since cycle 8 an EXACT parsed-address match via `spanishAddrListIncludes_`, Node-pinned, not the old raw substring `indexOf` which passed `xspanishcalls@…`; and the Gmail scans use `spanishSearchQuery_`'s `{to: cc:}` brace-OR so Cc'd requests enter stats/pending/resolved too), locked (INV-01), idempotent, PHI-FREE (append-only `SpanishManualResolved` tab on the ADP sheet — threadId + resolver + ms only, the ms as a NUMBER cell so no date coercion; `SpanishInboxResolve` audit row carries the threadId only). All three readers consult `spanishManualResolvedMap_` (bounded 1000-row tail): pending drops the thread immediately (live-read), stats/resolved count it as resolved (in-thread reply wins when both exist; stats reflect within the 5-min cache TTL — the INV-43 posture). **Cycle-17 batch ⑥: all three readers scan via the named `SPANISH_THREAD_SCAN_MAX` (200 — the silent GmailApp.search bound) and return `truncated` (threads.length ≥ cap ⇒ possibly more; the INV-169 class)**; the Spanish tab renders "scan capped at 200 threads — figures may be incomplete; narrow the window" on the stats note and both list tabs (`spanishTruncNote_`). The Dashboard Spanish card deliberately omits the note (space); the field is additive. The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error on all five; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server
@@ -7408,7 +7463,7 @@ INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `ge
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server
 INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates, and the `dateLocal` (PunchDate col 5) via `normalizeDate_` — the client's "View note" deep-link feeds it to `managerGetCallNotes`, which `^\d{4}-\d{2}-\d{2}$`-rejects a raw coerced Date, F cycle-8). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date — since cycle 11 (L-4) keyed off the WINDOW's true oldest scanned day (`cnReadCallNoteAuditRows_` returns `oldestScannedDay` from the raw window, any action), not the oldest MATCHING row: a 4000-row punch-dominated stretch with zero CN rows used to render an empty result with no "narrow the range" hint while older CN rows sat beyond the scan cap. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
 INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
-INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request. **Cycle-11 M-1: the guard also runs on the STATUS-CHANGE path** — `updateTimeOffStatus` re-checks `hasActiveTimeOffOnDate_(sheet, empId, date, i)` (its own row excluded via the optional 4th arg) before any →Approved deduct, so flipping an old Denied/Pending row to Approved beside an existing Approved row can no longer recreate the double-deduct signature (the last creator of the H1 class `getPtoReconciliation` detects after the fact). Approving a lone Pending row is unaffected. Both submit paths ALSO bound the date to a sanity horizon (`TIMEOFF_MAX_DAYS_AHEAD`=370 / `TIMEOFF_MAX_DAYS_BACK`=90, measured in the rep's/target's tz — cycle-11 L-11: the time-off date was the module's only unbounded date write; a typo'd year created an approvable, balance-deducting row invisible to every month view). Pinned by `test_updateTimeOff_dupApproveRejected` + the extended `test_submitTimeOff_rejectsBadDate` | Subsystem: Server
+INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request. **Cycle-11 M-1: the guard also runs on the STATUS-CHANGE path** — `updateTimeOffStatus` re-checks `hasActiveTimeOffOnDate_(sheet, empId, date, i)` (its own row excluded via the optional 4th arg) before any →Approved deduct, so flipping an old Denied/Pending row to Approved beside an existing Approved row can no longer recreate the double-deduct signature (the last creator of the H1 class `getPtoReconciliation` detects after the fact). Approving a lone Pending row is unaffected. Both submit paths ALSO bound the date to a sanity horizon (`TIMEOFF_MAX_DAYS_AHEAD`=370 / `TIMEOFF_MAX_DAYS_BACK`=90, measured in the rep's/target's tz — cycle-11 L-11: the time-off date was the module's only unbounded date write; a typo'd year created an approvable, balance-deducting row invisible to every month view). **Operator 2026-08-18: `submitTimeOffRange(start, end, type, notes)` (the multi-day path) carries the SAME guard per weekday, ATOMICALLY (the INV-106 posture): every weekday in the range is checked and a conflict on ANY of them rejects the whole batch NAMING the dates — nothing is written. Weekends are skipped; the store stays one-row-per-date, so every downstream reader (calendar, approval queue, INV-03 transitions, bulk approve, cancel) sees the rows as if filed singly.** Pinned by `test_updateTimeOff_dupApproveRejected` + the extended `test_submitTimeOff_rejectsBadDate` + `test_submitTimeOffRange_weekendSkipAtomicCaps` | Subsystem: Server
 INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test. `TIME_OFF_TYPES` NO LONGER contains `'Sick Leave'` (deferred #2): the day-type `<select>` dropped it too (still ⊆), so no new sick request is creatable via the UI or a direct RPC; the sick BUCKET machinery is intentionally retained for legacy reverts (INV-17/INV-72) | Subsystem: Server
 INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied payload before the append: field count ≤ 200 and per-cell char length ≤ 45000 (under the 50k Sheets cell limit) for both the data JSON and the signature. On exceed it returns a specific error and leaves the token `pending` for retry, rather than throwing mid-write; also caps the number of arbitrary keys an unauthenticated caller can persist; since cycle 9 (L-7) the recipient-supplied `_meta.openedAt` is length-capped too (64 chars — the one previously unbounded cell input). Cycle-17 batch ⑤ closed the REP-side family: `createFormToken` bounds `recipientName` (≤200 chars) and requires `prefillData` to be a plain object with ≤50 keys and ≤20k serialized JSON, rejected BEFORE the append — the last uncapped client-writable PHI cells. Defense-in-depth (B5): `form_public.html`'s `SIG_PAD.toDataURL` downscales the signature EXPORT to ≤ 600px wide (the capture canvas is `rect.width * devicePixelRatio`, large on retina/mobile) so a legitimate signature's base64 stays well under one cell and never trips this cap — capture stays full-res for smooth drawing. A B5 "store the signature in Drive" alternative was deliberately NOT built: it would split a HIPAA-attested append-only record (§164.312(c)) across two stores and require integrating the destructive `purgeExpiredFormData` to avoid orphaned PHI in Drive — disproportionate risk for a cap that the capture-side downscale already keeps from biting | Subsystem: Server + Client (public forms)
 INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
@@ -7990,6 +8045,10 @@ S46 | Consolidated Time / PTO page + quick-actions card (operator 2026-08-18; re
     - Click "Request punch edit" → the #4a adjustment-request modal opens (its own bounded date picker)
     - In DevTools, set a stale `localStorage.umsMergeMode = 'timesheet'`; refresh → no effect (the key is retired and ignored)
     - Confirm the calendar renders worked-hours corner badges + PTO dots as before
+    - **(range round, operator 2026-08-18)** In the quick-actions card, fill BOTH dates (a Mon and the Fri of the NEXT week) → Request → the pinned day modal opens on the Monday with "Through" pre-filled; the balance preview reads "N weekdays × 1d" and projects the multiplied deduction; Submit → toast reports "N request(s) submitted — 2 weekend day(s) skipped", the calendar shows a pending dot on each weekday, and Your Requests lists one row per day (each individually cancelable/approvable)
+    - Submit a range overlapping an EXISTING pending/approved day → the whole batch is rejected naming the conflicting date(s), and NO rows were written (check the sheet)
+    - In the day modal opened from a calendar tap, leave "Through" blank → the single-day flow is unchanged
+    - **(accrual round)** Put `1.25` in the rep's Employees column Q (`PtoAccrual`), wait out the 5-min roster cache (or run `clearCaches_()`), reload → the Annual-leave tile reads "ACCRUING 1.25D/MO" with "balance → ≈Nd by Dec 31" and a bar that FILLS with accruals; blank the cell → the /15-days fixed-allotment tile returns
   Expected: One page; the rail's pay-period block lazy-loads via `loadTimesheetSideRail_` on every render (a failed load renders the error card in that slot only). The PTO path is the SAME day-modal submit flow a calendar tap uses (one submit path); closing/submitting the modal behaves per S47/S4. No `.mp-mode` markup or `umsMergeMode` read/write remains (pinned).
 
 S47 | Hover-triggered day modal (Round 2 · 8c) | Subsystem: Client (Time Clock views)

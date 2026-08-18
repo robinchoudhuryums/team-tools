@@ -800,7 +800,25 @@ Updated: 2026-08-11
   (color: var(--paper-card), measured illegible as #fff first). Pin + 5
   bites; timeoff-light/dark-wide re-shot (0 overflow). S39/S46/S79
   updated; block at .cycle/blocks/18pre-timeoff-consolidation-*.
-- Pure 553, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
+- Follow-up (operator round 6, 2026-08-18, post-#172 redeploy): RANGE
+  time-off requests + ACCRUAL PTO tile. Server: submitTimeOffRange
+  (rep-callable, locked, ATOMIC — INV-94 dup-guard per weekday with the
+  whole batch rejected naming conflict dates, INV-95 whitelist, L-11
+  horizon both ends, C17-⑤ notes bound, 31-day span cap, weekend skip;
+  one Pending row per weekday so every downstream reader is unchanged);
+  EMP.PTO_ACCRUAL col Q (display-only d/mo rate, empPtoAccrual_
+  fail-safe) + ROSTER_CACHE_KEY v10 (INV-28). Client: day modal
+  "Through (optional)" field (per-open reset, preview × weekday count,
+  dual submit routing), quick-actions card second date threading through
+  the {date, through} pending handoff, and the accrual tile variant
+  (ACCRUING X.XXd/mo, balance → ≈Dec-31 projection, filling bar; blank
+  Q = legacy tile byte-identical — chosen over server-side auto-credit,
+  which would double-count against hand edits). Pin +1 (554) with 5
+  bites incl. atomicity order + behavioural counter; editor +1
+  (test_submitTimeOffRange_weekendSkipAtomicCaps ≈303); mock fixture
+  accrual-on; INV-28/94 amended, column-Q checklist entry, S46 extended.
+  OPERATOR ACTION: fill column Q for accruing agents (optional).
+- Pure 554, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics

@@ -1014,6 +1014,7 @@ function _runAllTests() {
   // H1 / M1 — duplicate-date guard + leave-type validation on time-off submit
   _integrationTest('submitTimeOff_duplicateDateRejected',      test_submitTimeOff_duplicateDateRejected);
   _integrationTest('submitTimeOff_invalidTypeRejected',        test_submitTimeOff_invalidTypeRejected);
+  _integrationTest('submitTimeOffRange_weekendSkipAtomicCaps', test_submitTimeOffRange_weekendSkipAtomicCaps);
   _integrationTest('managerSubmitTimeOff_duplicateDateRejected', test_managerSubmitTimeOff_duplicateDateRejected);
 
   // B1 — PTO balance reconciliation (double-deduct detection)
@@ -2061,6 +2062,44 @@ function test_submitTimeOff_invalidTypeRejected() {
     _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day', ''), 'Invalid leave type');
     _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, '', ''), 'Invalid leave type');
   });
+}
+
+// ── submitTimeOffRange (operator 2026-08-18, multi-day requests) ──
+// Weekend skip + ATOMIC INV-94 dup rejection + span/order/type guards. One
+// Pending row per WEEKDAY in the range; a conflict on ANY day writes NOTHING.
+function test_submitTimeOffRange_weekendSkipAtomicCaps() {
+  _clearTestState(_TEST_INDIA_ID);
+  // A future Monday ≥14 days out — stable whatever day the suite runs, and
+  // far from every tz/day boundary (the cycle-14 target-tz lesson).
+  const base = new Date(); base.setDate(base.getDate() + 14);
+  while (base.getDay() !== 1) base.setDate(base.getDate() + 1);
+  const iso = (n) => { const d = new Date(base); d.setDate(d.getDate() + n); return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); };
+  const mon = iso(0), fri = iso(4), sat = iso(5), sun = iso(6), nextMon = iso(7);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(submitTimeOffRange('05/17/2026', fri, 'Full Day', ''), 'Invalid date');
+    _assertFailure(submitTimeOffRange(fri, mon, 'Full Day', ''), 'on or before');
+    _assertFailure(submitTimeOffRange(mon, iso(40), 'Full Day', ''), 'Range too long');
+    _assertFailure(submitTimeOffRange(mon, fri, 'Half Day', ''), 'Invalid leave type');
+    _assertFailure(submitTimeOffRange(sat, sun, 'Full Day', ''), 'only weekend');
+    // Happy path: Mon..next-Mon = 8 calendar days → 6 weekday rows, 2 skipped.
+    const r = submitTimeOffRange(mon, nextMon, 'Full Day', 'trip');
+    _assertSuccess(r);
+    _assertEq(r.count, 6, '6 weekday rows written');
+    _assertEq(r.skippedWeekendDays, 2, '2 weekend days skipped');
+    // Atomic dup: an overlapping range (fri..Tue) conflicts on fri + nextMon —
+    // the WHOLE batch rejects and the non-conflicting Tue is NOT written.
+    _assertFailure(submitTimeOffRange(fri, iso(8), 'Full Day', ''),
+      'already have a pending or approved');
+  });
+  const rows = getAdpSS_().getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+  let count = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][TO.EMP_ID]).trim() !== _TEST_INDIA_ID) continue;
+    const d = normalizeDate_(rows[i][TO.DATE]);
+    if (d >= mon && d <= iso(8)) count++;
+  }
+  _assertEq(count, 6, 'exactly the 6 weekday rows — the atomic reject added nothing');
+  _clearTestState(_TEST_INDIA_ID);
 }
 
 // ── cancelTimeOffRequest ──

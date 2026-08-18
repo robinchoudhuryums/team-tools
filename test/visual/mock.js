@@ -271,7 +271,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
                           { date: year + '-' + m2 + '-30', type: 'Half Day - Morning', status: 'Pending', submittedAt: todayLocal + ' 10:00:00', notes: '' }],
         allRequests: [{ date: year + '-' + m2 + '-28', type: 'Full Day', status: 'Approved', submittedAt: todayLocal + ' 09:00:00' },
                       { date: year + '-' + m2 + '-30', type: 'Half Day - Morning', status: 'Pending', submittedAt: todayLocal + ' 10:00:00' }],
-        teammates: [], holidays: [], annualLeave: 11.5, sickLeave: 10, ptoEnabled: true, annualLeaveMax: 15 };
+        teammates: [], holidays: [], annualLeave: 11.5, sickLeave: 10, ptoEnabled: true, annualLeaveMax: 15,
+        // Accrual variant on camera (operator 2026-08-18): a positive column-Q
+        // rate flips the tile to the growing/projection framing. The legacy
+        // fixed-allotment tile is source-pinned (blank Q = byte-identical).
+        ptoAccrualPerMonth: 1.25 };
     },
     // Pay-period side-rail block (always-on since the 2026-08-18 Time/PTO
     // consolidation). Shape mirrors buildTimesheetForEmployee_'s return:

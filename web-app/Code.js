@@ -335,7 +335,16 @@ const EMP = {
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
+  PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate in DAYS PER MONTH (operator 2026-08-18; e.g. 1.25). DISPLAY-ONLY: it reframes the rep's annual-leave tile as a growing accrued balance + year-end projection. The BALANCE (col I) stays the hand-maintained source of truth — the system never credits accruals itself (auto-crediting would double-count against manual balance edits). Blank/garbage = the fixed-allotment tile, exactly as before.
 };
+
+/** Parse the optional column-Q accrual rate: a finite positive days/month
+ *  number, else null (fail-safe — a typo'd cell degrades to the legacy tile,
+ *  the parseShiftOverride_ posture). */
+function empPtoAccrual_(cell) {
+  const n = parseFloat(String(cell == null ? '' : cell).replace(/[^0-9.]/g, ''));
+  return (isFinite(n) && n > 0 && n <= 31) ? n : null;
+}
 /**
  * The ONE roster-INCLUSION predicate: a row counts as a CURRENT employee iff
  * it carries a non-blank email. Returns the trimmed email, or '' — so a caller
@@ -619,7 +628,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v9';   // bumped: PayRate column P (pay statement, operator 2026-08-17)
+const ROSTER_CACHE_KEY = 'employee_roster_v10';   // bumped: PtoAccrual column Q (accrual-aware PTO tile, operator 2026-08-18)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -1183,6 +1192,65 @@ function submitTimeOffRequest(date, type, notes) {
     toSheet.appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
     writeAuditLog_(emp, 'TimeOffRequest', date, '', false, 0, type + (notes ? ' — ' + notes : ''));
     return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Multi-day time-off request (operator 2026-08-18). ONE row per WEEKDAY in
+ *  [startDate, endDate] — the store's one-row-per-date model is unchanged, so
+ *  every downstream reader (calendar, dashboards, approval queue, INV-03
+ *  transitions, bulk approve) works on the rows as if filed singly. ATOMIC
+ *  (the INV-106 posture): every weekday is validated — INV-94 dup-date guard,
+ *  INV-95 type whitelist, the L-11 horizon — and NOTHING is written unless
+ *  all pass; a conflict rejects the whole batch NAMING the dates. Weekends
+ *  inside the range are skipped silently (a Mon–Fri×2 range naturally spans
+ *  them); a range of only weekend days is rejected. Rows stay Pending — no
+ *  balance change until approval (INV-03), each carrying the same submittedAt
+ *  (cancel/update match on (date, submittedAt), and dates differ per row). */
+const TIMEOFF_RANGE_MAX_DAYS = 31;
+function submitTimeOffRange(startDate, endDate, type, notes) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    notes = String(notes || '').slice(0, 1000);   // the C17-⑤ bound, matching the single-day path
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+        !endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { success: false, error: 'Invalid date format.' };
+    if (startDate > endDate)
+      return { success: false, error: 'Start date must be on or before the end date.' };
+    if (daysBetween_(startDate, endDate) > TIMEOFF_RANGE_MAX_DAYS)
+      return { success: false, error: 'Range too long (max ' + TIMEOFF_RANGE_MAX_DAYS + ' days) — split it into smaller requests.' };
+    {
+      const todayRep = fmtDateTz_(new Date(), empTz_(emp));
+      if (daysBetween_(todayRep, endDate) > TIMEOFF_MAX_DAYS_AHEAD)
+        return { success: false, error: 'That range ends more than a year ahead — double-check the year.' };
+      if (daysBetween_(todayRep, startDate) < -TIMEOFF_MAX_DAYS_BACK)
+        return { success: false, error: 'That range starts more than ' + TIMEOFF_MAX_DAYS_BACK + ' days in the past.' };
+    }
+    if (!isValidTimeOffType_(type))
+      return { success: false, error: 'Invalid leave type.' };
+    const span = daysBetween_(startDate, endDate);
+    const days = [];
+    for (let i = 0; i <= span; i++) {
+      const d = addDaysIso_(startDate, i);
+      const dow = new Date(d + 'T00:00:00Z').getUTCDay();
+      if (dow !== 0 && dow !== 6) days.push(d);
+    }
+    if (days.length === 0)
+      return { success: false, error: 'That range contains only weekend days.' };
+    const toSheet = getOrCreateTimeOffSheet_();
+    const conflicts = days.filter(d => hasActiveTimeOffOnDate_(toSheet, emp.id, d));
+    if (conflicts.length > 0)
+      return { success: false, error: 'You already have a pending or approved request on: ' + conflicts.join(', ') + '. Cancel it or adjust the range.' };
+    const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    days.forEach(d => {
+      toSheet.appendRow([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]);
+      writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
+        type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
+    });
+    return { success: true, count: days.length, skippedWeekendDays: (span + 1) - days.length };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -11839,6 +11907,9 @@ function buildCalendarForEmployee_(emp, year, month) {
     sickLeave:   emp.sickLeave,
     annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
     sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
+    // Column-Q accrual rate (operator 2026-08-18) — null for lump-grant reps.
+    // Display-only: reframes the tile; never enters any balance arithmetic.
+    ptoAccrualPerMonth: emp.ptoAccrualPerMonth || null,
   };
 }
 
@@ -13802,6 +13873,7 @@ function getEmployeeInfo_() {
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
         departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),   // parsed lazily via empDepartments_
         scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),          // per-rep shift override (Turn D)
+        ptoAccrualPerMonth: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),   // column Q, display-only (accrual tile)
       };
     }
   }
@@ -13832,6 +13904,7 @@ function lookupEmployeeById_(empId) {
       managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
       departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
       scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),
+      ptoAccrualPerMonth: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),
     };
   }
   return null;

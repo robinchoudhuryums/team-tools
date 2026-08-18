@@ -9991,15 +9991,15 @@ test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit c
   assert.ok(/<button type="button" class="to-act-btn" id="to-adj-open">/.test(to), 'Request punch edit is a real button');
   assert.ok(/<input type="date" id="to-req-date" value="\$\{def\}" min="\$\{todayIso\}"/.test(to),
     'the request date picker is floored at today');
-  const orf = to.match(/function openRequestForDate_\(dateStr\) \{[\s\S]*?\n\}/);
-  assert.ok(orf, 'openRequestForDate_ exists');
-  assert.ok(/calData\.year === y && calData\.month === m/.test(orf[0]) && /openPinnedDayModal_\(dateStr\)/.test(orf[0]),
+  const orf = to.match(/function openRequestForDate_\(dateStr, throughStr\) \{[\s\S]*?\n\}/);
+  assert.ok(orf, 'openRequestForDate_ exists (range round: takes the optional through)');
+  assert.ok(/calData\.year === y && calData\.month === m/.test(orf[0]) && /openPinnedDayModal_\(dateStr, thru\)/.test(orf[0]),
     'same displayed month opens the pinned day modal directly');
-  assert.ok(/TO_PENDING_DAY_OPEN = dateStr;\s*calNavTo_\(y, m\);/.test(orf[0]),
-    'another month hands off via the pending variable + calNavTo_');
-  assert.ok(/if \(TO_PENDING_DAY_OPEN\) \{[\s\S]{0,500}?openPinnedDayModal_\(pend\)/.test(to),
-    'renderTimeOffView consumes the pending cross-month open');
-  assert.ok(/pend\.slice\(0, 7\) === `\$\{data\.year\}-\$\{String\(data\.month\)\.padStart\(2, '0'\)\}`/.test(to),
+  assert.ok(/TO_PENDING_DAY_OPEN = \{ date: dateStr, through: thru \};\s*calNavTo_\(y, m\);/.test(orf[0]),
+    'another month hands off via the pending variable + calNavTo_ ({date, through})');
+  assert.ok(/if \(TO_PENDING_DAY_OPEN\) \{[\s\S]{0,500}?openPinnedDayModal_\(pend\.date, pend\.through\)/.test(to),
+    'renderTimeOffView consumes the pending cross-month open incl. the through');
+  assert.ok(/pend\.date\.slice\(0, 7\) === `\$\{data\.year\}-\$\{String\(data\.month\)\.padStart\(2, '0'\)\}`/.test(to),
     'the pending open is guarded to the month actually rendered');
   // ── Pay-statement click-through: the Request-edit button renders ONLY on a
   // fixable day (incomplete, or an empty non-weekend non-PTO day), ONLY
@@ -10025,6 +10025,73 @@ test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit c
   assert.ok(oam, 'openAdjustModal takes the optional prefill');
   assert.ok(/prefillDate >= minIso && prefillDate <= todayIso/.test(oam[0]),
     'the prefill honors the [min, today] picker bounds');
+});
+
+test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const to = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  const modals = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
+  // ── Server: submitTimeOffRange is ATOMIC (INV-106 posture) and carries the
+  // single-day path's guards — INV-94 dup-date per weekday (whole batch
+  // rejected, dates NAMED), INV-95 type whitelist, the L-11 horizon on both
+  // ends, the C17-⑤ notes bound, a span cap, and a weekend skip. Nothing is
+  // appended unless every check passes: the conflicts rejection must sit
+  // BEFORE the first appendRow. (The INV-01 finally-release structural scan
+  // covers the lock automatically.)
+  const str = code.match(/function submitTimeOffRange\(startDate, endDate, type, notes\) \{[\s\S]*?\n\}/);
+  assert.ok(str, 'submitTimeOffRange exists');
+  const b = str[0];
+  assert.ok(/isValidTimeOffType_\(type\)/.test(b), 'INV-95 type whitelist');
+  assert.ok(/hasActiveTimeOffOnDate_\(toSheet, emp\.id, d\)/.test(b), 'INV-94 dup-date guard per weekday');
+  assert.ok(/if \(conflicts\.length > 0\)/.test(b) &&
+            b.indexOf('if (conflicts.length > 0)') < b.indexOf('appendRow'),
+    'conflicts reject the WHOLE batch before any row is written (atomic)');
+  assert.ok(/conflicts\.join\(', '\)/.test(b), 'the rejection NAMES the conflicting dates');
+  assert.ok(/dow !== 0 && dow !== 6/.test(b), 'weekends inside the range are skipped');
+  assert.ok(/notes = String\(notes \|\| ''\)\.slice\(0, 1000\)/.test(b), 'notes carry the 1000-char bound');
+  assert.ok(/TIMEOFF_RANGE_MAX_DAYS/.test(b) && /const TIMEOFF_RANGE_MAX_DAYS = 31/.test(code), 'span-capped');
+  assert.ok(/daysBetween_\(todayRep, endDate\) > TIMEOFF_MAX_DAYS_AHEAD/.test(b) &&
+            /daysBetween_\(todayRep, startDate\) < -TIMEOFF_MAX_DAYS_BACK/.test(b),
+    'horizon bounds check the range END ahead and START back');
+  // ── Client: the Through field resets per open, drives the preview
+  // multiplier, and routes the submit; the pure weekday counter mirrors the
+  // server's enumeration (behavioural below).
+  assert.ok(/id="day-through"/.test(modals), 'the day modal carries the optional Through field');
+  assert.ok(/thr\.value = ''; thr\.min = dateStr;/.test(to), 'openDayModal resets + floors Through per open');
+  assert.ok(/ded\.days \* nDays/.test(to), 'the balance preview multiplies by the weekday count');
+  assert.ok(/runner\.submitTimeOffRange\(dayModalDate, through, type, notes\)/.test(to) &&
+            /runner\.submitTimeOffRequest\(dayModalDate, type, notes\)/.test(to),
+    'submit routes range vs single-day');
+  const cw = loadFunction(sb, 'tc/script_timeoff.html', 'countWeekdaysIso_');
+  assert.strictEqual(cw('2026-08-17', '2026-08-21'), 5, 'Mon–Fri = 5 weekdays');
+  assert.strictEqual(cw('2026-08-22', '2026-08-23'), 0, 'Sat–Sun = 0');
+  assert.strictEqual(cw('2026-08-21', '2026-08-24'), 2, 'Fri–Mon spans the weekend = 2');
+  assert.strictEqual(cw('2026-08-19', '2026-08-19'), 1, 'single weekday = 1');
+  // ── Accrual tile: column Q is declared AND read (INV-184 — never a dead
+  // enum member), the roster cache key bumped (INV-28), the parse fail-safe
+  // (behavioural), and the tile branch display-only — accrual variant gated
+  // on the shipped rate, legacy variant byte-preserved for blank cells.
+  assert.ok(/PTO_ACCRUAL:16/.test(code), 'EMP.PTO_ACCRUAL declared (column Q)');
+  assert.strictEqual((code.match(/empPtoAccrual_\(rows\[i\]\[EMP\.PTO_ACCRUAL\]\)/g) || []).length, 2,
+    'both emp builders read column Q through the parser');
+  assert.ok(/ptoAccrualPerMonth: emp\.ptoAccrualPerMonth \|\| null/.test(code),
+    'the calendar payload ships the rate');
+  assert.ok(/ROSTER_CACHE_KEY = 'employee_roster_v10'/.test(code), 'INV-28 — cache key bumped for the new column');
+  vm.runInContext(extractRawFunction('Code.js', 'empPtoAccrual_'), sb, { filename: 'Code.js#empPtoAccrual_' });
+  const pa = sb.empPtoAccrual_;
+  assert.strictEqual(pa('1.25'), 1.25, 'plain rate parses');
+  assert.strictEqual(pa('1.25 d/mo'), 1.25, 'unit-annotated cell parses');
+  assert.strictEqual(pa(''), null, 'blank = legacy tile');
+  assert.strictEqual(pa('n/a'), null, 'garbage = legacy tile (fail-safe)');
+  assert.strictEqual(pa(0), null, 'zero = legacy tile');
+  assert.strictEqual(pa('40'), null, 'implausible rate (>31 d/mo) = legacy tile');
+  assert.ok(/data\.ptoAccrualPerMonth === 'number' && data\.ptoAccrualPerMonth > 0/.test(to),
+    'the accrual tile is gated on a shipped positive rate');
+  assert.ok(/ACCRUING \$\{rateStr\}D\/MO/.test(to) && /by Dec 31/.test(to),
+    'the accrual variant frames the rate + year-end projection');
+  assert.ok(/\/ \$\{formatLeaveDays\(annualMax\)\} days/.test(to),
+    'the legacy fixed-allotment variant survives for blank column Q');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
