@@ -16114,11 +16114,39 @@ function getMyMetricsRange(from, to) {
  * Accepts either a single date or from/to. Also returns a 30-day team
  * % Answered trend when viewing a single date.
  */
+/** The REP view of the team aggregate (operator 2026-08-18: "users should
+ *  have the team metrics available as well") — whitelist-BUILT, the
+ *  trainStripQuizForRep_ discipline: a field missed by a delete-key copy
+ *  can't leak here because nothing rides unless named. Reps get the
+ *  TEAM-LEVEL aggregate the Dashboard Team card already summarizes (totals,
+ *  trend, the queue/department transfer folds — queue rows carry counts,
+ *  never names) and NEVER the per-rep `reps[]` rows or the roster↔CDR name
+ *  diagnostics: INV-124's posture is that individual peers' numbers stay
+ *  manager-only (My Stats anonymizes the team line for the same reason), and
+ *  the reps table names every colleague. `repView: true` tells the client
+ *  which shape it holds. */
+function teamMetricsRepView_(full) {
+  return {
+    repView: true,
+    from: full.from, to: full.to, date: full.date,
+    teamTotals: full.teamTotals,
+    trend: full.trend,
+    transferMeta: full.transferMeta,
+    queueRows: full.queueRows,
+    groupRows: full.groupRows,
+    alertThreshold: full.alertThreshold,
+  };
+}
+
 function getTeamMetrics(dateOrFrom, to) {
   try {
     var t0 = Date.now();
     var callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // Operator 2026-08-18: enrolled REPS may read the TEAM AGGREGATE (the
+    // whitelist-built teamMetricsRepView_ above — applied on BOTH return
+    // paths, cache hit included, because the cache stores the FULL manager
+    // payload under a caller-free key). Managers keep the full response.
+    if (!callerEmp) return { error: 'Your account is not registered.' };
 
     var dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     var from, toDate;
@@ -16147,7 +16175,10 @@ function getTeamMetrics(dateOrFrom, to) {
     if (useTeamCache) {
       try {
         var cachedTeam = teamMetricsCache.get(teamCacheKey);
-        if (cachedTeam) { var cto = JSON.parse(cachedTeam); cto.cached = true; return cto; }
+        if (cachedTeam) {
+          var cto = JSON.parse(cachedTeam); cto.cached = true;
+          return callerEmp.isManager ? cto : teamMetricsRepView_(cto);
+        }
       } catch (_) {}
     }
 
@@ -16386,7 +16417,7 @@ function getTeamMetrics(dateOrFrom, to) {
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }
-    return teamResult;
+    return callerEmp.isManager ? teamResult : teamMetricsRepView_(teamResult);
   } catch (err) { return { error: err.message }; }
 }
 

@@ -192,6 +192,12 @@
 
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
   .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .dash-head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* Card → Metrics click-through (operator 2026-08-18): link treatment (V-12). */
+  .dash-open-btn { appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--info-deep); display: inline-flex; align-items: center; gap: 3px; padding: 3px 5px; border-radius: var(--radius-sm); }
+  .dash-open-btn:hover { text-decoration: underline; background: var(--paper-2); }
   /* A13 (cycle 13): an <h2>, not a span — margin:0 zeroes the UA h2 default so
      the flex head row is pixel-identical. */
   .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
@@ -678,8 +684,17 @@ function clkDashCarouselHtml_(key, title) {
     var card = (key === 'mine') ? clkDashOwnCard_(res) : clkDashTeamCard_(res);
     return '<div class="dash-sld">' + card + '</div>';
   }).join('');
+  // Operator 2026-08-18 — click-through to the full Metrics page (the daily
+  // trendlines live there; a mini chart on the card was mocked and passed
+  // on). V-12 link treatment: navigation NAMES its destination and is not a
+  // pill; the seg chip beside it keeps the pill because it carries state.
+  var openTab = (key === 'mine') ? 'metricsMyStats' : 'metricsTeam';
+  var openLbl = (key === 'mine') ? 'My Stats' : 'Team Metrics';
+  var openBtn = '<button type="button" class="dash-open-btn" title="Open ' + openLbl + ' in Metrics"' +
+    ' onclick="enterTool(\'metrics\',\'' + openTab + '\')">' + esc(openLbl) + ' ' + icon('chevronRight', 10) + '</button>';
   return '<div class="dash-card">' +
-    '<div class="dash-card-head"><h2 class="dash-seclabel">' + esc(title) + '</h2>' + clkDashSegHtml_(key) + '</div>' +
+    '<div class="dash-card-head"><h2 class="dash-seclabel">' + esc(title) + '</h2>' +
+    '<div class="dash-head-right">' + openBtn + clkDashSegHtml_(key) + '</div></div>' +
     '<div class="dash-vp"><div class="dash-trk" id="dash-trk-' + key + '" style="transform:translateX(-' + (i * 100) + '%)">' + slides + '</div></div>' +
   '</div>';
 }

@@ -1427,7 +1427,9 @@ function mRenderTeamMetrics_(data) {
   // stuck on its spinner with no surfaced error. Treat a missing shape as
   // "no data" rather than a thrown success handler.
   var t = data.teamTotals;
-  if (!t || !data.reps) {
+  // repView (operator 2026-08-18): a rep's payload carries the team AGGREGATE
+  // only — no reps[] by design, so its absence is the expected shape there.
+  if (!t || (!data.reps && !data.repView)) {
     el.innerHTML = '<div class="m-empty">No metrics available for this range.</div>';
     return;
   }
@@ -1504,8 +1506,13 @@ function mRenderTeamMetrics_(data) {
       ' &nbsp; Team-wide coverage below 80%.</div>';
   }
 
-  // Per-rep table
-  if (data.reps.length === 0) {
+  // Per-rep table — manager payloads only. A rep's repView payload stops at
+  // the aggregate above; the note names the boundary so the shorter page
+  // reads as designed, not as data that failed to load (INV-187's cousin).
+  if (data.repView) {
+    html += '<div class="m-hint" style="margin-top:var(--space-md)">' + icon('info', 14) +
+      ' Team-level metrics only — the per-rep breakdown is visible to managers.</div>';
+  } else if (data.reps.length === 0) {
     html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
     // #10 — Copy table: TSV of whatever table the current scope displays.

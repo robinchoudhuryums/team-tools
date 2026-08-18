@@ -9252,15 +9252,60 @@ test('the three slow tabs paint last-good instantly and refresh behind the pill'
 test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const f = nc(extractRawFunction('Code.js', 'getTeamMetrics'));
-  const gateAt = f.indexOf('Manager access required');
+  // Operator 2026-08-18: the manager GATE became an auth check + a per-role
+  // SHAPE (reps get the whitelist-built aggregate) — the invariant this pin
+  // kept is unchanged in spirit: no cache read before auth, and the cached
+  // FULL payload never reaches a rep unstripped (both return paths).
+  const gateAt = f.indexOf('Your account is not registered');
   const readAt = f.indexOf('teamMetricsCache.get(teamCacheKey)');
-  assert.ok(gateAt > 0 && readAt > gateAt, 'the cache read sits AFTER the manager gate');
+  assert.ok(gateAt > 0 && readAt > gateAt, 'the cache read sits AFTER the auth check');
+  assert.strictEqual((f.match(/callerEmp\.isManager \? \w+ : teamMetricsRepView_\(\w+\)/g) || []).length, 2,
+    'BOTH return paths (cache hit + fresh compute) strip for a non-manager');
   // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
   // a transfer-read error must not pin a degraded aggregate for the TTL.
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
   assert.ok(/team_metrics_v1:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate');
+});
+
+test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // Behavioral: drive the real strip with a full-shaped manager payload and
+  // assert the EXACT key set — whitelist-BUILT (the trainStripQuizForRep_
+  // discipline), so a new manager-only field added to teamResult later can
+  // never ride to reps by default.
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), ctx);
+  const full = {
+    from: 'a', to: 'b', date: 'a', reps: [{ repName: 'X' }], teamTotals: { rung: 1 },
+    unmatchedAgents: ['Z'], rosterWithNoCdr: ['Y'], likelyMismatches: [{}],
+    trend: [], transferMeta: { available: true }, queueRows: [], groupRows: [],
+    alertThreshold: 85, meta: { rowsScanned: 9 }, cached: true, futureManagerOnlyField: 'leak',
+  };
+  const rep = ctx.teamMetricsRepView_(full);
+  assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold'].sort().join('|'),
+    'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
+  assert.strictEqual(rep.repView, true);
+  // Registry: the tab is visible to everyone now (the server shape is the
+  // boundary); the client render treats a reps-less repView payload as the
+  // expected shape and says the breakdown is manager-only rather than
+  // rendering "no metrics".
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  const teamEntry = core.match(/metricsTeam:\s*\{[^}]*\}/)[0];
+  assert.ok(!/managerOnly/.test(teamEntry), 'metricsTeam is no longer managerOnly');
+  const render = nc(extractFunction('metrics/script_metrics.html', 'mRenderTeamMetrics_'));
+  assert.ok(/!data\.reps && !data\.repView/.test(render), 'a reps-less repView payload is not "no metrics"');
+  assert.ok(/if \(data\.repView\) \{/.test(render) && /visible to managers/.test(render),
+    'the rep view names the manager-only boundary instead of a silent short page');
+  // Dashboard click-throughs: real buttons (INV-173) landing on the right
+  // tabs; team card -> metricsTeam, own card -> metricsMyStats.
+  const car = nc(extractFunction('tc/script_clock.html', 'clkDashCarouselHtml_'));
+  assert.ok(/'mine'\) \? 'metricsMyStats' : 'metricsTeam'/.test(car), 'per-card destination tabs');
+  assert.ok(/<button type="button" class="dash-open-btn"/.test(car) && /enterTool\(\\'metrics\\'/.test(car),
+    'the click-through is a real button into the Metrics tool');
 });
 
 console.log('\nemails — the three CN digests share the branded chrome (operator 2026-08-13)');
