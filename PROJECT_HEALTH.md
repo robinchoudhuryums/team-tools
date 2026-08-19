@@ -1,6 +1,75 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 17 (broad scan) CLOSED 2026-08-05 — reflected net +12 (15 prod fixes −
+3 new failure modes; 3 capabilities; 28 defensive).** 0 Critical / 1 High /
+~40 findings, ALL implemented in-cycle across 7 batches, each followed by
+`/sync-docs`, **merged as PR #154 (13eeed2) and deployed** — the second
+consecutive cycle to reach `main` inside its own cycle. **Axis-B lowest: Test
+Coverage Quality** (for the second cycle running).
+
+**The spine of the cycle: INV-187 closed as a CLASS.** Every best-effort read
+now carries its outcome — the export's `skippedReps`, the CN loaders'
+preserve-last-good, the three manager lazy cards, and batch-2's nine
+cross-rep walks. The pattern that produced the flagship finding of cycles 12,
+16 AND 17 is finished rather than sampled.
+
+**The one High was test integrity, again.** The A2 compact-grid scan's regex
+matched ZERO of `styles.html`'s ~67 compact selectors while the documentation
+claimed it covered them; fixing the regex surfaced 9 live obligations,
+including two genuinely missing breakpoints on the live punch grid. Alongside
+it: five hand-listed scans derived per INV-179, three visual-fixture field-name
+drifts, and the first DERIVED fixture-shape pin. The self-reports were also
+CORRECTED downward at reflection — the five batch blocks' nets summed to 33
+while each block separately marked most items "fired-this-month: NO"; re-derived
+strictly per the template that is 15/28/3, net 12. Treat batch-block nets as
+"real defect" counts, not fired counts.
+
+**Scale:** C17-9 is the one genuine scale fix — a multi-day Day Edit held the
+ONE project lock through ~124 full-Timesheet reads plus ~124 `openById` calls
+(the INV-153 starvation class), now one indexed read and a memoized handle.
+
+**Measurement infrastructure repaid itself immediately, for the second cycle
+running:** batch-7's `?failrpc=` error-state harness surfaced a live Low on its
+FIRST run (the Reference landing hangs on a loader when the tree fetch fails) —
+the same shape as cycle 16's `overflowPx` metric finding a clipped heading four
+interface-focused sessions had missed.
+
+Tests: pure 407→433 (26 pins, every one bite-checked), DOM 69, visual matrix
+29→37. INV-189/190/191 proposed and since WRITTEN.
+
+## Since cycle 17 closed — between-cycles operator work (2026-08-06 → 08-19)
+
+**Three merged PRs of operator-requested feature work sit on top of cycle 17**
+(#171, #172, #173), reflected in `.cycle/blocks/18pre-a-reflect.md`: **net +3**
+(4 prod fixes − 1 new failure mode; 8 capabilities; 6 defensive). Deliberately
+NO metrics.csv row — the template writes one reflect row per CYCLE, cycle 17's
+already exists, and a second would double-count it in any trend report.
+
+Shipped: the Spanish bilingual-members editor; a full-width sweep (Punctuality
+had never been screenshotted, which is why two prior width passes missed its
+inner caps); a load-time/caching sweep; Team Metrics opened to reps as a
+whitelist-built aggregate; **Time/PTO consolidated to one page** with a
+quick-actions Requests card and a pay-statement "Request edit" click-through;
+CN pop-out fluid type + ≤400px stacking (the operator's screenshot showed
+values wrapping one letter per line); **multi-day time-off requests**; and
+**system-computed PTO accrual credits** (INV-194).
+
+**The open item, and it is the honest headline:** the accrual model does not
+match the entitlement rule for the population it was built for. The credit
+writer skips `PtoEnabled=FALSE` reps — which CLAUDE.md documents as exactly
+the PH team — and the rate is days-per-calendar-month while the real rule is
+**3.08 hours per 80 hours WORKED**. It is inert today (it credits nobody), and
+wrong the moment column Q is filled and the flag flipped. Counted as 1 Medium
+new failure mode rather than filed as a spec gap, because the mechanism can
+write unsupported numbers into a payroll-adjacent column. **Awaiting an
+operator decision on the hours→days convention before rebuild.**
+
+**Also open:** the editor suite has NOT been run against #172/#173 — three new
+editor tests have never executed, and `runAllTests()` is the only thing that
+exercises the accrual credit against a real sheet.
+
+## Prior standing (Cycle 16 close, 2026-08-03)
 **Cycle 16 (broad scan) CLOSED 2026-08-03 — reflected net +7 (8 prod fixes − 1
 new failure mode; 1 capability; 5 defensive).** 0 Critical / 0 High / 6 Medium /
 5 Low across 11 findings, ALL implemented across three sessions, each followed by
@@ -426,3 +495,5 @@ backlog was implemented):
 | 2026-07-31 | 14 | net 0 (0 prod fixes − 0 new failure modes; 4 capabilities; 3 defensive) | *(backfilled.)* Operator-requested FEATURE work, not an audit — net 0 is by design. **The headline is a NEGATIVE result:** Phase 0 was a cheap read-only gate built to test whether the approved design was buildable, and it was not (DQE carries one row per (agent, date)), invalidating the original scope before any of it was written. Re-scoped to transfer-only and shipped: queue inventory, per-queue transfer reader, Combined/By-department/By-queue UI, operator-supplied grouping. |
 | 2026-07-31 | 15 | net +1 (2 prod fixes − 1 new failure mode; 4 defensive) | **Seams & Invariants** (cadence 4 of 4). 0 Critical / 0 High / 2 Medium / 3 Low. Fixes: the CDR health card toned off a count that can never reach zero (permanently amber → now tones off the actionable pairing and names the alias to add); and `getTeamMetrics` counted offboarded name-only roster rows into the manager's team table and totals (F3 → one `empRosterEmail_` predicate across 14 walks). Also removed 4 declared-but-unread CONFIG keys — two were knobs against a hardcoded FRIDAY, i.e. a silent no-op for an operator moving the weekly digest. Adopted INV-181–186, clearing a two-cycle backlog. Pure 394→396, DOM 69. |
 | 2026-08-03 | 16 | net +7 (8 prod fixes − 1 new failure mode; 1 capability; 5 defensive) | Broad scan (0 Critical / 0 High / 6 Medium / 5 Low), entire backlog across three sessions, **merged PR #152 and DEPLOYED** (`runAllTests()` 286/0/0 — first cycle since 10 to ship inside its own cycle). Theme: three tripwires each named the right rule then scanned a FIXED LIST of past fixes — deriving A12's sets surfaced **28 violations across six partials** behind a green CI, one of them using a class the tripwire already knew in a file it did not scan. Fixes cluster as *a failure rendered as a confident answer* (F1 unreadable Sheet → 0 notes + CRIT 0% on the manager performance table; F4 a swallowed PTO read made every rep count as working, so an understaffing planner gave a green all-clear; F5 a confident team judgement from a contaminated numerator; F10 the 28 sites) plus the clinical F9 (`parseInt('')` → NaN → an unreadable weight capacity read as UNLIMITED) and two interface fixes (Reference reader 70px at 390px; `uiPrompt` unnamed input + unannounced validator error). Reflection corrected the batch self-report DOWNWARD (8→7). Post-reflection the operator check changed F9's *reason*: the one malformed row is a scratch entry, so no real chair was mis-recommended — but it exposed that the catalog has no disabled-row concept and the Group-3 ladder misclassifies E-codes (both logged, not fixed). Adopted INV-187/188. Pure 391→407, DOM 69, visual 22→29. |
+| 2026-08-05 | 17 | net +12 (15 prod fixes − 3 Low new failure modes; 3 capabilities; 28 defensive) | Broad scan (6 parallel deep-readers + the mandatory visual stage + independent re-verification of every Medium+ claim, zero retractions) → ~40 findings across 7 batches, **merged PR #154 and deployed**. **INV-187 closed as a CLASS** — every best-effort read now carries its outcome, finishing the pattern that produced the flagship finding of cycles 12, 16 AND 17. The one High was TEST INTEGRITY: the A2 scan's regex matched zero of `styles.html`'s ~67 compact selectors while the docs claimed coverage; fixing it surfaced 9 live obligations incl. two real missing breakpoints on the punch grid. Self-reports CORRECTED downward at reflection (batch nets summed to 33; strict per-template re-derivation gives 12). Axis-B lowest: Test Coverage Quality, second cycle running. Pure 407→433, DOM 69, matrix 29→37. |
+| 2026-08-19 | 18pre | net +3 (4 prod fixes − 1 Medium new failure mode; 8 capabilities; 6 defensive) | **Between-cycles operator work, not an audit** (three merged PRs: #171/#172/#173) — reflected in `.cycle/blocks/18pre-a-reflect.md`, deliberately NO metrics.csv row (one reflect row per CYCLE; 17's already exists). Shipped: Spanish-members editor, full-width + caching sweeps, rep-facing Team Metrics aggregate, **Time/PTO consolidated to one page** + quick-actions card + pay-statement request-edit click-through, CN pop-out fluid type + ≤400px stacking, **multi-day time-off requests**, **system-computed PTO accrual** (INV-194). **The headline is the new failure mode:** the accrual model does not match the entitlement rule for the population it was built for — the credit writer skips `PtoEnabled=FALSE` reps (documented as the PH team) and uses days-per-calendar-month while the real rule is 3.08 hours per 80 hours WORKED. Inert today; wrong the moment column Q is filled and the flag flipped. Awaiting an operator decision on the hours→days convention. |

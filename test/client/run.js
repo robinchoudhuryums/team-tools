@@ -10068,80 +10068,141 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
   assert.strictEqual(cw('2026-08-22', '2026-08-23'), 0, 'Sat–Sun = 0');
   assert.strictEqual(cw('2026-08-21', '2026-08-24'), 2, 'Fri–Mon spans the weekend = 2');
   assert.strictEqual(cw('2026-08-19', '2026-08-19'), 1, 'single weekday = 1');
-  // ── Accrual tile: column Q is declared AND read (INV-184 — never a dead
-  // enum member), the roster cache key bumped (INV-28), the parse fail-safe
-  // (behavioural), and the tile branch display-only — accrual variant gated
-  // on the shipped rate, legacy variant byte-preserved for blank cells.
+  // ── Accrual tile (operator 2026-08-19, hours-driven): column Q is declared
+  // AND read (INV-184 — never a dead enum member), the roster cache key
+  // bumped (INV-28), the parse fail-safe (behavioural), and the tile shows
+  // only what is TRUE — rate in real terms + a server-computed month-to-date,
+  // with NO invented year-end projection and no ceiling-less bar.
   assert.ok(/PTO_ACCRUAL:16/.test(code), 'EMP.PTO_ACCRUAL declared (column Q)');
-  assert.strictEqual((code.match(/empPtoAccrual_\(rows\[i\]\[EMP\.PTO_ACCRUAL\]\)/g) || []).length, 3,
-    'both emp builders + the accrual-credit trigger read column Q through the parser');
-  assert.ok(/ptoAccrualPerMonth: emp\.ptoAccrualPerMonth \|\| null/.test(code),
+  assert.ok(/ptoAccrualPerBasis: empPtoAccrual_\(rows\[i\]\[EMP\.PTO_ACCRUAL\]\)/.test(code),
+    'the emp builders read column Q through the parser, named for its real unit');
+  assert.ok(/ptoAccrualPer80: emp\.ptoAccrualPerBasis \|\| null/.test(code),
     'the calendar payload ships the rate');
-  assert.ok(/ROSTER_CACHE_KEY = 'employee_roster_v11'/.test(code), 'INV-28 — cache key bumped for the newest column (R, AccruedThrough)');
+  assert.ok(/ROSTER_CACHE_KEY = 'employee_roster_v11'/.test(code), 'INV-28 — cache key bumped for column R');
   vm.runInContext(extractRawFunction('Code.js', 'empPtoAccrual_'), sb, { filename: 'Code.js#empPtoAccrual_' });
   const pa = sb.empPtoAccrual_;
-  assert.strictEqual(pa('1.25'), 1.25, 'plain rate parses');
-  assert.strictEqual(pa('1.25 d/mo'), 1.25, 'unit-annotated cell parses');
-  assert.strictEqual(pa(''), null, 'blank = legacy tile');
-  assert.strictEqual(pa('n/a'), null, 'garbage = legacy tile (fail-safe)');
-  assert.strictEqual(pa(0), null, 'zero = legacy tile');
-  assert.strictEqual(pa('40'), null, 'implausible rate (>31 d/mo) = legacy tile');
-  assert.ok(/data\.ptoAccrualPerMonth === 'number' && data\.ptoAccrualPerMonth > 0/.test(to),
+  assert.strictEqual(pa('3.08'), 3.08, 'the PH rate parses');
+  assert.strictEqual(pa('3.08 h/80h'), 3.08, 'unit-annotated cell parses');
+  assert.strictEqual(pa(''), null, 'blank = no accrual');
+  assert.strictEqual(pa('n/a'), null, 'garbage = no accrual (fail-safe)');
+  assert.strictEqual(pa(0), null, 'zero = no accrual');
+  assert.strictEqual(pa('80'), null, 'implausible rate = no accrual');
+  assert.ok(/data\.ptoAccrualPer80 === 'number' && data\.ptoAccrualPer80 > 0/.test(to),
     'the accrual tile is gated on a shipped positive rate');
-  assert.ok(/ACCRUING \$\{rateStr\}D\/MO/.test(to) && /by Dec 31/.test(to),
-    'the accrual variant frames the rate + year-end projection');
+  assert.ok(/ACCRUING \$\{rateStr\}H \/ \$\{basis\}H/.test(to),
+    'the tile states the rate in its real terms (hours per basis hours)');
+  assert.ok(/earned this month/.test(to) && /h worked so far/.test(to),
+    'the tile shows the server-computed month-to-date earning');
+  // The MTD figure is printed at the server's 2dp, NOT through formatLeaveDays
+  // — 1dp renders 0.46 as "0.5", overstating the accrual by 9%.
+  assert.ok(!/formatLeaveDays\(mtd\.days\)/.test(to),
+    'the month-to-date earning is not rounded to 1dp');
+  assert.ok(!/by Dec 31/.test(to),
+    'the invented year-end projection is GONE (it cannot survive an hours-driven rule)');
+  // The progress BAR went with it, and for the same reason: an accruing
+  // balance has no ceiling, so a fill can only be drawn against a made-up
+  // denominator (INV-187). Scoped to the accrual branch — the legacy
+  // fixed-allotment tile below it keeps its bar, where the max is real.
+  const accrualBranch = to.slice(to.indexOf("data.ptoAccrualPer80 === 'number'"),
+                                 to.indexOf('} else {', to.indexOf("data.ptoAccrualPer80 === 'number'")));
+  assert.ok(accrualBranch.length > 200, 'the accrual branch was located');
+  assert.ok(!/class="bar"/.test(accrualBranch),
+    'the accrual tile draws NO fill bar — an accruing balance has no ceiling to fill against');
   assert.ok(/\/ \$\{formatLeaveDays\(annualMax\)\} days/.test(to),
     'the legacy fixed-allotment variant survives for blank column Q');
 });
 
-test('PTO accrual CREDIT: in-arrears month math, idempotent stamp, credit-before-stamp (operator 2026-08-18 follow-up)', () => {
+test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed read, archive-aware, credit-before-stamp (operator 2026-08-19)', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
-  // ── The pure month arithmetic, BEHAVIOURAL — the cap const is read from
-  // source so a changed cap re-parameterizes the cases rather than lying.
-  const capM = code.match(/const PTO_ACCRUAL_CATCHUP_MAX_MONTHS = (\d+)/);
-  assert.ok(capM, 'the catch-up cap const exists');
-  sb.PTO_ACCRUAL_CATCHUP_MAX_MONTHS = +capM[1];
+  // ── The entitlement arithmetic, BEHAVIOURAL. The rule is "N PTO hours per
+  // BASIS hours worked", converted to the DAYS the balance column stores.
+  // Constants come from CONFIG so a policy change re-parameterizes rather
+  // than silently disagreeing with the pin.
+  const basisM = code.match(/PTO_ACCRUAL_BASIS_HOURS:\s*(\d+)/);
+  const perDayM = code.match(/PTO_HOURS_PER_DAY:\s*(\d+)/);
+  assert.ok(basisM && perDayM, 'the accrual CONFIG constants exist');
+  const BASIS = +basisM[1], PERDAY = +perDayM[1];
+  assert.strictEqual(BASIS, 80, 'basis is 80 hours worked');
+  assert.strictEqual(PERDAY, 8, 'one PTO day is 8 hours (operator 2026-08-19)');
+  vm.runInContext(extractRawFunction('Code.js', 'accrualDaysForHours_'), sb, { filename: 'Code.js#accrualDaysForHours_' });
+  const adh = sb.accrualDaysForHours_;
+  // A full 80-hour fortnight at the PH rate earns exactly 3.08 PTO hours.
+  assert.deepStrictEqual({ ...adh(80, 3.08, BASIS, PERDAY) }, { ptoHours: 3.08, days: 0.39 },
+    '80 hours worked → 3.08 PTO hours → 0.385 days, 2dp');
+  // A full-time year lands on ~10 days — the sanity check on the whole model.
+  const yr = adh(2080, 3.08, BASIS, PERDAY);
+  assert.ok(Math.abs(yr.days - 10.01) < 0.02, '2080 hours worked ≈ 10 days/year (got ' + yr.days + ')');
+  assert.deepStrictEqual({ ...adh(0, 3.08, BASIS, PERDAY) }, { ptoHours: 0, days: 0 },
+    'zero hours worked earns zero — correct under an hours rule, not a failure');
+  // "Cannot compute" must NEVER collapse to 0 (INV-176/187).
+  assert.strictEqual(adh(null, 3.08, BASIS, PERDAY), null, 'unusable hours → null, never 0');
+  assert.strictEqual(adh(80, 0, BASIS, PERDAY), null, 'no rate → null');
+  assert.strictEqual(adh(80, 3.08, BASIS, 0), null, 'no hours-per-day → null (never divide by zero)');
+  assert.strictEqual(adh(-5, 3.08, BASIS, PERDAY), null, 'negative hours → null');
+  // ── The month plan is unchanged (in arrears, seed, cap) — re-pinned because
+  // the credit now multiplies it by real hours.
+  // The cap constant is DERIVED from Code.js, not restated here (INV-179).
+  const capM = /const PTO_ACCRUAL_CATCHUP_MAX_MONTHS\s*=\s*(\d+)/.exec(code);
+  assert.ok(capM, 'PTO_ACCRUAL_CATCHUP_MAX_MONTHS is declared in Code.js');
+  vm.runInContext('var PTO_ACCRUAL_CATCHUP_MAX_MONTHS = ' + capM[1] + ';', sb);
   vm.runInContext(extractRawFunction('Code.js', 'accrualMonthsToCredit_'), sb, { filename: 'Code.js#accrualMonthsToCredit_' });
   const amc = sb.accrualMonthsToCredit_;
-  assert.deepStrictEqual({ ...amc('', '2026-08') }, { months: 0, newStamp: '2026-07', capped: 0, seeded: true },
-    'blank stamp SEEDS — restamps last month, credits nothing (no surprise back-credit at enable)');
-  assert.deepStrictEqual({ ...amc('2026-07', '2026-08') }, { months: 0, newStamp: '2026-07', capped: 0, seeded: false },
-    'current-through-last-month owes nothing (in arrears: August is not complete in August)');
-  assert.deepStrictEqual({ ...amc('2026-06', '2026-08') }, { months: 1, newStamp: '2026-07', capped: 0, seeded: false },
-    'one completed month owed');
-  assert.deepStrictEqual({ ...amc('2025-11', '2026-01') }, { months: 1, newStamp: '2025-12', capped: 0, seeded: false },
-    'year boundary: a January run credits December');
-  const far = amc('2024-01', '2026-08');
-  assert.strictEqual(far.months, +capM[1], 'catch-up caps at the const');
-  assert.strictEqual(far.capped, 30 - +capM[1], 'the overflow is RETURNED, never silently absorbed (INV-187)');
-  assert.strictEqual(far.newStamp, '2026-07', 'the stamp still advances to last month');
-  assert.deepStrictEqual({ ...amc('2027-01', '2026-08') }, { months: 0, newStamp: '2026-07', capped: 0, seeded: false },
-    'a future/garbage-ahead stamp heals to last month without crediting');
-  assert.strictEqual(amc('2026-06', 'garbage'), null, 'unparseable now → null (caller skips)');
-  // ── The trigger handler: gate/wiring are auto-covered by the derived
-  // TARGETS + gate-type tripwires; here pin the parts they cannot see.
+  assert.strictEqual(amc('', '2026-08').seeded, true, 'a blank stamp SEEDS without back-crediting');
+  assert.strictEqual(amc('2026-07', '2026-08').months, 0, 'in arrears — August is not complete in August');
+  assert.strictEqual(amc('2026-06', '2026-08').months, 1, 'one completed month owed');
+  assert.strictEqual(amc('2025-11', '2026-01').newStamp, '2025-12', 'year boundary');
+  // The owed-month LIST the credit iterates (newest `months`, oldest dropped
+  // by the cap — which the audit row names).
+  vm.runInContext(extractRawFunction('Code.js', 'accrualMonthList_'), sb, { filename: 'Code.js#accrualMonthList_' });
+  const aml = sb.accrualMonthList_;
+  assert.deepStrictEqual(aml('2026-05', { months: 2, newStamp: '2026-07' }).join('|'), '2026-06|2026-07',
+    'the list runs stamp+1 .. newStamp');
+  assert.strictEqual(aml('2026-07', { months: 0, newStamp: '2026-07' }).length, 0, 'nothing owed → empty list');
+  // ── ONE Timesheet read for the whole run (the C17-9 / INV-153 lock-
+  // amplification rule): the credit runs inside the global lock, so a per-rep
+  // buildTimesheetForEmployee_ call would be N full-sheet reads.
   const h = code.match(/function creditMonthlyPtoAccruals\(\) \{[\s\S]*?\n\}/);
   assert.ok(h, 'creditMonthlyPtoAccruals exists');
+  assert.ok(!/buildTimesheetForEmployee_/.test(h[0]),
+    'no per-rep timesheet build inside the locked credit run');
+  assert.strictEqual((h[0].match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
+    'exactly ONE range index build per run');
+  const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
+  assert.ok(idx, 'the index helper exists');
+  assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2,
+    'one live read + one archive read, no more');
+  assert.ok(/calcHours_\(pm\.ClockIn, pm\.ClockOut/.test(idx[0]),
+    'per-day hours use the SAME calcHours_ arithmetic as payroll');
+  assert.ok(/if \(h === null\) \{ incomplete\+\+/.test(idx[0]),
+    'INV-176 — an unparseable day is INCOMPLETE, never a silent 0 hours');
+  // Archive read-through (INV-153/F1): a catch-up range can predate the live
+  // tab, and reading short would UNDER-credit real earned PTO.
+  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(idx[0]) && /startIso < oldestLiveDate/.test(idx[0]),
+    'the index reads through the archive when the range predates the live tab');
+  assert.ok(/liveKeys\.has\(key\)/.test(idx[0]),
+    'a row present in BOTH tabs is counted once (INV-132 duplicate-not-lose)');
+  assert.ok(!/catch/.test(idx[0]),
+    'a failed read THROWS — the run aborts with no credits rather than crediting from partial hours');
+  // ── Unchanged guarantees, re-pinned against the rewrite.
   assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(h[0]), 'INV-183 — the roster-inclusion predicate guards the walk');
-  assert.ok(/adjustLeaveBalance_\(empLike\.id, 'annual', days\)/.test(h[0]),
+  assert.ok(/adjustLeaveBalance_\(p\.emp\.id, 'annual', earned\.days\)/.test(h[0]),
     'credits go through THE balance mutator (per-row gate + cache invalidation ride along)');
   assert.ok(h[0].indexOf('adjustLeaveBalance_') < h[0].indexOf('EMP.ACCRUED_THROUGH + 1'),
-    'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit, never a silent lost month');
-  assert.ok(/accrualStampYm_\(rows\[i\]\[EMP\.ACCRUED_THROUGH\]\)/.test(h[0]),
-    'the stamp is read coercion-safely');
+    'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
+  assert.ok(/hoursWorked=/.test(h[0]) && /ptoHours=/.test(h[0]) && /rate=/.test(h[0]),
+    'the audit row records the hours, the rate and the days — the operator can verify a credit');
+  assert.ok(/no worked hours in the period/.test(h[0]),
+    'a zero-hours month writes an audit row too, so unexpected silence is visible');
   assert.ok(/getFlag_\('enablePtoTracking'\)/.test(h[0]), 'the global PTO switch short-circuits the run');
-  // The stamp column is a Date-coercion surface: the reader handles both forms.
   const asy = code.match(/function accrualStampYm_\(cell\) \{[\s\S]*?\n\}/);
   assert.ok(asy && /instanceof Date/.test(asy[0]) && /normalizeDate_/.test(asy[0]),
     'accrualStampYm_ recovers a coerced Date via normalizeDate_');
-  // Membership the coupling registry cannot enforce in this direction:
-  // REMOVING the action from AUTOMATION_AUDIT_ACTIONS keeps labels ⊇ actions
-  // true, so pin it explicitly — without it the Automation Health last-seen
-  // row silently disappears.
+  // Membership the coupling registry cannot enforce in this direction.
   assert.ok(/'TimesheetArchive',\s*'PtoAccrualCredit',/.test(code),
     'PtoAccrualCredit is a registered automation audit action');
 });
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
