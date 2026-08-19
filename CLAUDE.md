@@ -518,9 +518,11 @@ this section before touching the relevant area.
   indices.
 - **`PtoEnabled` defaults to TRUE.** Column K (`EMP.PTO_ENABLED`)
   defaults to enabled when blank — for back-compat with rows
-  added before the column existed. Contractors who don't accrue
-  paid leave need an explicit `FALSE` / `no` / `n` / `0` in this
-  column. The PTO UI then hides for them entirely (employee Calendar
+  added before the column existed. Someone who earns no paid leave at all
+  needs an explicit `FALSE` / `no` / `n` / `0` in this
+  column — note this is NOT the same as "does not get a fixed annual
+  allotment": an ACCRUING rep (roster column Q, INV-194) must stay `TRUE`,
+  or the accrual credit skips them entirely. The PTO UI then hides for them entirely (employee Calendar
   ring, decision email balance line, etc.). **The per-row gate also
   guards the DEDUCTION, not just display** — `adjustLeaveBalance_`
   returns `null` (no change) for a `FALSE` employee even when the
@@ -2139,9 +2141,16 @@ this section before touching the relevant area.
   TimeOffRequests don't carry balance — they trigger balance
   updates on approve/revert transitions.
 - **Per-employee PTO opt-out via `EMP.PTO_ENABLED` column.**
-  Contractors (e.g. PH team) get `FALSE` in column K; their UI
-  hides the PTO ring and balance line entirely. Single codebase
-  serves both paid and unpaid populations without forks.
+  An employee who earns no paid leave gets `FALSE` in column K; their UI
+  hides the PTO ring and balance line entirely, and `adjustLeaveBalance_`
+  refuses to move their balance. Single codebase serves both paid and
+  unpaid populations without forks. **The PH team is NOT such a population
+  — operator 2026-08-19: they ACCRUE, so their column K is `TRUE` and their
+  column Q carries a rate.** This document named them as the canonical
+  `FALSE` example for months, and the two facts are load-bearing together:
+  `creditMonthlyPtoAccruals` skips a `FALSE` rep, so if the example had been
+  true the accrual feature would have credited nobody. Check column K before
+  concluding a population does not accrue.
 - **Self-undo vs. Adjust split.** Live mistakes within 5 minutes
   go through `selfDeletePunch` (audit row, no Manager
   involvement). Anything older now goes through the **adjustment-request
@@ -5335,9 +5344,11 @@ manually for a fresh deploy or environment:
   numbers. **Post-deploy: run `runAllTests()`** — the rewritten
   `test_creditPtoAccrual_seedCreditIdempotent` now writes two 8-hour test
   days and asserts the credit the hours imply.
-- **The 2026-08-18 accrual-CREDIT follow-up (operator: "I would rather the
-  system compute the accrued balance") SUPERSEDES the display-only accrual
-  model shipped earlier the same day.** It adds ONE auto-managed roster
+- **The 2026-08-18 accrual-CREDIT follow-up — ITSELF SUPERSEDED the next day
+  by the hours-driven REBUILD above; read this entry for the machinery
+  (trigger, stamp, idempotence, enable convention), NEVER for the amount.**
+  (operator: "I would rather the system compute the accrued balance") It
+  superseded the display-only accrual model shipped earlier the same day. It adds ONE auto-managed roster
   column (R `AccruedThrough`), ONE new trigger (`creditMonthlyPtoAccruals`,
   daily manager-tz 6am — the seventeenth), the `PtoAccrualCredit` audit
   action, and `ROSTER_CACHE_KEY` v11. **THREE operator actions:**
@@ -5345,8 +5356,9 @@ manually for a fresh deploy or environment:
   ever fires (the trigger doesn't exist yet); (2) fill column Q for
   accruing agents (as before); (3) **STOP the routine manual monthly
   top-ups for those agents the day their rate is set** — the system now
-  adds rate × completed-months on the 1st (in arrears), and a manual
-  top-up on top of it double-credits. Enable convention: the balance is
+  adds the accrual for each completed month on the 1st (in arrears — as of
+  2026-08-19 that amount comes from the month's real worked hours, not a flat
+  monthly figure), and a manual top-up on top of it double-credits. Enable convention: the balance is
   presumed current through the END of last month (the first automated
   credit lands on the 1st of next month, for this month). One-off
   corrections remain fine any time — credits are deltas, they compose.
