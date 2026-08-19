@@ -879,8 +879,20 @@ monthly top-ups for exactly those agents, and (4) — NEW and easy to miss —
 the 2026-08-18 round now reads as 1.25 PTO hours per 80 worked, roughly a
 third of the intended rate.
 
-**The one real verification gap, now larger:** the editor suite has NOT been
-run against #172/#173 or this rebuild. Three editor tests are new or rewritten
+**Editor suite RUN 2026-08-19 against the merged branch: 288 passed, 1 failed,
+0 skipped.** The single failure was `deptReq_incomingAndMemberResolve` — TEST
+ROT, not a code defect: the 2026-08-18 load-time round gave `getDeptRequests` a
+per-caller result cache invalidated by its two production writers, and that
+test builds its fixture with a direct `appendRow`, so it read back a cached
+payload warmed by the omnibus gate test. Fixed by bumping the generation
+between the append and the read (+ after cleanup), pinned with an ordering
+assert, and written up as a Common Gotcha. **The accrual rebuild's own editor
+tests passed.** Everything below about the gap is now HISTORY, kept for the
+lesson: it had gone unrun long enough for a cache added under a test to go
+unnoticed.
+
+**Previously (superseded by the run above):** the editor suite had NOT been
+run against #172/#173 or the rebuild. Three editor tests are new or rewritten
 and have never executed (`submitTimeOffRange_weekendSkipAtomicCaps`,
 `creditPtoAccrual_seedCreditIdempotent` — REWRITTEN for the hours model, it
 now writes two 8-hour test days and asserts the credit they imply,
