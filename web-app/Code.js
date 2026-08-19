@@ -13982,7 +13982,7 @@ function getEmployeeInfo_() {
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
         departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),   // parsed lazily via empDepartments_
         scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),          // per-rep shift override (Turn D)
-        ptoAccrualPerMonth: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),   // column Q, display-only (accrual tile)
+        ptoAccrualPerMonth: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),   // column Q — tile framing + the monthly credit (INV-194)
       };
     }
   }

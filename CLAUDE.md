@@ -509,7 +509,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v10`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v11`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -5328,16 +5328,15 @@ manually for a fresh deploy or environment:
   `runAllTests()`** — the new `test_creditPtoAccrual_seedCreditIdempotent`
   + `test_triggerGate_ptoAccrual_nonManagerThrows` execute only in the
   editor.
-- **The 2026-08-18 range + accrual round adds ONE optional roster column and
-  NO other operator state** — no Script Properties, triggers, or CONFIG
-  constants; one new REP-callable endpoint (`submitTimeOffRange`, guarded per
-  INV-94/95 — not manager-gated) and `ROSTER_CACHE_KEY` v10. **The one
-  operator action: put a days-per-month rate in Employees column Q
-  (`PtoAccrual`, e.g. `1.25`) for each agent who ACCRUES PTO** — their
-  annual-leave tile flips to the growing accrued-balance framing
-  (balance → ≈Dec 31 projection); reps with a blank Q keep the fixed
-  /15-days tile exactly as before. The rate is display-only: keep
-  maintaining column-I balances as accruals land, exactly as today.
+- **The 2026-08-18 range round adds NO operator state** — no Script
+  Properties, triggers, or CONFIG constants; one new REP-callable endpoint
+  (`submitTimeOffRange`, guarded per INV-94/95 — not manager-gated).
+  (This round ALSO introduced column Q as a display-only accrual rate with
+  `ROSTER_CACHE_KEY` v10; the accrual-credit follow-up above SUPERSEDED both
+  the same day, before either shipped — take the column-Q/R instructions and
+  the cache-key version from THAT entry, never this one. In particular its
+  original "keep maintaining column-I balances by hand" instruction is now
+  WRONG: the system credits them.)
   Behaviour changes to expect post-deploy: (a) the request-time-off card
   and day modal accept an optional SECOND date — a range writes one
   Pending row per weekday (weekends skipped, conflicts reject the whole

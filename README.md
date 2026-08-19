@@ -13,7 +13,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
   system health, compliance audit, and team-member onboarding:
   add a rep with a validated form that also provisions their Call
   Notes Sheet, check per-rep readiness, offboard):
-  - **Time Clock** — cross-timezone time tracking, PTO requests,
+  - **Time Clock** — cross-timezone time tracking, PTO requests
+    (single-day or a date range, which files one request per weekday),
     manager dashboard, ADP-format export, and a manager-only Coverage
     planner (forward staffing across timezones with PTO overlaid and
     understaffed manager-tz hours flagged). Break and end-of-shift
@@ -23,7 +24,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
     permits it, a desktop notification. A per-period pay statement
     (Time / PTO → the pay-period rail block) lets each rep check their own
     punches, hours, PTO, and — when a pay rate is on the roster — an
-    estimated gross, clearly labeled an estimate.
+    estimated gross, clearly labeled an estimate. Agents who accrue
+    leave get a monthly accrual rate on the roster: the app credits it
+    into their balance automatically each month (in arrears) and their
+    leave tile shows the balance growing toward a year-end projection
+    instead of draining from a fixed allotment.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
