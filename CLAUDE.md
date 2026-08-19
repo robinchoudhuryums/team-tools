@@ -544,6 +544,24 @@ this section before touching the relevant area.
   bucket (a balance-corruption regression). Treat the sick path as
   read/revert-only legacy — don't re-add `Sick Leave` to `TIME_OFF_TYPES`
   without re-deriving this.
+- **A test fixture that writes DIRECTLY to a store behind a RESULT CACHE owes
+  the production writer's invalidation (operator run, 2026-08-19).** The
+  2026-08-18 load-time round gave `getDeptRequests` a per-caller CacheService
+  result cache keyed by a generation salt that its two PRODUCTION writers bump
+  (`emailFromCallNote`'s auto-log append and `markDeptRequestResolved_`).
+  `test_deptReq_incomingAndMemberResolve` builds its fixture by appending a row
+  to the `DeptRequests` tab directly — a path production never takes — so no
+  bump happened, and the read-back was served from the entry the omnibus gate
+  test had warmed for that same employee minutes earlier. Red suite, correct
+  code: the FIXTURE was stale, not the endpoint. It sat undetected because the
+  editor suite had not been run since the cache shipped. The fix is one line
+  (`drBumpCacheGen_()` between the append and the read, and again after the
+  cleanup delete), and the general rule is the one this entry's title states —
+  when you add a result cache, check whether any test writes to that store
+  outside the endpoints you just taught to invalidate it. Pinned by an
+  ordering assert (bump strictly between the append and the read — a bump only
+  in `finally` is too late, which is how the first version of the pin failed to
+  bite).
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.**
   Any code path that calls `Session.getActiveUser()` directly will
   bypass the test impersonation and use the real running user.

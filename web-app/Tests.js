@@ -5190,6 +5190,13 @@ function test_deptReq_incomingAndMemberResolve() {
     sh.appendRow(['TEST_DR_INC', 'TEST_OTHER_SENDER', 'Other', 'o@x.com', dept, 'x.com',
       drNowTs_(), 'open', '', '', 'incoming-test', 'TEST_DR_NOTE_INC']);
     SpreadsheetApp.flush();
+    // getDeptRequests is result-cached per caller (2026-08-18 load-time round);
+    // the two PRODUCTION writers bump the generation, but this fixture appends
+    // to the sheet directly, so it must do the same or the read is served from
+    // an entry warmed earlier in the run (the omnibus gate test calls
+    // getDeptRequests as this very employee). The cache is correct — a fixture
+    // that bypasses the writer owes the writer's invalidation.
+    drBumpCacheGen_();
     let res; _asUser(_TEST_INDIA_EMAIL, function () { res = getDeptRequests(); });
     _assertTrue(res && Array.isArray(res.incoming), 'incoming array present');
     _assertTrue(res.incoming.some(function (it) { return it.requestId === 'TEST_DR_INC'; }),
@@ -5201,6 +5208,7 @@ function test_deptReq_incomingAndMemberResolve() {
     invalidateRosterCache_();
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
+    drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
   }
 }
 

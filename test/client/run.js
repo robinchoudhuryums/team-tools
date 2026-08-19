@@ -9820,6 +9820,18 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   assert.ok(bumps >= 2, 'gen bumped at the resolve write AND the auto-track append (found ' + bumps + ')');
   assert.ok(/drBumpCacheGen_\(\);[\s\S]{0,400}DeptRequestResolved/.test(code),
     'the bump sits on markDeptRequestResolved_ — BOTH resolve paths route through it');
+  // A fixture that writes to the DeptRequests sheet DIRECTLY bypasses both
+  // production writers, so it owes their invalidation. The editor test that
+  // reads back through getDeptRequests failed exactly this way once the cache
+  // shipped (2026-08-18) — the code was right, the fixture was stale.
+  const tests = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  const inc = tests.match(/function test_deptReq_incomingAndMemberResolve\(\) \{[\s\S]*?\n\}/);
+  assert.ok(inc, 'the DR incoming test exists');
+  const iApp = inc[0].indexOf('appendRow'), iRead = inc[0].indexOf('getDeptRequests(');
+  const iBump = inc[0].indexOf('drBumpCacheGen_');
+  assert.ok(iApp > -1 && iRead > iApp && iBump > -1, 'the fixture appends, then reads back');
+  assert.ok(iBump > iApp && iBump < iRead,
+    'the generation is bumped BETWEEN the direct append and the read-back — a bump only in finally is too late');
   assert.ok(!/getSpanishInboxPending[\s\S]{0,900}cache\.put/.test(code.slice(code.indexOf('function getSpanishInboxPending'))),
     'getSpanishInboxPending stays uncached (documented privacy decision — request content never sits in CacheService)');
   // Client: the DR enter paints last-good + skips a fresh refetch; a failed or
