@@ -52,6 +52,12 @@
           <option value="Other">Other</option>
         </select>
       </div>
+      <!-- Multi-day range (operator 2026-08-18): optional end date — one
+           Pending row per WEEKDAY in [day, through] via submitTimeOffRange;
+           blank = the single-day flow, unchanged. -->
+      <div class="field"><label for="day-through">Through <span class="opt-marker">(optional — multi-day, weekends skipped)</span></label>
+        <input type="date" id="day-through">
+      </div>
       <div class="field"><label>Notes (optional)</label>
         <textarea id="day-notes" placeholder="Reason, trip, appointment…"></textarea>
       </div>

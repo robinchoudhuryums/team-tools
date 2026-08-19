@@ -143,7 +143,44 @@ function renderTimeOffView(area, data) {
     const ftrRight = upcomingReqs.length > 0
       ? `${formatLeaveDays(remaining)}d after ${nextLabel}`
       : 'nothing planned';
-    balanceCardHtml = `
+    // ACCRUAL variant (operator 2026-08-18, roster column Q): reps who accrue
+    // PTO over the year get a GROWING framing instead of the depleting
+    // /15-days bar — big number stays the current available balance (column
+    // I, which the SYSTEM now credits monthly IN ARREARS via the
+    // creditMonthlyPtoAccruals trigger: month M's rate lands on/after the 1st
+    // of M+1, idempotent via the col-R stamp), the denominator becomes a
+    // ≈year-end projection (balance + rate × the 12−month credits still
+    // landing before Dec 31 — Aug: Sep 1, Oct 1, Nov 1, Dec 1 = 4 — exactly
+    // the in-arrears schedule, so the formula needs no convention slack),
+    // and the bar fills as credits land (balance / projected). Blank column
+    // Q = the fixed-allotment tile below, byte-identical to before.
+    const accrual = (typeof data.ptoAccrualPerMonth === 'number' && data.ptoAccrualPerMonth > 0)
+      ? data.ptoAccrualPerMonth : null;
+    if (accrual) {
+      // The RATE keeps its two decimals (1.25 ≠ 1.3 — the common 15d/yr rate
+      // is exactly 1.25/mo); balances/projections stay on formatLeaveDays.
+      const rateStr = String(+accrual.toFixed(2));
+      const monthsAfter = 12 - parseInt(todayIso.slice(5, 7), 10);
+      const projected = Math.round((annual + accrual * monthsAfter) * 10) / 10;
+      const apct = projected > 0 ? Math.min(100, Math.max(0, (annual / projected) * 100)) : 0;
+      balanceCardHtml = `
+      <div class="pto-tile" title="Your balance grows automatically — ${rateStr}d is credited on the 1st of each month for the month just worked. The bar shows how much of your projected Dec 31 total is available now.">
+        <div class="head">
+          <span class="lbl">Annual leave</span>
+          <span class="meta">ACCRUING ${rateStr}D/MO</span>
+        </div>
+        <div class="v-row">
+          <span class="v num">${formatLeaveDays(annual)}</span>
+          <span class="denom">&rarr; &asymp;${formatLeaveDays(projected)}d by Dec 31</span>
+        </div>
+        <div class="bar"><i style="width:${apct.toFixed(1)}%"></i></div>
+        <div class="ftr">
+          <span>${formatLeaveDays(plannedDays)}d planned</span>
+          <span>${esc(ftrRight)}</span>
+        </div>
+      </div>`;
+    } else {
+      balanceCardHtml = `
       <div class="pto-tile">
         <div class="head">
           <span class="lbl">Annual leave</span>
@@ -159,6 +196,7 @@ function renderTimeOffView(area, data) {
           <span>${esc(ftrRight)}</span>
         </div>
       </div>`;
+    }
   }
 
   let calHtml = '<div class="cal-grid">';
@@ -321,7 +359,9 @@ function renderTimeOffView(area, data) {
     const inp = document.getElementById('to-req-date');
     const v = inp ? inp.value : '';
     if (!v) { showToast('Pick a date first', 'toast-warn'); return; }
-    openRequestForDate_(v);
+    const toEl = document.getElementById('to-req-to');
+    const thru = (toEl && toEl.value && toEl.value > v) ? toEl.value : '';
+    openRequestForDate_(v, thru);
   });
   const adjOpen = document.getElementById('to-adj-open');
   if (adjOpen) adjOpen.addEventListener('click', () => {
@@ -340,8 +380,8 @@ function renderTimeOffView(area, data) {
   if (TO_PENDING_DAY_OPEN) {
     const pend = TO_PENDING_DAY_OPEN;
     TO_PENDING_DAY_OPEN = null;
-    if (pend.slice(0, 7) === `${data.year}-${String(data.month).padStart(2, '0')}`) {
-      openPinnedDayModal_(pend);
+    if (pend.date.slice(0, 7) === `${data.year}-${String(data.month).padStart(2, '0')}`) {
+      openPinnedDayModal_(pend.date, pend.through);
     }
   }
 
@@ -423,9 +463,11 @@ function toActionsCardHtml_(todayIso) {
       <h2 class="card-label">Requests</h2>
       <label class="to-act-lbl" for="to-req-date">Request time off</label>
       <div class="to-act-row">
-        <input type="date" id="to-req-date" value="${def}" min="${todayIso}" max="${maxIso}">
+        <input type="date" id="to-req-date" value="${def}" min="${todayIso}" max="${maxIso}" aria-label="First day">
+        <input type="date" id="to-req-to" min="${todayIso}" max="${maxIso}" aria-label="Last day (optional)" title="Last day — leave blank for a single day">
         <button type="button" class="to-act-go" id="to-req-go">Request</button>
       </div>
+      <div class="to-act-hint">Second date optional — multi-day requests skip weekends.</div>
       <div class="to-act-div"></div>
       <label class="to-act-lbl" for="to-adj-open">Fix a missed or wrong punch</label>
       <button type="button" class="to-act-btn" id="to-adj-open">${icon('adjust', 13)} Request punch edit</button>
@@ -439,20 +481,24 @@ function toActionsCardHtml_(todayIso) {
 // synchronously and the miss path async, but BOTH end in renderTimeOffView,
 // so one handoff variable covers both (the mgrPendingRepDrill pattern).
 var TO_PENDING_DAY_OPEN = null;
-function openRequestForDate_(dateStr) {
+function openRequestForDate_(dateStr, throughStr) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return;
+  const thru = (throughStr && /^\d{4}-\d{2}-\d{2}$/.test(String(throughStr)) && throughStr > dateStr)
+    ? throughStr : '';
   const p = dateStr.split('-');
   const y = parseInt(p[0], 10), m = parseInt(p[1], 10);
   if (calData && calData.year === y && calData.month === m) {
-    openPinnedDayModal_(dateStr);
+    openPinnedDayModal_(dateStr, thru);
   } else {
-    TO_PENDING_DAY_OPEN = dateStr;
+    TO_PENDING_DAY_OPEN = { date: dateStr, through: thru };
     calNavTo_(y, m);
   }
 }
 
-/** Pin + center the day modal for a date (clears any hover-tether state). */
-function openPinnedDayModal_(dateStr) {
+/** Pin + center the day modal for a date (clears any hover-tether state);
+ *  an optional through pre-fills the modal's multi-day field AFTER
+ *  openDayModal's per-open reset. */
+function openPinnedDayModal_(dateStr, throughStr) {
   dayPopoverPinned = true;
   const overlay = document.getElementById('day-overlay');
   if (overlay) {
@@ -461,6 +507,10 @@ function openPinnedDayModal_(dateStr) {
     if (modal) { modal.style.top = ''; modal.style.left = ''; }
   }
   openDayModal(dateStr);
+  if (throughStr) {
+    const thr = document.getElementById('day-through');
+    if (thr) { thr.value = throughStr; updateDayBalancePreview_(); }
+  }
 }
 
 // ── PAY-PERIOD SIDE-RAIL BLOCK (Round 2 · 8b; always-on since the
@@ -771,6 +821,21 @@ function getLeaveDeductionClient_(type) {
   return { bucket: 'annual', days: 1.0 };
 }
 
+/** Count WEEKDAYS in [fromIso, toIso] inclusive (pure UTC math — mirrors the
+ *  server's weekday enumeration in submitTimeOffRange, so the balance preview
+ *  multiplies by the same day count the server will write). */
+function countWeekdaysIso_(fromIso, toIso) {
+  let n = 0;
+  const d = new Date(fromIso + 'T00:00:00Z');
+  const end = new Date(toIso + 'T00:00:00Z');
+  while (d <= end) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) n++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return n;
+}
+
 function openDayModal(dateStr) {
   if (!calData) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
@@ -870,6 +935,10 @@ function openDayModal(dateStr) {
     formSec.style.display = ''; submitBtn.style.display = '';
     document.getElementById('day-type').value = 'Full Day';
     document.getElementById('day-notes').value = '';
+    // Multi-day range (operator 2026-08-18): reset per open; floored at the
+    // modal's own date so "through" can never precede the start.
+    const thr = document.getElementById('day-through');
+    if (thr) { thr.value = ''; thr.min = dateStr; }
     updateDayBalancePreview_();
   } else {
     formSec.style.display = 'none'; submitBtn.style.display = 'none';
@@ -886,6 +955,12 @@ function updateDayBalancePreview_() {
   if (!calData || !calData.ptoEnabled) { previewEl.innerHTML = ''; return; }
   const type = document.getElementById('day-type').value;
   const ded = getLeaveDeductionClient_(type);
+  // Multi-day range: the preview multiplies by the weekday count the server
+  // will write (weekends skipped, matching submitTimeOffRange).
+  const thrEl = document.getElementById('day-through');
+  const thr = thrEl ? thrEl.value : '';
+  const nDays = (thr && /^\d{4}-\d{2}-\d{2}$/.test(thr) && thr > dayModalDate)
+    ? countWeekdaysIso_(dayModalDate, thr) : 1;
   if (!ded.bucket) {
     previewEl.innerHTML = `<div class="balance-after">
       <span class="ba-label">Balance impact</span>
@@ -894,12 +969,14 @@ function updateDayBalancePreview_() {
     return;
   }
   const cur = ded.bucket === 'sick' ? (calData.sickLeave || 0) : (calData.annualLeave || 0);
-  const proj = +(cur - ded.days).toFixed(2);
+  const proj = +(cur - ded.days * nDays).toFixed(2);
   const bucketLabel = ded.bucket === 'sick' ? 'Sick leave after' : 'Annual leave after';
   const projCls = proj < 0 ? 'neg' : '';
+  const rangeNote = nDays > 1 ? `<span class="ba-label" style="width:100%">${nDays} weekdays × ${formatLeaveDays(ded.days)}d</span>` : '';
   previewEl.innerHTML = `<div class="balance-after">
     <span class="ba-label">${bucketLabel}</span>
     <span class="ba-val">${formatLeaveDays(cur)} → <strong class="${projCls}">${formatLeaveDays(proj)}</strong> days</span>
+    ${rangeNote}
   </div>`;
 }
 
@@ -1031,12 +1108,22 @@ function positionDayPopover_(cell) {
 }
 // Live balance preview when Type changes (V1·E2).
 document.getElementById('day-type').addEventListener('change', updateDayBalancePreview_);
+document.getElementById('day-through').addEventListener('change', updateDayBalancePreview_);
 document.getElementById('day-submit').addEventListener('click', () => {
   const type = document.getElementById('day-type').value;
   const notes = document.getElementById('day-notes').value.trim();
   const btn = document.getElementById('day-submit');
+  // Multi-day range (operator 2026-08-18): a filled "Through" after the start
+  // date routes to submitTimeOffRange (atomic, weekend-skipping, one Pending
+  // row per weekday); blank/equal keeps the single-day path byte-identical.
+  const thrEl = document.getElementById('day-through');
+  const through = thrEl ? thrEl.value : '';
+  const isRange = !!(through && /^\d{4}-\d{2}-\d{2}$/.test(through) && through > dayModalDate);
+  if (isRange && countWeekdaysIso_(dayModalDate, through) === 0) {
+    showToast('That range contains only weekend days', 'toast-warn'); return;
+  }
   btn.disabled = true;
-  google.script.run
+  const runner = google.script.run
     .withSuccessHandler(result => {
       btn.disabled = false;
       // D1 (cycle 10): check the RESULT before closing — a server-side
@@ -1051,14 +1138,17 @@ document.getElementById('day-submit').addEventListener('click', () => {
       // calendar cells' mouseenter handlers early-return on it, so hover-open
       // (Round 2 · 8c) was dead until an Esc or cell click.
       dayPopoverPinned = false;
-      showToast('Time off request submitted','toast-success');
+      showToast(isRange
+        ? (result.count + ' request(s) submitted' + (result.skippedWeekendDays ? ' — ' + result.skippedWeekendDays + ' weekend day(s) skipped' : ''))
+        : 'Time off request submitted', 'toast-success');
       CAL_CACHE = {};   // a PTO change invalidates every cached month
       refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });
     })
     .withFailureHandler(err => {
       btn.disabled = false;
       showToast((err.message||'Server error'),'toast-error');
-    })
-    .submitTimeOffRequest(dayModalDate, type, notes);
+    });
+  if (isRange) runner.submitTimeOffRange(dayModalDate, through, type, notes);
+  else runner.submitTimeOffRequest(dayModalDate, type, notes);
 });
 </script>

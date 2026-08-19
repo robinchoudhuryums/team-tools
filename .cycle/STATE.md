@@ -800,7 +800,44 @@ Updated: 2026-08-11
   (color: var(--paper-card), measured illegible as #fff first). Pin + 5
   bites; timeoff-light/dark-wide re-shot (0 overflow). S39/S46/S79
   updated; block at .cycle/blocks/18pre-timeoff-consolidation-*.
-- Pure 553, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
+- Follow-up (operator round 6, 2026-08-18, post-#172 redeploy): RANGE
+  time-off requests + ACCRUAL PTO tile. Server: submitTimeOffRange
+  (rep-callable, locked, ATOMIC — INV-94 dup-guard per weekday with the
+  whole batch rejected naming conflict dates, INV-95 whitelist, L-11
+  horizon both ends, C17-⑤ notes bound, 31-day span cap, weekend skip;
+  one Pending row per weekday so every downstream reader is unchanged);
+  EMP.PTO_ACCRUAL col Q (display-only d/mo rate, empPtoAccrual_
+  fail-safe) + ROSTER_CACHE_KEY v10 (INV-28). Client: day modal
+  "Through (optional)" field (per-open reset, preview × weekday count,
+  dual submit routing), quick-actions card second date threading through
+  the {date, through} pending handoff, and the accrual tile variant
+  (ACCRUING X.XXd/mo, balance → ≈Dec-31 projection, filling bar; blank
+  Q = legacy tile byte-identical — chosen over server-side auto-credit,
+  which would double-count against hand edits). Pin +1 (554) with 5
+  bites incl. atomicity order + behavioural counter; editor +1
+  (test_submitTimeOffRange_weekendSkipAtomicCaps ≈303); mock fixture
+  accrual-on; INV-28/94 amended, column-Q checklist entry, S46 extended.
+  OPERATOR ACTION: fill column Q for accruing agents (optional).
+- Follow-up (operator round 7, 2026-08-18): ACCRUAL CREDITS system-computed
+  — supersedes round 6's display-only model per the operator ("I would
+  rather the system compute the accrued balance... carefully"). Design:
+  credits flow INTO the existing col-I balance (never derived at read
+  time), through adjustLeaveBalance_ (INV-27 gate + cache invalidation
+  ride along), in ARREARS (month M lands on/after the 1st of M+1 — which
+  is why the tile's 12−month projection needed no change), idempotent via
+  the auto-managed col-R AccruedThrough stamp (coercion-safe reader
+  accrualStampYm_), seeded-without-back-credit on enable, catch-up capped
+  at 12 with overflow NAMED in the audit row, credit-before-stamp so a
+  mid-run failure fails toward VISIBLE re-credit; pto-disabled reps skip
+  with the stamp FROZEN. New trigger creditMonthlyPtoAccruals (daily
+  manager-tz 6am, the seventeenth — both TARGETS arrays; the derived
+  trigger nets auto-generated its gate coverage, INV-179), audit action
+  PtoAccrualCredit (+ client CN_HEALTH_RUN_LABELS entry), ROSTER_CACHE_KEY
+  v11. INV-194 WRITTEN. Pins → 556 (5 bites incl. in-arrears + cap +
+  order + through-the-mutator + action-registered); editor +2 ≈305.
+  OPERATOR ACTIONS: re-run installAutomationTriggers() (blocks the
+  feature), fill col Q, STOP manual monthly top-ups for rated agents.
+- Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
 Cycle 17 is closed (reflected). The operator-feedback rounds + metrics
