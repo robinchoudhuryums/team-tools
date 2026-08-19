@@ -272,10 +272,13 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         allRequests: [{ date: year + '-' + m2 + '-28', type: 'Full Day', status: 'Approved', submittedAt: todayLocal + ' 09:00:00' },
                       { date: year + '-' + m2 + '-30', type: 'Half Day - Morning', status: 'Pending', submittedAt: todayLocal + ' 10:00:00' }],
         teammates: [], holidays: [], annualLeave: 11.5, sickLeave: 10, ptoEnabled: true, annualLeaveMax: 15,
-        // Accrual variant on camera (operator 2026-08-18): a positive column-Q
-        // rate flips the tile to the growing/projection framing. The legacy
+        // Accrual variant on camera (operator 2026-08-19): a positive column-Q
+        // rate flips the tile to the accruing framing — the rate in its real
+        // terms plus the server-computed month-to-date earning. Field names
+        // mirror the server payload exactly (INV-185); the legacy
         // fixed-allotment tile is source-pinned (blank Q = byte-identical).
-        ptoAccrualPerMonth: 1.25 };
+        ptoAccrualPer80: 3.08, ptoAccrualBasisHours: 80, ptoHoursPerDay: 8,
+        ptoAccrualMtd: { hours: 96, days: 0.46 } };
     },
     // Pay-period side-rail block (always-on since the 2026-08-18 Time/PTO
     // consolidation). Shape mirrors buildTimesheetForEmployee_'s return:

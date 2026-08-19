@@ -2699,12 +2699,15 @@ this section before touching the relevant area.
   `{date, through}`** — the through pre-fills the day modal's new
   "Through (optional)" field AFTER its per-open reset; plus
   "Request punch edit" → `openAdjustModal()`), the annual-leave
-  `.pto-tile` (**two variants since 2026-08-18: roster column Q
-  `PtoAccrual` > 0 flips it to the ACCRUAL framing — balance →
-  ≈year-end projection, a bar that fills as accruals land; blank Q =
-  the fixed-allotment /15-days tile, byte-identical** — see the column-Q
-  checklist entry; since the same day's follow-up the SYSTEM also CREDITS
-  the rate monthly in arrears — see INV-194), and the
+  `.pto-tile` (**two variants: roster column Q `PtoAccrual` > 0 flips it
+  to the ACCRUING framing — the credited balance, the rate in its real
+  terms (`ACCRUING 3.08H / 80H`), and a server-computed month-to-date
+  earned line; blank Q = the fixed-allotment /15-days tile,
+  byte-identical** — see the column-Q checklist entry; the SYSTEM credits
+  the rate monthly in arrears from HOURS WORKED — see INV-194. The
+  accrual variant carries NO year-end projection and NO fill bar: an
+  accruing balance has no ceiling and no knowable future work pattern,
+  so both would be invented numbers, INV-187), and the
   pay-period block (`#ts-side-rail` — pay-period tile + "View pay
   statement" + recent activity, lazy-loaded via
   `loadTimesheetSideRail_` on EVERY render now, its own
@@ -5307,6 +5310,31 @@ manually for a fresh deploy or environment:
   parallel with the metrics RPCs, and a same-day reload paints the metric
   cards instantly from the local blob while refreshing in the background.
   **Post-deploy: run `runAllTests()`** as usual.
+- **The 2026-08-19 accrual REBUILD (operator: "3.08 PTO hours per 80 hours
+  worked, 8 hours per day, and PtoEnabled will be TRUE") SUPERSEDES the
+  days-per-calendar-month model of the two 2026-08-18 entries below.** Same
+  machinery — same trigger, same column-R stamp, same in-arrears
+  idempotence, same audit action, same `ROSTER_CACHE_KEY` v11 — only the
+  AMOUNT changed: a credit is now the PTO earned from the hours the rep
+  actually WORKED in each owed month, not a flat monthly figure. Two new
+  CONFIG constants, `PTO_ACCRUAL_BASIS_HOURS` (80) and `PTO_HOURS_PER_DAY`
+  (8); both CONFIG-only, so changing them is a redeploy. **What an operator
+  must do differently from the 2026-08-18 instructions:** column Q now holds
+  **PTO hours per 80 hours worked** (`3.08` for the PH team), NOT days per
+  month — a cell left at `1.25` from the earlier round would now read as
+  1.25 PTO hours per 80 worked, roughly a third of the intended rate, so
+  **re-enter every column-Q value in the new units**. Everything else in the
+  follow-up entry still holds: re-run `installAutomationTriggers()` once,
+  and stop routine manual top-ups. Behaviour to expect: a rep who worked no
+  hours in a month is credited NOTHING (correct under an hours rule) and
+  still gets an audit row saying so; a day missing a clock-out is reported
+  as `incomplete day(s) NOT counted` rather than counted as zero; and the
+  Time/PTO tile drops the year-end projection and the progress bar it
+  carried on 2026-08-18 — an accruing balance has no ceiling to fill and no
+  knowable future work pattern to project from, so both were invented
+  numbers. **Post-deploy: run `runAllTests()`** — the rewritten
+  `test_creditPtoAccrual_seedCreditIdempotent` now writes two 8-hour test
+  days and asserts the credit the hours imply.
 - **The 2026-08-18 accrual-CREDIT follow-up (operator: "I would rather the
   system compute the accrued balance") SUPERSEDES the display-only accrual
   model shipped earlier the same day.** It adds ONE auto-managed roster
@@ -6127,7 +6155,7 @@ manually for a fresh deploy or environment:
     - `sendManagerDailyBrief` (daily manager-tz 8am — the consolidated manager morning brief behind the `managerDailyBrief` feature flag, default OFF. While off it only stamps its `managerBrief` heartbeat (installing it is harmless); while on it sends ONE per-manager branded email consolidating urgent notes / missed clock-outs / overdue training-docs-coaching / dept-SLA overdue, and those four handlers suppress their separate MANAGER emails (employee-facing reminders + weekly digests + the failure watchdog are untouched). Silent on an all-clear morning. INV-151)
     - `archiveOldTimesheetRows` (Timesheet cold-archive, daily manager-tz **6pm** — moved off 1am in cycle 8: 1am CT is mid-shift for IST/PHT and the move holds the global ScriptLock, so a large first run could starve offshore punches; 6pm CT is the all-team quiet window. MOVES Timesheet rows older than `TIMESHEET_ARCHIVE_DAYS` to a `TimesheetArchive` tab in the same ADP spreadsheet; NEVER deletes (payroll is keep-forever — no purge tier exists for it); sub-floor windows clamp UP to `TIMESHEET_ARCHIVE_MIN_DAYS` (120); no-ops while the window is 0 (the default). INV-153)
     - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on a confirmed dev instance (`isDevInstance_()` — BOTH `INSTANCE_LABEL` set and `INSTANCE_IS_PROD` explicitly not 'true'; unset = prod, A5). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
-    - `creditMonthlyPtoAccruals` (PTO accrual, daily manager-tz 6am — credits each accruing rep's column-Q monthly rate into the column-I balance IN ARREARS, idempotent via the column-R stamp; daily-with-idempotence rather than a monthly trigger so a missed 1st catches up instead of silently losing the month. No-ops for reps with no rate, so installing it is harmless. Audit row `PtoAccrualCredit` per credited rep. INV-194)
+    - `creditMonthlyPtoAccruals` (PTO accrual, daily manager-tz 6am — credits each accruing rep the PTO they EARNED from hours actually worked in each completed month (column-Q rate per `CONFIG.PTO_ACCRUAL_BASIS_HOURS` worked, converted to days by `CONFIG.PTO_HOURS_PER_DAY`) into the column-I balance IN ARREARS, idempotent via the column-R stamp; daily-with-idempotence rather than a monthly trigger so a missed 1st catches up instead of silently losing the month. Hours come from ONE range-wide, archive-aware Timesheet index — never a per-rep read inside the lock. No-ops for reps with no rate, so installing it is harmless. Audit row `PtoAccrualCredit` per credited rep (incl. zero-hour months). INV-194)
   The install + remove TARGETS arrays both list all seventeen, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
@@ -6409,14 +6437,22 @@ manually for a fresh deploy or environment:
   payroll decision, not an onboarding field); `ROSTER_CACHE_KEY` was bumped
   to v9 for this column, so stale cache entries expire within 5 min.
 - **`Employees` sheet column Q = `PtoAccrual`** (operator 2026-08-18) — an
-  OPTIONAL PTO accrual rate in DAYS PER MONTH (e.g. `1.25`; unit-annotated
-  cells like `1.25 d/mo` parse too). Setting it does TWO things: (a) that
-  rep's Time/PTO annual-leave tile flips to the growing accrued-balance
-  framing ("ACCRUING 1.25D/MO", balance → ≈year-end projection, a bar that
-  FILLS as credits land); (b) **the SYSTEM credits the rate into the
-  column-I balance automatically** — the daily `creditMonthlyPtoAccruals`
-  trigger, IN ARREARS (month M's accrual lands on/after the 1st of M+1),
-  idempotent via the auto-managed column-R stamp (see below and INV-194).
+  OPTIONAL PTO accrual rate in **PTO HOURS PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS`
+  HOURS WORKED** — the operator's real rule (2026-08-19). For the PH team
+  that is **`3.08`** (3.08 PTO hours per 80 hours worked); unit-annotated
+  cells like `3.08 h/80h` parse too (the first numeric token is read — do
+  NOT strip non-digits, `3.08 h/80h` would become 3.088). Setting it does
+  TWO things: (a) that rep's Time/PTO annual-leave tile flips to the
+  ACCRUING framing (`ACCRUING 3.08H / 80H` + a month-to-date earned line);
+  (b) **the SYSTEM credits the earned amount into the column-I balance
+  automatically** — the daily `creditMonthlyPtoAccruals` trigger reads the
+  rep's ACTUAL worked hours for each owed month (one range-wide Timesheet
+  index, archive-aware) and credits `hours × rate / basis ÷
+  CONFIG.PTO_HOURS_PER_DAY` days, IN ARREARS (month M's accrual lands
+  on/after the 1st of M+1), idempotent via the auto-managed column-R stamp
+  (see below and INV-194). **A month with no worked hours credits nothing**
+  — correct under an hours rule, and it still writes an audit row so the
+  silence is visible.
   Shipped display-only for ~an hour, then operator-upgraded to
   system-computed the same day. Column I REMAINS the balance of record:
   the credit is a DELTA through `adjustLeaveBalance_`, so manual
@@ -6428,13 +6464,25 @@ manually for a fresh deploy or environment:
   accrual — the fixed-allotment tile and zero credits, exactly as before
   (`empPtoAccrual_` fail-safes to null, the `parseShiftOverride_`
   posture). Fill it by hand in the sheet for accruing agents only; the
-  onboarding form deliberately doesn't ask.
+  onboarding form deliberately doesn't ask. **A rate carried over from the
+  2026-08-18 days-per-month round means something different now** — re-enter
+  it in hours-per-80-worked.
+- **`CONFIG.PTO_ACCRUAL_BASIS_HOURS` (80) + `CONFIG.PTO_HOURS_PER_DAY` (8)**
+  (operator 2026-08-19) — the two halves of the accrual unit conversion:
+  column Q's rate is *per basis hours worked*, and the earned PTO hours are
+  divided by hours-per-day to reach the DAYS column I stores. Both are
+  CONFIG-only (no Script Property), so changing either is a redeploy — and
+  changing the basis silently re-scales every column-Q rate, so change the
+  cells in the same pass. `PTO_ACCRUAL_CATCHUP_MAX_MONTHS` (12) bounds a
+  cold-start catch-up.
 - **`Employees` sheet column R = `AccruedThrough`** (operator 2026-08-18) —
   AUTO-MANAGED `yyyy-MM` stamp: the last month whose accrual has been
   credited. Written only by `creditMonthlyPtoAccruals`; leave it alone.
   Blank = seeds on the next run (stamps last month, credits nothing).
   Hand-edit ONLY to deliberately re-credit or skip months — backdating it
-  credits the intervening months on the next run (capped at
+  credits the intervening months on the next run, each from the hours that
+  month's Timesheet rows actually record (the index reads through
+  `TimesheetArchive`, so an old month is not silently worth zero; capped at
   `PTO_ACCRUAL_CATCHUP_MAX_MONTHS`=12, with any capped overflow NAMED in
   the audit row rather than silently absorbed). Sheets may coerce the cell
   to a Date — every read routes through `accrualStampYm_` (the
@@ -7191,6 +7239,24 @@ since REMOVING an action keeps the subset true) — 5 mutations
 bite-checked. Editor suite +2 (`test_creditPtoAccrual_seedCreditIdempotent`
 with an ABSOLUTE balance restore in finally — a relative un-credit would
 corrupt the fixture on partial failure — + the trigger-gate case) ≈ 305.
+The 2026-08-19 accrual REBUILD (operator: hours-driven, 3.08 per 80 worked)
+kept the count at **556** — both pins were REWRITTEN in place rather than
+added, which is the honest bookkeeping when a contract changes under a
+test. The credit pin now drives the earn arithmetic behaviourally
+(80h → 3.08 PTO hours → 0.39 days; 2080h ≈ 10 days/year; a genuine 0 earns
+0 while an UNREADABLE hours figure returns null — `Number(null)` is 0, so
+without an explicit guard an unread month would credit and audit as a real
+zero) and pins the read shape the lock demands: ONE range-wide index, no
+`buildTimesheetForEmployee_`, exactly two `getDataRange().getValues()`
+(live + archive), archive read-through with live-key dedupe, `calcHours_`
+for per-day arithmetic, INCOMPLETE-not-zero on an unparseable day, and NO
+`catch` (a failed read aborts the run rather than crediting from partial
+hours). The tile pin gained a scoped ban on a fill BAR inside the accrual
+branch — the first write of it asserted the absent projection but not the
+absent bar, and a re-added bar passed, so the pin was tightened until it
+bit. 11 mutations bite-checked, one of which (the digit-strip rate parser
+turning `3.08 h/80h` into **3.088**) was a live defect the pin caught while
+being written — a silently wrong rate feeding real balance credits.
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
 step back, zero-arg defaults to employee-tz today; the My-Stats-preset pin —
@@ -7537,7 +7603,7 @@ INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_me
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
 INV-192 | **A Drive SHEET embed is a title-only search hit and cannot be read in the mid-call drawer — convert it.** Both limits are structural, not cosmetic: `searchReference` skips embeds with "No stored content to chunk", so a roster titled "Power Roster" is unfindable by any query naming a team or a person; and the Ctrl/⌘+K drawer renders embeds as an open-in-a-tab card because an iframe is useless at 400px. The `/preview` iframe also loads under the REP's credentials, so an embed silently fails for anyone the file was never shared with. `kbConvertDriveSheet` (admin-gated per INV-136; READ-ONLY per INV-115's posture — it writes neither the Sheet nor a KB row, and the normal `kbSaveItem` persists it after review) produces a native article instead. It adds NO new OAuth scope (`SpreadsheetApp` is already authorized). The conversion DETECTS the shape: no merges + a header row → GFM table; a banded grid → headings + grouped members. **Banded grids partition by COLUMN — sub-teams sit side by side in the same rows — so headers claim a COLUMN RANGE and members are collected per range; a row-wise walk silently merges two teams and misroutes calls.** A band is a merge spanning the USED WIDTH, not a ratio of it (a 3-column sub-team merge cleared a 60%-of-6 bar and every sub-team was promoted to a department — measured, not reasoned). Highlights become bold plus a warning to record the legend: dropping them loses which name is the lead, and inventing a meaning is worse. Conversion is MANUAL by design, so an article later edited in-app is never overwritten by a re-sync. Verify: the column-separation behavioural pin, the shape-split pin, the highlight-legend pin, the kbMd_ round-trip, and the gate/read-only/bounded source pin | Subsystem: Server + Client (Reference views)
 INV-193 | **Interactive KB content comes from a RECOGNIZED FENCE, never from HTML in the article.** `kbMd_` escapes `& < >` before anything else, so an author cannot put a control into a document — the ` ```snippet ` block (a copy card) and now ` ```roster ` (an interactive directory) are the sanctioned shape: the app draws the markup, the content stays inert. Three failure modes a new block type must handle, all found the hard way on `roster`: the content arrives ESCAPED, so a separator like `&` is `&amp;` and a naive split mangles it; the top-level pass does NOT cover quotes, so any value going into an ATTRIBUTE needs its own quote-escaping (the gap `kbMd_`'s link/image rules already guard); and anything modelled as an attribute of a person/entity must travel with it across every group it appears in rather than living in one place. Searchability survives because `kbSplitSections_` masks fences only for HEADING detection — the block's text stays in the section markdown, so `searchReference` still finds it (verify this for any new block; it is the main advantage over an embed). Interactive blocks render in the 400px drawer, so they owe an intrinsic grid + a real breakpoint (A2) and full keyboard/ARIA treatment (INV-173/174). Verify: the roster parse/render/inert/reflow pins and the fence-recognition pin | Subsystem: Client (Reference views)
-INV-194 | **PTO accrual credits are system-computed, in arrears, idempotent, and fail toward VISIBLE over-credit.** `creditMonthlyPtoAccruals` (daily manager-tz trigger, INV-44 gate, INV-01 locked) credits each accruing rep's column-Q rate × completed months into the column-I balance THROUGH `adjustLeaveBalance_` (the one balance mutator — the INV-27 per-row gate and roster-cache invalidation ride along; never a direct cell write). The column-R `yyyy-MM` stamp is the idempotence state: the pure `accrualMonthsToCredit_(stamp, nowYm)` owes stamp+1..now−1 (IN ARREARS — month M lands on/after the 1st of M+1, which is also why the tile's `12 − month` year-end projection needs no convention slack); a blank/garbage/future stamp SEEDS (restamps to last month, credits NOTHING — enabling never dumps a surprise back-credit; the operator's balance is presumed current through the end of last month). Catch-up caps at `PTO_ACCRUAL_CATCHUP_MAX_MONTHS` (12) with the overflow NAMED in the audit row, never silently absorbed (INV-187). ORDER IS LOAD-BEARING: the credit + its `PtoAccrualCredit` audit row land BEFORE the stamp advances, so a mid-run failure re-credits next run — failing toward a VISIBLE over-credit (two audit rows for one month) rather than a silent lost month (the archive mover's duplicate-not-lose posture). A pto-disabled rep is skipped WITH the stamp frozen, so re-enabling credits the (capped) missed months instead of swallowing them. Column I stays the balance of record — manual corrections compose as deltas; the operator MUST stop routine manual top-ups once column Q is set. The stamp cell is a Sheets-coercion surface — every read routes through `accrualStampYm_`. Verify: the accrual-credit Node pin (behavioural month math incl. seed/cap/year-boundary, credit-before-stamp order, through-the-mutator, action registered) + `test_creditPtoAccrual_seedCreditIdempotent` + `test_triggerGate_ptoAccrual_nonManagerThrows` | Subsystem: Server + Client (Time Clock views)
+INV-194 | **PTO accrual is HOURS-DRIVEN, in arrears, idempotent, and fails toward VISIBLE over-credit.** The operator's rule is a rate of PTO HOURS per hours WORKED — column Q holds hours-per-`CONFIG.PTO_ACCRUAL_BASIS_HOURS` (80 by default; 3.08 for the PH team) and `CONFIG.PTO_HOURS_PER_DAY` (8) converts the earned hours to the days column I stores. `creditMonthlyPtoAccruals` (daily manager-tz trigger, INV-44 gate, INV-01 locked) credits `accrualDaysForHours_(hoursWorked, rate, basis, perDay)` through `adjustLeaveBalance_` — the one balance mutator, so the INV-27 per-row gate and roster-cache invalidation ride along; never a direct cell write. **Hours come from ONE range-wide Timesheet index** (`workedHoursByEmpForRange_`), not a per-rep `buildTimesheetForEmployee_` call: the run holds the global lock, so N full-sheet reads is the C17-9 / INV-153 lock-amplification trap. That index reads THROUGH `TimesheetArchive` when the catch-up range predates the live tab (INV-153/F1 — reading short would under-credit real earned PTO), counts a row present in both tabs once (INV-132), computes each day with the SAME `calcHours_` arithmetic as payroll, treats an unparseable day as INCOMPLETE rather than 0 hours (INV-176, and the audit row names the count), and THROWS on a failed read so the run aborts with no credits rather than crediting from partial hours. A month with genuinely zero worked hours credits zero and still writes an audit row, so unexpected silence is visible; an UNREADABLE hours figure (null/'' ) returns null instead of coercing to 0 through `Number()`, which would be indistinguishable from that real zero. The column-R `yyyy-MM` stamp is the idempotence state: `accrualMonthsToCredit_(stamp, nowYm)` owes stamp+1..now−1 (IN ARREARS — month M lands on/after the 1st of M+1); a blank/garbage/future stamp SEEDS (restamps to last month, credits NOTHING — enabling never dumps a surprise back-credit). Catch-up caps at `PTO_ACCRUAL_CATCHUP_MAX_MONTHS` (12) with the overflow NAMED in the audit row (INV-187). ORDER IS LOAD-BEARING: credit + audit row land BEFORE the stamp advances, so a mid-run failure re-credits next run — a VISIBLE over-credit (two audit rows for one month) beats a silent lost month. A pto-disabled rep is skipped WITH the stamp frozen. Column I stays the balance of record; the operator MUST stop routine manual top-ups once column Q is set. The stamp cell is a Sheets-coercion surface — every read routes through `accrualStampYm_`. **The tile states only what is TRUE** — the credited balance, the rate in its real terms, and the server-computed month-to-date earning; the old fixed-rate variant's Dec-31 projection and progress bar are GONE, because an hours-driven balance has no ceiling and no knowable future work pattern to project from (INV-187). Verify: the hours-driven accrual Node pin (behavioural earn arithmetic + null-not-zero, one indexed read, archive read-through + dedupe, incomplete-not-zero, credit-before-stamp order, through-the-mutator, zero-hour audit row, action registered) + the tile pin (rate line, MTD line, no projection, NO fill bar) + `test_creditPtoAccrual_seedCreditIdempotent` (real punched hours → the amount they imply) + `test_triggerGate_ptoAccrual_nonManagerThrows` | Subsystem: Server + Client (Time Clock views)
 INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is **admin-gated** (`emp.isAdmin`, `'Admin access required.'` — KB content authoring, INV-136; was manager-gated) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (drawings, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. Phase 2b: `INLINE_IMAGE`s emit `kbdoc:<fileId>:<n>` tokens (the converter remains read-only); `kbSaveItem` resolves them at save via `kbResolveDocImages_` — Doc re-walk in converter order (`kbCollectDocInlineImages_`, a mirrored-walk pair pinned by a Node test), idempotent export to the `KB_IMAGES_FOLDER_ID` Drive folder (deterministic `kbdoc-<fileId>-<n>` names, reused on re-save), token → thumbnail-URL swap, per-token degradation to the italic placeholder on any failure. Resolution runs OUTSIDE the ScriptLock; the lock wraps only the sheet write. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON) AND, since cycle 9 (L-16), metadata-only at the READ layer too: two column-bounded reads per tab (the leading metadata columns + the Recipient column) skip the AnswersJSON/Recommendations/Selections blobs entirely instead of fetching full-width rows and projecting in memory. Newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. Since cycle-17 batch ⑤ the list response carries `total` + `cap` (INV-169 — a manager's list spans all reps × 3 form types, so the silent cap read as "exactly 100 exist") and the client renders "N shown · server holds M total (list capped)" keyed off the UNFILTERED list length (additive — an older server renders nothing). The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). For a PPD detail it ALSO returns `factors` — the read-only engine explainability (`intakeExplainFactors_`, recomputed from the stored answers, drift-free per INV-112) rendered as a "Why these recommendations · engine factors" block (every value `esc()`'d). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), USER-locked (batch K-B: `LockService.getUserLock()` — an append-only fire-and-forget log must never make punch/note writes queue behind the ONE script lock; the user lock still serializes a rep's own double-fires, and the INV-01 finally-release structure is unchanged), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
@@ -8100,8 +8166,8 @@ S46 | Consolidated Time / PTO page + quick-actions card (operator 2026-08-18; re
     - **(range round, operator 2026-08-18)** In the quick-actions card, fill BOTH dates (a Mon and the Fri of the NEXT week) → Request → the pinned day modal opens on the Monday with "Through" pre-filled; the balance preview reads "N weekdays × 1d" and projects the multiplied deduction; Submit → toast reports "N request(s) submitted — 2 weekend day(s) skipped", the calendar shows a pending dot on each weekday, and Your Requests lists one row per day (each individually cancelable/approvable)
     - Submit a range overlapping an EXISTING pending/approved day → the whole batch is rejected naming the conflicting date(s), and NO rows were written (check the sheet)
     - In the day modal opened from a calendar tap, leave "Through" blank → the single-day flow is unchanged
-    - **(accrual round)** Put `1.25` in the rep's Employees column Q (`PtoAccrual`), wait out the 5-min roster cache (or run `clearCaches_()`), reload → the Annual-leave tile reads "ACCRUING 1.25D/MO" with "balance → ≈Nd by Dec 31" and a bar that FILLS as credits land; blank the cell → the /15-days fixed-allotment tile returns
-    - **(automated credit, same day's follow-up — INV-194)** From the editor run `creditMonthlyPtoAccruals` as a manager: first run with a blank column R SEEDS (stamps last month, balance unchanged); hand-set column R one month further back and re-run → the balance grows by exactly one month's rate and an AuditLog `PtoAccrualCredit` row records rate/months/days/through; a re-run credits nothing (idempotent); a rep with `PtoEnabled=FALSE` is skipped with the stamp FROZEN. In production the daily 6am trigger does this — verify it exists after re-running `installAutomationTriggers()`
+    - **(accrual round, hours model 2026-08-19)** Put `3.08` in the rep's Employees column Q (`PtoAccrual` — PTO hours per 80 hours WORKED), wait out the 5-min roster cache (or run `clearCaches_()`), reload → the Annual-leave tile reads "ACCRUING 3.08H / 80H" over the credited balance, with a month-to-date line ("+0.46d earned this month · 96h worked so far") computed from the rep's real punches; there is deliberately NO year-end projection and NO progress bar (nothing to project or fill against). Blank the cell → the /15-days fixed-allotment tile returns, bar and all
+    - **(automated credit — INV-194)** From the editor run `creditMonthlyPtoAccruals` as a manager: first run with a blank column R SEEDS (stamps last month, balance unchanged); hand-set column R one month further back and re-run → the balance grows by exactly the PTO the rep's PUNCHED HOURS in that month earned (`hours × rate / 80 ÷ 8` days) and an AuditLog `PtoAccrualCredit` row records `hoursWorked=`/`rate=`/`ptoHours=`/`days=`/`months=`/`through=`/`balance=`; a re-run credits nothing (idempotent); a rep who worked NO hours that month is credited nothing but still gets an audit row saying so; a rep with `PtoEnabled=FALSE` is skipped with the stamp FROZEN. Check the row also names any `incomplete day(s) NOT counted` — a day missing a clock-out is not zero hours. In production the daily 6am trigger does this — verify it exists after re-running `installAutomationTriggers()`
   Expected: One page; the rail's pay-period block lazy-loads via `loadTimesheetSideRail_` on every render (a failed load renders the error card in that slot only). The PTO path is the SAME day-modal submit flow a calendar tap uses (one submit path); closing/submitting the modal behaves per S47/S4. No `.mp-mode` markup or `umsMergeMode` read/write remains (pinned).
 
 S47 | Hover-triggered day modal (Round 2 · 8c) | Subsystem: Client (Time Clock views)

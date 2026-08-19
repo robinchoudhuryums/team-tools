@@ -840,14 +840,17 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Cycle 17 is CLOSED (reflected). **Cycle 18 has NOT opened and is DUE as the
-Seams & Invariants audit** (cadence counter 4/4) — when it opens, move the
-cycle-17 block into HISTORY.md and reset this file from the template. The
-library is at **INV-194**; 189/190/191 came from the 2026-08-11 pilot round
-and 192/193/194 since, so cycle 18 owes NEW candidates, not those.
+Cycle 17 is CLOSED (reflected) and PROJECT_HEALTH now carries it. **Cycle 18
+has NOT opened and is DUE as the Seams & Invariants audit** (cadence counter
+4/4) — when it opens, move the cycle-17 block into HISTORY.md and reset this
+file from the template. The library is at **INV-194**; 189/190/191 came from
+the 2026-08-11 pilot round and 192/193/194 since, so cycle 18 owes NEW
+candidates, not those.
 
-**Since cycle 17 closed, SEVEN operator-request rounds shipped in three
-merged PRs** (all CI-green, branch restarted from main after each):
+**Since cycle 17 closed, EIGHT operator-request rounds shipped** — seven in
+three merged PRs (#171, #172, #173), plus the PTO accrual **REBUILD** now
+sitting UNMERGED on this branch:
+
 - **#171** — Spanish-members editor, compact auto-tag list, full-width sweep,
   load-time/caching sweep, 6h dashboard TTL, Team Metrics opened to reps as a
   whitelist-built aggregate (INV-66/124 posture kept), dashboard→Metrics
@@ -856,28 +859,32 @@ merged PRs** (all CI-green, branch restarted from main after each):
   retired), quick-actions Requests card, pay-statement "Request edit"
   click-through, CN pop-out fluid type + ≤400px narrow stacking.
 - **#173** — multi-day time-off requests (`submitTimeOffRange`, atomic,
-  weekday rows) + **system-computed PTO accrual credits** (INV-194: daily
-  `creditMonthlyPtoAccruals`, in arrears, idempotent via roster column R).
+  weekday rows) + system-computed PTO accrual credits.
+- **UNMERGED, on this branch — the accrual REBUILD (2026-08-19).** The
+  operator's real rule is **3.08 PTO hours per 80 hours WORKED, 8 hours per
+  day**; #173 had shipped a flat days-per-calendar-month model (the one new
+  failure mode cycle 17's between-rounds reflection recorded). The machinery
+  is unchanged — same trigger, stamp, in-arrears idempotence, audit action,
+  gate, cache key — only the AMOUNT calculation was replaced. See
+  `.cycle/blocks/18pre-pto-hours-rebuild-broad-implement.md`.
 
 **Deploy state (the thing a fresh session must not get wrong):** the operator
-deployed after #172 and was mid-testing when #173 was merged. **#173's deploy
-carries THREE operator actions, not one** — (1) `clasp push -f` + New version
-+ `runAllTests()`, (2) **re-run `installAutomationTriggers()` once** (the
-accrual trigger does not exist until then, so the feature is inert without
-it), (3) fill roster column Q for accruing agents AND stop the manual monthly
-balance top-ups for exactly those agents (doing both double-credits).
+deployed after #172 and was mid-testing when #173 was merged; the rebuild
+above has NOT been deployed. Its deploy carries **FOUR** operator actions:
+(1) `clasp push -f` + New version + `runAllTests()`, (2) **re-run
+`installAutomationTriggers()` once** (the accrual trigger does not exist until
+then), (3) fill roster column Q for accruing agents AND stop the manual
+monthly top-ups for exactly those agents, and (4) — NEW and easy to miss —
+**re-enter every column-Q value in the new units**: a cell left at `1.25` from
+the 2026-08-18 round now reads as 1.25 PTO hours per 80 worked, roughly a
+third of the intended rate.
 
-**The one real verification gap:** the editor suite has NOT been run against
-#172/#173. Three editor tests are new and have never executed
-(`submitTimeOffRange_weekendSkipAtomicCaps`,
-`creditPtoAccrual_seedCreditIdempotent`,
-`triggerGate_ptoAccrual_nonManagerThrows`) — `runAllTests()` is the ONLY
-thing that exercises the accrual credit against a real sheet, and the
-editor-test-rot gotcha (cycle-14 found two rotted tests after four unrun
-cycles) is exactly this shape. Node baselines are green: **pure 556, DOM 71,
-visual matrix 42** (0 missing / 0 overflow).
-
-**Also stale, NOT mine to rewrite:** `PROJECT_HEALTH.md`'s Current Standing
-still reads **Cycle 16** although cycle 17 closed — its `/reflect` appended
-the metrics row and wrote `.cycle/blocks/17-a-reflect.md` but never promoted
-the Current Standing. Source material for the fix is both of those files.
+**The one real verification gap, now larger:** the editor suite has NOT been
+run against #172/#173 or this rebuild. Three editor tests are new or rewritten
+and have never executed (`submitTimeOffRange_weekendSkipAtomicCaps`,
+`creditPtoAccrual_seedCreditIdempotent` — REWRITTEN for the hours model, it
+now writes two 8-hour test days and asserts the credit they imply,
+`triggerGate_ptoAccrual_nonManagerThrows`). `runAllTests()` is the ONLY thing
+that exercises the accrual credit against a real sheet, and the editor-test-rot
+gotcha (cycle-14 found two rotted tests after four unrun cycles) is exactly
+this shape. Node baselines are green: **pure 556, DOM 71, visual matrix 42**.

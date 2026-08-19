@@ -4095,9 +4095,14 @@ function test_triggerGate_ptoAccrual_nonManagerThrows() {
   }, 'manager access required');
 }
 
-// Seed (blank stamp → restamp only, no credit), one in-arrears credit,
-// idempotent re-run, and the pto-disabled skip that FREEZES the stamp (so a
-// re-enabled rep gets the capped catch-up instead of silently losing months).
+// Seed (blank stamp → restamp only, no credit), one in-arrears credit whose
+// AMOUNT comes from real punched hours (the operator's rule: PTO hours per
+// hours WORKED — 3.08 per 80 by default), idempotent re-run, and the
+// pto-disabled skip that FREEZES the stamp (so a re-enabled rep gets the
+// capped catch-up instead of silently losing months).
+// The fixture writes two 8-hour days into the credited month and DELETES them
+// in finally: leaving them would make every later run credit a different
+// amount, so the assertion would rot rather than fail honestly.
 // Balance restored ABSOLUTELY in finally (never a relative un-credit — a
 // partial failure before the credit would otherwise corrupt the fixture).
 function test_creditPtoAccrual_seedCreditIdempotent() {
@@ -4124,27 +4129,46 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     const backYm = lp[1] === '01' ? (parseInt(lp[0], 10) - 1) + '-12'
       : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
     let res;
+    // Two full 8-hour days INSIDE the month that will be credited. Written
+    // directly (not via recordPunch) because the dates are weeks in the past.
+    const d1 = lastYm + '-05', d2 = lastYm + '-06';
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN',  'ClockIn');
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '17:00:00', 'OUT', 'ClockOut');
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d2, '09:00:00', 'IN',  'ClockIn');
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d2, '17:00:00', 'OUT', 'ClockOut');
+    // The rate is the operator's real one; the expected credit is the arithmetic
+    // it implies for 16 worked hours — NOT a number read back from the helper
+    // under test (that would assert only that the code agrees with itself).
+    const RATE = 3.08;                                  // PTO hours per basis hours
+    const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
+    const expectDays = Math.round(((16 * RATE / basis) / perDay) * 100) / 100;
+    _assertTrue(expectDays > 0, 'the fixture earns a non-zero, non-trivial credit');
     // 1. SEED — rate on, stamp blank: restamps to last month, credits nothing.
-    qCell.setValue(1.25); rCell.setValue(''); invalidateRosterCache_();
+    qCell.setValue(RATE); rCell.setValue(''); invalidateRosterCache_();
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
     _assertSuccess(res);
     _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'seeded through last month');
     _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore, 0.001, 'seeding credits nothing');
-    // 2. CREDIT — stamp one month further back: exactly one in-arrears credit.
+    // 2. CREDIT — stamp one month further back: exactly one in-arrears month,
+    //    and the credit equals the hours actually worked in it.
     rCell.setValue(backYm); invalidateRosterCache_();
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
     _assertSuccess(res);
-    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'one month credited in arrears');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'credited the hours-driven amount for the worked month');
     _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'stamp advanced with the credit');
     // 3. IDEMPOTENT — a re-run owes nothing.
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
-    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'idempotent re-run credits nothing');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'idempotent re-run credits nothing');
     // 4. PTO-DISABLED — no credit AND the stamp stays frozen.
     ptoCell.setValue('FALSE'); rCell.setValue(backYm); invalidateRosterCache_();
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
-    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + 1.25, 0.001, 'disabled rep not credited');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'disabled rep not credited');
     _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'disabled rep stamp frozen');
   } finally {
+    _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
     if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
