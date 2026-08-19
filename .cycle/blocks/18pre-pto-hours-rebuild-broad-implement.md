@@ -78,6 +78,18 @@ below keeps its bar, where the max is real) and re-bitten.
 4. `runAllTests()` after deploy — the rewritten accrual test executes only in
    the editor.
 
+## Found by looking at the render
+The first shoot showed the MTD line as **"+0.5d earned this month"** —
+`formatLeaveDays` rounds to 1dp, and 0.46 → 0.5 overstates by 9% the one
+figure the tile exists to state honestly. Now printed at the server's 2dp
+(the balance above can afford 1dp; a month's increment cannot), pinned, and
+bite-checked as the 12th. Re-shot and read back: "+0.46d earned this month ·
+96h worked so far".
+
+Visual matrix: **42 scenarios, 0 missing, 0 overflow**, light + dark read.
+DOM 71, pure 556.
+
 ## Not done
-- The visual re-shoot was still running when this block was written; the
-  timeoff scenarios need a look before the tile change is considered verified.
+- The editor suite has still never been run against this branch (three tests,
+  one of them this round's rewrite). `runAllTests()` is the only thing that
+  exercises the credit against a real sheet.

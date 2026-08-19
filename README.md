@@ -25,10 +25,12 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (Time / PTO → the pay-period rail block) lets each rep check their own
     punches, hours, PTO, and — when a pay rate is on the roster — an
     estimated gross, clearly labeled an estimate. Agents who accrue
-    leave get a monthly accrual rate on the roster: the app credits it
-    into their balance automatically each month (in arrears) and their
-    leave tile shows the balance growing toward a year-end projection
-    instead of draining from a fixed allotment.
+    leave get an accrual rate on the roster — PTO hours earned per hours
+    WORKED (3.08 per 80 for the PH team) — and the app credits what each
+    month's real punched hours earned, automatically and in arrears. Their
+    leave tile shows the credited balance, the rate in its own terms, and
+    what they have earned so far this month, instead of draining from a
+    fixed allotment.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
