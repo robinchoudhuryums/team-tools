@@ -856,74 +856,26 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Cycle-18 /broad-scan Batches 1+2 are implemented and UNMERGED on
-`claude/broad-scan-s9b8fd`. All suites green (pure 562, DOM 75, matrix 42
-clean); 15 mutations bite-checked, three pins strengthened after failing to
-bite — including the whole Batch-2 block, which was appended AFTER run.js's
-`process.exit()` and never ran until moved.
+Batches 1–4 of the cycle-18 pre-audit scan are implemented and committed on
+`claude/broad-scan-s9b8fd` (ade5136, 149461b, ebb2d65, f024a42, 57784e0) — NOT
+merged, NOT deployed. All suites green: pure 570, DOM 75, matrix 42 clean;
+28 mutations bite-checked across the four batches.
 
-NEXT: `/sync-docs` is OWED before merge — INV-193 is now factually wrong as
-written, and the new data-* decode gotcha, the AUTOMATION_JOB_CHECKS
-derivation, and the test counts all need recording (full list in the block).
-Then the remaining audit batches, in priority order: 3 (status-normalize
-family F5), 4 (weekend reminders F2 + accrual tile F7/F10), 5 (accessibility
-F6), 6 (fixture drift F14 + timeoff mobile F8), 7 (span cap F3 + doc
-corrections), 8 (completeness gaps). The scan report is in this session's
-transcript; the batch plan is reproduced in the block file.
+NEXT: **/sync-docs for Batches 3+4** — the six items at the end of
+`.cycle/blocks/18-batch3-batch4-broad-implement.md`. Two matter most because the
+docs now state the OPPOSITE of the code: INV-183's text still lists the three raw
+`DR.STATUS` reads as a known-open gap ("the right close is a `drStatus_(row)`
+predicate…") when that close has shipped, and the trigger list still says the PTO
+accrual credit runs at 6am when it now runs at 18:00.
 
-NOTE the cadence counter still says a Seams & Invariants audit is DUE (4/4) —
-this broad scan did not discharge it.
+Then Batches 5–8 remain: 5 accessibility (15 unnamed `ensureOverlay` dialogs +
+~65 placeholder-only controls), 6 fixture drift F14 + a timeoff mobile scenario
+F8, 7 `getTeamMetrics` span cap F3 + ViewUsage retention F11, 8 completeness gaps
+(Offerings browse view, manager pay-statement UI, print stylesheet).
 
-**Since cycle 17 closed, EIGHT operator-request rounds shipped** — seven in
-three merged PRs (#171, #172, #173), plus the PTO accrual **REBUILD** now
-sitting UNMERGED on this branch:
-
-- **#171** — Spanish-members editor, compact auto-tag list, full-width sweep,
-  load-time/caching sweep, 6h dashboard TTL, Team Metrics opened to reps as a
-  whitelist-built aggregate (INV-66/124 posture kept), dashboard→Metrics
-  click-throughs.
-- **#172** — Time/PTO CONSOLIDATED to one page (mode toggle + `umsMergeMode`
-  retired), quick-actions Requests card, pay-statement "Request edit"
-  click-through, CN pop-out fluid type + ≤400px narrow stacking.
-- **#173** — multi-day time-off requests (`submitTimeOffRange`, atomic,
-  weekday rows) + system-computed PTO accrual credits.
-- **UNMERGED, on this branch — the accrual REBUILD (2026-08-19).** The
-  operator's real rule is **3.08 PTO hours per 80 hours WORKED, 8 hours per
-  day**; #173 had shipped a flat days-per-calendar-month model (the one new
-  failure mode cycle 17's between-rounds reflection recorded). The machinery
-  is unchanged — same trigger, stamp, in-arrears idempotence, audit action,
-  gate, cache key — only the AMOUNT calculation was replaced. See
-  `.cycle/blocks/18pre-pto-hours-rebuild-broad-implement.md`.
-
-**Deploy state (the thing a fresh session must not get wrong):** the operator
-deployed after #172 and was mid-testing when #173 was merged; the rebuild
-above has NOT been deployed. Its deploy carries **FOUR** operator actions:
-(1) `clasp push -f` + New version + `runAllTests()`, (2) **re-run
-`installAutomationTriggers()` once** (the accrual trigger does not exist until
-then), (3) fill roster column Q for accruing agents AND stop the manual
-monthly top-ups for exactly those agents, and (4) — NEW and easy to miss —
-**re-enter every column-Q value in the new units**: a cell left at `1.25` from
-the 2026-08-18 round now reads as 1.25 PTO hours per 80 worked, roughly a
-third of the intended rate.
-
-**Editor suite RUN 2026-08-19 against the merged branch: 288 passed, 1 failed,
-0 skipped.** The single failure was `deptReq_incomingAndMemberResolve` — TEST
-ROT, not a code defect: the 2026-08-18 load-time round gave `getDeptRequests` a
-per-caller result cache invalidated by its two production writers, and that
-test builds its fixture with a direct `appendRow`, so it read back a cached
-payload warmed by the omnibus gate test. Fixed by bumping the generation
-between the append and the read (+ after cleanup), pinned with an ordering
-assert, and written up as a Common Gotcha. **The accrual rebuild's own editor
-tests passed.** Everything below about the gap is now HISTORY, kept for the
-lesson: it had gone unrun long enough for a cache added under a test to go
-unnoticed.
-
-**Previously (superseded by the run above):** the editor suite had NOT been
-run against #172/#173 or the rebuild. Three editor tests are new or rewritten
-and have never executed (`submitTimeOffRange_weekendSkipAtomicCaps`,
-`creditPtoAccrual_seedCreditIdempotent` — REWRITTEN for the hours model, it
-now writes two 8-hour test days and asserts the credit they imply,
-`triggerGate_ptoAccrual_nonManagerThrows`). `runAllTests()` is the ONLY thing
-that exercises the accrual credit against a real sheet, and the editor-test-rot
-gotcha (cycle-14 found two rotted tests after four unrun cycles) is exactly
-this shape. Node baselines are green: **pure 556, DOM 71, visual matrix 42**.
+TWO PROCESS RE-LEARNINGS this session, both traps CLAUDE.md already documents:
+a `git checkout` bite-revert wiped uncommitted Code.js work (re-applied from
+context; the fix is COMMIT BEFORE bite-checking, which made the later reverts a
+clean recovery), and two reverse edits matched a DIFFERENT occurrence than
+intended (`getDataRange()`, `</div>\``) — anchor on a string unique in the FILE
+and verify the restore by re-reading, not by re-running the suite.
