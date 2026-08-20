@@ -1055,3 +1055,134 @@ test('the × dismisses it, and the stack cap evicts routine toasts first', () =>
   assert.ok(/toast-leave/.test(h.$('#toast-stack .toast-sticky').className),
     'clicking it starts the same leave animation a timed-out toast uses');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// KB interactive blocks — the fence-source round-trip (F1 / INV-193).
+//
+// WHY THESE LIVE HERE AND NOT IN run.js: the defect is a property of the DOM,
+// not of the string. kbMd_ escapes `<` before a fence is captured, so the FIRST
+// render is inert and every pure pin over it passes. But the source is stashed
+// in `data-src`, and an attribute DECODES on read — so the SECOND render (a
+// mode switch, Expand, a decision answer) parsed `<img src=x onerror=…>` and
+// put a live element into the article. The pure harness cannot see it: it has
+// no HTML parser, so it can never perform the decode that causes the bug, and
+// run.js:7790 pinned the vulnerable line as the CORRECT shape.
+//
+// The rule this encodes: a component that reads its own state back out of the
+// DOM gets a DOM test, not a string test.
+// ═════════════════════════════════════════════════════════════════════════════
+section('KB blocks — fence source survives the DOM round-trip');
+
+/** Render an article body through the real kbMd_ into a mounted .kb-article. */
+function mountArticle(h, body) {
+  const host = h.window.document.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = h.window.kbMd_(body);
+  h.window.document.body.appendChild(host);
+  return host;
+}
+
+test('a roster fence cannot inject a live element on ANY view switch', () => {
+  const h = boot();
+  const host = mountArticle(h, [
+    '```roster',
+    'dept| Ops — Owner',
+    'flow| Ops -> Ops',
+    'team| Ops > Sub: <img src=x onerror="window.__PWNED__=1"> (C)',
+    '```',
+  ].join('\n'));
+  const root = host.querySelector('.kb-roster');
+  assert.ok(root, 'the block rendered');
+  assert.strictEqual(host.querySelectorAll('img').length, 0, 'the first render is inert');
+  // Every mode re-renders the body from the stored source.
+  ['capabilities', 'chart', 'flow', 'coverage', 'teams'].forEach((mode) => {
+    const btn = root.querySelector('.kb-ros-mode[data-mode="' + mode + '"]');
+    if (!btn) return;
+    h.window.kbRosterSetMode_(btn);
+    assert.strictEqual(root.querySelectorAll('img').length, 0,
+      'no live element after switching to ' + mode);
+  });
+  // Expand builds a whole fresh instance from the same source.
+  const exp = root.querySelector('.kb-ros-expand');
+  if (exp) {
+    h.window.kbRosterExpand_(exp);
+    const ov = h.window.document.getElementById('kb-roster-overlay');
+    assert.ok(ov, 'the expand overlay mounted');
+    assert.strictEqual(ov.querySelectorAll('img').length, 0, 'and it is inert too');
+  }
+  assert.strictEqual(h.window.__PWNED__, undefined, 'nothing executed');
+});
+
+test('the person panel renders parsed source, not decoded source', () => {
+  const h = boot();
+  const host = mountArticle(h, [
+    '```roster', 'dept| Ops — Owner',
+    'team| Ops: <img src=x onerror="window.__PWNED2__=1">',
+    '```',
+  ].join('\n'));
+  const root = host.querySelector('.kb-roster');
+  const btn = root.querySelector('.kb-ros-name');
+  assert.ok(btn, 'the person button rendered');
+  h.window.kbRosterOpenPerson_(btn);
+  assert.strictEqual(root.querySelectorAll('img').length, 0,
+    'the detail panel injects the ESCAPED name');
+  assert.strictEqual(h.window.__PWNED2__, undefined, 'nothing executed');
+});
+
+test('a decision fence cannot inject a live element when an answer is picked', () => {
+  const h = boot();
+  const host = mountArticle(h, [
+    '```decision',
+    'ask| a: <img src=y onerror="window.__PWNED3__=1">?',
+    'opt| a: Yes -> b',
+    'do| b: <img src=z onerror="window.__PWNED3__=1">',
+    '```',
+  ].join('\n'));
+  assert.strictEqual(host.querySelectorAll('img').length, 0, 'the first render is inert');
+  // Call the handler directly: jsdom under runScripts:'outside-only' does not
+  // compile inline onclick attributes, so dispatching a click here would be a
+  // no-op and the assertion below would pass vacuously.
+  h.window.kbDecideChoose_(host.querySelector('.kb-dec-opt'));
+  assert.strictEqual(h.window.document.querySelectorAll('.kb-decision img').length, 0,
+    'and so is the answer it walks to');
+  assert.strictEqual(h.window.__PWNED3__, undefined, 'nothing executed');
+});
+
+test('re-escaping the source does not break matching on & < > values', () => {
+  const h = boot();
+  // A decision option label with an ampersand — the escaped source says
+  // `PT &amp; OT` while data-opt decodes to `PT & OT`; both sides must land on
+  // the same string or the guide dead-ends.
+  let host = mountArticle(h, [
+    '```decision', 'ask| q1: Which eval?', 'opt| q1: PT & OT -> q2',
+    'ask| q2: Which site?', 'opt| q2: North -> a1', 'do| a1: Schedule it', '```',
+  ].join('\n'));
+  h.window.kbDecideChoose_(host.querySelector('.kb-dec-opt'));
+  let dec = h.window.document.querySelector('.kb-decision');
+  assert.strictEqual(dec.querySelector('.kb-dec-title').textContent, 'Which site?',
+    'the ampersand option still resolves to the next question');
+  assert.strictEqual(dec.querySelector('.kb-dec-crumb-a').textContent, 'PT & OT',
+    'and the crumb shows the human form, not the entity');
+  // A SECOND step is what exercises the stored path: answer one is now read
+  // back out of `data-path` (its own decoded channel) and re-matched. A
+  // one-step walk never reads it, so it would not test this at all.
+  h.window.kbDecideChoose_(dec.querySelector('.kb-dec-opt'));
+  dec = h.window.document.querySelector('.kb-decision');
+  assert.strictEqual(dec.querySelector('.kb-dec-title').textContent, 'Schedule it',
+    'the second answer resolves THROUGH the stored ampersand answer');
+  assert.strictEqual(dec.querySelectorAll('.kb-dec-crumb').length, 2, 'both crumbs survive');
+
+  // A person name with an ampersand — the panel lookup keys off the parsed index.
+  host = mountArticle(h, [
+    '```roster', 'dept| Ops — Owner', 'team| Ops: Smith & Jones (C)', '```',
+  ].join('\n'));
+  const root = host.querySelector('.kb-roster');
+  const btn = root.querySelector('.kb-ros-name');
+  assert.strictEqual(btn.textContent, 'Smith & Jones', 'the name renders in human form');
+  h.window.kbRosterOpenPerson_(btn);
+  const panel = root.querySelector('.kb-ros-panel');
+  assert.strictEqual(panel.hidden, false, 'their detail panel still opens');
+  assert.strictEqual(panel.querySelector('b').textContent, 'Smith & Jones', 'with their name');
+  assert.strictEqual(panel.querySelector('.kb-ros-copy').getAttribute('data-name'), 'Smith & Jones',
+    'and Copy name still yields the human form, not an entity');
+});

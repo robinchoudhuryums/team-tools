@@ -520,7 +520,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         { action: 'CallNotesPurge', last: null },
         { action: 'CallNotesArchive', last: null },
         { action: 'CallNotesArchivePurge', last: null },
-        { action: 'TimesheetArchive', last: null }],
+        { action: 'TimesheetArchive', last: null },
+        { action: 'PtoAccrualCredit', last: { timestampMgr: daysAgo(0) + ' 06:00:03', ms: Date.now() - 7200000, notes: 'credited=2' } }],
+      // F4: stamped last-errors for jobs that catch their own failure. Empty on
+      // a healthy deployment — the shape, not a fault, is what the panel reads.
+      automationErrors: {},
       digests: [
         { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
         { key: 'urgent', last: daysAgo(0) + ' 08:00:11', stale: false },

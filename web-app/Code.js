@@ -613,8 +613,16 @@ function creditMonthlyPtoAccruals() {
       }
     });
     if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
+    clearAutomationError_('PtoAccrualCredit');
     return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps };
-  } catch (err) { return { success: false, error: err.message }; }
+  } catch (err) {
+    // F4: this job writes LEAVE BALANCES, and a caught error reports failure to
+    // nobody — Apps Script's trigger-failure email fires on a THROW, not on a
+    // returned error object, and nothing else reads this return value. Stamp it
+    // so Admin → Automation Health and the daily failure digest can see it.
+    stampAutomationError_('PtoAccrualCredit', err.message);
+    return { success: false, error: err.message };
+  }
   finally { lock.releaseLock(); }
 }
 
@@ -6032,6 +6040,127 @@ const AUTOMATION_AUDIT_ACTIONS = [
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
+// ── Per-JOB liveness, derived rather than accumulated (Gap4 / INV-186) ───────
+// automationProblems_ grew one hand-written check per SIGNAL, so a job added
+// later got an audit row and no alarm: only CallNotesReconcile was ever checked
+// for staleness, while the PTO accrual credit — which writes leave BALANCES —
+// failed to nobody (F4). This table is the derivation instead.
+//
+// The `enabled` predicate is the load-bearing part, and it is INV-186 in code:
+// "before toning a health indicator off a count, ask what that count reads on a
+// healthy production system". Most of these jobs legitimately write NO audit row
+// on a correctly-configured deployment (retention disabled, no accruing reps), so
+// a bare staleness check would nag every such deployment forever. A job whose
+// `enabled()` is false is simply not checked.
+//
+// `cadence` is 'daily' (expect a row every run) or 'monthly' (expect one per
+// calendar month, in arrears — see INV-194). AdpExportAuto is DELIBERATELY
+// ABSENT: it fires only at a pay-period boundary, so neither cadence describes
+// it, and a check that is wrong most of the month is worse than none.
+const AUTOMATION_JOB_CHECKS = [
+  { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile',
+    cadence: 'daily', staleHours: 30, enabled: function () { return true; } },
+  { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit',
+    cadence: 'monthly', graceDays: 3,
+    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); } },
+  { action: 'TimesheetArchive', label: 'Timesheet cold-archive',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getTimesheetArchiveDays_() > 0; } },
+  { action: 'CallNotesArchive', label: 'call-note cold-archive',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getNoteArchiveDays_() > 0; } },
+  { action: 'CallNotesPurge', label: 'call-note retention purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getNoteRetentionDays_() > 0; } },
+  { action: 'CallNotesArchivePurge', label: 'archived-note purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getArchiveRetentionDays_() > 0; } },
+  { action: 'FormDataPurge', label: 'form-data retention purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getFormRetentionDays_() > 0; } },
+];
+
+/** Is any roster row carrying a column-Q accrual rate? Decides whether the
+ *  accrual credit is EXPECTED to write rows at all (see the table above). */
+function rosterHasAccruingRep_() {
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;
+      if (empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]) !== null) return true;
+    }
+  } catch (e) { /* unreadable roster — treated as "not expected", never nags */ }
+  return false;
+}
+
+// A trigger handler that CATCHES its own error reports failure to nobody:
+// Apps Script's own failure email fires on a THROW, not on a returned error
+// object (F4). Each such job stamps its last error here and clears it on a
+// clean run, so the panel and the daily digest can see it.
+const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
+function stampAutomationError_(job, message) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let map = {};
+    try { map = JSON.parse(props.getProperty(AUTOMATION_ERROR_PROP)) || {}; } catch (_) {}
+    if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
+    map[job] = { at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+                 message: String(message || '').slice(0, 300) };
+    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+  } catch (e) { /* best-effort — never break the job's own error path */ }
+}
+function clearAutomationError_(job) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let map = {};
+    try { map = JSON.parse(props.getProperty(AUTOMATION_ERROR_PROP)) || {}; } catch (_) {}
+    if (!map || typeof map !== 'object' || Array.isArray(map) || !map[job]) return;
+    delete map[job];
+    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+  } catch (e) { /* best-effort */ }
+}
+function readAutomationErrors_() {
+  try {
+    const map = JSON.parse(PropertiesService.getScriptProperties()
+      .getProperty(AUTOMATION_ERROR_PROP)) || {};
+    return (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+  } catch (e) { return {}; }
+}
+
+/** PURE-ish: the per-job problem lines for `automationLastRuns`, given the
+ *  table above. `nowMs`/`todayDom`/`thisMonth` are passed so the decision is
+ *  testable without a clock. */
+function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPrefix) {
+  const out = [];
+  const byAction = {};
+  (lastRuns || []).forEach(function (a) { if (a && a.action) byAction[a.action] = a.last || null; });
+  AUTOMATION_JOB_CHECKS.forEach(function (job) {
+    let on = false;
+    try { on = !!job.enabled(); } catch (e) { on = false; }
+    if (!on) return;                       // not expected to run — never nags
+    const last = byAction[job.action];
+    if (job.cadence === 'monthly') {
+      // In arrears: a row is expected on/just after the 1st. Before the grace
+      // day the absence is normal, so the check simply does not apply yet.
+      if (todayDom < (job.graceDays || 3)) return;
+      const ranThisMonth = !!(last && last.timestampMgr &&
+        String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
+      if (!ranThisMonth) {
+        out.push('The ' + job.label + ' has not run this month (expected on the 1st) — ' +
+          'the trigger may be missing. Re-run installAutomationTriggers().');
+      }
+    } else if (last && last.ms && (nowMs - last.ms) > job.staleHours * 3600000) {
+      out.push('The ' + job.label + ' last ran ' + last.timestampMgr +
+        ' (over ' + job.staleHours + 'h ago) — the trigger may be disabled.');
+    }
+    const err = errors && errors[job.action];
+    if (err) {
+      out.push('The ' + job.label + ' FAILED on ' + err.at + ': ' + err.message);
+    }
+  });
+  return out;
+}
+
 /** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
@@ -6237,6 +6366,9 @@ function computeAutomationHealth_(opts) {
     const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
       return { action: a, last: lastRunByAction[a] || null };
     });
+    // F4: a job that catches its own error reports failure to nobody unless the
+    // error is stamped somewhere the panel and the digest can read.
+    const automationErrors = readAutomationErrors_();
 
     // ── (b): CDR reachability + name-match health (last 7 days) ──────────
     let cdr;
@@ -6374,6 +6506,7 @@ function computeAutomationHealth_(opts) {
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
+      automationErrors: automationErrors,
       digests: digestHealth,
       cdr: cdr,
       detectors: detectors,   // Turn C — detector-liveness checks
@@ -6414,11 +6547,19 @@ function automationProblems_(report) {
   (report.digests || []).forEach(function (d) {
     if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
   });
-  const RECON_STALE_HOURS = 30;   // daily 5am + margin
-  const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
-  if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
-    problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
-  }
+  // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
+  // than hand-listed here (Gap4). This block used to check exactly one job
+  // (CallNotesReconcile), which is why the PTO accrual credit could fail every
+  // month in silence — see F4 and the table's own comment.
+  const mgrTzNow = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const nowD = new Date();
+  automationJobProblems_(
+    report.automationLastRuns,
+    report.automationErrors,
+    Date.now(),
+    parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
+    Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
+  ).forEach(function (m) { problems.push(m); });
   if (report.syncFails && report.syncFails.count > 0) {
     problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
   }
@@ -11711,6 +11852,19 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
   let html = '<p style="margin:0 0 4px;">Your consolidated morning brief — <strong>' + totalItems +
     '</strong> item(s) across ' + sections.length + ' area(s).</p>';
   let text = 'Team Tools daily brief (' + todayIso + ') — ' + totalItems + ' item(s):\n';
+  // A source that could not be read is NOT an all-clear for that area, and this
+  // brief suppresses the standalone digest that would otherwise have covered it
+  // (INV-187). Say so at the TOP, where an absent section would be read.
+  const failed = (d && d.failedSources) || [];
+  if (failed.length) {
+    html += '<p style="margin:8px 0;padding:8px 10px;border-left:3px solid ' + P.warnDeep +
+      ';background:' + P.warnBorder + ';font-size:12px;color:' + P.ink + ';">' +
+      '<strong>Incomplete brief.</strong> ' + esc_(failed.join(', ')) +
+      ' could not be read this morning, so ' + (failed.length === 1 ? 'that area is' : 'those areas are') +
+      ' missing below — treat their absence as unknown, not as clear.</p>';
+    text += '! INCOMPLETE — could not read: ' + failed.join(', ') +
+      ' (their absence below is unknown, not clear)\n';
+  }
 
   sections.forEach(function (s) {
     html += secLabel(s.label + ' (' + s.count + ')');
@@ -11793,18 +11947,34 @@ function sendManagerDailyBrief() {
     const back = new Date(now); back.setDate(back.getDate() - 1);
     const dateRange = { start: Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd'), end: todayIso };
 
-    let missed = [];
-    try { missed = computeMissedClockOuts_(); } catch (e) { Logger.log('brief: missed-punch source failed: ' + e.message); }
-    let urgent = [];
-    try { urgent = managerAggregateUrgent_(dateRange).results || []; } catch (e) { Logger.log('brief: urgent source failed: ' + e.message); }
-    let training = [];
-    try { training = trainOverdueForRoster_(todayIso); } catch (e) { Logger.log('brief: training source failed: ' + e.message); }
-    let docs = [];
-    try { docs = empDocsOverdueAll_(todayIso); } catch (e) { Logger.log('brief: docs source failed: ' + e.message); }
-    let coaching = [];
-    try { coaching = coachUnackedAll_(Date.now()); } catch (e) { Logger.log('brief: coaching source failed: ' + e.message); }
-    let deptOverdue = [];
-    try { deptOverdue = deptRequestsOverdueOpen_(); } catch (e) { Logger.log('brief: dept-request source failed: ' + e.message); }
+    // Each source is best-effort so one broken store cannot cost a manager the
+    // whole brief — but a source that fails must not simply VANISH from it.
+    // The brief SUPPRESSES the four standalone digests it replaces, so a
+    // silently-omitted section means that signal reached nobody at all, and an
+    // all-clear brief is indistinguishable from a brief that could not look
+    // (INV-187). `failedSources` rides into the email, and the whole run stamps
+    // an automation error so the health panel and failure digest see it too.
+    const failedSources = [];
+    const src = function (label, fn) {
+      try { return fn() || []; }
+      catch (e) {
+        Logger.log('brief: ' + label + ' source failed: ' + e.message);
+        failedSources.push(label);
+        return [];
+      }
+    };
+    const missed      = src('missed punches', function () { return computeMissedClockOuts_(); });
+    const urgent      = src('urgent notes', function () { return managerAggregateUrgent_(dateRange).results; });
+    const training    = src('overdue training', function () { return trainOverdueForRoster_(todayIso); });
+    const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
+    const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
+    const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
+    if (failedSources.length) {
+      stampAutomationError_('ManagerDailyBrief',
+        failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
+    } else {
+      clearAutomationError_('ManagerDailyBrief');
+    }
 
     let sent = 0;
     mgrEmails.forEach(function (email) {
@@ -11817,8 +11987,11 @@ function sendManagerDailyBrief() {
         coaching: coaching.filter(function (oc) { return coachCanManagerSee_(mgr, oc.item); }),
         deptOverdue: deptOverdue,
       };
+      d.failedSources = failedSources;
       const sections = managerBriefSections_(d);
-      if (!sections.length) return;   // all clear for this manager — silent
+      // Silent ONLY on a genuine all-clear. If a source could not be read, the
+      // absence of sections is not an all-clear and the brief says so.
+      if (!sections.length && !failedSources.length) return;
       try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
       catch (e) { console.warn('daily brief to ' + email + ' failed: ' + e.message); }
     });

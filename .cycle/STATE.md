@@ -7,7 +7,23 @@ cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191.
-Phase: idle (post-reflect) + operator-requested feature work:
+Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1+2 DONE, unmerged.
+  A fresh /broad-scan ran this session (42-scenario matrix + 556/71 baselines
+  green at start). Batches 1+2 of its 8-batch plan are implemented:
+  **F1 (High) stored XSS** — the roster + decision KB blocks stashed their
+  fence source in `data-src`, and an attribute DECODES on read, so every
+  re-render (mode switch, Expand, decision answer) put a LIVE element into the
+  article. Reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7
+  coupled sites, and pinned in the DOM harness — the pure harness cannot
+  decode, and run.js had literally pinned the vulnerable line as correct.
+  **F4 + Gap4** — the PTO accrual credit caught its own error and told nobody;
+  per-job liveness is now DERIVED from `AUTOMATION_JOB_CHECKS` (with an
+  `enabled()` predicate = INV-186 in code) instead of one hardcoded reconcile
+  check, and the manager brief now reports unreadable sources instead of
+  silently omitting their sections. Block:
+  `.cycle/blocks/18-batch1-batch2-broad-implement.md`.
+  Pure 562, DOM 75, matrix 42 clean, 15 mutations bite-checked.
+Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
   combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
   vocabulary + dept filter (commits 3215f45, ebd1cab, 395c554). Pure 436.
@@ -840,12 +856,23 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Cycle 17 is CLOSED (reflected) and PROJECT_HEALTH now carries it. **Cycle 18
-has NOT opened and is DUE as the Seams & Invariants audit** (cadence counter
-4/4) — when it opens, move the cycle-17 block into HISTORY.md and reset this
-file from the template. The library is at **INV-194**; 189/190/191 came from
-the 2026-08-11 pilot round and 192/193/194 since, so cycle 18 owes NEW
-candidates, not those.
+Cycle-18 /broad-scan Batches 1+2 are implemented and UNMERGED on
+`claude/broad-scan-s9b8fd`. All suites green (pure 562, DOM 75, matrix 42
+clean); 15 mutations bite-checked, three pins strengthened after failing to
+bite — including the whole Batch-2 block, which was appended AFTER run.js's
+`process.exit()` and never ran until moved.
+
+NEXT: `/sync-docs` is OWED before merge — INV-193 is now factually wrong as
+written, and the new data-* decode gotcha, the AUTOMATION_JOB_CHECKS
+derivation, and the test counts all need recording (full list in the block).
+Then the remaining audit batches, in priority order: 3 (status-normalize
+family F5), 4 (weekend reminders F2 + accrual tile F7/F10), 5 (accessibility
+F6), 6 (fixture drift F14 + timeoff mobile F8), 7 (span cap F3 + doc
+corrections), 8 (completeness gaps). The scan report is in this session's
+transcript; the batch plan is reproduced in the block file.
+
+NOTE the cadence counter still says a Seams & Invariants audit is DUE (4/4) —
+this broad scan did not discharge it.
 
 **Since cycle 17 closed, EIGHT operator-request rounds shipped** — seven in
 three merged PRs (#171, #172, #173), plus the PTO accrual **REBUILD** now

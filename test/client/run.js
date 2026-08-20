@@ -1074,7 +1074,13 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
     'automationProblems_ must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   assert.ok(/witnessFails\.recent/.test(problemsSrc), 'automationProblems_ covers recent witness loss (C4/INV-158)');
   assert.ok(/syncFails/.test(problemsSrc), 'automationProblems_ covers personal-sheet sync failures');
-  assert.ok(/CallNotesReconcile/.test(problemsSrc), 'automationProblems_ covers the stale-reconcile F1 signal');
+  // Gap4: the per-job liveness checks are now DERIVED from AUTOMATION_JOB_CHECKS
+  // rather than hand-written here — this block used to check exactly ONE job,
+  // which is why the PTO accrual credit could fail every month in silence (F4).
+  assert.ok(/automationJobProblems_\(/.test(problemsSrc),
+    'automationProblems_ derives per-job liveness from the table (Gap4)');
+  assert.ok(/automationErrors/.test(problemsSrc),
+    'automationProblems_ surfaces a stamped job error (F4)');
   assert.ok(/d\.stale/.test(problemsSrc), 'automationProblems_ covers stale digest heartbeats');
   const digest = extractRawFunction('Code.js', 'sendAutomationHealthDigest');
   assert.ok(/automationProblems_\(/.test(digest),
@@ -7701,7 +7707,8 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
 console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
 
 const kbDecCtx = vm.createContext({});
-['kbSlug_', 'kbRosterAttr_', 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
+['kbSlug_', 'kbRosterAttr_', 'kbFenceEsc_', 'kbFenceDecode_',
+ 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbDecCtx));
 
 const DEC_SRC = [
@@ -7787,10 +7794,34 @@ test('the guide renders one question at a time with a walkable trail', () => {
   // no checkbox can arrive pre-checked and assert work that was not done.
   assert.strictEqual(/checked/.test(leaf), false, 'a freshly rendered action has nothing ticked');
   const render = extractFunction('kb/script_kb.html', 'kbDecideRender_');
-  assert.ok(/kbDecideHtml_\(root\.getAttribute\('data-src'\)/.test(render), 're-render rebuilds from the source');
+  // F1: this pin USED to assert `kbDecideHtml_(root.getAttribute('data-src')`
+  // — i.e. it pinned the injection as the correct shape. An attribute DECODES
+  // on read, so that fed the renderer `<img onerror=…>` where kbMd_ had
+  // written `&lt;img …&gt;`. Every stored-source read goes through kbFenceSrc_,
+  // which restores the escaped contract; the behavioural proof that this is
+  // not merely cosmetic lives in the DOM suite (runDom.js), which is the only
+  // harness that can perform the decode.
+  assert.ok(/kbDecideHtml_\(kbFenceSrc_\(root\)/.test(render), 're-render rebuilds from the ESCAPED source');
   assert.ok(/replaceChild/.test(render), 'replacing the node, so no prior state survives');
   assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-dec-opts \{ flex-direction: column/.test(kb),
     'options stack on a phone');
+});
+
+test('no block reads its stored fence source raw (F1 — the decode boundary)', () => {
+  // The GENERAL form of the fix, so a NEW interactive block cannot reintroduce
+  // it: `getAttribute('data-src')` outside kbFenceSrc_ is the injection. This
+  // is a source scan, so it holds for blocks that do not exist yet — the pure
+  // harness cannot decode, but it can forbid the shape that requires decoding.
+  const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188 — strip comments first
+  const raw = kbSrc.match(/getAttribute\(\s*['"]data-src['"]\s*\)/g) || [];
+  assert.strictEqual(raw.length, 1,
+    'exactly one read of data-src — inside kbFenceSrc_, which re-escapes it');
+  const reader = extractFunction('kb/script_kb.html', 'kbFenceSrc_');
+  assert.ok(/kbFenceEsc_/.test(reader), 'and that one read re-applies the escape');
+  // The two helpers must stay inverses over kbMd_'s exact three entities.
+  const esc = extractFunction('kb/script_kb.html', 'kbFenceEsc_');
+  ['&amp;', '&lt;', '&gt;'].forEach((e) => assert.ok(esc.indexOf(e) >= 0, 'kbFenceEsc_ covers ' + e));
 });
 
 test('kbMd_ renders a ```decision fence, inert like the others', () => {
@@ -9014,7 +9045,8 @@ const kbMapCtx = vm.createContext({});
   const capLine = kbSrc.match(/var KB_MAP_MAX_WH_CLIENT = \d+;/);
   assert.ok(capLine, 'the client warehouse cap constant exists');
   vm.runInContext(capLine[0], kbMapCtx);
-  ['kbSlug_', 'kbRosterAttr_', 'kbMapDecode_', 'kbMapParse_', 'kbMapHtml_', 'kbMd_']
+  ['kbSlug_', 'kbRosterAttr_', 'kbFenceEsc_', 'kbFenceDecode_', 'kbMapDecode_',
+   'kbMapParse_', 'kbMapHtml_', 'kbMd_']
     .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbMapCtx));
 }
 
@@ -10215,6 +10247,106 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'PtoAccrualCredit is a registered automation audit action');
 });
 
+
+// ── Gap4 / F4 — per-job automation liveness, derived not accumulated ─────────
+console.log('\nCode.js — automation job liveness (Gap4 / F4)');
+{
+  const jobCtx = vm.createContext({ console });
+  vm.runInContext(extractRawFunction('Code.js', 'automationJobProblems_'), jobCtx);
+  // A STUB table, so these cases test the decision rather than today's job list
+  // (the real table's coverage is asserted separately below).
+  vm.runInContext(`var ACC=true, ARCH=false; var AUTOMATION_JOB_CHECKS=[
+    {action:'CallNotesReconcile',label:'nightly Sheets reconcile',cadence:'daily',staleHours:30,enabled:()=>true},
+    {action:'PtoAccrualCredit',label:'monthly PTO accrual credit',cadence:'monthly',graceDays:3,enabled:()=>ACC},
+    {action:'TimesheetArchive',label:'Timesheet cold-archive',cadence:'daily',staleHours:30,enabled:()=>ARCH}
+  ];`, jobCtx);
+  const f = jobCtx.automationJobProblems_;
+  const NOW = Date.parse('2026-08-20T09:00:00Z');
+  const runs = (o) => Object.keys(o).map((k) => ({ action: k, last: o[k] }));
+  const set = (k, v) => vm.runInContext(k + '=' + v + ';', jobCtx);
+
+  test('a MONTHLY job that has not run this month is flagged — after its grace day', () => {
+    const stale = runs({ PtoAccrualCredit: { ms: Date.parse('2026-07-01T06:00:00Z'), timestampMgr: '2026-07-01 06:00:00' } });
+    assert.ok(f(stale, {}, NOW, 20, '2026-08').some((m) => /accrual credit has not run this month/.test(m)),
+      'flagged on the 20th');
+    // Before the grace day its absence is NORMAL (the credit lands on the 1st,
+    // in arrears) — a check that fires on the 1st would nag every month.
+    assert.strictEqual(f(stale, {}, NOW, 2, '2026-08').length, 0, 'silent on the 2nd');
+    const ranThisMonth = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.strictEqual(f(ranThisMonth, {}, NOW, 20, '2026-08').length, 0, 'silent once it has run');
+  });
+
+  test('a job that is not EXPECTED to run is never checked (INV-186)', () => {
+    // The rule this encodes: most of these jobs write no audit row at all on a
+    // correctly-configured deployment (retention off, no accruing reps), so a
+    // bare staleness check would pin every such deployment amber forever.
+    set('ACC', false);
+    assert.strictEqual(f(runs({}), {}, NOW, 20, '2026-08').length, 0, 'no accruing reps → no nag');
+    assert.strictEqual(f(runs({ TimesheetArchive: { ms: NOW - 40 * 3600000, timestampMgr: 'x' } }), {}, NOW, 20, '2026-08').length, 0,
+      'archiving disabled → no nag even though it is stale');
+    set('ARCH', true);
+    assert.ok(f(runs({ TimesheetArchive: { ms: NOW - 40 * 3600000, timestampMgr: '2026-08-18 18:00:00' } }), {}, NOW, 20, '2026-08')
+      .some((m) => /Timesheet cold-archive last ran/.test(m)), 'enabled + stale → flagged');
+    set('ARCH', false); set('ACC', true);
+  });
+
+  test('a stamped job error surfaces, and the reconcile check is unchanged', () => {
+    const ok = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.ok(f(ok, { PtoAccrualCredit: { at: '2026-08-20 06:00:01', message: 'Timesheet unreadable' } }, NOW, 20, '2026-08')
+      .some((m) => /FAILED on 2026-08-20 06:00:01: Timesheet unreadable/.test(m)),
+      'a caught failure is no longer invisible (F4)');
+    // The pre-existing signal must read EXACTLY as before.
+    const recon = runs({ CallNotesReconcile: { ms: NOW - 40 * 3600000, timestampMgr: '2026-08-18 17:00:00' },
+                         PtoAccrualCredit: { ms: NOW, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.ok(f(recon, {}, NOW, 20, '2026-08')
+      .some((m) => /nightly Sheets reconcile last ran 2026-08-18 17:00:00 \(over 30h ago\)/.test(m)),
+      'the F1 stale-reconcile message is preserved verbatim');
+  });
+
+  test('the real table covers every audit-row job, or says why not', () => {
+    const src = extractRawFunction('Code.js', 'automationProblems_');
+    const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    // Slice from the RATIONALE comment, not the const — the reasoned omission
+    // below is stated there, and a slice that starts at the const cannot see it.
+    const table = codeSrc.slice(codeSrc.indexOf('// ── Per-JOB liveness'), codeSrc.indexOf('function rosterHasAccruingRep_'));
+    const actions = (codeSrc.match(/const AUTOMATION_AUDIT_ACTIONS = \[[\s\S]*?\];/) || [''])[0];
+    ['CallNotesReconcile', 'PtoAccrualCredit', 'TimesheetArchive', 'CallNotesArchive',
+     'CallNotesPurge', 'CallNotesArchivePurge', 'FormDataPurge'].forEach((a) => {
+      assert.ok(actions.indexOf("'" + a + "'") >= 0, a + ' is an audit-row job');
+      // Match the ENTRY, not a substring: 'PtoAccrualCreditXX' contains
+      // 'PtoAccrualCredit', so indexOf would pass on a renamed-away action.
+      assert.ok(new RegExp("action:\\s*'" + a + "'").test(table), a + ' has a liveness check');
+    });
+    // AdpExportAuto is deliberately absent — it fires at a pay-period boundary,
+    // so neither 'daily' nor 'monthly' describes it and a wrong check would be
+    // wrong most of the month. The omission is REASONED, so pin BOTH halves:
+    // no entry claims it, and the table says why (a silent omission and a
+    // reasoned one are indistinguishable to the next reader otherwise).
+    assert.strictEqual((table.match(/action:\s*'AdpExportAuto'/) || []).length, 0,
+      'no table ENTRY covers AdpExportAuto (period-based)');
+    assert.ok(/AdpExportAuto/.test(table), 'and the table names it as a deliberate omission');
+    assert.ok(/automationJobProblems_\(/.test(src), 'automationProblems_ consumes the derivation');
+  });
+
+  test('the accrual credit stamps its own failure and clears it on a clean run', () => {
+    // F4's PRODUCER half. Without this the table has nothing to report: this
+    // job catches its own error, and Apps Script emails only on a THROW.
+    const credit = extractRawFunction('Code.js', 'creditMonthlyPtoAccruals')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+    assert.ok(/catch\s*\([\s\S]{0,40}stampAutomationError_\('PtoAccrualCredit'/.test(credit),
+      'the catch stamps the failure');
+    assert.ok(/clearAutomationError_\('PtoAccrualCredit'\)/.test(credit),
+      'and a clean run clears it, so an old failure cannot nag forever');
+    // The brief has the same shape for the same reason (its six sources are
+    // individually best-effort, and it SUPPRESSES the digests it replaces).
+    const brief = extractRawFunction('Code.js', 'sendManagerDailyBrief')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/failedSources\.push/.test(brief), 'the brief records which sources failed');
+    assert.ok(/stampAutomationError_\('ManagerDailyBrief'/.test(brief), 'and stamps them');
+    assert.ok(/!sections\.length && !failedSources\.length/.test(brief),
+      'a brief with a failed source is NOT silent — silence means a true all-clear');
+  });
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
