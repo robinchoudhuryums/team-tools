@@ -7,22 +7,36 @@ cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191.
-Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1+2 DONE, unmerged.
+Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1+2+3+4 DONE,
+  doc-synced, unmerged, NOT deployed.
   A fresh /broad-scan ran this session (42-scenario matrix + 556/71 baselines
-  green at start). Batches 1+2 of its 8-batch plan are implemented:
-  **F1 (High) stored XSS** — the roster + decision KB blocks stashed their
-  fence source in `data-src`, and an attribute DECODES on read, so every
-  re-render (mode switch, Expand, decision answer) put a LIVE element into the
-  article. Reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7
-  coupled sites, and pinned in the DOM harness — the pure harness cannot
-  decode, and run.js had literally pinned the vulnerable line as correct.
-  **F4 + Gap4** — the PTO accrual credit caught its own error and told nobody;
-  per-job liveness is now DERIVED from `AUTOMATION_JOB_CHECKS` (with an
-  `enabled()` predicate = INV-186 in code) instead of one hardcoded reconcile
-  check, and the manager brief now reports unreadable sources instead of
-  silently omitting their sections. Block:
-  `.cycle/blocks/18-batch1-batch2-broad-implement.md`.
-  Pure 562, DOM 75, matrix 42 clean, 15 mutations bite-checked.
+  green at start), producing an 8-batch plan. FOUR batches are implemented:
+  **Batch 1+2** (`.cycle/blocks/18-batch1-batch2-broad-implement.md`) —
+  **F1 (High) stored XSS**: the roster + decision KB blocks stashed their fence
+  source in `data-src`, and an attribute DECODES on read, so every re-render
+  (mode switch, Expand, decision answer) put a LIVE element into the article.
+  Reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7 coupled sites,
+  pinned in the DOM harness — the pure harness cannot decode, and run.js had
+  literally pinned the vulnerable line as correct. **F4 + Gap4**: the PTO accrual
+  credit caught its own error and told nobody; per-job liveness is now DERIVED
+  from `AUTOMATION_JOB_CHECKS` (with an `enabled()` predicate = INV-186 in code)
+  instead of one hardcoded reconcile check, and the manager brief now reports
+  unreadable sources instead of silently omitting their sections.
+  **Batch 3+4** (`.cycle/blocks/18-batch3-batch4-broad-implement.md`) —
+  **F5** closes the INV-183 status-read family on its FIFTH column (`drStatus_`
+  + 4 call sites + the calendar's TO.STATUS trim); **F2** stops weekend/PTO
+  reminder nags (`remindIsDayOff_`, gated PER BRANCH so the still-clocked-in
+  nudge stays live, plus a bounded `empIsOffToday_` server flag); **F7** unwraps
+  the accrual tile footer (MEASURED 22px → 11px at the 240px rail) and restores
+  the planned line it had been replacing; **F10** moves the accrual credit off
+  the offshore shift tail to 18:00, matching the archive's INV-153 reasoning.
+  /sync-docs is DONE for both pairs (149461b, e02621f) — INV-183's third column
+  now reads CLOSED with the calendar trim as its fourth site, S74 lost the same
+  stale sentence, INV-190 carries the day-off gate + the (b) exemption + the
+  inferred-weekends limit, INV-193 carries the round-trip clause, and the
+  accrual hour reads 18:00 in all three documented places.
+  Pure 570, DOM 75, matrix 42 clean, 28 mutations bite-checked across the four
+  batches. NO doc debt outstanding.
 Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
   combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
@@ -856,22 +870,24 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Batches 1–4 of the cycle-18 pre-audit scan are implemented and committed on
-`claude/broad-scan-s9b8fd` (ade5136, 149461b, ebb2d65, f024a42, 57784e0) — NOT
-merged, NOT deployed. All suites green: pure 570, DOM 75, matrix 42 clean;
-28 mutations bite-checked across the four batches.
+Batches 1–4 of the cycle-18 pre-audit scan are implemented, doc-synced and
+committed on `claude/broad-scan-s9b8fd` (ade5136 → e02621f) — NOT merged, NOT
+deployed. All suites green: pure 570, DOM 75, matrix 42 clean; 28 mutations
+bite-checked across the four batches. **No doc debt outstanding.**
 
-NEXT: **/sync-docs for Batches 3+4** — the six items at the end of
-`.cycle/blocks/18-batch3-batch4-broad-implement.md`. Two matter most because the
-docs now state the OPPOSITE of the code: INV-183's text still lists the three raw
-`DR.STATUS` reads as a known-open gap ("the right close is a `drStatus_(row)`
-predicate…") when that close has shipped, and the trigger list still says the PTO
-accrual credit runs at 6am when it now runs at 18:00.
+NEXT: Batches 5–8 of the scan remain — 5 accessibility (15 unnamed
+`ensureOverlay` dialogs + ~65 placeholder-only controls), 6 fixture drift F14 +
+a timeoff mobile scenario F8, 7 `getTeamMetrics` span cap F3 + ViewUsage
+retention F11, 8 completeness gaps (Offerings browse view, manager pay-statement
+UI, print stylesheet). Alternatively, cycle 18 proper is still DUE as the Seams
+& Invariants audit (cadence counter 4/4) — this scan was a pre-audit pass, not
+that audit, and it owes the library fresh candidates.
 
-Then Batches 5–8 remain: 5 accessibility (15 unnamed `ensureOverlay` dialogs +
-~65 placeholder-only controls), 6 fixture drift F14 + a timeoff mobile scenario
-F8, 7 `getTeamMetrics` span cap F3 + ViewUsage retention F11, 8 completeness gaps
-(Offerings browse view, manager pay-statement UI, print stylesheet).
+DEPLOY carries THREE operator actions (see the two blocks for detail):
+re-run `installAutomationTriggers()` (moves the accrual credit to 18:00),
+run `runAllTests()` from the editor, and answer the open question — does any rep
+work Saturdays or Sundays? Weekends are inferred, so such a rep would silently
+lose break reminders.
 
 TWO PROCESS RE-LEARNINGS this session, both traps CLAUDE.md already documents:
 a `git checkout` bite-revert wiped uncommitted Code.js work (re-applied from
