@@ -10786,7 +10786,11 @@ test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
   const partials = A11Y_SCAN_PARTIALS.concat(['kb/script_kb.html', 'index.html']);
   const all = partials.map((rel) => {
     try { return fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); } catch (e) { return ''; }
-  }).join('\n');
+  }).join('\n')
+    // INV-188 — comments too: a class named only in the prose explaining it
+    // would otherwise count as "used", which is how the .no-print assert
+    // below first failed to bite.
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const selectorPart = block.replace(/\{[^{}]*\}/g, '|');   // keep selectors, drop declarations
   const named = new Set((selectorPart.match(/[.#][A-Za-z][\w-]*/g) || []));
   named.delete('.no-print');   // introduced BY this block; asserted separately below
@@ -10795,7 +10799,8 @@ test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
     const bare = sel.slice(1);
     assert.ok(all.includes(bare), `the print block's "${sel}" hook exists in the app`);
   });
-  assert.ok(all.includes('no-print'), 'the .no-print escape hatch is actually used');
+  assert.ok((all.match(/no-print/g) || []).length >= 3,
+    'the .no-print escape hatch is actually used (the statement Print button + its period nav)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
