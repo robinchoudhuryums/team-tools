@@ -122,8 +122,18 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     // Operator #4/#5 (2026-08-06): alertThreshold mirrors the server's
     // CONFIG.CDR_ALERT_THRESHOLD ship; `transfer` is the own-day scalar
     // ({transferred, transferPct}, null = absent — INV-180 zero-vs-absence).
-    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
-      transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 },
+    // F14 (cycle 18) — a FUNCTION, because this endpoint's response ECHOES the
+    // date it was asked for and the client's hero kicker branches on it
+    // ("Today" vs "Yesterday" vs the bare date). A static `date: todayIso`
+    // ignored the argument, so the default shot rendered "TODAY · % ANSWERED"
+    // beneath a pressed "YESTERDAY" chip — a combination the server cannot
+    // produce (the client's label logic is correct; the FIXTURE was lying).
+    // Fifth instance of the INV-185 drift class, so: a fixture whose response
+    // shape depends on its arguments must BE a function of them.
+    getMyMetrics: function (date) {
+      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
+        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
+    },
     // V-14: the range endpoint returns its OWN cdr totals for the span, so the
     // fixture needs weekly-scale numbers — reusing the single-day `kpis` made
     // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the

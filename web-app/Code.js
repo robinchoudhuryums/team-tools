@@ -16820,6 +16820,17 @@ function getTeamMetrics(dateOrFrom, to) {
     if (!toDate || !dateRegex.test(toDate))
       return { error: 'Invalid end date (expected yyyy-MM-dd).' };
     if (from > toDate) return { error: 'Start date must be on or before end date.' };
+    // F3 (cycle 18) — SPAN CAP. Every sibling range endpoint is capped
+    // (getMyMetricsRange 92, getMyCallNotesRange 90, buildTimesheetForEmployee_
+    // 370); this one was the outlier, and on 2026-08-18 it was opened to every
+    // enrolled REP as the whitelist-built aggregate (INV-66). The threat model
+    // changed and the cap did not follow: a rep could ask for a decade, driving
+    // the full cross-rep note walk plus a per-day CDR breakdown, and mint
+    // arbitrarily many distinct org-wide cache keys (`team_metrics_v1:<from>:<to>`)
+    // that evict managers' warm entries LRU. 92 matches getMyMetricsRange —
+    // the same window the multi-day trend below already refuses to exceed.
+    var teamSpanDays = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
+    if (teamSpanDays > 92) return { error: 'Range capped at 92 days.' };
 
     // Endpoint result cache (operator 2026-08-13 "Team Metrics takes a while"):
     // the assembled response for a (from, to) range, org-wide — every manager

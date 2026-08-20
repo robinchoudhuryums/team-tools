@@ -4383,7 +4383,7 @@ function cnViewFormSubmission_(token) {
 }
 
 function cnRenderFormSubOverlay_(html) {
-  var overlay = ensureOverlay('cn-form-sub-overlay', { onClose: cnCloseFormSubOverlay_ });
+  var overlay = ensureOverlay('cn-form-sub-overlay', { label: 'Form submission', onClose: cnCloseFormSubOverlay_ });
   overlay.innerHTML = html;
 }
 
@@ -4421,7 +4421,7 @@ function cnOpenPatientTimeline_(trx) {
     .getPatientTimeline(trx);
 }
 function cnRenderTimelineOverlay_(html) {
-  var overlay = ensureOverlay('cn-timeline-overlay', { onClose: cnCloseTimelineOverlay_ });
+  var overlay = ensureOverlay('cn-timeline-overlay', { label: 'Patient timeline', onClose: cnCloseTimelineOverlay_ });
   overlay.innerHTML = html;
 }
 function cnCloseTimelineOverlay_() {
@@ -5149,7 +5149,7 @@ function cnSwitchComposerTab_(target) {
    composer renders into the same overlay when the save confirms, and the
    submit failure funnel (cnRevertPendingSubmit_) tears it down. */
 function cnShowComposerLoading_() {
-  const overlay = ensureOverlay('cn-compose-overlay', { onClose: cnCloseComposerModal_ });
+  const overlay = ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: cnCloseComposerModal_ });
   overlay.innerHTML =
     '<div class="modal cn-compose-loading">' +
       '<div class="env">' + icon('mail', 34) + '</div>' +
@@ -5244,7 +5244,7 @@ function cnRenderComposerModal_() {
   // registers the close hook so the shell's Escape path runs OUR teardown —
   // the prior class-strip-only Esc left this overlay hidden-but-stateful,
   // permanently swallowing every later compose until a page reload.
-  const overlay = ensureOverlay('cn-compose-overlay', { onClose: cnCloseComposerModal_ });
+  const overlay = ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: cnCloseComposerModal_ });
   const c = CN_STATE.composer;
   if (!c) { cnCloseComposerModal_(); return; }
   if (c.step === 'form')    overlay.innerHTML = cnRenderComposerFormStep_();
@@ -10534,7 +10534,7 @@ function cnRenderExternalEmailModal_() {
   // Same ensureOverlay rationale as cnRenderComposerModal_ — Esc must run
   // cnCloseExternalEmailModal_ (clearing CN_STATE.extComposer), and a reused
   // node must come back visible.
-  var overlay = ensureOverlay('cn-ext-overlay', { onClose: cnCloseExternalEmailModal_ });
+  var overlay = ensureOverlay('cn-ext-overlay', { label: 'External email composer', onClose: cnCloseExternalEmailModal_ });
   var c = CN_STATE.extComposer;
   if (!c) { cnCloseExternalEmailModal_(); return; }
   overlay.innerHTML = cnBuildExternalEmailHtml_();

@@ -101,6 +101,12 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
+  // F8 (cycle 18): Time / PTO is the most recently RESTRUCTURED rep-facing page
+  // (consolidated to one page 2026-08-18 — quick-actions card + stacked rail)
+  // and was shot only at 1440px, so the stacking of that new rail was never on
+  // camera. Every other rep-facing tool has a mobile scenario; this closes the
+  // gap the Visual Audit Stage's own claim already implied.
+  ['timeoff-light-mobile', { tool: 'timeClock', tab: 'timeoff' }, MOBILE, 'light', ''],
   // Operator 2026-08-18 (fluid pop-out type, then the same day's narrow
   // round): the CN pop-out shrunk BELOW its 480px launch width. At 360px this
   // now shows the ≤400px STACKED framing — one-column trio, labels above

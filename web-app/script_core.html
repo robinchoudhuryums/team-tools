@@ -615,7 +615,7 @@ function whatsNewRenderSidebarBtn_() {
 function whatsNewOpen_() {
   var res = WHATSNEW_STATE;
   if (!res) return;
-  var ov = ensureOverlay('whatsnew-overlay', { onClose: whatsNewClose_ });
+  var ov = ensureOverlay('whatsnew-overlay', { label: "What's new", onClose: whatsNewClose_ });
   var bodyHtml = (typeof kbMd_ === 'function')
     ? kbMd_(res.bodyMd)
     : '<pre style="white-space:pre-wrap">' + esc(res.bodyMd) + '</pre>';
@@ -2353,6 +2353,21 @@ function ensureOverlay(id, opts) {
   overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '');
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
+  // A11y (cycle-18 Batch 5): a role="dialog" with NO accessible name announces
+  // as just "dialog" — every one of these 15 overlays was in that state, while
+  // the six STATIC modals in modals.html were correctly named all along. Pass
+  // `labelledBy` when the dialog renders a visible heading with a stable id
+  // (the preferred form — the name and the heading can never drift), else
+  // `label` for a fixed string. Set exactly one: an aria-labelledby pointing at
+  // a missing id yields NO name at all, which is worse than aria-label, so a
+  // stale id is cleared here rather than left dangling.
+  if (opts.labelledBy) {
+    overlay.setAttribute('aria-labelledby', opts.labelledBy);
+    overlay.removeAttribute('aria-label');
+  } else if (opts.label) {
+    overlay.setAttribute('aria-label', opts.label);
+    overlay.removeAttribute('aria-labelledby');
+  }
   if (opts.onClose) OVERLAY_CLOSE_HOOKS[id] = opts.onClose;
   if (!wasOpen) {
     var ae = document.activeElement;

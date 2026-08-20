@@ -5372,7 +5372,11 @@ test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', 
   // cnNoteCoverage_(noteCount, totalAnswered) = round(n/a*100); the Clock strip
   // derives missing = answered - noteCount. Both must hold in the fixture, or
   // the harness renders data the server cannot produce (its README's first rule).
-  const single = /getMyMetrics: \{[^}]*noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
+  // F14 (cycle 18) made this fixture a FUNCTION of its date argument (it echoes
+  // the date the client's hero kicker branches on), so the shape is now
+  // `getMyMetrics: function (date) { return { … } }`. The PROPERTY this pin
+  // guards — the coverage arithmetic — is unchanged; only the wrapper is.
+  const single = /getMyMetrics:[\s\S]{0,300}?noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
   assert.ok(single, 'getMyMetrics fixture found');
   const [, n, cov, missing] = single.map(Number);
   const answered = Number(/totalAnswered: (\d+)/.exec(mock)[1]);
@@ -10357,6 +10361,118 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
       'a brief with a failed source is NOT silent — silence means a true all-clear');
   });
 }
+
+// ── Cycle-18 Batch 5: form-control accessible names ─────────────────────────
+// A11y already has derived scans for ROLES (A1), STATE (A11), HEADINGS (A13)
+// and empty-vs-error (A12). Accessible NAMES had none, which is how 210
+// controls accumulated. This is a RATCHET, not an absolute scan like its four
+// siblings: the debt is real, ~82 of those controls need an author to DECIDE
+// what each is called, and a scan that fails on day one is a scan someone
+// disables. It pins the count so the class cannot grow while the sweep is
+// scheduled; the target is 0 and the baseline should only ever move DOWN.
+
+/** Controls that need a name, split by how cheaply each can get one.
+ *  Comments are stripped FIRST — the INV-188 lesson, in MARKUP: an <input> or
+ *  <textarea> written inside an HTML comment is not a control, and counting
+ *  them inflated an early version of this census by ~30. */
+function a11yUnnamedControls() {
+  const out = { adjacentLabel: [], placeholderOnly: [], none: [] };
+  A11Y_SCAN_PARTIALS.concat(['form_public.html']).forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/<!--[\s\S]*?-->/g, '')
+             .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const forIds = new Set([...src.matchAll(/<label[^>]*\bfor="([^"]+)"/g)].map((m) => m[1]));
+    const re = /<(input|select|textarea)\b([^>]*)>/gi;
+    let m;
+    while ((m = re.exec(src))) {
+      const attrs = m[2];
+      // A checkbox/radio is named by its wrapping <label> in this codebase's
+      // idiom, and submit/button/hidden carry their own or need none.
+      if (/type=.(hidden|submit|button|checkbox|radio)/i.test(attrs)) continue;
+      if (/aria-label(?:ledby)?=/.test(attrs)) continue;
+      const id = (attrs.match(/\bid="([^"]+)"/) || [])[1];
+      if (id && forIds.has(id)) continue;
+      const line = src.slice(0, m.index).split('\n').length;
+      const before = src.slice(Math.max(0, m.index - 160), m.index);
+      const rec = rel + ':' + line;
+      // An adjacent <label> whose text is RIGHT THERE but carries no for= is
+      // the cheapest bucket — the name exists, it just is not wired.
+      if (/<label[^>]*>[^<]{1,40}<\/label>\s*$/.test(before)) out.adjacentLabel.push(rec);
+      else if (/placeholder=/.test(attrs)) out.placeholderOnly.push(rec);
+      else out.none.push(rec);
+    }
+  });
+  return out;
+}
+
+test('A14: form controls without an accessible name do not INCREASE (ratchet)', () => {
+  // Measured 2026-08-19 over THIS scan's own derived file set (A11Y_SCAN_PARTIALS
+  // + form_public.html) — an earlier baseline came from an ad-hoc walk of every
+  // .html and read 73/55/82, which is a DIFFERENT population and would have
+  // made the ratchet fire on day one. Measure a baseline with the scan that
+  // will enforce it. Lower these as the sweep lands; NEVER raise them.
+  // A placeholder is not an accessible name (it is not reliably announced and
+  // vanishes on first keystroke) — the rule cycle-16 F6 established for
+  // uiPrompt's input, unenforced everywhere else until now.
+  const BASELINE = { adjacentLabel: 75, placeholderOnly: 61, none: 116 };   // total 252
+  const got = a11yUnnamedControls();
+  ['adjacentLabel', 'placeholderOnly', 'none'].forEach((k) => {
+    assert.ok(got[k].length <= BASELINE[k],
+      k + ': ' + got[k].length + ' unnamed controls, baseline ' + BASELINE[k] +
+      ' — a NEW control shipped without an accessible name. First offenders: ' +
+      got[k].slice(0, 4).join(', '));
+  });
+  // Ratchet hygiene: if the sweep lands and the count drops, this fails loudly
+  // so the baseline is tightened in the same commit rather than drifting.
+  const total = got.adjacentLabel.length + got.placeholderOnly.length + got.none.length;
+  const base = BASELINE.adjacentLabel + BASELINE.placeholderOnly + BASELINE.none;
+  assert.ok(total >= base - 4,
+    'the debt dropped from ' + base + ' to ' + total + ' — LOWER the A14 baseline in this commit');
+});
+
+test('A14: every ensureOverlay dialog has an accessible name', () => {
+  // A role="dialog" with no name announces as just "dialog". All 15 dynamic
+  // overlays were in that state while the six STATIC modals were named.
+  // Unlike the ratchet above this IS absolute — the set is small and closed.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const ens = extractFunction('script_core.html', 'ensureOverlay');
+  assert.ok(/aria-labelledby/.test(ens) && /aria-label/.test(ens),
+    'ensureOverlay supports both naming forms');
+  assert.ok(/removeAttribute\('aria-label'\)/.test(ens) && /removeAttribute\('aria-labelledby'\)/.test(ens),
+    'setting one CLEARS the other — a dangling aria-labelledby yields NO name, worse than aria-label');
+  let sites = 0, unnamed = [];
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const re = /ensureOverlay\(\s*'([^']+)'\s*,\s*\{([\s\S]{0,200}?)\}\s*\)/g;
+    let m;
+    while ((m = re.exec(src))) {
+      sites++;
+      if (!/\blabel(?:ledBy)?\s*:/.test(m[2])) unnamed.push(rel + ' → ' + m[1]);
+    }
+  });
+  assert.ok(sites >= 15, 'the scan found the overlay call sites (got ' + sites + ')');
+  assert.deepStrictEqual(unnamed, [], 'every ensureOverlay call names its dialog');
+});
+
+test('A14: no dialog is nested inside another dialog', () => {
+  // ensureOverlay already sets role="dialog" + aria-modal on the OVERLAY, so an
+  // inner .modal repeating them made two nested dialogs — five did. The six
+  // static modals in modals.html are the real (un-nested) ones and are exempt.
+  A11Y_SCAN_PARTIALS.filter((f) => f !== 'modals.html').forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const hits = (src.match(/<div class="modal[^"]*"[^>]*role="dialog"/g) || []);
+    assert.deepStrictEqual(hits, [],
+      rel + ' nests a role="dialog" inside the overlay ensureOverlay already marked');
+  });
+});
 
 // ── Cycle-18 batches 3+4 ────────────────────────────────────────────────────
 // NOTE the placement: ABOVE process.exit. A block appended after it never runs

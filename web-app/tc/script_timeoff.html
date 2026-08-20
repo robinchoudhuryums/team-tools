@@ -658,7 +658,7 @@ var PAY_STMT = { offset: 0 };
 
 function openPayStatement_(offset) {
   PAY_STMT.offset = Math.max(0, Math.min(6, parseInt(offset, 10) || 0));
-  const ov = ensureOverlay('pay-stmt-overlay', { onClose: function () {
+  const ov = ensureOverlay('pay-stmt-overlay', { label: 'Pay statement', onClose: function () {
     const el = document.getElementById('pay-stmt-overlay');
     if (el) el.classList.remove('open');   // idempotent — no module state to tear down
   }});

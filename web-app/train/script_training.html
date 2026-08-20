@@ -326,7 +326,7 @@ function trainMarkComplete_(itemId, btn) {
 // ── Reader modal (article via global kbMd_; embed via Drive /preview) ─────
 function trainOpenReader_(itemId) {
   TRAIN_STATE.readerItemId = itemId;
-  var overlay = ensureOverlay('train-reader-overlay', { onClose: trainCloseReader_ });
+  var overlay = ensureOverlay('train-reader-overlay', { label: 'Training item', onClose: trainCloseReader_ });
   overlay.innerHTML = '<div class="modal tr-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading…</div></div></div>';
   // Usage loop (INV-117) — fire-and-forget, same as the Reference surfaces.
   try { google.script.run.kbRecordView(itemId, 'training'); } catch (_) {}
@@ -393,7 +393,7 @@ function trainCloseReader_() {
 // shape; submitQuizAttempt returns only per-question right/wrong — §9.4).
 function trainOpenQuiz_(quizId) {
   TRAIN_STATE.quizTaking = quizId;
-  var overlay = ensureOverlay('train-quiz-overlay', { onClose: trainCloseQuiz_ });
+  var overlay = ensureOverlay('train-quiz-overlay', { label: 'Quiz', onClose: trainCloseQuiz_ });
   overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading quiz&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (quiz) {
@@ -798,7 +798,7 @@ function trainOpenQuizEditor_(quizId) {
     ? { quizId: quizId, title: existing.title, kbItemId: existing.kbItemId, passPct: existing.passPct,
         questions: existing.questions.map(function (q) { return { q: q.q, options: q.options.slice(), correct: q.correct }; }) }
     : { quizId: '', title: '', kbItemId: '', passPct: 80, questions: [{ q: '', options: ['', ''], correct: 0 }] };
-  var overlay = ensureOverlay('train-qed-overlay', { onClose: trainCloseQuizEditor_ });
+  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_ });
   trainRenderQuizEditor_(overlay);
 }
 

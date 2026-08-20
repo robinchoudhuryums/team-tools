@@ -2371,8 +2371,8 @@ function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*
 // (PPD/account previews, intakeRenderSentDetail_).
 function intakeOpenModal_(title, bodyHtml) {
   intakeCloseModal_();
-  var ov = ensureOverlay('intk-modal-overlay', { onClose: intakeCloseModal_ });
-  ov.innerHTML = '<div class="modal intk-modal" role="dialog" aria-modal="true">' +
+  var ov = ensureOverlay('intk-modal-overlay', { label: 'Intake preview', onClose: intakeCloseModal_ });
+  ov.innerHTML = '<div class="modal intk-modal">' +
     '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
     '<div class="body">' + bodyHtml + '</div></div>';
   ov.addEventListener('click', function (e) {

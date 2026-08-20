@@ -1798,9 +1798,10 @@ function kbRosterExpand_(btn) {
   // ensureOverlay (never a hand-rolled overlay — INV-83) so Escape, the focus
   // trap and the focus-restore lifecycle all behave; onClose is idempotent.
   var ov = ensureOverlay('kb-roster-overlay', {
+    label: 'Roster',
     onClose: function () { var o = document.getElementById('kb-roster-overlay'); if (o) o.remove(); },
   });
-  ov.innerHTML = '<div class="modal kb-roster-modal" role="dialog" aria-modal="true" aria-label="Roster">' +
+  ov.innerHTML = '<div class="modal kb-roster-modal">' +
     '<div class="kb-roster-modal-head">' +
       '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-roster-overlay\'))">Close</button>' +
     '</div>' + kbRosterHtml_(src) + '</div>';
@@ -2175,8 +2176,8 @@ function kbAddBtnHtml_() {
 
 // #8 — admin-only search-synonym editor (one group per line, comma-separated).
 function kbOpenSynonyms_() {
-  var ov = ensureOverlay('kb-syn-overlay', { onClose: function () { var o = document.getElementById('kb-syn-overlay'); if (o) o.remove(); } });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Search synonyms</h3><button class="kb-btn" data-kb-synclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-syn-body">' + loSweep() + '</div></div>';
+  var ov = ensureOverlay('kb-syn-overlay', { label: 'Search synonyms', onClose: function () { var o = document.getElementById('kb-syn-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Search synonyms</h3><button class="kb-btn" data-kb-synclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-syn-body">' + loSweep() + '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-synclose]')) ov.remove(); });
   google.script.run
     .withSuccessHandler(function (res) {
@@ -2886,8 +2887,8 @@ function kbPublishItem_(id) {
 
 // #4 — revision history modal: list prior versions, restore one.
 function kbOpenRevisions_(id) {
-  var ov = ensureOverlay('kb-rev-overlay', { onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
+  var ov = ensureOverlay('kb-rev-overlay', { label: 'Revision history', onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-revclose]')) { ov.remove(); } });
   google.script.run
     .withSuccessHandler(function (res) {
@@ -3160,8 +3161,8 @@ function kbRenderEditor_() {
   // ensureOverlay (script_core) registers kbCloseModal_ as the close hook so
   // the shell's Escape path removes the editor node instead of merely hiding
   // it (a hidden-but-present editor would shadow the next open).
-  var ov = ensureOverlay('kb-ed-overlay', { onClose: kbCloseModal_ });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true">' +
+  var ov = ensureOverlay('kb-ed-overlay', { label: 'Reference item editor', onClose: kbCloseModal_ });
+  ov.innerHTML = '<div class="modal kb-ed">' +
     '<div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><h3 style="margin:0;">' + (e.id ? 'Edit item' : 'Add item') + '</h3>' +
       '<button class="kb-btn" data-kb-close="1">' + icon('x', 15) + '</button></div>' +
     '<div class="body">' +
