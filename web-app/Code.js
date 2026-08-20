@@ -705,6 +705,31 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
 const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
 const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
+
+/**
+ * THE one reader of the DeptRequests Status cell — trimmed + lowercased, with
+ * the same 'open' default `getDeptRequests` already applied (a legacy row with
+ * a blank Status is an OPEN request, not an unknown one).
+ *
+ * WHY A PREDICATE (cycle-18 F5 — the INV-183 shape, on a fifth column): four
+ * readers each decided the comparison for themselves and did not agree. ONE
+ * normalized (the cycle-16 F8 fix) while THREE compared the RAW cell against a
+ * bare literal:
+ *   • drFindOpenRequest_        — the re-send dedupe misses, so re-sending a
+ *     note to the same dept opens a DUPLICATE request (INV-131 silently void)
+ *   • markDeptRequestResolved_  — the already-resolved idempotence check
+ *     misses, so a second click OVERWRITES ResolvedAt / ResolvedBy and re-audits
+ *   • deptRequestsOverdueOpen_  — a resolved request nags in the daily SLA
+ *     digest forever
+ * A padded or mixed-case cell therefore made the four DISAGREE — the identical
+ * shape column L had before `cnEnrolledSheetId_` (INV-167) and column A before
+ * `empRosterEmail_` (INV-183), now on a fifth column. Only a hand edit produces
+ * one (every writer stores a canonical literal), which is why this is a
+ * correctness fix and not an incident.
+ */
+function drStatus_(row) {
+  return String(row[DR.STATUS] || 'open').trim().toLowerCase();
+}
 // Bounded tail scan for the getDeptRequests LIST read only (rows append
 // chronologically; the sheet grows one row per dept email with no retention).
 // The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
@@ -1166,6 +1191,10 @@ function getEmployeeState() {
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: empShiftSchedule_(emp, empTz),   // Turn D: column-O override wins
+      // F2 (cycle 18) — the shell reminder ticker needs to know this is a day
+      // OFF, not just what the shift shape is. Approved PTO only; a pending
+      // request is not yet a day off.
+      offToday: empIsOffToday_(emp.id, today),
       ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -10926,14 +10955,21 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runNightlySelfTest')
     .timeBased().atHour(1).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 6am
-  // (staggered off the 5am reconcile; both take the global lock briefly).
+  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 18:00,
+  // alongside the Timesheet cold-archive. NOT 6am (F10, cycle 18): 6am CT is
+  // ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of
+  // the month this run holds the ONE project ScriptLock through a full
+  // Timesheet read — the exact starvation reasoning that moved
+  // archiveOldTimesheetRows off 1am (INV-153). "Both take the lock briefly"
+  // was true on 29 days a month and false on the one that matters. 18:00 CT is
+  // the all-team quiet window; the daily-with-idempotence cadence is unchanged,
+  // so a missed run still catches up via the col-R stamp.
   // Daily-with-idempotence rather than a monthly trigger: if the 1st's run is
   // missed (dead trigger, quota), the next day's run catches up via the col-R
   // stamp instead of silently losing the month. No-ops for reps with a blank
   // column-Q rate, so installing it is harmless on a roster with no accruers.
   ScriptApp.newTrigger('creditMonthlyPtoAccruals')
-    .timeBased().atHour(6).everyDays(1)
+    .timeBased().atHour(18).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -12350,7 +12386,13 @@ function buildCalendarForEmployee_(emp, year, month) {
   for (let i = 1; i < toRows.length; i++) {
     const rowId   = String(toRows[i][TO.EMP_ID]).trim();
     const rowDate = normalizeDate_(toRows[i][TO.DATE]);
-    const status  = String(toRows[i][TO.STATUS]);
+    // F5 (cycle 18) — TRIM as well as lowercase. Every sibling TO.STATUS reader
+    // trims (INV-183); this one did not, so a padded cell fell through the
+    // teammate filter below AND rode to the client raw, where the calendar's
+    // `st === 'approved'` cell-class test missed it and painted a rep's own
+    // APPROVED day as pending. The trimmed value is what ships, so the client
+    // comparison and the server filter can no longer disagree.
+    const status  = String(toRows[i][TO.STATUS]).trim();
     if (rowDate < startDate || rowDate > endDate) continue;
     const statusL = status.toLowerCase();
     if (rowId === emp.id) {
@@ -12509,6 +12551,41 @@ function isValidTimeOffType_(type) {
  *  requests: INV-03's transition guard is per-row, so two sibling rows for
  *  one day would each deduct on approval and double-charge the balance (H1).
  *  Denied/cancelled rows never deducted, so they don't block a re-request. */
+/**
+ * Is this rep on APPROVED time off on `dateIso`? (cycle-18 F2.)
+ *
+ * BOUNDED on purpose: `getEmployeeState` is the app's hottest endpoint (boot,
+ * every punch via the recordPunch wrapper, the reminder ticker's <=1/10min
+ * refresh), so this reads the three columns it needs — EmpId / Date / Status —
+ * not the full row (the INV-46 discipline). Status is compared NORMALIZED
+ * (INV-183); the date is coercion-recovered (INV-29).
+ *
+ * Best-effort by construction: any read failure returns FALSE, i.e. "not known
+ * to be off". That is the safe direction here — the ONLY consumer is the
+ * reminder ticker, and a false NEGATIVE costs a reminder on a day off (the
+ * pre-fix behaviour), while a false POSITIVE would silence a real reminder for
+ * a rep who IS working.
+ */
+function empIsOffToday_(empId, dateIso) {
+  try {
+    const sheet = getOrCreateTimeOffSheet_();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return false;
+    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID) + 1;
+    const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    const id = String(empId).trim();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
+      if (normalizeDate_(rows[i][TO.DATE]) !== dateIso) continue;
+      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') return true;
+    }
+    return false;
+  } catch (e) {
+    Logger.log('empIsOffToday_ failed: ' + e.message);
+    return false;
+  }
+}
+
 function hasActiveTimeOffOnDate_(sheet, empId, date, excludeRowIndex) {
   const rows = sheet.getDataRange().getValues();
   const id = String(empId).trim();
@@ -13775,7 +13852,7 @@ function drFindOpenRequest_(noteId, deptLabel) {
   const rows = sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues();
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
-    if (String(r[DR.STATUS]) === 'open' &&
+    if (drStatus_(r) === 'open' &&
         String(r[DR.NOTE_ID] || '') === String(noteId) &&
         String(r[DR.TO_DEPT] || '') === String(deptLabel)) {
       return String(r[DR.REQ_ID]);
@@ -13811,7 +13888,7 @@ function markDeptRequestResolved_(token, byEmail) {
     const rows = sh.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][DR.REQ_ID]) !== String(token)) continue;
-      if (String(rows[i][DR.STATUS]) === 'resolved') {
+      if (drStatus_(rows[i]) === 'resolved') {
         return { found: true, already: true, dept: rows[i][DR.TO_DEPT],
                  resolvedAt: formTokenIsoString_(rows[i][DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
                  resolvedBy: String(rows[i][DR.RESOLVED_BY] || '') };
@@ -14000,7 +14077,7 @@ function getDeptRequests() {
       // 'resolved ' (so it was excluded from `incoming` and from `allOpen`) but
       // this test was false, so `deptStats` counted it as OPEN. The INV-167 /
       // INV-183 whitespace class on a third column.
-      const status = String(r[DR.STATUS] || 'open').trim().toLowerCase();
+      const status = drStatus_(r);
       const isResolved = (status === 'resolved');
       const resolvedMs = isResolved ? parseMs(r[DR.RESOLVED_AT]) : null;
       // F8: a row marked resolved whose ResolvedAt is blank or unparseable has
@@ -14191,7 +14268,7 @@ function deptRequestsOverdueOpen_() {
   const overdue = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
+    if (!r[DR.REQ_ID] || drStatus_(r) === 'resolved') continue;
     const cv = r[DR.CREATED_AT];
     const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
     if (!createdMs) continue;

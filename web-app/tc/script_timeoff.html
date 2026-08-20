@@ -162,12 +162,26 @@ function renderTimeOffView(area, data) {
       const basis = data.ptoAccrualBasisHours || 80;
       const rateStr = String(+accrual.toFixed(2));
       const mtd = data.ptoAccrualMtd || null;
+      // F7 (cycle 18) — TWO fixes to this footer, both measured rather than
+      // reasoned. (1) The strings were ~35% longer than the fixed-allotment
+      // variant's, and the rail is 240px at DESKTOP width (it is full-width at
+      // compact/mobile), so both spans wrapped to two lines there — measured
+      // 22px vs 11px. The labels are now terse ("+0.46d this month" /
+      // "96h worked"); the tile title already explains the rule in full.
+      // (2) The MTD line REPLACED the planned/projected line, so an accruing
+      // rep lost the one number they want before requesting time off — and
+      // browsing to a past month brought it back, so one slot meant two
+      // different things. Both now render: earning on top, plans beneath.
+      // Projections stay out (an hours-driven balance has no knowable future
+      // work pattern — INV-187), but PENDING days are arithmetic on rows that
+      // already exist and need no forecast.
+      const plannedFtr = `<div class="ftr"><span>${formatLeaveDays(plannedDays)}d planned</span><span>${esc(ftrRight)}</span></div>`;
       const mtdHtml = mtd
         // 2dp, NOT formatLeaveDays: a month's increment is a small number, and
         // 1dp turns 0.46 into "0.5" — a 9% overstatement of the one figure this
         // tile exists to state honestly. The balance above can afford 1dp.
-        ? `<div class="ftr"><span>+${esc(String(mtd.days))}d earned this month</span><span>${esc(String(mtd.hours))}h worked so far</span></div>`
-        : `<div class="ftr"><span>${formatLeaveDays(plannedDays)}d planned</span><span>${esc(ftrRight)}</span></div>`;
+        ? `<div class="ftr"><span>+${esc(String(mtd.days))}d this month</span><span>${esc(String(mtd.hours))}h worked</span></div>` + plannedFtr
+        : plannedFtr;
       balanceCardHtml = `
       <div class="pto-tile" title="Your balance grows as you work — ${rateStr} PTO hours for every ${basis} hours worked, credited on the 1st for the month just finished.">
         <div class="head">

@@ -2010,11 +2010,23 @@ function remindersTick_() {
     if (today !== _remindDay) { _remindDay = today; _remindFired = {}; }
     var sched = remindersSchedule_();
     if (!sched) return;
+    // F2 (cycle 18) — a shift SHAPE exists every day of the week, so without
+    // this the break reminders (a) and the not-clocked-in nudge (c) fired on
+    // Saturdays, Sundays and approved-PTO days for anyone with the app open:
+    // a rep checking their schedule on a day off got a chimed, STICKY
+    // "clock in so today counts on your timesheet". That is precisely the
+    // false positive (c)'s own comment says "teaches reps to ignore the
+    // channel", arriving weekly. The still-clocked-in nudge (b) was always
+    // safe — it requires a confirmed 'in' punch state — and deliberately stays
+    // OUTSIDE this guard: a rep who genuinely clocked in on a Saturday still
+    // needs to be told to clock out, which is exactly when a forgotten punch
+    // is most likely.
+    var dayOff = remindIsDayOff_(tz);
     var nowMin = remindNowMin_(tz);
 
     // (a) Upcoming break — the lead time is the rep's own breakReminderMin.
     var lead = sched.breakReminderMin || 10;
-    var breaks = Array.isArray(sched.breaks) ? sched.breaks : [];
+    var breaks = dayOff ? [] : (Array.isArray(sched.breaks) ? sched.breaks : []);
     for (var i = 0; i < breaks.length; i++) {
       var b = breaks[i];
       var until = b.startMin - nowMin;
@@ -2054,7 +2066,7 @@ function remindersTick_() {
     //     nags (the (b) posture); the daily missed-punch email stays the
     //     backstop for a closed browser.
     var startMin = sched.startMin || 0;
-    if (nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin &&
+    if (!dayOff && nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin &&
         Date.now() - _remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS &&
         remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
       if (Date.now() - _remindStateOkAt < REMIND_STATE_CONFIRM_MS) {
@@ -2071,6 +2083,23 @@ function remindersTick_() {
  *  conservative: an unknown state never nags (a false clock-out reminder to a
  *  rep who already clocked out is worse than a missed one — the daily email
  *  still catches a genuinely missed punch). */
+/** Rep-local day-of-week + approved-PTO gate for the reminder ticker (F2).
+ *  Weekday-ness is computed in the REP's timezone via isoDateTz — never
+ *  browser-local time, which is a different DAY for an offshore rep near
+ *  midnight (the F6 discipline). `offToday` is server-computed approved PTO
+ *  (empIsOffToday_); an older server that does not send it simply yields the
+ *  weekend-only guard, which is the additive-field posture. */
+function remindIsDayOff_(tz) {
+  if (empState && empState.offToday) return true;
+  try {
+    // isoDateTz gives the rep-local calendar date; parse it as UTC so the
+    // weekday is read off those digits and not shifted again by the browser.
+    var iso = isoDateTz(tz);
+    var dow = new Date(iso + 'T00:00:00Z').getUTCDay();
+    return dow === 0 || dow === 6;
+  } catch (e) { return false; }
+}
+
 function remindPunchState_() {
   var acts = (empState && empState.nextActions) || null;
   if (!acts || !acts.length) return 'unknown';

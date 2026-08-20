@@ -5582,13 +5582,20 @@ test('F8: getDeptRequests normalizes DR.STATUS once and never re-reads it raw', 
   // strip was added, and still fails 2 !== 1 if the raw comparison returns.)
   const fn = extractRawFunction('Code.js', 'getDeptRequests')
     .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.ok(/const status = String\(r\[DR\.STATUS\] \|\| 'open'\)\.trim\(\)\.toLowerCase\(\)/.test(fn),
-    'the status is normalized once into a local');
+  // F5 (cycle 18) moved the normalization INTO the shared `drStatus_`
+  // predicate — the property this pin guards (read once, normalized, into a
+  // local) is unchanged; only its spelling is. The predicate itself is pinned
+  // separately, including that it still applies the 'open' default.
+  assert.ok(/const status = drStatus_\(r\)/.test(fn),
+    'the status is normalized once into a local, via the shared predicate');
   assert.ok(/status: status,/.test(fn), 'the item ships the NORMALIZED status');
-  // The raw comparison this fix removed must not come back in any form.
+  // The raw comparison this fix removed must not come back in any form. F5
+  // (cycle 18) STRENGTHENED this: the one remaining read moved into the shared
+  // `drStatus_` predicate, so this function should now hold ZERO raw reads —
+  // a tighter bound than the 1 the F8 fix left behind, not a looser one.
   const raw = fn.match(/r\[DR\.STATUS\]/g) || [];
-  assert.strictEqual(raw.length, 1,
-    'DR.STATUS is read exactly once (the normalize line); got ' + raw.length + ' reads');
+  assert.strictEqual(raw.length, 0,
+    'DR.STATUS is never read raw here — it goes through drStatus_; got ' + raw.length + ' reads');
   // The second half: a row marked resolved with a blank/unparseable ResolvedAt
   // has an UNKNOWN duration. The old code fell through to "now − created",
   // pushing an ever-growing age into deptStats.durations every single day.
@@ -10135,7 +10142,10 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
     'the accrual tile is gated on a shipped positive rate');
   assert.ok(/ACCRUING \$\{rateStr\}H \/ \$\{basis\}H/.test(to),
     'the tile states the rate in its real terms (hours per basis hours)');
-  assert.ok(/earned this month/.test(to) && /h worked so far/.test(to),
+  // F7 (cycle 18) shortened these labels — at the 240px DESKTOP rail both
+  // spans wrapped to two lines (measured 22px vs 11px). The FIGURES are what
+  // this pin guards, not the prose around them.
+  assert.ok(/d this month/.test(to) && /h worked</.test(to),
     'the tile shows the server-computed month-to-date earning');
   // The MTD figure is printed at the server's 2dp, NOT through formatLeaveDays
   // — 1dp renders 0.46 as "0.5", overstating the accrual by 9%.
@@ -10347,6 +10357,133 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
       'a brief with a failed source is NOT silent — silence means a true all-clear');
   });
 }
+
+// ── Cycle-18 batches 3+4 ────────────────────────────────────────────────────
+// NOTE the placement: ABOVE process.exit. A block appended after it never runs
+// and reports nothing — that hazard cost three silently-dead pins last session.
+
+test('F5: the DeptRequests Status cell has ONE reader (INV-183, fifth column)', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  // The predicate exists and normalizes BOTH ways, with the 'open' default the
+  // one already-correct reader applied.
+  const pred = extractRawFunction('Code.js', 'drStatus_').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\|\|\s*'open'/.test(pred), "a blank Status reads as OPEN, not unknown");
+  assert.ok(/\.trim\(\)/.test(pred) && /\.toLowerCase\(\)/.test(pred),
+    'the predicate trims AND lowercases');
+  // No raw DR.STATUS read survives anywhere outside the predicate and the WRITE.
+  // `DR.STATUS + 1` (the setValue column) is NOT a bracketed read, so it never
+  // enters this count — assert the bracketed form directly.
+  const reads = (code.match(/\[DR\.STATUS\]/g) || []).length;
+  assert.strictEqual(reads, 1,
+    'exactly one [DR.STATUS] read remains — the one inside drStatus_');
+  // And each of the three former raw comparators now delegates.
+  ['drFindOpenRequest_', 'markDeptRequestResolved_', 'deptRequestsOverdueOpen_', 'getDeptRequests']
+    .forEach((fn) => {
+      const body = extractRawFunction('Code.js', fn);
+      assert.ok(/drStatus_\(/.test(body), fn + ' routes through drStatus_');
+      assert.ok(!/String\([^)]*\[DR\.STATUS\]\)/.test(body.replace(/^\s*\/\/.*$/gm, '')),
+        fn + ' keeps no raw DR.STATUS comparison');
+    });
+});
+
+test('F5: a padded / mixed-case Status is read the same way by every consumer', () => {
+  const ctx = { DR: { REQ_ID: 0, STATUS: 7 } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'drStatus_'), ctx);
+  const row = (v) => { const r = []; r[7] = v; return r; };
+  ['resolved', ' resolved ', 'Resolved', 'RESOLVED', '\tResolved\n'].forEach((v) => {
+    assert.strictEqual(ctx.drStatus_(row(v)), 'resolved', JSON.stringify(v) + ' reads as resolved');
+  });
+  ['open', ' Open', ''].forEach((v) => {
+    assert.strictEqual(ctx.drStatus_(row(v)), 'open', JSON.stringify(v) + ' reads as open');
+  });
+  assert.strictEqual(ctx.drStatus_(row(undefined)), 'open', 'a missing cell defaults to open');
+});
+
+test('F5: the calendar TRIMS the time-off status it ships to the client', () => {
+  const body = extractRawFunction('Code.js', 'buildCalendarForEmployee_');
+  assert.ok(/String\(toRows\[i\]\[TO\.STATUS\]\)\.trim\(\)/.test(body),
+    'TO.STATUS is trimmed at the single read — the client compares the value it ships');
+});
+
+test('F2: reminders skip a day OFF, but the still-clocked-in nudge does not', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const tick = extractFunction('script_core.html', 'remindersTick_');
+  const stripped = tick.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/var dayOff = remindIsDayOff_\(tz\)/.test(stripped), 'the ticker computes a day-off flag');
+  // (a) breaks and (c) the clock-in nudge are gated; (b) is NOT.
+  assert.ok(/dayOff \? \[\] :/.test(stripped), '(a) break reminders are suppressed on a day off');
+  assert.ok(/!dayOff && nowMin >= startMin \+ REMIND_CLOCKIN_GRACE_MIN/.test(stripped),
+    '(c) the not-clocked-in nudge is suppressed on a day off');
+  // The still-clocked-in branch must NOT carry the flag — a forgotten Saturday
+  // punch is exactly when that reminder matters most.
+  const bBranch = /nowMin >= endMin \+ 5 && nowMin <= endMin \+ 120/.exec(stripped);
+  assert.ok(bBranch, '(b) the still-clocked-in window is still there');
+  assert.ok(!/dayOff[^\n]*endMin \+ 5/.test(stripped) && !/endMin \+ 5[^\n]*dayOff/.test(stripped),
+    '(b) is NOT gated on dayOff');
+  // An early `return` before nowMin would silently take (b) with it.
+  assert.ok(!/if \(remindIsDayOff_\(tz\)\) return/.test(stripped),
+    'the guard is per-branch, never an early return that also drops (b)');
+  assert.ok(/function remindIsDayOff_/.test(core), 'the predicate is defined');
+});
+
+test('F2: the day-off predicate uses the REP tz and the server PTO flag', () => {
+  const ctx = { empState: null, isoDateTz: (tz) => ctx.__iso, __iso: '2026-08-22' };  // a Saturday
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('script_core.html', 'remindIsDayOff_'), ctx);
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'Saturday is a day off');
+  ctx.__iso = '2026-08-23';
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'Sunday is a day off');
+  ctx.__iso = '2026-08-21';
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'Friday is a working day');
+  // Approved PTO on a weekday.
+  ctx.empState = { offToday: true };
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'approved PTO is a day off');
+  // An older server that does not send offToday degrades to the weekday guard.
+  ctx.empState = {};
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'a missing flag is not "off"');
+});
+
+test('F2: empIsOffToday_ is bounded, approved-only, and fails toward "working"', () => {
+  const body = extractRawFunction('Code.js', 'empIsOffToday_');
+  assert.ok(!/getDataRange\(\)/.test(body), 'it does not read the full sheet (INV-46)');
+  assert.ok(/getRange\(2, 1, lastRow - 1, width\)/.test(body), 'it reads a bounded column window');
+  assert.ok(/normalizeDate_/.test(body), 'the date cell is coercion-recovered (INV-29)');
+  assert.ok(/\.trim\(\)\.toLowerCase\(\) === 'approved'/.test(body),
+    "only APPROVED counts — a pending request is not yet a day off (normalized, INV-183)");
+  assert.ok(/catch \(e\)[\s\S]*return false/.test(body),
+    'a failed read returns false — the safe direction (a missed reminder, never a silenced one)');
+  const state = extractRawFunction('Code.js', 'getEmployeeState');
+  assert.ok(/offToday: empIsOffToday_\(/.test(state), 'getEmployeeState ships it');
+});
+
+test('F7: the accrual tile footer is terse AND keeps the planned line', () => {
+  const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  // The long strings that wrapped in the 240px desktop rail are gone.
+  assert.ok(!/earned this month/.test(to), 'the wrapping "earned this month" label is gone');
+  assert.ok(!/h worked so far/.test(to), 'the wrapping "worked so far" label is gone');
+  assert.ok(/d this month/.test(to) && /h worked</.test(to), 'terse labels replace them');
+  // The MTD line no longer REPLACES the planned line — both render.
+  assert.ok(/const plannedFtr =/.test(to), 'the planned footer is factored out');
+  assert.ok(/\+ plannedFtr\s*\n?\s*: plannedFtr/.test(to.replace(/\r/g, '')),
+    'the accrual branch appends the planned footer instead of dropping it');
+  // No projection sneaks back into the accrual branch (INV-187).
+  const accrual = /if \(accrual\) \{([\s\S]*?)\n    \} else \{/.exec(to);
+  assert.ok(accrual, 'the accrual branch is findable');
+  assert.ok(!/class="bar"/.test(accrual[1]), 'no fill bar — an accruing balance has no ceiling');
+  assert.ok(!/monthsLeft|curYear/.test(accrual[1]), 'no year-end projection');
+});
+
+test('F10: the accrual credit runs in the all-team quiet window, not mid-offshore-shift', () => {
+  const install = extractRawFunction('Code.js', 'installAutomationTriggers');
+  const m = /newTrigger\('creditMonthlyPtoAccruals'\)\s*\n\s*\.timeBased\(\)\.atHour\((\d+)\)/.exec(install);
+  assert.ok(m, 'the accrual trigger is installed');
+  assert.strictEqual(m[1], '18', 'at 18:00 manager-tz — the INV-153 quiet window');
+  // The archive chose that hour for the same reason; they should agree.
+  const arch = /newTrigger\('archiveOldTimesheetRows'\)\s*\n\s*\.timeBased\(\)\.atHour\((\d+)\)/.exec(install);
+  assert.strictEqual(arch && arch[1], '18', 'and matches archiveOldTimesheetRows (INV-153)');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
