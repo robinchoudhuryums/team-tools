@@ -5,8 +5,8 @@ Cycle: 17 — CLOSED (reflected, `.cycle/blocks/17-a-reflect.md`; metrics row
 appended). Between-cycles OPERATOR WORK continues on the branch (see below);
 cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
-point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
-wrote 189/190/191.
+point. NOTE the library is at INV-195 — the 2026-08-11 pilot-feedback round
+wrote 189/190/191, and cycle 18's pre-audit batch 5 wrote 195.
 Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
   5B, unmerged, NOT deployed.
   A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
@@ -34,8 +34,16 @@ Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
   the ~65 the audit estimated, and 116 of them need an author to DECIDE the
   name. Delivered instead as the A14 RATCHET (two-sided: fails if the count
   rises OR drops without the baseline moving).
-  /sync-docs is DONE for Batches 1+2 (149461b) and 3+4 (e02621f);
-  **/sync-docs for 5+6+7 is OWED** — 8 items at the end of its block.
+  /sync-docs is DONE for ALL of Batches 1+2 (149461b), 3+4 (e02621f) and
+  5+6+7 (this session) — the last pass wrote **INV-195** (a form control needs
+  an accessible NAME; a placeholder is not one; A14 is a two-sided ratchet
+  with a stated target of zero and the 75/61/116 census split), amended INV-83
+  (every `ensureOverlay` dialog is named; `label`/`labelledBy` are mutually
+  exclusive; no nested `role="dialog"`), INV-66 (92-day span cap), INV-185
+  (F14 — a fixture whose response depends on its ARGUMENTS must be a function
+  of them) and INV-188 (strip `<!-- -->` too), moved the matrix count to 43,
+  the test narrative to 576, and recorded that ViewUsage + ClientErrors are
+  the only two stores with no retention tier (F11 follow-on).
   Pure 576, DOM 75, matrix 43 clean, 39 mutations bite-checked across the
   session.
 Prior phase (unchanged below): operator-requested feature work:
