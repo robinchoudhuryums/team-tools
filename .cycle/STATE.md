@@ -7,36 +7,37 @@ cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191.
-Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1+2+3+4 DONE,
-  doc-synced, unmerged, NOT deployed.
-  A fresh /broad-scan ran this session (42-scenario matrix + 556/71 baselines
-  green at start), producing an 8-batch plan. FOUR batches are implemented:
-  **Batch 1+2** (`.cycle/blocks/18-batch1-batch2-broad-implement.md`) —
-  **F1 (High) stored XSS**: the roster + decision KB blocks stashed their fence
-  source in `data-src`, and an attribute DECODES on read, so every re-render
-  (mode switch, Expand, decision answer) put a LIVE element into the article.
-  Reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7 coupled sites,
-  pinned in the DOM harness — the pure harness cannot decode, and run.js had
-  literally pinned the vulnerable line as correct. **F4 + Gap4**: the PTO accrual
-  credit caught its own error and told nobody; per-job liveness is now DERIVED
-  from `AUTOMATION_JOB_CHECKS` (with an `enabled()` predicate = INV-186 in code)
-  instead of one hardcoded reconcile check, and the manager brief now reports
-  unreadable sources instead of silently omitting their sections.
-  **Batch 3+4** (`.cycle/blocks/18-batch3-batch4-broad-implement.md`) —
-  **F5** closes the INV-183 status-read family on its FIFTH column (`drStatus_`
-  + 4 call sites + the calendar's TO.STATUS trim); **F2** stops weekend/PTO
-  reminder nags (`remindIsDayOff_`, gated PER BRANCH so the still-clocked-in
-  nudge stays live, plus a bounded `empIsOffToday_` server flag); **F7** unwraps
-  the accrual tile footer (MEASURED 22px → 11px at the 240px rail) and restores
-  the planned line it had been replacing; **F10** moves the accrual credit off
-  the offshore shift tail to 18:00, matching the archive's INV-153 reasoning.
-  /sync-docs is DONE for both pairs (149461b, e02621f) — INV-183's third column
-  now reads CLOSED with the calendar trim as its fourth site, S74 lost the same
-  stale sentence, INV-190 carries the day-off gate + the (b) exemption + the
-  inferred-weekends limit, INV-193 carries the round-trip clause, and the
-  accrual hour reads 18:00 in all three documented places.
-  Pure 570, DOM 75, matrix 42 clean, 28 mutations bite-checked across the four
-  batches. NO doc debt outstanding.
+Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
+  5B, unmerged, NOT deployed.
+  A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
+  `18-batch1-batch2-`, `18-batch3-batch4-`, `18-batch5-batch6-batch7-`
+  `broad-implement.md`.
+  **Batch 1+2** — F1 (High) stored XSS via the KB `data-src` round-trip (an
+  attribute DECODES on read, so every re-render put a LIVE element into the
+  article; reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7
+  coupled sites, pinned in the DOM harness because the pure harness cannot
+  decode and run.js had pinned the vulnerable line as correct); F4 + Gap4,
+  per-job automation liveness DERIVED from `AUTOMATION_JOB_CHECKS`.
+  **Batch 3+4** — F5 closes the INV-183 status family on its FIFTH column
+  (`drStatus_` + 4 call sites + the calendar's TO.STATUS trim); F2 stops
+  weekend/PTO reminder nags (gated PER BRANCH so the still-clocked-in nudge
+  stays live); F7 unwraps the accrual tile footer (MEASURED) and restores the
+  planned line; F10 moves the accrual credit to 18:00 (INV-153 quiet window).
+  **Batch 5+6+7** — 5A names all 15 `ensureOverlay` dialogs (they announced as
+  bare "dialog") and un-nests five dialogs-inside-dialogs, verified via
+  `getByRole('dialog',{name})` in Chromium; F14 makes the getMyMetrics fixture
+  a FUNCTION of its date (it was rendering "TODAY" under a pressed "YESTERDAY"
+  chip — INV-185's fifth instance); F8 adds the Time/PTO mobile scenario
+  (matrix 42 → 43); F3 caps `getTeamMetrics` at 92 days (the only uncapped
+  range endpoint, opened to every rep on 2026-08-18).
+  **5B IS NOT SWEPT** — the enforced census is 252 unnamed form controls, not
+  the ~65 the audit estimated, and 116 of them need an author to DECIDE the
+  name. Delivered instead as the A14 RATCHET (two-sided: fails if the count
+  rises OR drops without the baseline moving).
+  /sync-docs is DONE for Batches 1+2 (149461b) and 3+4 (e02621f);
+  **/sync-docs for 5+6+7 is OWED** — 8 items at the end of its block.
+  Pure 576, DOM 75, matrix 43 clean, 39 mutations bite-checked across the
+  session.
 Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
   combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
@@ -870,28 +871,31 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Batches 1–4 of the cycle-18 pre-audit scan are implemented, doc-synced and
-committed on `claude/broad-scan-s9b8fd` (ade5136 → e02621f) — NOT merged, NOT
-deployed. All suites green: pure 570, DOM 75, matrix 42 clean; 28 mutations
-bite-checked across the four batches. **No doc debt outstanding.**
+Batches 1-7 (except 5B) of the cycle-18 pre-audit scan are implemented and
+committed on `claude/broad-scan-s9b8fd` — NOT merged, NOT deployed. Suites:
+pure 576, DOM 75, matrix 43 clean.
 
-NEXT: Batches 5–8 of the scan remain — 5 accessibility (15 unnamed
-`ensureOverlay` dialogs + ~65 placeholder-only controls), 6 fixture drift F14 +
-a timeoff mobile scenario F8, 7 `getTeamMetrics` span cap F3 + ViewUsage
-retention F11, 8 completeness gaps (Offerings browse view, manager pay-statement
-UI, print stylesheet). Alternatively, cycle 18 proper is still DUE as the Seams
-& Invariants audit (cadence counter 4/4) — this scan was a pre-audit pass, not
-that audit, and it owes the library fresh candidates.
+NEXT: **/sync-docs for Batches 5+6+7** (8 items listed at the end of
+`.cycle/blocks/18-batch5-batch6-batch7-broad-implement.md`), then decide 5B.
 
-DEPLOY carries THREE operator actions (see the two blocks for detail):
-re-run `installAutomationTriggers()` (moves the accrual credit to 18:00),
-run `runAllTests()` from the editor, and answer the open question — does any rep
-work Saturdays or Sundays? Weekends are inferred, so such a rep would silently
-lose break reminders.
+**5B needs an OPERATOR DECISION, not more implementation.** 252 controls lack an
+accessible name: 75 have an adjacent `<label>` missing only a `for=` (mechanical),
+61 are placeholder-only, and 116 have nothing and need someone to decide what each
+control is CALLED. 92 sit in `cn/script_callnotes.html` inside template-literal
+render functions. Realistic scope is multi-day. The A14 ratchet holds the line in
+the meantime and will FAIL if a sweep lands without lowering its baseline — that
+is deliberate and self-describing.
 
-TWO PROCESS RE-LEARNINGS this session, both traps CLAUDE.md already documents:
-a `git checkout` bite-revert wiped uncommitted Code.js work (re-applied from
-context; the fix is COMMIT BEFORE bite-checking, which made the later reverts a
-clean recovery), and two reverse edits matched a DIFFERENT occurrence than
-intended (`getDataRange()`, `</div>\``) — anchor on a string unique in the FILE
-and verify the restore by re-reading, not by re-running the suite.
+Batch 8 (completeness gaps) is untouched: Offerings browse view, manager
+pay-statement UI, print stylesheet.
+
+DEPLOY still carries the Batch 3+4 operator actions: re-run
+`installAutomationTriggers()` (accrual credit → 18:00), run `runAllTests()`, and
+answer whether any rep works Saturdays or Sundays (weekends are INFERRED).
+
+PROCESS this session: committing BEFORE bite-checking worked — two imprecise
+reverse edits became a clean `git checkout` recovery instead of lost work. FOUR
+mutations did not bite on first attempt: three because the fix shipped with NO
+pin at all (F3/F14/F8), one because the assertion matched a substring of an
+unrelated line. Check every mutation; a missing pin looks exactly like a passing
+one.
