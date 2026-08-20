@@ -10745,6 +10745,27 @@ test('B8: the manager pay-statement branch is wired and cannot leak the rep id',
     'cross-partial call is typeof-guarded');
 });
 
+test('B8: the manager liveStatus fixture carries the id the client reads', () => {
+  // INV-185 field-name drift, found by CLICKING the new pay-statement button
+  // in Chromium: the fixture shipped `empId` where the server ships `id`, so
+  // every Day-Edit AND pay-statement button in the visual matrix rendered
+  // data-emp-id="undefined" — a screenshot the server cannot produce.
+  const srv = extractRawFunction('Code.js', 'getManagerDashboard');
+  const ret = /const liveStatus = employees\.map\(e => \{[\s\S]*?return \{([\s\S]*?)\};/.exec(srv);
+  assert.ok(ret, 'found the liveStatus row shape in Code.js');
+  assert.ok(/\bid:\s*e\.id\b/.test(ret[1]), 'the server ships `id` on a liveStatus row');
+  assert.ok(!/\bempId:/.test(ret[1]), 'and NOT `empId` — which is what drifted');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const lsFn = /function ls\(name, status, t, tz, abbr\) \{ return \{([\s\S]*?)\}; \}/.exec(mock);
+  assert.ok(lsFn, 'found the fixture row builder');
+  assert.ok(/\bid:\s*'E-'/.test(lsFn[1]), 'the fixture ships `id` too');
+  assert.ok(!/\bempId:/.test(lsFn[1]), 'and not the drifted `empId`');
+  // The client reads e.id for BOTH buttons on the card.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok((mgr.match(/data-emp-id="\$\{esc\(e\.id\)\}"/g) || []).length >= 2,
+    'both live-status card buttons key off e.id');
+});
+
 test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   const i = css.indexOf('@media print {');

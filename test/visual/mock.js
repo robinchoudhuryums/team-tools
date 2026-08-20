@@ -372,7 +372,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     getManagerDashboard: (function () {
       function spark(n, base) { var a = []; for (var i = n; i >= 1; i--) a.push({ date: daysAgo(i), count: (i * base) % 4 }); return a; }
       function rh() { var a = []; for (var i = 7; i >= 1; i--) a.push({ date: daysAgo(i), hours: [8.5, 9, 0, 8.75, 9, 8.5, 4][i - 1] }); return a; }
-      function ls(name, status, t, tz, abbr) { return { empId: 'E-' + name.length + '0' + t, name: name, status: status,
+      // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
+      // return block) — the drift made every Day-Edit button in every manager
+      // screenshot render data-emp-id="undefined", and surfaced only when the
+      // batch-8 pay-statement button was clicked in a real browser. INV-185.
+      function ls(name, status, t, tz, abbr) { return { id: 'E-' + name.length + '0' + t, name: name, status: status,
         lastPunchType: t, lastPunchTime: '08:0' + (name.length % 6) + ':00', lastPunchTimeMgr: '21:3' + (name.length % 6) + ':00',
         timezone: tz, tzAbbr: abbr, empTzAbbr: abbr, mgrTzAbbr: 'CST', recentHours: rh(), recentTotal: 47.75, recentDays: 6 }; }
       return {
