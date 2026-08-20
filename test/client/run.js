@@ -10479,6 +10479,52 @@ test('A14: no dialog is nested inside another dialog', () => {
   });
 });
 
+// ── Cycle-18 batches 6+7 ────────────────────────────────────────────────────
+
+test('F3: getTeamMetrics is span-capped like every sibling range endpoint', () => {
+  const fn = extractRawFunction('Code.js', 'getTeamMetrics')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/teamSpanDays/.test(fn), 'the span is computed');
+  assert.ok(/if \(teamSpanDays > 92\) return \{ error:/.test(fn),
+    'and refused past 92 days — the getMyMetricsRange window');
+  // The cap must sit BEFORE the cache read, or a rep can still mint an
+  // arbitrary cache key for an out-of-range span and evict warm entries.
+  assert.ok(fn.indexOf('teamSpanDays > 92') < fn.indexOf('teamMetricsCache.get'),
+    'the cap precedes the cache lookup');
+  // It is REP-reachable (INV-66 opened it), which is why the cap exists at all.
+  assert.ok(/repView|teamMetricsRepView_/.test(fn), 'the rep path is still present');
+});
+
+test('F14: a fixture whose response depends on its arguments IS a function of them', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  // getMyMetrics ECHOES the requested date and the client's hero kicker
+  // branches on it ("Today" / "Yesterday" / the bare date). A static date
+  // rendered "TODAY" under a pressed "YESTERDAY" chip — a state the server
+  // cannot produce. Fifth instance of the INV-185 drift class.
+  assert.ok(/getMyMetrics: function \(date\)/.test(mock),
+    'the getMyMetrics fixture takes the date it is asked for');
+  assert.ok(/return \{ date: date \|\| todayIso/.test(mock),
+    'and echoes it back rather than a hardcoded today');
+  // Drive it: the fixture must return what it was asked for.
+  const m = /getMyMetrics: function \(date\) \{\s*return \{ date: (date \|\| todayIso)/.exec(mock);
+  assert.ok(m, 'the echo is the first field, where the client reads it');
+});
+
+test('F8: every rep-facing tool has a mobile visual scenario', () => {
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const mobile = [...shoot.matchAll(/\['([^']+)',\s*\{ tool: '([^']+)',\s*tab: ('[^']*'|null) \},\s*MOBILE/g)];
+  const tools = new Set(mobile.map((m) => m[2]));
+  // Time / PTO is a TAB, and it is the most recently restructured rep-facing
+  // layout (consolidated 2026-08-18), so tool-level coverage was not enough.
+  const names = mobile.map((m) => m[1]);
+  assert.ok(names.includes('timeoff-light-mobile'),
+    'Time / PTO has a mobile scenario (F8); got ' + names.join(', '));
+  ['timeClock', 'callNotes', 'metrics', 'intake', 'reference', 'develop'].forEach((t) => {
+    assert.ok(tools.has(t), t + ' has at least one MOBILE scenario');
+  });
+});
+
 // ── Cycle-18 batches 3+4 ────────────────────────────────────────────────────
 // NOTE the placement: ABOVE process.exit. A block appended after it never runs
 // and reports nothing — that hazard cost three silently-dead pins last session.
