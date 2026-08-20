@@ -10775,15 +10775,23 @@ test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
   assert.ok(/\.no-print\s*{\s*display:\s*none/.test(block) || /,\s*\.no-print\s*{[^}]*display:\s*none/.test(block),
     '.no-print is honored');
   assert.ok(!/^\s*button\s*{/m.test(block), 'no blanket button hide');
-  // Every selector the block hides must EXIST in the markup (INV-184 — a dead
-  // selector is the next reader's false lead).
-  const partials = A11Y_SCAN_PARTIALS.concat(['styles.html', 'kb/script_kb.html']);
+  // Every class/id the block NAMES must exist somewhere in the app (INV-184 —
+  // a dead selector is the next reader's false lead). DERIVED from the block,
+  // not a hand list: a hand list passes no matter what the block says, which
+  // is how the first version of this assertion failed to bite.
+  const partials = A11Y_SCAN_PARTIALS.concat(['styles.html', 'kb/script_kb.html', 'index.html']);
   const all = partials.map((rel) => {
     try { return fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); } catch (e) { return ''; }
   }).join('\n');
-  ['no-print', 'pay-stmt-row', 'kb-drawer-tab', 'toast-stack', 'tool-tab-bar'].forEach((cls) => {
-    assert.ok(all.includes(cls), `the print block's "${cls}" hook exists in the markup`);
+  const selectorPart = block.replace(/\{[^{}]*\}/g, '|');   // keep selectors, drop declarations
+  const named = new Set((selectorPart.match(/[.#][A-Za-z][\w-]*/g) || []));
+  named.delete('.no-print');   // introduced BY this block; asserted separately below
+  assert.ok(named.size >= 8, 'the block names real hooks');
+  named.forEach((sel) => {
+    const bare = sel.slice(1);
+    assert.ok(all.includes(bare), `the print block's "${sel}" hook exists in the app`);
   });
+  assert.ok(all.includes('no-print'), 'the .no-print escape hatch is actually used');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
