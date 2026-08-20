@@ -18465,6 +18465,53 @@ function intakeGetSubmission(formType, submissionId) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Rep-facing READ-ONLY browse of the PMD Offerings catalog (cycle-18 batch 8).
+ *
+ *  WHY: the catalog is the clinical product list the PPD engine recommends
+ *  FROM, and until now the only way to see what a HCPCS code means, what a
+ *  chair's weight capacity is, or which brochure to send was to open the
+ *  Intake SPREADSHEET — which also holds the PPD/PMD/PAP PHI submission tabs.
+ *  So "what does K0861 support?" cost a rep a trip into a PHI store, or a
+ *  message to a manager. This surfaces the same six columns the engine reads,
+ *  and NOTHING else from that spreadsheet.
+ *
+ *  PHI-free by construction: `getIntakeOfferings_` reads only `Offerings!A2:F`
+ *  (product data — the same rationale `intakeCatalogIssues_` records), so no
+ *  submission tab is touched and no patient value can enter the payload.
+ *
+ *  Rep-callable (an enrolled employee, like every other Intake read) and
+ *  strictly read-only. Payload-capped with the pre-slice `total` reported
+ *  (INV-169) so a future catalog past the cap reads as capped, not as
+ *  complete. A row with no HCPCS is dropped — the engine already treats it as
+ *  inert (`hcpcsNum === 0`), so listing it would advertise a product the
+ *  recommendation engine can never return. */
+const INTAKE_OFFERINGS_LIST_CAP_ = 200;
+function intakeListOfferings() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const rows = getIntakeOfferings_();
+    const out = [];
+    (rows || []).forEach(function (r) {
+      const cell = function (n) { return String(r && r[n] == null ? '' : r[n]).trim(); };
+      const hcpcs = cell(1);
+      if (!hcpcs) return;                       // inert to the engine — see above
+      out.push({
+        hcpcs: hcpcs,
+        features: cell(0),
+        weightCapacity: cell(2),
+        seatType: cell(3),
+        pdfLink: cell(4),
+        imageUrl: cell(5),
+      });
+    });
+    out.sort(function (a, b) { return a.hcpcs.localeCompare(b.hcpcs); });
+    const total = out.length;
+    if (out.length > INTAKE_OFFERINGS_LIST_CAP_) out.length = INTAKE_OFFERINGS_LIST_CAP_;
+    return { offerings: out, total: total, cap: INTAKE_OFFERINGS_LIST_CAP_ };
+  } catch (err) { return { error: err.message }; }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  REFERENCE / KNOWLEDGE BASE  (Phase 1)
 //  Per-department reference articles (markdown source, rendered client-side) +

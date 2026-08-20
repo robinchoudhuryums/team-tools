@@ -51,6 +51,7 @@ const SCENARIOS = [
   ['metrics-team-light-wide', { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'light', ''],
   ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  ''],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
+  ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],
   ['intake-dark-wide',      { tool: 'intake',    tab: null },         WIDE, 'dark',  ''],
   ['reference-light-wide',  { tool: 'reference', tab: null },         WIDE, 'light', ''],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],

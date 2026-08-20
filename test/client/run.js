@@ -10652,5 +10652,139 @@ test('F10: the accrual credit runs in the all-team quiet window, not mid-offshor
   assert.strictEqual(arch && arch[1], '18', 'and matches archiveOldTimesheetRows (INV-153)');
 });
 
+// ── Batch 8: completeness gaps (Offerings browse, manager pay statement, print)
+
+test('B8: the Offerings browse endpoint is rep-callable, read-only and PHI-free', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const body = nc(extractRawFunction('Code.js', 'intakeListOfferings'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(body) && /Not authorized\./.test(body),
+    'requires an enrolled employee');
+  // PHI boundary: the ONLY store read is the Offerings catalog helper. A
+  // submission tab read here would put patient answers on a browse surface.
+  assert.ok(/getIntakeOfferings_\(\)/.test(body), 'reads the catalog helper');
+  assert.ok(!/getIntakeSubmissionSheet_|SUBMISSIONS_TAB|AnswersJSON/.test(body),
+    'never touches a PHI submission tab');
+  // Read-only — no lock, no write.
+  assert.ok(!/appendRow|setValue|waitLock/.test(body), 'read-only: no write, no lock');
+  // INV-169 — the pre-slice total rides the payload so a capped list cannot
+  // read as a complete one.
+  assert.ok(/total\s*=\s*out\.length/.test(body) && /total:\s*total/.test(body) && /cap:/.test(body),
+    'reports the pre-slice total and the cap');
+  assert.ok(/INTAKE_OFFERINGS_LIST_CAP_/.test(body), 'caps the payload');
+  // A row with no HCPCS is inert to the engine (hcpcsNum === 0) — listing it
+  // would advertise a product the engine can never return.
+  assert.ok(/if\s*\(!hcpcs\)\s*return/.test(body), 'drops HCPCS-less rows');
+});
+
+test('B8: the catalog browse view is named, filtered purely, and error-vs-empty split', () => {
+  const view = extractFunction('intake/script_intake.html', 'enterIntakeCatalogView');
+  // A12/INV-175 — a failed load must never render as an empty catalog.
+  assert.ok((view.match(/errorStateHtml_\(/g) || []).length >= 2,
+    'both failure paths render the error card');
+  assert.ok(!/errorStateHtml_\(esc\(/.test(view), 'no double-escape');
+  // A14 — a placeholder is not an accessible name.
+  assert.ok(/id="intk-cat-search"[^>]*aria-label=/.test(view),
+    'the search input carries an accessible name');
+  // The scheme whitelist is the SHARED helper, not a second copy.
+  const render = extractFunction('intake/script_intake.html', 'intakeRenderCatalogList_');
+  assert.ok((render.match(/intakeHttpOnly_\(/g) || []).length === 2,
+    'both URL columns go through the shared http(s) whitelist');
+  assert.ok(!/https\?:/.test(render), 'no second copy of the scheme regex');
+  // A blank capacity is the F9 fail-closed state — it must be STATED, never
+  // rendered as a value (INV-187 applied to a cell).
+  assert.ok(/capacity not recorded/.test(render) && /seat not recorded/.test(render),
+    'unrecorded specs say so');
+  // INV-169 — the cap note keys off the UNFILTERED length, not the filtered one.
+  assert.ok(/serverTotal\s*!=\s*null\s*&&\s*serverTotal\s*>\s*unfilteredLen/.test(render),
+    'the cap note compares the server total against the unfiltered length');
+});
+
+test('B8: the catalog seat filter mirrors the engine letter test', () => {
+  const ctx = { esc: (x) => String(x) };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeFilterCatalog_'), ctx);
+  const rows = [
+    { hcpcs: 'K0821', features: 'captain seat', seatType: 'Captain' },
+    { hcpcs: 'K0861', features: 'solid seat pan', seatType: 'Solid' },
+    { hcpcs: 'K0864', features: 'heavy duty', seatType: '' },
+  ];
+  const f = (q, seat) => ctx.intakeFilterCatalog_(rows, { q: q, seat: seat }).map((r) => r.hcpcs).join(',');
+  assert.strictEqual(f('', 'ALL'), 'K0821,K0861,K0864', 'ALL passes everything');
+  // The engine tests for the LETTER anywhere in the cell; a browse view that
+  // disagreed about which chairs are captain-seat is worse than no filter.
+  assert.strictEqual(f('', 'C'), 'K0821', 'captain matches the letter c');
+  assert.strictEqual(f('', 'S'), 'K0861', 'solid matches the letter s');
+  assert.strictEqual(f('k086', 'ALL'), 'K0861,K0864', 'query matches hcpcs, case-insensitive');
+  assert.strictEqual(f('SOLID', 'ALL'), 'K0861', 'query matches features too');
+  assert.strictEqual(f('nothing', 'ALL'), '', 'no match is empty, not everything');
+});
+
+test('B8: the manager pay-statement branch is wired and cannot leak the rep id', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  const open = extractFunction('tc/script_timeoff.html', 'openPayStatement_');
+  // Set on EVERY open — a "only assign when present" shape would make a
+  // manager's own statement inherit the rep they last viewed.
+  assert.ok(/PAY_STMT\.repId\s*=\s*String\(repEmpId\s*\|\|\s*''\)/.test(open),
+    'repId is assigned unconditionally on every open');
+  const load = extractFunction('tc/script_timeoff.html', 'payStmtLoad_');
+  assert.ok(/\.getMyPayStatement\(PAY_STMT\.offset,\s*PAY_STMT\.repId\s*\|\|\s*''\)/.test(load),
+    'the rep id is passed to the server');
+  // The rail button is the OWN-statement entry — it must clear the id.
+  assert.ok(/openPayStatement_\(0,\s*''\s*,\s*''\)/.test(src),
+    'the own-statement button clears the rep id');
+  // The A14 dialog name distinguishes whose statement is open.
+  assert.ok(/'Pay statement for '\s*\+/.test(open), 'the dialog name names the rep');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  // INV-191 — .ps-open-btn borrows .de-open-btn for its LOOK, so the Day-Edit
+  // binding must exclude it or the button opens the wrong modal.
+  assert.ok(/querySelectorAll\('\.de-open-btn:not\(\.ps-open-btn\)'\)/.test(mgr),
+    'the Day-Edit binding excludes the pay-statement button');
+  assert.ok(/querySelectorAll\('\.ps-open-btn'\)/.test(mgr) && /openPayStatement_\(0,\s*btn\.dataset\.empId/.test(mgr),
+    'the pay-statement button opens the statement for that rep');
+  assert.ok(/typeof openPayStatement_ !== 'function'/.test(mgr),
+    'cross-partial call is typeof-guarded');
+});
+
+test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const i = css.indexOf('@media print {');
+  assert.ok(i > 0, 'a print block exists');
+  // Brace-match the block so the assertions cannot drift onto neighbouring CSS.
+  let depth = 0, end = i;
+  for (let j = css.indexOf('{', i); j < css.length; j++) {
+    if (css[j] === '{') depth++;
+    else if (css[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+  }
+  const block = css.slice(i, end + 1);
+  // (1) Dark mode prints WHITE-on-white without this — browsers drop the
+  // background but keep the near-white --ink. !important, because the palette
+  // blocks are (0,3,0) and would out-specify a plain :root here.
+  assert.ok(/--ink:\s*#1{2,3}\s*!important/.test(block), '--ink is forced dark');
+  assert.ok(/--paper-card:\s*#fff\s*!important/.test(block), '--paper-card is forced white');
+  // (3) MEASURED: without this a 2359px statement printed 772px — 1587px of
+  // payroll data silently dropped.
+  assert.ok(/\.overlay\.open \.modal\s*{[^}]*max-height:\s*none\s*!important/.test(block),
+    'an open modal is un-clipped for print');
+  assert.ok(/\.overlay\.open \.modal\s*{[^}]*overflow:\s*visible\s*!important/.test(block),
+    'and its overflow is visible');
+  // (2) The page behind an open modal must not print with it.
+  assert.ok(/body:has\(\.overlay\.open\) \.app-shell/.test(block),
+    'an open overlay is the print subject');
+  // Chrome is hidden BY NAME — blanket-hiding <button> would delete data
+  // (transfer-count disclosures, KB roster chips ARE buttons).
+  assert.ok(/\.no-print\s*{\s*display:\s*none/.test(block) || /,\s*\.no-print\s*{[^}]*display:\s*none/.test(block),
+    '.no-print is honored');
+  assert.ok(!/^\s*button\s*{/m.test(block), 'no blanket button hide');
+  // Every selector the block hides must EXIST in the markup (INV-184 — a dead
+  // selector is the next reader's false lead).
+  const partials = A11Y_SCAN_PARTIALS.concat(['styles.html', 'kb/script_kb.html']);
+  const all = partials.map((rel) => {
+    try { return fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); } catch (e) { return ''; }
+  }).join('\n');
+  ['no-print', 'pay-stmt-row', 'kb-drawer-tab', 'toast-stack', 'tool-tab-bar'].forEach((cls) => {
+    assert.ok(all.includes(cls), `the print block's "${cls}" hook exists in the markup`);
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

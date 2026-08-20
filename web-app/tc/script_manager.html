@@ -440,7 +440,8 @@ function renderManagerView(area, data) {
           <div class="emp-card-top">
             <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
             <div class="emp-name">${esc(e.name)}</div>
-            <button class="de-open-btn" title="Edit day" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
+            <button class="de-open-btn" title="Edit day" aria-label="Edit day for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
+            <button class="de-open-btn ps-open-btn" title="Pay statement" aria-label="Pay statement for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('fileText', 13)}</button>
           </div>
           <div class="emp-status-line">${line}</div>
           ${sparkSection}
@@ -779,10 +780,27 @@ function renderManagerView(area, data) {
     });
   });
 
-  // Edit Day buttons on employee cards
-  document.querySelectorAll('.de-open-btn').forEach(function (btn) {
+  // Edit Day buttons on employee cards. `.ps-open-btn` shares the class for
+  // its LOOK only, so the Day-Edit binding must exclude it — a class-keyed
+  // writer that treats appearance as identity is INV-191, and here it would
+  // have opened Day Edit from the pay-statement button.
+  document.querySelectorAll('.de-open-btn:not(.ps-open-btn)').forEach(function (btn) {
     btn.addEventListener('click', function () {
       openDayEditModal(btn.dataset.empId, btn.dataset.empName);
+    });
+  });
+
+  // Manager pay-statement view (cycle-18 batch 8). The server branch
+  // (getMyPayStatement's repEmpId arg) is manager-gated; this is the UI that
+  // had never been built. Cross-partial, so typeof-guarded like every other
+  // shell hook — the statement lives in tc/script_timeoff.html.
+  document.querySelectorAll('.ps-open-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (typeof openPayStatement_ !== 'function') {
+        if (typeof showToast === 'function') showToast('Pay statement is unavailable', 'toast-error');
+        return;
+      }
+      openPayStatement_(0, btn.dataset.empId, btn.dataset.empName);
     });
   });
 }
