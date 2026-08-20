@@ -10779,7 +10779,11 @@ test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
   // a dead selector is the next reader's false lead). DERIVED from the block,
   // not a hand list: a hand list passes no matter what the block says, which
   // is how the first version of this assertion failed to bite.
-  const partials = A11Y_SCAN_PARTIALS.concat(['styles.html', 'kb/script_kb.html', 'index.html']);
+  // The corpus is the MARKUP, deliberately EXCLUDING styles.html: including
+  // the stylesheet that holds this very block made the check self-satisfying
+  // (a renamed selector "existed" because the rename itself was in the
+  // corpus), which is how the first two versions of it failed to bite.
+  const partials = A11Y_SCAN_PARTIALS.concat(['kb/script_kb.html', 'index.html']);
   const all = partials.map((rel) => {
     try { return fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); } catch (e) { return ''; }
   }).join('\n');
