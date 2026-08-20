@@ -7,7 +7,7 @@ cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-195 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191, and cycle 18's pre-audit batch 5 wrote 195.
-Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
+Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-8 DONE except
   5B, unmerged, NOT deployed.
   A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
   `18-batch1-batch2-`, `18-batch3-batch4-`, `18-batch5-batch6-batch7-`
@@ -30,6 +30,16 @@ Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
   chip — INV-185's fifth instance); F8 adds the Time/PTO mobile scenario
   (matrix 42 → 43); F3 caps `getTeamMetrics` at 92 days (the only uncapped
   range endpoint, opened to every rep on 2026-08-18).
+  **Batch 8** — the three completeness gaps: a rep-facing Intake -> Catalog
+  browse of the Offerings catalog (previously readable only by opening the
+  PHI-bearing Intake spreadsheet); the manager pay-statement UI (the
+  manager-gated repEmpId branch had been pinned-but-callerless since
+  2026-08-17); and the app's FIRST @media print block — MEASURED, a 2359px
+  pay statement printed 772px, and dark mode printed near-white ink on the
+  white sheet. Also fixed a live-status FIXTURE drift the new button
+  surfaced (empId vs the server's id — every Day-Edit button in every
+  manager screenshot had rendered data-emp-id="undefined") and the card
+  name column the second button squeezed (33px -> 105px, measured).
   **5B IS NOT SWEPT** — the enforced census is 252 unnamed form controls, not
   the ~65 the audit estimated, and 116 of them need an author to DECIDE the
   name. Delivered instead as the A14 RATCHET (two-sided: fails if the count
@@ -44,7 +54,7 @@ Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-7 DONE except
   of them) and INV-188 (strip `<!-- -->` too), moved the matrix count to 43,
   the test narrative to 576, and recorded that ViewUsage + ClientErrors are
   the only two stores with no retention tier (F11 follow-on).
-  Pure 576, DOM 75, matrix 43 clean, 39 mutations bite-checked across the
+  Pure 582, DOM 75, matrix 44 clean, 61 mutations bite-checked across the
   session.
 Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
@@ -883,8 +893,10 @@ Batches 1-7 (except 5B) of the cycle-18 pre-audit scan are implemented and
 committed on `claude/broad-scan-s9b8fd` — NOT merged, NOT deployed. Suites:
 pure 576, DOM 75, matrix 43 clean.
 
-NEXT: **/sync-docs for Batches 5+6+7** (8 items listed at the end of
-`.cycle/blocks/18-batch5-batch6-batch7-broad-implement.md`), then decide 5B.
+NEXT: **/sync-docs for Batch 8** (7 items at the end of
+`.cycle/blocks/18-batch8-broad-implement.md` — the Intake tool is FIVE tabs now,
+the print stylesheet needs a gotcha, and the liveStatus fixture drift is a fresh
+INV-185 instance), then decide 5B.
 
 **5B needs an OPERATOR DECISION, not more implementation.** 252 controls lack an
 accessible name: 75 have an adjacent `<label>` missing only a `for=` (mechanical),
@@ -894,8 +906,11 @@ render functions. Realistic scope is multi-day. The A14 ratchet holds the line i
 the meantime and will FAIL if a sweep lands without lowering its baseline — that
 is deliberate and self-describing.
 
-Batch 8 (completeness gaps) is untouched: Offerings browse view, manager
-pay-statement UI, print stylesheet.
+Batch 8 is DONE (block `18-batch8-broad-implement.md`). Its own follow-ons: no
+"all reps this period" manager export exists (not asked for), and THREE pin
+repairs are worth reading — the print-hook check failed to bite twice and the
+.no-print usage assert once, each because the assertion was weaker than the
+property it guarded.
 
 DEPLOY still carries the Batch 3+4 operator actions: re-run
 `installAutomationTriggers()` (accrual credit → 18:00), run `runAllTests()`, and
