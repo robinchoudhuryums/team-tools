@@ -436,15 +436,22 @@ function renderManagerView(area, data) {
         }
         // V4·E3 — 7-day daily-hours sparkline under the status line.
         const sparkSection = renderEmpSparkline_(e.recentHours);
+        // Batch 8: the actions moved OFF the name row. MEASURED at 1440 —
+        // the card is 181px, and two 26px buttons plus their gaps left the
+        // name 33px for a 75px name ("Av…"). One button had already cost it
+        // 69px; a second made it unreadable. Their own row costs ~30px of
+        // card height and gives the name the full width back.
         return `<div class="emp-card">
           <div class="emp-card-top">
             <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
-            <div class="emp-name">${esc(e.name)}</div>
-            <button class="de-open-btn" title="Edit day" aria-label="Edit day for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
-            <button class="de-open-btn ps-open-btn" title="Pay statement" aria-label="Pay statement for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('fileText', 13)}</button>
+            <div class="emp-name" title="${esc(e.name)}">${esc(e.name)}</div>
           </div>
           <div class="emp-status-line">${line}</div>
           ${sparkSection}
+          <div class="emp-card-actions">
+            <button class="de-open-btn" title="Edit day" aria-label="Edit day for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
+            <button class="de-open-btn ps-open-btn" title="Pay statement" aria-label="Pay statement for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('fileText', 13)}</button>
+          </div>
         </div>`;
       }).join('') + '</div>';
 

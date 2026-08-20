@@ -1736,6 +1736,12 @@
     padding: 0; margin-left: auto;
     transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
   }
+  /* Batch 8: the live-status card's actions sit on their own row so the two
+     26px buttons stop eating the name column (MEASURED: 33px for a 75px
+     name at 1440). margin-left:auto on .de-open-btn would right-push only
+     the FIRST button, so the row owns the alignment instead. */
+  .emp-card-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  .emp-card-actions .de-open-btn { margin-left: 0; }
   .de-open-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .de-open-btn svg { width: 13px; height: 13px; }
 

@@ -10743,6 +10743,17 @@ test('B8: the manager pay-statement branch is wired and cannot leak the rep id',
     'the pay-statement button opens the statement for that rep');
   assert.ok(/typeof openPayStatement_ !== 'function'/.test(mgr),
     'cross-partial call is typeof-guarded');
+  // The actions live on their OWN row. MEASURED at 1440: with both buttons in
+  // .emp-card-top the name column was 33px for a 75px name; one button had
+  // already cost it 69px. A source pin, because the pure harness has no layout
+  // engine — the measurement itself is the visual matrix's job.
+  const top = /<div class="emp-card-top">([\s\S]*?)<\/div>\s*<div class="emp-status-line">/.exec(mgr);
+  assert.ok(top, 'found the card top row');
+  assert.ok(!/<button/.test(top[1]), 'no action button squeezes the name column');
+  assert.ok(/class="emp-card-actions"/.test(mgr), 'the actions have their own row');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.emp-card-actions\s*{[^}]*justify-content:\s*flex-end/.test(css),
+    'the actions row owns its alignment (margin-left:auto right-pushes only the first button)');
 });
 
 test('B8: the manager liveStatus fixture carries the id the client reads', () => {
