@@ -88,6 +88,9 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       isManager: true, isAdmin: true, canSeeSpanish: true, departments: ['Billing'],
       timezone: 'Asia/Kolkata', timezoneAbbr: 'IST',
       schedule: { startMin: 480, lengthMin: 540, breaks: [{ label: 'B1', startMin: 630, lenMin: 15 }, { label: 'Lunch', startMin: 750, lenMin: 30 }, { label: 'B2', startMin: 900, lenMin: 15 }], breakReminderMin: 5 },
+      // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
+      // field (INV-185); false = a normal working day, the scenario's intent.
+      offToday: false,
       ptoEnabled: true, annualLeaveBalance: 11.5, sickLeaveBalance: 10, annualLeaveMax: 15,
       flags: { showTeammateStatus: true, showTeammateType: true, enablePtoTracking: true },
       instanceLabel: '',
