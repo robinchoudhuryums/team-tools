@@ -10438,8 +10438,13 @@ test('A14: every ensureOverlay dialog has an accessible name', () => {
   // Unlike the ratchet above this IS absolute — the set is small and closed.
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
   const ens = extractFunction('script_core.html', 'ensureOverlay');
-  assert.ok(/aria-labelledby/.test(ens) && /aria-label/.test(ens),
-    'ensureOverlay supports both naming forms');
+  // Assert the SET calls specifically, not the mere presence of the strings —
+  // `removeAttribute('aria-label')` below contains both substrings, so a
+  // looser test passed even with the setters deleted (caught by bite-check).
+  assert.ok(/setAttribute\('aria-labelledby', opts\.labelledBy\)/.test(ens),
+    'ensureOverlay SETS aria-labelledby from opts.labelledBy');
+  assert.ok(/setAttribute\('aria-label', opts\.label\)/.test(ens),
+    'ensureOverlay SETS aria-label from opts.label');
   assert.ok(/removeAttribute\('aria-label'\)/.test(ens) && /removeAttribute\('aria-labelledby'\)/.test(ens),
     'setting one CLEARS the other — a dangling aria-labelledby yields NO name, worse than aria-label');
   let sites = 0, unnamed = [];
