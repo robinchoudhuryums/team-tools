@@ -1,6 +1,52 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 18 (broad pre-audit + Seams & Invariants) CLOSED 2026-08-21 — reflected
+net +4 (6 prod fixes − 2 Low new failure modes; 3 capabilities; 19 defensive).**
+The row covers the pre-audit /broad-scan batches 1–8 + 5B (**merged PR #176**),
+the accrual hours-rebuild, and the DUE seams round F1–F5 (**merged PR #177**) —
+**NOT DEPLOYED: both PRs await the one `clasp push -f` + New-version deploy +
+post-deploy `runAllTests()`**, the single outstanding operator action.
+**Axis-B lowest: Test Coverage Quality, THIRD cycle running.**
+
+**The High: KB `data-src` stored XSS (INV-193).** An attribute value DECODES on
+read, so every interactive-block re-render (mode switch, Expand, decision
+answer) put RAW article text through `innerHTML` — reproduced in Chromium,
+closed via one named boundary (`kbFenceSrc_`) + 7 coupled sites, and pinned in
+the DOM harness because the pure harness cannot decode an attribute and had
+pinned the vulnerable line AS CORRECT.
+
+**The self-report correction repeated, larger:** the five batch blocks' nets
+summed to 17−0; strict per-template re-derivation gives 6−2 (demotions:
+failure-visibility fixes whose failures haven't occurred, hand-edited-cell
+triggers cycle 16 already scored NO on the same column, harness-integrity items
+the blocks' own text called non-production, and two capabilities counted as
+fixes). The seams round's own 0−0 self-report SURVIVED scrutiny — the first in
+three cycles to do so.
+
+**The interface lens again produced the volume:** all 15 dialogs announced as
+bare "dialog" (five nested a second one), the 168-control accessible-name debt
+swept to 0/0/0 with one real association bug found inside it, weekend reminder
+nags stopped, printing un-clipped (a pay statement was silently dropping 1587px
+of payroll data). Capabilities: the Intake **Catalog** tab (reps stop opening
+the PHI spreadsheet to look up a HCPCS code), the manager pay-statement UI, and
+table-derived per-job automation liveness + `AUTOMATION_LAST_ERRORS`.
+
+**The seams round's value is verified-held rather than fixes:** 6/6 veteran
+tripwires bite (in a scratch copy), every doc count claim matches, INV
+Verify-clauses resolve — plus three closed drift channels (the server
+`intakeHttpOnly_` twin pinned byte-equal to the client regex; the pay-statement
+fixture's hand-rolled month arithmetic replaced with a verbatim mirror + shape
+pins DERIVED from the server's own return blocks; the
+`AUTOMATION_JOB_CHECKS` ⊆ `AUTOMATION_AUDIT_ACTIONS` coupling).
+
+Tests: pure 433→585 (every new pin bite-checked; 3 silently-dead pins caught
+only BECAUSE of that — tests appended after `process.exit` run nothing), DOM
+69→75, visual matrix 37→44 + the `print-check.mjs` / `a11y-names.mjs`
+companion harnesses. Invariant library: 195 (INV-192..195 written in-cycle;
+seams rules folded as amendments into INV-112/185/188).
+
+## Prior standing (Cycle 17 close, 2026-08-05)
 **Cycle 17 (broad scan) CLOSED 2026-08-05 — reflected net +12 (15 prod fixes −
 3 new failure modes; 3 capabilities; 28 defensive).** 0 Critical / 1 High /
 ~40 findings, ALL implemented in-cycle across 7 batches, each followed by
@@ -497,3 +543,4 @@ backlog was implemented):
 | 2026-08-03 | 16 | net +7 (8 prod fixes − 1 new failure mode; 1 capability; 5 defensive) | Broad scan (0 Critical / 0 High / 6 Medium / 5 Low), entire backlog across three sessions, **merged PR #152 and DEPLOYED** (`runAllTests()` 286/0/0 — first cycle since 10 to ship inside its own cycle). Theme: three tripwires each named the right rule then scanned a FIXED LIST of past fixes — deriving A12's sets surfaced **28 violations across six partials** behind a green CI, one of them using a class the tripwire already knew in a file it did not scan. Fixes cluster as *a failure rendered as a confident answer* (F1 unreadable Sheet → 0 notes + CRIT 0% on the manager performance table; F4 a swallowed PTO read made every rep count as working, so an understaffing planner gave a green all-clear; F5 a confident team judgement from a contaminated numerator; F10 the 28 sites) plus the clinical F9 (`parseInt('')` → NaN → an unreadable weight capacity read as UNLIMITED) and two interface fixes (Reference reader 70px at 390px; `uiPrompt` unnamed input + unannounced validator error). Reflection corrected the batch self-report DOWNWARD (8→7). Post-reflection the operator check changed F9's *reason*: the one malformed row is a scratch entry, so no real chair was mis-recommended — but it exposed that the catalog has no disabled-row concept and the Group-3 ladder misclassifies E-codes (both logged, not fixed). Adopted INV-187/188. Pure 391→407, DOM 69, visual 22→29. |
 | 2026-08-05 | 17 | net +12 (15 prod fixes − 3 Low new failure modes; 3 capabilities; 28 defensive) | Broad scan (6 parallel deep-readers + the mandatory visual stage + independent re-verification of every Medium+ claim, zero retractions) → ~40 findings across 7 batches, **merged PR #154 and deployed**. **INV-187 closed as a CLASS** — every best-effort read now carries its outcome, finishing the pattern that produced the flagship finding of cycles 12, 16 AND 17. The one High was TEST INTEGRITY: the A2 scan's regex matched zero of `styles.html`'s ~67 compact selectors while the docs claimed coverage; fixing it surfaced 9 live obligations incl. two real missing breakpoints on the punch grid. Self-reports CORRECTED downward at reflection (batch nets summed to 33; strict per-template re-derivation gives 12). Axis-B lowest: Test Coverage Quality, second cycle running. Pure 407→433, DOM 69, matrix 29→37. |
 | 2026-08-19 | 18pre | net +3 (4 prod fixes − 1 Medium new failure mode; 8 capabilities; 6 defensive) | **Between-cycles operator work, not an audit** (three merged PRs: #171/#172/#173) — reflected in `.cycle/blocks/18pre-a-reflect.md`, deliberately NO metrics.csv row (one reflect row per CYCLE; 17's already exists). Shipped: Spanish-members editor, full-width + caching sweeps, rep-facing Team Metrics aggregate, **Time/PTO consolidated to one page** + quick-actions card + pay-statement request-edit click-through, CN pop-out fluid type + ≤400px stacking, **multi-day time-off requests**, **system-computed PTO accrual** (INV-194). **The headline is the new failure mode:** the accrual model does not match the entitlement rule for the population it was built for — the credit writer skips `PtoEnabled=FALSE` reps (documented as the PH team) and uses days-per-calendar-month while the real rule is 3.08 hours per 80 hours WORKED. Inert today; wrong the moment column Q is filled and the flag flipped. Awaiting an operator decision on the hours→days convention. |
+| 2026-08-21 | 18 | net +4 (6 prod fixes − 2 Low new failure modes; 3 capabilities; 19 defensive) | **Broad pre-audit (batches 1–8 + 5B, PR #176) + the DUE Seams & Invariants round (F1–F5, PR #177)** — one row for everything un-reflected since 18pre. The High: KB `data-src` stored XSS (attribute values DECODE on read; every interactive-block re-render pushed raw article text through innerHTML — reproduced in Chromium, closed via the `kbFenceSrc_` boundary, INV-193, pinned in the DOM harness because the pure harness had blessed the vulnerable line). Interface volume: 15 unnamed dialogs (five nested), the 168-control accessible-name debt → 0/0/0 (one real association bug inside it), weekend reminder nags, un-clipped printing (1587px of a pay statement was silently dropped). Capabilities: Intake Catalog tab, manager pay-statement UI, table-derived automation liveness + `AUTOMATION_LAST_ERRORS`. The accrual hours-rebuild closed 18pre's declared Medium before its first live credit. Seams value = verified-held (6/6 veteran tripwires bite; all doc counts match) + three closed drift channels (byte-equal server URL-whitelist twin; verbatim fixture mirror + DERIVED shape pins; the `AUTOMATION_JOB_CHECKS` coupling). **Self-reports corrected 17−0 → 6−2** (the cycle-17 pattern, larger); the seams round's own 0−0 survived scrutiny — the first block self-report in three cycles to do so. Axis-B lowest: Test Coverage Quality, third cycle running. Pure 433→585, DOM 69→75, matrix 37→44 + print/a11y-name companion harnesses. **NOT DEPLOYED — PRs #176+#177 await the one clasp push + New version + `runAllTests()`.** |

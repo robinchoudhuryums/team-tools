@@ -1,13 +1,20 @@
 # Cycle State
 
 ## Current
-Cycle: 18
-Phase: implement — the DUE Seams & Invariants audit ran 2026-08-21 (fresh
+Cycle: 18 — CLOSED (reflected 2026-08-21, `.cycle/blocks/18-a-reflect.md`;
+metrics row appended: net +4 = 6 prod fixes − 2 Low new failure modes;
+3 capabilities; 19 defensive. The row covers the pre-audit batches 1–8 + 5B
+(PR #176) + the accrual hours-rebuild + the seams F1–F5 round (PR #177) —
+everything un-reflected since `18pre-a-reflect.md`. Batch self-reports
+summed to 17−0; strict re-derivation gives 6−2 — the cycle-17 correction
+pattern, documented in the metrics notes. When cycle 19 opens, move this
+block to HISTORY.md and reset from the template.)
+Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   session, read-only; handoff block pasted into the implement session) and
-  its five findings F1–F5 are IMPLEMENTED on `claude/broad-scan-s9b8fd`
-  (commits d467b94 + c105f04, block
-  `.cycle/blocks/18-seams-F1-F5-broad-implement.md`). Not yet PR'd/merged —
-  the user has not asked for a PR for this batch.
+  its five findings F1–F5 are IMPLEMENTED, doc-synced, and **MERGED as
+  PR #177** (16aa3b0) — commits d467b94 + c105f04 + a4f33bf + 91f493c,
+  block `.cycle/blocks/18-seams-F1-F5-broad-implement.md`. NOT DEPLOYED —
+  it ships with the still-owed PR #176 deploy.
   NOTE the cycle-18 PRE-audit batches 1–8 + 5B were implemented BEFORE this
   cycle formally opened (between-cycles operator work) and are already
   MERGED as PR #176 (4d5fc9f) but NOT DEPLOYED — the Apps Script
@@ -45,12 +52,9 @@ Updated: 2026-08-21
   count (stale twice); the matrix summary is the single source
 
 ## Pending / not yet done
-- /sync-docs for the F1–F5 batch (INV updates: INV-112 gains the server
-  whitelist mention; possibly a gotcha for the two first-write pin lessons)
-- PR + merge for F1–F5 (only when the user asks)
-- /reflect to close cycle 18 (after any remaining implement work)
-- DEPLOY (operator): PR #176 batches + this batch ship together on the next
-  `clasp push -f` + New version; then `runAllTests()` in the editor
+- DEPLOY (operator): PR #176 + PR #177 ship together on the next
+  `clasp push -f` + New version; then `runAllTests()` in the editor —
+  the ONE outstanding action; nothing reaches users until it runs
 
 ## Open follow-on items
 - Code.js: `intakeHttpOnly_` drops schemeless operator URLs (`www.x.com`)
@@ -71,6 +75,8 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-F1–F5 implemented + committed + pushed pending. Next: produce/keep the
-summary block in `.cycle/blocks/18-seams-F1-F5-broad-implement.md`, push
-the branch, then offer /sync-docs. Cycle 18 stays open until /reflect.
+Cycle 18 is CLOSED (reflected, metrics row appended, PROJECT_HEALTH
+updated). Nothing is mid-flight. Next session starts fresh: either the
+operator DEPLOY confirmation (then move this block to HISTORY.md), or a
+new cycle 19 audit (/broad-scan or /audit — the seams counter is 0, so
+the next seams audit is 4 subsystem cycles out).
