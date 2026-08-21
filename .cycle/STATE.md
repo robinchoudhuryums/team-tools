@@ -1,8 +1,15 @@
 # Cycle State
 
 ## Current
-Cycle: 18
-Phase: implement — the DUE Seams & Invariants audit ran 2026-08-21 (fresh
+Cycle: 18 — CLOSED (reflected 2026-08-21, `.cycle/blocks/18-a-reflect.md`;
+metrics row appended: net +4 = 6 prod fixes − 2 Low new failure modes;
+3 capabilities; 19 defensive. The row covers the pre-audit batches 1–8 + 5B
+(PR #176) + the accrual hours-rebuild + the seams F1–F5 round (PR #177) —
+everything un-reflected since `18pre-a-reflect.md`. Batch self-reports
+summed to 17−0; strict re-derivation gives 6−2 — the cycle-17 correction
+pattern, documented in the metrics notes. When cycle 19 opens, move this
+block to HISTORY.md and reset from the template.)
+Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   session, read-only; handoff block pasted into the implement session) and
   its five findings F1–F5 are IMPLEMENTED, doc-synced, and **MERGED as
   PR #177** (16aa3b0) — commits d467b94 + c105f04 + a4f33bf + 91f493c,
@@ -45,11 +52,9 @@ Updated: 2026-08-21
   count (stale twice); the matrix summary is the single source
 
 ## Pending / not yet done
-- /reflect to close cycle 18 — implement work is DONE (F1–F5 was the whole
-  seams plan; /sync-docs and the PR #177 merge are done too), so /reflect is
-  the next workflow step and can run in a FRESH session off the blocks
-- DEPLOY (operator): PR #176 batches + this batch ship together on the next
-  `clasp push -f` + New version; then `runAllTests()` in the editor
+- DEPLOY (operator): PR #176 + PR #177 ship together on the next
+  `clasp push -f` + New version; then `runAllTests()` in the editor —
+  the ONE outstanding action; nothing reaches users until it runs
 
 ## Open follow-on items
 - Code.js: `intakeHttpOnly_` drops schemeless operator URLs (`www.x.com`)
@@ -70,9 +75,8 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-Everything for the seams round is DONE and merged (PR #177). The next
-workflow step is /reflect to close cycle 18 — runnable in a fresh session
-off `.cycle/blocks/18-seams-F1-F5-broad-implement.md` (+ the audit's
-handoff facts summarized under "In progress" above). After /reflect:
-append the metrics row, write `18-a-reflect.md`, close the cycle. The
-DEPLOY (PR #176 + #177 together) remains operator-only.
+Cycle 18 is CLOSED (reflected, metrics row appended, PROJECT_HEALTH
+updated). Nothing is mid-flight. Next session starts fresh: either the
+operator DEPLOY confirmation (then move this block to HISTORY.md), or a
+new cycle 19 audit (/broad-scan or /audit — the seams counter is 0, so
+the next seams audit is 4 subsystem cycles out).
