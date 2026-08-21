@@ -1074,7 +1074,13 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
     'automationProblems_ must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   assert.ok(/witnessFails\.recent/.test(problemsSrc), 'automationProblems_ covers recent witness loss (C4/INV-158)');
   assert.ok(/syncFails/.test(problemsSrc), 'automationProblems_ covers personal-sheet sync failures');
-  assert.ok(/CallNotesReconcile/.test(problemsSrc), 'automationProblems_ covers the stale-reconcile F1 signal');
+  // Gap4: the per-job liveness checks are now DERIVED from AUTOMATION_JOB_CHECKS
+  // rather than hand-written here — this block used to check exactly ONE job,
+  // which is why the PTO accrual credit could fail every month in silence (F4).
+  assert.ok(/automationJobProblems_\(/.test(problemsSrc),
+    'automationProblems_ derives per-job liveness from the table (Gap4)');
+  assert.ok(/automationErrors/.test(problemsSrc),
+    'automationProblems_ surfaces a stamped job error (F4)');
   assert.ok(/d\.stale/.test(problemsSrc), 'automationProblems_ covers stale digest heartbeats');
   const digest = extractRawFunction('Code.js', 'sendAutomationHealthDigest');
   assert.ok(/automationProblems_\(/.test(digest),
@@ -1745,7 +1751,11 @@ test('F17: client CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS', () => {
 
 test('F17: coaching severity options === COACH_SEVERITIES', () => {
   const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  const sel = co.slice(co.indexOf("<select id=\"coach-sev\">"));
+  // Anchor on the id, NOT on the exact open tag: this pin extracted nothing
+  // (and silently compared []) the moment the select gained an aria-label.
+  const selAt = /<select id="coach-sev"[^>]*>/.exec(co);
+  assert.ok(selAt, 'found the severity select');
+  const sel = co.slice(selAt.index);
   const opts = (sel.slice(0, sel.indexOf('</select>')).match(/value="([a-z]+)"/g) || [])
     .map((v) => v.replace(/value="|"/g, ''));
   const server = arrayLiteral_(codeSrc, 'COACH_SEVERITIES');
@@ -5366,7 +5376,11 @@ test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', 
   // cnNoteCoverage_(noteCount, totalAnswered) = round(n/a*100); the Clock strip
   // derives missing = answered - noteCount. Both must hold in the fixture, or
   // the harness renders data the server cannot produce (its README's first rule).
-  const single = /getMyMetrics: \{[^}]*noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
+  // F14 (cycle 18) made this fixture a FUNCTION of its date argument (it echoes
+  // the date the client's hero kicker branches on), so the shape is now
+  // `getMyMetrics: function (date) { return { … } }`. The PROPERTY this pin
+  // guards — the coverage arithmetic — is unchanged; only the wrapper is.
+  const single = /getMyMetrics:[\s\S]{0,300}?noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
   assert.ok(single, 'getMyMetrics fixture found');
   const [, n, cov, missing] = single.map(Number);
   const answered = Number(/totalAnswered: (\d+)/.exec(mock)[1]);
@@ -5576,13 +5590,20 @@ test('F8: getDeptRequests normalizes DR.STATUS once and never re-reads it raw', 
   // strip was added, and still fails 2 !== 1 if the raw comparison returns.)
   const fn = extractRawFunction('Code.js', 'getDeptRequests')
     .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.ok(/const status = String\(r\[DR\.STATUS\] \|\| 'open'\)\.trim\(\)\.toLowerCase\(\)/.test(fn),
-    'the status is normalized once into a local');
+  // F5 (cycle 18) moved the normalization INTO the shared `drStatus_`
+  // predicate — the property this pin guards (read once, normalized, into a
+  // local) is unchanged; only its spelling is. The predicate itself is pinned
+  // separately, including that it still applies the 'open' default.
+  assert.ok(/const status = drStatus_\(r\)/.test(fn),
+    'the status is normalized once into a local, via the shared predicate');
   assert.ok(/status: status,/.test(fn), 'the item ships the NORMALIZED status');
-  // The raw comparison this fix removed must not come back in any form.
+  // The raw comparison this fix removed must not come back in any form. F5
+  // (cycle 18) STRENGTHENED this: the one remaining read moved into the shared
+  // `drStatus_` predicate, so this function should now hold ZERO raw reads —
+  // a tighter bound than the 1 the F8 fix left behind, not a looser one.
   const raw = fn.match(/r\[DR\.STATUS\]/g) || [];
-  assert.strictEqual(raw.length, 1,
-    'DR.STATUS is read exactly once (the normalize line); got ' + raw.length + ' reads');
+  assert.strictEqual(raw.length, 0,
+    'DR.STATUS is never read raw here — it goes through drStatus_; got ' + raw.length + ' reads');
   // The second half: a row marked resolved with a blank/unparseable ResolvedAt
   // has an UNKNOWN duration. The old code fell through to "now − created",
   // pushing an ever-growing age into deptStats.durations every single day.
@@ -7701,7 +7722,8 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
 console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
 
 const kbDecCtx = vm.createContext({});
-['kbSlug_', 'kbRosterAttr_', 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
+['kbSlug_', 'kbRosterAttr_', 'kbFenceEsc_', 'kbFenceDecode_',
+ 'kbDecideParse_', 'kbDecideResolve_', 'kbDecideHtml_', 'kbMd_']
   .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbDecCtx));
 
 const DEC_SRC = [
@@ -7787,10 +7809,34 @@ test('the guide renders one question at a time with a walkable trail', () => {
   // no checkbox can arrive pre-checked and assert work that was not done.
   assert.strictEqual(/checked/.test(leaf), false, 'a freshly rendered action has nothing ticked');
   const render = extractFunction('kb/script_kb.html', 'kbDecideRender_');
-  assert.ok(/kbDecideHtml_\(root\.getAttribute\('data-src'\)/.test(render), 're-render rebuilds from the source');
+  // F1: this pin USED to assert `kbDecideHtml_(root.getAttribute('data-src')`
+  // — i.e. it pinned the injection as the correct shape. An attribute DECODES
+  // on read, so that fed the renderer `<img onerror=…>` where kbMd_ had
+  // written `&lt;img …&gt;`. Every stored-source read goes through kbFenceSrc_,
+  // which restores the escaped contract; the behavioural proof that this is
+  // not merely cosmetic lives in the DOM suite (runDom.js), which is the only
+  // harness that can perform the decode.
+  assert.ok(/kbDecideHtml_\(kbFenceSrc_\(root\)/.test(render), 're-render rebuilds from the ESCAPED source');
   assert.ok(/replaceChild/.test(render), 'replacing the node, so no prior state survives');
   assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-dec-opts \{ flex-direction: column/.test(kb),
     'options stack on a phone');
+});
+
+test('no block reads its stored fence source raw (F1 — the decode boundary)', () => {
+  // The GENERAL form of the fix, so a NEW interactive block cannot reintroduce
+  // it: `getAttribute('data-src')` outside kbFenceSrc_ is the injection. This
+  // is a source scan, so it holds for blocks that do not exist yet — the pure
+  // harness cannot decode, but it can forbid the shape that requires decoding.
+  const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188 — strip comments first
+  const raw = kbSrc.match(/getAttribute\(\s*['"]data-src['"]\s*\)/g) || [];
+  assert.strictEqual(raw.length, 1,
+    'exactly one read of data-src — inside kbFenceSrc_, which re-escapes it');
+  const reader = extractFunction('kb/script_kb.html', 'kbFenceSrc_');
+  assert.ok(/kbFenceEsc_/.test(reader), 'and that one read re-applies the escape');
+  // The two helpers must stay inverses over kbMd_'s exact three entities.
+  const esc = extractFunction('kb/script_kb.html', 'kbFenceEsc_');
+  ['&amp;', '&lt;', '&gt;'].forEach((e) => assert.ok(esc.indexOf(e) >= 0, 'kbFenceEsc_ covers ' + e));
 });
 
 test('kbMd_ renders a ```decision fence, inert like the others', () => {
@@ -9014,7 +9060,8 @@ const kbMapCtx = vm.createContext({});
   const capLine = kbSrc.match(/var KB_MAP_MAX_WH_CLIENT = \d+;/);
   assert.ok(capLine, 'the client warehouse cap constant exists');
   vm.runInContext(capLine[0], kbMapCtx);
-  ['kbSlug_', 'kbRosterAttr_', 'kbMapDecode_', 'kbMapParse_', 'kbMapHtml_', 'kbMd_']
+  ['kbSlug_', 'kbRosterAttr_', 'kbFenceEsc_', 'kbFenceDecode_', 'kbMapDecode_',
+   'kbMapParse_', 'kbMapHtml_', 'kbMd_']
     .forEach((n) => vm.runInContext(extractFunction('kb/script_kb.html', n), kbMapCtx));
 }
 
@@ -10103,7 +10150,10 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
     'the accrual tile is gated on a shipped positive rate');
   assert.ok(/ACCRUING \$\{rateStr\}H \/ \$\{basis\}H/.test(to),
     'the tile states the rate in its real terms (hours per basis hours)');
-  assert.ok(/earned this month/.test(to) && /h worked so far/.test(to),
+  // F7 (cycle 18) shortened these labels — at the 240px DESKTOP rail both
+  // spans wrapped to two lines (measured 22px vs 11px). The FIGURES are what
+  // this pin guards, not the prose around them.
+  assert.ok(/d this month/.test(to) && /h worked</.test(to),
     'the tile shows the server-computed month-to-date earning');
   // The MTD figure is printed at the server's 2dp, NOT through formatLeaveDays
   // — 1dp renders 0.46 as "0.5", overstating the accrual by 9%.
@@ -10215,6 +10265,591 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'PtoAccrualCredit is a registered automation audit action');
 });
 
+
+// ── Gap4 / F4 — per-job automation liveness, derived not accumulated ─────────
+console.log('\nCode.js — automation job liveness (Gap4 / F4)');
+{
+  const jobCtx = vm.createContext({ console });
+  vm.runInContext(extractRawFunction('Code.js', 'automationJobProblems_'), jobCtx);
+  // A STUB table, so these cases test the decision rather than today's job list
+  // (the real table's coverage is asserted separately below).
+  vm.runInContext(`var ACC=true, ARCH=false; var AUTOMATION_JOB_CHECKS=[
+    {action:'CallNotesReconcile',label:'nightly Sheets reconcile',cadence:'daily',staleHours:30,enabled:()=>true},
+    {action:'PtoAccrualCredit',label:'monthly PTO accrual credit',cadence:'monthly',graceDays:3,enabled:()=>ACC},
+    {action:'TimesheetArchive',label:'Timesheet cold-archive',cadence:'daily',staleHours:30,enabled:()=>ARCH}
+  ];`, jobCtx);
+  const f = jobCtx.automationJobProblems_;
+  const NOW = Date.parse('2026-08-20T09:00:00Z');
+  const runs = (o) => Object.keys(o).map((k) => ({ action: k, last: o[k] }));
+  const set = (k, v) => vm.runInContext(k + '=' + v + ';', jobCtx);
+
+  test('a MONTHLY job that has not run this month is flagged — after its grace day', () => {
+    const stale = runs({ PtoAccrualCredit: { ms: Date.parse('2026-07-01T06:00:00Z'), timestampMgr: '2026-07-01 06:00:00' } });
+    assert.ok(f(stale, {}, NOW, 20, '2026-08').some((m) => /accrual credit has not run this month/.test(m)),
+      'flagged on the 20th');
+    // Before the grace day its absence is NORMAL (the credit lands on the 1st,
+    // in arrears) — a check that fires on the 1st would nag every month.
+    assert.strictEqual(f(stale, {}, NOW, 2, '2026-08').length, 0, 'silent on the 2nd');
+    const ranThisMonth = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.strictEqual(f(ranThisMonth, {}, NOW, 20, '2026-08').length, 0, 'silent once it has run');
+  });
+
+  test('a job that is not EXPECTED to run is never checked (INV-186)', () => {
+    // The rule this encodes: most of these jobs write no audit row at all on a
+    // correctly-configured deployment (retention off, no accruing reps), so a
+    // bare staleness check would pin every such deployment amber forever.
+    set('ACC', false);
+    assert.strictEqual(f(runs({}), {}, NOW, 20, '2026-08').length, 0, 'no accruing reps → no nag');
+    assert.strictEqual(f(runs({ TimesheetArchive: { ms: NOW - 40 * 3600000, timestampMgr: 'x' } }), {}, NOW, 20, '2026-08').length, 0,
+      'archiving disabled → no nag even though it is stale');
+    set('ARCH', true);
+    assert.ok(f(runs({ TimesheetArchive: { ms: NOW - 40 * 3600000, timestampMgr: '2026-08-18 18:00:00' } }), {}, NOW, 20, '2026-08')
+      .some((m) => /Timesheet cold-archive last ran/.test(m)), 'enabled + stale → flagged');
+    set('ARCH', false); set('ACC', true);
+  });
+
+  test('a stamped job error surfaces, and the reconcile check is unchanged', () => {
+    const ok = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.ok(f(ok, { PtoAccrualCredit: { at: '2026-08-20 06:00:01', message: 'Timesheet unreadable' } }, NOW, 20, '2026-08')
+      .some((m) => /FAILED on 2026-08-20 06:00:01: Timesheet unreadable/.test(m)),
+      'a caught failure is no longer invisible (F4)');
+    // The pre-existing signal must read EXACTLY as before.
+    const recon = runs({ CallNotesReconcile: { ms: NOW - 40 * 3600000, timestampMgr: '2026-08-18 17:00:00' },
+                         PtoAccrualCredit: { ms: NOW, timestampMgr: '2026-08-01 06:00:00' } });
+    assert.ok(f(recon, {}, NOW, 20, '2026-08')
+      .some((m) => /nightly Sheets reconcile last ran 2026-08-18 17:00:00 \(over 30h ago\)/.test(m)),
+      'the F1 stale-reconcile message is preserved verbatim');
+  });
+
+  test('the real table covers every audit-row job, or says why not', () => {
+    const src = extractRawFunction('Code.js', 'automationProblems_');
+    const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    // Slice from the RATIONALE comment, not the const — the reasoned omission
+    // below is stated there, and a slice that starts at the const cannot see it.
+    const table = codeSrc.slice(codeSrc.indexOf('// ── Per-JOB liveness'), codeSrc.indexOf('function rosterHasAccruingRep_'));
+    const actions = (codeSrc.match(/const AUTOMATION_AUDIT_ACTIONS = \[[\s\S]*?\];/) || [''])[0];
+    ['CallNotesReconcile', 'PtoAccrualCredit', 'TimesheetArchive', 'CallNotesArchive',
+     'CallNotesPurge', 'CallNotesArchivePurge', 'FormDataPurge'].forEach((a) => {
+      assert.ok(actions.indexOf("'" + a + "'") >= 0, a + ' is an audit-row job');
+      // Match the ENTRY, not a substring: 'PtoAccrualCreditXX' contains
+      // 'PtoAccrualCredit', so indexOf would pass on a renamed-away action.
+      assert.ok(new RegExp("action:\\s*'" + a + "'").test(table), a + ' has a liveness check');
+    });
+    // AdpExportAuto is deliberately absent — it fires at a pay-period boundary,
+    // so neither 'daily' nor 'monthly' describes it and a wrong check would be
+    // wrong most of the month. The omission is REASONED, so pin BOTH halves:
+    // no entry claims it, and the table says why (a silent omission and a
+    // reasoned one are indistinguishable to the next reader otherwise).
+    assert.strictEqual((table.match(/action:\s*'AdpExportAuto'/) || []).length, 0,
+      'no table ENTRY covers AdpExportAuto (period-based)');
+    assert.ok(/AdpExportAuto/.test(table), 'and the table names it as a deliberate omission');
+    assert.ok(/automationJobProblems_\(/.test(src), 'automationProblems_ consumes the derivation');
+  });
+
+  test('the accrual credit stamps its own failure and clears it on a clean run', () => {
+    // F4's PRODUCER half. Without this the table has nothing to report: this
+    // job catches its own error, and Apps Script emails only on a THROW.
+    const credit = extractRawFunction('Code.js', 'creditMonthlyPtoAccruals')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+    assert.ok(/catch\s*\([\s\S]{0,40}stampAutomationError_\('PtoAccrualCredit'/.test(credit),
+      'the catch stamps the failure');
+    assert.ok(/clearAutomationError_\('PtoAccrualCredit'\)/.test(credit),
+      'and a clean run clears it, so an old failure cannot nag forever');
+    // The brief has the same shape for the same reason (its six sources are
+    // individually best-effort, and it SUPPRESSES the digests it replaces).
+    const brief = extractRawFunction('Code.js', 'sendManagerDailyBrief')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/failedSources\.push/.test(brief), 'the brief records which sources failed');
+    assert.ok(/stampAutomationError_\('ManagerDailyBrief'/.test(brief), 'and stamps them');
+    assert.ok(/!sections\.length && !failedSources\.length/.test(brief),
+      'a brief with a failed source is NOT silent — silence means a true all-clear');
+  });
+}
+
+// ── Cycle-18 Batch 5: form-control accessible names ─────────────────────────
+// A11y already has derived scans for ROLES (A1), STATE (A11), HEADINGS (A13)
+// and empty-vs-error (A12). Accessible NAMES had none, which is how 210
+// controls accumulated. This is a RATCHET, not an absolute scan like its four
+// siblings: the debt is real, ~82 of those controls need an author to DECIDE
+// what each is called, and a scan that fails on day one is a scan someone
+// disables. It pins the count so the class cannot grow while the sweep is
+// scheduled; the target is 0 and the baseline should only ever move DOWN.
+
+/** Controls that need a name, split by how cheaply each can get one.
+ *  Comments are stripped FIRST — the INV-188 lesson, in MARKUP: an <input> or
+ *  <textarea> written inside an HTML comment is not a control, and counting
+ *  them inflated an early version of this census by ~30. */
+function a11yUnnamedControls() {
+  const out = { adjacentLabel: [], placeholderOnly: [], none: [] };
+  // DEDUPE: form_public.html is already in PARSE_GUARD_PARTIALS (and therefore
+  // in A11Y_SCAN_PARTIALS), so the concat below read it TWICE and every control
+  // on the public form was counted double — the baseline this ratchet enforces
+  // was inflated by 84. The concat stays as an explicit statement that the
+  // public form is in scope even if it ever leaves the parse-guard list.
+  A11Y_SCAN_PARTIALS.concat(['form_public.html']).filter((v, i, a) => a.indexOf(v) === i).forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/<!--[\s\S]*?-->/g, '')
+             .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // Collect EVERY for="…" in the file, not only ones textually inside a
+    // <label> tag: these partials build the attribute in a separate variable
+    // (`'<label class="q"' + labelFor + '>'`), so the association is real at
+    // runtime but invisible to a contiguous-match regex. Nothing else in this
+    // codebase writes for="…" — a `for (` loop has no `=` — so widening it
+    // recognises associations rather than excusing missing ones. Verified in
+    // Chromium: the five controls this reclaims measure as NAMED.
+    const forIds = new Set([...src.matchAll(/\bfor="([^"]+)"/g)].map((m) => m[1]));
+    const re = /<(input|select|textarea)\b([^>]*)>/gi;
+    let m;
+    while ((m = re.exec(src))) {
+      const attrs = m[2];
+      // A checkbox/radio is named by its wrapping <label> in this codebase's
+      // idiom, and submit/button/hidden carry their own or need none.
+      if (/type=.(hidden|submit|button|checkbox|radio)/i.test(attrs)) continue;
+      if (/aria-label(?:ledby)?=/.test(attrs)) continue;
+      const id = (attrs.match(/\bid="([^"]+)"/) || [])[1];
+      if (id && forIds.has(id)) continue;
+      const line = src.slice(0, m.index).split('\n').length;
+      const before = src.slice(Math.max(0, m.index - 160), m.index);
+      const rec = rel + ':' + line;
+      // An adjacent <label> whose text is RIGHT THERE but carries no for= is
+      // the cheapest bucket — the name exists, it just is not wired.
+      if (/<label[^>]*>[^<]{1,40}<\/label>\s*$/.test(before)) out.adjacentLabel.push(rec);
+      else if (/placeholder=/.test(attrs)) out.placeholderOnly.push(rec);
+      else out.none.push(rec);
+    }
+  });
+  return out;
+}
+
+test('A14: form controls without an accessible name do not INCREASE (ratchet)', () => {
+  // Measured 2026-08-19 over THIS scan's own derived file set (A11Y_SCAN_PARTIALS
+  // + form_public.html) — an earlier baseline came from an ad-hoc walk of every
+  // .html and read 73/55/82, which is a DIFFERENT population and would have
+  // made the ratchet fire on day one. Measure a baseline with the scan that
+  // will enforce it. Lower these as the sweep lands; NEVER raise them.
+  // A placeholder is not an accessible name (it is not reliably announced and
+  // vanishes on first keystroke) — the rule cycle-16 F6 established for
+  // uiPrompt's input, unenforced everywhere else until now.
+  const BASELINE = { adjacentLabel: 0, placeholderOnly: 0, none: 0 };   // total 0 — swept 2026-08-21
+  const got = a11yUnnamedControls();
+  ['adjacentLabel', 'placeholderOnly', 'none'].forEach((k) => {
+    assert.ok(got[k].length <= BASELINE[k],
+      k + ': ' + got[k].length + ' unnamed controls, baseline ' + BASELINE[k] +
+      ' — a NEW control shipped without an accessible name. First offenders: ' +
+      got[k].slice(0, 4).join(', '));
+  });
+  // Ratchet hygiene: if the sweep lands and the count drops, this fails loudly
+  // so the baseline is tightened in the same commit rather than drifting.
+  const total = got.adjacentLabel.length + got.placeholderOnly.length + got.none.length;
+  const base = BASELINE.adjacentLabel + BASELINE.placeholderOnly + BASELINE.none;
+  assert.ok(total >= base - 4,
+    'the debt dropped from ' + base + ' to ' + total + ' — LOWER the A14 baseline in this commit');
+});
+
+test('A14: every ensureOverlay dialog has an accessible name', () => {
+  // A role="dialog" with no name announces as just "dialog". All 15 dynamic
+  // overlays were in that state while the six STATIC modals were named.
+  // Unlike the ratchet above this IS absolute — the set is small and closed.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const ens = extractFunction('script_core.html', 'ensureOverlay');
+  // Assert the SET calls specifically, not the mere presence of the strings —
+  // `removeAttribute('aria-label')` below contains both substrings, so a
+  // looser test passed even with the setters deleted (caught by bite-check).
+  assert.ok(/setAttribute\('aria-labelledby', opts\.labelledBy\)/.test(ens),
+    'ensureOverlay SETS aria-labelledby from opts.labelledBy');
+  assert.ok(/setAttribute\('aria-label', opts\.label\)/.test(ens),
+    'ensureOverlay SETS aria-label from opts.label');
+  assert.ok(/removeAttribute\('aria-label'\)/.test(ens) && /removeAttribute\('aria-labelledby'\)/.test(ens),
+    'setting one CLEARS the other — a dangling aria-labelledby yields NO name, worse than aria-label');
+  let sites = 0, unnamed = [];
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const re = /ensureOverlay\(\s*'([^']+)'\s*,\s*\{([\s\S]{0,200}?)\}\s*\)/g;
+    let m;
+    while ((m = re.exec(src))) {
+      sites++;
+      if (!/\blabel(?:ledBy)?\s*:/.test(m[2])) unnamed.push(rel + ' → ' + m[1]);
+    }
+  });
+  assert.ok(sites >= 15, 'the scan found the overlay call sites (got ' + sites + ')');
+  assert.deepStrictEqual(unnamed, [], 'every ensureOverlay call names its dialog');
+});
+
+test('A14: no dialog is nested inside another dialog', () => {
+  // ensureOverlay already sets role="dialog" + aria-modal on the OVERLAY, so an
+  // inner .modal repeating them made two nested dialogs — five did. The six
+  // static modals in modals.html are the real (un-nested) ones and are exempt.
+  A11Y_SCAN_PARTIALS.filter((f) => f !== 'modals.html').forEach((rel) => {
+    let src;
+    try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
+    catch (e) { return; }
+    src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const hits = (src.match(/<div class="modal[^"]*"[^>]*role="dialog"/g) || []);
+    assert.deepStrictEqual(hits, [],
+      rel + ' nests a role="dialog" inside the overlay ensureOverlay already marked');
+  });
+});
+
+// ── Cycle-18 batches 6+7 ────────────────────────────────────────────────────
+
+test('F3: getTeamMetrics is span-capped like every sibling range endpoint', () => {
+  const fn = extractRawFunction('Code.js', 'getTeamMetrics')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/teamSpanDays/.test(fn), 'the span is computed');
+  assert.ok(/if \(teamSpanDays > 92\) return \{ error:/.test(fn),
+    'and refused past 92 days — the getMyMetricsRange window');
+  // The cap must sit BEFORE the cache read, or a rep can still mint an
+  // arbitrary cache key for an out-of-range span and evict warm entries.
+  assert.ok(fn.indexOf('teamSpanDays > 92') < fn.indexOf('teamMetricsCache.get'),
+    'the cap precedes the cache lookup');
+  // It is REP-reachable (INV-66 opened it), which is why the cap exists at all.
+  assert.ok(/repView|teamMetricsRepView_/.test(fn), 'the rep path is still present');
+});
+
+test('F14: a fixture whose response depends on its arguments IS a function of them', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  // getMyMetrics ECHOES the requested date and the client's hero kicker
+  // branches on it ("Today" / "Yesterday" / the bare date). A static date
+  // rendered "TODAY" under a pressed "YESTERDAY" chip — a state the server
+  // cannot produce. Fifth instance of the INV-185 drift class.
+  assert.ok(/getMyMetrics: function \(date\)/.test(mock),
+    'the getMyMetrics fixture takes the date it is asked for');
+  assert.ok(/return \{ date: date \|\| todayIso/.test(mock),
+    'and echoes it back rather than a hardcoded today');
+  // Drive it: the fixture must return what it was asked for.
+  const m = /getMyMetrics: function \(date\) \{\s*return \{ date: (date \|\| todayIso)/.exec(mock);
+  assert.ok(m, 'the echo is the first field, where the client reads it');
+});
+
+test('F8: every rep-facing tool has a mobile visual scenario', () => {
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const mobile = [...shoot.matchAll(/\['([^']+)',\s*\{ tool: '([^']+)',\s*tab: ('[^']*'|null) \},\s*MOBILE/g)];
+  const tools = new Set(mobile.map((m) => m[2]));
+  // Time / PTO is a TAB, and it is the most recently restructured rep-facing
+  // layout (consolidated 2026-08-18), so tool-level coverage was not enough.
+  const names = mobile.map((m) => m[1]);
+  assert.ok(names.includes('timeoff-light-mobile'),
+    'Time / PTO has a mobile scenario (F8); got ' + names.join(', '));
+  ['timeClock', 'callNotes', 'metrics', 'intake', 'reference', 'develop'].forEach((t) => {
+    assert.ok(tools.has(t), t + ' has at least one MOBILE scenario');
+  });
+});
+
+// ── Cycle-18 batches 3+4 ────────────────────────────────────────────────────
+// NOTE the placement: ABOVE process.exit. A block appended after it never runs
+// and reports nothing — that hazard cost three silently-dead pins last session.
+
+test('F5: the DeptRequests Status cell has ONE reader (INV-183, fifth column)', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  // The predicate exists and normalizes BOTH ways, with the 'open' default the
+  // one already-correct reader applied.
+  const pred = extractRawFunction('Code.js', 'drStatus_').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\|\|\s*'open'/.test(pred), "a blank Status reads as OPEN, not unknown");
+  assert.ok(/\.trim\(\)/.test(pred) && /\.toLowerCase\(\)/.test(pred),
+    'the predicate trims AND lowercases');
+  // No raw DR.STATUS read survives anywhere outside the predicate and the WRITE.
+  // `DR.STATUS + 1` (the setValue column) is NOT a bracketed read, so it never
+  // enters this count — assert the bracketed form directly.
+  const reads = (code.match(/\[DR\.STATUS\]/g) || []).length;
+  assert.strictEqual(reads, 1,
+    'exactly one [DR.STATUS] read remains — the one inside drStatus_');
+  // And each of the three former raw comparators now delegates.
+  ['drFindOpenRequest_', 'markDeptRequestResolved_', 'deptRequestsOverdueOpen_', 'getDeptRequests']
+    .forEach((fn) => {
+      const body = extractRawFunction('Code.js', fn);
+      assert.ok(/drStatus_\(/.test(body), fn + ' routes through drStatus_');
+      assert.ok(!/String\([^)]*\[DR\.STATUS\]\)/.test(body.replace(/^\s*\/\/.*$/gm, '')),
+        fn + ' keeps no raw DR.STATUS comparison');
+    });
+});
+
+test('F5: a padded / mixed-case Status is read the same way by every consumer', () => {
+  const ctx = { DR: { REQ_ID: 0, STATUS: 7 } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'drStatus_'), ctx);
+  const row = (v) => { const r = []; r[7] = v; return r; };
+  ['resolved', ' resolved ', 'Resolved', 'RESOLVED', '\tResolved\n'].forEach((v) => {
+    assert.strictEqual(ctx.drStatus_(row(v)), 'resolved', JSON.stringify(v) + ' reads as resolved');
+  });
+  ['open', ' Open', ''].forEach((v) => {
+    assert.strictEqual(ctx.drStatus_(row(v)), 'open', JSON.stringify(v) + ' reads as open');
+  });
+  assert.strictEqual(ctx.drStatus_(row(undefined)), 'open', 'a missing cell defaults to open');
+});
+
+test('F5: the calendar TRIMS the time-off status it ships to the client', () => {
+  const body = extractRawFunction('Code.js', 'buildCalendarForEmployee_');
+  assert.ok(/String\(toRows\[i\]\[TO\.STATUS\]\)\.trim\(\)/.test(body),
+    'TO.STATUS is trimmed at the single read — the client compares the value it ships');
+});
+
+test('F2: reminders skip a day OFF, but the still-clocked-in nudge does not', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const tick = extractFunction('script_core.html', 'remindersTick_');
+  const stripped = tick.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/var dayOff = remindIsDayOff_\(tz\)/.test(stripped), 'the ticker computes a day-off flag');
+  // (a) breaks and (c) the clock-in nudge are gated; (b) is NOT.
+  assert.ok(/dayOff \? \[\] :/.test(stripped), '(a) break reminders are suppressed on a day off');
+  assert.ok(/!dayOff && nowMin >= startMin \+ REMIND_CLOCKIN_GRACE_MIN/.test(stripped),
+    '(c) the not-clocked-in nudge is suppressed on a day off');
+  // The still-clocked-in branch must NOT carry the flag — a forgotten Saturday
+  // punch is exactly when that reminder matters most.
+  const bBranch = /nowMin >= endMin \+ 5 && nowMin <= endMin \+ 120/.exec(stripped);
+  assert.ok(bBranch, '(b) the still-clocked-in window is still there');
+  assert.ok(!/dayOff[^\n]*endMin \+ 5/.test(stripped) && !/endMin \+ 5[^\n]*dayOff/.test(stripped),
+    '(b) is NOT gated on dayOff');
+  // An early `return` before nowMin would silently take (b) with it.
+  assert.ok(!/if \(remindIsDayOff_\(tz\)\) return/.test(stripped),
+    'the guard is per-branch, never an early return that also drops (b)');
+  assert.ok(/function remindIsDayOff_/.test(core), 'the predicate is defined');
+});
+
+test('F2: the day-off predicate uses the REP tz and the server PTO flag', () => {
+  const ctx = { empState: null, isoDateTz: (tz) => ctx.__iso, __iso: '2026-08-22' };  // a Saturday
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('script_core.html', 'remindIsDayOff_'), ctx);
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'Saturday is a day off');
+  ctx.__iso = '2026-08-23';
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'Sunday is a day off');
+  ctx.__iso = '2026-08-21';
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'Friday is a working day');
+  // Approved PTO on a weekday.
+  ctx.empState = { offToday: true };
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), true, 'approved PTO is a day off');
+  // An older server that does not send offToday degrades to the weekday guard.
+  ctx.empState = {};
+  assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'a missing flag is not "off"');
+});
+
+test('F2: empIsOffToday_ is bounded, approved-only, and fails toward "working"', () => {
+  const body = extractRawFunction('Code.js', 'empIsOffToday_');
+  assert.ok(!/getDataRange\(\)/.test(body), 'it does not read the full sheet (INV-46)');
+  assert.ok(/getRange\(2, 1, lastRow - 1, width\)/.test(body), 'it reads a bounded column window');
+  assert.ok(/normalizeDate_/.test(body), 'the date cell is coercion-recovered (INV-29)');
+  assert.ok(/\.trim\(\)\.toLowerCase\(\) === 'approved'/.test(body),
+    "only APPROVED counts — a pending request is not yet a day off (normalized, INV-183)");
+  assert.ok(/catch \(e\)[\s\S]*return false/.test(body),
+    'a failed read returns false — the safe direction (a missed reminder, never a silenced one)');
+  const state = extractRawFunction('Code.js', 'getEmployeeState');
+  assert.ok(/offToday: empIsOffToday_\(/.test(state), 'getEmployeeState ships it');
+});
+
+test('F7: the accrual tile footer is terse AND keeps the planned line', () => {
+  const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  // The long strings that wrapped in the 240px desktop rail are gone.
+  assert.ok(!/earned this month/.test(to), 'the wrapping "earned this month" label is gone');
+  assert.ok(!/h worked so far/.test(to), 'the wrapping "worked so far" label is gone');
+  assert.ok(/d this month/.test(to) && /h worked</.test(to), 'terse labels replace them');
+  // The MTD line no longer REPLACES the planned line — both render.
+  assert.ok(/const plannedFtr =/.test(to), 'the planned footer is factored out');
+  assert.ok(/\+ plannedFtr\s*\n?\s*: plannedFtr/.test(to.replace(/\r/g, '')),
+    'the accrual branch appends the planned footer instead of dropping it');
+  // No projection sneaks back into the accrual branch (INV-187).
+  const accrual = /if \(accrual\) \{([\s\S]*?)\n    \} else \{/.exec(to);
+  assert.ok(accrual, 'the accrual branch is findable');
+  assert.ok(!/class="bar"/.test(accrual[1]), 'no fill bar — an accruing balance has no ceiling');
+  assert.ok(!/monthsLeft|curYear/.test(accrual[1]), 'no year-end projection');
+});
+
+test('F10: the accrual credit runs in the all-team quiet window, not mid-offshore-shift', () => {
+  const install = extractRawFunction('Code.js', 'installAutomationTriggers');
+  const m = /newTrigger\('creditMonthlyPtoAccruals'\)\s*\n\s*\.timeBased\(\)\.atHour\((\d+)\)/.exec(install);
+  assert.ok(m, 'the accrual trigger is installed');
+  assert.strictEqual(m[1], '18', 'at 18:00 manager-tz — the INV-153 quiet window');
+  // The archive chose that hour for the same reason; they should agree.
+  const arch = /newTrigger\('archiveOldTimesheetRows'\)\s*\n\s*\.timeBased\(\)\.atHour\((\d+)\)/.exec(install);
+  assert.strictEqual(arch && arch[1], '18', 'and matches archiveOldTimesheetRows (INV-153)');
+});
+
+// ── Batch 8: completeness gaps (Offerings browse, manager pay statement, print)
+
+test('B8: the Offerings browse endpoint is rep-callable, read-only and PHI-free', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const body = nc(extractRawFunction('Code.js', 'intakeListOfferings'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(body) && /Not authorized\./.test(body),
+    'requires an enrolled employee');
+  // PHI boundary: the ONLY store read is the Offerings catalog helper. A
+  // submission tab read here would put patient answers on a browse surface.
+  assert.ok(/getIntakeOfferings_\(\)/.test(body), 'reads the catalog helper');
+  assert.ok(!/getIntakeSubmissionSheet_|SUBMISSIONS_TAB|AnswersJSON/.test(body),
+    'never touches a PHI submission tab');
+  // Read-only — no lock, no write.
+  assert.ok(!/appendRow|setValue|waitLock/.test(body), 'read-only: no write, no lock');
+  // INV-169 — the pre-slice total rides the payload so a capped list cannot
+  // read as a complete one.
+  assert.ok(/total\s*=\s*out\.length/.test(body) && /total:\s*total/.test(body) && /cap:/.test(body),
+    'reports the pre-slice total and the cap');
+  assert.ok(/INTAKE_OFFERINGS_LIST_CAP_/.test(body), 'caps the payload');
+  // A row with no HCPCS is inert to the engine (hcpcsNum === 0) — listing it
+  // would advertise a product the engine can never return.
+  assert.ok(/if\s*\(!hcpcs\)\s*return/.test(body), 'drops HCPCS-less rows');
+});
+
+test('B8: the catalog browse view is named, filtered purely, and error-vs-empty split', () => {
+  const view = extractFunction('intake/script_intake.html', 'enterIntakeCatalogView');
+  // A12/INV-175 — a failed load must never render as an empty catalog.
+  assert.ok((view.match(/errorStateHtml_\(/g) || []).length >= 2,
+    'both failure paths render the error card');
+  assert.ok(!/errorStateHtml_\(esc\(/.test(view), 'no double-escape');
+  // A14 — a placeholder is not an accessible name.
+  assert.ok(/id="intk-cat-search"[^>]*aria-label=/.test(view),
+    'the search input carries an accessible name');
+  // The scheme whitelist is the SHARED helper, not a second copy.
+  const render = extractFunction('intake/script_intake.html', 'intakeRenderCatalogList_');
+  assert.ok((render.match(/intakeHttpOnly_\(/g) || []).length === 2,
+    'both URL columns go through the shared http(s) whitelist');
+  assert.ok(!/https\?:/.test(render), 'no second copy of the scheme regex');
+  // A blank capacity is the F9 fail-closed state — it must be STATED, never
+  // rendered as a value (INV-187 applied to a cell).
+  assert.ok(/capacity not recorded/.test(render) && /seat not recorded/.test(render),
+    'unrecorded specs say so');
+  // INV-169 — the cap note keys off the UNFILTERED length, not the filtered one.
+  assert.ok(/serverTotal\s*!=\s*null\s*&&\s*serverTotal\s*>\s*unfilteredLen/.test(render),
+    'the cap note compares the server total against the unfiltered length');
+});
+
+test('B8: the catalog seat filter mirrors the engine letter test', () => {
+  const ctx = { esc: (x) => String(x) };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeFilterCatalog_'), ctx);
+  const rows = [
+    { hcpcs: 'K0821', features: 'captain seat', seatType: 'Captain' },
+    { hcpcs: 'K0861', features: 'solid seat pan', seatType: 'Solid' },
+    { hcpcs: 'K0864', features: 'heavy duty', seatType: '' },
+  ];
+  const f = (q, seat) => ctx.intakeFilterCatalog_(rows, { q: q, seat: seat }).map((r) => r.hcpcs).join(',');
+  assert.strictEqual(f('', 'ALL'), 'K0821,K0861,K0864', 'ALL passes everything');
+  // The engine tests for the LETTER anywhere in the cell; a browse view that
+  // disagreed about which chairs are captain-seat is worse than no filter.
+  assert.strictEqual(f('', 'C'), 'K0821', 'captain matches the letter c');
+  assert.strictEqual(f('', 'S'), 'K0861', 'solid matches the letter s');
+  assert.strictEqual(f('k086', 'ALL'), 'K0861,K0864', 'query matches hcpcs, case-insensitive');
+  assert.strictEqual(f('SOLID', 'ALL'), 'K0861', 'query matches features too');
+  assert.strictEqual(f('nothing', 'ALL'), '', 'no match is empty, not everything');
+});
+
+test('B8: the manager pay-statement branch is wired and cannot leak the rep id', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  const open = extractFunction('tc/script_timeoff.html', 'openPayStatement_');
+  // Set on EVERY open — a "only assign when present" shape would make a
+  // manager's own statement inherit the rep they last viewed.
+  assert.ok(/PAY_STMT\.repId\s*=\s*String\(repEmpId\s*\|\|\s*''\)/.test(open),
+    'repId is assigned unconditionally on every open');
+  const load = extractFunction('tc/script_timeoff.html', 'payStmtLoad_');
+  assert.ok(/\.getMyPayStatement\(PAY_STMT\.offset,\s*PAY_STMT\.repId\s*\|\|\s*''\)/.test(load),
+    'the rep id is passed to the server');
+  // The rail button is the OWN-statement entry — it must clear the id.
+  assert.ok(/openPayStatement_\(0,\s*''\s*,\s*''\)/.test(src),
+    'the own-statement button clears the rep id');
+  // The A14 dialog name distinguishes whose statement is open.
+  assert.ok(/'Pay statement for '\s*\+/.test(open), 'the dialog name names the rep');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  // INV-191 — .ps-open-btn borrows .de-open-btn for its LOOK, so the Day-Edit
+  // binding must exclude it or the button opens the wrong modal.
+  assert.ok(/querySelectorAll\('\.de-open-btn:not\(\.ps-open-btn\)'\)/.test(mgr),
+    'the Day-Edit binding excludes the pay-statement button');
+  assert.ok(/querySelectorAll\('\.ps-open-btn'\)/.test(mgr) && /openPayStatement_\(0,\s*btn\.dataset\.empId/.test(mgr),
+    'the pay-statement button opens the statement for that rep');
+  assert.ok(/typeof openPayStatement_ !== 'function'/.test(mgr),
+    'cross-partial call is typeof-guarded');
+  // The actions live on their OWN row. MEASURED at 1440: with both buttons in
+  // .emp-card-top the name column was 33px for a 75px name; one button had
+  // already cost it 69px. A source pin, because the pure harness has no layout
+  // engine — the measurement itself is the visual matrix's job.
+  const top = /<div class="emp-card-top">([\s\S]*?)<\/div>\s*<div class="emp-status-line">/.exec(mgr);
+  assert.ok(top, 'found the card top row');
+  assert.ok(!/<button/.test(top[1]), 'no action button squeezes the name column');
+  assert.ok(/class="emp-card-actions"/.test(mgr), 'the actions have their own row');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.emp-card-actions\s*{[^}]*justify-content:\s*flex-end/.test(css),
+    'the actions row owns its alignment (margin-left:auto right-pushes only the first button)');
+});
+
+test('B8: the manager liveStatus fixture carries the id the client reads', () => {
+  // INV-185 field-name drift, found by CLICKING the new pay-statement button
+  // in Chromium: the fixture shipped `empId` where the server ships `id`, so
+  // every Day-Edit AND pay-statement button in the visual matrix rendered
+  // data-emp-id="undefined" — a screenshot the server cannot produce.
+  const srv = extractRawFunction('Code.js', 'getManagerDashboard');
+  const ret = /const liveStatus = employees\.map\(e => \{[\s\S]*?return \{([\s\S]*?)\};/.exec(srv);
+  assert.ok(ret, 'found the liveStatus row shape in Code.js');
+  assert.ok(/\bid:\s*e\.id\b/.test(ret[1]), 'the server ships `id` on a liveStatus row');
+  assert.ok(!/\bempId:/.test(ret[1]), 'and NOT `empId` — which is what drifted');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const lsFn = /function ls\(name, status, t, tz, abbr\) \{ return \{([\s\S]*?)\}; \}/.exec(mock);
+  assert.ok(lsFn, 'found the fixture row builder');
+  assert.ok(/\bid:\s*'E-'/.test(lsFn[1]), 'the fixture ships `id` too');
+  assert.ok(!/\bempId:/.test(lsFn[1]), 'and not the drifted `empId`');
+  // The client reads e.id for BOTH buttons on the card.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok((mgr.match(/data-emp-id="\$\{esc\(e\.id\)\}"/g) || []).length >= 2,
+    'both live-status card buttons key off e.id');
+});
+
+test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const i = css.indexOf('@media print {');
+  assert.ok(i > 0, 'a print block exists');
+  // Brace-match the block so the assertions cannot drift onto neighbouring CSS.
+  let depth = 0, end = i;
+  for (let j = css.indexOf('{', i); j < css.length; j++) {
+    if (css[j] === '{') depth++;
+    else if (css[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+  }
+  const block = css.slice(i, end + 1);
+  // (1) Dark mode prints WHITE-on-white without this — browsers drop the
+  // background but keep the near-white --ink. !important, because the palette
+  // blocks are (0,3,0) and would out-specify a plain :root here.
+  assert.ok(/--ink:\s*#1{2,3}\s*!important/.test(block), '--ink is forced dark');
+  assert.ok(/--paper-card:\s*#fff\s*!important/.test(block), '--paper-card is forced white');
+  // (3) MEASURED: without this a 2359px statement printed 772px — 1587px of
+  // payroll data silently dropped.
+  assert.ok(/\.overlay\.open \.modal\s*{[^}]*max-height:\s*none\s*!important/.test(block),
+    'an open modal is un-clipped for print');
+  assert.ok(/\.overlay\.open \.modal\s*{[^}]*overflow:\s*visible\s*!important/.test(block),
+    'and its overflow is visible');
+  // (2) The page behind an open modal must not print with it.
+  assert.ok(/body:has\(\.overlay\.open\) \.app-shell/.test(block),
+    'an open overlay is the print subject');
+  // Chrome is hidden BY NAME — blanket-hiding <button> would delete data
+  // (transfer-count disclosures, KB roster chips ARE buttons).
+  assert.ok(/\.no-print\s*{\s*display:\s*none/.test(block) || /,\s*\.no-print\s*{[^}]*display:\s*none/.test(block),
+    '.no-print is honored');
+  assert.ok(!/^\s*button\s*{/m.test(block), 'no blanket button hide');
+  // Every class/id the block NAMES must exist somewhere in the app (INV-184 —
+  // a dead selector is the next reader's false lead). DERIVED from the block,
+  // not a hand list: a hand list passes no matter what the block says, which
+  // is how the first version of this assertion failed to bite.
+  // The corpus is the MARKUP, deliberately EXCLUDING styles.html: including
+  // the stylesheet that holds this very block made the check self-satisfying
+  // (a renamed selector "existed" because the rename itself was in the
+  // corpus), which is how the first two versions of it failed to bite.
+  const partials = A11Y_SCAN_PARTIALS.concat(['kb/script_kb.html', 'index.html']);
+  const all = partials.map((rel) => {
+    try { return fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); } catch (e) { return ''; }
+  }).join('\n')
+    // INV-188 — comments too: a class named only in the prose explaining it
+    // would otherwise count as "used", which is how the .no-print assert
+    // below first failed to bite.
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const selectorPart = block.replace(/\{[^{}]*\}/g, '|');   // keep selectors, drop declarations
+  const named = new Set((selectorPart.match(/[.#][A-Za-z][\w-]*/g) || []));
+  named.delete('.no-print');   // introduced BY this block; asserted separately below
+  assert.ok(named.size >= 8, 'the block names real hooks');
+  named.forEach((sel) => {
+    const bare = sel.slice(1);
+    assert.ok(all.includes(bare), `the print block's "${sel}" hook exists in the app`);
+  });
+  assert.ok((all.match(/no-print/g) || []).length >= 3,
+    'the .no-print escape hatch is actually used (the statement Print button + its period nav)');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

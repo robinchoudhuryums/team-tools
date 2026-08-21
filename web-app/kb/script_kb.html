@@ -709,7 +709,13 @@ function kbDecideHtml_(text, path) {
 function kbDecideRoot_(el) { return el && el.closest ? el.closest('.kb-decision') : null; }
 
 function kbDecidePath_(root) {
-  try { var p = JSON.parse(root.getAttribute('data-path') || '[]'); return Array.isArray(p) ? p : []; }
+  // The stored path decodes on read exactly as data-src does, and its entries
+  // are matched against option labels parsed from the (escaped) source — so
+  // they are re-escaped here or a label containing & < > stops resolving.
+  try {
+    var p = JSON.parse(root.getAttribute('data-path') || '[]');
+    return Array.isArray(p) ? p.map(kbFenceEsc_) : [];
+  }
   catch (e) { return []; }
 }
 
@@ -717,7 +723,7 @@ function kbDecidePath_(root) {
  *  deliberately NOT carried across: they belong to the action being shown, and
  *  restoring them onto a different action would assert work that was not done. */
 function kbDecideRender_(root, path) {
-  var html = kbDecideHtml_(root.getAttribute('data-src') || '', path);
+  var html = kbDecideHtml_(kbFenceSrc_(root), path);
   var tmp = document.createElement('div');
   tmp.innerHTML = html;
   var next = tmp.firstChild;
@@ -729,7 +735,7 @@ function kbDecideRender_(root, path) {
 function kbDecideChoose_(btn) {
   var root = kbDecideRoot_(btn);
   if (!root) return;
-  kbDecideRender_(root, kbDecidePath_(root).concat([btn.getAttribute('data-opt') || '']));
+  kbDecideRender_(root, kbDecidePath_(root).concat([kbFenceEsc_(btn.getAttribute('data-opt') || '')]));
 }
 
 /** Clicking a crumb returns to that question — a rep who mis-answers must not
@@ -1081,7 +1087,7 @@ function kbMapDecode_(s) {
   // for URL building (encodeURIComponent re-encodes everything, so the result
   // is attribute-safe); text and attribute contexts keep the escaped form —
   // the roster lesson: the parser never unescapes into markup.
-  return String(s == null ? '' : s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  return kbFenceDecode_(s);
 }
 function kbMapParse_(text) {
   var whs = [], warnings = [], truncated = 0;
@@ -1196,6 +1202,33 @@ function kbMapLookup_(el) {
 
 function kbRosterAttr_(v) {
   return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── The fence-source round-trip boundary ────────────────────────────────────
+// A block that re-renders itself (a roster mode switch, Expand, a decision
+// answer) needs its own fence source back. Storing it in a `data-*` attribute
+// looks safe because kbRosterAttr_ escapes the quotes — but the browser
+// DECODES every entity when the attribute is parsed, so `getAttribute` hands
+// back `<img src=x onerror=...>` where kbMd_ had written `&lt;img …&gt;`.
+// Re-rendering that raw put a LIVE element into the article: the escape-first
+// boundary INV-193 relies on held for the first render only.
+//
+// So: every read of a stored fence source (or of a value that will be COMPARED
+// against parsed source) re-applies kbMd_'s top-level escape, restoring exactly
+// the contract the renderers were written against. The two helpers are inverses
+// over the same three entities kbMd_ escapes — do not let them drift apart.
+function kbFenceEsc_(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function kbFenceDecode_(s) {
+  return String(s == null ? '' : s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+/** THE one reader of a block's stored fence source. Never call getAttribute
+ *  ('data-src') directly — that is the decoded form, and feeding it back into
+ *  a renderer is the injection above. */
+function kbFenceSrc_(root) {
+  return kbFenceEsc_((root && root.getAttribute ? root.getAttribute('data-src') : '') || '');
 }
 
 /** A URL-safe id fragment, so a person or team is addressable in the DOM. */
@@ -1624,7 +1657,12 @@ function kbRosterDrawEdges_(root) {
   svg.setAttribute('width', wrap.scrollWidth);
   svg.setAttribute('height', wrap.scrollHeight);
   svg.setAttribute('viewBox', '0 0 ' + wrap.scrollWidth + ' ' + wrap.scrollHeight);
-  var find = function (name) { return proc.querySelector('[data-node="' + kbRosterKey_(name).replace(/"/g, '') + '"]'); };
+  // A CSS attribute selector matches the DECODED attribute value, while the
+  // key comes from the (escaped) parse — decode it or a node whose name
+  // carries & < > is never found and its edges silently vanish.
+  var find = function (name) {
+    return proc.querySelector('[data-node="' + kbFenceDecode_(kbRosterKey_(name)).replace(/"/g, '') + '"]');
+  };
   // A RECIPROCAL pair (A→B and B→A, e.g. an appointment bouncing between two
   // stages) would draw two opposite arrows on the same line, overlapping into
   // one ambiguous stroke. Offset each side so both remain readable.
@@ -1756,13 +1794,14 @@ function kbRosterHtml_(text) {
 function kbRosterExpand_(btn) {
   var root = kbRosterRoot_(btn);
   if (!root) return;
-  var src = root.getAttribute('data-src') || '';
+  var src = kbFenceSrc_(root);
   // ensureOverlay (never a hand-rolled overlay — INV-83) so Escape, the focus
   // trap and the focus-restore lifecycle all behave; onClose is idempotent.
   var ov = ensureOverlay('kb-roster-overlay', {
+    label: 'Roster',
     onClose: function () { var o = document.getElementById('kb-roster-overlay'); if (o) o.remove(); },
   });
-  ov.innerHTML = '<div class="modal kb-roster-modal" role="dialog" aria-modal="true" aria-label="Roster">' +
+  ov.innerHTML = '<div class="modal kb-roster-modal">' +
     '<div class="kb-roster-modal-head">' +
       '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-roster-overlay\'))">Close</button>' +
     '</div>' + kbRosterHtml_(src) + '</div>';
@@ -1774,9 +1813,9 @@ function kbRosterExpand_(btn) {
 function kbRosterRoot_(el) { return el && el.closest ? el.closest('.kb-roster') : null; }
 
 function kbRosterData_(root) {
-  // The stored source is attribute-escaped; the DOM decodes &quot;/&#39; on
-  // read, so what comes back is exactly what kbMd_ handed the renderer.
-  return kbRosterParse_(root.getAttribute('data-src') || '');
+  // NOT "exactly what kbMd_ handed the renderer" — the DOM decodes EVERY
+  // entity on read, &lt; included. kbFenceSrc_ restores the escaped form.
+  return kbRosterParse_(kbFenceSrc_(root));
 }
 
 function kbRosterSetMode_(btn) {
@@ -1805,7 +1844,8 @@ function kbRosterSetMode_(btn) {
 function kbRosterOpenPerson_(btn) {
   var root = kbRosterRoot_(btn);
   if (!root) return;
-  var name = btn.getAttribute('data-name') || '';
+  // Re-escaped to match the index, which is keyed off the parsed source.
+  var name = kbFenceEsc_(btn.getAttribute('data-name') || '');
   var idx = kbRosterPeopleIndex_(kbRosterData_(root));
   var e = idx.byName[name.toLowerCase()];
   var panel = root.querySelector('.kb-ros-panel');
@@ -2098,7 +2138,7 @@ function enterReferenceView(area) {
     '<div class="view-title-row"><h1 class="view-title">Reference</h1></div>' +
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
-        '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +
+        '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off" aria-label="Search reference">' +
         '<div id="kb-tree">' + loSweep() + '</div>' +
       '</div>' +
       '<div class="kb-main" id="kb-main">' + loSweep() + '</div>' +
@@ -2136,8 +2176,8 @@ function kbAddBtnHtml_() {
 
 // #8 — admin-only search-synonym editor (one group per line, comma-separated).
 function kbOpenSynonyms_() {
-  var ov = ensureOverlay('kb-syn-overlay', { onClose: function () { var o = document.getElementById('kb-syn-overlay'); if (o) o.remove(); } });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Search synonyms</h3><button class="kb-btn" data-kb-synclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-syn-body">' + loSweep() + '</div></div>';
+  var ov = ensureOverlay('kb-syn-overlay', { label: 'Search synonyms', onClose: function () { var o = document.getElementById('kb-syn-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Search synonyms</h3><button class="kb-btn" data-kb-synclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-syn-body">' + loSweep() + '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-synclose]')) ov.remove(); });
   google.script.run
     .withSuccessHandler(function (res) {
@@ -2146,7 +2186,7 @@ function kbOpenSynonyms_() {
       var lines = (res.synonyms || []).map(function (g) { return g.join(', '); }).join('\n');
       body.innerHTML =
         '<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">One synonym group per line, terms comma-separated. A search for any term in a group also matches the others.<br>e.g. <code>cpap, pap</code> &nbsp; <code>power chair, pmd, power wheelchair</code></div>' +
-        '<textarea id="kb-syn-ta" style="width:100%;min-height:180px;font:inherit;box-sizing:border-box">' + esc(lines) + '</textarea>' +
+        '<textarea id="kb-syn-ta" aria-label="Synonym groups, one per line" style="width:100%;min-height:180px;font:inherit;box-sizing:border-box">' + esc(lines) + '</textarea>' +
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
         '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })
@@ -2691,7 +2731,7 @@ function kbSearchFilterBarHtml_(all) {
   };
   var deptKeys = Object.keys(depts).sort();
   var deptSel = deptKeys.length > 1
-    ? '<select class="kb-fdept" onchange="kbSetSearchFilter_(\'dept\', this.value)"><option value="">All departments</option>' +
+    ? '<select class="kb-fdept" aria-label="Filter results by department" onchange="kbSetSearchFilter_(\'dept\', this.value)"><option value="">All departments</option>' +
         deptKeys.map(function (d) { return '<option value="' + esc(d) + '"' + (fdept === d ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') +
       '</select>'
     : '';
@@ -2847,8 +2887,8 @@ function kbPublishItem_(id) {
 
 // #4 — revision history modal: list prior versions, restore one.
 function kbOpenRevisions_(id) {
-  var ov = ensureOverlay('kb-rev-overlay', { onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
+  var ov = ensureOverlay('kb-rev-overlay', { label: 'Revision history', onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-revclose]')) { ov.remove(); } });
   google.script.run
     .withSuccessHandler(function (res) {
@@ -3121,13 +3161,13 @@ function kbRenderEditor_() {
   // ensureOverlay (script_core) registers kbCloseModal_ as the close hook so
   // the shell's Escape path removes the editor node instead of merely hiding
   // it (a hidden-but-present editor would shadow the next open).
-  var ov = ensureOverlay('kb-ed-overlay', { onClose: kbCloseModal_ });
-  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true">' +
+  var ov = ensureOverlay('kb-ed-overlay', { label: 'Reference item editor', onClose: kbCloseModal_ });
+  ov.innerHTML = '<div class="modal kb-ed">' +
     '<div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><h3 style="margin:0;">' + (e.id ? 'Edit item' : 'Add item') + '</h3>' +
       '<button class="kb-btn" data-kb-close="1">' + icon('x', 15) + '</button></div>' +
     '<div class="body">' +
-      '<div class="field"><label>Department</label><input type="text" id="kb-ed-dept" list="kb-dept-list" value="' + esc(e.department) + '" placeholder="e.g. Sales, Power, Billing">' + datalist + '</div>' +
-      '<div class="field"><label>Title</label><input type="text" id="kb-ed-title" value="' + esc(e.title) + '" placeholder="Article / document title"></div>' +
+      '<div class="field"><label for="kb-ed-dept">Department</label><input type="text" id="kb-ed-dept" list="kb-dept-list" value="' + esc(e.department) + '" placeholder="e.g. Sales, Power, Billing">' + datalist + '</div>' +
+      '<div class="field"><label for="kb-ed-title">Title</label><input type="text" id="kb-ed-title" value="' + esc(e.title) + '" placeholder="Article / document title"></div>' +
       '<div class="field"><label>Type</label><div class="kb-typetog">' +
         '<button type="button" id="kb-tt-article" class="' + (e.type !== 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type !== 'embed') + '" onclick="kbEditorSetType_(\'article\')">Article (markdown)</button>' +
         '<button type="button" id="kb-tt-embed" class="' + (e.type === 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type === 'embed') + '" onclick="kbEditorSetType_(\'embed\')">Embed Drive doc</button>' +
@@ -3173,13 +3213,13 @@ function kbSnapshotEditor_() {
 function kbRenderEditorBody_() {
   var host = document.getElementById('kb-ed-body'); if (!host) return;
   if (KB_EDIT.type === 'embed') {
-    host.innerHTML = '<div class="field"><label>Drive share URL (Google Doc, Sheet, or file)</label>' +
+    host.innerHTML = '<div class="field"><label for="kb-ed-driveurl">Drive share URL (Google Doc, Sheet, or file)</label>' +
       '<input type="text" id="kb-ed-driveurl" value="' + esc(KB_EDIT.driveUrl) + '" placeholder="https://docs.google.com/document/d/…"></div>' +
       '<div style="font-size:.76rem;color:var(--muted);">The doc embeds as a read-only preview in the app, with an "Open in new tab" link. Reps need access to the file (share it with the team).</div>' +
       '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
       '<div style="font-size:.72rem;color:var(--muted);margin-top:4px;">Google Docs only — pulls the Doc\'s text in as editable markdown (you review before saving; the Doc isn\'t changed).</div>';
   } else {
-    host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +
+    host.innerHTML = '<div class="field"><label for="kb-ed-bodymd">Body (markdown)</label>' +
       '<textarea id="kb-ed-bodymd" placeholder="# Heading&#10;&#10;**bold**, *italic*, `code`, [links](https://…)&#10;- bullet lists&#10;1. numbered&#10;> quote">' + esc(KB_EDIT.body) + '</textarea></div>' +
       '<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 6px;">Paste a screenshot directly into the body to upload it. The KB is PHI-free by policy — scrub patient data first.</div>' +
       '<div style="font-size:.76rem;color:var(--muted);margin-bottom:4px;">Live preview:</div><div class="kb-ed-prev kb-article" id="kb-ed-prev"></div>';
@@ -3393,7 +3433,7 @@ function kbDrawerMount_() {
     '<div class="kbd-head">' + icon('list', 14) +
       '<span class="kbd-kicker">Reference</span>' +
       '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
-    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off"><span class="kbd-spin" id="kbd-spin"></span></div>' +
+    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off" aria-label="Search reference\u2026 (Ctrl/\u2318+K)"><span class="kbd-spin" id="kbd-spin"></span></div>' +
     '<div class="kbd-body" id="kbd-body"></div>';
   document.body.appendChild(d);
   var tab = document.createElement('button');

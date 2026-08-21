@@ -5,9 +5,69 @@ Cycle: 17 — CLOSED (reflected, `.cycle/blocks/17-a-reflect.md`; metrics row
 appended). Between-cycles OPERATOR WORK continues on the branch (see below);
 cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
-point. NOTE the library is at INV-191 — the 2026-08-11 pilot-feedback round
-wrote 189/190/191.
-Phase: idle (post-reflect) + operator-requested feature work:
+point. NOTE the library is at INV-195 — the 2026-08-11 pilot-feedback round
+wrote 189/190/191, and cycle 18's pre-audit batch 5 wrote 195.
+Phase: implement — /broad-scan (cycle 18 pre-audit) ALL batches 1-8 DONE
+  (5B included), unmerged, NOT deployed.
+  A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
+  `18-batch1-batch2-`, `18-batch3-batch4-`, `18-batch5-batch6-batch7-`
+  `broad-implement.md`.
+  **Batch 1+2** — F1 (High) stored XSS via the KB `data-src` round-trip (an
+  attribute DECODES on read, so every re-render put a LIVE element into the
+  article; reproduced in Chromium, closed via a `kbFenceSrc_` boundary + 7
+  coupled sites, pinned in the DOM harness because the pure harness cannot
+  decode and run.js had pinned the vulnerable line as correct); F4 + Gap4,
+  per-job automation liveness DERIVED from `AUTOMATION_JOB_CHECKS`.
+  **Batch 3+4** — F5 closes the INV-183 status family on its FIFTH column
+  (`drStatus_` + 4 call sites + the calendar's TO.STATUS trim); F2 stops
+  weekend/PTO reminder nags (gated PER BRANCH so the still-clocked-in nudge
+  stays live); F7 unwraps the accrual tile footer (MEASURED) and restores the
+  planned line; F10 moves the accrual credit to 18:00 (INV-153 quiet window).
+  **Batch 5+6+7** — 5A names all 15 `ensureOverlay` dialogs (they announced as
+  bare "dialog") and un-nests five dialogs-inside-dialogs, verified via
+  `getByRole('dialog',{name})` in Chromium; F14 makes the getMyMetrics fixture
+  a FUNCTION of its date (it was rendering "TODAY" under a pressed "YESTERDAY"
+  chip — INV-185's fifth instance); F8 adds the Time/PTO mobile scenario
+  (matrix 42 → 43); F3 caps `getTeamMetrics` at 92 days (the only uncapped
+  range endpoint, opened to every rep on 2026-08-18).
+  **Batch 8** — the three completeness gaps: a rep-facing Intake -> Catalog
+  browse of the Offerings catalog (previously readable only by opening the
+  PHI-bearing Intake spreadsheet); the manager pay-statement UI (the
+  manager-gated repEmpId branch had been pinned-but-callerless since
+  2026-08-17); and the app's FIRST @media print block — MEASURED, a 2359px
+  pay statement printed 772px, and dark mode printed near-white ink on the
+  white sheet. Also fixed a live-status FIXTURE drift the new button
+  surfaced (empId vs the server's id — every Day-Edit button in every
+  manager screenshot had rendered data-emp-id="undefined") and the card
+  name column the second button squeezed (33px -> 105px, measured).
+  **Batch 5B — SWEPT, debt 168 -> 0** (block `18-batch5B-broad-implement.md`).
+  The deferral rested on a census that was wrong three ways: it double-counted
+  form_public.html (already in PARSE_GUARD_PARTIALS, so the ratchet's own
+  concat read it twice — real starting debt 168, not 252), it called 116
+  controls author-decisions when ~30 needed a human eye and every one was
+  nameable from on-screen text, and it attributed 92 of those to Call Notes
+  (that was CN's total across all buckets; the biggest none-bucket file was the
+  public form). 210 were mechanical: 123 label-for wirings, 29 placeholder
+  promotions, 17 money-table rows, 30 read from context. One was a real
+  association BUG — the PPD num/text branches build an input with an id but
+  never set hasInputId, so the label never got its for=. A14 baseline is
+  0/0/0, bite-checked at zero on four failure shapes, and
+  `test/visual/a11y-names.mjs` now measures the names Chromium actually
+  computes across 9 in-app views + all 3 public-form templates (the public
+  form's only coverage).
+  /sync-docs is DONE for ALL of Batches 1+2 (149461b), 3+4 (e02621f) and
+  5+6+7 (this session) — the last pass wrote **INV-195** (a form control needs
+  an accessible NAME; a placeholder is not one; A14 is a two-sided ratchet
+  with a stated target of zero and the 75/61/116 census split), amended INV-83
+  (every `ensureOverlay` dialog is named; `label`/`labelledBy` are mutually
+  exclusive; no nested `role="dialog"`), INV-66 (92-day span cap), INV-185
+  (F14 — a fixture whose response depends on its ARGUMENTS must be a function
+  of them) and INV-188 (strip `<!-- -->` too), moved the matrix count to 43,
+  the test narrative to 576, and recorded that ViewUsage + ClientErrors are
+  the only two stores with no retention tier (F11 follow-on).
+  Pure 582, DOM 75, matrix 44 clean, 70 mutations bite-checked across the
+  session.
+Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
   combined color-coded Spanish Inbox; Dept Requests rebuilt on the Spanish
   vocabulary + dept filter (commits 3215f45, ebd1cab, 395c554). Pure 436.
@@ -840,63 +900,40 @@ Updated: 2026-08-11
 - Pure 556, DOM 71, matrix 42 (0 missing / 0 overflow on everything shot).
 
 ## Where I left off
-Cycle 17 is CLOSED (reflected) and PROJECT_HEALTH now carries it. **Cycle 18
-has NOT opened and is DUE as the Seams & Invariants audit** (cadence counter
-4/4) — when it opens, move the cycle-17 block into HISTORY.md and reset this
-file from the template. The library is at **INV-194**; 189/190/191 came from
-the 2026-08-11 pilot round and 192/193/194 since, so cycle 18 owes NEW
-candidates, not those.
+Batches 1-7 (except 5B) of the cycle-18 pre-audit scan are implemented and
+committed on `claude/broad-scan-s9b8fd` — NOT merged, NOT deployed. Suites:
+pure 576, DOM 75, matrix 43 clean.
 
-**Since cycle 17 closed, EIGHT operator-request rounds shipped** — seven in
-three merged PRs (#171, #172, #173), plus the PTO accrual **REBUILD** now
-sitting UNMERGED on this branch:
+NEXT: **the cycle-18 Seams & Invariants audit is DUE** (counter 4/4). /sync-docs
+is DONE for every batch — the last pass CORRECTED INV-195 (its census was wrong
+three ways), added the print-block and bite-check gotchas, gave INV-185 a sixth
+instance and INV-112 the browse surface, and recorded both operator answers.
 
-- **#171** — Spanish-members editor, compact auto-tag list, full-width sweep,
-  load-time/caching sweep, 6h dashboard TTL, Team Metrics opened to reps as a
-  whitelist-built aggregate (INV-66/124 posture kept), dashboard→Metrics
-  click-throughs.
-- **#172** — Time/PTO CONSOLIDATED to one page (mode toggle + `umsMergeMode`
-  retired), quick-actions Requests card, pay-statement "Request edit"
-  click-through, CN pop-out fluid type + ≤400px narrow stacking.
-- **#173** — multi-day time-off requests (`submitTimeOffRange`, atomic,
-  weekday rows) + system-computed PTO accrual credits.
-- **UNMERGED, on this branch — the accrual REBUILD (2026-08-19).** The
-  operator's real rule is **3.08 PTO hours per 80 hours WORKED, 8 hours per
-  day**; #173 had shipped a flat days-per-calendar-month model (the one new
-  failure mode cycle 17's between-rounds reflection recorded). The machinery
-  is unchanged — same trigger, stamp, in-arrears idempotence, audit action,
-  gate, cache key — only the AMOUNT calculation was replaced. See
-  `.cycle/blocks/18pre-pto-hours-rebuild-broad-implement.md`.
+**5B needs an OPERATOR DECISION, not more implementation.** 252 controls lack an
+accessible name: 75 have an adjacent `<label>` missing only a `for=` (mechanical),
+61 are placeholder-only, and 116 have nothing and need someone to decide what each
+control is CALLED. 92 sit in `cn/script_callnotes.html` inside template-literal
+render functions. Realistic scope is multi-day. The A14 ratchet holds the line in
+the meantime and will FAIL if a sweep lands without lowering its baseline — that
+is deliberate and self-describing.
 
-**Deploy state (the thing a fresh session must not get wrong):** the operator
-deployed after #172 and was mid-testing when #173 was merged; the rebuild
-above has NOT been deployed. Its deploy carries **FOUR** operator actions:
-(1) `clasp push -f` + New version + `runAllTests()`, (2) **re-run
-`installAutomationTriggers()` once** (the accrual trigger does not exist until
-then), (3) fill roster column Q for accruing agents AND stop the manual
-monthly top-ups for exactly those agents, and (4) — NEW and easy to miss —
-**re-enter every column-Q value in the new units**: a cell left at `1.25` from
-the 2026-08-18 round now reads as 1.25 PTO hours per 80 worked, roughly a
-third of the intended rate.
+Batches 8 and 5B are DONE. Operator has re-run installAutomationTriggers() and
+confirmed NO REP WORKS WEEKENDS — which closes the open question the F2 gotcha
+records, and that answer needs to land in CLAUDE.md rather than only here.
+Follow-ons worth reading: no "all reps this period" manager export exists (not
+asked for); three batch-8 pin repairs (the print-hook check failed to bite
+TWICE and the .no-print assert once, each because the assertion was weaker than
+the property); and a bite-check reverted uncommitted edits THREE times in 5B —
+the rule is in CLAUDE.md but `bite.sh` has no guard, so it should refuse to run
+against a file with uncommitted changes.
 
-**Editor suite RUN 2026-08-19 against the merged branch: 288 passed, 1 failed,
-0 skipped.** The single failure was `deptReq_incomingAndMemberResolve` — TEST
-ROT, not a code defect: the 2026-08-18 load-time round gave `getDeptRequests` a
-per-caller result cache invalidated by its two production writers, and that
-test builds its fixture with a direct `appendRow`, so it read back a cached
-payload warmed by the omnibus gate test. Fixed by bumping the generation
-between the append and the read (+ after cleanup), pinned with an ordering
-assert, and written up as a Common Gotcha. **The accrual rebuild's own editor
-tests passed.** Everything below about the gap is now HISTORY, kept for the
-lesson: it had gone unrun long enough for a cache added under a test to go
-unnoticed.
+DEPLOY still carries the Batch 3+4 operator actions: re-run
+`installAutomationTriggers()` (accrual credit → 18:00), run `runAllTests()`, and
+answer whether any rep works Saturdays or Sundays (weekends are INFERRED).
 
-**Previously (superseded by the run above):** the editor suite had NOT been
-run against #172/#173 or the rebuild. Three editor tests are new or rewritten
-and have never executed (`submitTimeOffRange_weekendSkipAtomicCaps`,
-`creditPtoAccrual_seedCreditIdempotent` — REWRITTEN for the hours model, it
-now writes two 8-hour test days and asserts the credit they imply,
-`triggerGate_ptoAccrual_nonManagerThrows`). `runAllTests()` is the ONLY thing
-that exercises the accrual credit against a real sheet, and the editor-test-rot
-gotcha (cycle-14 found two rotted tests after four unrun cycles) is exactly
-this shape. Node baselines are green: **pure 556, DOM 71, visual matrix 42**.
+PROCESS this session: committing BEFORE bite-checking worked — two imprecise
+reverse edits became a clean `git checkout` recovery instead of lost work. FOUR
+mutations did not bite on first attempt: three because the fix shipped with NO
+pin at all (F3/F14/F8), one because the assertion matched a substring of an
+unrelated line. Check every mutation; a missing pin looks exactly like a passing
+one.

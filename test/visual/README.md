@@ -19,7 +19,7 @@ npm ci                 # playwright package only (browser download is skipped
                        #   when PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 is set and a
                        #   system Chromium is provided — see below)
 node build.mjs         # composes web-app/ partials -> page.html (generated)
-node shoot.mjs         # all 42 scenarios -> shots/*.png + report.json
+node shoot.mjs         # all 44 scenarios -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 node map-check.mjs     # spot-measure: the ```map block + article-image fallback

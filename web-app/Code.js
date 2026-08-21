@@ -613,8 +613,16 @@ function creditMonthlyPtoAccruals() {
       }
     });
     if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
+    clearAutomationError_('PtoAccrualCredit');
     return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps };
-  } catch (err) { return { success: false, error: err.message }; }
+  } catch (err) {
+    // F4: this job writes LEAVE BALANCES, and a caught error reports failure to
+    // nobody — Apps Script's trigger-failure email fires on a THROW, not on a
+    // returned error object, and nothing else reads this return value. Stamp it
+    // so Admin → Automation Health and the daily failure digest can see it.
+    stampAutomationError_('PtoAccrualCredit', err.message);
+    return { success: false, error: err.message };
+  }
   finally { lock.releaseLock(); }
 }
 
@@ -697,6 +705,31 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
 const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
 const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
+
+/**
+ * THE one reader of the DeptRequests Status cell — trimmed + lowercased, with
+ * the same 'open' default `getDeptRequests` already applied (a legacy row with
+ * a blank Status is an OPEN request, not an unknown one).
+ *
+ * WHY A PREDICATE (cycle-18 F5 — the INV-183 shape, on a fifth column): four
+ * readers each decided the comparison for themselves and did not agree. ONE
+ * normalized (the cycle-16 F8 fix) while THREE compared the RAW cell against a
+ * bare literal:
+ *   • drFindOpenRequest_        — the re-send dedupe misses, so re-sending a
+ *     note to the same dept opens a DUPLICATE request (INV-131 silently void)
+ *   • markDeptRequestResolved_  — the already-resolved idempotence check
+ *     misses, so a second click OVERWRITES ResolvedAt / ResolvedBy and re-audits
+ *   • deptRequestsOverdueOpen_  — a resolved request nags in the daily SLA
+ *     digest forever
+ * A padded or mixed-case cell therefore made the four DISAGREE — the identical
+ * shape column L had before `cnEnrolledSheetId_` (INV-167) and column A before
+ * `empRosterEmail_` (INV-183), now on a fifth column. Only a hand edit produces
+ * one (every writer stores a canonical literal), which is why this is a
+ * correctness fix and not an incident.
+ */
+function drStatus_(row) {
+  return String(row[DR.STATUS] || 'open').trim().toLowerCase();
+}
 // Bounded tail scan for the getDeptRequests LIST read only (rows append
 // chronologically; the sheet grows one row per dept email with no retention).
 // The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
@@ -1158,6 +1191,10 @@ function getEmployeeState() {
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: empShiftSchedule_(emp, empTz),   // Turn D: column-O override wins
+      // F2 (cycle 18) — the shell reminder ticker needs to know this is a day
+      // OFF, not just what the shift shape is. Approved PTO only; a pending
+      // request is not yet a day off.
+      offToday: empIsOffToday_(emp.id, today),
       ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -6032,6 +6069,127 @@ const AUTOMATION_AUDIT_ACTIONS = [
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
+// ── Per-JOB liveness, derived rather than accumulated (Gap4 / INV-186) ───────
+// automationProblems_ grew one hand-written check per SIGNAL, so a job added
+// later got an audit row and no alarm: only CallNotesReconcile was ever checked
+// for staleness, while the PTO accrual credit — which writes leave BALANCES —
+// failed to nobody (F4). This table is the derivation instead.
+//
+// The `enabled` predicate is the load-bearing part, and it is INV-186 in code:
+// "before toning a health indicator off a count, ask what that count reads on a
+// healthy production system". Most of these jobs legitimately write NO audit row
+// on a correctly-configured deployment (retention disabled, no accruing reps), so
+// a bare staleness check would nag every such deployment forever. A job whose
+// `enabled()` is false is simply not checked.
+//
+// `cadence` is 'daily' (expect a row every run) or 'monthly' (expect one per
+// calendar month, in arrears — see INV-194). AdpExportAuto is DELIBERATELY
+// ABSENT: it fires only at a pay-period boundary, so neither cadence describes
+// it, and a check that is wrong most of the month is worse than none.
+const AUTOMATION_JOB_CHECKS = [
+  { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile',
+    cadence: 'daily', staleHours: 30, enabled: function () { return true; } },
+  { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit',
+    cadence: 'monthly', graceDays: 3,
+    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); } },
+  { action: 'TimesheetArchive', label: 'Timesheet cold-archive',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getTimesheetArchiveDays_() > 0; } },
+  { action: 'CallNotesArchive', label: 'call-note cold-archive',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getNoteArchiveDays_() > 0; } },
+  { action: 'CallNotesPurge', label: 'call-note retention purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getNoteRetentionDays_() > 0; } },
+  { action: 'CallNotesArchivePurge', label: 'archived-note purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getArchiveRetentionDays_() > 0; } },
+  { action: 'FormDataPurge', label: 'form-data retention purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return getFormRetentionDays_() > 0; } },
+];
+
+/** Is any roster row carrying a column-Q accrual rate? Decides whether the
+ *  accrual credit is EXPECTED to write rows at all (see the table above). */
+function rosterHasAccruingRep_() {
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;
+      if (empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]) !== null) return true;
+    }
+  } catch (e) { /* unreadable roster — treated as "not expected", never nags */ }
+  return false;
+}
+
+// A trigger handler that CATCHES its own error reports failure to nobody:
+// Apps Script's own failure email fires on a THROW, not on a returned error
+// object (F4). Each such job stamps its last error here and clears it on a
+// clean run, so the panel and the daily digest can see it.
+const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
+function stampAutomationError_(job, message) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let map = {};
+    try { map = JSON.parse(props.getProperty(AUTOMATION_ERROR_PROP)) || {}; } catch (_) {}
+    if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
+    map[job] = { at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+                 message: String(message || '').slice(0, 300) };
+    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+  } catch (e) { /* best-effort — never break the job's own error path */ }
+}
+function clearAutomationError_(job) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let map = {};
+    try { map = JSON.parse(props.getProperty(AUTOMATION_ERROR_PROP)) || {}; } catch (_) {}
+    if (!map || typeof map !== 'object' || Array.isArray(map) || !map[job]) return;
+    delete map[job];
+    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+  } catch (e) { /* best-effort */ }
+}
+function readAutomationErrors_() {
+  try {
+    const map = JSON.parse(PropertiesService.getScriptProperties()
+      .getProperty(AUTOMATION_ERROR_PROP)) || {};
+    return (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+  } catch (e) { return {}; }
+}
+
+/** PURE-ish: the per-job problem lines for `automationLastRuns`, given the
+ *  table above. `nowMs`/`todayDom`/`thisMonth` are passed so the decision is
+ *  testable without a clock. */
+function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPrefix) {
+  const out = [];
+  const byAction = {};
+  (lastRuns || []).forEach(function (a) { if (a && a.action) byAction[a.action] = a.last || null; });
+  AUTOMATION_JOB_CHECKS.forEach(function (job) {
+    let on = false;
+    try { on = !!job.enabled(); } catch (e) { on = false; }
+    if (!on) return;                       // not expected to run — never nags
+    const last = byAction[job.action];
+    if (job.cadence === 'monthly') {
+      // In arrears: a row is expected on/just after the 1st. Before the grace
+      // day the absence is normal, so the check simply does not apply yet.
+      if (todayDom < (job.graceDays || 3)) return;
+      const ranThisMonth = !!(last && last.timestampMgr &&
+        String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
+      if (!ranThisMonth) {
+        out.push('The ' + job.label + ' has not run this month (expected on the 1st) — ' +
+          'the trigger may be missing. Re-run installAutomationTriggers().');
+      }
+    } else if (last && last.ms && (nowMs - last.ms) > job.staleHours * 3600000) {
+      out.push('The ' + job.label + ' last ran ' + last.timestampMgr +
+        ' (over ' + job.staleHours + 'h ago) — the trigger may be disabled.');
+    }
+    const err = errors && errors[job.action];
+    if (err) {
+      out.push('The ' + job.label + ' FAILED on ' + err.at + ': ' + err.message);
+    }
+  });
+  return out;
+}
+
 /** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
@@ -6237,6 +6395,9 @@ function computeAutomationHealth_(opts) {
     const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
       return { action: a, last: lastRunByAction[a] || null };
     });
+    // F4: a job that catches its own error reports failure to nobody unless the
+    // error is stamped somewhere the panel and the digest can read.
+    const automationErrors = readAutomationErrors_();
 
     // ── (b): CDR reachability + name-match health (last 7 days) ──────────
     let cdr;
@@ -6374,6 +6535,7 @@ function computeAutomationHealth_(opts) {
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
+      automationErrors: automationErrors,
       digests: digestHealth,
       cdr: cdr,
       detectors: detectors,   // Turn C — detector-liveness checks
@@ -6414,11 +6576,19 @@ function automationProblems_(report) {
   (report.digests || []).forEach(function (d) {
     if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
   });
-  const RECON_STALE_HOURS = 30;   // daily 5am + margin
-  const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
-  if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
-    problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
-  }
+  // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
+  // than hand-listed here (Gap4). This block used to check exactly one job
+  // (CallNotesReconcile), which is why the PTO accrual credit could fail every
+  // month in silence — see F4 and the table's own comment.
+  const mgrTzNow = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const nowD = new Date();
+  automationJobProblems_(
+    report.automationLastRuns,
+    report.automationErrors,
+    Date.now(),
+    parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
+    Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
+  ).forEach(function (m) { problems.push(m); });
   if (report.syncFails && report.syncFails.count > 0) {
     problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
   }
@@ -10785,14 +10955,21 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runNightlySelfTest')
     .timeBased().atHour(1).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 6am
-  // (staggered off the 5am reconcile; both take the global lock briefly).
+  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 18:00,
+  // alongside the Timesheet cold-archive. NOT 6am (F10, cycle 18): 6am CT is
+  // ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of
+  // the month this run holds the ONE project ScriptLock through a full
+  // Timesheet read — the exact starvation reasoning that moved
+  // archiveOldTimesheetRows off 1am (INV-153). "Both take the lock briefly"
+  // was true on 29 days a month and false on the one that matters. 18:00 CT is
+  // the all-team quiet window; the daily-with-idempotence cadence is unchanged,
+  // so a missed run still catches up via the col-R stamp.
   // Daily-with-idempotence rather than a monthly trigger: if the 1st's run is
   // missed (dead trigger, quota), the next day's run catches up via the col-R
   // stamp instead of silently losing the month. No-ops for reps with a blank
   // column-Q rate, so installing it is harmless on a roster with no accruers.
   ScriptApp.newTrigger('creditMonthlyPtoAccruals')
-    .timeBased().atHour(6).everyDays(1)
+    .timeBased().atHour(18).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -11711,6 +11888,19 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
   let html = '<p style="margin:0 0 4px;">Your consolidated morning brief — <strong>' + totalItems +
     '</strong> item(s) across ' + sections.length + ' area(s).</p>';
   let text = 'Team Tools daily brief (' + todayIso + ') — ' + totalItems + ' item(s):\n';
+  // A source that could not be read is NOT an all-clear for that area, and this
+  // brief suppresses the standalone digest that would otherwise have covered it
+  // (INV-187). Say so at the TOP, where an absent section would be read.
+  const failed = (d && d.failedSources) || [];
+  if (failed.length) {
+    html += '<p style="margin:8px 0;padding:8px 10px;border-left:3px solid ' + P.warnDeep +
+      ';background:' + P.warnBorder + ';font-size:12px;color:' + P.ink + ';">' +
+      '<strong>Incomplete brief.</strong> ' + esc_(failed.join(', ')) +
+      ' could not be read this morning, so ' + (failed.length === 1 ? 'that area is' : 'those areas are') +
+      ' missing below — treat their absence as unknown, not as clear.</p>';
+    text += '! INCOMPLETE — could not read: ' + failed.join(', ') +
+      ' (their absence below is unknown, not clear)\n';
+  }
 
   sections.forEach(function (s) {
     html += secLabel(s.label + ' (' + s.count + ')');
@@ -11793,18 +11983,34 @@ function sendManagerDailyBrief() {
     const back = new Date(now); back.setDate(back.getDate() - 1);
     const dateRange = { start: Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd'), end: todayIso };
 
-    let missed = [];
-    try { missed = computeMissedClockOuts_(); } catch (e) { Logger.log('brief: missed-punch source failed: ' + e.message); }
-    let urgent = [];
-    try { urgent = managerAggregateUrgent_(dateRange).results || []; } catch (e) { Logger.log('brief: urgent source failed: ' + e.message); }
-    let training = [];
-    try { training = trainOverdueForRoster_(todayIso); } catch (e) { Logger.log('brief: training source failed: ' + e.message); }
-    let docs = [];
-    try { docs = empDocsOverdueAll_(todayIso); } catch (e) { Logger.log('brief: docs source failed: ' + e.message); }
-    let coaching = [];
-    try { coaching = coachUnackedAll_(Date.now()); } catch (e) { Logger.log('brief: coaching source failed: ' + e.message); }
-    let deptOverdue = [];
-    try { deptOverdue = deptRequestsOverdueOpen_(); } catch (e) { Logger.log('brief: dept-request source failed: ' + e.message); }
+    // Each source is best-effort so one broken store cannot cost a manager the
+    // whole brief — but a source that fails must not simply VANISH from it.
+    // The brief SUPPRESSES the four standalone digests it replaces, so a
+    // silently-omitted section means that signal reached nobody at all, and an
+    // all-clear brief is indistinguishable from a brief that could not look
+    // (INV-187). `failedSources` rides into the email, and the whole run stamps
+    // an automation error so the health panel and failure digest see it too.
+    const failedSources = [];
+    const src = function (label, fn) {
+      try { return fn() || []; }
+      catch (e) {
+        Logger.log('brief: ' + label + ' source failed: ' + e.message);
+        failedSources.push(label);
+        return [];
+      }
+    };
+    const missed      = src('missed punches', function () { return computeMissedClockOuts_(); });
+    const urgent      = src('urgent notes', function () { return managerAggregateUrgent_(dateRange).results; });
+    const training    = src('overdue training', function () { return trainOverdueForRoster_(todayIso); });
+    const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
+    const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
+    const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
+    if (failedSources.length) {
+      stampAutomationError_('ManagerDailyBrief',
+        failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
+    } else {
+      clearAutomationError_('ManagerDailyBrief');
+    }
 
     let sent = 0;
     mgrEmails.forEach(function (email) {
@@ -11817,8 +12023,11 @@ function sendManagerDailyBrief() {
         coaching: coaching.filter(function (oc) { return coachCanManagerSee_(mgr, oc.item); }),
         deptOverdue: deptOverdue,
       };
+      d.failedSources = failedSources;
       const sections = managerBriefSections_(d);
-      if (!sections.length) return;   // all clear for this manager — silent
+      // Silent ONLY on a genuine all-clear. If a source could not be read, the
+      // absence of sections is not an all-clear and the brief says so.
+      if (!sections.length && !failedSources.length) return;
       try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
       catch (e) { console.warn('daily brief to ' + email + ' failed: ' + e.message); }
     });
@@ -12177,7 +12386,13 @@ function buildCalendarForEmployee_(emp, year, month) {
   for (let i = 1; i < toRows.length; i++) {
     const rowId   = String(toRows[i][TO.EMP_ID]).trim();
     const rowDate = normalizeDate_(toRows[i][TO.DATE]);
-    const status  = String(toRows[i][TO.STATUS]);
+    // F5 (cycle 18) — TRIM as well as lowercase. Every sibling TO.STATUS reader
+    // trims (INV-183); this one did not, so a padded cell fell through the
+    // teammate filter below AND rode to the client raw, where the calendar's
+    // `st === 'approved'` cell-class test missed it and painted a rep's own
+    // APPROVED day as pending. The trimmed value is what ships, so the client
+    // comparison and the server filter can no longer disagree.
+    const status  = String(toRows[i][TO.STATUS]).trim();
     if (rowDate < startDate || rowDate > endDate) continue;
     const statusL = status.toLowerCase();
     if (rowId === emp.id) {
@@ -12336,6 +12551,41 @@ function isValidTimeOffType_(type) {
  *  requests: INV-03's transition guard is per-row, so two sibling rows for
  *  one day would each deduct on approval and double-charge the balance (H1).
  *  Denied/cancelled rows never deducted, so they don't block a re-request. */
+/**
+ * Is this rep on APPROVED time off on `dateIso`? (cycle-18 F2.)
+ *
+ * BOUNDED on purpose: `getEmployeeState` is the app's hottest endpoint (boot,
+ * every punch via the recordPunch wrapper, the reminder ticker's <=1/10min
+ * refresh), so this reads the three columns it needs — EmpId / Date / Status —
+ * not the full row (the INV-46 discipline). Status is compared NORMALIZED
+ * (INV-183); the date is coercion-recovered (INV-29).
+ *
+ * Best-effort by construction: any read failure returns FALSE, i.e. "not known
+ * to be off". That is the safe direction here — the ONLY consumer is the
+ * reminder ticker, and a false NEGATIVE costs a reminder on a day off (the
+ * pre-fix behaviour), while a false POSITIVE would silence a real reminder for
+ * a rep who IS working.
+ */
+function empIsOffToday_(empId, dateIso) {
+  try {
+    const sheet = getOrCreateTimeOffSheet_();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return false;
+    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID) + 1;
+    const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    const id = String(empId).trim();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
+      if (normalizeDate_(rows[i][TO.DATE]) !== dateIso) continue;
+      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') return true;
+    }
+    return false;
+  } catch (e) {
+    Logger.log('empIsOffToday_ failed: ' + e.message);
+    return false;
+  }
+}
+
 function hasActiveTimeOffOnDate_(sheet, empId, date, excludeRowIndex) {
   const rows = sheet.getDataRange().getValues();
   const id = String(empId).trim();
@@ -13602,7 +13852,7 @@ function drFindOpenRequest_(noteId, deptLabel) {
   const rows = sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues();
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
-    if (String(r[DR.STATUS]) === 'open' &&
+    if (drStatus_(r) === 'open' &&
         String(r[DR.NOTE_ID] || '') === String(noteId) &&
         String(r[DR.TO_DEPT] || '') === String(deptLabel)) {
       return String(r[DR.REQ_ID]);
@@ -13638,7 +13888,7 @@ function markDeptRequestResolved_(token, byEmail) {
     const rows = sh.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][DR.REQ_ID]) !== String(token)) continue;
-      if (String(rows[i][DR.STATUS]) === 'resolved') {
+      if (drStatus_(rows[i]) === 'resolved') {
         return { found: true, already: true, dept: rows[i][DR.TO_DEPT],
                  resolvedAt: formTokenIsoString_(rows[i][DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
                  resolvedBy: String(rows[i][DR.RESOLVED_BY] || '') };
@@ -13827,7 +14077,7 @@ function getDeptRequests() {
       // 'resolved ' (so it was excluded from `incoming` and from `allOpen`) but
       // this test was false, so `deptStats` counted it as OPEN. The INV-167 /
       // INV-183 whitespace class on a third column.
-      const status = String(r[DR.STATUS] || 'open').trim().toLowerCase();
+      const status = drStatus_(r);
       const isResolved = (status === 'resolved');
       const resolvedMs = isResolved ? parseMs(r[DR.RESOLVED_AT]) : null;
       // F8: a row marked resolved whose ResolvedAt is blank or unparseable has
@@ -14018,7 +14268,7 @@ function deptRequestsOverdueOpen_() {
   const overdue = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
+    if (!r[DR.REQ_ID] || drStatus_(r) === 'resolved') continue;
     const cv = r[DR.CREATED_AT];
     const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
     if (!createdMs) continue;
@@ -16570,6 +16820,17 @@ function getTeamMetrics(dateOrFrom, to) {
     if (!toDate || !dateRegex.test(toDate))
       return { error: 'Invalid end date (expected yyyy-MM-dd).' };
     if (from > toDate) return { error: 'Start date must be on or before end date.' };
+    // F3 (cycle 18) — SPAN CAP. Every sibling range endpoint is capped
+    // (getMyMetricsRange 92, getMyCallNotesRange 90, buildTimesheetForEmployee_
+    // 370); this one was the outlier, and on 2026-08-18 it was opened to every
+    // enrolled REP as the whitelist-built aggregate (INV-66). The threat model
+    // changed and the cap did not follow: a rep could ask for a decade, driving
+    // the full cross-rep note walk plus a per-day CDR breakdown, and mint
+    // arbitrarily many distinct org-wide cache keys (`team_metrics_v1:<from>:<to>`)
+    // that evict managers' warm entries LRU. 92 matches getMyMetricsRange —
+    // the same window the multi-day trend below already refuses to exceed.
+    var teamSpanDays = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
+    if (teamSpanDays > 92) return { error: 'Range capped at 92 days.' };
 
     // Endpoint result cache (operator 2026-08-13 "Team Metrics takes a while"):
     // the assembled response for a (from, to) range, org-wide — every manager
@@ -18201,6 +18462,53 @@ function intakeGetSubmission(formType, submissionId) {
       result.imageCount = Number(row[9]) || 0;
     }
     return result;
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-facing READ-ONLY browse of the PMD Offerings catalog (cycle-18 batch 8).
+ *
+ *  WHY: the catalog is the clinical product list the PPD engine recommends
+ *  FROM, and until now the only way to see what a HCPCS code means, what a
+ *  chair's weight capacity is, or which brochure to send was to open the
+ *  Intake SPREADSHEET — which also holds the PPD/PMD/PAP PHI submission tabs.
+ *  So "what does K0861 support?" cost a rep a trip into a PHI store, or a
+ *  message to a manager. This surfaces the same six columns the engine reads,
+ *  and NOTHING else from that spreadsheet.
+ *
+ *  PHI-free by construction: `getIntakeOfferings_` reads only `Offerings!A2:F`
+ *  (product data — the same rationale `intakeCatalogIssues_` records), so no
+ *  submission tab is touched and no patient value can enter the payload.
+ *
+ *  Rep-callable (an enrolled employee, like every other Intake read) and
+ *  strictly read-only. Payload-capped with the pre-slice `total` reported
+ *  (INV-169) so a future catalog past the cap reads as capped, not as
+ *  complete. A row with no HCPCS is dropped — the engine already treats it as
+ *  inert (`hcpcsNum === 0`), so listing it would advertise a product the
+ *  recommendation engine can never return. */
+const INTAKE_OFFERINGS_LIST_CAP_ = 200;
+function intakeListOfferings() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const rows = getIntakeOfferings_();
+    const out = [];
+    (rows || []).forEach(function (r) {
+      const cell = function (n) { return String(r && r[n] == null ? '' : r[n]).trim(); };
+      const hcpcs = cell(1);
+      if (!hcpcs) return;                       // inert to the engine — see above
+      out.push({
+        hcpcs: hcpcs,
+        features: cell(0),
+        weightCapacity: cell(2),
+        seatType: cell(3),
+        pdfLink: cell(4),
+        imageUrl: cell(5),
+      });
+    });
+    out.sort(function (a, b) { return a.hcpcs.localeCompare(b.hcpcs); });
+    const total = out.length;
+    if (out.length > INTAKE_OFFERINGS_LIST_CAP_) out.length = INTAKE_OFFERINGS_LIST_CAP_;
+    return { offerings: out, total: total, cap: INTAKE_OFFERINGS_LIST_CAP_ };
   } catch (err) { return { error: err.message }; }
 }
 

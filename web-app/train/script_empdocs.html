@@ -237,7 +237,7 @@ function edRenderMy_() {
 function edOpenDoc_(docId) {
   ED_STATE.readerDocId = docId;
   ED_STATE.sigPad = null;
-  var overlay = ensureOverlay('ed-reader-overlay', { onClose: edCloseDoc_ });
+  var overlay = ensureOverlay('ed-reader-overlay', { label: 'Employee document', onClose: edCloseDoc_ });
   overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (doc) {
@@ -276,9 +276,9 @@ function edRenderDoc_(doc) {
       var val = responses[f.id] != null ? responses[f.id] : '';
       body += '<div class="ed-field"><label>' + esc(f.label) + (f.required && editable ? ' <span class="ed-req">*</span>' : '') + '</label>';
       if (editable) {
-        if (f.type === 'textarea') body += '<textarea class="ed-resp" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>';
-        else if (f.type === 'date') body += '<input type="date" class="ed-resp" data-fid="' + esc(f.id) + '" value="' + esc(val) + '">';
-        else body += '<input type="text" class="ed-resp" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
+        if (f.type === 'textarea') body += '<textarea class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>';
+        else if (f.type === 'date') body += '<input type="date" class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '" value="' + esc(val) + '">';
+        else body += '<input type="text" class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
       } else {
         body += '<div class="ed-resp-ro">' + (val ? esc(val) : '<em>—</em>') + '</div>';
       }
@@ -443,12 +443,12 @@ function edRenderMgr_() {
   if (dash.error) { el.innerHTML = errorStateHtml_(dash.error); return; }   // A12
   var emps = (ED_STATE.emps && ED_STATE.emps.employees) || [];
 
-  var empSel = '<select id="ed-is-emp"><option value="">Pick an employee…</option>';
+  var empSel = '<select id="ed-is-emp" aria-label="Employee"><option value="">Pick an employee…</option>';
   emps.forEach(function (e) { empSel += '<option value="' + esc(e.id) + '">' + esc(e.name) + '</option>'; });
   empSel += '</select>';
 
   var templates = (ED_STATE.templates && ED_STATE.templates.templates) || [];
-  var tplPick = '<select id="ed-tpl-pick"><option value="">Start from scratch…</option>';
+  var tplPick = '<select id="ed-tpl-pick" aria-label="Start from a template"><option value="">Start from scratch…</option>';
   templates.forEach(function (t) { tplPick += '<option value="' + esc(t.templateId) + '">' + esc(t.name) + '</option>'; });
   tplPick += '</select>';
 
@@ -458,16 +458,16 @@ function edRenderMgr_() {
       '<div style="align-self:flex-end;"><button class="kb-btn" id="ed-tpl-save">' + icon('fileText', 13) + ' Save current as template</button></div></div>' +
     '<div class="row">' +
       '<div><label>Employee</label>' + empSel + '</div>' +
-      '<div><label>Type</label><select id="ed-is-type">' +
+      '<div><label for="ed-is-type">Type</label><select id="ed-is-type">' +
         '<option value="review">Performance review</option>' +
         '<option value="pip">Performance improvement plan</option>' +
         '<option value="policy">Policy acknowledgment</option>' +
         '<option value="other">Other</option></select></div>' +
-      '<div><label>Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
+      '<div><label for="ed-is-due">Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
       '<div><label>Signature</label><label style="font-weight:400;font-size:.84rem;display:flex;align-items:center;gap:6px;margin-top:8px;"><input type="checkbox" id="ed-is-sig" checked> Require signature</label></div>' +
     '</div>' +
-    '<div class="row"><div style="flex:1;min-width:280px;"><label>Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label>Body (markdown — frozen at issue)</label>' +
+    '<div class="row"><div style="flex:1;min-width:280px;"><label for="ed-is-title">Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label for="ed-is-body">Body (markdown — frozen at issue)</label>' +
       '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
       '<div class="hint">Content is hashed and locked when you issue — a correction means voiding and re-issuing. ' +
       '<button class="tr-link" id="ed-is-convert">Convert a Google Doc to markdown</button></div></div></div>' +
@@ -553,8 +553,8 @@ function edRenderIssueFields_() {
   var h = '';
   fields.forEach(function (f, i) {
     h += '<div class="ed-field-row">' +
-      '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '">' +
-      '<select class="ed-field-type" data-ed-fi="' + i + '">' +
+      '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '" aria-label="Field label">' +
+      '<select class="ed-field-type" aria-label="Field type" data-ed-fi="' + i + '">' +
         '<option value="text"' + (f.type === 'text' ? ' selected' : '') + '>Short text</option>' +
         '<option value="textarea"' + (f.type === 'textarea' ? ' selected' : '') + '>Paragraph</option>' +
         '<option value="date"' + (f.type === 'date' ? ' selected' : '') + '>Date</option>' +

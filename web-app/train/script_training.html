@@ -326,7 +326,7 @@ function trainMarkComplete_(itemId, btn) {
 // ── Reader modal (article via global kbMd_; embed via Drive /preview) ─────
 function trainOpenReader_(itemId) {
   TRAIN_STATE.readerItemId = itemId;
-  var overlay = ensureOverlay('train-reader-overlay', { onClose: trainCloseReader_ });
+  var overlay = ensureOverlay('train-reader-overlay', { label: 'Training item', onClose: trainCloseReader_ });
   overlay.innerHTML = '<div class="modal tr-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading…</div></div></div>';
   // Usage loop (INV-117) — fire-and-forget, same as the Reference surfaces.
   try { google.script.run.kbRecordView(itemId, 'training'); } catch (_) {}
@@ -393,7 +393,7 @@ function trainCloseReader_() {
 // shape; submitQuizAttempt returns only per-question right/wrong — §9.4).
 function trainOpenQuiz_(quizId) {
   TRAIN_STATE.quizTaking = quizId;
-  var overlay = ensureOverlay('train-quiz-overlay', { onClose: trainCloseQuiz_ });
+  var overlay = ensureOverlay('train-quiz-overlay', { label: 'Quiz', onClose: trainCloseQuiz_ });
   overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading quiz&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (quiz) {
@@ -585,7 +585,7 @@ function trainRenderMgr_() {
   var byDept = {};
   kbItems.forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
   var quizzes = (TRAIN_STATE.quizzes && TRAIN_STATE.quizzes.quizzes) || [];
-  var sel = '<select id="tr-as-item"><option value="">Pick an item…</option>';
+  var sel = '<select id="tr-as-item" aria-label="Item to assign"><option value="">Pick an item…</option>';
   if (quizzes.length) {
     sel += '<optgroup label="Quizzes">';
     quizzes.forEach(function (q) { sel += '<option value="quiz:' + esc(q.quizId) + '">' + esc(q.title) + '</option>'; });
@@ -633,7 +633,7 @@ function trainRenderMgr_() {
     '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
     '<div><label>Reference item</label>' + sel + '</div>' +
     '<div><label>Employees</label>' + empBox + '</div>' +
-    '<div><label>Due date (optional)</label><input type="date" id="tr-as-due"></div>' +
+    '<div><label for="tr-as-due">Due date (optional)</label><input type="date" id="tr-as-due"></div>' +
     '<div><label>&nbsp;</label><button class="tr-complete-btn" id="tr-as-go">' + icon('plus', 13) + ' Assign</button></div>' +
     '</div></div>';
 
@@ -798,7 +798,7 @@ function trainOpenQuizEditor_(quizId) {
     ? { quizId: quizId, title: existing.title, kbItemId: existing.kbItemId, passPct: existing.passPct,
         questions: existing.questions.map(function (q) { return { q: q.q, options: q.options.slice(), correct: q.correct }; }) }
     : { quizId: '', title: '', kbItemId: '', passPct: 80, questions: [{ q: '', options: ['', ''], correct: 0 }] };
-  var overlay = ensureOverlay('train-qed-overlay', { onClose: trainCloseQuizEditor_ });
+  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_ });
   trainRenderQuizEditor_(overlay);
 }
 
@@ -807,7 +807,7 @@ function trainRenderQuizEditor_(overlay) {
   var st = TRAIN_STATE.qed;
   if (!overlay || !st) return;
   var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
-  var kbSel = '<select id="tr-qed-kb"><option value="">(none)</option>';
+  var kbSel = '<select id="tr-qed-kb" aria-label="Linked reference item"><option value="">(none)</option>';
   kbItems.forEach(function (it) {
     kbSel += '<option value="' + esc(it.id) + '"' + (it.id === st.kbItemId ? ' selected' : '') + '>' + esc(it.title) + '</option>';
   });
@@ -821,17 +821,17 @@ function trainRenderQuizEditor_(overlay) {
       (st.quizId ? '' : '<button class="kb-btn" id="tr-qed-import" title="Pull questions + correct answers from a Google Forms quiz">' + icon('download', 12) + ' Import from Google Forms</button>') +
     '</div>' +
     warnHtml +
-    '<div class="field"><label>Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
-    '<div class="field"><label>Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
+    '<div class="field"><label for="tr-qed-title">Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
+    '<div class="field"><label for="tr-qed-pass">Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
     '<div class="field"><label>Linked Reference item (optional — shown as "review the material")</label>' + kbSel + '</div>';
   st.questions.forEach(function (q, qi) {
     h += '<div class="tr-qed-q"><div class="qhead"><span class="qn">Question ' + (qi + 1) + '</span>' +
       (st.questions.length > 1 ? '<button class="tr-revoke-btn" data-qed-delq="' + qi + '">Remove</button>' : '') + '</div>' +
-      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text">' + esc(q.q) + '</textarea></div>';
+      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text" aria-label="Question text">' + esc(q.q) + '</textarea></div>';
     q.options.forEach(function (opt, oi) {
       h += '<div class="opt-row">' +
         '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +
-        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
+        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" aria-label="Answer option ' + (oi + 1) + '" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
         (q.options.length > 2 ? '<button class="tr-revoke-btn" data-qed-delopt="' + qi + ':' + oi + '">×</button>' : '') +
         '</div>';
     });

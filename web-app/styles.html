@@ -1736,6 +1736,12 @@
     padding: 0; margin-left: auto;
     transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
   }
+  /* Batch 8: the live-status card's actions sit on their own row so the two
+     26px buttons stop eating the name column (MEASURED: 33px for a 75px
+     name at 1440). margin-left:auto on .de-open-btn would right-push only
+     the FIRST button, so the row owns the alignment instead. */
+  .emp-card-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  .emp-card-actions .de-open-btn { margin-left: 0; }
   .de-open-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .de-open-btn svg { width: 13px; height: 13px; }
 
@@ -2512,4 +2518,80 @@
     content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
   }
   @keyframes viewRefreshPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
+
+  /* ─── PRINT (cycle-18 batch 8) ────────────────────────────────────────
+     The app had NO @media print rules at all, so Ctrl+P produced the whole
+     shell — sidebar, tab bar, mobile nav, toasts — around content that was
+     usually CLIPPED: every modal is `max-height: 86-90vh; overflow-y: auto`,
+     which prints exactly one screenful and silently drops the rest. That is
+     the concrete defect here, and it lands on the surface most likely to be
+     printed: the pay statement.
+
+     THREE rules, in order of how load-bearing they are.
+
+     (1) TOKENS ARE FORCED, WITH !important. Browsers default to
+         `print-color-adjust: economy` and drop background fills, so a
+         dark-mode page prints a WHITE sheet with `--ink` set to near-white
+         text — invisible ink, not merely ugly. The override cannot rely on
+         source order: the palette blocks are
+         `:root[data-palette="x"][data-mode="dark"]` at (0,3,0) and would beat
+         a plain `:root` here (the V-2/V-3 specificity trap), so the
+         declarations carry !important rather than trying to out-specify a set
+         that grows every time a palette is added. Only the NEUTRALS are
+         forced — the semantic colours keep their meaning on paper, which is
+         the palette contract.
+     (2) WHEN AN OVERLAY IS OPEN, ONLY THE OVERLAY PRINTS. `:has()` is already
+         the idiom here (`.view-area:has(#dash-grid)`), and printing the modal
+         over a full page of app behind it is worse than useless.
+     (3) THE MODAL IS UN-CLIPPED. max-height/overflow are reset so a long
+         statement paginates instead of stopping at the fold.
+
+     `.no-print` is the escape hatch for controls INSIDE printed content
+     (the statement's period nav, its own Print button, per-day Request-edit
+     buttons). Chrome is hidden by name rather than by hiding every <button>:
+     several surfaces use buttons to carry DATA (the transfer-count
+     disclosure, KB roster person chips), and blanket-hiding them would
+     delete content from the printout. */
+  @media print {
+    :root {
+      --paper: #fff !important; --paper-2: #fff !important; --paper-card: #fff !important;
+      --ink: #111 !important;
+      --muted: #444 !important; --muted-2: #555 !important; --muted-3: #888 !important;
+      --line: #c8c8c8 !important; --line-2: #b0b0b0 !important;
+      --shadow-sm: none !important; --shadow-md: none !important; --shadow-lg: none !important;
+    }
+    @page { margin: 12mm; }
+    html, body { background: #fff !important; }
+
+    /* Chrome that can never be actionable on paper. */
+    .sidebar, .mobile-header, .mobile-nav, .tool-tab-bar, .toast-stack,
+    .settings-panel, .sidebar-grip, .skip-link, #kb-drawer, #kb-drawer-tab,
+    .view-refreshing, .no-print { display: none !important; }
+
+    /* The shell grid collapses to a single flow column. */
+    .app-shell { display: block !important; }
+    .view-area { padding: 0 !important; max-width: none !important; overflow: visible !important; }
+
+    /* (2) — an open overlay is the print subject; the page behind it is not. */
+    body:has(.overlay.open) .app-shell,
+    body:has(.overlay.open) .instance-banner,
+    body:has(.overlay.open) .viewas-banner { display: none !important; }
+    .overlay { display: none !important; }
+    .overlay.open {
+      display: block !important; position: static !important;
+      background: none !important; backdrop-filter: none !important;
+      padding: 0 !important; animation: none !important;
+    }
+    /* (3) — un-clip, so a long statement paginates instead of truncating. */
+    .overlay.open .modal {
+      max-height: none !important; overflow: visible !important;
+      width: auto !important; max-width: none !important;
+      border: none !important; box-shadow: none !important;
+      padding: 0 !important; animation: none !important;
+    }
+
+    /* Keep rows and cards whole across a page break where we can. */
+    .card, tr, .emp-card, .pay-stmt-row { break-inside: avoid; page-break-inside: avoid; }
+    a[href] { text-decoration: none; color: inherit; }
+  }
 </style>

@@ -88,6 +88,9 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       isManager: true, isAdmin: true, canSeeSpanish: true, departments: ['Billing'],
       timezone: 'Asia/Kolkata', timezoneAbbr: 'IST',
       schedule: { startMin: 480, lengthMin: 540, breaks: [{ label: 'B1', startMin: 630, lenMin: 15 }, { label: 'Lunch', startMin: 750, lenMin: 30 }, { label: 'B2', startMin: 900, lenMin: 15 }], breakReminderMin: 5 },
+      // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
+      // field (INV-185); false = a normal working day, the scenario's intent.
+      offToday: false,
       ptoEnabled: true, annualLeaveBalance: 11.5, sickLeaveBalance: 10, annualLeaveMax: 15,
       flags: { showTeammateStatus: true, showTeammateType: true, enablePtoTracking: true },
       instanceLabel: '',
@@ -119,8 +122,34 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     // Operator #4/#5 (2026-08-06): alertThreshold mirrors the server's
     // CONFIG.CDR_ALERT_THRESHOLD ship; `transfer` is the own-day scalar
     // ({transferred, transferPct}, null = absent — INV-180 zero-vs-absence).
-    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
-      transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 },
+    // F14 (cycle 18) — a FUNCTION, because this endpoint's response ECHOES the
+    // date it was asked for and the client's hero kicker branches on it
+    // ("Today" vs "Yesterday" vs the bare date). A static `date: todayIso`
+    // ignored the argument, so the default shot rendered "TODAY · % ANSWERED"
+    // beneath a pressed "YESTERDAY" chip — a combination the server cannot
+    // produce (the client's label logic is correct; the FIXTURE was lying).
+    // Fifth instance of the INV-185 drift class, so: a fixture whose response
+    // shape depends on its arguments must BE a function of them.
+    getMyMetrics: function (date) {
+      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
+        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
+    },
+    // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
+    // named string fields (the server String()+trim()s every cell), the
+    // pre-slice `total` + `cap` (INV-169), and rows sorted by HCPCS as the
+    // server sorts them. One row DELIBERATELY has a blank weightCapacity —
+    // that is the F9 fail-closed state the card must render as "capacity not
+    // recorded" rather than as a value, and it is unshootable without it.
+    intakeListOfferings: {
+      offerings: [
+        { hcpcs: 'K0821', features: 'Standard power wheelchair, captain seat, 18" width', weightCapacity: '300', seatType: 'Captain', pdfLink: 'https://example.com/k0821.pdf', imageUrl: '' },
+        { hcpcs: 'K0823', features: 'Group 2 standard, captain seat, sealed batteries', weightCapacity: '300-450', seatType: 'Captain', pdfLink: 'https://example.com/k0823.pdf', imageUrl: '' },
+        { hcpcs: 'K0856', features: 'Group 3 single power option, solid seat pan', weightCapacity: '300', seatType: 'Solid', pdfLink: 'https://example.com/k0856.pdf', imageUrl: '' },
+        { hcpcs: 'K0861', features: 'Group 3 multiple power option, solid seat, tilt-capable', weightCapacity: '300-600', seatType: 'Solid', pdfLink: 'https://example.com/k0861.pdf', imageUrl: '' },
+        { hcpcs: 'K0864', features: 'Group 3 heavy duty, multiple power options', weightCapacity: '', seatType: 'Solid', pdfLink: '', imageUrl: '' },
+      ],
+      total: 5, cap: 200,
+    },
     // V-14: the range endpoint returns its OWN cdr totals for the span, so the
     // fixture needs weekly-scale numbers — reusing the single-day `kpis` made
     // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the
@@ -313,10 +342,41 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
       return { startDate: startDate, endDate: endDate, days: days, totalHours: total, daysWorked: worked,
         incompleteCount: incomplete, payCycle: 'Monthly', payAnchor: '', timezone: 'America/Chicago' };
     },
+    // Pay statement (cycle-18 batch 8 — the manager branch finally has a UI, and
+    // the statement had never had a fixture at all, so it was unmeasurable).
+    // A FUNCTION of BOTH arguments per the F14 rule (INV-185): the period
+    // shifts with `offset` and `viewingOther` appears only when a repEmpId is
+    // passed — a static object would render "current" under a pressed "2 back"
+    // and would make the manager view unshootable. Shape mirrors
+    // getMyPayStatement's return exactly; days come from the getTimesheetData
+    // fixture so there is ONE day-row generator, not two that can disagree.
+    getMyPayStatement: function (offset, repEmpId) {
+      var off = Math.max(0, Math.min(6, parseInt(offset, 10) || 0));
+      var now = new Date(todayIso + 'T00:00:00Z');
+      var first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - off, 1));
+      var last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+      var iso = function (d) { return d.toISOString().slice(0, 10); };
+      var ts = FIXTURES.getTimesheetData(iso(first), iso(last));
+      var rate = 18.5;
+      var rid = String(repEmpId || '').trim();
+      return {
+        period: { start: ts.startDate, end: ts.endDate, cycle: 'Monthly', offset: off },
+        days: ts.days, totalHours: ts.totalHours, daysWorked: ts.daysWorked,
+        incompleteCount: ts.incompleteCount, timezone: ts.timezone,
+        pto: [{ date: iso(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 12))), type: 'Full Day', days: 1 }],
+        rate: rate, estGross: Math.round(ts.totalHours * rate * 100) / 100,
+        archiveNote: false, maxOffset: 6,
+        viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,
+      };
+    },
     getManagerDashboard: (function () {
       function spark(n, base) { var a = []; for (var i = n; i >= 1; i--) a.push({ date: daysAgo(i), count: (i * base) % 4 }); return a; }
       function rh() { var a = []; for (var i = 7; i >= 1; i--) a.push({ date: daysAgo(i), hours: [8.5, 9, 0, 8.75, 9, 8.5, 4][i - 1] }); return a; }
-      function ls(name, status, t, tz, abbr) { return { empId: 'E-' + name.length + '0' + t, name: name, status: status,
+      // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
+      // return block) — the drift made every Day-Edit button in every manager
+      // screenshot render data-emp-id="undefined", and surfaced only when the
+      // batch-8 pay-statement button was clicked in a real browser. INV-185.
+      function ls(name, status, t, tz, abbr) { return { id: 'E-' + name.length + '0' + t, name: name, status: status,
         lastPunchType: t, lastPunchTime: '08:0' + (name.length % 6) + ':00', lastPunchTimeMgr: '21:3' + (name.length % 6) + ':00',
         timezone: tz, tzAbbr: abbr, empTzAbbr: abbr, mgrTzAbbr: 'CST', recentHours: rh(), recentTotal: 47.75, recentDays: 6 }; }
       return {
@@ -520,7 +580,11 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
         { action: 'CallNotesPurge', last: null },
         { action: 'CallNotesArchive', last: null },
         { action: 'CallNotesArchivePurge', last: null },
-        { action: 'TimesheetArchive', last: null }],
+        { action: 'TimesheetArchive', last: null },
+        { action: 'PtoAccrualCredit', last: { timestampMgr: daysAgo(0) + ' 06:00:03', ms: Date.now() - 7200000, notes: 'credited=2' } }],
+      // F4: stamped last-errors for jobs that catch their own failure. Empty on
+      // a healthy deployment — the shape, not a fault, is what the panel reads.
+      automationErrors: {},
       digests: [
         { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
         { key: 'urgent', last: daysAgo(0) + ' 08:00:11', stale: false },

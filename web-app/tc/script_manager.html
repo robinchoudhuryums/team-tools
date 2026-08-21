@@ -436,14 +436,22 @@ function renderManagerView(area, data) {
         }
         // V4·E3 — 7-day daily-hours sparkline under the status line.
         const sparkSection = renderEmpSparkline_(e.recentHours);
+        // Batch 8: the actions moved OFF the name row. MEASURED at 1440 —
+        // the card is 181px, and two 26px buttons plus their gaps left the
+        // name 33px for a 75px name ("Av…"). One button had already cost it
+        // 69px; a second made it unreadable. Their own row costs ~30px of
+        // card height and gives the name the full width back.
         return `<div class="emp-card">
           <div class="emp-card-top">
             <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
-            <div class="emp-name">${esc(e.name)}</div>
-            <button class="de-open-btn" title="Edit day" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
+            <div class="emp-name" title="${esc(e.name)}">${esc(e.name)}</div>
           </div>
           <div class="emp-status-line">${line}</div>
           ${sparkSection}
+          <div class="emp-card-actions">
+            <button class="de-open-btn" title="Edit day" aria-label="Edit day for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
+            <button class="de-open-btn ps-open-btn" title="Pay statement" aria-label="Pay statement for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('fileText', 13)}</button>
+          </div>
         </div>`;
       }).join('') + '</div>';
 
@@ -779,10 +787,27 @@ function renderManagerView(area, data) {
     });
   });
 
-  // Edit Day buttons on employee cards
-  document.querySelectorAll('.de-open-btn').forEach(function (btn) {
+  // Edit Day buttons on employee cards. `.ps-open-btn` shares the class for
+  // its LOOK only, so the Day-Edit binding must exclude it — a class-keyed
+  // writer that treats appearance as identity is INV-191, and here it would
+  // have opened Day Edit from the pay-statement button.
+  document.querySelectorAll('.de-open-btn:not(.ps-open-btn)').forEach(function (btn) {
     btn.addEventListener('click', function () {
       openDayEditModal(btn.dataset.empId, btn.dataset.empName);
+    });
+  });
+
+  // Manager pay-statement view (cycle-18 batch 8). The server branch
+  // (getMyPayStatement's repEmpId arg) is manager-gated; this is the UI that
+  // had never been built. Cross-partial, so typeof-guarded like every other
+  // shell hook — the statement lives in tc/script_timeoff.html.
+  document.querySelectorAll('.ps-open-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (typeof openPayStatement_ !== 'function') {
+        if (typeof showToast === 'function') showToast('Pay statement is unavailable', 'toast-error');
+        return;
+      }
+      openPayStatement_(0, btn.dataset.empId, btn.dataset.empName);
     });
   });
 }
@@ -1250,8 +1275,8 @@ function enterCoverageView(area) {
       ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
       : '<div class="view-title-row"><div><h1 class="view-title">Coverage</h1><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
-      '<div class="field"><label>From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
-      '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
+      '<div class="field"><label for="cov-from">From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
+      '<div class="field"><label for="cov-to">To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
       '<button class="refresh-btn" id="cov-load">Load</button>' +
     '</div>' +
     '<div id="cov-body">' + loSweep() + '</div>';
@@ -1468,8 +1493,8 @@ function enterPunctualityView(area) {
       ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
       : '<div class="view-title-row"><div><h1 class="view-title">Punctuality</h1><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
-      '<div class="field"><label>From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
-      '<div class="field"><label>To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
+      '<div class="field"><label for="punct-from">From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
+      '<div class="field"><label for="punct-to">To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
       '<button class="refresh-btn" id="punct-load">Load</button>' +
       '<div class="punct-presets">' +
         '<button type="button" class="punct-preset" data-punct-days="7">7D</button>' +

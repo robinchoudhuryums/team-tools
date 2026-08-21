@@ -162,12 +162,26 @@ function renderTimeOffView(area, data) {
       const basis = data.ptoAccrualBasisHours || 80;
       const rateStr = String(+accrual.toFixed(2));
       const mtd = data.ptoAccrualMtd || null;
+      // F7 (cycle 18) — TWO fixes to this footer, both measured rather than
+      // reasoned. (1) The strings were ~35% longer than the fixed-allotment
+      // variant's, and the rail is 240px at DESKTOP width (it is full-width at
+      // compact/mobile), so both spans wrapped to two lines there — measured
+      // 22px vs 11px. The labels are now terse ("+0.46d this month" /
+      // "96h worked"); the tile title already explains the rule in full.
+      // (2) The MTD line REPLACED the planned/projected line, so an accruing
+      // rep lost the one number they want before requesting time off — and
+      // browsing to a past month brought it back, so one slot meant two
+      // different things. Both now render: earning on top, plans beneath.
+      // Projections stay out (an hours-driven balance has no knowable future
+      // work pattern — INV-187), but PENDING days are arithmetic on rows that
+      // already exist and need no forecast.
+      const plannedFtr = `<div class="ftr"><span>${formatLeaveDays(plannedDays)}d planned</span><span>${esc(ftrRight)}</span></div>`;
       const mtdHtml = mtd
         // 2dp, NOT formatLeaveDays: a month's increment is a small number, and
         // 1dp turns 0.46 into "0.5" — a 9% overstatement of the one figure this
         // tile exists to state honestly. The balance above can afford 1dp.
-        ? `<div class="ftr"><span>+${esc(String(mtd.days))}d earned this month</span><span>${esc(String(mtd.hours))}h worked so far</span></div>`
-        : `<div class="ftr"><span>${formatLeaveDays(plannedDays)}d planned</span><span>${esc(ftrRight)}</span></div>`;
+        ? `<div class="ftr"><span>+${esc(String(mtd.days))}d this month</span><span>${esc(String(mtd.hours))}h worked</span></div>` + plannedFtr
+        : plannedFtr;
       balanceCardHtml = `
       <div class="pto-tile" title="Your balance grows as you work — ${rateStr} PTO hours for every ${basis} hours worked, credited on the 1st for the month just finished.">
         <div class="head">
@@ -623,7 +637,7 @@ function renderTimesheetSideRail_(d) {
         <span>${incompleteHtml}</span>
       </div>
     </div>
-    <button type="button" onclick="openPayStatement_(0)"
+    <button type="button" onclick="openPayStatement_(0, '', '')"
       style="width:100%;margin-top:10px;padding:9px 12px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);color:var(--info-deep);cursor:pointer;text-align:center">
       View pay statement &rarr;</button>
     <div class="card" style="margin-top:14px">
@@ -640,16 +654,33 @@ function renderTimesheetSideRail_(d) {
 // gross, labeled as an estimate (worked hours × rate; no PTO pay / OT /
 // payroll adjustments). The server (getMyPayStatement) is caller-scoped; the
 // optional repEmpId branch is manager-gated for the manager/admin view.
-var PAY_STMT = { offset: 0 };
+var PAY_STMT = { offset: 0, repId: '', repName: '' };
 
-function openPayStatement_(offset) {
+/** Open the statement. `repEmpId` is the MANAGER view (cycle-18 batch 8): the
+ *  server branch has been manager-gated + omnibus-pinned since 2026-08-17 and
+ *  simply had no caller. Both arguments are set on EVERY open — a manager who
+ *  views a rep's statement and then opens their own from the rail must not
+ *  inherit the rep id, which a "only assign when present" shape would do. */
+function openPayStatement_(offset, repEmpId, repName) {
   PAY_STMT.offset = Math.max(0, Math.min(6, parseInt(offset, 10) || 0));
-  const ov = ensureOverlay('pay-stmt-overlay', { onClose: function () {
+  PAY_STMT.repId = String(repEmpId || '').trim();
+  PAY_STMT.repName = String(repName || '').trim();
+  const label = PAY_STMT.repId
+    ? 'Pay statement for ' + (PAY_STMT.repName || PAY_STMT.repId)
+    : 'Pay statement';
+  const ov = ensureOverlay('pay-stmt-overlay', { label: label, onClose: function () {
     const el = document.getElementById('pay-stmt-overlay');
     if (el) el.classList.remove('open');   // idempotent — no module state to tear down
   }});
+  // The Print button is `no-print` so it cannot appear on the printed page.
+  // The print stylesheet prints whichever overlay is OPEN, so no per-modal
+  // marker class is needed (a marker with no rule is INV-184).
   ov.innerHTML = '<div class="modal" style="max-width:660px;width:min(94vw,660px);max-height:86vh;overflow-y:auto">' +
-    '<h3 style="margin:0 0 8px">Pay statement</h3>' +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin:0 0 8px">' +
+      '<h3 style="margin:0;flex:1">' + esc(label) + '</h3>' +
+      '<button type="button" class="no-print" onclick="window.print()"' +
+        ' style="font:inherit;font-size:12px;color:var(--info-deep);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer">Print</button>' +
+    '</div>' +
     '<div id="pay-stmt-body">' + loSweep() + '</div></div>';
   payStmtLoad_();
 }
@@ -687,7 +718,7 @@ function payStmtLoad_() {
       const slot = document.getElementById('pay-stmt-body');
       if (slot) slot.innerHTML = errorStateHtml_('Failed to load the statement: ' + ((e && e.message) || e));   // A12
     })
-    .getMyPayStatement(PAY_STMT.offset);
+    .getMyPayStatement(PAY_STMT.offset, PAY_STMT.repId || '');
 }
 
 // Click-through from an incomplete/empty statement day into the punch-edit
@@ -715,12 +746,12 @@ function payStmtHtml_(d) {
   (d.pto || []).forEach(p => { ptoByDate[p.date] = p; });
   const nav =
     `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <button type="button" class="month-nav-btn" onclick="payStmtNav_(1)" ${off >= maxOff ? 'disabled' : ''} aria-label="Older period">${icon('chevronLeft', 14)}</button>
+      <button type="button" class="month-nav-btn no-print" onclick="payStmtNav_(1)" ${off >= maxOff ? 'disabled' : ''} aria-label="Older period">${icon('chevronLeft', 14)}</button>
       <div style="flex:1;text-align:center;font-size:13px">
         <b>${esc(d.period.start)} &rarr; ${esc(d.period.end)}</b>
         <span style="color:var(--muted)"> · ${esc(d.period.cycle)}${off ? ' · ' + off + ' back' : ' · current'}</span>
       </div>
-      <button type="button" class="month-nav-btn" onclick="payStmtNav_(-1)" ${off <= 0 ? 'disabled' : ''} aria-label="Newer period">${icon('chevronRight', 14)}</button>
+      <button type="button" class="month-nav-btn no-print" onclick="payStmtNav_(-1)" ${off <= 0 ? 'disabled' : ''} aria-label="Newer period">${icon('chevronRight', 14)}</button>
     </div>` +
     (d.viewingOther ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Viewing: <b>${esc(d.viewingOther.name)}</b> (${esc(d.viewingOther.id)})</div>` : '');
 
@@ -756,10 +787,10 @@ function payStmtHtml_(d) {
     const needsFix = !x.inProgress && (x.isIncomplete || (!x.hasData && !x.isWeekend && !pto));
     const inWindow = x.date <= stmtToday && daysBetweenIso(x.date, stmtToday) <= adjWin;
     const fixBtn = (needsFix && inWindow && !d.viewingOther)
-      ? `<button type="button" class="pay-stmt-fix" data-adj-date="${esc(x.date)}"
+      ? `<button type="button" class="pay-stmt-fix no-print" data-adj-date="${esc(x.date)}"
            style="margin-left:8px;font:inherit;font-size:11px;color:var(--info-deep);background:none;border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer">Request edit</button>`
       : '';
-    rows += `<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">
+    rows += `<div class="pay-stmt-row" style="display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">
       <span style="flex:0 0 84px;color:var(--muted)">${esc(x.dayLabel)}</span>
       <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
       <span style="flex:0 0 auto">${right}${fixBtn}</span>

@@ -190,6 +190,24 @@
   .intk-sent-row:first-child { border-top: none; }
   .intk-sent-meta { font-size: .76rem; color: var(--muted); margin-top: 2px; }
 
+  /* Catalog browse tab (cycle-18 batch 8). The grid is INTRINSIC
+     (auto-fill/minmax), so it reflows at every width on its own and owes no
+     viewport breakpoint — the A2_INTRINSIC carve-out. */
+  .intk-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+  .intk-cat-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-card); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .intk-cat-card .cat-img { width: 100%; height: 110px; object-fit: contain; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .intk-cat-card .cat-noimg { width: 100%; height: 110px; display: flex; align-items: center; justify-content: center; font-size: .72rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+  .intk-cat-card .cat-code { font-weight: 700; font-size: 1rem; }
+  /* The recommendation cards' brochure-link treatment is scoped to .intk-rec,
+     so without this the catalog's HCPCS link fell back to the UA default
+     (blue + underline) — the app has ONE link vocabulary. */
+  .intk-cat-card .code-link { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .intk-cat-card .code-link:hover { text-decoration: underline; }
+  .intk-cat-card .cat-feat { font-size: .82rem; color: var(--ink); }
+  .intk-cat-spec { display: flex; flex-wrap: wrap; gap: 6px; }
+  .intk-cat-spec span { font-size: .7rem; font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--muted-2); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 1px 8px; }
+  .intk-cat-count { font-size: .78rem; color: var(--muted); margin-bottom: 10px; }
+
   /* preview modal */
   .intk-modal { width: min(860px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
   .intk-modal .body { overflow: auto; padding: 4px 2px; }
@@ -290,10 +308,12 @@ var INTAKE_STATE = {
   preview: null, // { formType, bodyHash, subject, recommendations, payload }
   sent: [],      // cached intakeListMySubmissions rows for the Sent tab
   sentFilter: { type: 'ALL', q: '' },
+  catalog: null, // cached intakeListOfferings rows for the Catalog tab
+  catalogFilter: { q: '', seat: 'ALL' },
 };
 
 // Tool sub-tab → icon (mirrors the TOOLS registry; used for compact headers).
-var INTAKE_TAB_ICON = { ppd: 'clipboardList', pmd: 'accessibility', pap: 'airflow', sent: 'outbox' };
+var INTAKE_TAB_ICON = { ppd: 'clipboardList', pmd: 'accessibility', pap: 'airflow', sent: 'outbox', catalog: 'list' };
 
 // ── Question banks (verbatim from the bound form-generator; that reference
 //    copy was deleted in cycle 13 and lives in git history) ─────────────────
@@ -579,10 +599,23 @@ var INTAKE_PAP_CLIENT = {
 };
 
 // ── App-bar header (shared shell vocabulary; replaces the bespoke navy bar) ──
+/** F(L-19), hoisted in cycle-18 batch 8 — the ONE http(s) scheme whitelist for
+ *  the operator-owned Offerings URL columns (E pdfLink / F imageUrl). esc()
+ *  prevents attribute breakout but a `javascript:` URL typed into that sheet
+ *  would still become a live href / <img> src, so the scheme is checked
+ *  BEFORE the value reaches an attribute — the kbMd_ link discipline. It lives
+ *  at module scope because the recommendation cards and the Catalog browse tab
+ *  both need it, and a duplicated security predicate is exactly the
+ *  parallel-source class this codebase bans. Returns '' (falsy) for anything
+ *  that is not http(s), so every caller's `url ? … : fallback` still holds. */
+function intakeHttpOnly_(u) {
+  return /^https?:\/\//i.test(String(u || '').trim()) ? esc(u) : '';
+}
+
 function intakeAppBar_(form, name) {
   var compactIcon = INTAKE_TAB_ICON[form] || 'clipboardList';
   if (COMPACT_MODE) return '';   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
-  var right = (form === 'sent') ? '' : intakeLangToggleHtml_(form);
+  var right = (form === 'sent' || form === 'catalog') ? '' : intakeLangToggleHtml_(form);
   return '<div class="app-bar"><div class="app-bar-left">' +
       '<div class="breadcrumb"><span>Intake</span><span class="crumb-sep">›</span><span class="crumb-current">' + esc(name) + '</span></div>' +
       '<h1 class="display-title">' + esc(name) + '</h1>' +
@@ -738,8 +771,10 @@ function intakePpdRowHtml_(qNum, text, isSecondary) {
   } else if (type === 'sev') {
     control = intakeSevControlHtml_('data-qnum="' + esc(qNum) + '"', text); hasInputId = false;
   } else if (type === 'num') {
+    hasInputId = true;   // the input below carries id="intk-ppd-q<n>" — wire the label to it
     control = '<input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   } else {
+    hasInputId = true;   // as above — a real input id, so the label can target it
     control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   }
   var labelFor = hasInputId ? ' for="intk-ppd-q' + esc(qNum) + '"' : '';
@@ -896,7 +931,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'ynnum':     return intakeYnNumControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
-    default:          return '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(text) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
 }
 
@@ -989,7 +1024,7 @@ function intakeRevealControlHtml_(ctrl, qNum, ariaLabel) {
   }).join('');
   return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '">' +
     '<div class="intk-reveal-opts">' + btns + '</div>' +
-    '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
+    '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" aria-label="' + esc(ariaLabel || 'Details') + '" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
 }
 function intakeRevealPick_(btn) {
   var grp = btn.closest('.intk-reveal'); if (!grp) return;
@@ -1149,7 +1184,7 @@ function intakeConditionControlHtml_(ctrl, qNum, ariaLabel) {
     return '<button type="button" class="intk-cond-opt" data-set="' + esc(v) + '" role="checkbox" aria-checked="false" onclick="intakeCondToggle_(this)">' + esc(v) + '</button>';
   }).join('');
   return '<div class="intk-condition" data-qnum="' + esc(qNum) + '" data-val="" role="group" aria-label="' + esc(ariaLabel) + '">' +
-      '<input type="text" class="intk-cond-filter" autocomplete="off" placeholder="Search or type a condition…" oninput="intakeCondFilter_(this)" onkeydown="intakeCondFilterKey_(event, this)">' +
+      '<input type="text" class="intk-cond-filter" autocomplete="off" placeholder="Search or type a condition…" oninput="intakeCondFilter_(this)" onkeydown="intakeCondFilterKey_(event, this)" aria-label="Search conditions">' +
       '<div class="intk-cond-list">' + opts + '<button type="button" class="intk-cond-add" style="display:none" onclick="intakeCondAddCustom_(this)"></button></div>' +
       '<div class="intk-cond-selected"></div>' +
     '</div>';
@@ -1463,11 +1498,7 @@ function intakeBuildPpdModal_(html, recs) {
   var panel = items.length
     ? items.map(function (p) {
         var id = String(p.hcpcs).replace(/\s+/g, '-');
-        // F(L-19): http(s)-only — esc() prevents attribute breakout but a
-        // javascript: URL in the operator-owned Offerings sheet (cols E/F)
-        // would still become a live href/window.open target. Same scheme
-        // whitelist discipline as kbMd_.
-        var httpOnly = function (u) { return /^https?:\/\//i.test(String(u || '').trim()) ? esc(u) : ''; };
+        var httpOnly = intakeHttpOnly_;
         var imgUrl = httpOnly(p.imageUrl);
         var pdfUrl = httpOnly(p.pdfLink);
         // Image opens full-size in a new tab (agent can right-click/copy/save to
@@ -1492,7 +1523,7 @@ function intakeBuildPpdModal_(html, recs) {
           '<div class="meta">' + codeHtml +
             '<div class="just">' + esc(intakeStripTags_(p.justification)) + '</div>' + actions +
           '</div>' +
-          '<select class="status-sel" data-status="' + esc(id) + '" onchange="intakeRecStatusChange_(this)" title="Marked on the email sent to the agent">' +
+          '<select class="status-sel" aria-label="Recommendation status for ' + esc(p.hcpcs) + '" data-status="' + esc(id) + '" onchange="intakeRecStatusChange_(this)" title="Marked on the email sent to the agent">' +
             '<option value="none">— No selection —</option>' +
             '<option value="accepted">Accepted</option>' +
             '<option value="undecided">Undecided/Maybe</option>' +
@@ -1517,7 +1548,7 @@ function intakeBuildPpdModal_(html, recs) {
       panel + '</div>' +
     '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:.82rem;color:var(--muted);">Preview the email body</summary><div class="intk-prev" style="margin-top:8px;">' + html + '</div></details>' +
     '<div class="intk-foot">' +
-      '<label><strong>Send to:</strong></label>' +
+      '<label for="intk-ppd-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
       '<input type="email" id="intk-ppd-custom" placeholder="recipient@&hellip;" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
@@ -1822,10 +1853,10 @@ function intakeBuildAcctModal_(form, html) {
   var body =
     '<div class="intk-prev">' + html + '</div>' +
     '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Drag, click, or paste — up to 12 images</div>' +
-    '<input type="file" id="intk-file" accept="image/*" multiple style="display:none">' +
+    '<input type="file" id="intk-file" aria-label="Choose images to attach" accept="image/*" multiple style="display:none">' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
     '<div class="intk-foot">' +
-      '<label><strong>Send to:</strong></label>' +
+      '<label for="intk-acct-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
       '<input type="email" id="intk-acct-custom" placeholder="recipient@…" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
@@ -2067,7 +2098,7 @@ function enterIntakeSentView(area) {
             return '<button class="toolbar-tab" aria-pressed="' + (INTAKE_STATE.sentFilter.type === t) + '" onclick="intakeSetSentFilter_(\'' + t + '\')">' + t + '</button>';
           }).join('') +
         '</div>' +
-        '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)">' +
+        '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)" aria-label="Search sent submissions">' +
       '</div>' +
       '<div id="intk-sent-list">' + loSweep() + '</div>' +
     '</div>';
@@ -2111,6 +2142,150 @@ function enterIntakeSentView(area) {
       if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load submissions');   // A12/INV-175
     })
     .intakeListMySubmissions();
+}
+
+// ── CATALOG view (cycle-18 batch 8) ───────────────────────────────────────
+// A read-only browse of the SAME Offerings catalog the PPD engine recommends
+// from. Before this the only way to look up what a HCPCS code covers, what a
+// chair's weight capacity is, or which brochure to send was to open the Intake
+// SPREADSHEET — which also holds the PHI submission tabs. The endpoint reads
+// Offerings!A2:F only (product data), so nothing patient-related can ride it.
+function enterIntakeCatalogView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    intakeAppBar_('catalog', 'Catalog') +
+    '<div class="intk-wrap">' +
+      '<div class="intk-filter">' +
+        '<div class="toolbar-tabs" role="group" aria-label="Filter by seat type">' +
+          [['ALL', 'All'], ['S', 'Solid seat'], ['C', 'Captain']].map(function (t) {
+            return '<button type="button" class="toolbar-tab" aria-pressed="' + (INTAKE_STATE.catalogFilter.seat === t[0]) +
+              '" onclick="intakeSetCatalogSeat_(\'' + t[0] + '\')">' + esc(t[1]) + '</button>';
+          }).join('') +
+        '</div>' +
+        // A14: named, because a placeholder is not an accessible name.
+        '<input type="search" class="intk-search" id="intk-cat-search" aria-label="Search the catalog by HCPCS code or features"' +
+          ' placeholder="Search HCPCS or features…" value="' + esc(INTAKE_STATE.catalogFilter.q) + '" oninput="intakeCatalogSearch_(this.value)">' +
+      '</div>' +
+      '<div id="intk-cat-list">' + loSweep() + '</div>' +
+    '</div>';
+
+  // Paint from cache instantly when we have one; the catalog is operator data
+  // that changes rarely, so a stale paint behind a refresh is always right.
+  var painted = false;
+  if (INTAKE_STATE.catalog) { intakeRenderCatalogHost_(); painted = true; }
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      var host = document.getElementById('intk-cat-list');
+      if (!host) return;
+      if (!res || res.error) {
+        // A12/INV-175 — a failed read must never render as an empty catalog.
+        if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh the catalog — showing last loaded', 'toast-warn'); return; }
+        host.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load the catalog');
+        return;
+      }
+      INTAKE_STATE.catalog = res.offerings || [];
+      // INV-169 — keep the PRE-slice total so the render can say "showing N of M".
+      INTAKE_STATE.catalogTotal = (typeof res.total === 'number') ? res.total : null;
+      intakeRenderCatalogHost_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requested) return;
+      if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh the catalog — showing last loaded', 'toast-warn'); return; }
+      var host = document.getElementById('intk-cat-list');
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load the catalog');   // A12/INV-175
+    })
+    .intakeListOfferings();
+}
+
+function intakeSetCatalogSeat_(seat) {
+  INTAKE_STATE.catalogFilter.seat = seat;
+  document.querySelectorAll('#view-area .intk-filter .toolbar-tab').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.getAttribute('onclick').indexOf("'" + seat + "'") >= 0 ? 'true' : 'false');
+  });
+  intakeRenderCatalogHost_();
+}
+
+function intakeCatalogSearch_(q) {
+  INTAKE_STATE.catalogFilter.q = q || '';
+  intakeRenderCatalogHost_();
+}
+
+/** PURE filter over the catalog rows. Seat matching mirrors the ENGINE's own
+ *  rule — it tests for the LETTER 's' / 'c' anywhere in the cell rather than
+ *  an exact word, because that is what intakeFilterRecommendations_ does, and
+ *  a browse view that disagrees with the engine about which chairs are
+ *  captain-seat would be worse than no filter at all. */
+function intakeFilterCatalog_(rows, filter) {
+  var q = String((filter && filter.q) || '').toLowerCase().trim();
+  var seat = String((filter && filter.seat) || 'ALL').toUpperCase();
+  return (rows || []).filter(function (r) {
+    if (seat !== 'ALL') {
+      var st = String(r.seatType || '').toLowerCase();
+      if (seat === 'S' && st.indexOf('s') < 0) return false;
+      if (seat === 'C' && st.indexOf('c') < 0) return false;
+    }
+    if (q) {
+      var hay = (String(r.hcpcs || '') + ' ' + String(r.features || '')).toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function intakeRenderCatalogHost_() {
+  var host = document.getElementById('intk-cat-list');
+  if (!host) return;
+  host.innerHTML = intakeRenderCatalogList_(
+    intakeFilterCatalog_(INTAKE_STATE.catalog, INTAKE_STATE.catalogFilter),
+    (INTAKE_STATE.catalog || []).length,
+    INTAKE_STATE.catalogTotal);
+}
+
+function intakeRenderCatalogList_(rows, unfilteredLen, serverTotal) {
+  if (!rows.length) {
+    // .no-data is the shared, DEFINED empty-state class (the intake partial's
+    // own idiom at the Sent list) — inventing an undeclared `.intk-empty`
+    // would render unstyled text, the INV-184 class in reverse.
+    return '<div class="no-data" style="padding:20px 0">' +
+      ((INTAKE_STATE.catalog && INTAKE_STATE.catalog.length)
+        ? 'No products match this filter.'
+        : 'The Offerings catalog is empty.') + '</div>';
+  }
+  // INV-169: the cap note keys off the UNFILTERED length vs the server's
+  // pre-slice total — a filtered-out row is not a server-capped one.
+  var capNote = (serverTotal != null && serverTotal > unfilteredLen)
+    ? ' · server holds ' + esc(String(serverTotal)) + ' total (list capped)'
+    : '';
+  var count = '<div class="intk-cat-count">' + esc(String(rows.length)) + ' product' + (rows.length === 1 ? '' : 's') +
+    (rows.length !== unfilteredLen ? ' of ' + esc(String(unfilteredLen)) : '') + capNote + '</div>';
+  var cards = rows.map(function (r) {
+    var imgUrl = intakeHttpOnly_(r.imageUrl);
+    var pdfUrl = intakeHttpOnly_(r.pdfLink);
+    var imgHtml = imgUrl
+      ? '<a href="' + imgUrl + '" target="_blank" rel="noopener" title="Open full image">' +
+          '<img class="cat-img" src="' + imgUrl + '" alt="' + esc(r.hcpcs) + '" loading="lazy"></a>'
+      : '<div class="cat-noimg">no image</div>';
+    var codeHtml = pdfUrl
+      ? '<a href="' + pdfUrl + '" target="_blank" rel="noopener" class="cat-code code-link" title="Open brochure">' +
+          esc(r.hcpcs) + ' ' + icon('popOut', 11) + '</a>'
+      : '<span class="cat-code">' + esc(r.hcpcs) + '</span>';
+    // A blank capacity/seat is stated as UNRECORDED, never as a value — the
+    // engine EXCLUDES such a row for any patient with a recorded weight
+    // (INV-112 fail-closed), so showing a confident blank would mislead.
+    var cap = String(r.weightCapacity || '').trim();
+    var seat = String(r.seatType || '').trim();
+    var specs = '<div class="intk-cat-spec">' +
+      '<span>' + (cap ? esc(cap) + ' lb' : 'capacity not recorded') + '</span>' +
+      '<span>' + (seat ? esc(seat) : 'seat not recorded') + '</span>' +
+      '</div>';
+    return '<div class="intk-cat-card">' + imgHtml + codeHtml +
+      '<div class="cat-feat">' + esc(r.features || '') + '</div>' + specs + '</div>';
+  }).join('');
+  return count + '<div class="intk-cat-grid">' + cards + '</div>';
 }
 
 function intakeSetSentFilter_(type) {
@@ -2371,8 +2546,8 @@ function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*
 // (PPD/account previews, intakeRenderSentDetail_).
 function intakeOpenModal_(title, bodyHtml) {
   intakeCloseModal_();
-  var ov = ensureOverlay('intk-modal-overlay', { onClose: intakeCloseModal_ });
-  ov.innerHTML = '<div class="modal intk-modal" role="dialog" aria-modal="true">' +
+  var ov = ensureOverlay('intk-modal-overlay', { label: 'Intake preview', onClose: intakeCloseModal_ });
+  ov.innerHTML = '<div class="modal intk-modal">' +
     '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
     '<div class="body">' + bodyHtml + '</div></div>';
   ov.addEventListener('click', function (e) {
@@ -2444,7 +2619,7 @@ function intakeShowNoteDraftModal_(label, text) {
   var body =
     '<p style="margin:0 0 8px;font-size:.84rem;color:var(--muted);">A note was drafted from this ' + esc(label) +
       ' submission, copied to your clipboard, and added to your Call Notes history.</p>' +
-    '<textarea class="intk-note-box" id="intk-note-box" readonly rows="5">' + esc(text) + '</textarea>' +
+    '<textarea class="intk-note-box" id="intk-note-box" aria-label="Call note text, ready to copy" readonly rows="5">' + esc(text) + '</textarea>' +
     '<div class="intk-note-status" id="intk-note-status">' + icon('clock', 12) + ' Saving to Call Notes…</div>' +
     '<div class="intk-foot">' +
       '<button class="intk-btn" onclick="intakeCopyNoteBox_()">' + icon('copy', 14) + ' Copy again</button>' +

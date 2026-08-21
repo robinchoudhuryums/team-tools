@@ -1209,7 +1209,7 @@ function tzSelectHtml_(repTz, repAbbr) {
   const zones = [{ label: repAbbr || 'Local', tz: repTz }];
   CLK_REGION_ZONES.forEach(function (z) { if (z.tz !== repTz) zones.push(z); });
   const cur = CLK_DISPLAY_TZ || repTz;
-  return '<select class="clk-tz-pill" id="clk-tz-sel" title="Preview another timezone’s clock">' +
+  return '<select class="clk-tz-pill" id="clk-tz-sel" aria-label="Preview another timezone’s clock" title="Preview another timezone’s clock">' +
     zones.map(function (z) {
       return '<option value="' + esc(z.tz) + '"' + (z.tz === cur ? ' selected' : '') + '>' + esc(z.label) + '</option>';
     }).join('') + '</select>';
