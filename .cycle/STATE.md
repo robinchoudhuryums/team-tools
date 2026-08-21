@@ -7,8 +7,8 @@ cycle 18 has not opened. When it does, it should be the DUE Seams &
 Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-195 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191, and cycle 18's pre-audit batch 5 wrote 195.
-Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-8 DONE except
-  5B, unmerged, NOT deployed.
+Phase: implement — /broad-scan (cycle 18 pre-audit) ALL batches 1-8 DONE
+  (5B included), unmerged, NOT deployed.
   A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
   `18-batch1-batch2-`, `18-batch3-batch4-`, `18-batch5-batch6-batch7-`
   `broad-implement.md`.
@@ -40,10 +40,21 @@ Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-8 DONE except
   surfaced (empId vs the server's id — every Day-Edit button in every
   manager screenshot had rendered data-emp-id="undefined") and the card
   name column the second button squeezed (33px -> 105px, measured).
-  **5B IS NOT SWEPT** — the enforced census is 252 unnamed form controls, not
-  the ~65 the audit estimated, and 116 of them need an author to DECIDE the
-  name. Delivered instead as the A14 RATCHET (two-sided: fails if the count
-  rises OR drops without the baseline moving).
+  **Batch 5B — SWEPT, debt 168 -> 0** (block `18-batch5B-broad-implement.md`).
+  The deferral rested on a census that was wrong three ways: it double-counted
+  form_public.html (already in PARSE_GUARD_PARTIALS, so the ratchet's own
+  concat read it twice — real starting debt 168, not 252), it called 116
+  controls author-decisions when ~30 needed a human eye and every one was
+  nameable from on-screen text, and it attributed 92 of those to Call Notes
+  (that was CN's total across all buckets; the biggest none-bucket file was the
+  public form). 210 were mechanical: 123 label-for wirings, 29 placeholder
+  promotions, 17 money-table rows, 30 read from context. One was a real
+  association BUG — the PPD num/text branches build an input with an id but
+  never set hasInputId, so the label never got its for=. A14 baseline is
+  0/0/0, bite-checked at zero on four failure shapes, and
+  `test/visual/a11y-names.mjs` now measures the names Chromium actually
+  computes across 9 in-app views + all 3 public-form templates (the public
+  form's only coverage).
   /sync-docs is DONE for ALL of Batches 1+2 (149461b), 3+4 (e02621f) and
   5+6+7 (this session) — the last pass wrote **INV-195** (a form control needs
   an accessible NAME; a placeholder is not one; A14 is a two-sided ratchet
@@ -54,7 +65,7 @@ Phase: implement — /broad-scan (cycle 18 pre-audit) Batches 1-8 DONE except
   of them) and INV-188 (strip `<!-- -->` too), moved the matrix count to 43,
   the test narrative to 576, and recorded that ViewUsage + ClientErrors are
   the only two stores with no retention tier (F11 follow-on).
-  Pure 582, DOM 75, matrix 44 clean, 61 mutations bite-checked across the
+  Pure 582, DOM 75, matrix 44 clean, 70 mutations bite-checked across the
   session.
 Prior phase (unchanged below): operator-requested feature work:
 - Operator feedback rounds 1–3 (2026-08-06): pop-out fit-to-template;
@@ -893,10 +904,12 @@ Batches 1-7 (except 5B) of the cycle-18 pre-audit scan are implemented and
 committed on `claude/broad-scan-s9b8fd` — NOT merged, NOT deployed. Suites:
 pure 576, DOM 75, matrix 43 clean.
 
-NEXT: **/sync-docs for Batch 8** (7 items at the end of
-`.cycle/blocks/18-batch8-broad-implement.md` — the Intake tool is FIVE tabs now,
-the print stylesheet needs a gotcha, and the liveStatus fixture drift is a fresh
-INV-185 instance), then decide 5B.
+NEXT: **/sync-docs for Batches 8 + 5B** (7 items at the end of
+`18-batch8-broad-implement.md` — the Intake tool is FIVE tabs now, the print
+stylesheet needs a gotcha, the liveStatus fixture drift is a fresh INV-185
+instance — plus 3 at the end of `18-batch5B-broad-implement.md`, of which the
+first is a CORRECTION: INV-195's recorded census is wrong in three ways).
+Then the cycle-18 Seams & Invariants audit is due (counter 4/4).
 
 **5B needs an OPERATOR DECISION, not more implementation.** 252 controls lack an
 accessible name: 75 have an adjacent `<label>` missing only a `for=` (mechanical),
@@ -906,11 +919,15 @@ render functions. Realistic scope is multi-day. The A14 ratchet holds the line i
 the meantime and will FAIL if a sweep lands without lowering its baseline — that
 is deliberate and self-describing.
 
-Batch 8 is DONE (block `18-batch8-broad-implement.md`). Its own follow-ons: no
-"all reps this period" manager export exists (not asked for), and THREE pin
-repairs are worth reading — the print-hook check failed to bite twice and the
-.no-print usage assert once, each because the assertion was weaker than the
-property it guarded.
+Batches 8 and 5B are DONE. Operator has re-run installAutomationTriggers() and
+confirmed NO REP WORKS WEEKENDS — which closes the open question the F2 gotcha
+records, and that answer needs to land in CLAUDE.md rather than only here.
+Follow-ons worth reading: no "all reps this period" manager export exists (not
+asked for); three batch-8 pin repairs (the print-hook check failed to bite
+TWICE and the .no-print assert once, each because the assertion was weaker than
+the property); and a bite-check reverted uncommitted edits THREE times in 5B —
+the rule is in CLAUDE.md but `bite.sh` has no guard, so it should refuse to run
+against a file with uncommitted changes.
 
 DEPLOY still carries the Batch 3+4 operator actions: re-run
 `installAutomationTriggers()` (accrual credit → 18:00), run `runAllTests()`, and
