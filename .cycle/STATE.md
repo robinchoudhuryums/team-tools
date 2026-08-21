@@ -904,12 +904,10 @@ Batches 1-7 (except 5B) of the cycle-18 pre-audit scan are implemented and
 committed on `claude/broad-scan-s9b8fd` — NOT merged, NOT deployed. Suites:
 pure 576, DOM 75, matrix 43 clean.
 
-NEXT: **/sync-docs for Batches 8 + 5B** (7 items at the end of
-`18-batch8-broad-implement.md` — the Intake tool is FIVE tabs now, the print
-stylesheet needs a gotcha, the liveStatus fixture drift is a fresh INV-185
-instance — plus 3 at the end of `18-batch5B-broad-implement.md`, of which the
-first is a CORRECTION: INV-195's recorded census is wrong in three ways).
-Then the cycle-18 Seams & Invariants audit is due (counter 4/4).
+NEXT: **the cycle-18 Seams & Invariants audit is DUE** (counter 4/4). /sync-docs
+is DONE for every batch — the last pass CORRECTED INV-195 (its census was wrong
+three ways), added the print-block and bite-check gotchas, gave INV-185 a sixth
+instance and INV-112 the browse surface, and recorded both operator answers.
 
 **5B needs an OPERATOR DECISION, not more implementation.** 252 controls lack an
 accessible name: 75 have an adjacent `<label>` missing only a `for=` (mechanical),
