@@ -443,12 +443,12 @@ function edRenderMgr_() {
   if (dash.error) { el.innerHTML = errorStateHtml_(dash.error); return; }   // A12
   var emps = (ED_STATE.emps && ED_STATE.emps.employees) || [];
 
-  var empSel = '<select id="ed-is-emp"><option value="">Pick an employee…</option>';
+  var empSel = '<select id="ed-is-emp" aria-label="Employee"><option value="">Pick an employee…</option>';
   emps.forEach(function (e) { empSel += '<option value="' + esc(e.id) + '">' + esc(e.name) + '</option>'; });
   empSel += '</select>';
 
   var templates = (ED_STATE.templates && ED_STATE.templates.templates) || [];
-  var tplPick = '<select id="ed-tpl-pick"><option value="">Start from scratch…</option>';
+  var tplPick = '<select id="ed-tpl-pick" aria-label="Start from a template"><option value="">Start from scratch…</option>';
   templates.forEach(function (t) { tplPick += '<option value="' + esc(t.templateId) + '">' + esc(t.name) + '</option>'; });
   tplPick += '</select>';
 

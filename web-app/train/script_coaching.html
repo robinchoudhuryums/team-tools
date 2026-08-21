@@ -199,14 +199,14 @@ function coachRenderMgr_() {
   var pre = window.COACH_PREFILL || null;
   window.COACH_PREFILL = null;
 
-  var empSel = '<select id="coach-emp"><option value="">Pick an employee…</option>';
+  var empSel = '<select id="coach-emp" aria-label="Employee"><option value="">Pick an employee…</option>';
   emps.forEach(function (e) {
     var seld = (pre && pre.empId === e.id) ? ' selected' : '';
     empSel += '<option value="' + esc(e.id) + '"' + seld + '>' + esc(e.name) + '</option>';
   });
   empSel += '</select>';
 
-  var sevSel = '<select id="coach-sev">' +
+  var sevSel = '<select id="coach-sev" aria-label="Severity">' +
     '<option value="praise">Praise — went above and beyond</option>' +
     '<option value="minor" selected>Minor — small correction</option>' +
     '<option value="major">Major — notable issue</option>' +

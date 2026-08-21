@@ -2186,7 +2186,7 @@ function kbOpenSynonyms_() {
       var lines = (res.synonyms || []).map(function (g) { return g.join(', '); }).join('\n');
       body.innerHTML =
         '<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">One synonym group per line, terms comma-separated. A search for any term in a group also matches the others.<br>e.g. <code>cpap, pap</code> &nbsp; <code>power chair, pmd, power wheelchair</code></div>' +
-        '<textarea id="kb-syn-ta" style="width:100%;min-height:180px;font:inherit;box-sizing:border-box">' + esc(lines) + '</textarea>' +
+        '<textarea id="kb-syn-ta" aria-label="Synonym groups, one per line" style="width:100%;min-height:180px;font:inherit;box-sizing:border-box">' + esc(lines) + '</textarea>' +
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
         '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })

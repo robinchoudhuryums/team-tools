@@ -1851,7 +1851,7 @@ function intakeBuildAcctModal_(form, html) {
   var body =
     '<div class="intk-prev">' + html + '</div>' +
     '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Drag, click, or paste — up to 12 images</div>' +
-    '<input type="file" id="intk-file" accept="image/*" multiple style="display:none">' +
+    '<input type="file" id="intk-file" aria-label="Choose images to attach" accept="image/*" multiple style="display:none">' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
     '<div class="intk-foot">' +
       '<label for="intk-acct-recipient"><strong>Send to:</strong></label>' +
@@ -2617,7 +2617,7 @@ function intakeShowNoteDraftModal_(label, text) {
   var body =
     '<p style="margin:0 0 8px;font-size:.84rem;color:var(--muted);">A note was drafted from this ' + esc(label) +
       ' submission, copied to your clipboard, and added to your Call Notes history.</p>' +
-    '<textarea class="intk-note-box" id="intk-note-box" readonly rows="5">' + esc(text) + '</textarea>' +
+    '<textarea class="intk-note-box" id="intk-note-box" aria-label="Call note text, ready to copy" readonly rows="5">' + esc(text) + '</textarea>' +
     '<div class="intk-note-status" id="intk-note-status">' + icon('clock', 12) + ' Saving to Call Notes…</div>' +
     '<div class="intk-foot">' +
       '<button class="intk-btn" onclick="intakeCopyNoteBox_()">' + icon('copy', 14) + ' Copy again</button>' +

@@ -567,7 +567,7 @@ function enterMetricsMyStatsView() {
       '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px" for="m-my-from">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
-      '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
+      '<input type="date" id="m-my-to" aria-label="Range end" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 

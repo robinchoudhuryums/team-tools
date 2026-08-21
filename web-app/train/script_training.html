@@ -585,7 +585,7 @@ function trainRenderMgr_() {
   var byDept = {};
   kbItems.forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
   var quizzes = (TRAIN_STATE.quizzes && TRAIN_STATE.quizzes.quizzes) || [];
-  var sel = '<select id="tr-as-item"><option value="">Pick an item…</option>';
+  var sel = '<select id="tr-as-item" aria-label="Item to assign"><option value="">Pick an item…</option>';
   if (quizzes.length) {
     sel += '<optgroup label="Quizzes">';
     quizzes.forEach(function (q) { sel += '<option value="quiz:' + esc(q.quizId) + '">' + esc(q.title) + '</option>'; });
@@ -807,7 +807,7 @@ function trainRenderQuizEditor_(overlay) {
   var st = TRAIN_STATE.qed;
   if (!overlay || !st) return;
   var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
-  var kbSel = '<select id="tr-qed-kb"><option value="">(none)</option>';
+  var kbSel = '<select id="tr-qed-kb" aria-label="Linked reference item"><option value="">(none)</option>';
   kbItems.forEach(function (it) {
     kbSel += '<option value="' + esc(it.id) + '"' + (it.id === st.kbItemId ? ' selected' : '') + '>' + esc(it.title) + '</option>';
   });
@@ -831,7 +831,7 @@ function trainRenderQuizEditor_(overlay) {
     q.options.forEach(function (opt, oi) {
       h += '<div class="opt-row">' +
         '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +
-        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
+        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" aria-label="Answer option ' + (oi + 1) + '" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
         (q.options.length > 2 ? '<button class="tr-revoke-btn" data-qed-delopt="' + qi + ':' + oi + '">×</button>' : '') +
         '</div>';
     });

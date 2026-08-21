@@ -6263,8 +6263,8 @@ function cnRenderResultCard_(note, repName) {
 // §7a — optional date-range controls shared by the rep + manager search bars.
 function cnSearchDatesHtml_(idPrefix, from, to) {
   return `<div class="cn-search-dates">` +
-    `<label>From</label><input type="date" id="${idPrefix}-from" value="${esc(from || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
-    `<label>To</label><input type="date" id="${idPrefix}-to" value="${esc(to || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+    `<label>From</label><input type="date" aria-label="Search from date" id="${idPrefix}-from" value="${esc(from || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+    `<label>To</label><input type="date" aria-label="Search to date" id="${idPrefix}-to" value="${esc(to || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
   `</div>`;
 }
 function cnSearchDateChanged_() {
@@ -8809,7 +8809,7 @@ function cnLoadSheetView_(viewKey) {
 
 function cnRenderSheetView_(res) {
   var rows = res.rows || [];
-  var picker = '<select id="cn-sheetview-pick" onchange="cnLoadSheetView_(this.value)" style="margin-left:10px;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--ink)">' +
+  var picker = '<select id="cn-sheetview-pick" aria-label="Sheet to view" onchange="cnLoadSheetView_(this.value)" style="margin-left:10px;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--ink)">' +
     CN_SHEET_VIEWS.map(function (v) {
       return '<option value="' + esc(v.key) + '"' + (v.key === res.viewKey ? ' selected' : '') + '>' + esc(v.label) + '</option>';
     }).join('') + '</select>';
@@ -10348,7 +10348,7 @@ function cnRenderDeptSlaRows_(deptSla) {
     var cur = tlc[String(d).toLowerCase()];
     return '<div class="field-row cn-admin-sla-row" style="gap:8px;align-items:center;margin-bottom:6px">' +
       '<div class="field" style="flex:1"><label>' + esc(d) + '</label></div>' +
-      '<div class="field" style="width:130px"><input type="number" min="1" max="720" class="cn-admin-sla-hours" data-dept="' +
+      '<div class="field" style="width:130px"><input type="number" min="1" max="720" class="cn-admin-sla-hours" aria-label="' + esc(d) + ' SLA hours" data-dept="' +
         esc(d) + '" value="' + (cur != null ? esc(String(cur)) : '') + '" placeholder="' + esc(String(def)) + ' (default)"></div>' +
     '</div>';
   }).join('');
@@ -10367,7 +10367,7 @@ function cnRenderLinkRow_(l) {
     '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
       '<div class="field" style="flex:0 0 28%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)" aria-label="Link label"></div>' +
       '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…" aria-label="Link URL"></div>' +
-      '<div class="field" style="flex:0 0 110px;margin:0"><select class="cn-admin-link-cat">' +
+      '<div class="field" style="flex:0 0 110px;margin:0"><select class="cn-admin-link-cat" aria-label="Link category">' +
         catOpt('survey', 'Survey') + catOpt('review', 'Review') + catOpt('feedback', 'Feedback') + catOpt('other', 'Other') +
       '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-link-row\').remove()">' + icon('x', 14) + '</button>' +
@@ -10422,7 +10422,7 @@ function cnRenderTemplateRow_(t) {
   return '<div class="cn-admin-tmpl-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
     '<div class="field-row" style="gap:8px;margin-bottom:6px;align-items:center">' +
       '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-tmpl-name" value="' + esc(t.name || '') + '" placeholder="Template name" aria-label="Template name"></div>' +
-      '<div class="field" style="flex:0 0 130px;margin:0"><select class="cn-admin-tmpl-type">' +
+      '<div class="field" style="flex:0 0 130px;margin:0"><select class="cn-admin-tmpl-type" aria-label="Template recipient type">' +
         opt('any', 'Any') + opt('customer', 'Customer') + opt('provider', 'Provider') +
       '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-tmpl-row\').remove()">' + icon('x', 14) + '</button>' +

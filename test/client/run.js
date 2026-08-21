@@ -1751,7 +1751,11 @@ test('F17: client CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS', () => {
 
 test('F17: coaching severity options === COACH_SEVERITIES', () => {
   const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  const sel = co.slice(co.indexOf("<select id=\"coach-sev\">"));
+  // Anchor on the id, NOT on the exact open tag: this pin extracted nothing
+  // (and silently compared []) the moment the select gained an aria-label.
+  const selAt = /<select id="coach-sev"[^>]*>/.exec(co);
+  assert.ok(selAt, 'found the severity select');
+  const sel = co.slice(selAt.index);
   const opts = (sel.slice(0, sel.indexOf('</select>')).match(/value="([a-z]+)"/g) || [])
     .map((v) => v.replace(/value="|"/g, ''));
   const server = arrayLiteral_(codeSrc, 'COACH_SEVERITIES');
@@ -10421,7 +10425,7 @@ test('A14: form controls without an accessible name do not INCREASE (ratchet)', 
   // A placeholder is not an accessible name (it is not reliably announced and
   // vanishes on first keystroke) — the rule cycle-16 F6 established for
   // uiPrompt's input, unenforced everywhere else until now.
-  const BASELINE = { adjacentLabel: 2, placeholderOnly: 5, none: 35 };   // total 42
+  const BASELINE = { adjacentLabel: 0, placeholderOnly: 3, none: 21 };   // total 24
   const got = a11yUnnamedControls();
   ['adjacentLabel', 'placeholderOnly', 'none'].forEach((k) => {
     assert.ok(got[k].length <= BASELINE[k],
