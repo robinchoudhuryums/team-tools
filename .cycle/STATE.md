@@ -52,9 +52,26 @@ Updated: 2026-08-21
   count (stale twice); the matrix summary is the single source
 
 ## Pending / not yet done
-- DEPLOY (operator): PR #176 + PR #177 ship together on the next
-  `clasp push -f` + New version; then `runAllTests()` in the editor —
-  the ONE outstanding action; nothing reaches users until it runs
+- DEPLOY (operator): PR #176 + PR #177 + the pilot-feedback ROUND 1 branch
+  (below) ship together on the next `clasp push -f` + New version; then
+  `runAllTests()` in the editor; then the round-1 email spot-check (one dept
+  email + one intake email — From name reads "<Agent> · Universal Medical
+  Supply", Reply-To is the agent). Nothing reaches users until it runs.
+
+## Between-cycles operator feature work (2026-08-21, the 18pre convention)
+- **Pilot-feedback ROUND 1 implemented** (operator-approved roadmap items
+  #8 sender identity / #1 review-flag comments / #2 inbound-outbound toggle)
+  — commit c15eec7 on branch `claude/team-tools-roadmap-6e2l97`, block
+  `.cycle/blocks/19pre-pilot-round1-broad-implement.md`. Pure 585→595 (all
+  10 new pins bite-checked), DOM 75, all green. NOT yet PR'd/merged/deployed.
+  /sync-docs is OWED for it (the block lists the exact CLAUDE.md updates:
+  INV-143 whitelist keys, SubformData gotcha, setCallNoteFlag 4th arg,
+  draft-blob shape, operator-round entry).
+- Roadmap rounds 2–3 approved in sequence: (2) Spanish Inbox claim/assign +
+  scheduled-call reminders; (3) intake arrow-key nav, server-backed
+  scratchpad (operator chose per-rep-sheet storage), Reference comments
+  Phase A. Operator answers on record: sender v1 = name+replyTo (alias
+  later); scratchpad = server-backed.
 
 ## Open follow-on items
 - Code.js: `intakeHttpOnly_` drops schemeless operator URLs (`www.x.com`)
@@ -75,8 +92,9 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-Cycle 18 is CLOSED (reflected, metrics row appended, PROJECT_HEALTH
-updated). Nothing is mid-flight. Next session starts fresh: either the
-operator DEPLOY confirmation (then move this block to HISTORY.md), or a
-new cycle 19 audit (/broad-scan or /audit — the seams counter is 0, so
-the next seams audit is 4 subsystem cycles out).
+Cycle 18 is CLOSED. Pilot-feedback Round 1 (sender identity / review
+comments / call direction) is implemented + tested + committed (c15eec7)
+on `claude/team-tools-roadmap-6e2l97` and pushed — awaiting the operator's
+PR/merge decision, the combined deploy (with PR #176/#177), and /sync-docs
+for the round-1 doc updates. Next implementation work: roadmap round 2
+(Spanish claim/assign, then scheduled-call reminders).
