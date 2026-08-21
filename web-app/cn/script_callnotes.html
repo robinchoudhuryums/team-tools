@@ -6722,7 +6722,7 @@ function cnMgrRenderReadonlyCard_(note) {
     const existingReply = cnLatestManagerReply_(note.subformData).message;
     editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
-        <input type="text" class="cn-mgr-reply-input" placeholder="${existingReply ? 'Edit reply…' : 'Reply to this question…'}"
+        <input type="text" class="cn-mgr-reply-input" aria-label="Reply to this training question" placeholder="${existingReply ? 'Edit reply…' : 'Reply to this question…'}"
                value="${esc(existingReply)}">
         <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveTrainingReply_(this)">
           ${icon('check', 12)}<span>${existingReply ? 'Update' : 'Send'}</span>
@@ -6737,7 +6737,7 @@ function cnMgrRenderReadonlyCard_(note) {
     // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
     editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
-        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
+        <input type="text" class="cn-mgr-reply-input" aria-label="Reply to this training question" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
         <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
           ${icon('check', 12)}<span>Comment</span>
         </button>
@@ -9607,11 +9607,11 @@ function cnRenderOnboardingHtml_(res) {
       '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-id">Employee ID</label><input id="cn-ob-id" maxlength="40" placeholder="E-1108"></div>' +
         '<div class="field" style="flex:1"><label for="cn-ob-tz">Timezone</label><input id="cn-ob-tz" list="cn-ob-tzs" placeholder="America/Chicago"><datalist id="cn-ob-tzs">' + tzList + '</datalist></div></div>' +
       '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-paycycle">Pay cycle</label><select id="cn-ob-paycycle"><option value="">—</option><option value="monthly">Monthly</option><option value="biweekly">Biweekly</option></select></div>' +
-        '<div class="field" style="flex:1"><label>Pay anchor (biweekly only' + (res.hasBiweeklyAnchor ? ' — already set, leave blank' : '') + ')</label><input id="cn-ob-anchor" type="date" disabled></div></div>' +
+        '<div class="field" style="flex:1"><label>Pay anchor (biweekly only' + (res.hasBiweeklyAnchor ? ' — already set, leave blank' : '') + ')</label><input id="cn-ob-anchor" type="date" aria-label="Pay anchor date (biweekly only)" disabled></div></div>' +
       '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-annual">Annual leave balance</label><input id="cn-ob-annual" type="number" min="0" max="365" step="0.5" value="0"></div>' +
         '<div class="field" style="flex:1"><label for="cn-ob-sick">Sick leave balance</label><input id="cn-ob-sick" type="number" min="0" max="365" step="0.5" value="0"></div>' +
         '<div class="field" style="flex:1"><label for="cn-ob-manager">Manager (column M)</label><select id="cn-ob-manager">' + mgrOpts + '</select></div></div>' +
-      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Departments staffed (optional, comma-separated' + (res.departments && res.departments.length ? ': ' + esc(res.departments.join(', ')) : '') + ')</label><input id="cn-ob-depts" placeholder=""></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Departments staffed (optional, comma-separated' + (res.departments && res.departments.length ? ': ' + esc(res.departments.join(', ')) : '') + ')</label><input id="cn-ob-depts" aria-label="Departments staffed (comma-separated)" placeholder=""></div>' +
         '<div class="field" style="flex:1"><label for="cn-ob-schedule">Shift override (optional, H:mm-H:mm in their tz)</label><input id="cn-ob-schedule" placeholder="9:00-17:30"></div></div>' +
       '<div class="field-row" style="gap:16px;align-items:center;margin-top:4px;flex-wrap:wrap">' +
         '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-pto" checked> Accrues paid leave (uncheck for contractors)</label>' +
@@ -10435,7 +10435,7 @@ function cnRenderRateRows_(rates) {
   return Object.keys(rates).sort().map(function (st) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
       '<span class="cn-admin-rate-state" style="flex:1;font-size:13px">' + esc(st) + '</span>' +
-      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + esc(String(rates[st])) + '" style="text-align:right"></div>' +
+      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" aria-label="Tax rate" value="' + esc(String(rates[st])) + '" style="text-align:right"></div>' +
       '</div>';
   }).join('');
 }
@@ -10553,23 +10553,23 @@ function cnPrefillFieldsForForm_(formId) {
     case 'eaa':
       return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
         '<div class="field"><label>Patient First Name</label>' +
-          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="firstName" value="' + esc(pf.firstName || '') + '"></div>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="firstName" aria-label="Patient First Name" value="' + esc(pf.firstName || '') + '"></div>' +
         '<div class="field"><label>Patient Last Name</label>' +
-          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="lastName" value="' + esc(pf.lastName || '') + '"></div>';
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="lastName" aria-label="Patient Last Name" value="' + esc(pf.lastName || '') + '"></div>';
     case 'pt-ot-rx':
       return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
         '<div class="field"><label>Patient Name</label>' +
-          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" value="' + esc(pf.patientName || '') + '"></div>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" aria-label="Patient Name" value="' + esc(pf.patientName || '') + '"></div>' +
         '<div class="field"><label>Item for Order</label>' +
-          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="itemForOrder" value="' + esc(pf.itemForOrder || '') + '"></div>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="itemForOrder" aria-label="Item for Order" value="' + esc(pf.itemForOrder || '') + '"></div>' +
         '<div class="field"><label>Order Date</label>' +
-          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="orderDate" value="' + esc(pf.orderDate || '') + '"></div>';
+          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="orderDate" aria-label="Order Date" value="' + esc(pf.orderDate || '') + '"></div>';
     case 'seating-eval':
       return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
         '<div class="field"><label>Patient Name</label>' +
-          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" value="' + esc(pf.patientName || '') + '"></div>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" aria-label="Patient Name" value="' + esc(pf.patientName || '') + '"></div>' +
         '<div class="field"><label>Date</label>' +
-          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="evalDate" value="' + esc(pf.evalDate || '') + '"></div>';
+          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="evalDate" aria-label="Date" value="' + esc(pf.evalDate || '') + '"></div>';
     default:
       return '';
   }
