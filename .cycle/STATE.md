@@ -70,6 +70,9 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-F1–F5 implemented + committed + pushed pending. Next: produce/keep the
-summary block in `.cycle/blocks/18-seams-F1-F5-broad-implement.md`, push
-the branch, then offer /sync-docs. Cycle 18 stays open until /reflect.
+Everything for the seams round is DONE and merged (PR #177). The next
+workflow step is /reflect to close cycle 18 — runnable in a fresh session
+off `.cycle/blocks/18-seams-F1-F5-broad-implement.md` (+ the audit's
+handoff facts summarized under "In progress" above). After /reflect:
+append the metrics row, write `18-a-reflect.md`, close the cycle. The
+DEPLOY (PR #176 + #177 together) remains operator-only.
