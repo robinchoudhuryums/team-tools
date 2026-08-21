@@ -10921,8 +10921,13 @@ test('seams-18 F3: the pay-statement and offerings fixtures mirror the server re
   // them through the success block, polluting the key set with "error".
   const payRet = /return \{\n([\s\S]*?)\n    \};/.exec(paySrv);
   assert.ok(payRet, 'found getMyPayStatement\'s success return block');
-  const payKeys = [...payRet[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]);
-  assert.ok(payKeys.length >= 8, 'derived a real key set (' + payKeys.join(',') + ')');
+  // Colon-space, NOT line-anchored: the server packs several keys per line
+  // (`days: …, totalHours: …, daysWorked: …`), and a `/^\s*(\w+):/gm` matcher
+  // silently dropped all but each line's first key — the bite-check caught the
+  // pin passing with a renamed totalHours. Nested-object keys (period.start
+  // etc.) ride along deliberately; they are part of the shape contract too.
+  const payKeys = [...payRet[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+  assert.ok(payKeys.length >= 12, 'derived a real key set (' + payKeys.join(',') + ')');
   const payMock = /getMyPayStatement: function[\s\S]*?return \{([\s\S]*?)\n      \};/.exec(mock);
   assert.ok(payMock, 'found the fixture\'s return block');
   payKeys.forEach((k) => assert.ok(new RegExp('\\b' + k + ':').test(payMock[1]),
