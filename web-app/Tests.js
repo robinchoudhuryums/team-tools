@@ -2071,11 +2071,18 @@ function test_submitTimeOff_invalidTypeRejected() {
 // Pending row per WEEKDAY in the range; a conflict on ANY day writes NOTHING.
 function test_submitTimeOffRange_weekendSkipAtomicCaps() {
   _clearTestState(_TEST_INDIA_ID);
-  // A future Monday ≥14 days out — stable whatever day the suite runs, and
-  // far from every tz/day boundary (the cycle-14 target-tz lesson).
-  const base = new Date(); base.setDate(base.getDate() + 14);
-  while (base.getDay() !== 1) base.setDate(base.getDate() + 1);
-  const iso = (n) => { const d = new Date(base); d.setDate(d.getDate() + n); return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); };
+  // A future Monday ≥14 days out — stable whatever day the suite runs. ONE
+  // TIMEZONE FRAME throughout (the cycle-14 lesson, properly this time): the
+  // first-ever run of this test (2026-08-21, afternoon CT) failed because the
+  // Monday anchor came from base.getDay() in the SCRIPT tz (Chicago) while the
+  // labels were formatted in CONFIG.TIMEZONE (Kolkata, ~+10.5h) — any run
+  // after ~13:30 Chicago shifted every label +1 day, so the "sat..sun" range
+  // was really Sun..Mon and the server CORRECTLY wrote the Monday. Day-of-week
+  // and labels both come from formatDate in CONFIG.TIMEZONE now; day steps are
+  // exact 24h ms (Kolkata has no DST).
+  const base = new Date(Date.now() + 14 * 86400000);
+  while (Utilities.formatDate(base, CONFIG.TIMEZONE, 'EEE') !== 'Mon') base.setTime(base.getTime() + 86400000);
+  const iso = (n) => Utilities.formatDate(new Date(base.getTime() + n * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd');
   const mon = iso(0), fri = iso(4), sat = iso(5), sun = iso(6), nextMon = iso(7);
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(submitTimeOffRange('05/17/2026', fri, 'Full Day', ''), 'Invalid date');
