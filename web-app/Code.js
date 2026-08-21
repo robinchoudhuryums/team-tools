@@ -3192,7 +3192,7 @@ function updateCallNote(noteId, payload) {
 /** Sets (or clears) the flag type on a note. Pass '' to clear.
  *  Optional trainingQuestion: when flagging as 'training', merges
  *  the question into subformData so it appears in digests/Q&A. */
-function setCallNoteFlag(noteId, flagType, trainingQuestion) {
+function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -3241,6 +3241,12 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion) {
       // M-15) — an uncapped write can push the SubformData cell toward the ~50k
       // Sheets limit, after which EVERY later metadata write to the note throws.
       subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
+    if (t === 'review' && reviewComment) {
+      // Round-1 pilot #1 — optional review comment from the card toggle; the
+      // trainingQuestion write above, mirrored (same trim + cell-size cap).
+      subformData.reviewComment = String(reviewComment).trim().slice(0, 2000);
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
     // Mirror the primary flag into subformData.flags so the form toolbar
@@ -7700,6 +7706,16 @@ function sanitizeCallNotePayload_(p) {
     // un-chipped. Bounded enum only; anything else drops.
     const it = s(rawSub.intakeType).toLowerCase();
     if (it === 'ppd' || it === 'pmd' || it === 'pap') subformData.intakeType = it;
+    // Round-1 pilot #1 (2026-08-21): optional comment on a review-flagged note —
+    // the trainingQuestion mechanism mirrored (same trim + 2000-char cell guard).
+    const rc = s(rawSub.reviewComment);
+    if (rc) subformData.reviewComment = rc.slice(0, 2000);
+    // Round-1 pilot #2: call direction. Stored ONLY as 'outbound' — absent =
+    // inbound (the overwhelming default), so tens of thousands of existing
+    // notes need no migration and anything else drops (bounded enum, the
+    // intakeType posture).
+    const cd = s(rawSub.callDirection).toLowerCase();
+    if (cd === 'outbound') subformData.callDirection = 'outbound';
     if (Object.keys(subformData).length === 0) subformData = null;
   }
   // Merge tags/flags into subformData so the schema stays in one column
@@ -7847,6 +7863,9 @@ function callNoteMatchesFilter_(note, filter) {
     case 'review':     return note.flagType === 'review';
     case 'unresolved': return note.flagType === 'action' && !note.resolved;
     case 'unsent':     return !note.emailedAt;
+    // Round-1 pilot #2 — mirrors the client cnNoteMatchesFilter_ case:
+    // callDirection is stored ONLY as 'outbound' (absent = inbound).
+    case 'outbound':   return !!(note.subformData && note.subformData.callDirection === 'outbound');
     case 'all':
     default:           return true;
   }
@@ -8110,6 +8129,25 @@ function computeCnEmailHash_(htmlBody, subject, to) {
   return out;
 }
 
+/** Round-1 pilot feedback #8 (2026-08-21) — rep-initiated correspondence
+ *  should read as coming from the AGENT, not the deploying account. The web
+ *  app runs as USER_DEPLOYING, so the true From ADDRESS cannot change (MailApp
+ *  always sends as the deployer; a neutral shared sender needs a Workspace
+ *  "Send mail as" alias on the deployer account — an operator action, not
+ *  code). What code controls is the display NAME recipients see and where a
+ *  reply lands: name = the agent + org, replyTo = the agent's own inbox.
+ *  Returns {} for a missing/partial emp so Object.assign is a no-op and the
+ *  send proceeds with the system identity rather than failing.
+ *  SCOPE: rep-initiated sends ONLY (dept email, external email, the three
+ *  intake sends) — automated digests/alerts/exports deliberately keep the
+ *  system identity, and the notifyAfter/best-effort senders are untouched. */
+function repSenderOpts_(emp) {
+  const opts = {};
+  if (emp && emp.name) opts.name = String(emp.name) + ' · Universal Medical Supply';
+  if (emp && emp.email) opts.replyTo = String(emp.email);
+  return opts;
+}
+
 /** Actually sends the email composed for a note. Stamps EmailedAt +
  *  EmailDepartments on the note row, writes a CallNoteEmail audit row.
  *
@@ -8197,29 +8235,29 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
-        MailApp.sendEmail({
+        MailApp.sendEmail(Object.assign({
           to: recipientList.internalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
           htmlBody: sentHtml,
-        });
+        }, repSenderOpts_(emp)));
         internalSent = true;
-        MailApp.sendEmail({
+        MailApp.sendEmail(Object.assign({
           to: recipientList.externalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody,
           htmlBody: htmlBody,   // no CTA
-        });
+        }, repSenderOpts_(emp)));
       } else {
-        MailApp.sendEmail({
+        MailApp.sendEmail(Object.assign({
           to: recipientList.to,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
           htmlBody: sentHtml,
-        });
+        }, repSenderOpts_(emp)));
       }
     } catch (sendErr) {
       // C17-11 (cycle 17): if the INTERNAL dept copy already went out, it is
@@ -8944,12 +8982,12 @@ function sendExternalEmail(payload) {
 
   // ── Send ──────────────────────────────────────────────────────────
   try {
-    const emailOpts = {
+    const emailOpts = Object.assign({
       to: recipientEmail,
       subject: subject,
       body: textBody,
       htmlBody: htmlBody,
-    };
+    }, repSenderOpts_(emp));   // Round-1 #8 — agent display name + replyTo
     if (attachments.length > 0) emailOpts.attachments = attachments;
     MailApp.sendEmail(emailOpts);
   } catch (sendErr) {
@@ -12067,29 +12105,40 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
     return (n.flagType === 'training' && n.subformData && n.subformData.trainingReply)
       ? String(n.subformData.trainingReply).trim() : '';
   };
+  // Round-1 pilot #1 (2026-08-21): review-flagged notes may carry an optional
+  // rep comment in subformData.reviewComment (the trainingQuestion mirror) —
+  // surface it in the Review Candidates digest the same way.
+  const rc = function (n) {
+    return (n.flagType === 'review' && n.subformData && n.subformData.reviewComment)
+      ? String(n.subformData.reviewComment).trim() : '';
+  };
   const itemsHtml = notes.map(function (n) {
     const q = tq(n);
     const reply = tr(n);
+    const comment = rc(n);
     const qLine = q ? `<br><span style="color:${P.accentDeep};font-size:12px;font-style:italic;">Q: ${esc_(q)}</span>` : '';
     const rLine = reply ? `<br><span style="color:${P.goodDeep};font-size:12px;">A: ${esc_(reply)}</span>` : '';
+    const cLine = comment ? `<br><span style="color:${P.goodDeep};font-size:12px;font-style:italic;">Comment: ${esc_(comment)}</span>` : '';
     return `<tr>` +
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
         `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
-        qLine + rLine +
+        qLine + rLine + cLine +
       `</td>` +
       `</tr>`;
   }).join('');
   const itemsText = notes.map(function (n) {
     const q = tq(n);
     const reply = tr(n);
+    const comment = rc(n);
     return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
            `    ${n.issue || ''}` +
            (n.resolution ? `\n    → ${n.resolution}` : '') +
            (q ? `\n    Q: ${q}` : '') +
-           (reply ? `\n    A: ${reply}` : '');
+           (reply ? `\n    A: ${reply}` : '') +
+           (comment ? `\n    Comment: ${comment}` : '');
   }).join('\n\n');
 
   // Operator 2026-08-13 (email-alignment audit): shares the branded chrome
@@ -18240,7 +18289,8 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
     if (oversize) return { success: false, error: oversize };
 
-    MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
+    MailApp.sendEmail(Object.assign({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html },
+      repSenderOpts_(emp)));   // Round-1 #8 — agent display name + replyTo
 
     let storeWarning = null;
     try {
@@ -18316,7 +18366,8 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const oversize = intakeStoreOversizeError_([answersJson]);
   if (oversize) return { success: false, error: oversize };
 
-  MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
+  MailApp.sendEmail(Object.assign({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj },
+    repSenderOpts_(emp)));   // Round-1 #8 — agent display name + replyTo
 
   let storeWarning = null;
   try {

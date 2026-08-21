@@ -10946,5 +10946,138 @@ test('seams-18 F3: the pay-statement and offerings fixtures mirror the server re
     'offerings fixture row keys must EQUAL the server row keys — a renamed field is the liveStatus class');
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-1 pilot features (2026-08-21) — review-flag comment (#1), call
+// direction (#2), rep sender identity (#8). Operator-approved feature round.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-1 pilot — review comment / call direction / sender identity');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // #1/#2 — behavioural, through the REAL sanitize fn (the INV-143 whitelist).
+  const r1Ctx = { Object, Array, JSON, String, Number, Boolean, Math, isFinite, console };
+  vm.createContext(r1Ctx);
+  const r1fc = codeSrc.match(/const (CN_FLAG_TYPES\s*=\s*\[[^\]]*\]);/);
+  const r1fe = codeSrc.match(/const (CN_FLAG_TYPES_EXTENDED\s*=\s*\[[^\]]*\]);/);
+  const r1fp = codeSrc.match(/const (CN_FLAG_PRIORITY\s*=\s*\[[^\]]*\]);/);
+  assert.ok(r1fc && r1fe && r1fp, 'CN flag consts found');
+  vm.runInContext(r1fc[1] + ';' + r1fe[1] + ';' + r1fp[1] + ';', r1Ctx);
+  ['sanitizeFlagsArray_', 'deriveFlagType_', 'sanitizeTagsArray_', 'sanitizeCallNotePayload_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), r1Ctx, { filename: 'Code.js#' + fn });
+  });
+  test('R1 #1: reviewComment survives the submit whitelist trimmed + capped at 2000', () => {
+    const c = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: '  great save  ' } });
+    assert.strictEqual(c.subformData.reviewComment, 'great save');
+    const long = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: 'a'.repeat(3000) } });
+    assert.strictEqual(long.subformData.reviewComment.length, 2000,
+      'cell-size cap (the trainingQuestion discipline — an uncapped write walks the cell toward the ~50k Sheets limit)');
+    assert.strictEqual(r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: '   ' } }).subformData, null,
+      'an empty comment stores nothing');
+  });
+  test('R1 #2: callDirection is a bounded enum — ONLY "outbound" is ever stored (absent = inbound)', () => {
+    const out = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { callDirection: 'Outbound' } });
+    assert.strictEqual(out.subformData.callDirection, 'outbound', 'case-normalized like intakeType');
+    ['inbound', 'evil<script>', '', 'OUT BOUND'].forEach((v) => {
+      const c = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { callDirection: v } });
+      assert.strictEqual(c.subformData, null,
+        JSON.stringify(v) + ' must drop — inbound is ABSENCE, never a stored value (no migration for existing notes)');
+    });
+  });
+
+  // #1 card path — setCallNoteFlag's review branch mirrors the training one.
+  test('R1 #1: setCallNoteFlag carries the 4th reviewComment param with the training-branch bounds', () => {
+    const src = strip(extractRawFunction('Code.js', 'setCallNoteFlag'));
+    assert.ok(/function setCallNoteFlag\(noteId, flagType, trainingQuestion, reviewComment\)/.test(src),
+      '4-param signature (the client card prompt passes the comment as arg 4)');
+    const m = /if \(t === 'review' && reviewComment\) \{([\s\S]*?)\n    \}/.exec(src);
+    assert.ok(m, "the review branch exists and is gated on t === 'review'");
+    assert.ok(/String\(reviewComment\)\.trim\(\)\.slice\(0, 2000\)/.test(m[1]),
+      'trim + 2000 cap (the cell-size guard the training branch carries)');
+    assert.ok(/CN\.SUBFORM_DATA/.test(m[1]), 'persists into the SubformData blob');
+  });
+
+  // #1 digest — the Review Candidates weekly digest surfaces the comment,
+  // gated on the CURRENT flag (a since-recleared flag stops rendering it).
+  test('R1 #1: sendManagerFlagDigest_ surfaces reviewComment in BOTH the html and text bodies', () => {
+    const src = strip(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+    assert.ok(/flagType === 'review' && n\.subformData && n\.subformData\.reviewComment/.test(src),
+      'accessor gated on the review flag (the tq gating mirrored)');
+    assert.ok(/qLine \+ rLine \+ cLine/.test(src), 'comment line joins the html item rows');
+    assert.ok(/Comment: \$\{comment\}/.test(src), 'comment line joins the plain-text fallback rows');
+    assert.ok(/esc_\(comment\)/.test(src), 'the html line escapes the rep-typed comment (INV-89 discipline)');
+  });
+
+  // #8 sender identity — behavioural + wiring.
+  vm.runInContext(extractRawFunction('Code.js', 'repSenderOpts_'), r1Ctx, { filename: 'Code.js#repSenderOpts_' });
+  test('R1 #8: repSenderOpts_ yields {name, replyTo} for a rep and {} for a missing one', () => {
+    const o = r1Ctx.repSenderOpts_({ name: 'Jane Doe', email: 'jane@umsupply.com' });
+    assert.strictEqual(o.replyTo, 'jane@umsupply.com', 'replies land in the AGENT\'s inbox, not the deployer\'s');
+    assert.ok(/^Jane Doe/.test(o.name), 'display name leads with the agent');
+    // vm-realm trap (documented in CLAUDE.md): deepStrictEqual compares
+    // PROTOTYPES, so a vm-created object never equals a host {} — compare keys.
+    assert.strictEqual(Object.keys(r1Ctx.repSenderOpts_(null)).length, 0,
+      'missing emp → empty options object (Object.assign no-op — the send proceeds with system identity, never throws)');
+    assert.deepStrictEqual(Object.keys(r1Ctx.repSenderOpts_({})), [], 'partial emp never emits undefined name/replyTo');
+  });
+  test('R1 #8: every rep-initiated sender routes its MailApp options through repSenderOpts_', () => {
+    // The four rep-initiated correspondence senders. Automated digests /
+    // alerts / exports deliberately keep the system identity — they are NOT
+    // in this list, and adding the opts there would misattribute system mail.
+    ['emailFromCallNote', 'sendExternalEmail', 'intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
+      const src = strip(extractRawFunction('Code.js', fn));
+      assert.ok(/repSenderOpts_\(emp\)/.test(src), fn + ' applies the agent sender identity');
+    });
+    // emailFromCallNote has THREE sends (split-CTA internal + external, and
+    // the single-recipient path) — each must carry the identity.
+    const efc = strip(extractRawFunction('Code.js', 'emailFromCallNote'));
+    assert.strictEqual((efc.match(/repSenderOpts_\(emp\)/g) || []).length, 3,
+      'all three emailFromCallNote sends carry the sender identity');
+  });
+
+  // Client half — filter case, pills, and the draft/snapshot round-trip.
+  const cnNoteMatchesFilter_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnNoteMatchesFilter_');
+  test('R1 #2: cnNoteMatchesFilter_("outbound") matches only callDirection === "outbound"', () => {
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: { callDirection: 'outbound' } }, 'outbound'), true);
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: {} }, 'outbound'), false);
+    assert.strictEqual(cnNoteMatchesFilter_r1({}, 'outbound'), false);
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: { callDirection: 'inbound' } }, 'outbound'), false);
+  });
+  const cnDirectionPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnDirectionPillHtml_');
+  test('R1 #2: the outbound pill renders only for callDirection === "outbound"', () => {
+    assert.ok(/outbound/.test(cnDirectionPillHtml_({ subformData: { callDirection: 'outbound' } })), 'pill renders');
+    assert.strictEqual(cnDirectionPillHtml_({ subformData: {} }), '', 'absent direction (inbound) renders nothing');
+    assert.strictEqual(cnDirectionPillHtml_({}), '');
+    assert.strictEqual(cnDirectionPillHtml_(null), '');
+  });
+  const cnReviewCommentLineHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnReviewCommentLineHtml_');
+  test('R1 #1: the card review-comment line is esc()\'d and gated on the CURRENT review flag', () => {
+    const html = cnReviewCommentLineHtml_({ flagType: 'review', subformData: { reviewComment: '<img src=x>' } });
+    assert.ok(html.indexOf('<img') < 0 && html.indexOf('&lt;img') >= 0,
+      'the rep-typed comment is escaped before innerHTML (INV-89 discipline)');
+    assert.strictEqual(cnReviewCommentLineHtml_({ flagType: '', subformData: { reviewComment: 'recleared' } }), '',
+      'a persisted comment on a since-recleared flag stops rendering (matches the digest gating)');
+  });
+  test('R1 #1/#2: sticky draft + snapshots round-trip reviewC and direction; the filter chip is registered', () => {
+    const cn = strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+    const persist = /function cnPersistActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/reviewC: rcVal/.test(persist) && /direction: dirVal/.test(persist), 'persist writes both fields');
+    const restore = /function cnRestoreActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/data\.reviewC/.test(restore) && /data\.direction/.test(restore), 'restore reads both fields back');
+    const park = /function cnSaveSnapshotAsStickyDraft_\([\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/reviewC: snap\.reviewC/.test(park) && /direction: snap\.direction/.test(park),
+      'the failed-submit park keeps both (the Cycle-2 M4 path)');
+    const clear = /function cnClearActiveForm_\([\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/cnSetFormDirection_\(form0, ''\)/.test(clear), 'Clear resets the direction toggle');
+    assert.ok(/'cn-fld-review-c', ''/.test(clear), 'Clear empties the review-comment field');
+    assert.ok(/'outbound'\]/.test(/const CN_DEFAULT_FILTERS[^\n]*/.exec(cn)[0]), 'the Outbound filter chip is registered');
+    // The direction toggle's identity is data-direction, never data-flag —
+    // the flag writer (querySelectorAll('.flag-btn[data-flag]')) and the
+    // server flags[] array must never see it (the INV-191 class).
+    assert.ok(/data-direction="outbound"/.test(cn), 'toggle carries the data-direction identity attribute');
+    const formFlags = /const CN_FORM_FLAGS = \[[^\]]*\]/.exec(cn)[0];
+    assert.ok(!/outbound/.test(formFlags), 'outbound is NOT a form flag — it must never enter flags[]/FlagType');
+  });
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

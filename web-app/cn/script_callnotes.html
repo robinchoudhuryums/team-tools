@@ -914,6 +914,30 @@
   .cn-training-q-row input:focus {
     border-color: var(--accent); box-shadow: var(--ring-focus);
   }
+  /* Round-1 pilot #1 (2026-08-21) — optional review-flag comment row; the
+     training-question row mirrored in the review flag's good/green family.
+     Shown only while the review flag is selected (cnSetFormFlags_). */
+  .cn-review-c-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed color-mix(in srgb, var(--good), transparent 70%);
+  }
+  .cn-review-c-row label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--success-deep); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 5px; display: block;
+  }
+  .cn-review-c-row input {
+    width: 100%; padding: 8px 11px;
+    border: 1px solid color-mix(in srgb, var(--good), transparent 60%);
+    border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px;
+    background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+  .cn-review-c-row input:focus {
+    border-color: var(--good); box-shadow: var(--ring-focus);
+  }
 
   /* Flag overflow menu — kebab button + dropdown for less-common flags */
   .cn-flag-more-wrap { position: relative; display: inline-flex; }
@@ -960,6 +984,17 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: .35; }
   }
+
+  /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
+     (the training-question line mirrored, in the review flag's green). */
+  .cn-card-review-c {
+    display: flex; align-items: flex-start; gap: 6px;
+    margin-top: 4px;
+    font-family: var(--ui); font-size: 12px;
+    color: var(--success-deep);
+    font-style: italic;
+  }
+  .cn-card-review-c svg { flex-shrink: 0; margin-top: 2px; }
 
   /* Training-question line on a saved card */
   .cn-card-training-q {
@@ -1190,6 +1225,23 @@
     background: var(--destructive-soft); color: var(--danger-deep);
     margin-left: 6px; vertical-align: middle;
   }
+  /* Round-1 pilot #2 — info-toned "outbound" pill (callDirection metadata;
+     absent = inbound, the overwhelming default, so inbound renders nothing). */
+  .cn-outbound-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px;
+    background: var(--info-soft); color: var(--info-deep);
+    margin-left: 6px; vertical-align: middle;
+  }
+  /* Round-1 pilot #2 — the outbound toggle row beneath the flag group. Not a
+     flag (never enters flags[]/FlagType): identity is data-direction, per the
+     INV-191 class-vs-identity rule; .flag-btn is borrowed for its LOOK only. */
+  .rail-dir { margin-top: 6px; }
+  .rail-dir .flag-btn { width: 100%; }
+  .flag-btn.dir-outbound svg { color: var(--info); }
+  .flag-btn.dir-outbound.on { background: var(--info-soft); color: var(--info-deep); border-color: transparent; }
   .cn-card-row {
     display: flex; align-items: center; gap: 10px;
   }
@@ -2109,7 +2161,7 @@ const CN_STATE = {
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
-const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','answered'];
+const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','answered','outbound'];
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
@@ -2647,6 +2699,14 @@ function cnRenderActiveForm_() {
             <button type="button" class="flag-btn review"   data-flag="review"   aria-pressed="false" aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
             <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-pressed="false" aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
+          <!-- Round-1 pilot #2 — call-direction toggle. NOT a flag (identity is
+               data-direction, never data-flag — the flag writer + server flags[]
+               array never see it); off = inbound, the default. -->
+          <div class="rail-dir">
+            <button type="button" class="flag-btn dir-outbound" id="cn-dir-outbound" data-direction="outbound"
+                    aria-pressed="false" aria-label="Mark as an outbound call"
+                    title="Mark this note as an OUTBOUND call (leave off for the usual inbound)">${icon('outbox', 12)}<span class="flag-lbl">Outbound call</span></button>
+          </div>
         </div>
 
         <div class="rail-card">
@@ -2688,6 +2748,11 @@ function cnRenderActiveForm_() {
         <label for="cn-fld-training-q">Training Question</label>
         <input type="text" id="cn-fld-training-q" placeholder="What's the question? (short — manager sees this in the weekly digest)">
       </div>
+      <!-- Round-1 pilot #1 — optional review comment, shown when review flag is on -->
+      <div class="cn-review-c-row" id="cn-review-c-row" style="display:none">
+        <label for="cn-fld-review-c">Review Comment (optional)</label>
+        <input type="text" id="cn-fld-review-c" placeholder="Why is this call a review candidate? (short — manager sees this in the weekly digest)">
+      </div>
     </div>
   `;
 }
@@ -2703,6 +2768,19 @@ function cnWireActiveForm_() {
   form.dataset.flags = '';
   form.dataset.flag = '';
   form.dataset.tags = '';
+  form.dataset.direction = '';   // Round-1 #2 — '' = inbound (default), 'outbound'
+
+  // Round-1 #2 — call-direction toggle. Keyed on data-direction (identity),
+  // never data-flag — the flag click-writer below must not see this button.
+  const dirBtn = document.getElementById('cn-dir-outbound');
+  if (dirBtn) {
+    dirBtn.addEventListener('click', function () {
+      const on = form.dataset.direction !== 'outbound';
+      cnSetFormDirection_(form, on ? 'outbound' : '');
+      if (on) { dirBtn.classList.remove('popping'); void dirBtn.offsetWidth; dirBtn.classList.add('popping'); }
+      cnPersistActiveFormDraft_();
+    });
+  }
 
   // Click on a multi-select flag button: toggle membership in the flags set.
   form.querySelectorAll('.flag-btn[data-flag]').forEach(function (btn) {
@@ -3045,8 +3123,10 @@ function cnRestoreFromSnapshot_(snap) {
       cnSetFormFlags_(form, []);
     }
     if (Array.isArray(snap.tags)) cnSetFormTags_(form, snap.tags);
+    cnSetFormDirection_(form, snap.direction || '');   // Round-1 #2
   }
   cnSetFieldValue_('cn-fld-training-q', snap.trainingQ || '');
+  cnSetFieldValue_('cn-fld-review-c', snap.reviewC || '');   // Round-1 #1
   showToast('Restored', 'toast-success');
 }
 
@@ -3060,10 +3140,14 @@ function cnClearActiveForm_(opts) {
       values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
     const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const rcVal = cnGetFieldValue_('cn-fld-review-c');
+    const dirVal = form0 ? (form0.dataset.direction || '') : '';
     const flags0 = cnGetFormFlags_(form0);
     const tags0 = cnGetFormTags_(form0);
     const anyContent = fields.some(function (k) { return (values[k] || '').trim().length > 0; })
                      || (tqVal && tqVal.trim())
+                     || (rcVal && rcVal.trim())
+                     || dirVal
                      || flags0.length > 0
                      || tags0.length > 0;
     if (anyContent) {
@@ -3073,6 +3157,8 @@ function cnClearActiveForm_(opts) {
         tags: tags0,
         flag: form0 ? form0.dataset.flag : '',  // legacy field retained
         trainingQ: tqVal,
+        reviewC: rcVal,      // Round-1 #1
+        direction: dirVal,   // Round-1 #2
         at: Date.now(),
       };
       showToast('Cleared · ' + (cnIsMac_() ? '⌘' : 'Ctrl') + '+Z to undo', 'toast-warn');
@@ -3084,8 +3170,10 @@ function cnClearActiveForm_(opts) {
   if (form0) {
     cnSetFormFlags_(form0, []);
     cnSetFormTags_(form0, []);
+    cnSetFormDirection_(form0, '');   // Round-1 #2
   }
   cnSetFieldValue_('cn-fld-training-q', '');
+  cnSetFieldValue_('cn-fld-review-c', '');
   const tagIn = document.getElementById('cn-tag-input');
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
@@ -3134,6 +3222,22 @@ function cnSetFormFlags_(form, flagsArray) {
   // Training-q row visibility — show when training is one of the selected flags
   const trainingRow = document.getElementById('cn-training-q-row');
   if (trainingRow) trainingRow.style.display = filtered.indexOf('training') >= 0 ? 'block' : 'none';
+  // Round-1 #1 — review-comment row, same rule for the review flag
+  const reviewRow = document.getElementById('cn-review-c-row');
+  if (reviewRow) reviewRow.style.display = filtered.indexOf('review') >= 0 ? 'block' : 'none';
+}
+/** Round-1 #2 — form call-direction state ('' = inbound default, 'outbound').
+ *  Mirrors cnSetFormFlags_'s dataset + button-class + aria-pressed discipline
+ *  (A11: the class alone is invisible to assistive tech). */
+function cnSetFormDirection_(form, dir) {
+  if (!form) return;
+  const v = (dir === 'outbound') ? 'outbound' : '';
+  form.dataset.direction = v;
+  const btn = document.getElementById('cn-dir-outbound');
+  if (btn) {
+    btn.classList.toggle('on', v === 'outbound');
+    btn.setAttribute('aria-pressed', v === 'outbound' ? 'true' : 'false');
+  }
 }
 function cnGetFormTags_(form) {
   if (!form) return [];
@@ -3215,6 +3319,13 @@ function cnReadActiveForm_() {
   // training-q input is still an <input> (lives below the doc frame, not
   // contenteditable) — cnGetFieldValue_ falls through to .value transparently.
   const trainingQ = (flags.indexOf('training') >= 0) ? cnGetFieldValue_('cn-fld-training-q').trim() : '';
+  // Round-1 #1/#2 — review comment (gated on the review flag, like trainingQ)
+  // and call direction ('' = inbound default; only 'outbound' is ever stored).
+  const reviewC = (flags.indexOf('review') >= 0) ? cnGetFieldValue_('cn-fld-review-c').trim() : '';
+  const direction = (form && form.dataset.direction === 'outbound') ? 'outbound' : '';
+  // Literal-keyed subformData so the INV-143 payload-contract tripwire sees
+  // every submitted key; the server whitelist drops empty strings.
+  const hasSub = !!(trainingQ || reviewC || direction);
   return {
     callback:      cnGetFieldValue_('cn-fld-callback'),
     caller:        cnGetFieldValue_('cn-fld-caller'),
@@ -3226,7 +3337,11 @@ function cnReadActiveForm_() {
     flagType:      flag,
     flags:         flags,
     tags:          tags,
-    subformData:   trainingQ ? { trainingQuestion: trainingQ } : null,
+    subformData:   hasSub ? {
+      trainingQuestion: trainingQ,
+      reviewComment:    reviewC,
+      callDirection:    direction,
+    } : null,
   };
 }
 
@@ -3283,6 +3398,8 @@ function cnPersistActiveFormDraft_() {
     });
     const form = document.getElementById('cn-active-form');
     const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const rcVal = cnGetFieldValue_('cn-fld-review-c');
+    const dirVal = form ? (form.dataset.direction || '') : '';
     const flags = cnGetFormFlags_(form);
     const tags = cnGetFormTags_(form);
     const data = {
@@ -3291,11 +3408,14 @@ function cnPersistActiveFormDraft_() {
       tags: tags,
       flag: form ? form.dataset.flag : '',
       trainingQ: tqVal,
+      reviewC: rcVal,      // Round-1 #1
+      direction: dirVal,   // Round-1 #2
       at: Date.now(),   // drafts expire after CN_FORM_STICKY_MAX_AGE_MS (PHI TTL)
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
-                    || flags.length > 0 || tags.length > 0
-                    || (data.trainingQ && data.trainingQ.trim());
+                    || flags.length > 0 || tags.length > 0 || dirVal
+                    || (data.trainingQ && data.trainingQ.trim())
+                    || (data.reviewC && data.reviewC.trim());
     if (anyContent) {
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
     } else {
@@ -3460,8 +3580,10 @@ function cnRestoreActiveFormDraft_() {
       if (Array.isArray(data.tags) && data.tags.length > 0) {
         cnSetFormTags_(form, data.tags);
       }
+      if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
     }
     if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
+    if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
     return true;
   } catch (e) { return false; }
 }
@@ -3676,6 +3798,8 @@ function cnSubmitActiveForm_(opts) {
     flags: Array.isArray(payload.flags) ? payload.flags.slice() : null,
     tags: Array.isArray(payload.tags) ? payload.tags.slice() : null,
     trainingQ: (payload.subformData && payload.subformData.trainingQuestion) || '',
+    reviewC: (payload.subformData && payload.subformData.reviewComment) || '',       // Round-1 #1
+    direction: (payload.subformData && payload.subformData.callDirection) || '',     // Round-1 #2
   };
 
   // Optimistic path — runs synchronously, well under one frame:
@@ -3801,6 +3925,8 @@ function cnSaveSnapshotAsStickyDraft_(snap) {
       tags: Array.isArray(snap.tags) ? snap.tags : [],
       flag: snap.flag || '',
       trainingQ: snap.trainingQ || '',
+      reviewC: snap.reviewC || '',        // Round-1 #1
+      direction: snap.direction || '',    // Round-1 #2
       at: Date.now(),
     }));
   } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
@@ -4268,10 +4394,11 @@ function cnRenderCardCore_(note, expandable) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}${cnDeptEmailPillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${cnIntakePillHtml_(note)}${cnDeptEmailPillHtml_(note)}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
+          ${cnReviewCommentLineHtml_(note)}
           ${trainingQ}
         </div>
         <div class="cn-card-actions">
@@ -4318,6 +4445,27 @@ function cnIsUrgent_(note) {
 function cnUrgentPillHtml_(note) {
   if (!cnIsUrgent_(note)) return '';
   return '<span class="cn-urgent-pill" title="Flagged urgent">' + icon('warning', 10) + 'urgent</span>';
+}
+
+// Round-1 pilot #2 — info-toned "outbound" pill. callDirection lives in
+// subformData and is stored ONLY as 'outbound' (absent = inbound, the
+// overwhelming default, which renders nothing). Single source of truth for
+// the rep card, the search result card, and the manager read-only card.
+function cnDirectionPillHtml_(note) {
+  const d = note && note.subformData && note.subformData.callDirection;
+  if (d !== 'outbound') return '';
+  return '<span class="cn-outbound-pill" title="Outbound call">' + icon('outbox', 10) + 'outbound</span>';
+}
+
+// Round-1 pilot #1 — the optional review comment as a card line (the
+// training-question line mirrored). Gated on the CURRENT flag being review —
+// a persisted comment on a since-recleared flag stays in subformData but
+// stops rendering (matching the digest's gating).
+function cnReviewCommentLineHtml_(note) {
+  const c = (note && note.flagType === 'review' && note.subformData && note.subformData.reviewComment)
+    ? String(note.subformData.reviewComment).trim() : '';
+  if (!c) return '';
+  return '<div class="cn-card-review-c">' + icon('thumbsUp', 12) + '<span>' + esc(c) + '</span></div>';
 }
 
 // Intake-sourced note chip: a note auto-logged after an Intake form was sent
@@ -4654,16 +4802,21 @@ function cnToggleFlag_(noteId, kind) {
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
 
-  if (next === 'training') {
+  if (next === 'training' || next === 'review') {
     // uiPrompt is async — set the in-flight guard BEFORE opening it so a
     // second click while the prompt is open is dropped (INV-56), then clear
     // it if the rep cancels. cnDoToggleFlag_ re-sets it for the RPC leg.
+    // Round-1 #1: the review flag prompts for an OPTIONAL comment the same
+    // way training prompts for its question.
+    const isTraining = (next === 'training');
     note._flagInFlight = true;
     uiPrompt({
-      title: 'Flag for training',
-      message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
+      title: isTraining ? 'Flag for training' : 'Flag as review candidate',
+      message: isTraining
+        ? 'What question or concern would you like to flag for training?\n(Leave blank to skip)'
+        : 'Why is this call a review candidate?\n(Optional — leave blank to skip)',
       initialValue: '',
-      placeholder: 'Optional training question',
+      placeholder: isTraining ? 'Optional training question' : 'Optional review comment',
       confirmLabel: 'Flag',
     }).then(function (raw) {
       // F8 — re-resolve the note from state: a 60s ambient refresh while the
@@ -4679,14 +4832,15 @@ function cnToggleFlag_(noteId, kind) {
       const curPrev = { flagType: cur.flagType, resolved: cur.resolved };
       const curNext = (cur.flagType === kind) ? '' : kind;
       const trimmed = String(raw).trim() || null;
-      cnDoToggleFlag_(noteId, cur, curPrev, curNext, trimmed);
+      cnDoToggleFlag_(noteId, cur, curPrev, curNext,
+        isTraining ? trimmed : null, isTraining ? null : trimmed);
     });
     return;
   }
-  cnDoToggleFlag_(noteId, note, prev, next, null);
+  cnDoToggleFlag_(noteId, note, prev, next, null, null);
 }
 
-function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
+function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
   note._flagInFlight = true;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
@@ -4710,7 +4864,7 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
       cnReRenderActiveView_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
-    .setCallNoteFlag(noteId, next, trainingQ);
+    .setCallNoteFlag(noteId, next, trainingQ, reviewC || null);
 }
 
 /** Card-level urgent toggle (Round 2 deferred 8e). Unlike action/training/
@@ -4999,7 +5153,8 @@ function cnRenderFilterBar_() {
   if (!bar) return;
   CN_STATE.filterCounts = cnComputeFilterCounts_(CN_STATE.rollingNotes);
   const labelFor = { all: 'All', action: 'Action', training: 'Training',
-                     review: 'Review', unresolved: 'Unresolved', answered: 'Q&A' };
+                     review: 'Review', unresolved: 'Unresolved', answered: 'Q&A',
+                     outbound: 'Outbound' };   // Round-1 #2
   bar.innerHTML = '<span class="cn-filter-label">Filter</span>' +
     CN_DEFAULT_FILTERS.map(function (f) {
       const count = CN_STATE.filterCounts[f] || 0;
@@ -5045,6 +5200,8 @@ function cnNoteMatchesFilter_(note, filter) {
     // reply must disappear from this filter / the QA count). Do not "fix" it to
     // read feedback[] without first redefining clear as a retraction marker.
     case 'answered':   return note.flagType === 'training' && note.subformData && !!note.subformData.trainingReply;
+    // Round-1 #2 — callDirection is stored ONLY as 'outbound' (absent = inbound).
+    case 'outbound':   return !!(note.subformData && note.subformData.callDirection === 'outbound');
     case 'all':
     default:           return true;
   }
@@ -6250,10 +6407,11 @@ function cnRenderResultCard_(note, repName) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)} · ${esc(note.dateLocal || '')}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${repBit}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${repBit}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
+          ${cnReviewCommentLineHtml_(note)}
         </div>
         <div class="cn-card-actions">${pills.join('')}</div>
       </div>
@@ -6764,8 +6922,9 @@ function cnMgrRenderReadonlyCard_(note) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
+          ${cnReviewCommentLineHtml_(note)}
           ${threadHtml}
           ${resolution}
         </div>
@@ -6945,6 +7104,8 @@ function cnMgrRenderQueue_(host, results) {
           <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
           <br>${esc(n.issue || '')}
           ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+          ${(n.flagType === 'review' && n.subformData && n.subformData.reviewComment)
+            ? '<br><span style="color:var(--success-deep);font-style:italic">' + esc(n.subformData.reviewComment) + '</span>' : ''}
         </div>
       </div>
     `;
