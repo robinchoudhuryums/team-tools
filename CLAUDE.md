@@ -2161,7 +2161,16 @@ this section before touching the relevant area.
   run before 09:00 Manila failed on a CORRECT guard. It had been silently flaky
   since cycle 9. Windows that don't need today should end YESTERDAY; a test that
   genuinely needs the boundary must derive its times from the target's own clock
-  and SKIP near midnight there. (b) **A fix that closes a creation path breaks
+  and SKIP near midnight there. **The class bit AGAIN on its post-deploy debut
+  (2026-08-21), through a different door — MIXED-FRAME DERIVATION:**
+  `submitTimeOffRange_weekendSkipAtomicCaps` picked its Monday anchor via
+  `base.getDay()` (SCRIPT tz, Chicago) but formatted its labels in
+  `CONFIG.TIMEZONE` (Kolkata, ~+10.5h), so any run after ~13:30 Chicago shifted
+  every label +1 day — its "sat..sun" range was really Sun..Mon, the server
+  CORRECTLY wrote the Monday, and the failure looked like a weekend-skip bug.
+  The rule: a test derives day-of-week AND the label from the SAME tz frame
+  (`Utilities.formatDate(d, tz, 'EEE')` beside the `'yyyy-MM-dd'`), stepping
+  days as exact 24h ms — never `getDay()` beside a `formatDate` in another zone. (b) **A fix that closes a creation path breaks
   every test that used that path to build its fixture.** Cycle 11's M-1 (the
   INV-94 dup-date guard extended to the →Approved transition) made
   `fixPtoReconciliation_creditsAndIdempotent`'s setup unreachable — the test
