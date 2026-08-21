@@ -4158,13 +4158,13 @@ function cnRenderCardCore_(note, expandable) {
           </div>
         </div>
         <div class="cn-edit-fields">
-          <div><input type="text" placeholder="Callback" id="cnE-callback-${esc(note.noteId)}" value="${esc(note.callback || '')}"></div>
-          <div><input type="text" placeholder="Caller" id="cnE-caller-${esc(note.noteId)}" value="${esc(note.caller || '')}"></div>
-          <div><input type="text" placeholder="Relationship" id="cnE-relationship-${esc(note.noteId)}" value="${esc(note.relationship || '')}"></div>
-          <div><input type="text" placeholder="Patient & TRX" id="cnE-patient-${esc(note.noteId)}" value="${esc(note.patientAndTrx || '')}"></div>
-          <div class="full"><textarea placeholder="Issue" id="cnE-issue-${esc(note.noteId)}" rows="2">${esc(note.issue || '')}</textarea></div>
-          <div><input type="text" placeholder="Transferred To" id="cnE-transferred-${esc(note.noteId)}" value="${esc(note.transferredTo || '')}"></div>
-          <div><textarea placeholder="Resolution" id="cnE-resolution-${esc(note.noteId)}" rows="1">${esc(note.resolution || '')}</textarea></div>
+          <div><input type="text" placeholder="Callback" id="cnE-callback-${esc(note.noteId)}" value="${esc(note.callback || '')}" aria-label="Callback"></div>
+          <div><input type="text" placeholder="Caller" id="cnE-caller-${esc(note.noteId)}" value="${esc(note.caller || '')}" aria-label="Caller"></div>
+          <div><input type="text" placeholder="Relationship" id="cnE-relationship-${esc(note.noteId)}" value="${esc(note.relationship || '')}" aria-label="Relationship"></div>
+          <div><input type="text" placeholder="Patient & TRX" id="cnE-patient-${esc(note.noteId)}" value="${esc(note.patientAndTrx || '')}" aria-label="Patient & TRX"></div>
+          <div class="full"><textarea placeholder="Issue" id="cnE-issue-${esc(note.noteId)}" rows="2" aria-label="Issue">${esc(note.issue || '')}</textarea></div>
+          <div><input type="text" placeholder="Transferred To" id="cnE-transferred-${esc(note.noteId)}" value="${esc(note.transferredTo || '')}" aria-label="Transferred To"></div>
+          <div><textarea placeholder="Resolution" id="cnE-resolution-${esc(note.noteId)}" rows="1" aria-label="Resolution">${esc(note.resolution || '')}</textarea></div>
         </div>
         <div class="cn-edit-footer">
           <button class="cn-save-btn" data-cn-action="save-edit">${icon('check', 12)} Save</button>
@@ -5268,7 +5268,7 @@ function cnRenderComposerFormStep_() {
 
   const otherEmailRow = selected.indexOf('Other') >= 0 ? `
     <div class="field" id="cnC-other-row" style="margin-top:8px">
-      <label>"Other" email addresses (comma-separated)</label>
+      <label for="cnC-individual-email">"Other" email addresses (comma-separated)</label>
       <input type="text" id="cnC-individual-email" value="${esc(c.selections.individualEmail || '')}"
              placeholder="name@example.com, other@example.com">
     </div>` : '';
@@ -5300,7 +5300,7 @@ function cnRenderComposerFormStep_() {
         <div class="field" style="margin:0">
           <input type="text" id="cnC-update-info" list="cnC-update-options"
                  placeholder="Type or pick…" value="${esc(c.selections.updateInfo || '')}"
-                 oninput="cnComposerUpdateInfoChanged_()" onchange="cnComposerUpdateInfoChanged_()">
+                 oninput="cnComposerUpdateInfoChanged_()" onchange="cnComposerUpdateInfoChanged_()" aria-label="Update type">
           <datalist id="cnC-update-options">${updateDatalist}</datalist>
         </div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
@@ -5381,7 +5381,7 @@ function cnUpdateComposerDeptUI_() {
       wrapper.id = 'cnC-other-row';
       wrapper.style.marginTop = '8px';
       wrapper.innerHTML =
-        '<label>"Other" email addresses (comma-separated)</label>' +
+        '<label for="cnC-individual-email">"Other" email addresses (comma-separated)</label>' +
         '<input type="text" id="cnC-individual-email" value="' +
           esc(c.selections.individualEmail || '') +
         '" placeholder="name@example.com, other@example.com">';
@@ -5460,37 +5460,37 @@ function cnRenderShippingSubform_() {
         <input type="checkbox" id="cnS-verified" ${sd.verifiedAddr ? 'checked' : ''} style="width:auto;margin:0">
         <label for="cnS-verified" style="margin:0;letter-spacing:0;text-transform:none;font-family:var(--ui);font-weight:400;color:var(--ink);font-size:12px">Address verified</label>
       </div>
-      <div class="field"><label>Verified Address (text + state auto-detect)</label>
+      <div class="field"><label for="cnS-addr">Verified Address (text + state auto-detect)</label>
         <input type="text" id="cnS-addr" value="${esc(sd.verifiedAddrText || '')}" placeholder="123 Main St, Austin, TX 78701" oninput="cnAutoDetectState_(this.value)">
       </div>
       <div class="field-row">
-        <div class="field"><label>State</label>
+        <div class="field"><label for="cnS-state">State</label>
           <select id="cnS-state"><option value="">— —</option>${cnStateOptionsHtml_(sd.state)}</select>
         </div>
-        <div class="field"><label>Patient Location</label>
+        <div class="field"><label for="cnS-patient-loc">Patient Location</label>
           <select id="cnS-patient-loc">
             ${cnSelectOpts_(['Home','Facility','Mailing Only','Other'], sd.patientLoc)}
           </select>
         </div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Docs To</label>
+        <div class="field"><label for="cnS-docs-to">Docs To</label>
           <select id="cnS-docs-to" onchange="cnShippingDocsToChanged_(this.value)">
             ${cnSelectOpts_(['Patient','Provider','Facility','Email','Other'], sd.docsTo)}
           </select>
         </div>
-        <div class="field"><label>Pat. Resp.</label>
+        <div class="field"><label for="cnS-pat-resp">Pat. Resp.</label>
           <select id="cnS-pat-resp">
             ${cnSelectOpts_(['Collected','Need to Collect','N/A'], sd.patResp)}
           </select>
         </div>
       </div>
       <div id="cnS-delivery-email-row" style="display:${sd.docsTo === 'Email' ? 'block' : 'none'}">
-        <div class="field"><label>Delivery Email</label>
+        <div class="field"><label for="cnS-delivery-email">Delivery Email</label>
           <input type="email" id="cnS-delivery-email" value="${esc(sd.deliveryEmail || '')}" placeholder="recipient@example.com">
         </div>
       </div>
-      <div class="field"><label>Note (optional)</label>
+      <div class="field"><label for="cnS-note">Note (optional)</label>
         <input type="text" id="cnS-note" value="${esc(sd.specialNote || '')}" placeholder="Anything else">
       </div>
     </div>
@@ -5503,7 +5503,7 @@ function cnRenderCloseSubform_() {
     <div class="cn-compose-section sf-close">
       <div class="cn-compose-section-title">Close Order — Reason</div>
       <div class="field" style="margin:0">
-        <input type="text" id="cnCD-reason" value="${esc(cd.reason || '')}" placeholder="Why are we closing it?">
+        <input type="text" id="cnCD-reason" value="${esc(cd.reason || '')}" placeholder="Why are we closing it?" aria-label="Reason for closing the order">
       </div>
     </div>
   `;
@@ -5515,20 +5515,20 @@ function cnRenderResupplySubform_() {
     <div class="cn-compose-section sf-resupply">
       <div class="cn-compose-section-title">Repeat Resupply</div>
       <div class="field-row">
-        <div class="field"><label>Item Category</label>
+        <div class="field"><label for="cnRR-cat">Item Category</label>
           <input type="text" id="cnRR-cat" value="${esc(rd.itemCategory || '')}" placeholder="CPAP / O2 / NIV / …">
         </div>
-        <div class="field"><label>D.O.B. (optional)</label>
+        <div class="field"><label for="cnRR-dob">D.O.B. (optional)</label>
           <input type="text" id="cnRR-dob" value="${esc(rd.dob || '')}" placeholder="MM/DD/YYYY">
         </div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Requesting Month</label>
+        <div class="field"><label for="cnRR-month">Requesting Month</label>
           <select id="cnRR-month">
             ${cnSelectOpts_(['January','February','March','April','May','June','July','August','September','October','November','December'], rd.resupplyMonth)}
           </select>
         </div>
-        <div class="field"><label>Last Scheduled Date</label>
+        <div class="field"><label for="cnRR-last-date">Last Scheduled Date</label>
           <input type="date" id="cnRR-last-date" value="${esc(rd.lastDate || '')}">
         </div>
       </div>
@@ -5537,48 +5537,48 @@ function cnRenderResupplySubform_() {
         <label for="cnRR-same-items" style="margin:0;letter-spacing:0;text-transform:none;font-family:var(--ui);font-weight:400;color:var(--ink);font-size:12px">Same items &amp; quantity as previous</label>
       </div>
       <div class="field-row">
-        <div class="field"><label>Address Status</label>
+        <div class="field"><label for="cnRR-addr-status">Address Status</label>
           <select id="cnRR-addr-status" onchange="cnResupplyAddrChanged_(this.value)">
             ${cnSelectOpts_(['Same','Different'], rd.addrStatus)}
           </select>
         </div>
-        <div class="field"><label>Insurance Status</label>
+        <div class="field"><label for="cnRR-ins-status">Insurance Status</label>
           <select id="cnRR-ins-status" onchange="cnResupplyInsChanged_(this.value)">
             ${cnSelectOpts_(['Same','Changed'], rd.insStatus)}
           </select>
         </div>
       </div>
       <div id="cnRR-new-addr-row" style="display:${rd.addrStatus === 'Different' ? 'block' : 'none'}">
-        <div class="field"><label>New Address</label>
+        <div class="field"><label for="cnRR-new-addr">New Address</label>
           <input type="text" id="cnRR-new-addr" value="${esc(rd.newAddr || '')}">
         </div>
       </div>
       <div id="cnRR-new-ins-row" style="display:${rd.insStatus === 'Changed' ? 'block' : 'none'}">
         <div class="field-row">
-          <div class="field"><label>New Insurance</label>
+          <div class="field"><label for="cnRR-new-ins">New Insurance</label>
             <input type="text" id="cnRR-new-ins" value="${esc(rd.newIns || '')}">
           </div>
-          <div class="field"><label>New Member ID</label>
+          <div class="field"><label for="cnRR-new-memid">New Member ID</label>
             <input type="text" id="cnRR-new-memid" value="${esc(rd.newMemId || '')}">
           </div>
         </div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Provider Status</label>
+        <div class="field"><label for="cnRR-prov-status">Provider Status</label>
           <select id="cnRR-prov-status" onchange="cnResupplyProvChanged_(this.value)">
             ${cnSelectOpts_(['Same','Changed'], rd.provStatus)}
           </select>
         </div>
-        <div class="field"><label>Note (optional)</label>
+        <div class="field"><label for="cnRR-note">Note (optional)</label>
           <input type="text" id="cnRR-note" value="${esc(rd.specialNote || '')}" placeholder="Extra context">
         </div>
       </div>
       <div id="cnRR-new-prov-row" style="display:${rd.provStatus === 'Changed' ? 'block' : 'none'}">
         <div class="field-row">
-          <div class="field"><label>New Provider</label>
+          <div class="field"><label for="cnRR-new-prov">New Provider</label>
             <input type="text" id="cnRR-new-prov" value="${esc(rd.newProv || '')}">
           </div>
-          <div class="field"><label>New Provider Phone</label>
+          <div class="field"><label for="cnRR-new-mdo-ph">New Provider Phone</label>
             <input type="text" id="cnRR-new-mdo-ph" value="${esc(rd.newMdoPh || '')}">
           </div>
         </div>
@@ -5594,7 +5594,7 @@ function cnRenderOopSubform_() {
   // base + shipping only.
   const taxRow = flagOn_('oopSalesTax') ? `
       <div class="field-row">
-        <div class="field"><label>Rx Tax-Exempt?</label>
+        <div class="field"><label for="cnO-rx">Rx Tax-Exempt?</label>
           <select id="cnO-rx" onchange="cnRecalcOop_()">
             ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
           </select>
@@ -5607,10 +5607,10 @@ function cnRenderOopSubform_() {
     <div class="cn-compose-section sf-oop">
       <div class="cn-compose-section-title">OOP Order Breakdown</div>
       <div class="field-row">
-        <div class="field"><label>Base Cost ($)</label>
+        <div class="field"><label for="cnO-base">Base Cost ($)</label>
           <input type="number" id="cnO-base" step="0.01" value="${esc(od.baseCost || '')}" placeholder="0.00" oninput="cnRecalcOop_()">
         </div>
-        <div class="field"><label>Shipping ($)</label>
+        <div class="field"><label for="cnO-shipping">Shipping ($)</label>
           <input type="text" id="cnO-shipping" value="${esc(od.shippingCost || '')}" placeholder="$14.99 / custom" oninput="cnRecalcOop_()">
         </div>
       </div>
@@ -6011,9 +6011,9 @@ function cnRenderHistoryView(area) {
   area.innerHTML = `
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · History', 'Past days — pick a date or range to view & edit prior notes, or send a forgotten email.')}
     <div class="cn-history-range">
-      <label>From</label>
+      <label for="cn-history-start">From</label>
       <input type="date" id="cn-history-start" value="${esc(startVal)}">
-      <label>To</label>
+      <label for="cn-history-end">To</label>
       <input type="date" id="cn-history-end" value="${esc(endVal)}">
       <div class="cn-history-presets">
         <button type="button" class="cn-history-preset-btn" data-preset="yesterday">Yesterday</button>
@@ -6296,7 +6296,7 @@ function cnRenderSearchView(area) {
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Search', 'Find past interactions by caller name, phone, patient/TRX, or issue.')}
     <div class="cn-search-bar">
       <input type="text" id="cn-search-q" placeholder="Type a caller name, phone, TRX, or issue keyword…"
-             value="${esc(CN_STATE.searchQuery || '')}" oninput="cnSearchQueryChanged_(this.value)">
+             value="${esc(CN_STATE.searchQuery || '')}" oninput="cnSearchQueryChanged_(this.value)" aria-label="Search your call notes">
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'all'}" onclick="cnSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'caller'}" onclick="cnSetSearchField_('caller')">Caller</button>
@@ -6647,12 +6647,12 @@ function cnMgrRenderRepViewControls_(host) {
   }).join('');
   host.innerHTML = `
     <div class="cn-history-picker" style="margin-bottom:14px">
-      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Rep</label>
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase" for="cn-mgr-rep-pick">Rep</label>
       <select id="cn-mgr-rep-pick" onchange="cnMgrRepChanged_(this.value)"
               style="padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius);font-family:var(--ui);font-size:13px;background:var(--paper-card);color:var(--ink);outline:none">
         ${repOpts}
       </select>
-      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase" for="cn-mgr-rep-date">Date</label>
       <input type="date" id="cn-mgr-rep-date" value="${esc(CN_STATE.mgrRepView.date)}" onchange="cnMgrRepDateChanged_(this.value)">
     </div>
     <div id="cn-mgr-rep-stack"></div>
@@ -6737,7 +6737,7 @@ function cnMgrRenderReadonlyCard_(note) {
     // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
     editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
-        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…">
+        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
         <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
           ${icon('check', 12)}<span>Comment</span>
         </button>
@@ -6969,7 +6969,7 @@ function cnMgrLoadStatsView_() {
   }
   host.innerHTML = `
     <div class="cn-history-picker" style="margin-bottom:14px">
-      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase" for="cn-mgr-stats-date">Date</label>
       <input type="date" id="cn-mgr-stats-date" value="${esc(CN_STATE.mgrStatsDate)}" onchange="cnMgrStatsDateChanged_(this.value)">
     </div>
     <div id="cn-mgr-stats-body"></div>
@@ -7120,7 +7120,7 @@ function cnMgrLoadSearchView_() {
   host.innerHTML = `
     <div class="cn-search-bar">
       <input type="text" id="cn-mgr-search-q" placeholder="Search across all reps — caller, phone, TRX, or issue keyword…"
-             value="${esc(CN_STATE.mgrSearchQuery || '')}" oninput="cnMgrSearchQueryChanged_(this.value)">
+             value="${esc(CN_STATE.mgrSearchQuery || '')}" oninput="cnMgrSearchQueryChanged_(this.value)" aria-label="Search all reps' call notes">
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'all'}" onclick="cnMgrSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'caller'}" onclick="cnMgrSetSearchField_('caller')">Caller</button>
@@ -7467,7 +7467,7 @@ function cnRenderQAThread_(note, opts) {
         + '<button type="button" class="qa-clarify-btn" data-qa-clarify="' + esc(note.noteId) + '">💬 Clarify</button>'
       + '</div>'
       + '<div class="qa-clarify-row" data-qa-clarify-row="' + esc(note.noteId) + '" hidden>'
-        + '<textarea class="qa-clarify-input" placeholder="Your follow-up question…"></textarea>'
+        + '<textarea class="qa-clarify-input" placeholder="Your follow-up question…" aria-label="Your follow-up question"></textarea>'
         + '<button type="button" class="qa-clarify-submit">Send</button>'
       + '</div>'
     : '';
@@ -8572,10 +8572,10 @@ function cnLoadAuditPanel_() {
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Compliance Audit</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Search the call-note audit trail across all reps. Expand a row for the note’s full history; “View note” opens it in Team Notes. The log is PHI-free — note content lives only in the per-rep view.</div>' +
       '<div class="field-row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">' +
-        '<div class="field" style="flex:1;min-width:130px"><label>Rep</label><select id="cn-audit-rep"><option value="">All reps</option></select></div>' +
-        '<div class="field" style="flex:1;min-width:150px"><label>Action</label><select id="cn-audit-action"><option value="">All actions</option></select></div>' +
-        '<div class="field" style="min-width:130px"><label>From</label><input type="date" id="cn-audit-start" value="' + esc(cnAuditDateMinus_(30)) + '"></div>' +
-        '<div class="field" style="min-width:130px"><label>To</label><input type="date" id="cn-audit-end" value="' + esc(todayIso) + '"></div>' +
+        '<div class="field" style="flex:1;min-width:130px"><label for="cn-audit-rep">Rep</label><select id="cn-audit-rep"><option value="">All reps</option></select></div>' +
+        '<div class="field" style="flex:1;min-width:150px"><label for="cn-audit-action">Action</label><select id="cn-audit-action"><option value="">All actions</option></select></div>' +
+        '<div class="field" style="min-width:130px"><label for="cn-audit-start">From</label><input type="date" id="cn-audit-start" value="' + esc(cnAuditDateMinus_(30)) + '"></div>' +
+        '<div class="field" style="min-width:130px"><label for="cn-audit-end">To</label><input type="date" id="cn-audit-end" value="' + esc(todayIso) + '"></div>' +
         '<button class="btn-modal-ok" id="cn-audit-search-btn" style="margin:0">' + icon('search', 13) + ' Search</button>' +
       '</div>' +
       '<div style="display:flex;gap:6px;margin:8px 0 4px">' +
@@ -9602,17 +9602,17 @@ function cnRenderOnboardingHtml_(res) {
     // A plain wrapper div (no display-setting class), so the hidden attribute
     // actually hides it — the documented [hidden]-vs-display gotcha.
     '<div id="cn-ob-form" hidden style="margin-top:12px">' +
-      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1.2"><label>Full name (exactly as the phone system spells it)</label><input id="cn-ob-name" maxlength="80"></div>' +
-        '<div class="field" style="flex:1"><label>Login email</label><input id="cn-ob-email" type="email" placeholder="name@umsupply.com"></div></div>' +
-      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Employee ID</label><input id="cn-ob-id" maxlength="40" placeholder="E-1108"></div>' +
-        '<div class="field" style="flex:1"><label>Timezone</label><input id="cn-ob-tz" list="cn-ob-tzs" placeholder="America/Chicago"><datalist id="cn-ob-tzs">' + tzList + '</datalist></div></div>' +
-      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Pay cycle</label><select id="cn-ob-paycycle"><option value="">—</option><option value="monthly">Monthly</option><option value="biweekly">Biweekly</option></select></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1.2"><label for="cn-ob-name">Full name (exactly as the phone system spells it)</label><input id="cn-ob-name" maxlength="80"></div>' +
+        '<div class="field" style="flex:1"><label for="cn-ob-email">Login email</label><input id="cn-ob-email" type="email" placeholder="name@umsupply.com"></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-id">Employee ID</label><input id="cn-ob-id" maxlength="40" placeholder="E-1108"></div>' +
+        '<div class="field" style="flex:1"><label for="cn-ob-tz">Timezone</label><input id="cn-ob-tz" list="cn-ob-tzs" placeholder="America/Chicago"><datalist id="cn-ob-tzs">' + tzList + '</datalist></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-paycycle">Pay cycle</label><select id="cn-ob-paycycle"><option value="">—</option><option value="monthly">Monthly</option><option value="biweekly">Biweekly</option></select></div>' +
         '<div class="field" style="flex:1"><label>Pay anchor (biweekly only' + (res.hasBiweeklyAnchor ? ' — already set, leave blank' : '') + ')</label><input id="cn-ob-anchor" type="date" disabled></div></div>' +
-      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Annual leave balance</label><input id="cn-ob-annual" type="number" min="0" max="365" step="0.5" value="0"></div>' +
-        '<div class="field" style="flex:1"><label>Sick leave balance</label><input id="cn-ob-sick" type="number" min="0" max="365" step="0.5" value="0"></div>' +
-        '<div class="field" style="flex:1"><label>Manager (column M)</label><select id="cn-ob-manager">' + mgrOpts + '</select></div></div>' +
+      '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label for="cn-ob-annual">Annual leave balance</label><input id="cn-ob-annual" type="number" min="0" max="365" step="0.5" value="0"></div>' +
+        '<div class="field" style="flex:1"><label for="cn-ob-sick">Sick leave balance</label><input id="cn-ob-sick" type="number" min="0" max="365" step="0.5" value="0"></div>' +
+        '<div class="field" style="flex:1"><label for="cn-ob-manager">Manager (column M)</label><select id="cn-ob-manager">' + mgrOpts + '</select></div></div>' +
       '<div class="field-row" style="gap:8px"><div class="field" style="flex:1"><label>Departments staffed (optional, comma-separated' + (res.departments && res.departments.length ? ': ' + esc(res.departments.join(', ')) : '') + ')</label><input id="cn-ob-depts" placeholder=""></div>' +
-        '<div class="field" style="flex:1"><label>Shift override (optional, H:mm-H:mm in their tz)</label><input id="cn-ob-schedule" placeholder="9:00-17:30"></div></div>' +
+        '<div class="field" style="flex:1"><label for="cn-ob-schedule">Shift override (optional, H:mm-H:mm in their tz)</label><input id="cn-ob-schedule" placeholder="9:00-17:30"></div></div>' +
       '<div class="field-row" style="gap:16px;align-items:center;margin-top:4px;flex-wrap:wrap">' +
         '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-pto" checked> Accrues paid leave (uncheck for contractors)</label>' +
         '<label style="font-size:12px;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="cn-ob-ismgr"> Manager (sees team dashboards)</label>' +
@@ -9828,8 +9828,8 @@ function cnRenderAdminBody_(cfg) {
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
-      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" value="' + esc(dept) + '" placeholder="Department name"></div>' +
-      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" value="' + esc(cfg.departmentEmails[dept]) + '" placeholder="email@example.com"></div>' +
+      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" value="' + esc(dept) + '" placeholder="Department name" aria-label="Department name"></div>' +
+      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" value="' + esc(cfg.departmentEmails[dept]) + '" placeholder="email@example.com" aria-label="Department email address"></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.field-row\').remove()">' + icon('x', 14) + '</button>' +
       '</div>';
   }).join('');
@@ -9855,7 +9855,7 @@ function cnRenderAdminBody_(cfg) {
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' State Tax Rates</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Decimal rates used for OOP tax calculations (e.g. 0.05 = 5%). Changes take effect immediately.</div>' +
-      '<div class="field" style="margin:0 0 8px"><input type="text" id="cn-admin-rate-filter" placeholder="Filter states…" oninput="cnFilterRateRows_(this.value)"></div>' +
+      '<div class="field" style="margin:0 0 8px"><input type="text" id="cn-admin-rate-filter" placeholder="Filter states…" oninput="cnFilterRateRows_(this.value)" aria-label="Filter states"></div>' +
       '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto;margin-bottom:10px">' +
         cnRenderRateRows_(cfg.stateTaxRates) +
       '</div>' +
@@ -9943,9 +9943,9 @@ function cnRenderAdminBody_(cfg) {
         ' Today’s spend: $' + esc(Number((kbAi.spend && kbAi.spend.usd) || 0).toFixed(2)) +
         ' across ' + esc(String((kbAi.spend && kbAi.spend.calls) || 0)) + ' call(s). When the daily cap is reached, the card silently stops for the rest of the day.</div>' +
       '<div class="field-row" style="gap:8px">' +
-        '<div class="field" style="flex:1"><label>Daily cap (USD, org-wide)</label>' +
+        '<div class="field" style="flex:1"><label for="cn-admin-kbai-cap">Daily cap (USD, org-wide)</label>' +
           '<input type="number" id="cn-admin-kbai-cap" min="0" max="100" step="0.5" value="' + esc(String(kbAi.dailyCap)) + '"></div>' +
-        '<div class="field" style="flex:1.4"><label>Model</label><select id="cn-admin-kbai-model">' +
+        '<div class="field" style="flex:1.4"><label for="cn-admin-kbai-model">Model</label><select id="cn-admin-kbai-model">' +
           (kbAi.models || []).map(function (m) {
             return '<option value="' + esc(m) + '"' + (m === kbAi.model ? ' selected' : '') + '>' + esc(m) + '</option>';
           }).join('') + '</select></div>' +
@@ -10061,8 +10061,8 @@ function cnRenderAdminBody_(cfg) {
     row.className = 'field-row';
     row.style.cssText = 'gap:8px;margin-bottom:6px';
     row.innerHTML =
-      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" placeholder="Department name"></div>' +
-      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" placeholder="email@example.com"></div>' +
+      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" placeholder="Department name" aria-label="Department name"></div>' +
+      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" placeholder="email@example.com" aria-label="Department email address"></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.field-row\').remove()">' + icon('x', 14) + '</button>';
     list.appendChild(row);
   });
@@ -10365,8 +10365,8 @@ function cnRenderLinkRow_(l) {
   var catOpt = function (v, lbl) { return '<option value="' + v + '"' + (cat === v ? ' selected' : '') + '>' + lbl + '</option>'; };
   return '<div class="cn-admin-link-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
     '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
-      '<div class="field" style="flex:0 0 28%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
-      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…"></div>' +
+      '<div class="field" style="flex:0 0 28%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)" aria-label="Link label"></div>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…" aria-label="Link URL"></div>' +
       '<div class="field" style="flex:0 0 110px;margin:0"><select class="cn-admin-link-cat">' +
         catOpt('survey', 'Survey') + catOpt('review', 'Review') + catOpt('feedback', 'Feedback') + catOpt('other', 'Other') +
       '</select></div>' +
@@ -10421,13 +10421,13 @@ function cnRenderTemplateRow_(t) {
   function opt(v, lbl) { return '<option value="' + v + '"' + (rt === v ? ' selected' : '') + '>' + lbl + '</option>'; }
   return '<div class="cn-admin-tmpl-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
     '<div class="field-row" style="gap:8px;margin-bottom:6px;align-items:center">' +
-      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-tmpl-name" value="' + esc(t.name || '') + '" placeholder="Template name"></div>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-tmpl-name" value="' + esc(t.name || '') + '" placeholder="Template name" aria-label="Template name"></div>' +
       '<div class="field" style="flex:0 0 130px;margin:0"><select class="cn-admin-tmpl-type">' +
         opt('any', 'Any') + opt('customer', 'Customer') + opt('provider', 'Provider') +
       '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-tmpl-row\').remove()">' + icon('x', 14) + '</button>' +
     '</div>' +
-    '<textarea class="cn-admin-tmpl-body" rows="3" placeholder="Message body — use {name} for the recipient name">' + esc(t.body || '') + '</textarea>' +
+    '<textarea class="cn-admin-tmpl-body" rows="3" placeholder="Message body — use {name} for the recipient name" aria-label="Template message body">' + esc(t.body || '') + '</textarea>' +
   '</div>';
 }
 
@@ -10454,7 +10454,7 @@ function cnRenderSuggestionRows_(suggestions) {
     var vals = (suggestions[dept] || []).join(', ');
     return '<div class="field-row" style="gap:8px;margin-bottom:6px;align-items:center">' +
       '<span class="cn-admin-sug-dept" style="flex:0 0 140px;font-size:13px;font-weight:500">' + esc(dept) + '</span>' +
-      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-sug-values" value="' + esc(vals) + '" placeholder="Comma-separated suggestions"></div>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-sug-values" value="' + esc(vals) + '" placeholder="Comma-separated suggestions" aria-label="Update-type suggestions"></div>' +
       '</div>';
   }).join('');
 }
@@ -10612,7 +10612,7 @@ function cnExtTemplateOptionsHtml_(recipientType) {
 function cnExtTemplateRowHtml_(recipientType) {
   if (cnExtTemplatesAll_().length === 0) return '';
   return '<div class="field" style="margin-bottom:10px">' +
-    '<label>Template</label>' +
+    '<label for="cnX-template">Template</label>' +
     '<select id="cnX-template">' + cnExtTemplateOptionsHtml_(recipientType) + '</select>' +
   '</div>';
 }
@@ -10648,7 +10648,7 @@ function cnExtLinkOptionsHtml_() {
 function cnExtLinkRowHtml_() {
   if (cnExtLinksAll_().length === 0) return '';
   return '<div class="field" style="margin-bottom:10px">' +
-    '<label>Quick link (survey / review / feedback)</label>' +
+    '<label for="cnX-link">Quick link (survey / review / feedback)</label>' +
     '<select id="cnX-link">' + cnExtLinkOptionsHtml_() + '</select>' +
   '</div>';
 }
@@ -10752,11 +10752,11 @@ function cnBuildExternalEmailHtml_() {
       '<div class="cn-ext-type-radios">' + typeRadios + '</div>' +
       '<div class="field-row" style="gap:10px">' +
         '<div class="field" style="flex:1.2">' +
-          '<label>Email Address</label>' +
+          '<label for="cnX-email">Email Address</label>' +
           '<input type="email" id="cnX-email" value="' + esc(c.recipientEmail) + '" placeholder="name@example.com">' +
         '</div>' +
         '<div class="field" style="flex:1">' +
-          '<label>Name (optional)</label>' +
+          '<label for="cnX-name">Name (optional)</label>' +
           '<input type="text" id="cnX-name" value="' + esc(c.recipientName) + '" placeholder="John Smith">' +
         '</div>' +
       '</div>' +
@@ -10770,17 +10770,17 @@ function cnBuildExternalEmailHtml_() {
     '<div class="cn-ext-section">' +
       '<div class="cn-ext-section-title">Message</div>' +
       '<div class="field" style="margin-bottom:10px">' +
-        '<label>Subject</label>' +
+        '<label for="cnX-subject">Subject</label>' +
         '<input type="text" id="cnX-subject" value="' + esc(autoSubject) + '">' +
       '</div>' +
       cnExtTemplateRowHtml_(c.recipientType) +
       cnExtLinkRowHtml_() +
       '<div class="field" style="margin-bottom:0">' +
-        '<label>Custom Message (optional)</label>' +
+        '<label for="cnX-message">Custom Message (optional)</label>' +
         '<textarea id="cnX-message" rows="3" placeholder="Add a personal message…">' + esc(c.message) + '</textarea>' +
       '</div>' +
       '<div class="cn-ext-note-link">' +
-        '<label style="margin:0;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap">Link to note</label>' +
+        '<label style="margin:0;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap" for="cnX-note-ref">Link to note</label>' +
         '<select id="cnX-note-ref">' + noteOptions + '</select>' +
       '</div>' +
     '</div>' +

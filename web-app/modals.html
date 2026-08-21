@@ -9,8 +9,8 @@
       once approved. More than <span id="adj-reason-days">7</span> days back requires a reason.
       Add several at once, then submit.
     </div>
-    <div class="field"><label>Date</label><input type="date" id="adj-date"></div>
-    <div class="field"><label>Punch Type</label>
+    <div class="field"><label for="adj-date">Date</label><input type="date" id="adj-date"></div>
+    <div class="field"><label for="adj-type">Punch Type</label>
       <select id="adj-type">
         <option value="ClockIn">Clock In</option>
         <option value="LunchOut">Lunch Out</option>
@@ -18,9 +18,9 @@
         <option value="ClockOut">Clock Out</option>
       </select>
     </div>
-    <div class="field"><label>Time</label><input type="time" id="adj-time"></div>
+    <div class="field"><label for="adj-time">Time</label><input type="time" id="adj-time"></div>
     <div class="field">
-      <label id="adj-reason-label">Reason <span class="opt-marker">(optional)</span></label>
+      <label id="adj-reason-label" for="adj-reason">Reason <span class="opt-marker">(optional)</span></label>
       <textarea id="adj-reason" placeholder="e.g. Forgot to clock out, system was down…"></textarea>
     </div>
     <button class="refresh-btn" id="adj-add" style="margin:2px 0 8px">＋ Add to list</button>
@@ -43,7 +43,7 @@
     <div id="day-body"></div>
     <div id="day-form-section" style="display:none">
       <div class="day-section-label" style="margin-top:6px">Request Time Off</div>
-      <div class="field"><label>Type</label>
+      <div class="field"><label for="day-type">Type</label>
         <select id="day-type">
           <option value="Full Day">Full Day</option>
           <option value="Half Day - Morning">Half Day – Morning</option>
@@ -58,7 +58,7 @@
       <div class="field"><label for="day-through">Through <span class="opt-marker">(optional — multi-day, weekends skipped)</span></label>
         <input type="date" id="day-through">
       </div>
-      <div class="field"><label>Notes (optional)</label>
+      <div class="field"><label for="day-notes">Notes (optional)</label>
         <textarea id="day-notes" placeholder="Reason, trip, appointment…"></textarea>
       </div>
       <!-- V1·E2 — projected balance preview, filled by updateDayBalancePreview_ -->
@@ -84,19 +84,19 @@
       unchanged (not removed).
     </div>
     <div class="field-row">
-      <div class="field"><label>Date</label><input type="date" id="de-date"></div>
-      <div class="field"><label>To <span class="opt-marker">(optional — range)</span></label><input type="date" id="de-date-to"></div>
+      <div class="field"><label for="de-date">Date</label><input type="date" id="de-date"></div>
+      <div class="field"><label for="de-date-to">To <span class="opt-marker">(optional — range)</span></label><input type="date" id="de-date-to"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Clock In</label><input type="time" id="de-clockin"></div>
-      <div class="field"><label>Lunch Out</label><input type="time" id="de-lunchout"></div>
+      <div class="field"><label for="de-clockin">Clock In</label><input type="time" id="de-clockin"></div>
+      <div class="field"><label for="de-lunchout">Lunch Out</label><input type="time" id="de-lunchout"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Lunch Return</label><input type="time" id="de-lunchin"></div>
-      <div class="field"><label>Clock Out</label><input type="time" id="de-clockout"></div>
+      <div class="field"><label for="de-lunchin">Lunch Return</label><input type="time" id="de-lunchin"></div>
+      <div class="field"><label for="de-clockout">Clock Out</label><input type="time" id="de-clockout"></div>
     </div>
     <div class="field">
-      <label id="de-reason-label">Reason <span class="opt-marker">(optional)</span></label>
+      <label id="de-reason-label" for="de-reason">Reason <span class="opt-marker">(optional)</span></label>
       <textarea id="de-reason" placeholder="Why is this edit needed?"></textarea>
     </div>
     <div class="modal-footer">
@@ -120,8 +120,8 @@
       <button class="preset-btn" data-preset="last-30">Last 30 Days</button>
     </div>
     <div class="field-row">
-      <div class="field"><label>Start Date</label><input type="date" id="exp-start"></div>
-      <div class="field"><label>End Date</label><input type="date" id="exp-end"></div>
+      <div class="field"><label for="exp-start">Start Date</label><input type="date" id="exp-start"></div>
+      <div class="field"><label for="exp-end">End Date</label><input type="date" id="exp-end"></div>
     </div>
     <div class="modal-footer">
       <button class="btn-modal-cancel" id="exp-cancel">Cancel</button>
@@ -144,8 +144,8 @@
       <button class="cn-exp-preset-btn" data-cn-preset="last-30">Last 30 Days</button>
     </div>
     <div class="field-row">
-      <div class="field"><label>Start Date</label><input type="date" id="cn-exp-start"></div>
-      <div class="field"><label>End Date</label><input type="date" id="cn-exp-end"></div>
+      <div class="field"><label for="cn-exp-start">Start Date</label><input type="date" id="cn-exp-start"></div>
+      <div class="field"><label for="cn-exp-end">End Date</label><input type="date" id="cn-exp-end"></div>
     </div>
     <div class="modal-footer">
       <button class="btn-modal-cancel" id="cn-exp-cancel">Cancel</button>
@@ -161,12 +161,12 @@
     <div class="modal-title" id="mgr-timeoff-title">Add Time Off (Manager)</div>
     <div class="modal-sub">File a time-off entry on behalf of an employee.</div>
     <div class="field">
-      <label>Employee</label>
+      <label for="mto-emp">Employee</label>
       <select id="mto-emp"></select>
     </div>
     <div class="field-row">
-      <div class="field"><label>Date</label><input type="date" id="mto-date"></div>
-      <div class="field"><label>Type</label>
+      <div class="field"><label for="mto-date">Date</label><input type="date" id="mto-date"></div>
+      <div class="field"><label for="mto-type">Type</label>
         <select id="mto-type">
           <option value="Full Day">Full Day</option>
           <option value="Half Day - Morning">Half Day – Morning</option>
@@ -178,7 +178,7 @@
       </div>
     </div>
     <div class="field">
-      <label>Notes (optional)</label>
+      <label for="mto-notes">Notes (optional)</label>
       <textarea id="mto-notes" placeholder="Context or reason…"></textarea>
     </div>
     <div class="field" style="display:flex;align-items:center;gap:8px">

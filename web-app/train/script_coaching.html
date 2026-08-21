@@ -217,12 +217,12 @@ function coachRenderMgr_() {
     '<div class="row">' +
       '<div><label>Employee</label>' + empSel + '</div>' +
       '<div><label>Severity</label>' + sevSel + '</div>' +
-      '<div style="flex:1;min-width:200px;"><label>Patient / TRX (optional)</label>' +
+      '<div style="flex:1;min-width:200px;"><label for="coach-trx">Patient / TRX (optional)</label>' +
         '<input type="text" id="coach-trx" maxlength="200" placeholder="e.g. TRX-12345" value="' + (pre && pre.patientTRX ? esc(pre.patientTRX) : '') + '"></div>' +
     '</div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label>What happened</label>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label for="coach-what">What happened</label>' +
       '<textarea id="coach-what" maxlength="4000" placeholder="Describe the interaction."></textarea></div></div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label>What should have happened (optional)</label>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label for="coach-should">What should have happened (optional)</label>' +
       '<textarea id="coach-should" maxlength="4000" placeholder="The coaching point — how to handle it next time."></textarea></div></div>' +
     '<input type="hidden" id="coach-noteid" value="' + (pre && pre.noteId ? esc(pre.noteId) : '') + '">' +
     '<div class="row"><button class="tr-complete-btn" id="coach-go">' + icon('send', 13) + ' Log coaching</button></div>' +

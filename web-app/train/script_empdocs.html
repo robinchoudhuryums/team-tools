@@ -458,16 +458,16 @@ function edRenderMgr_() {
       '<div style="align-self:flex-end;"><button class="kb-btn" id="ed-tpl-save">' + icon('fileText', 13) + ' Save current as template</button></div></div>' +
     '<div class="row">' +
       '<div><label>Employee</label>' + empSel + '</div>' +
-      '<div><label>Type</label><select id="ed-is-type">' +
+      '<div><label for="ed-is-type">Type</label><select id="ed-is-type">' +
         '<option value="review">Performance review</option>' +
         '<option value="pip">Performance improvement plan</option>' +
         '<option value="policy">Policy acknowledgment</option>' +
         '<option value="other">Other</option></select></div>' +
-      '<div><label>Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
+      '<div><label for="ed-is-due">Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
       '<div><label>Signature</label><label style="font-weight:400;font-size:.84rem;display:flex;align-items:center;gap:6px;margin-top:8px;"><input type="checkbox" id="ed-is-sig" checked> Require signature</label></div>' +
     '</div>' +
-    '<div class="row"><div style="flex:1;min-width:280px;"><label>Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label>Body (markdown — frozen at issue)</label>' +
+    '<div class="row"><div style="flex:1;min-width:280px;"><label for="ed-is-title">Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label for="ed-is-body">Body (markdown — frozen at issue)</label>' +
       '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
       '<div class="hint">Content is hashed and locked when you issue — a correction means voiding and re-issuing. ' +
       '<button class="tr-link" id="ed-is-convert">Convert a Google Doc to markdown</button></div></div></div>' +
@@ -553,7 +553,7 @@ function edRenderIssueFields_() {
   var h = '';
   fields.forEach(function (f, i) {
     h += '<div class="ed-field-row">' +
-      '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '">' +
+      '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '" aria-label="Field label">' +
       '<select class="ed-field-type" data-ed-fi="' + i + '">' +
         '<option value="text"' + (f.type === 'text' ? ' selected' : '') + '>Short text</option>' +
         '<option value="textarea"' + (f.type === 'textarea' ? ' selected' : '') + '>Paragraph</option>' +

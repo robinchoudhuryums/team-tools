@@ -633,7 +633,7 @@ function trainRenderMgr_() {
     '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
     '<div><label>Reference item</label>' + sel + '</div>' +
     '<div><label>Employees</label>' + empBox + '</div>' +
-    '<div><label>Due date (optional)</label><input type="date" id="tr-as-due"></div>' +
+    '<div><label for="tr-as-due">Due date (optional)</label><input type="date" id="tr-as-due"></div>' +
     '<div><label>&nbsp;</label><button class="tr-complete-btn" id="tr-as-go">' + icon('plus', 13) + ' Assign</button></div>' +
     '</div></div>';
 
@@ -821,13 +821,13 @@ function trainRenderQuizEditor_(overlay) {
       (st.quizId ? '' : '<button class="kb-btn" id="tr-qed-import" title="Pull questions + correct answers from a Google Forms quiz">' + icon('download', 12) + ' Import from Google Forms</button>') +
     '</div>' +
     warnHtml +
-    '<div class="field"><label>Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
-    '<div class="field"><label>Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
+    '<div class="field"><label for="tr-qed-title">Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
+    '<div class="field"><label for="tr-qed-pass">Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
     '<div class="field"><label>Linked Reference item (optional — shown as "review the material")</label>' + kbSel + '</div>';
   st.questions.forEach(function (q, qi) {
     h += '<div class="tr-qed-q"><div class="qhead"><span class="qn">Question ' + (qi + 1) + '</span>' +
       (st.questions.length > 1 ? '<button class="tr-revoke-btn" data-qed-delq="' + qi + '">Remove</button>' : '') + '</div>' +
-      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text">' + esc(q.q) + '</textarea></div>';
+      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text" aria-label="Question text">' + esc(q.q) + '</textarea></div>';
     q.options.forEach(function (opt, oi) {
       h += '<div class="opt-row">' +
         '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +

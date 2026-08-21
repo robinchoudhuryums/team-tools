@@ -10377,7 +10377,12 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
  *  them inflated an early version of this census by ~30. */
 function a11yUnnamedControls() {
   const out = { adjacentLabel: [], placeholderOnly: [], none: [] };
-  A11Y_SCAN_PARTIALS.concat(['form_public.html']).forEach((rel) => {
+  // DEDUPE: form_public.html is already in PARSE_GUARD_PARTIALS (and therefore
+  // in A11Y_SCAN_PARTIALS), so the concat below read it TWICE and every control
+  // on the public form was counted double — the baseline this ratchet enforces
+  // was inflated by 84. The concat stays as an explicit statement that the
+  // public form is in scope even if it ever leaves the parse-guard list.
+  A11Y_SCAN_PARTIALS.concat(['form_public.html']).filter((v, i, a) => a.indexOf(v) === i).forEach((rel) => {
     let src;
     try { src = fs.readFileSync(path.join(__dirname, '../../web-app/', rel), 'utf8'); }
     catch (e) { return; }
@@ -10416,7 +10421,7 @@ test('A14: form controls without an accessible name do not INCREASE (ratchet)', 
   // A placeholder is not an accessible name (it is not reliably announced and
   // vanishes on first keystroke) — the rule cycle-16 F6 established for
   // uiPrompt's input, unenforced everywhere else until now.
-  const BASELINE = { adjacentLabel: 75, placeholderOnly: 61, none: 116 };   // total 252
+  const BASELINE = { adjacentLabel: 2, placeholderOnly: 5, none: 35 };   // total 42
   const got = a11yUnnamedControls();
   ['adjacentLabel', 'placeholderOnly', 'none'].forEach((k) => {
     assert.ok(got[k].length <= BASELINE[k],

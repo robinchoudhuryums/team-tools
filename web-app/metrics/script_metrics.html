@@ -563,9 +563,9 @@ function enterMetricsMyStatsView() {
     '</div>' +
     '<div class="m-controls m-custom-row" id="m-my-custom"' +
       (mCustomRowOpen_('my', mMyActivePreset_()) ? '' : ' hidden') + '>' +
-      '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
+      '<label style="font-size:0.85rem;color:var(--muted)" for="m-my-date">Day</label>' +
       '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
-      '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
+      '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px" for="m-my-from">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
     '</div>' +
@@ -1298,9 +1298,9 @@ function enterMetricsTeamView() {
     '</div>' +
     '<div class="m-controls m-custom-row" id="m-team-custom"' +
       (mCustomRowOpen_('team', mTeamActivePreset_()) ? '' : ' hidden') + '>' +
-      '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
+      '<label style="font-size:0.85rem;color:var(--muted)" for="m-team-from">From</label>' +
       '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
-      '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
+      '<label style="font-size:0.85rem;color:var(--muted)" for="m-team-to">To</label>' +
       '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
     '</div>' +
     '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
@@ -1866,7 +1866,7 @@ function enterSpanishInboxView(area) {
       ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
       : '<div class="view-title-row"><div><h1 class="view-title">Spanish Inbox</h1><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div></div>') +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
-      '<label style="font-size:12px;color:var(--muted)">Window</label>' +
+      '<label style="font-size:12px;color:var(--muted)" for="spanish-days">Window</label>' +
       '<select id="spanish-days">' + [7, 30, 60, 90].map(function (n) {
         return '<option value="' + n + '"' + (n === SPANISH_STATE.days ? ' selected' : '') + '>Last ' + n + ' days</option>';
       }).join('') + '</select>' +

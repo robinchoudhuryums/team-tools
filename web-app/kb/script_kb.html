@@ -2138,7 +2138,7 @@ function enterReferenceView(area) {
     '<div class="view-title-row"><h1 class="view-title">Reference</h1></div>' +
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
-        '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +
+        '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off" aria-label="Search reference">' +
         '<div id="kb-tree">' + loSweep() + '</div>' +
       '</div>' +
       '<div class="kb-main" id="kb-main">' + loSweep() + '</div>' +
@@ -3166,8 +3166,8 @@ function kbRenderEditor_() {
     '<div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><h3 style="margin:0;">' + (e.id ? 'Edit item' : 'Add item') + '</h3>' +
       '<button class="kb-btn" data-kb-close="1">' + icon('x', 15) + '</button></div>' +
     '<div class="body">' +
-      '<div class="field"><label>Department</label><input type="text" id="kb-ed-dept" list="kb-dept-list" value="' + esc(e.department) + '" placeholder="e.g. Sales, Power, Billing">' + datalist + '</div>' +
-      '<div class="field"><label>Title</label><input type="text" id="kb-ed-title" value="' + esc(e.title) + '" placeholder="Article / document title"></div>' +
+      '<div class="field"><label for="kb-ed-dept">Department</label><input type="text" id="kb-ed-dept" list="kb-dept-list" value="' + esc(e.department) + '" placeholder="e.g. Sales, Power, Billing">' + datalist + '</div>' +
+      '<div class="field"><label for="kb-ed-title">Title</label><input type="text" id="kb-ed-title" value="' + esc(e.title) + '" placeholder="Article / document title"></div>' +
       '<div class="field"><label>Type</label><div class="kb-typetog">' +
         '<button type="button" id="kb-tt-article" class="' + (e.type !== 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type !== 'embed') + '" onclick="kbEditorSetType_(\'article\')">Article (markdown)</button>' +
         '<button type="button" id="kb-tt-embed" class="' + (e.type === 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type === 'embed') + '" onclick="kbEditorSetType_(\'embed\')">Embed Drive doc</button>' +
@@ -3213,13 +3213,13 @@ function kbSnapshotEditor_() {
 function kbRenderEditorBody_() {
   var host = document.getElementById('kb-ed-body'); if (!host) return;
   if (KB_EDIT.type === 'embed') {
-    host.innerHTML = '<div class="field"><label>Drive share URL (Google Doc, Sheet, or file)</label>' +
+    host.innerHTML = '<div class="field"><label for="kb-ed-driveurl">Drive share URL (Google Doc, Sheet, or file)</label>' +
       '<input type="text" id="kb-ed-driveurl" value="' + esc(KB_EDIT.driveUrl) + '" placeholder="https://docs.google.com/document/d/…"></div>' +
       '<div style="font-size:.76rem;color:var(--muted);">The doc embeds as a read-only preview in the app, with an "Open in new tab" link. Reps need access to the file (share it with the team).</div>' +
       '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
       '<div style="font-size:.72rem;color:var(--muted);margin-top:4px;">Google Docs only — pulls the Doc\'s text in as editable markdown (you review before saving; the Doc isn\'t changed).</div>';
   } else {
-    host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +
+    host.innerHTML = '<div class="field"><label for="kb-ed-bodymd">Body (markdown)</label>' +
       '<textarea id="kb-ed-bodymd" placeholder="# Heading&#10;&#10;**bold**, *italic*, `code`, [links](https://…)&#10;- bullet lists&#10;1. numbered&#10;> quote">' + esc(KB_EDIT.body) + '</textarea></div>' +
       '<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 6px;">Paste a screenshot directly into the body to upload it. The KB is PHI-free by policy — scrub patient data first.</div>' +
       '<div style="font-size:.76rem;color:var(--muted);margin-bottom:4px;">Live preview:</div><div class="kb-ed-prev kb-article" id="kb-ed-prev"></div>';
@@ -3433,7 +3433,7 @@ function kbDrawerMount_() {
     '<div class="kbd-head">' + icon('list', 14) +
       '<span class="kbd-kicker">Reference</span>' +
       '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
-    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off"><span class="kbd-spin" id="kbd-spin"></span></div>' +
+    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off" aria-label="Search reference\u2026 (Ctrl/\u2318+K)"><span class="kbd-spin" id="kbd-spin"></span></div>' +
     '<div class="kbd-body" id="kbd-body"></div>';
   document.body.appendChild(d);
   var tab = document.createElement('button');

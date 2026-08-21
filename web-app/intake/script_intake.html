@@ -1182,7 +1182,7 @@ function intakeConditionControlHtml_(ctrl, qNum, ariaLabel) {
     return '<button type="button" class="intk-cond-opt" data-set="' + esc(v) + '" role="checkbox" aria-checked="false" onclick="intakeCondToggle_(this)">' + esc(v) + '</button>';
   }).join('');
   return '<div class="intk-condition" data-qnum="' + esc(qNum) + '" data-val="" role="group" aria-label="' + esc(ariaLabel) + '">' +
-      '<input type="text" class="intk-cond-filter" autocomplete="off" placeholder="Search or type a condition…" oninput="intakeCondFilter_(this)" onkeydown="intakeCondFilterKey_(event, this)">' +
+      '<input type="text" class="intk-cond-filter" autocomplete="off" placeholder="Search or type a condition…" oninput="intakeCondFilter_(this)" onkeydown="intakeCondFilterKey_(event, this)" aria-label="Search conditions">' +
       '<div class="intk-cond-list">' + opts + '<button type="button" class="intk-cond-add" style="display:none" onclick="intakeCondAddCustom_(this)"></button></div>' +
       '<div class="intk-cond-selected"></div>' +
     '</div>';
@@ -1546,7 +1546,7 @@ function intakeBuildPpdModal_(html, recs) {
       panel + '</div>' +
     '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:.82rem;color:var(--muted);">Preview the email body</summary><div class="intk-prev" style="margin-top:8px;">' + html + '</div></details>' +
     '<div class="intk-foot">' +
-      '<label><strong>Send to:</strong></label>' +
+      '<label for="intk-ppd-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
       '<input type="email" id="intk-ppd-custom" placeholder="recipient@&hellip;" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
@@ -1854,7 +1854,7 @@ function intakeBuildAcctModal_(form, html) {
     '<input type="file" id="intk-file" accept="image/*" multiple style="display:none">' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
     '<div class="intk-foot">' +
-      '<label><strong>Send to:</strong></label>' +
+      '<label for="intk-acct-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
       '<input type="email" id="intk-acct-custom" placeholder="recipient@…" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
@@ -2096,7 +2096,7 @@ function enterIntakeSentView(area) {
             return '<button class="toolbar-tab" aria-pressed="' + (INTAKE_STATE.sentFilter.type === t) + '" onclick="intakeSetSentFilter_(\'' + t + '\')">' + t + '</button>';
           }).join('') +
         '</div>' +
-        '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)">' +
+        '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)" aria-label="Search sent submissions">' +
       '</div>' +
       '<div id="intk-sent-list">' + loSweep() + '</div>' +
     '</div>';
