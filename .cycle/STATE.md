@@ -8,7 +8,9 @@ Invariants audit (counter 4/4); move this cycle's block to HISTORY.md at that
 point. NOTE the library is at INV-195 — the 2026-08-11 pilot-feedback round
 wrote 189/190/191, and cycle 18's pre-audit batch 5 wrote 195.
 Phase: implement — /broad-scan (cycle 18 pre-audit) ALL batches 1-8 DONE
-  (5B included), unmerged, NOT deployed.
+  (5B included). **MERGED as PR #176** (4d5fc9f). NOT DEPLOYED — the Apps
+  Script push + New-version deploy is still owed, and `runAllTests()` has not
+  been run since these batches landed.
   A fresh /broad-scan ran this session, producing an 8-batch plan. Blocks:
   `18-batch1-batch2-`, `18-batch3-batch4-`, `18-batch5-batch6-batch7-`
   `broad-implement.md`.
