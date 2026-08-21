@@ -312,9 +312,6 @@ var INTAKE_STATE = {
   catalogFilter: { q: '', seat: 'ALL' },
 };
 
-// Tool sub-tab → icon (mirrors the TOOLS registry; used for compact headers).
-var INTAKE_TAB_ICON = { ppd: 'clipboardList', pmd: 'accessibility', pap: 'airflow', sent: 'outbox', catalog: 'list' };
-
 // ── Question banks (verbatim from the bound form-generator; that reference
 //    copy was deleted in cycle 13 and lives in git history) ─────────────────
 var INTAKE_PPD_Q = {
@@ -613,7 +610,6 @@ function intakeHttpOnly_(u) {
 }
 
 function intakeAppBar_(form, name) {
-  var compactIcon = INTAKE_TAB_ICON[form] || 'clipboardList';
   if (COMPACT_MODE) return '';   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
   var right = (form === 'sent' || form === 'catalog') ? '' : intakeLangToggleHtml_(form);
   return '<div class="app-bar"><div class="app-bar-left">' +

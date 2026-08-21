@@ -1629,6 +1629,22 @@ const COUPLING_REGISTRY = [
     minSub: 4,
   },
   {
+    // seams-18 F4: a typo'd table action never matches an AuditLog row, so an
+    // ENABLED job reads permanently stale — INV-186's permanently-amber class,
+    // in the very subsystem built to avoid it. All 7 matched by hand at audit
+    // time; this makes the triangle's third leg machine-checked like the
+    // other two.
+    name: 'AUTOMATION_JOB_CHECKS actions ⊆ AUTOMATION_AUDIT_ACTIONS (seams-18 F4)',
+    sub: () => {
+      const m = /AUTOMATION_JOB_CHECKS = \[([\s\S]*?)\n\];/.exec(codeSrc);
+      assert.ok(m, 'AUTOMATION_JOB_CHECKS table found in Code.js');
+      return [...m[1].matchAll(/action:\s*'([^']+)'/g)].map((x) => x[1]);
+    },
+    sup: () => stringArrayItems_(codeSrc, /AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/, 'AUTOMATION_AUDIT_ACTIONS'),
+    why: 'a job-check action with no matching AuditLog writer can never record a last-seen row — a permanently-stale check for an enabled job',
+    minSub: 7,
+  },
+  {
     name: 'Automation-Health CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (F5)',
     sub: () => stringArrayItems_(codeSrc, /AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/, 'AUTOMATION_AUDIT_ACTIONS'),
     sup: () => topLevelObjectKeys_(cnHealthSrc, /CN_HEALTH_RUN_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'CN_HEALTH_RUN_LABELS'),
@@ -1715,6 +1731,13 @@ const MIRROR_INDEX = [
     guards: ['ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES'] },
   { pair: 'PUNCH_META keys ⊇ server PUNCH_LABELS_ (INV-155 button render)',
     guards: ['PUNCH_META covers every PUNCH_LABELS_ type'] },
+  // seams-18: the three mirrors cycle 18 created without registering them.
+  { pair: 'client intakeHttpOnly_ ↔ server intakeHttpOnly_ (Offerings URL scheme — seams-18 F1)',
+    guards: ['seams-18 F1: Offerings URLs are scheme-whitelisted at the server sink, mirroring the client'] },
+  { pair: 'test/visual mock.js payPeriodRange_ ↔ Code.js (INV-185 — seams-18 F3)',
+    guards: ['F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte'] },
+  { pair: 'mock.js getMyPayStatement / intakeListOfferings shapes ↔ server return blocks (seams-18 F3)',
+    guards: ['seams-18 F3: the pay-statement and offerings fixtures mirror the server return shapes'] },
 ];
 console.log('\nclient — mirror index (batch K D: every mirror names a live guard)');
 test('mirror index — every listed guard test exists in this file', () => {
@@ -10849,6 +10872,78 @@ test('B8: the print stylesheet un-clips modals and forces readable ink', () => {
   });
   assert.ok((all.match(/no-print/g) || []).length >= 3,
     'the .no-print escape hatch is actually used (the statement Print button + its period nav)');
+});
+
+// ── seams-18: the cycle-18 seams-audit fixes ───────────────────────────────
+
+test('seams-18 F1: Offerings URLs are scheme-whitelisted at the server sink, mirroring the client', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'intakeRecListHtml_'));
+  // Both URL columns route through the whitelist BEFORE the href/src...
+  assert.ok(/intakeHttpOnly_\(product\.pdfLink\)/.test(srv), 'pdfLink goes through the whitelist');
+  assert.ok(/intakeHttpOnly_\(product\.imageUrl\)/.test(srv), 'imageUrl goes through the whitelist');
+  // ...and no raw column reaches an attribute any more. esc_ alone lets a
+  // javascript: URL ship as a LIVE link into the preview modal's innerHTML.
+  assert.ok(!/esc_\(product\.pdfLink/.test(srv) && !/esc_\(product\.imageUrl/.test(srv),
+    'no esc_-only URL sink remains (esc_ does not neutralize a javascript: scheme)');
+  // The predicate is a client↔server MIRROR PAIR (both named intakeHttpOnly_,
+  // the kbSlug_ convention). The bodies differ deliberately (the client
+  // couples esc(); the server leaves esc_ at the sink) — the REGEX is the
+  // shared truth, pinned byte-identical so the two boundaries cannot drift.
+  const RX = '/^https?:\\/\\//i';
+  const srvFn = extractRawFunction('Code.js', 'intakeHttpOnly_');
+  const cliFn = extractFunction('intake/script_intake.html', 'intakeHttpOnly_');
+  assert.ok(srvFn.includes(RX), 'server intakeHttpOnly_ carries the exact scheme regex');
+  assert.ok(cliFn.includes(RX), 'client intakeHttpOnly_ carries the SAME regex literal');
+});
+
+test('seams-18 F3: the pay-statement and offerings fixtures mirror the server return shapes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  // (a) The period math is the VERBATIM payPeriodRange_ copy, CALLED — never a
+  // hand-rolled paraphrase (INV-185; the byte-identity itself is enforced by
+  // the derived DO-NOT-EDIT region pin the moment the copy lives there).
+  // The BAN scans a COMMENT-STRIPPED view (INV-188: mock.js's own fix comment
+  // quotes the removed paraphrase, and the raw ban tripped on it on first
+  // write) — but the SHAPE extraction below stays on the RAW source, because
+  // the naive `//`-stripper also eats `https://…` fixture URLs and with them
+  // the rows' closing braces (found the hard way on the same first write).
+  assert.ok(/var range = payPeriodRange_\('Monthly', null, todayIso, offset\)/.test(mock),
+    'the fixture calls the verbatim payPeriodRange_ copy');
+  assert.ok(!/getUTCMonth\(\) - off/.test(nc(mock)),
+    'the hand-rolled month arithmetic is gone and must not come back');
+  // (b) Payload FIELD NAMES derive from the server's own return blocks — the
+  // liveStatus empId/id drift is the class this closes (a data-* consumer of a
+  // drifted field is invisible in a screenshot).
+  const paySrv = nc(extractRawFunction('Code.js', 'getMyPayStatement'));
+  // Anchor on the MULTI-LINE return — the early `return { error: … };` forms
+  // are single-line, and a bare `return \{` anchor captured from the first of
+  // them through the success block, polluting the key set with "error".
+  const payRet = /return \{\n([\s\S]*?)\n    \};/.exec(paySrv);
+  assert.ok(payRet, 'found getMyPayStatement\'s success return block');
+  // Colon-space, NOT line-anchored: the server packs several keys per line
+  // (`days: …, totalHours: …, daysWorked: …`), and a `/^\s*(\w+):/gm` matcher
+  // silently dropped all but each line's first key — the bite-check caught the
+  // pin passing with a renamed totalHours. Nested-object keys (period.start
+  // etc.) ride along deliberately; they are part of the shape contract too.
+  const payKeys = [...payRet[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+  assert.ok(payKeys.length >= 12, 'derived a real key set (' + payKeys.join(',') + ')');
+  const payMock = /getMyPayStatement: function[\s\S]*?return \{([\s\S]*?)\n      \};/.exec(mock);
+  assert.ok(payMock, 'found the fixture\'s return block');
+  payKeys.forEach((k) => assert.ok(new RegExp('\\b' + k + ':').test(payMock[1]),
+    'pay-statement fixture is missing server field "' + k + '"'));
+  const offSrv = nc(extractRawFunction('Code.js', 'intakeListOfferings'));
+  const offPush = /out\.push\(\{([\s\S]*?)\}\);/.exec(offSrv);
+  assert.ok(offPush, 'found intakeListOfferings\' row shape');
+  // Keys are `name: ` (colon-SPACE) — a bare `(\w+):` also matches the
+  // `https:` inside URL string values (colon-slash), same first-write lesson.
+  const offKeys = [...offPush[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+  assert.ok(offKeys.length >= 6, 'derived the offerings row keys (' + offKeys.join(',') + ')');
+  const offMock = /intakeListOfferings: \{[\s\S]*?offerings: \[\s*\{([^}]*)\}/.exec(mock);
+  assert.ok(offMock, 'found the offerings fixture\'s first row');
+  const mockKeys = [...offMock[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+  assert.deepStrictEqual(mockKeys.sort().join('|'), offKeys.slice().sort().join('|'),
+    'offerings fixture row keys must EQUAL the server row keys — a renamed field is the liveStatus class');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
