@@ -771,8 +771,10 @@ function intakePpdRowHtml_(qNum, text, isSecondary) {
   } else if (type === 'sev') {
     control = intakeSevControlHtml_('data-qnum="' + esc(qNum) + '"', text); hasInputId = false;
   } else if (type === 'num') {
+    hasInputId = true;   // the input below carries id="intk-ppd-q<n>" — wire the label to it
     control = '<input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   } else {
+    hasInputId = true;   // as above — a real input id, so the label can target it
     control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   }
   var labelFor = hasInputId ? ' for="intk-ppd-q' + esc(qNum) + '"' : '';
@@ -929,7 +931,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'ynnum':     return intakeYnNumControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
-    default:          return '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(text) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
 }
 
@@ -1022,7 +1024,7 @@ function intakeRevealControlHtml_(ctrl, qNum, ariaLabel) {
   }).join('');
   return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '">' +
     '<div class="intk-reveal-opts">' + btns + '</div>' +
-    '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
+    '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" aria-label="' + esc(ariaLabel || 'Details') + '" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
 }
 function intakeRevealPick_(btn) {
   var grp = btn.closest('.intk-reveal'); if (!grp) return;
@@ -1521,7 +1523,7 @@ function intakeBuildPpdModal_(html, recs) {
           '<div class="meta">' + codeHtml +
             '<div class="just">' + esc(intakeStripTags_(p.justification)) + '</div>' + actions +
           '</div>' +
-          '<select class="status-sel" data-status="' + esc(id) + '" onchange="intakeRecStatusChange_(this)" title="Marked on the email sent to the agent">' +
+          '<select class="status-sel" aria-label="Recommendation status for ' + esc(p.hcpcs) + '" data-status="' + esc(id) + '" onchange="intakeRecStatusChange_(this)" title="Marked on the email sent to the agent">' +
             '<option value="none">— No selection —</option>' +
             '<option value="accepted">Accepted</option>' +
             '<option value="undecided">Undecided/Maybe</option>' +

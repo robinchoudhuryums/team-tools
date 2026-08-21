@@ -10392,7 +10392,14 @@ function a11yUnnamedControls() {
     catch (e) { return; }
     src = src.replace(/<!--[\s\S]*?-->/g, '')
              .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    const forIds = new Set([...src.matchAll(/<label[^>]*\bfor="([^"]+)"/g)].map((m) => m[1]));
+    // Collect EVERY for="…" in the file, not only ones textually inside a
+    // <label> tag: these partials build the attribute in a separate variable
+    // (`'<label class="q"' + labelFor + '>'`), so the association is real at
+    // runtime but invisible to a contiguous-match regex. Nothing else in this
+    // codebase writes for="…" — a `for (` loop has no `=` — so widening it
+    // recognises associations rather than excusing missing ones. Verified in
+    // Chromium: the five controls this reclaims measure as NAMED.
+    const forIds = new Set([...src.matchAll(/\bfor="([^"]+)"/g)].map((m) => m[1]));
     const re = /<(input|select|textarea)\b([^>]*)>/gi;
     let m;
     while ((m = re.exec(src))) {
@@ -10425,7 +10432,7 @@ test('A14: form controls without an accessible name do not INCREASE (ratchet)', 
   // A placeholder is not an accessible name (it is not reliably announced and
   // vanishes on first keystroke) — the rule cycle-16 F6 established for
   // uiPrompt's input, unenforced everywhere else until now.
-  const BASELINE = { adjacentLabel: 0, placeholderOnly: 3, none: 21 };   // total 24
+  const BASELINE = { adjacentLabel: 0, placeholderOnly: 0, none: 0 };   // total 0 — swept 2026-08-21
   const got = a11yUnnamedControls();
   ['adjacentLabel', 'placeholderOnly', 'none'].forEach((k) => {
     assert.ok(got[k].length <= BASELINE[k],

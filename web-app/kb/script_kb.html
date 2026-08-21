@@ -2731,7 +2731,7 @@ function kbSearchFilterBarHtml_(all) {
   };
   var deptKeys = Object.keys(depts).sort();
   var deptSel = deptKeys.length > 1
-    ? '<select class="kb-fdept" onchange="kbSetSearchFilter_(\'dept\', this.value)"><option value="">All departments</option>' +
+    ? '<select class="kb-fdept" aria-label="Filter results by department" onchange="kbSetSearchFilter_(\'dept\', this.value)"><option value="">All departments</option>' +
         deptKeys.map(function (d) { return '<option value="' + esc(d) + '"' + (fdept === d ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') +
       '</select>'
     : '';

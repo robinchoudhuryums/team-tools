@@ -276,9 +276,9 @@ function edRenderDoc_(doc) {
       var val = responses[f.id] != null ? responses[f.id] : '';
       body += '<div class="ed-field"><label>' + esc(f.label) + (f.required && editable ? ' <span class="ed-req">*</span>' : '') + '</label>';
       if (editable) {
-        if (f.type === 'textarea') body += '<textarea class="ed-resp" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>';
-        else if (f.type === 'date') body += '<input type="date" class="ed-resp" data-fid="' + esc(f.id) + '" value="' + esc(val) + '">';
-        else body += '<input type="text" class="ed-resp" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
+        if (f.type === 'textarea') body += '<textarea class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>';
+        else if (f.type === 'date') body += '<input type="date" class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '" value="' + esc(val) + '">';
+        else body += '<input type="text" class="ed-resp" aria-label="' + esc(f.label) + '" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
       } else {
         body += '<div class="ed-resp-ro">' + (val ? esc(val) : '<em>—</em>') + '</div>';
       }
@@ -554,7 +554,7 @@ function edRenderIssueFields_() {
   fields.forEach(function (f, i) {
     h += '<div class="ed-field-row">' +
       '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '" aria-label="Field label">' +
-      '<select class="ed-field-type" data-ed-fi="' + i + '">' +
+      '<select class="ed-field-type" aria-label="Field type" data-ed-fi="' + i + '">' +
         '<option value="text"' + (f.type === 'text' ? ' selected' : '') + '>Short text</option>' +
         '<option value="textarea"' + (f.type === 'textarea' ? ' selected' : '') + '>Paragraph</option>' +
         '<option value="date"' + (f.type === 'date' ? ' selected' : '') + '>Date</option>' +
