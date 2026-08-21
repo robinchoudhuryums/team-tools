@@ -18005,6 +18005,22 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
 // selections: { itemId: { status:'accepted'|'rejected'|'undecided'|'none', preferred:bool } }
 // justification is server-generated (trusted) and intentionally carries inline
 // markup, so it is injected raw; hcpcs / links / images are esc_'d.
+/** Offerings URL scheme whitelist — the SERVER twin of the client
+ *  intakeHttpOnly_ (intake/script_intake.html). esc_ prevents attribute
+ *  breakout, but a `javascript:` URL typed into the operator-owned Offerings
+ *  sheet (cols E/F) would still ship as a LIVE href/src — and this builder's
+ *  output is injected into the preview modal via innerHTML
+ *  (script_intake.html .intk-prev), where clicking it executes in the rep's
+ *  session. The client rec cards (cycle-9 L-19) and the Catalog tab (batch 8)
+ *  have carried this exact guard for the same two columns; the server sink was
+ *  the one left open (seams-18 F1). Returns the raw trimmed URL or '' — the
+ *  sinks keep their esc_. The regex is pinned byte-identical to the client
+ *  twin, so the two boundaries cannot drift apart again. */
+function intakeHttpOnly_(u) {
+  u = String(u == null ? '' : u).trim();
+  return /^https?:\/\//i.test(u) ? u : '';
+}
+
 function intakeRecListHtml_(items, selections) {
   selections = selections || {};
   const P = CN_EMAIL_PALETTE;
@@ -18014,6 +18030,8 @@ function intakeRecListHtml_(items, selections) {
   let out = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
   (items || []).forEach(function (product) {
     const itemId = String(product.hcpcs).replace(/\s+/g, '-');
+    const pdfUrl = intakeHttpOnly_(product.pdfLink);   // seams-18 F1 — scheme-whitelist BEFORE the href/src
+    const imgUrl = intakeHttpOnly_(product.imageUrl);
     const sel = selections[itemId] || {};
     const status = sel.status || 'none';
     const isPreferred = !!sel.preferred;
@@ -18030,12 +18048,12 @@ function intakeRecListHtml_(items, selections) {
     const star = isPreferred
       ? '<span style="font-size:20px;color:' + P.star + ';line-height:1;vertical-align:middle;">&#9733;</span> '
       : '';
-    const title = product.pdfLink
-      ? '<a href="' + esc_(product.pdfLink) + '" target="_blank" style="text-decoration:none;color:' + P.info + ';">' + esc_(product.hcpcs) + '</a>'
+    const title = pdfUrl
+      ? '<a href="' + esc_(pdfUrl) + '" target="_blank" style="text-decoration:none;color:' + P.info + ';">' + esc_(product.hcpcs) + '</a>'
       : esc_(product.hcpcs);
 
-    const imgCell = product.imageUrl
-      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + (String(product.imageUrl).indexOf('?') >= 0 ? '&v=' : '?v=') + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
+    const imgCell = imgUrl
+      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(imgUrl) + (imgUrl.indexOf('?') >= 0 ? '&v=' : '?v=') + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
       : '<td style="width:1px;padding:0;border-bottom:1px solid ' + P.line + ';background:' + rowBg + ';"></td>';
 
     // justification is server-generated (trusted) + carries inline markup, so

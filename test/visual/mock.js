@@ -44,6 +44,31 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
   return (answeredCalls && answeredCalls > 0)
     ? Math.round((noteCount / answeredCalls) * 100) : null;
 }
+// seams-18 F3 (INV-185): the pay-statement fixture used to PARAPHRASE this
+// function's monthly branch (getUTCMonth() - off) — one drift away from
+// screenshots the server cannot produce. Verbatim copy; the derived F4 mirror
+// pin holds it byte-identical to Code.js automatically.
+function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
+  let off = parseInt(offset, 10);
+  if (isNaN(off) || off < 0) off = 0;
+  if (off > 6) off = 6;
+  if (String(cycle || '').toLowerCase() === 'biweekly') {
+    if (!currentBiweekly || !currentBiweekly.start || !currentBiweekly.end) return null;
+    const shift = function (iso) {
+      const d = new Date(iso + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() - off * 14);
+      return d.toISOString().substring(0, 10);
+    };
+    return { start: shift(currentBiweekly.start), end: shift(currentBiweekly.end), offset: off };
+  }
+  const y = parseInt(String(todayStr).substring(0, 4), 10);
+  const m = parseInt(String(todayStr).substring(5, 7), 10);
+  if (!y || !m) return null;
+  const first = new Date(Date.UTC(y, m - 1 - off, 1, 12));
+  const last  = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0, 12));
+  return { start: first.toISOString().substring(0, 10), end: last.toISOString().substring(0, 10), offset: off };
+}
+
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -351,19 +376,17 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     // getMyPayStatement's return exactly; days come from the getTimesheetData
     // fixture so there is ONE day-row generator, not two that can disagree.
     getMyPayStatement: function (offset, repEmpId) {
-      var off = Math.max(0, Math.min(6, parseInt(offset, 10) || 0));
-      var now = new Date(todayIso + 'T00:00:00Z');
-      var first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - off, 1));
-      var last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
-      var iso = function (d) { return d.toISOString().slice(0, 10); };
-      var ts = FIXTURES.getTimesheetData(iso(first), iso(last));
+      // seams-18 F3: the period comes from the VERBATIM payPeriodRange_ copy
+      // above — never a hand-rolled month arithmetic (INV-185).
+      var range = payPeriodRange_('Monthly', null, todayIso, offset);
+      var ts = FIXTURES.getTimesheetData(range.start, range.end);
       var rate = 18.5;
       var rid = String(repEmpId || '').trim();
       return {
-        period: { start: ts.startDate, end: ts.endDate, cycle: 'Monthly', offset: off },
+        period: { start: ts.startDate, end: ts.endDate, cycle: 'Monthly', offset: range.offset },
         days: ts.days, totalHours: ts.totalHours, daysWorked: ts.daysWorked,
         incompleteCount: ts.incompleteCount, timezone: ts.timezone,
-        pto: [{ date: iso(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 12))), type: 'Full Day', days: 1 }],
+        pto: [{ date: range.start.substring(0, 8) + '12', type: 'Full Day', days: 1 }],
         rate: rate, estGross: Math.round(ts.totalHours * rate * 100) / 100,
         archiveNote: false, maxOffset: 6,
         viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,

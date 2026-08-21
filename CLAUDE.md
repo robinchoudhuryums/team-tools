@@ -7893,7 +7893,9 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
-3. Actually OPEN the 42 PNGs. Compare light vs dark and wide vs compact vs
+3. Actually OPEN the PNGs — every scenario the run just wrote (the count lives
+   in ONE place, the matrix's own summary; this step restated it twice and was
+   stale twice — seams-18 F5). Compare light vs dark and wide vs compact vs
    mobile for the same scenario; that pairing is what surfaces theme and
    breakpoint defects. **Every rep-facing tool has a mobile scenario since
    cycle-16 Batch 4** — before that the matrix shot five of nine tools at ONE
