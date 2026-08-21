@@ -4,10 +4,10 @@
 Cycle: 18
 Phase: implement — the DUE Seams & Invariants audit ran 2026-08-21 (fresh
   session, read-only; handoff block pasted into the implement session) and
-  its five findings F1–F5 are IMPLEMENTED on `claude/broad-scan-s9b8fd`
-  (commits d467b94 + c105f04, block
-  `.cycle/blocks/18-seams-F1-F5-broad-implement.md`). Not yet PR'd/merged —
-  the user has not asked for a PR for this batch.
+  its five findings F1–F5 are IMPLEMENTED, doc-synced, and **MERGED as
+  PR #177** (16aa3b0) — commits d467b94 + c105f04 + a4f33bf + 91f493c,
+  block `.cycle/blocks/18-seams-F1-F5-broad-implement.md`. NOT DEPLOYED —
+  it ships with the still-owed PR #176 deploy.
   NOTE the cycle-18 PRE-audit batches 1–8 + 5B were implemented BEFORE this
   cycle formally opened (between-cycles operator work) and are already
   MERGED as PR #176 (4d5fc9f) but NOT DEPLOYED — the Apps Script
@@ -45,10 +45,9 @@ Updated: 2026-08-21
   count (stale twice); the matrix summary is the single source
 
 ## Pending / not yet done
-- /sync-docs for the F1–F5 batch (INV updates: INV-112 gains the server
-  whitelist mention; possibly a gotcha for the two first-write pin lessons)
-- PR + merge for F1–F5 (only when the user asks)
-- /reflect to close cycle 18 (after any remaining implement work)
+- /reflect to close cycle 18 — implement work is DONE (F1–F5 was the whole
+  seams plan; /sync-docs and the PR #177 merge are done too), so /reflect is
+  the next workflow step and can run in a FRESH session off the blocks
 - DEPLOY (operator): PR #176 batches + this batch ship together on the next
   `clasp push -f` + New version; then `runAllTests()` in the editor
 
