@@ -141,9 +141,27 @@ Updated: 2026-08-21
   store row + endpoints + KbCommentAdd audit action, intake arrow nav,
   the cn-head-fabs note); INV-01 exception list + saveMyScratchpad;
   localStorage + INV-136 counts UNCHANGED.
+- **Round-3 FOLLOW-ONS implemented + /sync-docs APPLIED** (2026-08-24,
+  /broad-implement "follow-on items … then /sync-docs … then create PR and
+  merge") — commits ed13796 → the checkpoint commit, block
+  `.cycle/blocks/19pre-pilot-round3-followons-broad-implement.md`. Drawer
+  comments parity (Phase B — dual-host shared renderer, per-host input ids,
+  closest()-scoped handlers), `kbEditComment` edit-in-place (author-ONLY, no
+  manager escape), comment-count fold into Most-used/Review-due via the
+  shared chip; scratchpad revision history deliberately NOT built (stated
+  design, condition unmet). THREE measured visual catches incl. **the
+  invisible edit button — `icon('pencil')` silently returns `''`** ("pencil"
+  is only an ICONS comment; key is `adjust`) → the new derived icon-key
+  tripwire (pure 619→620; sweep found no other dead key) + the
+  `reference-reader-light-wide` post-hook scenario + `getReferenceItem`
+  fixture. 5 mutations / 5 bites. /sync-docs applied IN-SESSION: the merged
+  round-2-FO + round-3 + follow-ons doc lists (test narrative →620,
+  storage-map Scratchpad/KbComments rows, Visual Audit Stage post-hook note,
+  round-3 operator entry, INV-01 exception list, S64 drawer-comments walk).
+  No doc lists owed.
 - Operator answers on record: sender v1 = name+replyTo (alias later);
-  scratchpad = server-backed (per-rep sheet). Roadmap rounds 1–3 are now
-  ALL implemented; no approved roadmap items remain unbuilt.
+  scratchpad = server-backed (per-rep sheet). Roadmap rounds 1–3 AND all
+  their follow-ons are now implemented; nothing approved remains unbuilt.
 
 ## Open follow-on items
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
@@ -171,11 +189,12 @@ Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
 server-backed scratchpad, Reference comments Phase A, matrix → 47 with
 the sched-modal dark/compact variants, plus the two visual fixes the
 re-shoot caught) are ALL implemented + tested on
-`claude/team-tools-roadmap-6e2l97` and pushed. The approved roadmap is
-complete. ONE /sync-docs remains, covering the round-2-followons +
-round-3 doc lists together (test totals 607→619, matrix 47 +
-modal-coverage sentence, the round-3 features/store rows/INV-01
-exception). Awaiting the operator's PR/merge decision and the combined
-deploy (with PR #176/#177) + post-deploy runAllTests() (now incl.
-scheduledCalls_flow, scratchpad_saveReadRoundTrip, kb_comments_flow) +
-email spot-check.
+`claude/team-tools-roadmap-6e2l97` and pushed, and the round-3
+FOLLOW-ONS (drawer comments parity, comment edit-in-place, count fold;
+the invisible-icon catch + derived icon-key tripwire) are done with
+/sync-docs APPLIED in the same session — no doc lists owed. The
+operator asked for PR + merge; once merged, the ONLY remaining step is
+the operator-side combined deploy (`clasp push -f` + New version, also
+shipping PR #176/#177) + post-deploy runAllTests() (now incl.
+scheduledCalls_flow, scratchpad_saveReadRoundTrip, kb_comments_flow
+with the edit steps) + the round-1 email spot-check.
