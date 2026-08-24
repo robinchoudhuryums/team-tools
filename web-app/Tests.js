@@ -683,15 +683,25 @@ function cleanupTestData() {
       empSheet.getRange(i + 1, EMP.SICK_LEAVE + 1).setValue(_TEST_INITIAL_SICK);
     }
   }
-  // Clear the test call-notes Sheet's Notes tab (if provisioned).
+  // Clear the test call-notes Sheet's Notes tab (if provisioned). Best-effort
+  // by design — this runs at the END of a run, so a throw here would fail a
+  // run whose tests all passed. It does REPORT leftovers though: rows
+  // surviving this sweep are what the next run's fixture inherits, and a
+  // silent skip is how a stale tab reaches an unrelated count assertion.
   if (_TEST_CN_SS_ID) {
     try {
       const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);
       const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
       if (notesTab && notesTab.getLastRow() > 1) {
         notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+        SpreadsheetApp.flush();
+        const left = notesTab.getLastRow() - 1;
+        if (left > 0) {
+          Logger.log('cleanupTestData: WARNING — ' + left + ' note row(s) survived the sweep in '
+            + _TEST_CN_SS_ID + '; the next run starts dirty.');
+        }
       }
-    } catch (e) { Logger.log('cleanupTestData: CN sheet cleanup skipped: ' + e.message); }
+    } catch (e) { Logger.log('cleanupTestData: CN sheet cleanup FAILED (next run starts dirty): ' + e.message); }
   }
 
   // Training tabs (KB spreadsheet) — drop TEST_-employee rows left by an
@@ -3745,15 +3755,29 @@ function test_cn_extractAuditNoteId_noMatch() {
 //  Cleanup happens in cleanupTestData (deletes all Notes-tab rows).
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Empties the TEST rep's Notes tab. LOUD BY CONSTRUCTION (2026-08-24): this
+ *  helper used to swallow every failure, so a clear that silently no-op'd
+ *  surfaced ~20 tests later as `metrics_cnCountNotesResult_countsToday`
+ *  expected 2, actual 21 — a count that was CORRECT about a tab the fixture
+ *  had failed to empty. A fixture helper that degrades silently produces a
+ *  failure far from its cause; that is the INV-187 rule applied to test
+ *  infrastructure. It now names the sheet it could not clear, flushes so the
+ *  delete is visible to the next openById handle, and VERIFIES the tab is
+ *  empty rather than assuming deleteRows took. */
 function _clearTestCallNotes() {
-  if (!_TEST_CN_SS_ID) return;
-  try {
-    const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);
-    const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
-    if (notesTab && notesTab.getLastRow() > 1) {
-      notesTab.deleteRows(2, notesTab.getLastRow() - 1);
-    }
-  } catch (e) {}
+  if (!_TEST_CN_SS_ID) {
+    throw new Error('_clearTestCallNotes: _TEST_CN_SS_ID is not set — run setupTestEnvironment first.');
+  }
+  const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);   // a throw here names the unreachable id
+  const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
+  if (!notesTab) return;                                  // never provisioned = nothing to clear
+  if (notesTab.getLastRow() > 1) notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+  SpreadsheetApp.flush();
+  const left = notesTab.getLastRow() - 1;
+  if (left > 0) {
+    throw new Error('_clearTestCallNotes: ' + left + ' row(s) survived the delete in Notes tab of '
+      + _TEST_CN_SS_ID + ' — the fixture is not clean, so any count assertion after this is meaningless.');
+  }
 }
 
 function _cnTestPayload(overrides) {
@@ -4593,6 +4617,14 @@ function test_metrics_cnCountNotesResult_countsToday() {
     submitCallNote(_cnTestPayload({ caller: 'Second Caller' }));
     return { emp: emp, today: t };
   });
+  // The fixture clears _TEST_CN_SS_ID; the app writes and counts through the
+  // id on the rep's ROSTER row. If those ever diverge (a duplicate TEST row, a
+  // hand-edited column L, a stale roster cache), every clear misses and the
+  // counts below accumulate run over run — which is precisely how this test
+  // failed 2-vs-21 on 2026-08-24. Assert the identity so a divergence reports
+  // ITSELF instead of surfacing as an arithmetic mystery.
+  _assertEq(ctx.emp.callNotesSheetId, _TEST_CN_SS_ID,
+    'the app and the fixture must resolve the SAME call-notes Sheet');
   // The note date is stored as a 'yyyy-MM-dd' string that Sheets coerces to a
   // Date on read. If the helper ever drops normalizeDate_, this count goes to 0.
   const todayRes = cnCountNotesResult_(ctx.emp, ctx.today, ctx.today);
