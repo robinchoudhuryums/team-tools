@@ -11471,5 +11471,166 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-3 pilot features (2026-08-24) — intake arrow-key nav (#7), server-
+// backed scratchpad (#5), Reference comments Phase A (#6).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comments');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const tests = strip(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  const mockRaw = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+
+  test('R3 #7: intakeCaretAtEdge_ behavioural + arrow-nav wiring (radiogroups/selects untouched)', () => {
+    const ctx = { String };
+    vm.createContext(ctx);
+    vm.runInContext(extractFunction('intake/script_intake.html', 'intakeCaretAtEdge_'), ctx);
+    const at = ctx.intakeCaretAtEdge_;
+    assert.strictEqual(at({ value: 'abc', selectionStart: 3, selectionEnd: 3 }, 'end'), true, 'caret at end');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 3, selectionEnd: 3 }, 'start'), false, 'end is not start');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 0, selectionEnd: 0 }, 'start'), true, 'caret at start');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 1, selectionEnd: 2 }, 'end'), false, 'a real selection keeps its arrows');
+    assert.strictEqual(at({ value: 'abc', selectionStart: null, selectionEnd: null }, 'end'), true, 'unsupported selection = hoppable');
+    assert.strictEqual(at({ value: 'x', get selectionStart() { throw new Error('nope'); } }, 'end'), true, 'a throwing accessor = hoppable');
+    const nav = strip(extractFunction('intake/script_intake.html', 'intakeArrowNav_'));
+    // The guards that keep other controls' arrow keys THEIRS: only text-type
+    // inputs/textareas hop (radiogroup <button>s, <select>, date/number
+    // steppers all early-return), modifiers pass through, and no wrap.
+    assert.ok(/tagName !== 'INPUT' && el\.tagName !== 'TEXTAREA'/.test(nav), 'non-field targets untouched');
+    assert.ok(/el\.type !== 'text'/.test(nav), 'non-text input types keep native arrows');
+    assert.ok(/e\.shiftKey \|\| e\.altKey \|\| e\.metaKey \|\| e\.ctrlKey/.test(nav), 'modifier combos pass through');
+    assert.ok(/if \(!next\) return;/.test(nav), 'no wrap at the form edge');
+    const visible = strip(extractFunction('intake/script_intake.html', 'intakeNavFields_'));
+    assert.ok(/offsetParent !== null/.test(visible), 'hidden reveal rows are skipped');
+    // BOTH binding sites (PPD + the shared acct enter) — one delegated
+    // listener each, the cn-frame precedent.
+    const binds = (strip(intake).match(/addEventListener\('keydown', intakeArrowNav_\)/g) || []).length;
+    assert.strictEqual(binds, 2, 'bound on the PPD form AND the acct forms');
+  });
+
+  test('R3 #5: scratchpad server — USER lock, cap-refuse-before-write, @-format, ms NUMBER, enrollment gate', () => {
+    const save = strip(extractRawFunction('Code.js', 'saveMyScratchpad'));
+    // USER lock, not the script lock (the kbRecordView / INV-01 documented-
+    // exception posture): a debounced autosave must never queue punch writes.
+    assert.ok(/LockService\.getUserLock\(\)/.test(save), 'user lock');
+    assert.ok(!/getScriptLock/.test(save), 'never the global script lock');
+    assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(save), 'finally-released (INV-01 structure)');
+    // Over-cap REFUSES before any sheet is touched (order: the error return
+    // precedes the provision call).
+    assert.ok(save.indexOf('SCRATCHPAD_MAX_CHARS') < save.indexOf('scratchpadSheet_(emp, true)'),
+      'cap check precedes the write path');
+    assert.ok(/trim it and save again/.test(save), 'over-cap error is actionable, never a silent truncate');
+    const sheet = strip(extractRawFunction('Code.js', 'scratchpadSheet_'));
+    assert.ok(/setNumberFormat\('@'\)/.test(sheet), 'A1 pinned to PLAIN TEXT at provision — the coercion class dodged at write time');
+    assert.ok(/callNotesSheetId/.test(sheet) && /not configured/.test(sheet), 'gated on the caller\'s own enrollment (per-rep isolation by construction)');
+    assert.ok(/setValue\(now\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
+    assert.ok(!/writeAuditLog_/.test(save), 'no audit row per save (high-frequency own-store write — the kbRecordView posture, documented)');
+    // Editor coverage registered + fixture-tab cleanup in the test itself.
+    assert.ok(/_integrationTest\('scratchpad_saveReadRoundTrip'/.test(tests), 'editor round-trip test registered');
+  });
+
+  test('R3 #5: scratchpad client — named modal, flush-on-close, visible failed autosave, A12 load failure', () => {
+    assert.ok(/ensureOverlay\('cn-scratch-overlay', \{ label: 'Scratchpad', onClose: cnCloseScratchpadModal_ \}\)/.test(cn),
+      'A14-named dialog with a close hook');
+    assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
+    const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
+    assert.ok(/if \(CN_SCRATCH\.dirty\) cnScratchSave_\(true\)/.test(close),
+      'a pending debounce FLUSHES on close (INV-148 — typed text never dies with the modal)');
+    const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
+    // A failed save is VISIBLE and retryable: the error branch keeps dirty
+    // (no dirty=false before the success path) and paints the warn status.
+    const errBranch = saveFn.slice(saveFn.indexOf('if (!r || r.error || !r.success)'), saveFn.indexOf('CN_SCRATCH.dirty = false'));
+    assert.ok(errBranch.indexOf('dirty = false') < 0, 'a failed save keeps the pad dirty (retries on next edit)');
+    assert.ok(/Save failed/.test(saveFn), 'the failure is stated in the status line (INV-187)');
+    const open = extractFunction('cn/script_callnotes.html', 'cnOpenScratchpadModal_');
+    assert.strictEqual((strip(open).match(/errorStateHtml_/g) || []).length, 2,
+      'BOTH load-failure shapes render the warn card, never an empty pad (A12)');
+  });
+
+  test('R3 #6: comments server — gates, draft invisibility, author-or-manager, soft-delete, INV-169, id-only audit', () => {
+    const add = strip(extractRawFunction('Code.js', 'kbAddComment'));
+    const get = strip(extractRawFunction('Code.js', 'kbGetComments'));
+    const del = strip(extractRawFunction('Code.js', 'kbDeleteComment'));
+    [add, get, del].forEach((f) => assert.ok(/getEmployeeInfo_\(\)/.test(f), 'employee-gated'));
+    const tgt = strip(extractRawFunction('Code.js', 'kbCommentTargetOk_'));
+    assert.ok(/KB_STATUS_DRAFT \|\| !!emp\.isAdmin/.test(tgt),
+      'a draft target is invisible to non-admins (INV-140/147 — commenting cannot probe drafts)');
+    assert.ok(/kbCommentTargetOk_/.test(add) && /kbCommentTargetOk_/.test(get), 'both paths check the target');
+    // Author-or-manager moderation — deliberately NOT the manager-gate string
+    // (per-row ownership, not a gated endpoint; the F9 net derives from that
+    // literal, so using it here would demand a gate test that cannot pass).
+    assert.ok(/your own comments/.test(del), 'ownership refusal message');
+    assert.ok(!/Manager access required/.test(add + get + del), 'never the gate literal');
+    assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
+    [get, del].forEach((f) => assert.ok(/KB_COMMENTS_SCAN/.test(f), 'bounded tail reads'));
+    assert.ok(/total: all\.length, cap: KB_COMMENTS_LIST_CAP/.test(get), 'pre-slice total + cap ride the payload (INV-169)');
+    // INV-32: the audit notes are built from IDS ONLY — the comment text
+    // variable never enters them. Match to END OF LINE, not to the first `;`
+    // — the notes string itself contains '; ' and a non-greedy `;` stop
+    // truncated the match mid-string on first write (the INV-188 family).
+    const addAudit = /writeAuditLog_\(emp, 'KbCommentAdd'[^\n]*/.exec(add);
+    assert.ok(addAudit && /'id=' \+ id \+ '; commentId=' \+ commentId/.test(addAudit[0]) && !/\+ t\b/.test(addAudit[0]),
+      'KbCommentAdd audit row is id-only — the text never reaches the shared AuditLog');
+    assert.ok(/'commentId=' \+ wanted/.test(del), 'delete audit row is id-only');
+    assert.ok(/_integrationTest\('kb_comments_flow'/.test(tests), 'editor flow test registered');
+    assert.ok(/getSheetByName\(KB_COMMENTS_TAB\), 'TEST_', KBC\.EMP_ID/.test(tests), 'cleanup sweeps KbComments (INV-21)');
+  });
+
+  test('R3 #6: comments client — esc()d render, tab-only (drawer stays comment-free), A12, named add form', () => {
+    const render = strip(extractFunction('kb/script_kb.html', 'kbRenderComments_'));
+    assert.ok(/esc\(c\.name\)/.test(render) && /esc\(c\.text\)/.test(render) && /esc\(c\.commentId\)/.test(render),
+      'every server string + attribute value is esc()\'d');
+    assert.ok(/showing ' \+ list\.length \+ ' of ' \+ res\.total/.test(render), 'the cap note renders "showing N of M" (INV-169)');
+    assert.ok(/PHI-free by policy/.test(render), 'the add form carries the PHI reminder (the kbRequestArticle posture)');
+    assert.ok(/for="kb-cmt-input"/.test(render), 'the textarea is label-for named (INV-195)');
+    const loadFn = strip(extractFunction('kb/script_kb.html', 'kbLoadComments_'));
+    assert.strictEqual((loadFn.match(/errorStateHtml_/g) || []).length, 2, 'both failure shapes render the warn card (A12)');
+    assert.ok(/KB_STATE\.currentId !== id/.test(loadFn), 'the L-18 stale-item guard');
+    // Phase A is the Reference TAB only — the mid-call drawer stays
+    // comment-free (the INV-139 drawer-parity follow-on shape).
+    const drawer = strip(extractFunction('kb/script_kb.html', 'kbDrawerOpenItem_'));
+    assert.ok(!/kbGetComments|kb-comments/.test(drawer), 'the drawer reader never loads comments');
+    // The reader hosts the slot in BOTH branches (article + embed).
+    assert.strictEqual((strip(extractFunction('kb/script_kb.html', 'kbRenderItem_')).match(/id="kb-comments"/g) || []).length, 2,
+      'both reader branches host the comments slot');
+  });
+
+  test('R3: the scratchpad + comments FIXTURES mirror the server shapes', () => {
+    // kbGetComments item keys derive from the server's own push literal.
+    const get = strip(extractRawFunction('Code.js', 'kbGetComments'));
+    const push = /all\.push\(\{([\s\S]*?)\}\);/.exec(get);
+    assert.ok(push, 'found the server comment shape');
+    const srvKeys = [...push[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+    const fx = /kbGetComments: \{ comments: \[([\s\S]*?)\],\n\s*total/.exec(mockRaw);
+    assert.ok(fx, 'found the comments fixture');
+    [...fx[1].matchAll(/\{([^}]*)\}/g)].forEach((it, i) => {
+      const keys = [...it[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+      assert.strictEqual(keys, srvKeys, 'comments fixture item ' + i + ' keys EQUAL the server shape');
+    });
+    // getMyScratchpad fixture keys ⊆ the server return keys.
+    const pad = strip(extractRawFunction('Code.js', 'getMyScratchpad'));
+    const padRet = /return \{ content: content,([\s\S]*?)\};/.exec(pad);
+    assert.ok(padRet, 'found the scratchpad return shape');
+    const padKeys = ['content'].concat([...padRet[1].matchAll(/(\w+):\s/g)].map((m) => m[1]));
+    const padFx = /getMyScratchpad: \{([^}]*)\}/.exec(mockRaw);
+    assert.ok(padFx, 'found the scratchpad fixture');
+    // Blank out string LITERALS before extracting keys — the fixture's content
+    // value contains "Dr. Alvarez: x4102", and a bare colon-space matcher read
+    // "Alvarez" as a key on first write (the seams-18 F3 `https:` lesson in a
+    // new guise: never key-match through string values).
+    const noStr = padFx[1].replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    [...noStr.matchAll(/(\w+):\s/g)].map((m) => m[1]).forEach((k) =>
+      assert.ok(padKeys.includes(k), 'scratchpad fixture key "' + k + '" is not a server field (' + padKeys.join('|') + ')'));
+    // The two new sched-modal scenario variants exist and use the post hook.
+    const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+    assert.ok(/\['cn-sched-modal-dark-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot), 'dark variant');
+    assert.ok(/\['cn-sched-modal-light-compact',[^\]]*'\?compact=1', 'cnOpenSchedModal_\(\)'\]/.test(shoot), 'compact variant');
+  });
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

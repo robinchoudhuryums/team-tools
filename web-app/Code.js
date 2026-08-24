@@ -14093,6 +14093,78 @@ function setScheduledCallStatus(id, status) {
   finally { lock.releaseLock(); }
 }
 
+// ── Per-rep scratchpad (pilot round 3 #5 — server-backed sticky notes) ──────
+// Personal scratch space that follows the rep across browsers/devices —
+// operator decision: stored in the rep's OWN per-rep Call Notes spreadsheet
+// (a `Scratchpad` tab beside their Notes), so it inherits that store's
+// PHI-class handling and per-rep isolation BY CONSTRUCTION (no cross-rep
+// read path exists — the resolver is the caller's own callNotesSheetId, the
+// INV-167-guarded field the employee builders populate).
+const SCRATCHPAD_TAB = 'Scratchpad';
+const SCRATCHPAD_MAX_CHARS = 40000;   // comfortably under the ~50k cell limit
+
+/** The caller's Scratchpad tab. createIfMissing provisions it with cell A1
+ *  PRE-FORMATTED as PLAIN TEXT ('@') — a scratchpad beginning "5/12" or
+ *  "0123" would otherwise be COERCED to a Date/number on read (the
+ *  normalizeDate_ class, dodged at write time instead of recovered). */
+function scratchpadSheet_(emp, createIfMissing) {
+  if (!emp || !emp.callNotesSheetId) {
+    throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');
+  }
+  const ss = SpreadsheetApp.openById(emp.callNotesSheetId);
+  let sh = ss.getSheetByName(SCRATCHPAD_TAB);
+  if (!sh && createIfMissing) {
+    sh = ss.insertSheet(SCRATCHPAD_TAB);
+    sh.getRange('A1').setNumberFormat('@');
+  }
+  return sh;
+}
+
+/** Read-only. No tab yet = an empty scratchpad, never an error. */
+function getMyScratchpad() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = scratchpadSheet_(emp, false);
+    if (!sh) return { content: '', updatedAtMs: null };
+    const v = sh.getRange('A1').getValue();
+    // Belt-and-braces for a hand-made tab without the '@' format: a coerced
+    // cell String()s rather than throwing (content fidelity is only
+    // guaranteed for app-written cells, which are format-pinned).
+    const content = v == null ? '' : (typeof v === 'string' ? v : String(v));
+    const ms = Number(sh.getRange('B1').getValue());
+    return { content: content, updatedAtMs: isFinite(ms) && ms > 0 ? ms : null, maxChars: SCRATCHPAD_MAX_CHARS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Save (whole-document replace; last write wins across windows — stated in
+ *  the modal copy). USER lock, not the script lock (the kbRecordView /
+ *  INV-01-documented-exception posture): a debounced autosave to the rep's
+ *  OWN sheet must never queue punch/note writes behind it, and the user lock
+ *  still serializes one rep's double-fires. Over-cap REFUSES with an
+ *  actionable error (the INV-96 posture — never a silent truncate: this is
+ *  the rep's document). NO audit row per save (high-frequency, own-store,
+ *  non-privileged — the kbRecordView precedent; INV-32 governs call-NOTE
+ *  actions, which this is not). */
+function saveMyScratchpad(content) {
+  const lock = LockService.getUserLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const text = String(content == null ? '' : content);
+    if (text.length > SCRATCHPAD_MAX_CHARS) {
+      return { error: 'Scratchpad is over the ' + SCRATCHPAD_MAX_CHARS + '-character limit (' + text.length + ') — trim it and save again.' };
+    }
+    const sh = scratchpadSheet_(emp, true);
+    const now = Date.now();
+    sh.getRange('A1').setValue(text);
+    sh.getRange('B1').setValue(now);   // epoch-ms NUMBER cell — coercion-immune
+    return { success: true, updatedAtMs: now };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 // ── Inter-department request tracking (Part B) ──────────────────────────────
 function getDeptRequestsSS_() {
   try {
@@ -19945,6 +20017,145 @@ function kbFlagItem(itemId, kind, note) {
     ]);
     if (k === 'stale') writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Reference comments, Phase A (pilot round 3 #6) ──────────────────────────
+// A visible per-article comment thread — the DISCUSSION complement to the
+// private kbFlagItem signal (INV-139). Append-only `KbComments` tab in the KB
+// spreadsheet (PHI-free-by-policy like every KB store — the UI carries the
+// reminder); moderation is SOFT-delete (Status='deleted', the append-only
+// posture — rows are never removed), author-or-manager. Phase A surfaces
+// comments in the Reference TAB reader only — the Ctrl/⌘+K drawer is the
+// mid-call surface and stays comment-free (the INV-139 drawer-parity
+// follow-on shape; add it there only if reps ask).
+const KB_COMMENTS_TAB = 'KbComments';
+const KB_COMMENTS_HEADERS = ['CommentId', 'ItemId', 'EmpId', 'EmpName', 'Text', 'AtMs', 'Status'];
+const KBC = { ID: 0, ITEM_ID: 1, EMP_ID: 2, EMP_NAME: 3, TEXT: 4, AT_MS: 5, STATUS: 6 };
+const KB_COMMENT_MAX_CHARS = 2000;
+const KB_COMMENTS_SCAN = 2000;      // bounded tail — reads stay cheap as the tab grows
+const KB_COMMENTS_LIST_CAP = 100;   // payload cap; pre-slice total reported (INV-169)
+
+function getOrCreateKbCommentsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_COMMENTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_COMMENTS_TAB);
+    sheet.appendRow(KB_COMMENTS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_COMMENTS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Existence + visibility check for a comment target — the getReferenceItem
+ *  boundary applied here: a DRAFT item is indistinguishable from not-found
+ *  for a non-admin, so commenting can't probe draft existence (INV-140/147).
+ *  Bounded: id + status columns only, never BodyMd. */
+function kbCommentTargetOk_(emp, itemId) {
+  const sheet = getOrCreateKbSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return false;
+  const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== itemId) continue;
+    const status = kbRowStatus_(sheet.getRange(i + 2, KB.STATUS + 1).getValue());
+    return status !== KB_STATUS_DRAFT || !!emp.isAdmin;
+  }
+  return false;
+}
+
+/** Add a comment. Rep-callable, locked (INV-01 — the kbFlagItem posture).
+ *  Over-cap REFUSES (a comment is the rep's words — never silently cut).
+ *  Audit row is id-only: the comment TEXT lives in the KB store, never the
+ *  shared AuditLog (the INV-32 discipline). */
+function kbAddComment(itemId, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const id = String(itemId || '').trim().substring(0, 100);
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const t = String(text || '').trim();
+    if (!t) return { success: false, error: 'Write a comment first.' };
+    if (t.length > KB_COMMENT_MAX_CHARS) {
+      return { success: false, error: 'Comments are capped at ' + KB_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and post again.' };
+    }
+    if (!kbCommentTargetOk_(emp, id)) return { success: false, error: 'Not found.' };
+    const commentId = Utilities.getUuid();
+    getOrCreateKbCommentsSheet_().appendRow([
+      commentId, id, emp.id, emp.name, t, Date.now(), 'active',   // AtMs: NUMBER cell — coercion-immune
+    ]);
+    writeAuditLog_(emp, 'KbCommentAdd', '', '', false, 0, 'id=' + id + '; commentId=' + commentId, emp.email);
+    return { success: true, commentId: commentId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The item's ACTIVE comments, oldest-first. Rep-callable, read-only, bounded
+ *  tail; payload-capped with the pre-slice total (INV-169 — the client says
+ *  "showing N of M"). Draft targets read as empty for non-admins (no leak). */
+function kbGetComments(itemId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const id = String(itemId || '').trim();
+    if (!id || !kbCommentTargetOk_(emp, id)) return { comments: [], total: 0, cap: KB_COMMENTS_LIST_CAP, canModerate: false };
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { comments: [], total: 0, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_COMMENTS_HEADERS.length).getValues();
+    const all = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KBC.ITEM_ID] || '') !== id) continue;
+      if (String(rows[i][KBC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+      all.push({
+        commentId: String(rows[i][KBC.ID] || ''),
+        empId: String(rows[i][KBC.EMP_ID] || ''),
+        name: String(rows[i][KBC.EMP_NAME] || ''),
+        text: String(rows[i][KBC.TEXT] || ''),
+        atMs: Number(rows[i][KBC.AT_MS]) || 0,
+        mine: String(rows[i][KBC.EMP_ID] || '') === String(emp.id),
+      });
+    }
+    return { comments: all.slice(0, KB_COMMENTS_LIST_CAP), total: all.length, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Remove (soft-delete) a comment — its AUTHOR or a manager (moderation).
+ *  The refusal is deliberately NOT the manager-gate string: this is a
+ *  per-row ownership rule, not a gated endpoint. Locked; audit row id-only. */
+function kbDeleteComment(commentId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const wanted = String(commentId || '').trim();
+    if (!wanted) return { success: false, error: 'Missing comment id.' };
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const ids = sheet.getRange(start, KBC.ID + 1, last - start + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') !== wanted) continue;
+      const rowIdx = start + i;
+      const row = sheet.getRange(rowIdx, 1, 1, KB_COMMENTS_HEADERS.length).getValues()[0];
+      if (String(row[KBC.STATUS] || '').trim().toLowerCase() !== 'active') {
+        return { success: true, already: true };
+      }
+      if (String(row[KBC.EMP_ID] || '') !== String(emp.id) && !emp.isManager) {
+        return { success: false, error: 'You can only remove your own comments.' };
+      }
+      sheet.getRange(rowIdx, KBC.STATUS + 1).setValue('deleted');
+      writeAuditLog_(emp, 'KbCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Comment not found.' };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }

@@ -315,6 +315,15 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyScheduledCalls: { calls: [
       { id: 'sc-2', whenMs: Date.now() - 2 * 3600000, leadMin: 5, label: 'Call back — J. Rivera · insurance question', status: 'active' },
       { id: 'sc-1', whenMs: Date.now() + 3600000, leadMin: 5, label: 'Translated call — Maria G · TRX 12345', status: 'active' }] },
+    // Pilot round 3 — scratchpad + Reference comments (shapes mirror the
+    // server returns; pinned like the sched fixture above).
+    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000 },
+    kbGetComments: { comments: [
+      { commentId: 'c-1', empId: 'E-1090', name: 'Leo Kim', text: 'The PAR fax number changed last month — worth updating the table.', atMs: Date.now() - 86400000, mine: false },
+      { commentId: 'c-2', empId: 'E-1042', name: 'Avery Blake', text: 'Updated — thanks for flagging.', atMs: Date.now() - 3600000, mine: true }],
+      total: 2, cap: 100, canModerate: true },
+    kbAddComment: { success: true, commentId: 'c-new' },
+    kbDeleteComment: { success: true },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],

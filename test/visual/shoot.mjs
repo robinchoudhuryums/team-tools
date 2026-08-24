@@ -126,6 +126,11 @@ const SCENARIOS = [
   // Done/Cancel controls are on camera; the create form's label-for naming is
   // what a11y-names.mjs cannot reach (it walks tab landings too).
   ['cn-sched-modal-light-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'light', '', 'cnOpenSchedModal_()'],
+  // Round-3 follow-through: dark parity + the compact pop-out form of the same
+  // modal (a theme or compact defect there was unshootable while the modal had
+  // one scenario — the reference/training dark-parity lesson, batch ⑦).
+  ['cn-sched-modal-dark-wide',     { tool: 'callNotes', tab: 'callNotes' }, WIDE,    'dark',  '', 'cnOpenSchedModal_()'],
+  ['cn-sched-modal-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', 'cnOpenSchedModal_()'],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

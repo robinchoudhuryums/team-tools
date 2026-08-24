@@ -1011,6 +1011,16 @@
     border-radius: var(--radius); padding: 12px; text-align: center; margin-top: 12px;
   }
 
+  /* Pilot round 3 #5 — scratchpad modal */
+  .cn-scratch-modal textarea {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper-card); color: var(--ink); resize: vertical; min-height: 180px;
+  }
+  .cn-scratch-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); }
+  .cn-scratch-status.warn { color: var(--warning-deep); }
+
   /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
      (the training-question line mirrored, in the review flag's green). */
   .cn-card-review-c {
@@ -2537,6 +2547,7 @@ function cnRenderNotesView(area) {
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Week</div></div>
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
+        <button type="button" class="cn-help-fab" id="cn-scratch-btn" title="Scratchpad — personal notes that follow you across devices" aria-label="Scratchpad">${icon('fileText', 14)}</button>
         <button type="button" class="cn-help-fab" id="cn-sched-btn" title="Scheduled call reminders" aria-label="Scheduled call reminders">${icon('bell', 14)}</button>
         <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
       </div>
@@ -3134,6 +3145,8 @@ function cnWireActiveForm_() {
   if (helpBtn) helpBtn.addEventListener('click', cnOpenShortcutsOverlay_);
   var schedBtn = document.getElementById('cn-sched-btn');
   if (schedBtn) schedBtn.addEventListener('click', function () { cnOpenSchedModal_(); });
+  var scratchBtn = document.getElementById('cn-scratch-btn');
+  if (scratchBtn) scratchBtn.addEventListener('click', function () { cnOpenScratchpadModal_(); });
   var extBtn = document.getElementById('cn-ext-email-btn');
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
@@ -4685,6 +4698,113 @@ function cnSchedStatus_(btn, id, status) {
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Update failed', 'toast-error'); })
     .setScheduledCallStatus(id, status);
+}
+
+// ── Scratchpad (pilot round 3 #5) — server-backed personal sticky notes ─────
+// One free-text document per rep, stored in THEIR OWN per-rep Call Notes
+// spreadsheet (a Scratchpad tab), so it follows them across browsers/devices
+// — the operator's server-backed decision, vs. a localStorage note that dies
+// with the browser profile. Autosaves debounced; a pending save FLUSHES on
+// close (the INV-148 teardown-safe persister pattern). Last write wins across
+// windows — stated in the modal copy. A failed autosave is VISIBLE in the
+// status line (INV-187 — never silently dropped) and retried on next edit.
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false };
+
+function cnOpenScratchpadModal_() {
+  var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
+  overlay.innerHTML =
+    '<div class="modal cn-scratch-modal" style="max-width:560px">' +
+      '<h3 style="margin-top:0">Scratchpad</h3>' +
+      '<p class="cn-sched-hint">Personal notes saved to YOUR Call Notes sheet — they follow you across ' +
+      'browsers and devices. Autosaves as you type; if two windows edit, the last save wins.</p>' +
+      '<textarea id="cn-scratch-text" rows="12" disabled aria-label="Scratchpad contents" placeholder="Loading…"></textarea>' +
+      '<div class="cn-scratch-foot">' +
+        '<span class="cn-scratch-status mono" id="cn-scratch-status" role="status"></span>' +
+        '<span style="flex:1"></span>' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="cnScratchSave_(true)">Save now</button>' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>' +
+      '</div>' +
+    '</div>';
+  CN_SCRATCH.dirty = false; CN_SCRATCH.saving = false; CN_SCRATCH.queued = false;
+  clearTimeout(CN_SCRATCH.timer);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var ta = document.getElementById('cn-scratch-text');
+      if (!ta) return;   // modal closed before the load landed
+      if (!res || res.error) {
+        // A12/INV-175 — a failed load is a warn card, never an empty pad the
+        // rep would type into and lose.
+        var modal = ta.closest('.cn-scratch-modal');
+        if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
+          errorStateHtml_((res && res.error) || 'Could not load your scratchpad') +
+          '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+        return;
+      }
+      ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
+      ta.value = res.content || '';
+      ta.addEventListener('input', cnScratchInput_);
+      cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
+      ta.focus();
+    })
+    .withFailureHandler(function (err) {
+      var ta = document.getElementById('cn-scratch-text');
+      if (!ta) return;
+      var modal = ta.closest('.cn-scratch-modal');
+      if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
+        errorStateHtml_((err && err.message) || 'Could not load your scratchpad') +
+        '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+    })
+    .getMyScratchpad();
+}
+
+/** onClose — flush a pending debounce so typed text never dies with the
+ *  modal (the INV-148 rule). Idempotent (safe when already closed). */
+function cnCloseScratchpadModal_() {
+  if (CN_SCRATCH.dirty) cnScratchSave_(true);
+}
+
+function cnScratchStatus_(msg, warn) {
+  var el = document.getElementById('cn-scratch-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('warn', !!warn);
+}
+
+function cnScratchInput_() {
+  CN_SCRATCH.dirty = true;
+  cnScratchStatus_('Unsaved changes…', false);
+  clearTimeout(CN_SCRATCH.timer);
+  CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
+}
+
+function cnScratchSave_(force) {
+  var ta = document.getElementById('cn-scratch-text');
+  // The flush-on-close path reads the field BEFORE the DOM goes away; a later
+  // fire with no field is a no-op (root-guard, the INV-148 pattern).
+  if (!ta && !force) return;
+  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; latest text re-reads at fire time
+  if (!ta) return;
+  var text = ta.value;
+  CN_SCRATCH.saving = true;
+  clearTimeout(CN_SCRATCH.timer);
+  cnScratchStatus_('Saving…', false);
+  google.script.run
+    .withSuccessHandler(function (r) {
+      CN_SCRATCH.saving = false;
+      if (!r || r.error || !r.success) {
+        // Keep dirty so the next edit (or Save now) retries — visible, never silent.
+        cnScratchStatus_((r && r.error) || 'Save failed — edit or press Save now to retry', true);
+        return;
+      }
+      CN_SCRATCH.dirty = false;
+      cnScratchStatus_('Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
+      if (CN_SCRATCH.queued) { CN_SCRATCH.queued = false; cnScratchSave_(false); }
+    })
+    .withFailureHandler(function (e) {
+      CN_SCRATCH.saving = false;
+      cnScratchStatus_((e && e.message) || 'Save failed — edit or press Save now to retry', true);
+    })
+    .saveMyScratchpad(text);
 }
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────

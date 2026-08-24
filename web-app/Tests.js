@@ -715,6 +715,9 @@ function cleanupTestData() {
     // the assignment picker permanently. (The quiz flow now runs against the
     // fixture, so this sweeps pre-fix orphans + any future live-store residue.)
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_QUIZ_TAB), 'TEST_', TQ.TITLE, 2);
+    // Pilot round 3 #6 — KbComments backstop (the flow runs against the
+    // fixture; this sweeps any live-store residue by the TEST_ emp id).
+    _cleanupRowsByPrefix(kbSs.getSheetByName(KB_COMMENTS_TAB), 'TEST_', KBC.EMP_ID, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
   // M-9 — same sweep inside the KB FIXTURE (if provisioned), so repeated runs
   // don't accumulate residue from aborted tests there either.
@@ -730,6 +733,8 @@ function cleanupTestData() {
       // Quizzes + QuizAttempts residue too (the F-7 gap).
       _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_QUIZ_TAB), 'TEST_', TQ.TITLE, 2);
       _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
+      // Pilot round 3 #6 — the comments flow lives in the fixture too.
+      _cleanupRowsByPrefix(fx.getSheetByName(KB_COMMENTS_TAB), 'TEST_', KBC.EMP_ID, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: KB fixture cleanup skipped: ' + e.message); }
   // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
@@ -1152,6 +1157,9 @@ function _runAllTests() {
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
+  // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
+  _integrationTest('scratchpad_saveReadRoundTrip',            test_scratchpad_saveReadRoundTrip);
+  _integrationTest('kb_comments_flow',                        test_kb_comments_flow);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -5321,6 +5329,115 @@ function test_scheduledCalls_flow() {
     try {
       _cleanupRowsByPrefix(getFormsSS_().getSheetByName(SCHED_CALLS_TAB), 'TEST_', SC.EMP_ID, 2);
     } catch (e) { Logger.log('sched cleanup skipped: ' + e.message); }
+  }
+}
+
+// ── Pilot round 3 #5 — scratchpad save/read round-trip ──────────────────────
+// Runs against the INDIA test emp's provisioned test CN sheet (column L). The
+// per-rep isolation is BY CONSTRUCTION (the resolver is the caller's own
+// callNotesSheetId), so the cross-rep case here is the UNENROLLED PH rep —
+// whose save must surface the enrollment error, never write anywhere.
+function test_scratchpad_saveReadRoundTrip() {
+  const marker = 'TEST_SCRATCH 5/12 0123 — starts with a coercible-looking token';
+  try {
+    let save, read;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      save = saveMyScratchpad(marker);
+      read = getMyScratchpad();
+    });
+    _assertEq(save.success, true, 'save succeeds');
+    _assertTrue(isFinite(save.updatedAtMs) && save.updatedAtMs > 0, 'save returns the ms stamp');
+    _assertEq(read.content, marker, 'read returns the EXACT text — the @ format defeats cell coercion');
+    _assertEq(read.updatedAtMs, save.updatedAtMs, 'stamp round-trips as a number');
+    // Over-cap REFUSES (never truncates) and the stored content is untouched.
+    let big, after;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      big = saveMyScratchpad(new Array(SCRATCHPAD_MAX_CHARS + 2).join('a') + 'aa');
+      after = getMyScratchpad();
+    });
+    _assertContains(big.error, 'limit', 'over-cap save refused with an actionable error');
+    _assertEq(after.content, marker, 'a refused save leaves the stored content untouched');
+    // Unenrolled rep: the enrollment error, nothing written.
+    let ph;
+    _asUser(_TEST_PH_EMAIL, function () { ph = saveMyScratchpad('x'); });
+    _assertContains(ph.error, 'not configured', 'an unenrolled rep gets the enrollment error');
+  } finally {
+    // Drop the Scratchpad tab from the TEST CN sheet so runs don't accumulate.
+    try {
+      if (_TEST_CN_SS_ID) {
+        const ss = SpreadsheetApp.openById(_TEST_CN_SS_ID);
+        const sh = ss.getSheetByName(SCRATCHPAD_TAB);
+        if (sh) ss.deleteSheet(sh);
+      }
+    } catch (e) { Logger.log('scratchpad cleanup skipped: ' + e.message); }
+  }
+}
+
+// ── Pilot round 3 #6 — Reference comments Phase A ───────────────────────────
+// Runs against the KB FIXTURE (_withTestKb_ — comment rows + the target item
+// land there, never the live store). Covers: add → list (mine flag) → the
+// author-or-manager delete rule → soft-delete → draft-target invisibility →
+// over-cap refusal → PHI-free audit (the comment TEXT never reaches the
+// shared AuditLog — the round-2 id-only discipline).
+function test_kb_comments_flow() {
+  return _withTestKb_(function () { _test_kb_comments_flow_(); });
+}
+function _test_kb_comments_flow_() {
+  let kbId = null, draftId = null;
+  try {
+    const saved = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_CMT_ITEM', type: 'article', body: 'comment target', department: 'TEST' });
+    });
+    _assertTrue(saved && saved.success, 'target item created');
+    kbId = saved.id;
+
+    // Add as the India rep; the audit row must carry ids only — never the text.
+    const secret = 'TEST_CMT_SECRET_TEXT do not audit';
+    let add;
+    _asUser(_TEST_INDIA_EMAIL, function () { add = kbAddComment(kbId, secret); });
+    _assertEq(add.success, true, 'rep adds a comment');
+    const aData = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB).getDataRange().getValues();
+    let auditNotes = null;
+    for (let i = aData.length - 1; i >= Math.max(1, aData.length - 25); i--) {
+      if (String(aData[i][AUDIT.ACTION]) === 'KbCommentAdd'
+          && String(aData[i][AUDIT.NOTES]).indexOf(add.commentId) >= 0) { auditNotes = String(aData[i][AUDIT.NOTES]); break; }
+    }
+    _assertTrue(auditNotes !== null, 'KbCommentAdd audit row written');
+    _assertTrue(auditNotes.indexOf('TEST_CMT_SECRET') < 0, 'audit row never carries the comment text');
+
+    // List: visible to another rep, mine-flag only for the author.
+    let mineList, phList2;
+    _asUser(_TEST_INDIA_EMAIL, function () { mineList = kbGetComments(kbId); });
+    _asUser(_TEST_PH_EMAIL, function () { phList2 = kbGetComments(kbId); });
+    _assertEq(mineList.comments.length, 1, 'author sees the comment');
+    _assertEq(mineList.comments[0].mine, true, 'mine flag for the author');
+    _assertEq(phList2.comments[0].mine, false, 'not mine for another rep');
+    _assertEq(phList2.canModerate, false, 'a rep cannot moderate');
+
+    // Delete rule: another rep is refused; the author (or a manager) succeeds.
+    let phDel, ownDel, afterList;
+    _asUser(_TEST_PH_EMAIL, function () { phDel = kbDeleteComment(add.commentId); });
+    _assertContains(phDel.error, 'your own', 'another rep cannot remove it');
+    _asUser(_TEST_INDIA_EMAIL, function () { ownDel = kbDeleteComment(add.commentId); afterList = kbGetComments(kbId); });
+    _assertEq(ownDel.success, true, 'the author removes their own comment');
+    _assertEq(afterList.comments.length, 0, 'soft-deleted comment leaves the list');
+
+    // Over-cap refused; draft target invisible to a rep (no probe channel).
+    let big;
+    _asUser(_TEST_INDIA_EMAIL, function () { big = kbAddComment(kbId, new Array(KB_COMMENT_MAX_CHARS + 2).join('a') + 'aa'); });
+    _assertContains(big.error, 'capped', 'over-cap comment refused');
+    const draft = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_CMT_DRAFT', type: 'article', body: 'x', department: 'TEST', status: 'draft' });
+    });
+    draftId = draft.id;
+    let onDraft;
+    _asUser(_TEST_INDIA_EMAIL, function () { onDraft = kbAddComment(draftId, 'probe'); });
+    _assertContains(onDraft.error, 'Not found', 'a draft target reads as not-found for a rep (INV-140/147)');
+  } finally {
+    _asUser(_TEST_MGR_EMAIL, function () {
+      try { if (kbId) kbDeleteItem(kbId); } catch (e) {}
+      try { if (draftId) kbDeleteItem(draftId); } catch (e) {}
+    });
   }
 }
 
