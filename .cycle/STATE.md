@@ -176,15 +176,36 @@ Updated: 2026-08-21
   sheet, flushes, and VERIFIES the tab is empty; the count test asserts
   `ctx.emp.callNotesSheetId === _TEST_CN_SS_ID` (the decisive divergence
   diagnostic); cleanup reports surviving rows; pin 620→621 (2 bites).
-- **ROOT CAUSE NOT YET PROVEN — the next `runAllTests()` names it:** a clean
-  pass = stale rows from an interrupted run; a throw = the unreachable
-  sheet / surviving row count; the identity assert firing = the fixture and
-  the app are on two different spreadsheets (it prints both ids).
+- **ROOT CAUSE PROVEN** by the next run (2026-08-24 17:22, 270/22): the loud
+  clear threw `Sorry, it is not possible to delete all non-frozen rows` in
+  all 22 CN tests. `deleteRows` permanently SHRINKS the grid, so after
+  enough runs `maxRows == lastRow` on a tab whose row 1 is frozen
+  (`getCallNotesSheet_` sets `setFrozenRows(1)`), and
+  `deleteRows(2, last - 1)` becomes "delete every non-frozen row" — which
+  Sheets REFUSES. The old bare catch swallowed that throw every run, so the
+  tab was never cleared and notes accumulated into the 2-vs-21 count. The
+  22 failures were the diagnosis working, not a new defect.
+- FIXED: both sweeps (the per-test clear + the end-of-run cleanup) now
+  `clearContent()` the data range instead — empties the tab without touching
+  the grid, so it stays correct however small the grid already is. The
+  post-clear verify counts rows still carrying a DateLocal (semantic, not a
+  bare getLastRow that a cleared-but-formatted grid could misreport). Pin
+  extended: the helper may not return to `deleteRows` (bite-checked).
 - Still owed from the deploy: the round-1 email spot-check (one dept + one
   intake email — From reads "<Agent> · Universal Medical Supply", Reply-To
   the agent).
 
 ## Open follow-on items
+- **LATENT (production, disabled-by-default features): the same Sheets
+  refusal can hit `archiveSheetRowsOlderThan_`.** It `deleteRow`s bottom-up
+  from the frozen-header Notes/Timesheet tabs; if a run's cutoff covers
+  EVERY data row and the grid has no spare rows, the last delete is
+  "delete all non-frozen rows" and throws — the per-rep catch would skip
+  that rep's archive forever, logged but unfixed. Only reachable with
+  `CN_NOTE_ARCHIVE_DAYS` / `TIMESHEET_ARCHIVE_DAYS` enabled (both default
+  0). One-line guard: `insertRowsAfter` a spare row before deleting, or
+  keep the final row and clearContent it. NOT fixed here (out of the scope
+  asked for, and no urgency while both windows are 0).
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
   (round-1 follow-ons FO-D, commit 86c64df)
 - CDR col-4 header one-liner (cycle 15, still open — operator)

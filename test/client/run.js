@@ -11710,8 +11710,16 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const body = clear[0];
     assert.ok(!/catch\s*\(\s*\w*\s*\)\s*\{\s*\}/.test(body), 'no bare swallow-everything catch');
     assert.ok(/throw new Error/.test(body), 'an unclearable fixture THROWS rather than no-opping');
-    assert.ok(/SpreadsheetApp\.flush\(\)/.test(body), 'flush so the delete is visible to the next handle');
-    assert.ok(/left > 0/.test(body) && /getLastRow\(\) - 1/.test(body), 'VERIFIES the tab is empty after the delete');
+    assert.ok(/SpreadsheetApp\.flush\(\)/.test(body), 'flush so the clear is visible to the next handle');
+    // THE ROOT CAUSE, proven by the 2026-08-24 re-run: deleteRows permanently
+    // SHRINKS the grid, so once maxRows == lastRow on a tab with a frozen
+    // header, `deleteRows(2, last-1)` is "delete every non-frozen row" and
+    // Sheets refuses it outright. clearContent empties the tab without
+    // touching the grid and stays correct however small the grid has become.
+    assert.ok(!/deleteRows/.test(body), 'clears CONTENT — deleteRows would eventually be refused on the frozen-header tab');
+    assert.ok(/clearContent\(\)/.test(body), 'uses clearContent');
+    assert.ok(/left > 0/.test(body) && /CN\.DATE_LOCAL/.test(body),
+      'VERIFIES semantically — counts rows still carrying a DateLocal, not a bare getLastRow');
     assert.ok(/\+ _TEST_CN_SS_ID/.test(body), 'the failure message names the sheet it could not clear');
     // The decisive diagnostic: the app writes/counts through the ROSTER id
     // while the fixture clears _TEST_CN_SS_ID — a divergence makes every clear

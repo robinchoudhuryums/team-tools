@@ -693,7 +693,9 @@ function cleanupTestData() {
       const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);
       const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
       if (notesTab && notesTab.getLastRow() > 1) {
-        notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+        // clearContent, not deleteRows — see _clearTestCallNotes for why
+        // (frozen row 1 + a grid shrunk by past deletes = a refused delete).
+        notesTab.getRange(2, 1, notesTab.getLastRow() - 1, notesTab.getMaxColumns()).clearContent();
         SpreadsheetApp.flush();
         const left = notesTab.getLastRow() - 1;
         if (left > 0) {
@@ -3771,11 +3773,31 @@ function _clearTestCallNotes() {
   const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);   // a throw here names the unreachable id
   const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
   if (!notesTab) return;                                  // never provisioned = nothing to clear
-  if (notesTab.getLastRow() > 1) notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+  const last = notesTab.getLastRow();
+  if (last > 1) {
+    // CLEAR CONTENT — never deleteRows. `getCallNotesSheet_` freezes row 1,
+    // and deleteRows permanently SHRINKS the grid, so after enough runs
+    // maxRows == lastRow and `deleteRows(2, last - 1)` becomes "delete every
+    // non-frozen row", which Sheets REFUSES ("Sorry, it is not possible to
+    // delete all non-frozen rows"). That throw — swallowed by the old bare
+    // catch — is exactly why notes accumulated into the 2-vs-21 count
+    // failure. clearContent empties the tab without touching the grid, so it
+    // stays correct however small the grid has already become.
+    notesTab.getRange(2, 1, last - 1, notesTab.getMaxColumns()).clearContent();
+  }
   SpreadsheetApp.flush();
-  const left = notesTab.getLastRow() - 1;
+  // Verify SEMANTICALLY — count rows that still carry a DateLocal, i.e. rows
+  // cnCountNotesResult_ would count. A bare getLastRow() check would be at the
+  // mercy of how Sheets reports a cleared-but-formatted grid, and a
+  // false-positive throw here fails every CN test at once.
+  const lastAfter = notesTab.getLastRow();
+  let left = 0;
+  if (lastAfter > 1) {
+    const dates = notesTab.getRange(2, CN.DATE_LOCAL + 1, lastAfter - 1, 1).getValues();
+    for (let i = 0; i < dates.length; i++) if (String(dates[i][0]).trim()) left++;
+  }
   if (left > 0) {
-    throw new Error('_clearTestCallNotes: ' + left + ' row(s) survived the delete in Notes tab of '
+    throw new Error('_clearTestCallNotes: ' + left + ' note row(s) survived the clear in the Notes tab of '
       + _TEST_CN_SS_ID + ' — the fixture is not clean, so any count assertion after this is meaningless.');
   }
 }
