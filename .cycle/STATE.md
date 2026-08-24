@@ -87,7 +87,16 @@ Updated: 2026-08-21
   cross-window dedupe + INV-190 fetch discipline, CN bell modal + card
   More-menu prefill). Pure 600→607 (7 pins, 8 bites), DOM 75; Tests.js
   omnibus Spanish set gained claim/release cases (run post-deploy).
-  /sync-docs owed (now THREE blocks' doc lists).
+- **/sync-docs APPLIED for all three blocks** (2026-08-24, commit 3d80176) —
+  CLAUDE.md updated per the three DOCUMENTATION UPDATES NEEDED lists
+  (SubformData/INV-143/INV-77/draft-shape/S24; sendRepEmail_ wrapper text in
+  the fire-and-forget gotcha + INV-01/42 + the REP_SENDER_FROM operator
+  entry; {callDirection} token; History outbound chip; Offerings E/F
+  http(s) requirement; storage-map SpanishClaims + ScheduledCalls rows +
+  INV-114; INV-31 seven-endpoint amendment + claim contract; Spanish KDD
+  claim paragraph; INV-190 section (d); running test total 585→607; the
+  consolidated Operator State Checklist round entry). Harnesses green after
+  the edits (pure 607 / DOM 75). No doc lists owed.
 - Roadmap round 3 remains: intake arrow-key nav, server-backed scratchpad
   (operator chose per-rep-sheet storage), Reference comments Phase A.
   Operator answers on record: sender v1 = name+replyTo (alias later);
@@ -116,8 +125,9 @@ Updated: 2026-08-21
 Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
 (86c64df) and Round 2 (Spanish claim/assign + scheduled-call reminders,
 through 3188e79) are implemented + tested on
-`claude/team-tools-roadmap-6e2l97` and pushed — awaiting the operator's
-PR/merge decision, the combined deploy (with PR #176/#177), and
-/sync-docs for all THREE blocks' doc lists. Next implementation work:
-roadmap round 3 (intake arrow-key nav, server-backed scratchpad,
-Reference comments Phase A).
+`claude/team-tools-roadmap-6e2l97` and pushed, and /sync-docs for all
+THREE blocks is APPLIED (3d80176). Awaiting the operator's PR/merge
+decision and the combined deploy (with PR #176/#177) + post-deploy
+runAllTests() + email spot-check. Next implementation work: roadmap
+round 3 (intake arrow-key nav, server-backed scratchpad, Reference
+comments Phase A).
