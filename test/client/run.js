@@ -11698,6 +11698,28 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(rule[0]), 'no raw hex in the rule');
   });
 
+  test('post-deploy: the CN fixture clear is LOUD (no silent no-op) + the divergence assert', () => {
+    // 2026-08-24 post-deploy runAllTests: metrics_cnCountNotesResult_countsToday
+    // reported "expected 2, actual 21". The COUNT was right — 21 rows dated
+    // today really were in the tab — because _clearTestCallNotes() had failed
+    // and swallowed it. A fixture helper that degrades silently surfaces its
+    // failure in an unrelated assertion ~20 tests away (INV-187 applied to test
+    // infrastructure), so it must throw, flush, and VERIFY.
+    const clear = /function _clearTestCallNotes\(\)[\s\S]*?\n\}/.exec(tests);
+    assert.ok(clear, 'found _clearTestCallNotes');
+    const body = clear[0];
+    assert.ok(!/catch\s*\(\s*\w*\s*\)\s*\{\s*\}/.test(body), 'no bare swallow-everything catch');
+    assert.ok(/throw new Error/.test(body), 'an unclearable fixture THROWS rather than no-opping');
+    assert.ok(/SpreadsheetApp\.flush\(\)/.test(body), 'flush so the delete is visible to the next handle');
+    assert.ok(/left > 0/.test(body) && /getLastRow\(\) - 1/.test(body), 'VERIFIES the tab is empty after the delete');
+    assert.ok(/\+ _TEST_CN_SS_ID/.test(body), 'the failure message names the sheet it could not clear');
+    // The decisive diagnostic: the app writes/counts through the ROSTER id
+    // while the fixture clears _TEST_CN_SS_ID — a divergence makes every clear
+    // miss, so the test asserts they are the same sheet.
+    const t = /function test_metrics_cnCountNotesResult_countsToday\(\)[\s\S]*?\n\}/.exec(tests)[0];
+    assert.ok(/callNotesSheetId, _TEST_CN_SS_ID/.test(t), 'the count test asserts fixture/app sheet identity');
+  });
+
   test('R3 FO: every icon(\'name\') literal is a real ICONS key (derived — INV-179)', () => {
     // icon('unknown') SILENTLY returns '' — the comment-edit pencil shipped
     // as a 4px empty button because icon('pencil') matched nothing (the real
