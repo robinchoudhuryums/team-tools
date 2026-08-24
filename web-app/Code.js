@@ -19736,12 +19736,14 @@ function kbGetUsageStats() {
       });
     }
     const fb = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
+    const cc = kbCommentCounts_();    // round-3 FO — surface discussion volume
     const items = ids
       .filter(function (id) { return !!titles[id]; })   // deleted items drop out
       .map(function (id) {
         return {
           id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount,
           helpful: (fb[id] && fb[id].helpful) || 0, notHelpful: (fb[id] && fb[id].notHelpful) || 0,
+          comments: cc[id] || 0,
         };
       })
       .sort(function (a, b) { return b.count - a.count; })
@@ -19824,6 +19826,7 @@ function kbGetReviewDue() {
     });
     const stale = kbStaleFlags_(reviewedTsByItem);
     const fb = kbFeedbackCounts_();
+    const cc = kbCommentCounts_();    // round-3 FO — discussion volume chip
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
     const items = [];
     rows.forEach(function (r) {
@@ -19851,6 +19854,7 @@ function kbGetReviewDue() {
         staleNote: (stale[id] && stale[id].lastNote) || '',
         helpful: (fb[id] && fb[id].helpful) || 0,
         notHelpful: (fb[id] && fb[id].notHelpful) || 0,
+        comments: cc[id] || 0,
       });
     });
     items.sort(function (a, b) {
@@ -19945,6 +19949,29 @@ function kbFeedbackCounts_() {
       if (!id) continue;
       if (!out[id]) out[id] = { helpful: 0, notHelpful: 0 };
       if (kind === 'helpful') out[id].helpful++; else out[id].notHelpful++;
+    }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+/** Round-3 FO — ACTIVE comment count per item over the bounded KbComments
+ *  tail (the kbFeedbackCounts_ shape: best-effort, empty map on any failure).
+ *  Folded into the SAME manager Most-used + Review-due rows rather than a new
+ *  ranked block/endpoint — "which items generate discussion" rides the
+ *  existing analytics surfaces, and kbFbCountHtml_ renders the chip. */
+function kbCommentCounts_() {
+  const out = {};
+  try {
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return out;
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_COMMENTS_HEADERS.length).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KBC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+      const id = String(rows[i][KBC.ITEM_ID] || '').trim();
+      if (!id) continue;
+      out[id] = (out[id] || 0) + 1;
     }
   } catch (e) { /* best-effort — empty map on any failure */ }
   return out;
@@ -20153,6 +20180,51 @@ function kbDeleteComment(commentId) {
       }
       sheet.getRange(rowIdx, KBC.STATUS + 1).setValue('deleted');
       writeAuditLog_(emp, 'KbCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Comment not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round-3 FO — edit a comment in place. AUTHOR-only, deliberately narrower
+ *  than delete's author-or-manager: moderation is REMOVAL — a manager
+ *  rewriting a rep's words under the rep's name is a worse surface than
+ *  removing them. Active rows only (an edited-after-delete row reads as not
+ *  found); over-cap REFUSES (the kbAddComment rule); the KbComments tab is a
+ *  casual PHI-free discussion surface, NOT an attested record, so in-place
+ *  Text mutation is acceptable (unlike FormSubmissions/DocSignatures —
+ *  §164.312(c) does not reach it). Audit row id-only (INV-32). */
+function kbEditComment(commentId, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const wanted = String(commentId || '').trim();
+    if (!wanted) return { success: false, error: 'Missing comment id.' };
+    const t = String(text || '').trim();
+    if (!t) return { success: false, error: 'Write a comment first.' };
+    if (t.length > KB_COMMENT_MAX_CHARS) {
+      return { success: false, error: 'Comments are capped at ' + KB_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and save again.' };
+    }
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const ids = sheet.getRange(start, KBC.ID + 1, last - start + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') !== wanted) continue;
+      const rowIdx = start + i;
+      const row = sheet.getRange(rowIdx, 1, 1, KB_COMMENTS_HEADERS.length).getValues()[0];
+      if (String(row[KBC.STATUS] || '').trim().toLowerCase() !== 'active') {
+        return { success: false, error: 'Comment not found.' };
+      }
+      if (String(row[KBC.EMP_ID] || '') !== String(emp.id)) {
+        return { success: false, error: 'You can only edit your own comments.' };
+      }
+      sheet.getRange(rowIdx, KBC.TEXT + 1).setValue(t);
+      writeAuditLog_(emp, 'KbCommentEdit', '', '', false, 0, 'commentId=' + wanted, emp.email);
       return { success: true };
     }
     return { success: false, error: 'Comment not found.' };

@@ -2235,11 +2235,14 @@ function kbItemIcon_(it) {
 
 // #2 — inline rep helpful/notHelpful tally (manager Most-used + Review-due rows).
 // Hidden entirely when there's no feedback yet, so it never adds clutter.
+// Round-3 FO: the comment count rides the same chip (the "most commented"
+// signal folded into the existing analytics rows rather than a new block).
 function kbFbCountHtml_(it) {
-  var h = (it && it.helpful) || 0, n = (it && it.notHelpful) || 0;
-  if (!h && !n) return '';
+  var h = (it && it.helpful) || 0, n = (it && it.notHelpful) || 0, c = (it && it.comments) || 0;
+  var cChip = c ? '<span class="kb-fb-tally" title="' + c + ' comment' + (c === 1 ? '' : 's') + '">' + icon('list', 11) + ' ' + c + '</span>' : '';
+  if (!h && !n) return cChip;
   return '<span class="kb-fb-tally" title="Rep feedback: ' + h + ' helpful · ' + n + ' not helpful">' +
-    icon('thumbsUp', 11) + ' ' + h + '<span class="kb-fb-sep">' + icon('thumbsDown', 11) + ' ' + n + '</span></span>';
+    icon('thumbsUp', 11) + ' ' + h + '<span class="kb-fb-sep">' + icon('thumbsDown', 11) + ' ' + n + '</span></span>' + cChip;
 }
 
 function kbRenderTree_() {
@@ -2862,12 +2865,15 @@ function kbRenderItem_(item) {
   }
 }
 
-// ── Reference comments, Phase A (pilot round 3 #6) ──────────────────────────
+// ── Reference comments, Phase A + drawer parity Phase B (pilot round 3) ─────
 // A visible per-article comment thread below the reader — the discussion
-// complement to the private feedback bar. Reference TAB only (the Ctrl/⌘+K
-// drawer stays comment-free — it's the mid-call surface; the INV-139
-// drawer-parity follow-on shape). Best-effort load; a failed fetch renders
-// the warn card (A12/INV-175), never an empty thread.
+// complement to the private feedback bar. Renders in BOTH readers (the
+// Reference tab and the Ctrl/⌘+K drawer — Phase B shipped the INV-139
+// drawer-parity shape on the round-3 follow-ons). The two hosts can show the
+// SAME article at once, so the renderer is HOST-scoped: per-host input ids
+// (the feedback-bar id-collision lesson) and closest()-scoped lookups in the
+// handlers. Best-effort load; a failed fetch renders the warn card
+// (A12/INV-175), never an empty thread.
 function kbLoadComments_(id) {
   var requested = currentView;
   google.script.run
@@ -2895,17 +2901,26 @@ function kbCommentFmt_(atMs) {
 
 function kbRenderComments_(host, id, res) {
   var list = res.comments || [];
+  // Two hosts can show the SAME article (tab + drawer), so the add-form input
+  // id is suffixed per host — duplicate DOM ids break the very label-for
+  // association they exist for (the kbMd_ heading-dedup lesson).
+  var sfx = (host.id === 'kbd-comments') ? '-d' : '';
   var capNote = (res.total > list.length)
     ? '<div class="kb-cmt-cap mono">showing ' + list.length + ' of ' + res.total + '</div>' : '';
   var rows = list.map(function (c) {
-    var canDelete = c.mine || res.canModerate;
-    var del = canDelete
+    // Edit is AUTHOR-only (narrower than delete's author-or-manager — the
+    // server enforces both; these buttons just match its contract).
+    var edit = c.mine
+      ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Edit your comment"' +
+        ' title="Edit this comment" onclick="kbEditComment_(this, \'' + esc(id) + '\')">' + icon('pencil', 12) + '</button>'
+      : '';
+    var del = (c.mine || res.canModerate)
       ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Remove comment by ' + esc(c.name) + '"' +
         ' title="Remove this comment" onclick="kbDeleteComment_(this, \'' + esc(id) + '\')">' + icon('x', 12) + '</button>'
       : '';
     return '<div class="kb-cmt">' +
       '<div class="kb-cmt-meta"><span class="kb-cmt-name">' + esc(c.name) + (c.mine ? ' <span class="kb-cmt-you">you</span>' : '') + '</span>' +
-        '<span class="kb-cmt-when">' + esc(kbCommentFmt_(c.atMs)) + '</span>' + del + '</div>' +
+        '<span class="kb-cmt-when">' + esc(kbCommentFmt_(c.atMs)) + '</span>' + edit + del + '</div>' +
       '<div class="kb-cmt-text">' + esc(c.text) + '</div>' +
     '</div>';
   }).join('');
@@ -2914,8 +2929,8 @@ function kbRenderComments_(host, id, res) {
       '<h3 class="kb-cmt-h">' + icon('list', 13) + ' Comments' + (res.total ? ' · ' + res.total : '') + '</h3>' +
       (rows || '<div class="kb-cmt-none">No comments yet.</div>') + capNote +
       '<div class="kb-cmt-add">' +
-        '<label for="kb-cmt-input" class="kb-cmt-lbl">Add a comment</label>' +
-        '<textarea id="kb-cmt-input" maxlength="2000" rows="2" placeholder="A correction, a tip, a question for the team…"></textarea>' +
+        '<label for="kb-cmt-input' + sfx + '" class="kb-cmt-lbl">Add a comment</label>' +
+        '<textarea id="kb-cmt-input' + sfx + '" maxlength="2000" rows="2" placeholder="A correction, a tip, a question for the team…"></textarea>' +
         '<div class="kb-cmt-foot">' +
           '<span class="kb-cmt-phi">Reference is PHI-free by policy — never a patient name or detail.</span>' +
           '<button class="kb-btn" data-kb-item="' + esc(id) + '" onclick="kbAddComment_(this)">' + icon('send', 12) + ' Post</button>' +
@@ -2924,9 +2939,19 @@ function kbRenderComments_(host, id, res) {
     '</div>';
 }
 
+/** Refresh the comments block the clicked control lives in — the tab and the
+ *  drawer each own a host, and refreshing the wrong one paints under the
+ *  other reader (the INV-139 dual-host rule). */
+function kbCommentsRefresh_(btn, itemId) {
+  if (btn && btn.closest('#kb-drawer')) { kbDrawerLoadComments_(itemId); return; }
+  if (KB_STATE.currentId === itemId) kbLoadComments_(itemId);
+}
+
 function kbAddComment_(btn) {
   var id = btn.getAttribute('data-kb-item');
-  var input = document.getElementById('kb-cmt-input');
+  // closest()-scoped, never getElementById — two hosts may both render the form.
+  var wrap = btn.closest('.kb-comments');
+  var input = wrap ? wrap.querySelector('.kb-cmt-add textarea') : null;
   var text = input ? String(input.value || '').trim() : '';
   if (!text) { showToast('Write a comment first', 'toast-warn'); return; }
   btn.disabled = true;
@@ -2935,7 +2960,7 @@ function kbAddComment_(btn) {
       btn.disabled = false;
       if (!r || !r.success) { showToast((r && r.error) || 'Could not post', 'toast-error'); return; }
       showToast('Comment posted', 'toast-success');
-      if (KB_STATE.currentId === id) kbLoadComments_(id);
+      kbCommentsRefresh_(btn, id);
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not post', 'toast-error'); })
     .kbAddComment(id, text);
@@ -2948,11 +2973,69 @@ function kbDeleteComment_(btn, itemId) {
     google.script.run
       .withSuccessHandler(function (r) {
         if (!r || !r.success) { showToast((r && r.error) || 'Could not remove', 'toast-error'); return; }
-        if (KB_STATE.currentId === itemId) kbLoadComments_(itemId);
+        kbCommentsRefresh_(btn, itemId);
       })
       .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not remove', 'toast-error'); })
       .kbDeleteComment(cid);
   });
+}
+
+/** Round-3 FO — edit-in-place: swap the text for a textarea + Save/Cancel.
+ *  textContent read-back hands us the DECODED original (the snippet-copy
+ *  pattern), and the value goes back through the server → esc() render, so
+ *  the escape boundary is untouched. Cancel just reloads the host. */
+function kbEditComment_(btn, itemId) {
+  var wrap = btn.closest('.kb-cmt'); if (!wrap || wrap.querySelector('.kb-cmt-editbox')) return;
+  var cid = btn.getAttribute('data-kb-cmt');
+  var textDiv = wrap.querySelector('.kb-cmt-text'); if (!textDiv) return;
+  var orig = textDiv.textContent;
+  textDiv.innerHTML =
+    '<textarea class="kb-cmt-editbox" maxlength="2000" rows="2" aria-label="Edit your comment"></textarea>' +
+    '<div class="kb-cmt-foot">' +
+      '<button class="kb-btn" data-kb-cmt="' + esc(cid) + '" data-kb-item="' + esc(itemId) + '"' +
+        ' onclick="kbEditCommentSave_(this)">' + icon('check', 12) + ' Save</button>' +
+      '<button class="kb-btn" data-kb-item="' + esc(itemId) + '"' +
+        ' onclick="kbCommentsRefresh_(this, this.getAttribute(\'data-kb-item\'))">Cancel</button>' +
+    '</div>';
+  var box = textDiv.querySelector('.kb-cmt-editbox');
+  box.value = orig;
+  box.focus();
+}
+
+function kbEditCommentSave_(btn) {
+  var cid = btn.getAttribute('data-kb-cmt');
+  var itemId = btn.getAttribute('data-kb-item');
+  var wrap = btn.closest('.kb-cmt');
+  var box = wrap ? wrap.querySelector('.kb-cmt-editbox') : null;
+  var text = box ? String(box.value || '').trim() : '';
+  if (!text) { showToast('Write a comment first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || !r.success) { showToast((r && r.error) || 'Could not save', 'toast-error'); return; }
+      kbCommentsRefresh_(btn, itemId);
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not save', 'toast-error'); })
+    .kbEditComment(cid, text);
+}
+
+/** Phase B — the drawer twin of kbLoadComments_, guarded by the drawer's own
+ *  L-18 stale-item state rather than currentView/KB_STATE. */
+function kbDrawerLoadComments_(id) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item' || KB_DRAWER.itemId !== id) return;
+      var host = document.getElementById('kbd-comments'); if (!host) return;
+      if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Comments failed to load'); return; }
+      kbRenderComments_(host, id, res);
+    })
+    .withFailureHandler(function (err) {
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item' || KB_DRAWER.itemId !== id) return;
+      var host = document.getElementById('kbd-comments');
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Comments failed to load');
+    })
+    .kbGetComments(id);
 }
 
 // #7 — lazy-load "See also" (co-viewed items) into the reader. Best-effort;
@@ -3849,12 +3932,13 @@ function kbDrawerOpenItem_(id, anchor) {
           '<div class="kbd-embed-card"><strong>' + esc(res.title) + '</strong>' +
           '<div class="kbd-empty" style="padding:6px 0 10px;">This item is an embedded Drive doc - it opens in its own tab.</div>' +
           '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>' +
-          kbFeedbackBarHtml_(res);
+          kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
       } else {
-        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res);
+        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
+      kbDrawerLoadComments_(id);   // Phase B — drawer parity (round-3 FO)
     })
     .withFailureHandler(function (err) {
       // C17 batch-2 — the failure path now carries the SAME stale-response

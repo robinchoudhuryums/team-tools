@@ -5414,6 +5414,16 @@ function _test_kb_comments_flow_() {
     _assertEq(phList2.comments[0].mine, false, 'not mine for another rep');
     _assertEq(phList2.canModerate, false, 'a rep cannot moderate');
 
+    // Round-3 FO — edit-in-place: another rep is refused (author-ONLY — no
+    // manager escape, narrower than delete by design); the author edits and
+    // the text changes in place.
+    let phEdit, ownEdit, editedList;
+    _asUser(_TEST_PH_EMAIL, function () { phEdit = kbEditComment(add.commentId, 'hijack attempt'); });
+    _assertContains(phEdit.error, 'your own', 'another rep cannot edit it');
+    _asUser(_TEST_INDIA_EMAIL, function () { ownEdit = kbEditComment(add.commentId, 'TEST_CMT_EDITED text'); editedList = kbGetComments(kbId); });
+    _assertEq(ownEdit.success, true, 'the author edits their own comment');
+    _assertEq(editedList.comments[0].text, 'TEST_CMT_EDITED text', 'the text changed in place');
+
     // Delete rule: another rep is refused; the author (or a manager) succeeds.
     let phDel, ownDel, afterList;
     _asUser(_TEST_PH_EMAIL, function () { phDel = kbDeleteComment(add.commentId); });
@@ -5421,6 +5431,9 @@ function _test_kb_comments_flow_() {
     _asUser(_TEST_INDIA_EMAIL, function () { ownDel = kbDeleteComment(add.commentId); afterList = kbGetComments(kbId); });
     _assertEq(ownDel.success, true, 'the author removes their own comment');
     _assertEq(afterList.comments.length, 0, 'soft-deleted comment leaves the list');
+    let editGone;
+    _asUser(_TEST_INDIA_EMAIL, function () { editGone = kbEditComment(add.commentId, 'resurrect'); });
+    _assertContains(editGone.error, 'not found', 'a deleted comment cannot be edited back to life');
 
     // Over-cap refused; draft target invisible to a rep (no probe channel).
     let big;

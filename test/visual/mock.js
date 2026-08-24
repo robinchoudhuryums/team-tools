@@ -324,6 +324,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       total: 2, cap: 100, canModerate: true },
     kbAddComment: { success: true, commentId: 'c-new' },
     kbDeleteComment: { success: true },
+    kbEditComment: { success: true },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
@@ -476,8 +477,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // contentRequests uses the real {open, resolved, openCount} shape; the
     // coaching rows carry the server's exact TRX field casing (the drifted
     // lowercase form meant no screenshot could ever render the TRX chip).
-    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July' }], total: 1, cap: 40, dueDays: 90 },
-    kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0 }], windowDays: 30 },
+    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', comments: 2 }], total: 1, cap: 40, dueDays: 90 },
+    kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0, comments: 2 }], windowDays: 30 },
     kbGetContentRequests: { open: [], resolved: [], openCount: 0 },
     kbGetRelated: { items: [] },
     kbRecordView: { ok: true },

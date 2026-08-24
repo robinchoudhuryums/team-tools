@@ -11560,7 +11560,21 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const add = strip(extractRawFunction('Code.js', 'kbAddComment'));
     const get = strip(extractRawFunction('Code.js', 'kbGetComments'));
     const del = strip(extractRawFunction('Code.js', 'kbDeleteComment'));
-    [add, get, del].forEach((f) => assert.ok(/getEmployeeInfo_\(\)/.test(f), 'employee-gated'));
+    const edit = strip(extractRawFunction('Code.js', 'kbEditComment'));
+    [add, get, del, edit].forEach((f) => assert.ok(/getEmployeeInfo_\(\)/.test(f), 'employee-gated'));
+    // Round-3 FO — edit is AUTHOR-only, deliberately NARROWER than delete's
+    // author-or-manager: moderation is removal, never rewriting a rep's words
+    // under their name. So the ownership check must NOT carry a manager escape.
+    assert.ok(/your own comments/.test(edit), 'edit ownership refusal message');
+    assert.ok(!/isManager/.test(edit), 'edit has NO manager escape (author-only by design)');
+    assert.ok(/KB_COMMENT_MAX_CHARS/.test(edit), 'edit over-cap REFUSES (the add rule)');
+    assert.ok(/KB_COMMENTS_SCAN/.test(edit), 'edit reads the bounded tail');
+    const editAudit = /writeAuditLog_\(emp, 'KbCommentEdit'[^\n]*/.exec(edit);
+    assert.ok(editAudit && /'commentId=' \+ wanted/.test(editAudit[0]) && !/\+ t\b/.test(editAudit[0]),
+      'KbCommentEdit audit row is id-only (INV-32)');
+    // An edited-after-delete row reads as NOT FOUND (active-only), not as a
+    // resurrectable record.
+    assert.ok(/!== 'active'/.test(edit) && /Comment not found/.test(edit), 'edit acts on active rows only');
     const tgt = strip(extractRawFunction('Code.js', 'kbCommentTargetOk_'));
     assert.ok(/KB_STATUS_DRAFT \|\| !!emp\.isAdmin/.test(tgt),
       'a draft target is invisible to non-admins (INV-140/147 — commenting cannot probe drafts)');
@@ -11585,23 +11599,50 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.ok(/getSheetByName\(KB_COMMENTS_TAB\), 'TEST_', KBC\.EMP_ID/.test(tests), 'cleanup sweeps KbComments (INV-21)');
   });
 
-  test('R3 #6: comments client — esc()d render, tab-only (drawer stays comment-free), A12, named add form', () => {
+  test('R3 #6: comments client — esc()d render, drawer parity (Phase B), host-scoped dual render, A12', () => {
     const render = strip(extractFunction('kb/script_kb.html', 'kbRenderComments_'));
     assert.ok(/esc\(c\.name\)/.test(render) && /esc\(c\.text\)/.test(render) && /esc\(c\.commentId\)/.test(render),
       'every server string + attribute value is esc()\'d');
     assert.ok(/showing ' \+ list\.length \+ ' of ' \+ res\.total/.test(render), 'the cap note renders "showing N of M" (INV-169)');
     assert.ok(/PHI-free by policy/.test(render), 'the add form carries the PHI reminder (the kbRequestArticle posture)');
-    assert.ok(/for="kb-cmt-input"/.test(render), 'the textarea is label-for named (INV-195)');
+    // Phase B made the renderer DUAL-HOST (tab + drawer can show the SAME
+    // article), so the add-form id is suffixed per host and the label-for
+    // follows it — duplicate DOM ids would break the association (INV-195 +
+    // the kbMd_ heading-dedup lesson). The handlers locate via closest(),
+    // never getElementById.
+    assert.ok(render.indexOf('for="kb-cmt-input\' + sfx + \'"') !== -1 &&
+              render.indexOf('id="kb-cmt-input\' + sfx + \'"') !== -1, 'per-host suffixed input id + matching label-for');
+    assert.ok(/host\.id === 'kbd-comments'/.test(render), 'the suffix derives from the host');
+    assert.ok(/var edit = c\.mine\s*\?/.test(render), 'the edit button renders for the AUTHOR only (matches the server contract)');
+    const addFn = strip(extractFunction('kb/script_kb.html', 'kbAddComment_'));
+    assert.ok(/closest\('\.kb-comments'\)/.test(addFn) && !/getElementById\('kb-cmt-input'\)/.test(addFn),
+      'the add handler is closest()-scoped, never a bare id lookup');
+    const refresh = strip(extractFunction('kb/script_kb.html', 'kbCommentsRefresh_'));
+    assert.ok(/closest\('#kb-drawer'\)/.test(refresh) && /kbDrawerLoadComments_/.test(refresh) && /kbLoadComments_/.test(refresh),
+      'post/delete/edit refresh the HOST the control lives in (the INV-139 dual-host rule)');
     const loadFn = strip(extractFunction('kb/script_kb.html', 'kbLoadComments_'));
     assert.strictEqual((loadFn.match(/errorStateHtml_/g) || []).length, 2, 'both failure shapes render the warn card (A12)');
     assert.ok(/KB_STATE\.currentId !== id/.test(loadFn), 'the L-18 stale-item guard');
-    // Phase A is the Reference TAB only — the mid-call drawer stays
-    // comment-free (the INV-139 drawer-parity follow-on shape).
+    // Phase B (round-3 follow-ons) REVERSED the Phase A tab-only omission —
+    // this pin was rewritten in place, the honest bookkeeping when a contract
+    // changes under a test (the accrual precedent). The drawer loads via its
+    // own L-18-guarded twin and hosts the slot in BOTH branches.
     const drawer = strip(extractFunction('kb/script_kb.html', 'kbDrawerOpenItem_'));
-    assert.ok(!/kbGetComments|kb-comments/.test(drawer), 'the drawer reader never loads comments');
-    // The reader hosts the slot in BOTH branches (article + embed).
+    assert.strictEqual((drawer.match(/id="kbd-comments"/g) || []).length, 2, 'both drawer branches host the comments slot');
+    assert.ok(/kbDrawerLoadComments_\(id\)/.test(drawer), 'the drawer reader loads comments (Phase B parity)');
+    const dLoad = strip(extractFunction('kb/script_kb.html', 'kbDrawerLoadComments_'));
+    assert.strictEqual((dLoad.match(/errorStateHtml_/g) || []).length, 2, 'drawer loader: both failure shapes render the warn card');
+    assert.ok(/KB_DRAWER\.itemId !== id/.test(dLoad), 'drawer loader carries the drawer L-18 guard');
+    assert.ok(/kbRenderComments_\(host, id, res\)/.test(dLoad), 'ONE shared renderer — no parallel drawer markup to drift');
+    // The tab reader hosts the slot in BOTH branches (article + embed).
     assert.strictEqual((strip(extractFunction('kb/script_kb.html', 'kbRenderItem_')).match(/id="kb-comments"/g) || []).length, 2,
-      'both reader branches host the comments slot');
+      'both tab reader branches host the comments slot');
+    // Round-3 FO — the comment-count chip folds into the SAME analytics rows
+    // (never a parallel block): server fold in BOTH endpoints, chip in the
+    // shared kbFbCountHtml_.
+    ['kbGetUsageStats', 'kbGetReviewDue'].forEach((fn) =>
+      assert.ok(/kbCommentCounts_\(\)/.test(strip(extractRawFunction('Code.js', fn))), fn + ' folds comment counts'));
+    assert.ok(/it\.comments/.test(strip(extractFunction('kb/script_kb.html', 'kbFbCountHtml_'))), 'the shared chip renders the count');
   });
 
   test('R3: the scratchpad + comments FIXTURES mirror the server shapes', () => {
