@@ -11397,14 +11397,18 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
     const fold = strip(extractRawFunction('Code.js', 'spanishClaimsFold_'));
     const lit = /out\[tid\] = \{([\s\S]*?)\};/.exec(fold);
     assert.ok(lit, 'found the fold\'s claim literal');
-    const srvKeys = [...lit[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+    // EXACT set membership — a joined-string indexOf substring-matched a
+    // drifted 'at' inside 'atMs' and the first bite-check exposed the pin as
+    // weaker than its property (the INV-188-family sibling: match the SET,
+    // never the concatenation).
+    const srvKeys = [...lit[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
     const claims = [...block[1].matchAll(/claim: \{([^}]*)\}/g)];
     assert.ok(claims.length >= 2, 'at least two CLAIMED items (other + self)');
     claims.forEach((c) => {
       const keys = [...c[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
-      keys.forEach((k) => assert.ok(srvKeys.indexOf(k) >= 0,
-        'fixture claim key "' + k + '" is not a server fold key (' + srvKeys + ')'));
-      assert.ok(keys.indexOf('by') >= 0, 'every claim carries by');
+      keys.forEach((k) => assert.ok(srvKeys.includes(k),
+        'fixture claim key "' + k + '" is not a server fold key (' + srvKeys.join('|') + ')'));
+      assert.ok(keys.includes('by'), 'every claim carries by');
     });
     assert.ok(/claim: null/.test(block[1]), 'an UNCLAIMED item stays on camera (Claim button state)');
     assert.ok(block[1].indexOf("claim: { by: '" + selfM[1] + "'") >= 0,
@@ -11419,10 +11423,16 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
     const ret = /return \{ (\w+: c\.\w+[\s\S]*?)\};/.exec(srv);
     assert.ok(ret, 'found the server\'s per-call return map');
     const srvKeys = [...ret[1].matchAll(/(\w+): c\./g)].map((m) => m[1]).sort().join('|');
-    const firstItem = /\{([^}]*)\}/.exec(fx[1]);
-    const fxKeys = [...firstItem[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
-    assert.strictEqual(fxKeys, srvKeys,
-      'sched fixture item keys must EQUAL the server call shape — the liveStatus drift class');
+    // EVERY item, not the first — the first bite-check mutated item 2 and the
+    // single-item form passed (the same weaker-than-its-property class as the
+    // claim-key substring match above).
+    const items = [...fx[1].matchAll(/\{([^}]*)\}/g)];
+    assert.ok(items.length >= 2, 'fixture has ≥2 sched items');
+    items.forEach((it, i) => {
+      const fxKeys = [...it[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+      assert.strictEqual(fxKeys, srvKeys,
+        'sched fixture item ' + i + ' keys must EQUAL the server call shape — the liveStatus drift class');
+    });
     // The overdue item sits BEYOND the schedTick_ fire window, so the modal
     // scenario shows the overdue tone WITHOUT a sticky toast covering it.
     const lateM = /SCHED_FIRE_LATE_MS = ([\d *]+);/.exec(
