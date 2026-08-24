@@ -9946,8 +9946,14 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   assert.ok(/viewCacheFresh_\(DR_STATE\.entry\)\) return;/.test(enter), 'fresh cache skips the refetch');
   assert.strictEqual((enter.match(/DR_STATE\.entry = null;/g) || []).length, 2, 'both failure shapes null the stamp');
   assert.ok(/DR_STATE\.entry = \{ at: Date\.now\(\) \};/.test(enter), 'only a successful round stamps freshness');
-  assert.ok(/DR_STATE\.entry = null;[\s\S]{0,200}enterDeptRequestsView\(getDeptRequestsArea_\(\)\)/.test(drc),
-    'the resolve success handler busts the stamp before re-entering');
+  // Operator 2026-08-24: the resolve no longer RE-ENTERS the view (that full
+  // repaint was the reported annoyance — loader, scroll jump, every card
+  // re-animating for a one-card change). The guarantee this pin exists for is
+  // unchanged and still asserted: a successful resolve BUSTS the SWR stamp,
+  // so the next enter refetches and can never serve the request as open.
+  const drClick = nc(extractFunction('metrics/script_deptrequests.html', 'drResolveClick_'));
+  assert.ok(/DR_STATE\.entry = null;/.test(drClick), 'a successful resolve busts the SWR stamp');
+  assert.ok(!/enterDeptRequestsView\(/.test(drClick), 'resolve patches in place — it must NOT re-enter the whole view');
   // Timeoff: the enter routes through calNavTo_ (the month SWR that already
   // existed but was never consulted on enter).
   const to = nc(extractFunction('script_core.html', 'enterTimeoffView'));
@@ -11697,6 +11703,49 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.ok(/var\(--line\)/.test(rule[0]) && /var\(--muted\)/.test(rule[0]), 'token-based colors');
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(rule[0]), 'no raw hex in the rule');
   });
+
+  test('DR resolve is IN-PLACE: card-scoped loader, cache patched before DOM, no list repaint', () => {
+    const dr = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+    const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+    const click = strip(extractFunction('metrics/script_deptrequests.html', 'drResolveClick_'));
+    // The CARD is the loader now — the operator's complaint was that a
+    // one-card change repainted the page.
+    assert.ok(/card\.classList\.add\('is-busy'\)/.test(click), 'the card carries the in-flight state');
+    assert.ok(/\.sp-task\.is-busy \{/.test(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8')),
+      'the shared card busy state is styled');
+    // ORDER IS LOAD-BEARING: DR_LAST_DATA drives every filter re-render, so
+    // the cache is patched BEFORE the DOM is repainted from it. A DOM-only
+    // patch would resurrect the card as OPEN on the next chip click.
+    assert.ok(click.indexOf('drApplyResolved_(id)') > -1 && click.indexOf('drRepaintRequest_(id)') > -1 &&
+      click.indexOf('drApplyResolved_(id)') < click.indexOf('drRepaintRequest_(id)'),
+      'the cached payload is patched before the card is repainted from it');
+    const apply = strip(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
+    ['mine', 'incoming', 'allOpen'].forEach((k) =>
+      assert.ok(apply.indexOf("'" + k + "'") !== -1, 'patches the ' + k + ' list (one request renders in several)'));
+    // resolvedBy is the resolver's EMAIL and the client holds only name/id —
+    // it must NOT be guessed; elapsedMin is deliberately untouched (while open
+    // it already IS minutes-since-created = the resolution time at this instant).
+    assert.ok(!/resolvedBy/.test(apply), 'never fabricates resolvedBy (server-owned email)');
+    assert.ok(!/elapsedMin/.test(apply), 'no invented elapsed arithmetic');
+    // The repaint touches the card(s) + the KPI strip only — never the lists.
+    const repaint = strip(extractFunction('metrics/script_deptrequests.html', 'drRepaintRequest_'));
+    assert.ok(/drRepaintKpi_\(\)/.test(repaint) && !/drRender_\(/.test(repaint),
+      'repaints the card + KPI strip, never the whole view');
+    // No payload value is ever concatenated into a selector (INV-193 family).
+    const nodes = strip(extractFunction('metrics/script_deptrequests.html', 'drCardNodes_'));
+    assert.ok(/querySelectorAll\('\.sp-task\[data-req\]'\)/.test(nodes) && !/data-req="' \+/.test(nodes),
+      'finds cards by comparing the decoded attribute, not by building a selector from the id');
+    // The KPI strip has ONE renderer, shared by the full render and the patch.
+    assert.ok((dr.match(/drKpiStripHtml_\(/g) || []).length >= 3, 'the KPI strip is a shared renderer');
+    assert.ok(/id="dr-kpi"/.test(dr) && /id="dr-mgr-wrap"/.test(dr), 'both repaint anchors exist');
+    // Managers get a quiet reconcile (deptStats is server-derived); reps do
+    // not need one — every number they see is client-derived from data.mine.
+    assert.ok(/isManager\) drReconcile_/.test(click), 'the reconcile is manager-only');
+    const rec = strip(extractFunction('metrics/script_deptrequests.html', 'drReconcile_'));
+    assert.ok(/DR_STATE\.entry = null;/.test(rec), 'a failed reconcile is never stamped fresh (INV-129)');
+    assert.ok(/currentView !== requestedView/.test(rec), 'the reconcile carries the nav guard');
+  });
+
 
   test('post-deploy: the CN fixture clear is LOUD (no silent no-op) + the divergence assert', () => {
     // 2026-08-24 post-deploy runAllTests: metrics_cnCountNotesResult_countsToday

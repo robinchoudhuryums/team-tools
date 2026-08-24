@@ -126,6 +126,26 @@ function drRowToneCls_(item) {
   return 'st-pending';
 }
 
+/** The 4-cell KPI strip. Extracted (operator 2026-08-24) so the full render
+ *  and the in-place resolve patch share ONE renderer. Every value here is
+ *  derived CLIENT-side from data.mine, which is why the optimistic patch keeps
+ *  the strip exactly correct with no server round-trip. */
+function drKpiStripHtml_(data) {
+  const mineAll = (data && data.mine) || [];
+  const openAll = mineAll.filter(function (r) { return r.status !== 'resolved'; });
+  const resolvedAll = mineAll.filter(function (r) { return r.status === 'resolved'; });
+  const overdueCount = openAll.filter(function (r) { return r.slaStatus === 'overdue'; }).length;
+  const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
+    .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+  const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
+  return '<div class="telemetry" id="dr-kpi" style="margin-bottom:16px">' +
+    '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
+    '</div>';
+}
+
 function drRender_(area, data, errorMsg) {
   if (data) DR_LAST_DATA = data;
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
@@ -158,18 +178,7 @@ function drRender_(area, data, errorMsg) {
     : '';
 
   const mineAll = (data && data.mine) || [];
-  const openAll = mineAll.filter(function (r) { return r.status !== 'resolved'; });
-  const resolvedAll = mineAll.filter(function (r) { return r.status === 'resolved'; });
-  const overdueCount = openAll.filter(function (r) { return r.slaStatus === 'overdue'; }).length;
-  const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
-    .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
-  const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
-  const strip = '<div class="telemetry" style="margin-bottom:16px">' +
-    '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
-    '</div>';
+  const strip = drKpiStripHtml_(data);
   // Round 3 — the department chip bar. Universe + counts from EVERY list in
   // the payload (a chip renders even for a dept only present in the manager
   // team-wide list). Prune selections for departments that left the payload
@@ -276,7 +285,7 @@ function drRequestCardHtml_(item) {
     : '';
   const body = esc(item.createdAt || '') + (item.byName ? ' · ' + esc(item.byName) : '') +
     (resolved && item.resolvedBy ? '\nResolved by ' + esc(item.resolvedBy) : '');
-  return '<div class="sp-task js-anim ' + drRowToneCls_(item) + '">' +
+  return '<div class="sp-task js-anim ' + drRowToneCls_(item) + '" data-req="' + esc(item.requestId) + '">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(item.toDept || '—') + '</span>' +
       drCardStatusHtml_(item) + '</div>' +
     '<div class="sp-task-subj">' + esc(item.label || 'Department request') + '</div>' +
@@ -316,10 +325,114 @@ function drManagerSectionHtml_(data) {
     ? spCappedTasksHtml_(open.map(drRequestCardHtml_), DR_SHOWN.team, "drShowMore_('team')")
     : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
-  return '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +
+  // #dr-mgr-wrap is the repaint anchor: deptStats (open/resolved/avg/median
+  // per department) is SERVER-derived, so an in-place resolve cannot keep it
+  // honest and drReconcile_ swaps this block alone.
+  return '<div id="dr-mgr-wrap">' +
+    '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +
     '<div class="dr-section dr-mgr">' + statTable + '</div>' +
     '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + openCount +
-      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml;
+      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml +
+  '</div>';
+}
+
+// ── In-place resolve (operator 2026-08-24) ─────────────────────────────────
+// Resolving used to re-enter the whole view: full loader, scroll jump, every
+// card re-animating — for a ONE-CARD change. The card now carries its own
+// in-flight state and flips to resolved in place. Nothing else on the page
+// moves.
+
+/** Every rendered card for a request. One request can appear in Mine,
+ *  Incoming AND the manager team list, so all instances must flip together.
+ *  Compares the decoded attribute in JS rather than building a selector from
+ *  the id — no value from the payload ever enters a selector string. */
+function drCardNodes_(id) {
+  const out = [];
+  const all = document.querySelectorAll('.sp-task[data-req]');
+  for (let i = 0; i < all.length; i++) {
+    if (String(all[i].getAttribute('data-req')) === String(id)) out.push(all[i]);
+  }
+  return out;
+}
+
+function drFindItem_(id) {
+  const lists = ['mine', 'incoming', 'allOpen'];
+  for (let i = 0; i < lists.length; i++) {
+    const arr = (DR_LAST_DATA && DR_LAST_DATA[lists[i]]) || [];
+    for (let j = 0; j < arr.length; j++) {
+      if (String(arr[j].requestId) === String(id)) return arr[j];
+    }
+  }
+  return null;
+}
+
+/** Mark the request resolved in the CACHED payload — in every list it appears
+ *  in. This is the load-bearing half: DR_LAST_DATA drives every filter
+ *  re-render (drSetFilter_ / drToggleDeptFilter_ / drShowMore_ all repaint
+ *  from it), so a DOM-only patch would resurrect the card as OPEN on the next
+ *  chip click. `elapsedMin` is deliberately left alone: while open it means
+ *  "minutes since created", and at the instant of resolution that is exactly
+ *  the resolution time the server will compute (resolvedAt − createdAt), so
+ *  the card reads "✓ 2h" with no invented arithmetic. `resolvedBy` is NOT
+ *  set — it is the resolver's EMAIL and the client only holds name/id, so
+ *  the "Resolved by" line waits for the authoritative payload rather than
+ *  showing a guess. */
+function drApplyResolved_(id) {
+  const lists = ['mine', 'incoming', 'allOpen'];
+  lists.forEach(function (k) {
+    ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) {
+      if (String(r.requestId) === String(id)) r.status = 'resolved';
+    });
+  });
+}
+
+function drRepaintKpi_() {
+  const host = document.getElementById('dr-kpi');
+  if (host && DR_LAST_DATA) host.outerHTML = drKpiStripHtml_(DR_LAST_DATA);
+}
+
+function drRepaintMgr_() {
+  const host = document.getElementById('dr-mgr-wrap');
+  if (host && DR_LAST_DATA && DR_LAST_DATA.isManager) host.outerHTML = drManagerSectionHtml_(DR_LAST_DATA);
+}
+
+/** Re-render ONLY this request's card(s) + the KPI strip, from the cached
+ *  payload. The card lists are never rebuilt — that repaint is the jump this
+ *  whole change exists to remove. */
+function drRepaintRequest_(id) {
+  const item = drFindItem_(id);
+  drCardNodes_(id).forEach(function (node) {
+    // No item = the reconcile dropped it from every list (the server keeps
+    // resolved requests out of incoming/allOpen). The optimistic card already
+    // reads resolved, so leave it standing and just clear the busy state.
+    if (!item) { node.classList.remove('is-busy'); return; }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = drRequestCardHtml_(item);
+    const fresh = tmp.firstElementChild;
+    if (!fresh) { node.classList.remove('is-busy'); return; }
+    fresh.classList.add('swap-in');   // the shared list-swap motion; reduced-motion-safe
+    node.parentNode.replaceChild(fresh, node);
+  });
+  drRepaintKpi_();
+}
+
+/** MANAGERS ONLY: deptStats (per-department open / resolved / avg / median)
+ *  is SERVER-derived, so the optimistic patch cannot keep it honest — refetch
+ *  quietly and swap the manager block + this request's card(s), which also
+ *  brings the authoritative "Resolved by". A rep needs no reconcile: every
+ *  number they can see (the KPI strip) is derived client-side from data.mine,
+ *  and the patch above keeps it exact. */
+function drReconcile_(requestedView, id) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (!res || res.error) { DR_STATE.entry = null; return; }   // INV-129: a failed round is never stamped fresh
+      DR_LAST_DATA = res; DR_STATE.data = res; DR_STATE.entry = { at: Date.now() };
+      drRepaintMgr_();
+      drRepaintRequest_(id);
+    })
+    .withFailureHandler(function () { DR_STATE.entry = null; })
+    .getDeptRequests();
 }
 
 /** In-app resolve (the manual path): the sender or a manager marks an open
@@ -327,29 +440,38 @@ function drManagerSectionHtml_(data) {
 function drResolveClick_(btn) {
   const id = btn.getAttribute('data-req');
   if (!id || btn.disabled) return;
+  const card = btn.closest('.sp-task');
   btn.disabled = true; btn.classList.add('is-busy');
   const orig = btn.innerHTML;
   btn.innerHTML = icon('check', 12) + ' Resolving…';
-  // F(cycle-8 M-9): capture the view at CLICK time — the success handler used
-  // to re-enter unconditionally, so a rep who navigated away during the
-  // 300–800ms RPC got the Dept Requests UI painted over the new view (and
-  // because enterDeptRequestsView re-captures currentView, its own guard
-  // passed — a nav-state desync until the next click).
+  if (card) card.classList.add('is-busy');   // the card is the loader now, not the page
+  // F(cycle-8 M-9): capture the view at CLICK time — a rep who navigates away
+  // during the 300–800ms RPC must not have this view painted over the new one.
   const requestedView = currentView;
+  const restore = function () {
+    if (card) card.classList.remove('is-busy');
+    btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;
+  };
   google.script.run
     .withSuccessHandler(function (res) {
       if (res && res.success) {
         showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
-        DR_STATE.entry = null;   // bust the SWR stamp — the re-enter must refetch, not repaint the request as open
-        if (currentView === requestedView) enterDeptRequestsView(getDeptRequestsArea_());
+        drApplyResolved_(id);          // cache first — the DOM is rendered FROM it
+        // The stamp is busted even on success: the patch is an approximation
+        // (resolvedBy, deptStats, the server's own list membership), so the
+        // next ENTER refetches rather than serving it as fresh.
+        DR_STATE.entry = null;
+        if (currentView !== requestedView) return;
+        drRepaintRequest_(id);
+        if (DR_LAST_DATA && DR_LAST_DATA.isManager) drReconcile_(requestedView, id);
       } else {
         showToast((res && res.error) || 'Could not resolve.', 'toast-error');
-        btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;
+        restore();
       }
     })
     .withFailureHandler(function (err) {
       showToast((err && err.message) || 'Could not resolve.', 'toast-error');
-      btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;
+      restore();
     })
     .resolveDeptRequest(id);
 }

@@ -225,6 +225,17 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
+MOST RECENT (2026-08-24, operator report): the Dept Requests page reloaded
+entirely on "Mark resolved". It now resolves IN PLACE — `.sp-task.is-busy`
+makes the one card the loader, the success handler patches `DR_LAST_DATA`
+BEFORE the DOM (that cache is what every filter re-render reads), the
+client-derived KPI strip is patched locally through a shared renderer, and
+only a MANAGER pays for a quiet reconcile of the server-derived `deptStats`
+(nav-guarded, stamp-nulled on failure). Committed as 6c553e4 with doc-sync;
+pure 622 / DOM 75. Measured in Chromium: 6 cards before and after, only the
+2 nodes for that request replaced, resolved 1→2, buttons 5→4, overflow 0.
+PR + merge is the next step.
+
 Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
 (86c64df), Round 2 (through 3188e79), Round-2 FOLLOW-ONS (d748f2f +
 39cb0c5), and ROUND 3 (ef489ad → ba10a49 — intake arrow nav,

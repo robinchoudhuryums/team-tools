@@ -278,6 +278,25 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false },
       { name: 'Nina Patel', status: 'clocked_in', isSelf: false },
       { name: 'Leo Kim', status: 'not_in', isSelf: false }] },
+    // A FUNCTION fixture (the dispatcher supports them). Shape mirrors
+    // resolveDeptRequest's own return ({success, already}) AND its write:
+    // the server flips the row and bumps the DR cache generation
+    // (drBumpCacheGen_ in markDeptRequestResolved_), so the next
+    // getDeptRequests read reflects it — resolved stays in `mine`, and leaves
+    // `incoming`/`allOpen`, which are OPEN-only lists. A static {success:true}
+    // would hand the manager reconcile an OPEN row back and visibly revert the
+    // card: a fixture artifact that reads exactly like a product bug (INV-185
+    // — a fixture must mirror the server, not merely satisfy the caller).
+    resolveDeptRequest: function (id) {
+      const dr = FIXTURES.getDeptRequests;
+      (dr.mine || []).forEach(function (r) {
+        if (String(r.requestId) === String(id)) { r.status = 'resolved'; r.resolvedBy = 'avery@umsupply.com'; }
+      });
+      ['incoming', 'allOpen'].forEach(function (k) {
+        if (dr[k]) dr[k] = dr[k].filter(function (r) { return String(r.requestId) !== String(id); });
+      });
+      return { success: true, already: false };
+    },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
         { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 190, slaStatus: 'ontime', slaHours: 48 },
