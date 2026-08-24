@@ -133,8 +133,11 @@
   .kb-cmt-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
   .kb-cmt-name { font-size: .8rem; font-weight: 600; }
   .kb-cmt-you { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; background: var(--accent-soft); color: var(--success-deep); padding: 1px 6px; border-radius: var(--radius-pill); }
-  .kb-cmt-when { font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
-  .kb-cmt-del { margin-left: auto; appearance: none; background: none; border: 0; padding: 2px; cursor: pointer; color: var(--muted-2); border-radius: var(--radius); }
+  /* The timestamp pushes the ACTION cluster right (margin-right: auto), so
+     one or two buttons (edit is author-only) sit together at the row end —
+     auto margins on the buttons themselves would split two of them apart. */
+  .kb-cmt-when { font-family: var(--mono); font-size: 10px; color: var(--muted-2); margin-right: auto; }
+  .kb-cmt-del { appearance: none; background: none; border: 0; padding: 2px; cursor: pointer; color: var(--muted-2); border-radius: var(--radius); }
   .kb-cmt-del:hover { color: var(--danger-deep); background: var(--destructive-soft); }
   .kb-cmt-text { font-size: .86rem; white-space: pre-wrap; overflow-wrap: anywhere; }
   .kb-cmt-none { font-size: .82rem; color: var(--muted-2); padding: 6px 0; }
