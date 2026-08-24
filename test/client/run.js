@@ -11635,6 +11635,27 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.ok(/\['cn-sched-modal-dark-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot), 'dark variant');
     assert.ok(/\['cn-sched-modal-light-compact',[^\]]*'\?compact=1', 'cnOpenSchedModal_\(\)'\]/.test(shoot), 'compact variant');
   });
+
+  test('R3: CN header fabs are ONE grid item; sched-modal buttons token-styled', () => {
+    const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+    // The .cn-head grid is `1fr auto` — bare children each become grid items,
+    // so the three fabs must render inside ONE .cn-head-fabs flex group (the
+    // round-3 third fab scattered the trio across two extra grid rows,
+    // measured on the full re-shoot).
+    const grp = /<div class="cn-head-fabs">([\s\S]*?)<\/div>/.exec(cn);
+    assert.ok(grp, 'the .cn-head-fabs group exists in the render');
+    ['cn-scratch-btn', 'cn-sched-btn', 'cn-help-btn'].forEach((id) =>
+      assert.ok(grp[1].indexOf('id="' + id + '"') !== -1, id + ' is inside the fabs group'));
+    assert.ok(/\.cn-head-fabs \{ display: flex/.test(cn), 'the group has its flex rule');
+    // .cn-act-btn is styled only under .cn-card-actions — the sched modal's
+    // ✓ / × / Close buttons need their own scoped TOKEN-based rule, or they
+    // render as unstyled native buttons (glaring white boxes in dark mode —
+    // measured the moment the dark modal scenario was first shot).
+    const rule = /\.cn-sched-modal \.cn-act-btn \{[\s\S]*?\}/.exec(cn);
+    assert.ok(rule, 'the scoped sched-modal act-btn rule exists');
+    assert.ok(/var\(--line\)/.test(rule[0]) && /var\(--muted\)/.test(rule[0]), 'token-based colors');
+    assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(rule[0]), 'no raw hex in the rule');
+  });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
