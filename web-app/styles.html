@@ -1348,7 +1348,10 @@
   .sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .sp-task-subj { font-weight: 600; font-size: 14px; color: var(--ink); margin-bottom: 4px; }
   .sp-task-body { font-size: 13px; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
-  .sp-task-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+  /* flex-wrap (round 2): the claim/assign controls joined this row, and five
+     controls at 390px overflow a no-wrap flex — wrapping is intrinsic reflow,
+     so no A2 breakpoint is owed. */
+  .sp-task-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; }
   .sp-open { font-size: 12px; color: var(--info); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .sp-open:hover { text-decoration: underline; }
   .sp-more { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
