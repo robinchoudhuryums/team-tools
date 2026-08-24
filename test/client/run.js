@@ -11494,6 +11494,11 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.strictEqual(at({ value: 'abc', selectionStart: 3, selectionEnd: 3 }, 'start'), false, 'end is not start');
     assert.strictEqual(at({ value: 'abc', selectionStart: 0, selectionEnd: 0 }, 'start'), true, 'caret at start');
     assert.strictEqual(at({ value: 'abc', selectionStart: 1, selectionEnd: 2 }, 'end'), false, 'a real selection keeps its arrows');
+    // A selection ANCHORED at a boundary must not hop either — without the
+    // s!==e guard, selectionStart 0 satisfies the start-edge test and an
+    // ArrowUp would destroy the selection (first bite-check: removing the
+    // guard passed the mid-field selection case, which never touches an edge).
+    assert.strictEqual(at({ value: 'abc', selectionStart: 0, selectionEnd: 2 }, 'start'), false, 'a boundary-anchored selection still keeps its arrows');
     assert.strictEqual(at({ value: 'abc', selectionStart: null, selectionEnd: null }, 'end'), true, 'unsupported selection = hoppable');
     assert.strictEqual(at({ value: 'x', get selectionStart() { throw new Error('nope'); } }, 'end'), true, 'a throwing accessor = hoppable');
     const nav = strip(extractFunction('intake/script_intake.html', 'intakeArrowNav_'));
