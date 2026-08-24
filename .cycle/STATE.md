@@ -163,6 +163,27 @@ Updated: 2026-08-21
   scratchpad = server-backed (per-rep sheet). Roadmap rounds 1–3 AND all
   their follow-ons are now implemented; nothing approved remains unbuilt.
 
+## Post-deploy (2026-08-24) — the ONE runAllTests failure
+- DEPLOY IS DONE (operator ran `clasp push -f` + New version; runAllTests
+  gave **291 passed / 1 failed / 0 skipped**, 292 total).
+- The failure was `metrics_cnCountNotesResult_countsToday` (expected 2,
+  actual 21). NOT a production defect: the count was CORRECT about a tab
+  the FIXTURE had failed to empty. `_clearTestCallNotes()` swallowed every
+  failure (bare catch + silent returns), so a dirty fixture surfaced ~20
+  tests later as an arithmetic mystery — INV-187 applied to test
+  infrastructure.
+- Fixed + merged as **PR #181** (21a90c2): the clear now throws naming the
+  sheet, flushes, and VERIFIES the tab is empty; the count test asserts
+  `ctx.emp.callNotesSheetId === _TEST_CN_SS_ID` (the decisive divergence
+  diagnostic); cleanup reports surviving rows; pin 620→621 (2 bites).
+- **ROOT CAUSE NOT YET PROVEN — the next `runAllTests()` names it:** a clean
+  pass = stale rows from an interrupted run; a throw = the unreachable
+  sheet / surviving row count; the identity assert firing = the fixture and
+  the app are on two different spreadsheets (it prints both ids).
+- Still owed from the deploy: the round-1 email spot-check (one dept + one
+  intake email — From reads "<Agent> · Universal Medical Supply", Reply-To
+  the agent).
+
 ## Open follow-on items
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
   (round-1 follow-ons FO-D, commit 86c64df)
