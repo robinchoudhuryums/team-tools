@@ -4370,8 +4370,13 @@ test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
   const acct = extractRawFunction('Code.js', 'intakeSendAcct_');
   [ppd, acct].forEach((src, i) => {
     const label = i === 0 ? 'intakeSendPPD' : 'intakeSendAcct_';
+    // (Round-1 #8 repointed the send from bare MailApp.sendEmail to the
+    // sendRepEmail_ agent-identity wrapper — the ordering property is the
+    // same; guard the anchor against -1 so a renamed call can't pass a <.)
+    const sendAt = src.indexOf('sendRepEmail_(emp');
+    assert.ok(sendAt >= 0, label + ' sends through the agent-identity wrapper');
     assert.ok(src.indexOf('intakeStoreOversizeError_') >= 0, label + ' consults the cap');
-    assert.ok(src.indexOf('intakeStoreOversizeError_') < src.indexOf('MailApp.sendEmail'),
+    assert.ok(src.indexOf('intakeStoreOversizeError_') < sendAt,
       label + ' caps BEFORE the send (no email without a record)');
     assert.ok(src.indexOf('intakeStoreFailWarn_') >= 0, label + ' surfaces store failures');
     assert.ok(src.indexOf('storeWarning: storeWarning') >= 0, label + ' returns storeWarning');
@@ -4960,20 +4965,26 @@ test('F9: well-formed capacities are completely unchanged', () => {
 });
 
 // The validator that keeps the fail-closed direction from being silent.
+// (Round-1 follow-on: it now scheme-checks E/F through the REAL server
+// intakeHttpOnly_ — load both so the free-var reference resolves, and the
+// fixtures carry REAL https URLs, since 'pdf'/'img' placeholders are exactly
+// the schemeless class the new warning names.)
 const intakeCatalogIssues_ = new Function(
+  extractRawFunction('Code.js', 'intakeHttpOnly_') + ';' +
   extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
 
 test('F9: the catalog validator names the rows the engine cannot recommend', () => {
+  const P = 'https://x.test/p.pdf', I = 'https://x.test/i.png';
   const rows = [
-    ['ok',      'K0823', '350',     'C', 'pdf', 'img'],   // clean
-    ['blank',   'K0824', '',        'S', 'pdf', 'img'],   // error: no capacity
-    ['bad',     'K0825', 'n/a',     'S', 'pdf', 'img'],   // error: non-numeric
-    ['halfrng', 'K0826', '300-',    'S', 'pdf', 'img'],   // error: unreadable range
-    ['inv',     'K0827', '450-300', 'S', 'pdf', 'img'],   // error: inverted range
-    ['seat',    'K0828', '350',     'x', 'pdf', 'img'],   // error: no s/c
-    ['endash',  'K0829', '300–450', 'S', 'pdf', 'img'], // warn: non-ASCII dash
-    ['noimg',   'K0830', '350',     'S', 'pdf', ''],      // warn: no image
-    ['',        '',      '',        '',  '',    ''],      // trailing blank row — ignored
+    ['ok',      'K0823', '350',     'C', P, I],   // clean
+    ['blank',   'K0824', '',        'S', P, I],   // error: no capacity
+    ['bad',     'K0825', 'n/a',     'S', P, I],   // error: non-numeric
+    ['halfrng', 'K0826', '300-',    'S', P, I],   // error: unreadable range
+    ['inv',     'K0827', '450-300', 'S', P, I],   // error: inverted range
+    ['seat',    'K0828', '350',     'x', P, I],   // error: no s/c
+    ['endash',  'K0829', '300–450', 'S', P, I], // warn: non-ASCII dash
+    ['noimg',   'K0830', '350',     'S', P, ''],  // warn: no image
+    ['',        '',      '',        '',  '', ''], // trailing blank row — ignored
   ];
   const issues = intakeCatalogIssues_(rows);
   const errs = issues.filter((x) => x.severity === 'error');
@@ -4991,8 +5002,28 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
   // A clean catalog must produce NOTHING, or the card can never reach green —
   // the "what does this read on a healthy system" rule.
   assert.deepStrictEqual(
-    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', 'pdf', 'img']]), [],
+    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', P, I]]), [],
     'a well-formed catalog raises no issues at all');
+});
+
+test('R1 follow-on: a non-http pdfLink/imageUrl is a NAMED warning, not a silent dead link', () => {
+  // Every sink (rec cards, sent email, Catalog tab) scheme-whitelists E/F
+  // (seams-18 F1), so a schemeless "www.x.com" silently renders NO link —
+  // INV-187 says the operator must be able to see that from the health card.
+  const issues = intakeCatalogIssues_([
+    ['schemeless', 'K0831', '350', 'S', 'www.x.test/p.pdf', 'javascript:alert(1)'],
+  ]);
+  const pdf = issues.find((x) => x.field === 'pdfLink');
+  const img = issues.find((x) => x.field === 'imageUrl');
+  assert.ok(pdf && pdf.severity === 'warn' && /http\(s\) URL/.test(pdf.detail),
+    'schemeless pdfLink is a warning naming the https:// fix');
+  assert.ok(img && img.severity === 'warn' && /http\(s\) URL/.test(img.detail),
+    'non-http imageUrl (incl. a javascript: scheme) is a warning');
+  // The check goes through the REAL intakeHttpOnly_ (the F1 twin), so real
+  // https URLs — including ones with query strings — stay clean.
+  assert.deepStrictEqual(
+    intakeCatalogIssues_([['q', 'K0832', '350', 'S', 'https://x.test/p.pdf?v=2', 'HTTP://x.test/i.png']]), [],
+    'http(s) in any case, with query strings, raises nothing');
 });
 
 test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from clean', () => {
@@ -9010,7 +9041,10 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   assert.ok(ppd.indexOf("intakeFeedbackCta_(submissionId, 'PPD')") > ppd.indexOf('intakeBodyHash_(baseBody, subject)'),
     'PPD: CTA joins the final body after the hash check');
   const mintAt = ppd.indexOf('const submissionId = Utilities.getUuid()');
-  assert.ok(mintAt > 0 && mintAt < ppd.indexOf('MailApp.sendEmail'),
+  // (Round-1 #8: the send is the sendRepEmail_ wrapper now; keep the -1 guard.)
+  const ppdSendAt = ppd.indexOf('sendRepEmail_(emp');
+  assert.ok(ppdSendAt > 0, 'PPD send found');
+  assert.ok(mintAt > 0 && mintAt < ppdSendAt,
     'PPD: the id is minted (and BEFORE the send) so the button can reference it — indexOf -1 would pass a < check');
   const cta = nc(extractRawFunction('Code.js', 'intakeFeedbackCta_'));
   assert.ok(/if \(!base\) return '';/.test(cta), 'no resolvable exec URL → no button (never a dead one)');
@@ -10945,6 +10979,746 @@ test('seams-18 F3: the pay-statement and offerings fixtures mirror the server re
   assert.deepStrictEqual(mockKeys.sort().join('|'), offKeys.slice().sort().join('|'),
     'offerings fixture row keys must EQUAL the server row keys — a renamed field is the liveStatus class');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-1 pilot features (2026-08-21) — review-flag comment (#1), call
+// direction (#2), rep sender identity (#8). Operator-approved feature round.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-1 pilot — review comment / call direction / sender identity');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // #1/#2 — behavioural, through the REAL sanitize fn (the INV-143 whitelist).
+  const r1Ctx = { Object, Array, JSON, String, Number, Boolean, Math, isFinite, console };
+  vm.createContext(r1Ctx);
+  const r1fc = codeSrc.match(/const (CN_FLAG_TYPES\s*=\s*\[[^\]]*\]);/);
+  const r1fe = codeSrc.match(/const (CN_FLAG_TYPES_EXTENDED\s*=\s*\[[^\]]*\]);/);
+  const r1fp = codeSrc.match(/const (CN_FLAG_PRIORITY\s*=\s*\[[^\]]*\]);/);
+  assert.ok(r1fc && r1fe && r1fp, 'CN flag consts found');
+  vm.runInContext(r1fc[1] + ';' + r1fe[1] + ';' + r1fp[1] + ';', r1Ctx);
+  ['sanitizeFlagsArray_', 'deriveFlagType_', 'sanitizeTagsArray_', 'sanitizeCallNotePayload_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), r1Ctx, { filename: 'Code.js#' + fn });
+  });
+  test('R1 #1: reviewComment survives the submit whitelist trimmed + capped at 2000', () => {
+    const c = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: '  great save  ' } });
+    assert.strictEqual(c.subformData.reviewComment, 'great save');
+    const long = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: 'a'.repeat(3000) } });
+    assert.strictEqual(long.subformData.reviewComment.length, 2000,
+      'cell-size cap (the trainingQuestion discipline — an uncapped write walks the cell toward the ~50k Sheets limit)');
+    assert.strictEqual(r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { reviewComment: '   ' } }).subformData, null,
+      'an empty comment stores nothing');
+  });
+  test('R1 #2: callDirection is a bounded enum — ONLY "outbound" is ever stored (absent = inbound)', () => {
+    const out = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { callDirection: 'Outbound' } });
+    assert.strictEqual(out.subformData.callDirection, 'outbound', 'case-normalized like intakeType');
+    ['inbound', 'evil<script>', '', 'OUT BOUND'].forEach((v) => {
+      const c = r1Ctx.sanitizeCallNotePayload_({ issue: 'x', subformData: { callDirection: v } });
+      assert.strictEqual(c.subformData, null,
+        JSON.stringify(v) + ' must drop — inbound is ABSENCE, never a stored value (no migration for existing notes)');
+    });
+  });
+
+  // #1 card path — setCallNoteFlag's review branch mirrors the training one.
+  test('R1 #1: setCallNoteFlag carries the 4th reviewComment param with the training-branch bounds', () => {
+    const src = strip(extractRawFunction('Code.js', 'setCallNoteFlag'));
+    assert.ok(/function setCallNoteFlag\(noteId, flagType, trainingQuestion, reviewComment\)/.test(src),
+      '4-param signature (the client card prompt passes the comment as arg 4)');
+    const m = /if \(t === 'review' && reviewComment\) \{([\s\S]*?)\n    \}/.exec(src);
+    assert.ok(m, "the review branch exists and is gated on t === 'review'");
+    assert.ok(/String\(reviewComment\)\.trim\(\)\.slice\(0, 2000\)/.test(m[1]),
+      'trim + 2000 cap (the cell-size guard the training branch carries)');
+    assert.ok(/CN\.SUBFORM_DATA/.test(m[1]), 'persists into the SubformData blob');
+  });
+
+  // #1 digest — the Review Candidates weekly digest surfaces the comment,
+  // gated on the CURRENT flag (a since-recleared flag stops rendering it).
+  test('R1 #1: sendManagerFlagDigest_ surfaces reviewComment in BOTH the html and text bodies', () => {
+    const src = strip(extractRawFunction('Code.js', 'sendManagerFlagDigest_'));
+    assert.ok(/flagType === 'review' && n\.subformData && n\.subformData\.reviewComment/.test(src),
+      'accessor gated on the review flag (the tq gating mirrored)');
+    assert.ok(/qLine \+ rLine \+ cLine/.test(src), 'comment line joins the html item rows');
+    assert.ok(/Comment: \$\{comment\}/.test(src), 'comment line joins the plain-text fallback rows');
+    assert.ok(/esc_\(comment\)/.test(src), 'the html line escapes the rep-typed comment (INV-89 discipline)');
+  });
+
+  // #8 sender identity — behavioural + wiring.
+  vm.runInContext(extractRawFunction('Code.js', 'repSenderOpts_'), r1Ctx, { filename: 'Code.js#repSenderOpts_' });
+  test('R1 #8: repSenderOpts_ yields {name, replyTo} for a rep and {} for a missing one', () => {
+    const o = r1Ctx.repSenderOpts_({ name: 'Jane Doe', email: 'jane@umsupply.com' });
+    assert.strictEqual(o.replyTo, 'jane@umsupply.com', 'replies land in the AGENT\'s inbox, not the deployer\'s');
+    assert.ok(/^Jane Doe/.test(o.name), 'display name leads with the agent');
+    // vm-realm trap (documented in CLAUDE.md): deepStrictEqual compares
+    // PROTOTYPES, so a vm-created object never equals a host {} — compare keys.
+    assert.strictEqual(Object.keys(r1Ctx.repSenderOpts_(null)).length, 0,
+      'missing emp → empty options object (Object.assign no-op — the send proceeds with system identity, never throws)');
+    assert.deepStrictEqual(Object.keys(r1Ctx.repSenderOpts_({})), [], 'partial emp never emits undefined name/replyTo');
+  });
+  test('R1 #8: every rep-initiated sender routes through sendRepEmail_ (identity + optional alias)', () => {
+    // The four rep-initiated correspondence senders. Automated digests /
+    // alerts / exports deliberately keep the system identity — they are NOT
+    // in this list, and adding the opts there would misattribute system mail.
+    // (Round-1 follow-on: the call sites moved from inline
+    // Object.assign(..., repSenderOpts_(emp)) to the sendRepEmail_ wrapper so
+    // the neutral-alias branch lives in ONE place.)
+    ['emailFromCallNote', 'sendExternalEmail', 'intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
+      const src = strip(extractRawFunction('Code.js', fn));
+      assert.ok(/sendRepEmail_\(emp/.test(src), fn + ' sends through the agent-identity wrapper');
+      assert.ok(!/MailApp\.sendEmail/.test(src),
+        fn + ' must not ALSO send bare MailApp — a send outside the wrapper loses the identity');
+    });
+    // emailFromCallNote has THREE sends (split-CTA internal + external, and
+    // the single-recipient path) — each must carry the identity.
+    const efc = strip(extractRawFunction('Code.js', 'emailFromCallNote'));
+    assert.strictEqual((efc.match(/sendRepEmail_\(emp/g) || []).length, 3,
+      'all three emailFromCallNote sends carry the sender identity');
+    // And the wrapper itself merges repSenderOpts_ into every branch.
+    const wrap = strip(extractRawFunction('Code.js', 'sendRepEmail_'));
+    assert.ok(/repSenderOpts_\(emp\)/.test(wrap), 'the wrapper applies name + replyTo');
+  });
+
+  // Follow-on: the neutral shared sender (Script Property REP_SENDER_FROM),
+  // dormant until configured. Behavioural, through the REAL fns with stubbed
+  // PropertiesService / GmailApp / MailApp.
+  const mkSenderCtx = (prop, aliases) => {
+    const ctx = {
+      console: { warn: () => {} }, Object, String, Boolean,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'REP_SENDER_FROM' ? prop : null) }) },
+      GmailApp: {
+        getAliases: () => { if (aliases === 'THROW') throw new Error('no gmail'); return aliases; },
+        sent: null,
+        sendEmail: function (to, subject, body, opts) { this.sent = { to, subject, body, opts }; },
+      },
+      MailApp: { sent: null, sendEmail: function (o) { this.sent = o; } },
+      _repSenderFromResolved: null,
+    };
+    vm.createContext(ctx);
+    ['repSenderOpts_', 'repSenderFrom_', 'sendRepEmail_'].forEach((fn) => {
+      vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn });
+    });
+    return ctx;
+  };
+  test('R1 follow-on: repSenderFrom_ resolves ONLY a registered alias; everything else falls back to ""', () => {
+    assert.strictEqual(mkSenderCtx(null, ['a@x.test']).repSenderFrom_(), '', 'unset property → deployer identity (dormant default)');
+    assert.strictEqual(mkSenderCtx(' Team@x.test ', ['team@x.test']).repSenderFrom_(), 'Team@x.test',
+      'set + registered (case-insensitive, trimmed) → the alias');
+    assert.strictEqual(mkSenderCtx('team@x.test', ['other@x.test']).repSenderFrom_(), '',
+      'set but NOT a registered Send-mail-as alias → fall back, never throw every send');
+    assert.strictEqual(mkSenderCtx('team@x.test', 'THROW').repSenderFrom_(), '',
+      'a GmailApp failure resolves to "" (fail-safe — a bad property can never break email)');
+  });
+  test('R1 follow-on: sendRepEmail_ picks GmailApp-with-from ONLY when the alias resolves', () => {
+    // No alias → MailApp single-object form, identity merged in.
+    const c1 = mkSenderCtx(null, []);
+    c1.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: '<b>h</b>' });
+    assert.ok(c1.MailApp.sent && !c1.GmailApp.sent, 'dormant → MailApp path');
+    assert.strictEqual(c1.MailApp.sent.replyTo, 'jane@x.test');
+    assert.ok(/^Jane/.test(c1.MailApp.sent.name));
+    // Alias configured → GmailApp positional form with from + identity, and
+    // the options object must NOT repeat to/subject/body (GmailApp rejects it).
+    const c2 = mkSenderCtx('team@x.test', ['team@x.test']);
+    c2.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', body: 'txt', htmlBody: '<b>h</b>', cc: 'c@d.e' });
+    assert.ok(c2.GmailApp.sent && !c2.MailApp.sent, 'configured → GmailApp path');
+    assert.strictEqual(c2.GmailApp.sent.to, 'a@b.c');
+    assert.strictEqual(c2.GmailApp.sent.body, 'txt');
+    assert.strictEqual(c2.GmailApp.sent.opts.from, 'team@x.test');
+    assert.strictEqual(c2.GmailApp.sent.opts.replyTo, 'jane@x.test');
+    assert.strictEqual(c2.GmailApp.sent.opts.cc, 'c@d.e');
+    ['to', 'subject', 'body'].forEach((k) =>
+      assert.ok(!(k in c2.GmailApp.sent.opts), 'options must not repeat positional "' + k + '"'));
+    // No plain body (the intake shape) → empty-string body, never undefined.
+    const c3 = mkSenderCtx('team@x.test', ['team@x.test']);
+    c3.sendRepEmail_({ name: 'J', email: 'j@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: 'h' });
+    assert.strictEqual(c3.GmailApp.sent.body, '', 'missing body → "" for the positional arg');
+  });
+
+  // Follow-on: {callDirection} is an OPERATOR-AVAILABLE copy token; the
+  // DEFAULT template deliberately omits it so existing pastes are unchanged.
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatTimestampForCopy_');
+  const cnFormatNoteForCopy_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatNoteForCopy_');
+  test('R1 follow-on: {callDirection} substitutes Outbound/Inbound; the default template omits it', () => {
+    sb.CN_STATE.autoCopyFormat = 'Dir: {callDirection} · {caller}';
+    try {
+      assert.strictEqual(
+        cnFormatNoteForCopy_r1({ caller: 'Jane', subformData: { callDirection: 'outbound' } }),
+        'Dir: Outbound · Jane');
+      assert.strictEqual(
+        cnFormatNoteForCopy_r1({ caller: 'Jane' }),
+        'Dir: Inbound · Jane', 'absent direction pastes as Inbound (the default)');
+    } finally { delete sb.CN_STATE.autoCopyFormat; }
+    // Default paste stays byte-identical: neither the server CONFIG default
+    // nor the client fallback carries the token (operator opts in by editing
+    // CONFIG.CALL_NOTES.AUTO_COPY_FORMAT — the documented tuning point).
+    assert.ok(!/callDirection/.test(codeSrc.match(/AUTO_COPY_FORMAT:[\s\S]{0,400}?Resolution: \{resolution\}/)[0]),
+      'the shipped default template must not grow the token silently');
+  });
+
+  // Follow-on: outbound count chip in the History date-group header.
+  const cnHistGroupChips_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnHistGroupChips_');
+  test('R1 follow-on: history group chips count outbound notes (and render nothing on an all-inbound day)', () => {
+    const out = cnHistGroupChips_r1([
+      { flagType: 'action', subformData: { callDirection: 'outbound' } },
+      { flagType: '', subformData: { callDirection: 'outbound' } },
+      { flagType: 'review', subformData: {} },
+    ]);
+    assert.ok(/cn-hg-outbound[^>]*title="2 outbound"/.test(out), 'outbound chip carries the count');
+    const allInbound = cnHistGroupChips_r1([{ flagType: '', subformData: {} }]);
+    assert.ok(!/outbound/.test(allInbound), 'an all-inbound group renders no outbound chip (byte-identical to before)');
+  });
+
+  // Client half — filter case, pills, and the draft/snapshot round-trip.
+  const cnNoteMatchesFilter_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnNoteMatchesFilter_');
+  test('R1 #2: cnNoteMatchesFilter_("outbound") matches only callDirection === "outbound"', () => {
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: { callDirection: 'outbound' } }, 'outbound'), true);
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: {} }, 'outbound'), false);
+    assert.strictEqual(cnNoteMatchesFilter_r1({}, 'outbound'), false);
+    assert.strictEqual(cnNoteMatchesFilter_r1({ subformData: { callDirection: 'inbound' } }, 'outbound'), false);
+  });
+  const cnDirectionPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnDirectionPillHtml_');
+  test('R1 #2: the outbound pill renders only for callDirection === "outbound"', () => {
+    assert.ok(/outbound/.test(cnDirectionPillHtml_({ subformData: { callDirection: 'outbound' } })), 'pill renders');
+    assert.strictEqual(cnDirectionPillHtml_({ subformData: {} }), '', 'absent direction (inbound) renders nothing');
+    assert.strictEqual(cnDirectionPillHtml_({}), '');
+    assert.strictEqual(cnDirectionPillHtml_(null), '');
+  });
+  const cnReviewCommentLineHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnReviewCommentLineHtml_');
+  test('R1 #1: the card review-comment line is esc()\'d and gated on the CURRENT review flag', () => {
+    const html = cnReviewCommentLineHtml_({ flagType: 'review', subformData: { reviewComment: '<img src=x>' } });
+    assert.ok(html.indexOf('<img') < 0 && html.indexOf('&lt;img') >= 0,
+      'the rep-typed comment is escaped before innerHTML (INV-89 discipline)');
+    assert.strictEqual(cnReviewCommentLineHtml_({ flagType: '', subformData: { reviewComment: 'recleared' } }), '',
+      'a persisted comment on a since-recleared flag stops rendering (matches the digest gating)');
+  });
+  test('R1 #1/#2: sticky draft + snapshots round-trip reviewC and direction; the filter chip is registered', () => {
+    const cn = strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+    const persist = /function cnPersistActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/reviewC: rcVal/.test(persist) && /direction: dirVal/.test(persist), 'persist writes both fields');
+    const restore = /function cnRestoreActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/data\.reviewC/.test(restore) && /data\.direction/.test(restore), 'restore reads both fields back');
+    const park = /function cnSaveSnapshotAsStickyDraft_\([\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/reviewC: snap\.reviewC/.test(park) && /direction: snap\.direction/.test(park),
+      'the failed-submit park keeps both (the Cycle-2 M4 path)');
+    const clear = /function cnClearActiveForm_\([\s\S]*?\n\}/.exec(cn)[0];
+    assert.ok(/cnSetFormDirection_\(form0, ''\)/.test(clear), 'Clear resets the direction toggle');
+    assert.ok(/'cn-fld-review-c', ''/.test(clear), 'Clear empties the review-comment field');
+    assert.ok(/'outbound'\]/.test(/const CN_DEFAULT_FILTERS[^\n]*/.exec(cn)[0]), 'the Outbound filter chip is registered');
+    // The direction toggle's identity is data-direction, never data-flag —
+    // the flag writer (querySelectorAll('.flag-btn[data-flag]')) and the
+    // server flags[] array must never see it (the INV-191 class).
+    assert.ok(/data-direction="outbound"/.test(cn), 'toggle carries the data-direction identity attribute');
+    const formFlags = /const CN_FORM_FLAGS = \[[^\]]*\]/.exec(cn)[0];
+    assert.ok(!/outbound/.test(formFlags), 'outbound is NOT a form flag — it must never enter flags[]/FlagType');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-2 pilot features (2026-08-24) — Spanish Inbox claim/assign (#4) +
+// scheduled-call reminders (#3).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminders');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // #4 — the pure claim fold: append-only rows, LATEST wins, release clears.
+  const foldCtx = { console, Object, String, Number, Array };
+  vm.createContext(foldCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishClaimsFold_'), foldCtx, { filename: 'Code.js#spanishClaimsFold_' });
+  test('R2 #4: spanishClaimsFold_ — latest row wins, release clears, assignedBy only on assign', () => {
+    const f = foldCtx.spanishClaimsFold_;
+    const m = f([
+      ['t1', 'claim', 'maria@x.com', 'maria@x.com', 100],
+      ['t2', 'claim', 'luis@x.com', 'boss@x.com', 200],     // manager assign
+      ['t1', 'release', 'maria@x.com', 'maria@x.com', 300],
+      ['t3', 'claim', 'ana@x.com', 'ana@x.com', 400],
+      ['t3', 'claim', 'luis@x.com', 'boss@x.com', 500],     // reassigned — latest wins
+      ['', 'claim', 'junk@x.com', 'junk@x.com', 600],       // no threadId — skipped
+      ['t4', 'weird', 'x@x.com', 'x@x.com', 700],           // unknown action — skipped
+    ]);
+    assert.strictEqual(m.t1, undefined, 'a release clears the claim');
+    assert.strictEqual(m.t2.by, 'luis@x.com');
+    assert.strictEqual(m.t2.assignedBy, 'boss@x.com', 'actor ≠ claimant records the assigner');
+    assert.strictEqual(m.t3.by, 'luis@x.com', 'the LATEST claim row wins (claims genuinely change hands)');
+    assert.strictEqual(m.t4, undefined, 'unknown actions are skipped');
+    const self = f([['t5', 'claim', 'Ana@X.com ', 'ana@x.com', 1]]);
+    assert.strictEqual(self.t5.by, 'ana@x.com', 'claimant is trimmed + lowercased');
+    assert.strictEqual(self.t5.assignedBy, '', 'a self-claim carries no assigner');
+  });
+
+  test('R2 #4: claim/release endpoints — gate, scope guard, assign rules, steal guard, lock, PHI-free audit', () => {
+    const claim = strip(extractRawFunction('Code.js', 'claimSpanishThread'));
+    const rel = strip(extractRawFunction('Code.js', 'releaseSpanishThread'));
+    [['claimSpanishThread', claim], ['releaseSpanishThread', rel]].forEach(([label, src]) => {
+      assert.ok(/canSeeSpanishInbox_\(emp\)/.test(src), label + ' carries the Spanish gate (INV-31 amendment)');
+      assert.ok(/waitLock\(15000\)/.test(src) && /releaseLock\(\)/.test(src), label + ' is locked (INV-01)');
+      assert.ok(/SpanishInboxClaim/.test(src), label + ' writes the audit row');
+      assert.ok(!/getSubject|getPlainBody/.test(src), label + ' never touches subject/body (PHI-free store + audit)');
+    });
+    // Claim only: the resolve-style Gmail scope guard, the manager-only assign
+    // (member-validated), and the no-silent-steal rule for non-managers.
+    assert.ok(/spanishAddrListIncludes_/.test(claim), 'claim is scope-guarded like resolveSpanishThread');
+    assert.ok(/Only a manager can assign/.test(claim), 'assigning someone else requires isManager');
+    assert.ok(/getSpanishInboxMembers_\(\)\[claimant\]/.test(claim), 'an assignee must be a configured member');
+    assert.ok(/cur\.by !== claimant && !emp\.isManager/.test(claim), 'a non-manager cannot claim over someone ELSE\'s live claim');
+    // Release: claimant-or-manager only, and idempotent on no claim.
+    assert.ok(/cur\.by !== self && !emp\.isManager/.test(rel), 'release is claimant-or-manager only');
+    assert.ok(/already: true/.test(rel), 'releasing an unclaimed thread is a friendly no-op');
+  });
+
+  test('R2 #4: the pending payload carries claim/members/self (additive fields)', () => {
+    const src = strip(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+    assert.ok(/spanishClaimsMap_\(\)/.test(src), 'reads the claim map once per scan');
+    assert.ok(/claim: claims\[th\.getId\(\)\] \|\| null/.test(src), 'each pending item carries its claim (null = unclaimed)');
+    assert.ok(/members: Object\.keys\(members\)/.test(src), 'ships the assign-select options');
+    assert.ok(/self: String\(emp\.email/.test(src), 'ships the caller identity for "claimed by me"');
+  });
+
+  test('R2 #4: claim pill + controls render by role (client, behavioural)', () => {
+    const pill = sb.spanishClaimPillHtml_, ctl = sb.spanishClaimControlsHtml_;
+    assert.strictEqual(pill({ claim: null }, 'me@x.com'), '', 'unclaimed → no pill');
+    assert.ok(/>you</.test(pill({ claim: { by: 'me@x.com' } }, 'me@x.com')), 'own claim reads "you"');
+    assert.ok(/maria/.test(pill({ claim: { by: 'maria@x.com' } }, 'me@x.com')), 'someone else\'s claim names them');
+    const esc1 = pill({ claim: { by: '<img>@x.com' } }, 'me@x.com');
+    assert.ok(esc1.indexOf('<img>') < 0, 'claimant strings are esc()\'d');
+    // Controls: Claim when unclaimed; Release for the claimant or a manager;
+    // the Assign select is manager-only and lists the members.
+    assert.ok(/spanishClaim_/.test(ctl({ threadId: 't', claim: null }, 'me@x.com', false, [])), 'member sees Claim');
+    assert.ok(!/sp-assign/.test(ctl({ threadId: 't', claim: null }, 'me@x.com', false, ['a@x.com'])), 'non-manager never sees Assign');
+    assert.ok(/spanishRelease_/.test(ctl({ threadId: 't', claim: { by: 'me@x.com' } }, 'me@x.com', false, [])), 'claimant sees Release');
+    assert.ok(!/spanishRelease_/.test(ctl({ threadId: 't', claim: { by: 'other@x.com' } }, 'me@x.com', false, [])),
+      'a non-manager teammate gets NO release on someone else\'s claim');
+    const mgr = ctl({ threadId: 't', claim: { by: 'other@x.com' } }, 'me@x.com', true, ['a@x.com', 'b@x.com']);
+    assert.ok(/spanishRelease_/.test(mgr) && /sp-assign/.test(mgr) && /a@x\.com/.test(mgr), 'manager gets Release + Assign over members');
+  });
+
+  // #3 — scheduled-call reminders.
+  const svCtx = { console, Object, String, Number, parseInt, isFinite };
+  vm.createContext(svCtx);
+  const labMax = codeSrc.match(/const (SCHED_LABEL_MAX = \d+);/);
+  assert.ok(labMax, 'SCHED_LABEL_MAX found');
+  vm.runInContext('const ' + labMax[1] + ';', svCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'schedValidateShape_'), svCtx, { filename: 'Code.js#schedValidateShape_' });
+  test('R2 #3: schedValidateShape_ — INV-04 regexes, label default + cap, lead clamp', () => {
+    const v = svCtx.schedValidateShape_;
+    assert.ok(/date format/.test(v('2026-8-1', '10:00', 'x', 5).error), 'loose date rejected');
+    assert.ok(/time format/.test(v('2026-08-24', '24:00', 'x', 5).error), '24:00 rejected (the INV-04 hour class)');
+    const ok = v('2026-08-24', '14:30', '  call Maria  ', '10');
+    assert.strictEqual(ok.label, 'call Maria');
+    assert.strictEqual(ok.leadMin, 10);
+    assert.strictEqual(v('2026-08-24', '14:30', '', null).label, 'Scheduled call', 'blank label gets a neutral default');
+    assert.strictEqual(v('2026-08-24', '14:30', 'a'.repeat(999), 5).label.length, 300, 'label is cell-capped');
+    assert.strictEqual(v('2026-08-24', '14:30', 'x', 999).leadMin, 120, 'lead clamps to 120');
+    assert.strictEqual(v('2026-08-24', '14:30', 'x', -3).leadMin, 5, 'bad lead falls back to 5');
+  });
+
+  test('R2 #3: server endpoints — caller-scoped, locked, rep-tz parse, PHI-free audit, bounded reads', () => {
+    const create = strip(extractRawFunction('Code.js', 'createScheduledCall'));
+    assert.ok(/Utilities\.parseDate\([\s\S]*empTz_\(emp\)/.test(create), 'the wall time parses in the REP\'s own tz server-side');
+    assert.ok(/SCHED_MAX_DAYS_AHEAD/.test(create) && /in the past/.test(create), 'both horizon ends are checked');
+    assert.ok(/SCHED_ACTIVE_CAP/.test(create), 'per-rep active cap consulted');
+    assert.ok(/waitLock\(15000\)/.test(create), 'create is locked');
+    // The LABEL may name a patient: it must reach the PHI store row but NEVER
+    // the shared AuditLog (INV-32). The audit note is the id alone.
+    const auditCall = /writeAuditLog_\(emp, 'ScheduledCallCreate'[^;]*;/.exec(create);
+    assert.ok(auditCall && /'id=' \+ id\)/.test(auditCall[0]) && !/label/i.test(auditCall[0]),
+      'the audit row carries the id ONLY — never the (PHI-adjacent) label');
+    const mine = strip(extractRawFunction('Code.js', 'schedReadMine_'));
+    assert.ok(/SCHED_CALLS_SCAN/.test(mine), 'bounded tail read');
+    assert.ok(/\.trim\(\)\.toLowerCase\(\) !== 'active'/.test(mine), 'status normalized in the ONE reader (the DR.STATUS lesson, from birth)');
+    const st = strip(extractRawFunction('Code.js', 'setScheduledCallStatus'));
+    assert.ok(/st !== 'done' && st !== 'cancelled'/.test(st), 'status whitelist');
+    assert.ok(/schedReadMine_\(sh, emp\.id\)/.test(st), 'status writes are scoped to the caller\'s OWN rows');
+    const list = strip(extractRawFunction('Code.js', 'getMyScheduledCalls'));
+    assert.ok(/schedReadMine_\(sh, emp\.id\)/.test(list), 'list is caller-scoped');
+    assert.ok(!/rowIndex/.test(/return \{ calls:[\s\S]*?\}\) \}/.exec(list)[0]), 'the live rowIndex never leaves the server');
+  });
+
+  test('R2 #3: schedDue_ fires in the lead window only; the ticker + fetch discipline is wired', () => {
+    const due = sb.schedDue_;
+    const item = { status: 'active', whenMs: 1000000, leadMin: 5 };
+    assert.strictEqual(due(item, 1000000 - 5 * 60000), true, 'fires at lead time');
+    assert.strictEqual(due(item, 1000000 - 5 * 60000 - 1), false, 'not before lead');
+    assert.strictEqual(due(item, 1000000 + 30 * 60000), true, 'still fires up to 30 min late');
+    assert.strictEqual(due(item, 1000000 + 30 * 60000 + 1), false, 'stops nagging past the late cutoff');
+    assert.strictEqual(due({ status: 'done', whenMs: 1000000, leadMin: 5 }, 1000000), false, 'non-active never fires');
+    assert.strictEqual(due({ status: 'active', whenMs: 0, leadMin: 5 }, 1000000), false, 'junk whenMs never fires');
+    const core = strip(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+    assert.ok(/schedTick_\(\);/.test(strip(extractFunction('script_core.html', 'remindersTick_'))),
+      'the shell ticker runs the scheduled-call section');
+    assert.ok(/remindOnce_\('sched:' \+ it\.id/.test(core), 'firing dedupes cross-window via the shared fired-set');
+    assert.ok(/!force && Date\.now\(\) - SCHED_STATE\.fetchedAt < SCHED_REFRESH_MS/.test(core),
+      'the refetch is throttled — the ticker must not add a per-minute RPC (INV-190 cost rule)');
+    assert.ok(/if \(sawActive\) schedFetch_\(false\)/.test(core), 'only a NON-EMPTY list keeps polling');
+    // Cross-partial hook (the INV-148 pattern): core calls the CN modal's
+    // refresh typeof-guarded; the CN partial defines it.
+    assert.ok(/typeof cnSchedListChanged_ === 'function'/.test(core), 'core hook is typeof-guarded');
+    const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+    assert.ok(/function cnSchedListChanged_\(\)/.test(cn), 'the CN partial defines the hook');
+    assert.ok(/case 'sched':\s*cnOpenSchedModal_/.test(cn), 'the card More-menu action dispatches to the modal');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-2 pilot FOLLOW-ONS (2026-08-24) — Spanish fixture claim-state +
+// sched-modal scenario (INV-185 gaps named by the round-2 block), the
+// Dashboard Spanish-card claim pill, and the editor sched-flow test's
+// registration + cleanup sweep.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / sched editor test');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const mockRaw = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+
+  test('R2-FU: dashboard Spanish card renders the SHARED claim pill (typeof-guarded, self from the payload)', () => {
+    const card = strip(extractFunction('tc/script_clock.html', 'clkDashSpanishCard_'));
+    // Reuses the metrics partial's pure pill — a paraphrase here would be the
+    // INV-185 drift class in production code.
+    assert.ok(/typeof spanishClaimPillHtml_ === 'function'/.test(card),
+      'the cross-partial call is typeof-guarded');
+    assert.ok(/spanishClaimPillHtml_\(r, \(pendingRes && pendingRes\.self\) \|\| ''\)/.test(card),
+      'the pill takes the previewed item + the payload self');
+    assert.ok(/ago<\/span>' \+ claimPill \+ '<\/div>/.test(card),
+      'the pill lands in the .dash-sp-from preview line');
+    const clkCss = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+    assert.ok(/\.dash-sp-from \.sp-claim-pill \{/.test(clkCss), 'the inline-pill spacing rule exists');
+  });
+
+  test('R2-FU: Spanish pending FIXTURE carries claim/members/self — all three claim states shootable', () => {
+    // Extract from RAW source (INV-188 inverse: the fixture rows carry
+    // https:// permalinks, which a naive //-stripper eats along with the
+    // rows' closing braces — the seams-18 F3 lesson).
+    const block = /getSpanishInboxPending: \{ pending: \[([\s\S]*?)\n      medianMinutes/.exec(mockRaw);
+    assert.ok(block, 'found the pending fixture block');
+    assert.ok(/members: \[/.test(mockRaw.slice(block.index, block.index + block[0].length + 400)),
+      'fixture ships members');
+    const selfM = /self: '([^']+)'/.exec(mockRaw.slice(block.index, block.index + block[0].length + 400));
+    assert.ok(selfM, 'fixture ships self');
+    // Claim keys derive from the server fold's own object literal — the
+    // seams-18 F3 pattern (a hand-copied key list here would drift exactly
+    // like the fixture it checks).
+    const fold = strip(extractRawFunction('Code.js', 'spanishClaimsFold_'));
+    const lit = /out\[tid\] = \{([\s\S]*?)\};/.exec(fold);
+    assert.ok(lit, 'found the fold\'s claim literal');
+    // EXACT set membership — a joined-string indexOf substring-matched a
+    // drifted 'at' inside 'atMs' and the first bite-check exposed the pin as
+    // weaker than its property (the INV-188-family sibling: match the SET,
+    // never the concatenation).
+    const srvKeys = [...lit[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+    const claims = [...block[1].matchAll(/claim: \{([^}]*)\}/g)];
+    assert.ok(claims.length >= 2, 'at least two CLAIMED items (other + self)');
+    claims.forEach((c) => {
+      const keys = [...c[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+      keys.forEach((k) => assert.ok(srvKeys.includes(k),
+        'fixture claim key "' + k + '" is not a server fold key (' + srvKeys.join('|') + ')'));
+      assert.ok(keys.includes('by'), 'every claim carries by');
+    });
+    assert.ok(/claim: null/.test(block[1]), 'an UNCLAIMED item stays on camera (Claim button state)');
+    assert.ok(block[1].indexOf("claim: { by: '" + selfM[1] + "'") >= 0,
+      'one item is claimed by SELF (the "you" pill state)');
+  });
+
+  test('R2-FU: sched FIXTURE mirrors the server shape; the overdue item can never toast over the shot', () => {
+    const fx = /getMyScheduledCalls: \{ calls: \[([\s\S]*?)\] \}/.exec(mockRaw);
+    assert.ok(fx, 'found the getMyScheduledCalls fixture');
+    // Item keys EQUAL the server's return map (derived — the F3 pattern).
+    const srv = strip(extractRawFunction('Code.js', 'getMyScheduledCalls'));
+    const ret = /return \{ (\w+: c\.\w+[\s\S]*?)\};/.exec(srv);
+    assert.ok(ret, 'found the server\'s per-call return map');
+    const srvKeys = [...ret[1].matchAll(/(\w+): c\./g)].map((m) => m[1]).sort().join('|');
+    // EVERY item, not the first — the first bite-check mutated item 2 and the
+    // single-item form passed (the same weaker-than-its-property class as the
+    // claim-key substring match above).
+    const items = [...fx[1].matchAll(/\{([^}]*)\}/g)];
+    assert.ok(items.length >= 2, 'fixture has ≥2 sched items');
+    items.forEach((it, i) => {
+      const fxKeys = [...it[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+      assert.strictEqual(fxKeys, srvKeys,
+        'sched fixture item ' + i + ' keys must EQUAL the server call shape — the liveStatus drift class');
+    });
+    // The overdue item sits BEYOND the schedTick_ fire window, so the modal
+    // scenario shows the overdue tone WITHOUT a sticky toast covering it.
+    const lateM = /SCHED_FIRE_LATE_MS = ([\d *]+);/.exec(
+      fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+    assert.ok(lateM, 'found SCHED_FIRE_LATE_MS');
+    const lateMs = Function('return (' + lateM[1] + ')')();
+    const overdueM = /Date\.now\(\) - ([\d *]+),/.exec(fx[1]);
+    assert.ok(overdueM, 'fixture has a past-due item');
+    assert.ok(Function('return (' + overdueM[1] + ')')() > lateMs,
+      'the overdue offset exceeds the fire window (' + lateMs + 'ms)');
+  });
+
+  test('R2-FU: shoot.mjs consumes the post hook and the sched-modal scenario uses it', () => {
+    const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+    assert.ok(/query, post\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element');
+    assert.ok(/if \(post\) \{/.test(shoot), 'the hook is consumed after nav');
+    assert.ok(/\['cn-sched-modal-light-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot),
+      'the sched-modal scenario opens the modal via the hook');
+  });
+
+  test('R2-FU: the editor sched-flow test is registered and cleanupTestData sweeps ScheduledCalls', () => {
+    const tests = strip(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+    assert.ok(/_integrationTest\('scheduledCalls_flow',\s*test_scheduledCalls_flow\)/.test(tests),
+      'test_scheduledCalls_flow is in the run list');
+    assert.ok(/function test_scheduledCalls_flow\(\)/.test(tests), 'the test exists');
+    const cleanup = /function cleanupTestData\(\) \{([\s\S]*?)\n\}/.exec(tests);
+    assert.ok(cleanup && /getSheetByName\(SCHED_CALLS_TAB\), 'TEST_', SC\.EMP_ID/.test(cleanup[1]),
+      'cleanupTestData sweeps ScheduledCalls by the TEST_ EmpId prefix (INV-21)');
+    // The sweep must use getSheetByName, never provision as a side effect.
+    assert.ok(!/getOrCreateScheduledCallsSheet_/.test(cleanup[1]),
+      'cleanup never provisions the tab');
+    // INV-32 inside the test itself: it asserts the audit row is label-free.
+    const flow = /function test_scheduledCalls_flow\(\)[\s\S]*?\n\}/.exec(tests)[0];
+    assert.ok(/indexOf\('TEST_SCHED'\) < 0/.test(flow),
+      'the flow test pins the PHI-free audit row');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-3 pilot features (2026-08-24) — intake arrow-key nav (#7), server-
+// backed scratchpad (#5), Reference comments Phase A (#6).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comments');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const tests = strip(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  const mockRaw = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+
+  test('R3 #7: intakeCaretAtEdge_ behavioural + arrow-nav wiring (radiogroups/selects untouched)', () => {
+    const ctx = { String };
+    vm.createContext(ctx);
+    vm.runInContext(extractFunction('intake/script_intake.html', 'intakeCaretAtEdge_'), ctx);
+    const at = ctx.intakeCaretAtEdge_;
+    assert.strictEqual(at({ value: 'abc', selectionStart: 3, selectionEnd: 3 }, 'end'), true, 'caret at end');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 3, selectionEnd: 3 }, 'start'), false, 'end is not start');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 0, selectionEnd: 0 }, 'start'), true, 'caret at start');
+    assert.strictEqual(at({ value: 'abc', selectionStart: 1, selectionEnd: 2 }, 'end'), false, 'a real selection keeps its arrows');
+    // A selection ANCHORED at a boundary must not hop either — without the
+    // s!==e guard, selectionStart 0 satisfies the start-edge test and an
+    // ArrowUp would destroy the selection (first bite-check: removing the
+    // guard passed the mid-field selection case, which never touches an edge).
+    assert.strictEqual(at({ value: 'abc', selectionStart: 0, selectionEnd: 2 }, 'start'), false, 'a boundary-anchored selection still keeps its arrows');
+    assert.strictEqual(at({ value: 'abc', selectionStart: null, selectionEnd: null }, 'end'), true, 'unsupported selection = hoppable');
+    assert.strictEqual(at({ value: 'x', get selectionStart() { throw new Error('nope'); } }, 'end'), true, 'a throwing accessor = hoppable');
+    const nav = strip(extractFunction('intake/script_intake.html', 'intakeArrowNav_'));
+    // The guards that keep other controls' arrow keys THEIRS: only text-type
+    // inputs/textareas hop (radiogroup <button>s, <select>, date/number
+    // steppers all early-return), modifiers pass through, and no wrap.
+    assert.ok(/tagName !== 'INPUT' && el\.tagName !== 'TEXTAREA'/.test(nav), 'non-field targets untouched');
+    assert.ok(/el\.type !== 'text'/.test(nav), 'non-text input types keep native arrows');
+    assert.ok(/e\.shiftKey \|\| e\.altKey \|\| e\.metaKey \|\| e\.ctrlKey/.test(nav), 'modifier combos pass through');
+    assert.ok(/if \(!next\) return;/.test(nav), 'no wrap at the form edge');
+    const visible = strip(extractFunction('intake/script_intake.html', 'intakeNavFields_'));
+    assert.ok(/offsetParent !== null/.test(visible), 'hidden reveal rows are skipped');
+    // BOTH binding sites (PPD + the shared acct enter) — one delegated
+    // listener each, the cn-frame precedent.
+    const binds = (strip(intake).match(/addEventListener\('keydown', intakeArrowNav_\)/g) || []).length;
+    assert.strictEqual(binds, 2, 'bound on the PPD form AND the acct forms');
+  });
+
+  test('R3 #5: scratchpad server — USER lock, cap-refuse-before-write, @-format, ms NUMBER, enrollment gate', () => {
+    const save = strip(extractRawFunction('Code.js', 'saveMyScratchpad'));
+    // USER lock, not the script lock (the kbRecordView / INV-01 documented-
+    // exception posture): a debounced autosave must never queue punch writes.
+    assert.ok(/LockService\.getUserLock\(\)/.test(save), 'user lock');
+    assert.ok(!/getScriptLock/.test(save), 'never the global script lock');
+    assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(save), 'finally-released (INV-01 structure)');
+    // Over-cap REFUSES before any sheet is touched (order: the error return
+    // precedes the provision call).
+    assert.ok(save.indexOf('SCRATCHPAD_MAX_CHARS') < save.indexOf('scratchpadSheet_(emp, true)'),
+      'cap check precedes the write path');
+    assert.ok(/trim it and save again/.test(save), 'over-cap error is actionable, never a silent truncate');
+    const sheet = strip(extractRawFunction('Code.js', 'scratchpadSheet_'));
+    assert.ok(/setNumberFormat\('@'\)/.test(sheet), 'A1 pinned to PLAIN TEXT at provision — the coercion class dodged at write time');
+    assert.ok(/callNotesSheetId/.test(sheet) && /not configured/.test(sheet), 'gated on the caller\'s own enrollment (per-rep isolation by construction)');
+    assert.ok(/setValue\(now\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
+    assert.ok(!/writeAuditLog_/.test(save), 'no audit row per save (high-frequency own-store write — the kbRecordView posture, documented)');
+    // Editor coverage registered + fixture-tab cleanup in the test itself.
+    assert.ok(/_integrationTest\('scratchpad_saveReadRoundTrip'/.test(tests), 'editor round-trip test registered');
+  });
+
+  test('R3 #5: scratchpad client — named modal, flush-on-close, visible failed autosave, A12 load failure', () => {
+    assert.ok(/ensureOverlay\('cn-scratch-overlay', \{ label: 'Scratchpad', onClose: cnCloseScratchpadModal_ \}\)/.test(cn),
+      'A14-named dialog with a close hook');
+    assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
+    const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
+    assert.ok(/if \(CN_SCRATCH\.dirty\) cnScratchSave_\(true\)/.test(close),
+      'a pending debounce FLUSHES on close (INV-148 — typed text never dies with the modal)');
+    const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
+    // A failed save is VISIBLE and retryable: the error branch keeps dirty
+    // (no dirty=false before the success path) and paints the warn status.
+    const errBranch = saveFn.slice(saveFn.indexOf('if (!r || r.error || !r.success)'), saveFn.indexOf('CN_SCRATCH.dirty = false'));
+    assert.ok(errBranch.indexOf('dirty = false') < 0, 'a failed save keeps the pad dirty (retries on next edit)');
+    assert.ok(/Save failed/.test(saveFn), 'the failure is stated in the status line (INV-187)');
+    const open = extractFunction('cn/script_callnotes.html', 'cnOpenScratchpadModal_');
+    assert.strictEqual((strip(open).match(/errorStateHtml_/g) || []).length, 2,
+      'BOTH load-failure shapes render the warn card, never an empty pad (A12)');
+  });
+
+  test('R3 #6: comments server — gates, draft invisibility, author-or-manager, soft-delete, INV-169, id-only audit', () => {
+    const add = strip(extractRawFunction('Code.js', 'kbAddComment'));
+    const get = strip(extractRawFunction('Code.js', 'kbGetComments'));
+    const del = strip(extractRawFunction('Code.js', 'kbDeleteComment'));
+    const edit = strip(extractRawFunction('Code.js', 'kbEditComment'));
+    [add, get, del, edit].forEach((f) => assert.ok(/getEmployeeInfo_\(\)/.test(f), 'employee-gated'));
+    // Round-3 FO — edit is AUTHOR-only, deliberately NARROWER than delete's
+    // author-or-manager: moderation is removal, never rewriting a rep's words
+    // under their name. So the ownership check must NOT carry a manager escape.
+    assert.ok(/your own comments/.test(edit), 'edit ownership refusal message');
+    assert.ok(!/isManager/.test(edit), 'edit has NO manager escape (author-only by design)');
+    assert.ok(/KB_COMMENT_MAX_CHARS/.test(edit), 'edit over-cap REFUSES (the add rule)');
+    assert.ok(/KB_COMMENTS_SCAN/.test(edit), 'edit reads the bounded tail');
+    const editAudit = /writeAuditLog_\(emp, 'KbCommentEdit'[^\n]*/.exec(edit);
+    assert.ok(editAudit && /'commentId=' \+ wanted/.test(editAudit[0]) && !/\+ t\b/.test(editAudit[0]),
+      'KbCommentEdit audit row is id-only (INV-32)');
+    // An edited-after-delete row reads as NOT FOUND (active-only), not as a
+    // resurrectable record.
+    assert.ok(/!== 'active'/.test(edit) && /Comment not found/.test(edit), 'edit acts on active rows only');
+    const tgt = strip(extractRawFunction('Code.js', 'kbCommentTargetOk_'));
+    assert.ok(/KB_STATUS_DRAFT \|\| !!emp\.isAdmin/.test(tgt),
+      'a draft target is invisible to non-admins (INV-140/147 — commenting cannot probe drafts)');
+    assert.ok(/kbCommentTargetOk_/.test(add) && /kbCommentTargetOk_/.test(get), 'both paths check the target');
+    // Author-or-manager moderation — deliberately NOT the manager-gate string
+    // (per-row ownership, not a gated endpoint; the F9 net derives from that
+    // literal, so using it here would demand a gate test that cannot pass).
+    assert.ok(/your own comments/.test(del), 'ownership refusal message');
+    assert.ok(!/Manager access required/.test(add + get + del), 'never the gate literal');
+    assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
+    [get, del].forEach((f) => assert.ok(/KB_COMMENTS_SCAN/.test(f), 'bounded tail reads'));
+    assert.ok(/total: all\.length, cap: KB_COMMENTS_LIST_CAP/.test(get), 'pre-slice total + cap ride the payload (INV-169)');
+    // INV-32: the audit notes are built from IDS ONLY — the comment text
+    // variable never enters them. Match to END OF LINE, not to the first `;`
+    // — the notes string itself contains '; ' and a non-greedy `;` stop
+    // truncated the match mid-string on first write (the INV-188 family).
+    const addAudit = /writeAuditLog_\(emp, 'KbCommentAdd'[^\n]*/.exec(add);
+    assert.ok(addAudit && /'id=' \+ id \+ '; commentId=' \+ commentId/.test(addAudit[0]) && !/\+ t\b/.test(addAudit[0]),
+      'KbCommentAdd audit row is id-only — the text never reaches the shared AuditLog');
+    assert.ok(/'commentId=' \+ wanted/.test(del), 'delete audit row is id-only');
+    assert.ok(/_integrationTest\('kb_comments_flow'/.test(tests), 'editor flow test registered');
+    assert.ok(/getSheetByName\(KB_COMMENTS_TAB\), 'TEST_', KBC\.EMP_ID/.test(tests), 'cleanup sweeps KbComments (INV-21)');
+  });
+
+  test('R3 #6: comments client — esc()d render, drawer parity (Phase B), host-scoped dual render, A12', () => {
+    const render = strip(extractFunction('kb/script_kb.html', 'kbRenderComments_'));
+    assert.ok(/esc\(c\.name\)/.test(render) && /esc\(c\.text\)/.test(render) && /esc\(c\.commentId\)/.test(render),
+      'every server string + attribute value is esc()\'d');
+    assert.ok(/showing ' \+ list\.length \+ ' of ' \+ res\.total/.test(render), 'the cap note renders "showing N of M" (INV-169)');
+    assert.ok(/PHI-free by policy/.test(render), 'the add form carries the PHI reminder (the kbRequestArticle posture)');
+    // Phase B made the renderer DUAL-HOST (tab + drawer can show the SAME
+    // article), so the add-form id is suffixed per host and the label-for
+    // follows it — duplicate DOM ids would break the association (INV-195 +
+    // the kbMd_ heading-dedup lesson). The handlers locate via closest(),
+    // never getElementById.
+    assert.ok(render.indexOf('for="kb-cmt-input\' + sfx + \'"') !== -1 &&
+              render.indexOf('id="kb-cmt-input\' + sfx + \'"') !== -1, 'per-host suffixed input id + matching label-for');
+    assert.ok(/host\.id === 'kbd-comments'/.test(render), 'the suffix derives from the host');
+    assert.ok(/var edit = c\.mine\s*\?/.test(render), 'the edit button renders for the AUTHOR only (matches the server contract)');
+    const addFn = strip(extractFunction('kb/script_kb.html', 'kbAddComment_'));
+    assert.ok(/closest\('\.kb-comments'\)/.test(addFn) && !/getElementById\('kb-cmt-input'\)/.test(addFn),
+      'the add handler is closest()-scoped, never a bare id lookup');
+    const refresh = strip(extractFunction('kb/script_kb.html', 'kbCommentsRefresh_'));
+    assert.ok(/closest\('#kb-drawer'\)/.test(refresh) && /kbDrawerLoadComments_/.test(refresh) && /kbLoadComments_/.test(refresh),
+      'post/delete/edit refresh the HOST the control lives in (the INV-139 dual-host rule)');
+    const loadFn = strip(extractFunction('kb/script_kb.html', 'kbLoadComments_'));
+    assert.strictEqual((loadFn.match(/errorStateHtml_/g) || []).length, 2, 'both failure shapes render the warn card (A12)');
+    assert.ok(/KB_STATE\.currentId !== id/.test(loadFn), 'the L-18 stale-item guard');
+    // Phase B (round-3 follow-ons) REVERSED the Phase A tab-only omission —
+    // this pin was rewritten in place, the honest bookkeeping when a contract
+    // changes under a test (the accrual precedent). The drawer loads via its
+    // own L-18-guarded twin and hosts the slot in BOTH branches.
+    const drawer = strip(extractFunction('kb/script_kb.html', 'kbDrawerOpenItem_'));
+    assert.strictEqual((drawer.match(/id="kbd-comments"/g) || []).length, 2, 'both drawer branches host the comments slot');
+    assert.ok(/kbDrawerLoadComments_\(id\)/.test(drawer), 'the drawer reader loads comments (Phase B parity)');
+    const dLoad = strip(extractFunction('kb/script_kb.html', 'kbDrawerLoadComments_'));
+    assert.strictEqual((dLoad.match(/errorStateHtml_/g) || []).length, 2, 'drawer loader: both failure shapes render the warn card');
+    assert.ok(/KB_DRAWER\.itemId !== id/.test(dLoad), 'drawer loader carries the drawer L-18 guard');
+    assert.ok(/kbRenderComments_\(host, id, res\)/.test(dLoad), 'ONE shared renderer — no parallel drawer markup to drift');
+    // The tab reader hosts the slot in BOTH branches (article + embed).
+    assert.strictEqual((strip(extractFunction('kb/script_kb.html', 'kbRenderItem_')).match(/id="kb-comments"/g) || []).length, 2,
+      'both tab reader branches host the comments slot');
+    // Round-3 FO — the comment-count chip folds into the SAME analytics rows
+    // (never a parallel block): server fold in BOTH endpoints, chip in the
+    // shared kbFbCountHtml_.
+    ['kbGetUsageStats', 'kbGetReviewDue'].forEach((fn) =>
+      assert.ok(/kbCommentCounts_\(\)/.test(strip(extractRawFunction('Code.js', fn))), fn + ' folds comment counts'));
+    assert.ok(/it\.comments/.test(strip(extractFunction('kb/script_kb.html', 'kbFbCountHtml_'))), 'the shared chip renders the count');
+  });
+
+  test('R3: the scratchpad + comments FIXTURES mirror the server shapes', () => {
+    // kbGetComments item keys derive from the server's own push literal.
+    const get = strip(extractRawFunction('Code.js', 'kbGetComments'));
+    const push = /all\.push\(\{([\s\S]*?)\}\);/.exec(get);
+    assert.ok(push, 'found the server comment shape');
+    const srvKeys = [...push[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+    const fx = /kbGetComments: \{ comments: \[([\s\S]*?)\],\n\s*total/.exec(mockRaw);
+    assert.ok(fx, 'found the comments fixture');
+    [...fx[1].matchAll(/\{([^}]*)\}/g)].forEach((it, i) => {
+      const keys = [...it[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+      assert.strictEqual(keys, srvKeys, 'comments fixture item ' + i + ' keys EQUAL the server shape');
+    });
+    // getMyScratchpad fixture keys ⊆ the server return keys.
+    const pad = strip(extractRawFunction('Code.js', 'getMyScratchpad'));
+    const padRet = /return \{ content: content,([\s\S]*?)\};/.exec(pad);
+    assert.ok(padRet, 'found the scratchpad return shape');
+    const padKeys = ['content'].concat([...padRet[1].matchAll(/(\w+):\s/g)].map((m) => m[1]));
+    const padFx = /getMyScratchpad: \{([^}]*)\}/.exec(mockRaw);
+    assert.ok(padFx, 'found the scratchpad fixture');
+    // Blank out string LITERALS before extracting keys — the fixture's content
+    // value contains "Dr. Alvarez: x4102", and a bare colon-space matcher read
+    // "Alvarez" as a key on first write (the seams-18 F3 `https:` lesson in a
+    // new guise: never key-match through string values).
+    const noStr = padFx[1].replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    [...noStr.matchAll(/(\w+):\s/g)].map((m) => m[1]).forEach((k) =>
+      assert.ok(padKeys.includes(k), 'scratchpad fixture key "' + k + '" is not a server field (' + padKeys.join('|') + ')'));
+    // The two new sched-modal scenario variants exist and use the post hook.
+    const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+    assert.ok(/\['cn-sched-modal-dark-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot), 'dark variant');
+    assert.ok(/\['cn-sched-modal-light-compact',[^\]]*'\?compact=1', 'cnOpenSchedModal_\(\)'\]/.test(shoot), 'compact variant');
+  });
+
+  test('R3: CN header fabs are ONE grid item; sched-modal buttons token-styled', () => {
+    const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+    // The .cn-head grid is `1fr auto` — bare children each become grid items,
+    // so the three fabs must render inside ONE .cn-head-fabs flex group (the
+    // round-3 third fab scattered the trio across two extra grid rows,
+    // measured on the full re-shoot).
+    const grp = /<div class="cn-head-fabs">([\s\S]*?)<\/div>/.exec(cn);
+    assert.ok(grp, 'the .cn-head-fabs group exists in the render');
+    ['cn-scratch-btn', 'cn-sched-btn', 'cn-help-btn'].forEach((id) =>
+      assert.ok(grp[1].indexOf('id="' + id + '"') !== -1, id + ' is inside the fabs group'));
+    assert.ok(/\.cn-head-fabs \{ display: flex/.test(cn), 'the group has its flex rule');
+    // .cn-act-btn is styled only under .cn-card-actions — the sched modal's
+    // ✓ / × / Close buttons need their own scoped TOKEN-based rule, or they
+    // render as unstyled native buttons (glaring white boxes in dark mode —
+    // measured the moment the dark modal scenario was first shot).
+    const rule = /\.cn-sched-modal \.cn-act-btn \{[\s\S]*?\}/.exec(cn);
+    assert.ok(rule, 'the scoped sched-modal act-btn rule exists');
+    assert.ok(/var\(--line\)/.test(rule[0]) && /var\(--muted\)/.test(rule[0]), 'token-based colors');
+    assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(rule[0]), 'no raw hex in the rule');
+  });
+
+  test('R3 FO: every icon(\'name\') literal is a real ICONS key (derived — INV-179)', () => {
+    // icon('unknown') SILENTLY returns '' — the comment-edit pencil shipped
+    // as a 4px empty button because icon('pencil') matched nothing (the real
+    // key is 'adjust'; "pencil" appears only in the ICONS COMMENT, which is
+    // exactly what a grep-for-existence check matched — the INV-188 trap
+    // pointed at markup). Found only by MEASURING the live button box.
+    const iconsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_icons.html'), 'utf8');
+    const stripAll = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/<!--[\s\S]*?-->/g, '');
+    // Anchor on the VALUE shape (`: '<` — every glyph is an SVG-path string),
+    // not indentation: a fixed-indent anchor matched only 19 of 57 keys.
+    const keys = new Set([...stripAll(iconsSrc).matchAll(/^\s*([\w]+):\s*'</gm)].map((m) => m[1]));
+    assert.ok(keys.size >= 30 && keys.has('adjust') && keys.has('bell'), 'derived a plausible ICONS key set');
+    const files = PARSE_GUARD_PARTIALS.concat(['modals.html', 'index.html']);
+    const bad = [];
+    files.forEach((f) => {
+      let src; try { src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'); } catch (e) { return; }
+      [...stripAll(src).matchAll(/\bicon\('([\w-]+)'/g)].forEach((m) => { if (!keys.has(m[1])) bad.push(f + ': ' + m[1]); });
+    });
+    assert.deepStrictEqual(bad, [], 'icon() literals that resolve to NO glyph (silent empty button)');
+  });
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

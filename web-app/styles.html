@@ -1348,12 +1348,32 @@
   .sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .sp-task-subj { font-weight: 600; font-size: 14px; color: var(--ink); margin-bottom: 4px; }
   .sp-task-body { font-size: 13px; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
-  .sp-task-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+  /* flex-wrap (round 2): the claim/assign controls joined this row, and five
+     controls at 390px overflow a no-wrap flex — wrapping is intrinsic reflow,
+     so no A2 breakpoint is owed. */
+  .sp-task-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; }
   .sp-open { font-size: 12px; color: var(--info); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .sp-open:hover { text-decoration: underline; }
   .sp-more { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
   .sp-more:hover { text-decoration: underline; }
   .sp-more.is-busy { opacity: .6; cursor: default; }
+  /* Pilot round 2 — advisory claim pill ("who is on this request") + the
+     manager assign select. The pill sits in the flexed card head between the
+     requester and the age; `.mine` tints the caller's own claim accent. */
+  .sp-claim-pill {
+    display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px;
+    background: var(--info-soft); color: var(--info-deep);
+  }
+  .sp-claim-pill.mine { background: var(--accent-soft); color: var(--success-deep); }
+  .sp-assign {
+    font: inherit; font-size: 12px; color: var(--muted);
+    background: var(--paper-card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 2px 6px; max-width: 140px;
+  }
+  .sp-claim-release { color: var(--warning-deep); }
 
   /* ─── ADMIN · TEAM MEMBERS (onboarding readiness) ─────────────
      A COLUMN grid, not a wrapping chip row: each readiness dimension owns a

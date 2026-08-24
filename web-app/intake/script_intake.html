@@ -659,6 +659,7 @@ function enterIntakePpdView(area) {
     form.addEventListener('click', function (e) {
       if (e.target.closest('.intk-yn-btn, .intk-sev-chip')) intakePpdUpdateProgress_();
     });
+    form.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
   }
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
@@ -666,6 +667,53 @@ function enterIntakePpdView(area) {
   intakePpdApplyReveals_(form);   // hide Q33a etc. per restored parent answers
   intakePpdUpdateProgress_();
   intakeConsumeNavHint_();
+}
+
+// ── Pilot round 3 (#7): arrow-key field navigation ──────────────────────────
+// ArrowDown with the caret at the END of a text field focuses the NEXT visible
+// text field in the form; ArrowUp at the START goes back — the Call Notes
+// boundary-hop pattern (operator feedback 2026-06-12 r2) applied to the intake
+// forms' real <input>/<textarea> controls. Deliberately UNTOUCHED: arrows
+// inside the radiogroup controls (.intk-yn/.intk-sev/.intk-choice —
+// intakePickKey_ owns those), <select> (arrows change its value), and any
+// non-text input type (date/number steppers). Hidden reveal rows are skipped
+// (offsetParent visibility test), and there is no wrap at the form's edges.
+function intakeCaretAtEdge_(el, edge) {
+  var s, e;
+  try { s = el.selectionStart; e = el.selectionEnd; } catch (err) { return true; }
+  if (s == null || e == null) return true;   // selection unsupported — treat as hoppable
+  if (s !== e) return false;                 // a real selection keeps its arrow keys
+  var len = String(el.value || '').length;
+  return edge === 'start' ? s === 0 : s === len;
+}
+
+function intakeNavFields_(root) {
+  return Array.prototype.filter.call(
+    root.querySelectorAll('input[type="text"], textarea'),
+    function (f) { return !f.disabled && f.offsetParent !== null; });
+}
+
+function intakeArrowNav_(e) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
+  var el = e.target;
+  if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
+  if (el.tagName === 'INPUT' && el.type !== 'text') return;
+  var fwd = e.key === 'ArrowDown';
+  if (!intakeCaretAtEdge_(el, fwd ? 'end' : 'start')) return;
+  var root = el.closest('.intk-sections');
+  if (!root) return;
+  var fields = intakeNavFields_(root);
+  var i = fields.indexOf(el);
+  if (i < 0) return;
+  var next = fields[i + (fwd ? 1 : -1)];
+  if (!next) return;   // at the form's edge — no wrap
+  e.preventDefault();
+  next.focus();
+  try {
+    var L = String(next.value || '').length;
+    next.setSelectionRange(fwd ? 0 : L, fwd ? 0 : L);
+  } catch (err) {}
 }
 
 // Consume a shared cross-tool nav hint targeting Intake (e.g. a Spanish Inbox
@@ -1705,6 +1753,7 @@ function intakeEnterAcct_(form, title, area) {
     f.addEventListener('input', function () { intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); });
     // Yes/No toggles are <button>s (no 'input' event) — refresh progress on click too.
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
+    f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
   }
   intakeRestoreDraft_(form);
   intakeAcctUpdateProgress_(form);

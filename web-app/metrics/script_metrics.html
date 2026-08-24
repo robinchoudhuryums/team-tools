@@ -2288,6 +2288,103 @@ function spanishNavTo_(btn) {
   enterTool(btn.dataset.tool, btn.dataset.tab);
 }
 
+// ── Claim / assign (pilot round 2, 2026-08-24) ─────────────────────────────
+// Advisory "I'm on it" marker per pending request: agents claim so teammates
+// skip it; managers can assign. Server truth lives in the SpanishClaims tab
+// (claimSpanishThread / releaseSpanishThread); the pending payload carries
+// `claim` per item + `members` + `self`.
+
+/** PURE (Node-pinned) — the claim pill for the card head. "you" for the
+ *  caller's own claim; the tooltip carries the full email + how it was
+ *  claimed. Nothing renders on an unclaimed card. */
+function spanishClaimPillHtml_(t, self) {
+  var c = t && t.claim;
+  if (!c || !c.by) return '';
+  var mine = c.by === self;
+  var name = c.by.indexOf('@') > 0 ? c.by.split('@')[0] : c.by;
+  return '<span class="sp-claim-pill' + (mine ? ' mine' : '') + '" title="' +
+    esc('Claimed by ' + c.by + (c.assignedBy ? ' · assigned by ' + c.assignedBy : '')) + '">' +
+    icon('headset', 11) + (mine ? 'you' : esc(name)) + '</span>';
+}
+
+/** PURE (Node-pinned) — the claim/release/assign controls for the actions row.
+ *  Unclaimed → Claim (any member); claimed by me or manager → Release; a
+ *  manager additionally gets the Assign select over the configured members. */
+function spanishClaimControlsHtml_(t, self, isManager, members) {
+  var c = t && t.claim;
+  var tid = esc((t && t.threadId) || '');
+  var html = '';
+  if (c && c.by) {
+    if (c.by === self || isManager) {
+      html += '<button type="button" class="sp-more sp-claim-release" data-thread="' + tid +
+        '" onclick="spanishRelease_(this)" title="Release this claim so someone else can take it">' +
+        icon('x', 11) + ' Release</button>';
+    }
+  } else {
+    html += '<button type="button" class="sp-more sp-claim-btn" data-thread="' + tid +
+      '" onclick="spanishClaim_(this)" title="Mark that YOU are working this request — teammates see it and skip it (advisory)">' +
+      icon('headset', 12) + ' Claim</button>';
+  }
+  if (isManager && (members || []).length) {
+    html += '<select class="sp-assign" data-thread="' + tid +
+      '" aria-label="Assign this request to a team member" onchange="spanishAssign_(this)">' +
+      '<option value="">Assign…</option>' +
+      (members || []).map(function (m) {
+        var name = String(m).indexOf('@') > 0 ? String(m).split('@')[0] : String(m);
+        return '<option value="' + esc(m) + '"' + (c && c.by === m ? ' selected' : '') + '>' + esc(name) + '</option>';
+      }).join('') +
+      '</select>';
+  }
+  return html;
+}
+
+function spanishClaim_(btn) { spanishClaimRpc_(btn, btn.getAttribute('data-thread'), null); }
+function spanishAssign_(sel) {
+  var v = sel.value;
+  if (!v) return;
+  spanishClaimRpc_(sel, sel.getAttribute('data-thread'), v);
+}
+function spanishClaimRpc_(el, tid, assignee) {
+  if (!tid) return;
+  el.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      el.disabled = false;
+      if (!r || r.error) { showToast((r && r.error) || 'Claim failed', 'error'); spanishRenderList_(); return; }
+      spanishSetClaimLocal_(tid, r.claim || null);
+      showToast(r.already ? 'Already claimed' :
+        (assignee ? 'Assigned to ' + assignee.split('@')[0] : 'Claimed — teammates will see you have it'), 'success');
+    })
+    .withFailureHandler(function (e) { el.disabled = false; showToast((e && e.message) || 'Claim failed', 'error'); })
+    .claimSpanishThread(tid, assignee);
+}
+function spanishRelease_(btn) {
+  var tid = btn.getAttribute('data-thread');
+  if (!tid) return;
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || r.error) { showToast((r && r.error) || 'Release failed', 'error'); return; }
+      spanishSetClaimLocal_(tid, null);
+      showToast('Claim released', 'success');
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Release failed', 'error'); })
+    .releaseSpanishThread(tid);
+}
+/** Update the item's claim in state and re-render. The SWR cache half stores
+ *  the SAME object reference (cacheHalf), so mutating pendingRes keeps the
+ *  cached copy in step too. */
+function spanishSetClaimLocal_(tid, claim) {
+  var pd = SPANISH_STATE.pendingRes;
+  if (pd && Array.isArray(pd.pending)) {
+    for (var i = 0; i < pd.pending.length; i++) {
+      if (pd.pending[i].threadId === tid) pd.pending[i].claim = claim;
+    }
+  }
+  spanishRenderList_();
+}
+
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
@@ -2297,13 +2394,18 @@ function spanishTaskCard_(t) {
   // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
   // pending forever. uiConfirm-guarded: there is no un-resolve.
   var resolve = '<button class="sp-more sp-resolve" data-thread="' + esc(t.threadId) + '" onclick="spanishResolve_(this)">' + icon('check', 12) + ' Mark resolved</button>';
+  // Pilot round 2 — claim pill (head) + claim/assign controls (actions row).
+  var pd = SPANISH_STATE.pendingRes || {};
+  var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
+  var claimPill = spanishClaimPillHtml_(t, pd.self || '');
+  var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
   return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
-    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + claimPill +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
     '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (t.snippet || '')) + '</div>' +
-    '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + '</div>' +
+    '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + ' ' + claimCtl + '</div>' +
   '</div>';
 }
 

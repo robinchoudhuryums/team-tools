@@ -123,9 +123,30 @@
   .kb-fb-btns { display: flex; gap: 6px; align-items: center; }
   .kb-fb-done { font-size: .82rem; color: var(--success-deep); }
   /* #2 — helpful/not-helpful tally on manager landing rows. */
-  .kb-fb-tally { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .kb-fb-tally { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); flex-shrink: 0; }
   .kb-fb-tally .kb-fb-sep { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
   .kb-fb-tally svg { width: 11px; height: 11px; }
+  /* Phase A (pilot round 3 #6) — per-article comment thread (tab reader only). */
+  .kb-comments { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .kb-cmt-h { margin: 0 0 10px; font-size: .88rem; display: flex; align-items: center; gap: 6px; }
+  .kb-cmt { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .kb-cmt-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .kb-cmt-name { font-size: .8rem; font-weight: 600; }
+  .kb-cmt-you { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; background: var(--accent-soft); color: var(--success-deep); padding: 1px 6px; border-radius: var(--radius-pill); }
+  /* The timestamp pushes the ACTION cluster right (margin-right: auto), so
+     one or two buttons (edit is author-only) sit together at the row end —
+     auto margins on the buttons themselves would split two of them apart. */
+  .kb-cmt-when { font-family: var(--mono); font-size: 10px; color: var(--muted-2); margin-right: auto; }
+  .kb-cmt-del { appearance: none; background: none; border: 0; padding: 2px; cursor: pointer; color: var(--muted-2); border-radius: var(--radius); }
+  .kb-cmt-del:hover { color: var(--danger-deep); background: var(--destructive-soft); }
+  .kb-cmt-text { font-size: .86rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .kb-cmt-none { font-size: .82rem; color: var(--muted-2); padding: 6px 0; }
+  .kb-cmt-cap { font-size: 10px; color: var(--muted-2); padding: 4px 0; }
+  .kb-cmt-add { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .kb-cmt-lbl { font-size: .78rem; color: var(--muted); }
+  .kb-cmt-add textarea { font: inherit; font-size: .86rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-card); color: var(--ink); resize: vertical; }
+  .kb-cmt-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .kb-cmt-phi { font-size: .72rem; color: var(--muted-2); }
   /* #1 — zero-result "request an article" prompt in the results panel. */
   .kb-gap { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
   .kb-gap .kb-btn { color: var(--success-deep); background: var(--accent-soft); border-color: var(--accent-soft); }
@@ -2217,11 +2238,14 @@ function kbItemIcon_(it) {
 
 // #2 — inline rep helpful/notHelpful tally (manager Most-used + Review-due rows).
 // Hidden entirely when there's no feedback yet, so it never adds clutter.
+// Round-3 FO: the comment count rides the same chip (the "most commented"
+// signal folded into the existing analytics rows rather than a new block).
 function kbFbCountHtml_(it) {
-  var h = (it && it.helpful) || 0, n = (it && it.notHelpful) || 0;
-  if (!h && !n) return '';
+  var h = (it && it.helpful) || 0, n = (it && it.notHelpful) || 0, c = (it && it.comments) || 0;
+  var cChip = c ? '<span class="kb-fb-tally" title="' + c + ' comment' + (c === 1 ? '' : 's') + '">' + icon('list', 11) + ' ' + c + '</span>' : '';
+  if (!h && !n) return cChip;
   return '<span class="kb-fb-tally" title="Rep feedback: ' + h + ' helpful · ' + n + ' not helpful">' +
-    icon('thumbsUp', 11) + ' ' + h + '<span class="kb-fb-sep">' + icon('thumbsDown', 11) + ' ' + n + '</span></span>';
+    icon('thumbsUp', 11) + ' ' + h + '<span class="kb-fb-sep">' + icon('thumbsDown', 11) + ' ' + n + '</span></span>' + cChip;
 }
 
 function kbRenderTree_() {
@@ -2796,6 +2820,7 @@ function kbOpenItem_(id, anchor) {
       kbPanelRecordOpen_(res, 'reference');
       kbRenderItem_(res);
       kbLoadRelated_(id);   // #7 — "See also" from co-views
+      kbLoadComments_(id);  // Phase A (pilot round 3 #6) — comment thread
       if (anchor) kbScrollToAnchor_(document.getElementById('kb-main'), anchor);
     })
     .withFailureHandler(function (err) { if (currentView === requested && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_(err.message || err); })   // A12
@@ -2836,11 +2861,184 @@ function kbRenderItem_(item) {
     : '';
   var head = '<div class="kb-item-head"><h2>' + esc(item.title) + (isDraft ? ' <span class="kb-draft-pill">Draft</span>' : '') + '</h2><div class="kb-item-actions">' + actions + '</div></div>';
   if (item.type === 'embed') {
-    main.innerHTML = head + draftBanner + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
+    main.innerHTML = head + draftBanner + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div><div id="kb-comments"></div>';
   } else {
-    main.innerHTML = head + draftBanner + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div>';
+    main.innerHTML = head + draftBanner + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item) + '<div id="kb-related"></div><div id="kb-comments"></div>';
     kbGlossaryAnnotate_(main);
   }
+}
+
+// ── Reference comments, Phase A + drawer parity Phase B (pilot round 3) ─────
+// A visible per-article comment thread below the reader — the discussion
+// complement to the private feedback bar. Renders in BOTH readers (the
+// Reference tab and the Ctrl/⌘+K drawer — Phase B shipped the INV-139
+// drawer-parity shape on the round-3 follow-ons). The two hosts can show the
+// SAME article at once, so the renderer is HOST-scoped: per-host input ids
+// (the feedback-bar id-collision lesson) and closest()-scoped lookups in the
+// handlers. Best-effort load; a failed fetch renders the warn card
+// (A12/INV-175), never an empty thread.
+function kbLoadComments_(id) {
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      if (KB_STATE.currentId !== id) return;   // the L-18 stale-item guard
+      var host = document.getElementById('kb-comments'); if (!host) return;
+      if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Comments failed to load'); return; }
+      kbRenderComments_(host, id, res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requested || KB_STATE.currentId !== id) return;
+      var host = document.getElementById('kb-comments');
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Comments failed to load');
+    })
+    .kbGetComments(id);
+}
+
+function kbCommentFmt_(atMs) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      .format(new Date(Number(atMs)));
+  } catch (e) { return ''; }
+}
+
+function kbRenderComments_(host, id, res) {
+  var list = res.comments || [];
+  // Two hosts can show the SAME article (tab + drawer), so the add-form input
+  // id is suffixed per host — duplicate DOM ids break the very label-for
+  // association they exist for (the kbMd_ heading-dedup lesson).
+  var sfx = (host.id === 'kbd-comments') ? '-d' : '';
+  var capNote = (res.total > list.length)
+    ? '<div class="kb-cmt-cap mono">showing ' + list.length + ' of ' + res.total + '</div>' : '';
+  var rows = list.map(function (c) {
+    // Edit is AUTHOR-only (narrower than delete's author-or-manager — the
+    // server enforces both; these buttons just match its contract).
+    var edit = c.mine
+      ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Edit your comment"' +
+        ' title="Edit this comment" onclick="kbEditComment_(this, \'' + esc(id) + '\')">' + icon('adjust', 12) + '</button>'
+      : '';
+    var del = (c.mine || res.canModerate)
+      ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Remove comment by ' + esc(c.name) + '"' +
+        ' title="Remove this comment" onclick="kbDeleteComment_(this, \'' + esc(id) + '\')">' + icon('x', 12) + '</button>'
+      : '';
+    return '<div class="kb-cmt">' +
+      '<div class="kb-cmt-meta"><span class="kb-cmt-name">' + esc(c.name) + (c.mine ? ' <span class="kb-cmt-you">you</span>' : '') + '</span>' +
+        '<span class="kb-cmt-when">' + esc(kbCommentFmt_(c.atMs)) + '</span>' + edit + del + '</div>' +
+      '<div class="kb-cmt-text">' + esc(c.text) + '</div>' +
+    '</div>';
+  }).join('');
+  host.innerHTML =
+    '<div class="kb-comments">' +
+      '<h3 class="kb-cmt-h">' + icon('list', 13) + ' Comments' + (res.total ? ' · ' + res.total : '') + '</h3>' +
+      (rows || '<div class="kb-cmt-none">No comments yet.</div>') + capNote +
+      '<div class="kb-cmt-add">' +
+        '<label for="kb-cmt-input' + sfx + '" class="kb-cmt-lbl">Add a comment</label>' +
+        '<textarea id="kb-cmt-input' + sfx + '" maxlength="2000" rows="2" placeholder="A correction, a tip, a question for the team…"></textarea>' +
+        '<div class="kb-cmt-foot">' +
+          '<span class="kb-cmt-phi">Reference is PHI-free by policy — never a patient name or detail.</span>' +
+          '<button class="kb-btn" data-kb-item="' + esc(id) + '" onclick="kbAddComment_(this)">' + icon('send', 12) + ' Post</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+/** Refresh the comments block the clicked control lives in — the tab and the
+ *  drawer each own a host, and refreshing the wrong one paints under the
+ *  other reader (the INV-139 dual-host rule). */
+function kbCommentsRefresh_(btn, itemId) {
+  if (btn && btn.closest('#kb-drawer')) { kbDrawerLoadComments_(itemId); return; }
+  if (KB_STATE.currentId === itemId) kbLoadComments_(itemId);
+}
+
+function kbAddComment_(btn) {
+  var id = btn.getAttribute('data-kb-item');
+  // closest()-scoped, never getElementById — two hosts may both render the form.
+  var wrap = btn.closest('.kb-comments');
+  var input = wrap ? wrap.querySelector('.kb-cmt-add textarea') : null;
+  var text = input ? String(input.value || '').trim() : '';
+  if (!text) { showToast('Write a comment first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || !r.success) { showToast((r && r.error) || 'Could not post', 'toast-error'); return; }
+      showToast('Comment posted', 'toast-success');
+      kbCommentsRefresh_(btn, id);
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not post', 'toast-error'); })
+    .kbAddComment(id, text);
+}
+
+function kbDeleteComment_(btn, itemId) {
+  var cid = btn.getAttribute('data-kb-cmt');
+  uiConfirm({ title: 'Remove this comment?', tone: 'danger', confirmLabel: 'Remove' }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r || !r.success) { showToast((r && r.error) || 'Could not remove', 'toast-error'); return; }
+        kbCommentsRefresh_(btn, itemId);
+      })
+      .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not remove', 'toast-error'); })
+      .kbDeleteComment(cid);
+  });
+}
+
+/** Round-3 FO — edit-in-place: swap the text for a textarea + Save/Cancel.
+ *  textContent read-back hands us the DECODED original (the snippet-copy
+ *  pattern), and the value goes back through the server → esc() render, so
+ *  the escape boundary is untouched. Cancel just reloads the host. */
+function kbEditComment_(btn, itemId) {
+  var wrap = btn.closest('.kb-cmt'); if (!wrap || wrap.querySelector('.kb-cmt-editbox')) return;
+  var cid = btn.getAttribute('data-kb-cmt');
+  var textDiv = wrap.querySelector('.kb-cmt-text'); if (!textDiv) return;
+  var orig = textDiv.textContent;
+  textDiv.innerHTML =
+    '<textarea class="kb-cmt-editbox" maxlength="2000" rows="2" aria-label="Edit your comment"></textarea>' +
+    '<div class="kb-cmt-foot">' +
+      '<button class="kb-btn" data-kb-cmt="' + esc(cid) + '" data-kb-item="' + esc(itemId) + '"' +
+        ' onclick="kbEditCommentSave_(this)">' + icon('check', 12) + ' Save</button>' +
+      '<button class="kb-btn" data-kb-item="' + esc(itemId) + '"' +
+        ' onclick="kbCommentsRefresh_(this, this.getAttribute(\'data-kb-item\'))">Cancel</button>' +
+    '</div>';
+  var box = textDiv.querySelector('.kb-cmt-editbox');
+  box.value = orig;
+  box.focus();
+}
+
+function kbEditCommentSave_(btn) {
+  var cid = btn.getAttribute('data-kb-cmt');
+  var itemId = btn.getAttribute('data-kb-item');
+  var wrap = btn.closest('.kb-cmt');
+  var box = wrap ? wrap.querySelector('.kb-cmt-editbox') : null;
+  var text = box ? String(box.value || '').trim() : '';
+  if (!text) { showToast('Write a comment first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || !r.success) { showToast((r && r.error) || 'Could not save', 'toast-error'); return; }
+      kbCommentsRefresh_(btn, itemId);
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not save', 'toast-error'); })
+    .kbEditComment(cid, text);
+}
+
+/** Phase B — the drawer twin of kbLoadComments_, guarded by the drawer's own
+ *  L-18 stale-item state rather than currentView/KB_STATE. */
+function kbDrawerLoadComments_(id) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item' || KB_DRAWER.itemId !== id) return;
+      var host = document.getElementById('kbd-comments'); if (!host) return;
+      if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Comments failed to load'); return; }
+      kbRenderComments_(host, id, res);
+    })
+    .withFailureHandler(function (err) {
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item' || KB_DRAWER.itemId !== id) return;
+      var host = document.getElementById('kbd-comments');
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Comments failed to load');
+    })
+    .kbGetComments(id);
 }
 
 // #7 — lazy-load "See also" (co-viewed items) into the reader. Best-effort;
@@ -3737,12 +3935,13 @@ function kbDrawerOpenItem_(id, anchor) {
           '<div class="kbd-embed-card"><strong>' + esc(res.title) + '</strong>' +
           '<div class="kbd-empty" style="padding:6px 0 10px;">This item is an embedded Drive doc - it opens in its own tab.</div>' +
           '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>' +
-          kbFeedbackBarHtml_(res);
+          kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
       } else {
-        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res);
+        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
+      kbDrawerLoadComments_(id);   // Phase B — drawer parity (round-3 FO)
     })
     .withFailureHandler(function (err) {
       // C17 batch-2 — the failure path now carries the SAME stale-response

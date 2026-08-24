@@ -318,6 +318,12 @@
     transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
   }
   .cn-help-fab:hover { color: var(--ink); border-color: var(--border-strong); }
+  /* Pilot round 3 — the header fabs (scratchpad / bell / ?) are ONE flex
+     group, i.e. ONE .cn-head grid item. Bare buttons were each their own
+     grid item in the 2-column head, so the third fab scattered them across
+     two extra grid rows (measured on the round-3 full re-shoot). */
+  .cn-head-fabs { display: flex; align-items: center; gap: 8px; justify-self: start; }
+  .cn-head-fabs .cn-help-fab { margin-left: 0; }
   /* Save & Compose loading state — envelope bobs while the save confirms */
   .cn-compose-loading {
     display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -914,6 +920,30 @@
   .cn-training-q-row input:focus {
     border-color: var(--accent); box-shadow: var(--ring-focus);
   }
+  /* Round-1 pilot #1 (2026-08-21) — optional review-flag comment row; the
+     training-question row mirrored in the review flag's good/green family.
+     Shown only while the review flag is selected (cnSetFormFlags_). */
+  .cn-review-c-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed color-mix(in srgb, var(--good), transparent 70%);
+  }
+  .cn-review-c-row label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--success-deep); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 5px; display: block;
+  }
+  .cn-review-c-row input {
+    width: 100%; padding: 8px 11px;
+    border: 1px solid color-mix(in srgb, var(--good), transparent 60%);
+    border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px;
+    background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+  .cn-review-c-row input:focus {
+    border-color: var(--good); box-shadow: var(--ring-focus);
+  }
 
   /* Flag overflow menu — kebab button + dropdown for less-common flags */
   .cn-flag-more-wrap { position: relative; display: inline-flex; }
@@ -960,6 +990,69 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: .35; }
   }
+
+  /* Round-2 pilot — scheduled-call reminders modal (create form + upcoming
+     list). Intrinsic 2-col grid inside the modal; the full-width rows span. */
+  .cn-sched-hint { font-size: 12px; color: var(--muted); margin: 4px 0 12px; line-height: 1.45; }
+  .cn-sched-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+  .cn-sched-row { display: flex; flex-direction: column; gap: 4px; }
+  .cn-sched-row.full { grid-column: 1 / -1; }
+  .cn-sched-row label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  }
+  .cn-sched-row input, .cn-sched-row select {
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px; background: var(--paper-card); color: var(--ink);
+  }
+  .cn-sched-form .btn-modal-ok { grid-column: 1 / -1; margin-top: 2px; }
+  .cn-sched-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .cn-sched-when { font-family: var(--mono); font-size: 11.5px; color: var(--info-deep); flex-shrink: 0; }
+  .cn-sched-item.overdue .cn-sched-when { color: var(--warning-deep); }
+  .cn-sched-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  .cn-sched-acts { display: inline-flex; gap: 4px; flex-shrink: 0; }
+  .cn-sched-acts .cn-act-btn { width: auto; }
+  /* .cn-act-btn is otherwise styled ONLY under .cn-card-actions, so the
+     sched modal's ✓ / × / Close buttons rendered as UNSTYLED native
+     buttons — glaring white boxes in dark mode, caught the moment the
+     round-3 dark modal scenario was shot. Token-based mirror of the
+     card-actions treatment, scoped to this modal. */
+  .cn-sched-modal .cn-act-btn {
+    appearance: none; border: 1px solid var(--line); background: transparent;
+    min-width: 26px; min-height: 26px; padding: 0 5px;
+    border-radius: var(--radius-pill);
+    cursor: pointer; color: var(--muted); font: inherit; font-size: 12.5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .cn-sched-modal .cn-act-btn:hover {
+    background: var(--paper-2); color: var(--ink); border-color: var(--border-strong);
+  }
+  .cn-sched-empty {
+    font-size: 13px; color: var(--muted); border: 1px dashed var(--line);
+    border-radius: var(--radius); padding: 12px; text-align: center; margin-top: 12px;
+  }
+
+  /* Pilot round 3 #5 — scratchpad modal */
+  .cn-scratch-modal textarea {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper-card); color: var(--ink); resize: vertical; min-height: 180px;
+  }
+  .cn-scratch-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); }
+  .cn-scratch-status.warn { color: var(--warning-deep); }
+
+  /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
+     (the training-question line mirrored, in the review flag's green). */
+  .cn-card-review-c {
+    display: flex; align-items: flex-start; gap: 6px;
+    margin-top: 4px;
+    font-family: var(--ui); font-size: 12px;
+    color: var(--success-deep);
+    font-style: italic;
+  }
+  .cn-card-review-c svg { flex-shrink: 0; margin-top: 2px; }
 
   /* Training-question line on a saved card */
   .cn-card-training-q {
@@ -1190,6 +1283,23 @@
     background: var(--destructive-soft); color: var(--danger-deep);
     margin-left: 6px; vertical-align: middle;
   }
+  /* Round-1 pilot #2 — info-toned "outbound" pill (callDirection metadata;
+     absent = inbound, the overwhelming default, so inbound renders nothing). */
+  .cn-outbound-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px;
+    background: var(--info-soft); color: var(--info-deep);
+    margin-left: 6px; vertical-align: middle;
+  }
+  /* Round-1 pilot #2 — the outbound toggle row beneath the flag group. Not a
+     flag (never enters flags[]/FlagType): identity is data-direction, per the
+     INV-191 class-vs-identity rule; .flag-btn is borrowed for its LOOK only. */
+  .rail-dir { margin-top: 6px; }
+  .rail-dir .flag-btn { width: 100%; }
+  .flag-btn.dir-outbound svg { color: var(--info); }
+  .flag-btn.dir-outbound.on { background: var(--info-soft); color: var(--info-deep); border-color: transparent; }
   .cn-card-row {
     display: flex; align-items: center; gap: 10px;
   }
@@ -1786,6 +1896,7 @@
   .cn-hg-action   { color: var(--warning-deep); border-color: var(--warn-soft); }
   .cn-hg-training { color: var(--info-deep);    border-color: var(--accent-soft); }
   .cn-hg-review   { color: var(--success-deep); border-color: var(--good-soft); }
+  .cn-hg-outbound { color: var(--info-deep);    border-color: var(--info-soft); }
   .cn-hg-urgent   { color: var(--danger-deep);  border-color: var(--destructive-soft); }
   .cn-hist-groupbody { overflow: hidden; }
   .cn-hist-group.collapsed .cn-hist-groupbody { display: none; }
@@ -2109,7 +2220,7 @@ const CN_STATE = {
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
-const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','answered'];
+const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','answered','outbound'];
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
@@ -2458,7 +2569,11 @@ function cnRenderNotesView(area) {
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Week</div></div>
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
-        <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
+        <div class="cn-head-fabs">
+          <button type="button" class="cn-help-fab" id="cn-scratch-btn" title="Scratchpad — personal notes that follow you across devices" aria-label="Scratchpad">${icon('fileText', 14)}</button>
+          <button type="button" class="cn-help-fab" id="cn-sched-btn" title="Scheduled call reminders" aria-label="Scheduled call reminders">${icon('bell', 14)}</button>
+          <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
+        </div>
       </div>
     `}
     <div class="cn-rolling">
@@ -2647,6 +2762,14 @@ function cnRenderActiveForm_() {
             <button type="button" class="flag-btn review"   data-flag="review"   aria-pressed="false" aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
             <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-pressed="false" aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
+          <!-- Round-1 pilot #2 — call-direction toggle. NOT a flag (identity is
+               data-direction, never data-flag — the flag writer + server flags[]
+               array never see it); off = inbound, the default. -->
+          <div class="rail-dir">
+            <button type="button" class="flag-btn dir-outbound" id="cn-dir-outbound" data-direction="outbound"
+                    aria-pressed="false" aria-label="Mark as an outbound call"
+                    title="Mark this note as an OUTBOUND call (leave off for the usual inbound)">${icon('outbox', 12)}<span class="flag-lbl">Outbound call</span></button>
+          </div>
         </div>
 
         <div class="rail-card">
@@ -2688,6 +2811,11 @@ function cnRenderActiveForm_() {
         <label for="cn-fld-training-q">Training Question</label>
         <input type="text" id="cn-fld-training-q" placeholder="What's the question? (short — manager sees this in the weekly digest)">
       </div>
+      <!-- Round-1 pilot #1 — optional review comment, shown when review flag is on -->
+      <div class="cn-review-c-row" id="cn-review-c-row" style="display:none">
+        <label for="cn-fld-review-c">Review Comment (optional)</label>
+        <input type="text" id="cn-fld-review-c" placeholder="Why is this call a review candidate? (short — manager sees this in the weekly digest)">
+      </div>
     </div>
   `;
 }
@@ -2703,6 +2831,19 @@ function cnWireActiveForm_() {
   form.dataset.flags = '';
   form.dataset.flag = '';
   form.dataset.tags = '';
+  form.dataset.direction = '';   // Round-1 #2 — '' = inbound (default), 'outbound'
+
+  // Round-1 #2 — call-direction toggle. Keyed on data-direction (identity),
+  // never data-flag — the flag click-writer below must not see this button.
+  const dirBtn = document.getElementById('cn-dir-outbound');
+  if (dirBtn) {
+    dirBtn.addEventListener('click', function () {
+      const on = form.dataset.direction !== 'outbound';
+      cnSetFormDirection_(form, on ? 'outbound' : '');
+      if (on) { dirBtn.classList.remove('popping'); void dirBtn.offsetWidth; dirBtn.classList.add('popping'); }
+      cnPersistActiveFormDraft_();
+    });
+  }
 
   // Click on a multi-select flag button: toggle membership in the flags set.
   form.querySelectorAll('.flag-btn[data-flag]').forEach(function (btn) {
@@ -3026,6 +3167,10 @@ function cnWireActiveForm_() {
   }
   var helpBtn = document.getElementById('cn-help-btn');
   if (helpBtn) helpBtn.addEventListener('click', cnOpenShortcutsOverlay_);
+  var schedBtn = document.getElementById('cn-sched-btn');
+  if (schedBtn) schedBtn.addEventListener('click', function () { cnOpenSchedModal_(); });
+  var scratchBtn = document.getElementById('cn-scratch-btn');
+  if (scratchBtn) scratchBtn.addEventListener('click', function () { cnOpenScratchpadModal_(); });
   var extBtn = document.getElementById('cn-ext-email-btn');
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
@@ -3045,8 +3190,10 @@ function cnRestoreFromSnapshot_(snap) {
       cnSetFormFlags_(form, []);
     }
     if (Array.isArray(snap.tags)) cnSetFormTags_(form, snap.tags);
+    cnSetFormDirection_(form, snap.direction || '');   // Round-1 #2
   }
   cnSetFieldValue_('cn-fld-training-q', snap.trainingQ || '');
+  cnSetFieldValue_('cn-fld-review-c', snap.reviewC || '');   // Round-1 #1
   showToast('Restored', 'toast-success');
 }
 
@@ -3060,10 +3207,14 @@ function cnClearActiveForm_(opts) {
       values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
     const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const rcVal = cnGetFieldValue_('cn-fld-review-c');
+    const dirVal = form0 ? (form0.dataset.direction || '') : '';
     const flags0 = cnGetFormFlags_(form0);
     const tags0 = cnGetFormTags_(form0);
     const anyContent = fields.some(function (k) { return (values[k] || '').trim().length > 0; })
                      || (tqVal && tqVal.trim())
+                     || (rcVal && rcVal.trim())
+                     || dirVal
                      || flags0.length > 0
                      || tags0.length > 0;
     if (anyContent) {
@@ -3073,6 +3224,8 @@ function cnClearActiveForm_(opts) {
         tags: tags0,
         flag: form0 ? form0.dataset.flag : '',  // legacy field retained
         trainingQ: tqVal,
+        reviewC: rcVal,      // Round-1 #1
+        direction: dirVal,   // Round-1 #2
         at: Date.now(),
       };
       showToast('Cleared · ' + (cnIsMac_() ? '⌘' : 'Ctrl') + '+Z to undo', 'toast-warn');
@@ -3084,8 +3237,10 @@ function cnClearActiveForm_(opts) {
   if (form0) {
     cnSetFormFlags_(form0, []);
     cnSetFormTags_(form0, []);
+    cnSetFormDirection_(form0, '');   // Round-1 #2
   }
   cnSetFieldValue_('cn-fld-training-q', '');
+  cnSetFieldValue_('cn-fld-review-c', '');
   const tagIn = document.getElementById('cn-tag-input');
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
@@ -3134,6 +3289,22 @@ function cnSetFormFlags_(form, flagsArray) {
   // Training-q row visibility — show when training is one of the selected flags
   const trainingRow = document.getElementById('cn-training-q-row');
   if (trainingRow) trainingRow.style.display = filtered.indexOf('training') >= 0 ? 'block' : 'none';
+  // Round-1 #1 — review-comment row, same rule for the review flag
+  const reviewRow = document.getElementById('cn-review-c-row');
+  if (reviewRow) reviewRow.style.display = filtered.indexOf('review') >= 0 ? 'block' : 'none';
+}
+/** Round-1 #2 — form call-direction state ('' = inbound default, 'outbound').
+ *  Mirrors cnSetFormFlags_'s dataset + button-class + aria-pressed discipline
+ *  (A11: the class alone is invisible to assistive tech). */
+function cnSetFormDirection_(form, dir) {
+  if (!form) return;
+  const v = (dir === 'outbound') ? 'outbound' : '';
+  form.dataset.direction = v;
+  const btn = document.getElementById('cn-dir-outbound');
+  if (btn) {
+    btn.classList.toggle('on', v === 'outbound');
+    btn.setAttribute('aria-pressed', v === 'outbound' ? 'true' : 'false');
+  }
 }
 function cnGetFormTags_(form) {
   if (!form) return [];
@@ -3215,6 +3386,13 @@ function cnReadActiveForm_() {
   // training-q input is still an <input> (lives below the doc frame, not
   // contenteditable) — cnGetFieldValue_ falls through to .value transparently.
   const trainingQ = (flags.indexOf('training') >= 0) ? cnGetFieldValue_('cn-fld-training-q').trim() : '';
+  // Round-1 #1/#2 — review comment (gated on the review flag, like trainingQ)
+  // and call direction ('' = inbound default; only 'outbound' is ever stored).
+  const reviewC = (flags.indexOf('review') >= 0) ? cnGetFieldValue_('cn-fld-review-c').trim() : '';
+  const direction = (form && form.dataset.direction === 'outbound') ? 'outbound' : '';
+  // Literal-keyed subformData so the INV-143 payload-contract tripwire sees
+  // every submitted key; the server whitelist drops empty strings.
+  const hasSub = !!(trainingQ || reviewC || direction);
   return {
     callback:      cnGetFieldValue_('cn-fld-callback'),
     caller:        cnGetFieldValue_('cn-fld-caller'),
@@ -3226,7 +3404,11 @@ function cnReadActiveForm_() {
     flagType:      flag,
     flags:         flags,
     tags:          tags,
-    subformData:   trainingQ ? { trainingQuestion: trainingQ } : null,
+    subformData:   hasSub ? {
+      trainingQuestion: trainingQ,
+      reviewComment:    reviewC,
+      callDirection:    direction,
+    } : null,
   };
 }
 
@@ -3283,6 +3465,8 @@ function cnPersistActiveFormDraft_() {
     });
     const form = document.getElementById('cn-active-form');
     const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const rcVal = cnGetFieldValue_('cn-fld-review-c');
+    const dirVal = form ? (form.dataset.direction || '') : '';
     const flags = cnGetFormFlags_(form);
     const tags = cnGetFormTags_(form);
     const data = {
@@ -3291,11 +3475,14 @@ function cnPersistActiveFormDraft_() {
       tags: tags,
       flag: form ? form.dataset.flag : '',
       trainingQ: tqVal,
+      reviewC: rcVal,      // Round-1 #1
+      direction: dirVal,   // Round-1 #2
       at: Date.now(),   // drafts expire after CN_FORM_STICKY_MAX_AGE_MS (PHI TTL)
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
-                    || flags.length > 0 || tags.length > 0
-                    || (data.trainingQ && data.trainingQ.trim());
+                    || flags.length > 0 || tags.length > 0 || dirVal
+                    || (data.trainingQ && data.trainingQ.trim())
+                    || (data.reviewC && data.reviewC.trim());
     if (anyContent) {
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
     } else {
@@ -3460,8 +3647,10 @@ function cnRestoreActiveFormDraft_() {
       if (Array.isArray(data.tags) && data.tags.length > 0) {
         cnSetFormTags_(form, data.tags);
       }
+      if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
     }
     if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
+    if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
     return true;
   } catch (e) { return false; }
 }
@@ -3676,6 +3865,8 @@ function cnSubmitActiveForm_(opts) {
     flags: Array.isArray(payload.flags) ? payload.flags.slice() : null,
     tags: Array.isArray(payload.tags) ? payload.tags.slice() : null,
     trainingQ: (payload.subformData && payload.subformData.trainingQuestion) || '',
+    reviewC: (payload.subformData && payload.subformData.reviewComment) || '',       // Round-1 #1
+    direction: (payload.subformData && payload.subformData.callDirection) || '',     // Round-1 #2
   };
 
   // Optimistic path — runs synchronously, well under one frame:
@@ -3801,6 +3992,8 @@ function cnSaveSnapshotAsStickyDraft_(snap) {
       tags: Array.isArray(snap.tags) ? snap.tags : [],
       flag: snap.flag || '',
       trainingQ: snap.trainingQ || '',
+      reviewC: snap.reviewC || '',        // Round-1 #1
+      direction: snap.direction || '',    // Round-1 #2
       at: Date.now(),
     }));
   } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
@@ -3858,6 +4051,11 @@ function cnFormatNoteForCopy_(note) {
     issue:         note.issue || '',
     transferredTo: transferred,
     resolution:    note.resolution || '',
+    // Round-1 #2 follow-on — available to the operator's template (add a
+    // "Direction: {callDirection}" line via CONFIG.CALL_NOTES.AUTO_COPY_FORMAT
+    // if the CRM wants it); the DEFAULT template deliberately omits it so
+    // existing pastes are byte-identical.
+    callDirection: (note.subformData && note.subformData.callDirection === 'outbound') ? 'Outbound' : 'Inbound',
   };
   return fmt.replace(/\{(\w+)\}/g, function (m, key) {
     return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : m;
@@ -3984,6 +4182,7 @@ function cnInstallCardDelegation_(area) {
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
       case 'timeline':    cnOpenPatientTimeline_(btn.dataset.trx); break;
       case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
+      case 'sched':       cnOpenSchedModal_({ label: cnSchedPrefillFromNote_(noteId) }); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
   });
@@ -4268,10 +4467,11 @@ function cnRenderCardCore_(note, expandable) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}${cnDeptEmailPillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${cnIntakePillHtml_(note)}${cnDeptEmailPillHtml_(note)}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
+          ${cnReviewCommentLineHtml_(note)}
           ${trainingQ}
         </div>
         <div class="cn-card-actions">
@@ -4284,7 +4484,8 @@ function cnRenderCardCore_(note, expandable) {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
-                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn;
+                var schedBtn2 = '<button class="cn-act-btn" title="Schedule a call-back reminder for this call" data-cn-action="sched">' + icon('bell', 14) + '</button>';
+                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn + schedBtn2;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more" aria-expanded="false" aria-haspopup="true">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -4320,6 +4521,27 @@ function cnUrgentPillHtml_(note) {
   return '<span class="cn-urgent-pill" title="Flagged urgent">' + icon('warning', 10) + 'urgent</span>';
 }
 
+// Round-1 pilot #2 — info-toned "outbound" pill. callDirection lives in
+// subformData and is stored ONLY as 'outbound' (absent = inbound, the
+// overwhelming default, which renders nothing). Single source of truth for
+// the rep card, the search result card, and the manager read-only card.
+function cnDirectionPillHtml_(note) {
+  const d = note && note.subformData && note.subformData.callDirection;
+  if (d !== 'outbound') return '';
+  return '<span class="cn-outbound-pill" title="Outbound call">' + icon('outbox', 10) + 'outbound</span>';
+}
+
+// Round-1 pilot #1 — the optional review comment as a card line (the
+// training-question line mirrored). Gated on the CURRENT flag being review —
+// a persisted comment on a since-recleared flag stays in subformData but
+// stops rendering (matching the digest's gating).
+function cnReviewCommentLineHtml_(note) {
+  const c = (note && note.flagType === 'review' && note.subformData && note.subformData.reviewComment)
+    ? String(note.subformData.reviewComment).trim() : '';
+  if (!c) return '';
+  return '<div class="cn-card-review-c">' + icon('thumbsUp', 12) + '<span>' + esc(c) + '</span></div>';
+}
+
 // Intake-sourced note chip: a note auto-logged after an Intake form was sent
 // (subformData.intakeType ∈ ppd|pmd|pap). Colored by category to match the
 // Intake tab. Single source of truth for the rep + manager read-only cards.
@@ -4353,6 +4575,260 @@ function cnExtEmailPillHtml_(note) {
   const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
   return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
     icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
+}
+
+// ── Scheduled-call reminders — UI (pilot round 2, 2026-08-24) ───────────────
+// The DATA + delivery live in the shell (SCHED_STATE / schedTick_ in
+// script_core.html — reminders must fire in the pinned pop-out, not just this
+// tab). This modal is the CRUD surface: create (date/time in the REP's own
+// profile timezone — the server parses the wall time in empTz_), an upcoming
+// list, Done / Cancel. Reached from the Log header bell and from a note
+// card's More menu ("Schedule a call-back reminder", prefilled from the note).
+
+function cnSchedPrefillFromNote_(noteId) {
+  var n = cnFindNoteAnywhere_(noteId);
+  if (!n) return '';
+  var who = (n.caller && n.caller.trim()) || (n.callback && n.callback.trim()) || '';
+  var trx = (n.patientAndTrx && n.patientAndTrx.trim()) || '';
+  return ('Call back ' + who + (trx ? ' · ' + trx : '')).trim();
+}
+
+function cnOpenSchedModal_(opts) {
+  var overlay = ensureOverlay('cn-sched-overlay', { label: 'Scheduled call reminders', onClose: cnCloseSchedModal_ });
+  var today = '';
+  try { today = isoDateTz(empTz()); } catch (e) {}
+  overlay.innerHTML =
+    '<div class="modal cn-sched-modal" style="max-width:480px">' +
+      '<h3 style="margin-top:0">Scheduled call reminders</h3>' +
+      '<p class="cn-sched-hint">A chime + alert fires in any open Team Tools window at the lead time. ' +
+      'Times are in YOUR profile timezone. The app must be open somewhere — a closed browser gets nothing.</p>' +
+      '<div class="cn-sched-form">' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-date">Date</label>' +
+          '<input type="date" id="cn-sched-date" value="' + esc(today) + '" min="' + esc(today) + '">' +
+        '</div>' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-time">Time</label>' +
+          '<input type="time" id="cn-sched-time">' +
+        '</div>' +
+        '<div class="cn-sched-row full">' +
+          '<label for="cn-sched-label">What / who</label>' +
+          '<input type="text" id="cn-sched-label" maxlength="300" value="' + esc((opts && opts.label) || '') + '"' +
+            ' placeholder="e.g. Translated call — Maria G · TRX 12345">' +
+        '</div>' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-lead">Remind me</label>' +
+          '<select id="cn-sched-lead">' +
+            '<option value="0">At the time</option>' +
+            '<option value="5" selected>5 min before</option>' +
+            '<option value="10">10 min before</option>' +
+            '<option value="15">15 min before</option>' +
+            '<option value="30">30 min before</option>' +
+          '</select>' +
+        '</div>' +
+        '<button type="button" class="btn-modal-ok" id="cn-sched-create" onclick="cnSchedCreate_(this)">' +
+          icon('bell', 13) + ' Schedule reminder</button>' +
+      '</div>' +
+      '<div id="cn-sched-list"></div>' +
+      '<div style="text-align:right;margin-top:12px">' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-sched-overlay\'))">Close</button>' +
+      '</div>' +
+    '</div>';
+  cnSchedRenderList_();
+  // The shell list may be stale (created in another window / never fetched) —
+  // refresh on open; cnSchedListChanged_ re-renders when it lands.
+  if (typeof schedFetch_ === 'function') schedFetch_(true);
+}
+
+function cnCloseSchedModal_() { /* idempotent — no module state to clear */ }
+
+/** Hook the shell's schedFetch_ calls after every list refresh (typeof-guarded
+ *  there). Re-renders only while the modal is actually open. */
+function cnSchedListChanged_() {
+  var overlay = document.getElementById('cn-sched-overlay');
+  if (overlay && overlay.classList.contains('open')) cnSchedRenderList_();
+}
+
+function cnSchedFmt_(whenMs) {
+  try {
+    var tz = (typeof empTz === 'function' && empTz()) || undefined;
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      .format(new Date(Number(whenMs)));
+  } catch (e) { return ''; }
+}
+
+function cnSchedRenderList_() {
+  var host = document.getElementById('cn-sched-list');
+  if (!host) return;
+  var items = (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) ? SCHED_STATE.items : null;
+  if (!items || !items.length) {
+    host.innerHTML = '<div class="cn-sched-empty">No upcoming reminders.</div>';
+    return;
+  }
+  var nowMs = Date.now();
+  host.innerHTML = '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
+    items.map(function (it) {
+      var overdue = Number(it.whenMs) < nowMs;
+      return '<div class="cn-sched-item' + (overdue ? ' overdue' : '') + '">' +
+        '<span class="cn-sched-when">' + esc(cnSchedFmt_(it.whenMs)) + (overdue ? ' · overdue' : '') + '</span>' +
+        '<span class="cn-sched-lbl">' + esc(it.label || '') + '</span>' +
+        '<span class="cn-sched-acts">' +
+          '<button type="button" class="cn-act-btn" title="Mark done" aria-label="Mark reminder done: ' + esc(it.label || '') + '"' +
+            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'done\')">' + icon('check', 13) + '</button>' +
+          '<button type="button" class="cn-act-btn" title="Cancel reminder" aria-label="Cancel reminder: ' + esc(it.label || '') + '"' +
+            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'cancelled\')">' + icon('x', 13) + '</button>' +
+        '</span>' +
+      '</div>';
+    }).join('');
+}
+
+function cnSchedCreate_(btn) {
+  var date = (document.getElementById('cn-sched-date') || {}).value || '';
+  var time = (document.getElementById('cn-sched-time') || {}).value || '';
+  var label = (document.getElementById('cn-sched-label') || {}).value || '';
+  var lead = (document.getElementById('cn-sched-lead') || {}).value || '5';
+  if (!date || !time) { showToast('Pick a date and a time first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || r.error || !r.success) { showToast((r && r.error) || 'Could not schedule', 'toast-error'); return; }
+      // Keep the shell list in step without waiting on a refetch.
+      if (typeof SCHED_STATE !== 'undefined') {
+        SCHED_STATE.items = (SCHED_STATE.items || []).concat([r.call])
+          .sort(function (a, b) { return Number(a.whenMs) - Number(b.whenMs); });
+        SCHED_STATE.fetchedAt = Date.now();
+      }
+      var t = document.getElementById('cn-sched-time'); if (t) t.value = '';
+      var l = document.getElementById('cn-sched-label'); if (l) l.value = '';
+      cnSchedRenderList_();
+      showToast('Reminder scheduled', 'toast-success');
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not schedule', 'toast-error'); })
+    .createScheduledCall({ date: date, time: time, label: label, leadMin: parseInt(lead, 10) });
+}
+
+function cnSchedStatus_(btn, id, status) {
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || r.error || !r.success) { showToast((r && r.error) || 'Update failed', 'toast-error'); return; }
+      if (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) {
+        SCHED_STATE.items = SCHED_STATE.items.filter(function (it) { return it.id !== id; });
+      }
+      cnSchedRenderList_();
+      showToast(status === 'done' ? 'Marked done' : 'Reminder cancelled', 'toast-success');
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Update failed', 'toast-error'); })
+    .setScheduledCallStatus(id, status);
+}
+
+// ── Scratchpad (pilot round 3 #5) — server-backed personal sticky notes ─────
+// One free-text document per rep, stored in THEIR OWN per-rep Call Notes
+// spreadsheet (a Scratchpad tab), so it follows them across browsers/devices
+// — the operator's server-backed decision, vs. a localStorage note that dies
+// with the browser profile. Autosaves debounced; a pending save FLUSHES on
+// close (the INV-148 teardown-safe persister pattern). Last write wins across
+// windows — stated in the modal copy. A failed autosave is VISIBLE in the
+// status line (INV-187 — never silently dropped) and retried on next edit.
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false };
+
+function cnOpenScratchpadModal_() {
+  var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
+  overlay.innerHTML =
+    '<div class="modal cn-scratch-modal" style="max-width:560px">' +
+      '<h3 style="margin-top:0">Scratchpad</h3>' +
+      '<p class="cn-sched-hint">Personal notes saved to YOUR Call Notes sheet — they follow you across ' +
+      'browsers and devices. Autosaves as you type; if two windows edit, the last save wins.</p>' +
+      '<textarea id="cn-scratch-text" rows="12" disabled aria-label="Scratchpad contents" placeholder="Loading…"></textarea>' +
+      '<div class="cn-scratch-foot">' +
+        '<span class="cn-scratch-status mono" id="cn-scratch-status" role="status"></span>' +
+        '<span style="flex:1"></span>' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="cnScratchSave_(true)">Save now</button>' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>' +
+      '</div>' +
+    '</div>';
+  CN_SCRATCH.dirty = false; CN_SCRATCH.saving = false; CN_SCRATCH.queued = false;
+  clearTimeout(CN_SCRATCH.timer);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var ta = document.getElementById('cn-scratch-text');
+      if (!ta) return;   // modal closed before the load landed
+      if (!res || res.error) {
+        // A12/INV-175 — a failed load is a warn card, never an empty pad the
+        // rep would type into and lose.
+        var modal = ta.closest('.cn-scratch-modal');
+        if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
+          errorStateHtml_((res && res.error) || 'Could not load your scratchpad') +
+          '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+        return;
+      }
+      ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
+      ta.value = res.content || '';
+      ta.addEventListener('input', cnScratchInput_);
+      cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
+      ta.focus();
+    })
+    .withFailureHandler(function (err) {
+      var ta = document.getElementById('cn-scratch-text');
+      if (!ta) return;
+      var modal = ta.closest('.cn-scratch-modal');
+      if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
+        errorStateHtml_((err && err.message) || 'Could not load your scratchpad') +
+        '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+    })
+    .getMyScratchpad();
+}
+
+/** onClose — flush a pending debounce so typed text never dies with the
+ *  modal (the INV-148 rule). Idempotent (safe when already closed). */
+function cnCloseScratchpadModal_() {
+  if (CN_SCRATCH.dirty) cnScratchSave_(true);
+}
+
+function cnScratchStatus_(msg, warn) {
+  var el = document.getElementById('cn-scratch-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('warn', !!warn);
+}
+
+function cnScratchInput_() {
+  CN_SCRATCH.dirty = true;
+  cnScratchStatus_('Unsaved changes…', false);
+  clearTimeout(CN_SCRATCH.timer);
+  CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
+}
+
+function cnScratchSave_(force) {
+  var ta = document.getElementById('cn-scratch-text');
+  // The flush-on-close path reads the field BEFORE the DOM goes away; a later
+  // fire with no field is a no-op (root-guard, the INV-148 pattern).
+  if (!ta && !force) return;
+  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; latest text re-reads at fire time
+  if (!ta) return;
+  var text = ta.value;
+  CN_SCRATCH.saving = true;
+  clearTimeout(CN_SCRATCH.timer);
+  cnScratchStatus_('Saving…', false);
+  google.script.run
+    .withSuccessHandler(function (r) {
+      CN_SCRATCH.saving = false;
+      if (!r || r.error || !r.success) {
+        // Keep dirty so the next edit (or Save now) retries — visible, never silent.
+        cnScratchStatus_((r && r.error) || 'Save failed — edit or press Save now to retry', true);
+        return;
+      }
+      CN_SCRATCH.dirty = false;
+      cnScratchStatus_('Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
+      if (CN_SCRATCH.queued) { CN_SCRATCH.queued = false; cnScratchSave_(false); }
+    })
+    .withFailureHandler(function (e) {
+      CN_SCRATCH.saving = false;
+      cnScratchStatus_((e && e.message) || 'Save failed — edit or press Save now to retry', true);
+    })
+    .saveMyScratchpad(text);
 }
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────
@@ -4654,16 +5130,21 @@ function cnToggleFlag_(noteId, kind) {
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
 
-  if (next === 'training') {
+  if (next === 'training' || next === 'review') {
     // uiPrompt is async — set the in-flight guard BEFORE opening it so a
     // second click while the prompt is open is dropped (INV-56), then clear
     // it if the rep cancels. cnDoToggleFlag_ re-sets it for the RPC leg.
+    // Round-1 #1: the review flag prompts for an OPTIONAL comment the same
+    // way training prompts for its question.
+    const isTraining = (next === 'training');
     note._flagInFlight = true;
     uiPrompt({
-      title: 'Flag for training',
-      message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
+      title: isTraining ? 'Flag for training' : 'Flag as review candidate',
+      message: isTraining
+        ? 'What question or concern would you like to flag for training?\n(Leave blank to skip)'
+        : 'Why is this call a review candidate?\n(Optional — leave blank to skip)',
       initialValue: '',
-      placeholder: 'Optional training question',
+      placeholder: isTraining ? 'Optional training question' : 'Optional review comment',
       confirmLabel: 'Flag',
     }).then(function (raw) {
       // F8 — re-resolve the note from state: a 60s ambient refresh while the
@@ -4679,14 +5160,15 @@ function cnToggleFlag_(noteId, kind) {
       const curPrev = { flagType: cur.flagType, resolved: cur.resolved };
       const curNext = (cur.flagType === kind) ? '' : kind;
       const trimmed = String(raw).trim() || null;
-      cnDoToggleFlag_(noteId, cur, curPrev, curNext, trimmed);
+      cnDoToggleFlag_(noteId, cur, curPrev, curNext,
+        isTraining ? trimmed : null, isTraining ? null : trimmed);
     });
     return;
   }
-  cnDoToggleFlag_(noteId, note, prev, next, null);
+  cnDoToggleFlag_(noteId, note, prev, next, null, null);
 }
 
-function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
+function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
   note._flagInFlight = true;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
@@ -4710,7 +5192,7 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
       cnReRenderActiveView_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
-    .setCallNoteFlag(noteId, next, trainingQ);
+    .setCallNoteFlag(noteId, next, trainingQ, reviewC || null);
 }
 
 /** Card-level urgent toggle (Round 2 deferred 8e). Unlike action/training/
@@ -4999,7 +5481,8 @@ function cnRenderFilterBar_() {
   if (!bar) return;
   CN_STATE.filterCounts = cnComputeFilterCounts_(CN_STATE.rollingNotes);
   const labelFor = { all: 'All', action: 'Action', training: 'Training',
-                     review: 'Review', unresolved: 'Unresolved', answered: 'Q&A' };
+                     review: 'Review', unresolved: 'Unresolved', answered: 'Q&A',
+                     outbound: 'Outbound' };   // Round-1 #2
   bar.innerHTML = '<span class="cn-filter-label">Filter</span>' +
     CN_DEFAULT_FILTERS.map(function (f) {
       const count = CN_STATE.filterCounts[f] || 0;
@@ -5045,6 +5528,8 @@ function cnNoteMatchesFilter_(note, filter) {
     // reply must disappear from this filter / the QA count). Do not "fix" it to
     // read feedback[] without first redefining clear as a retraction marker.
     case 'answered':   return note.flagType === 'training' && note.subformData && !!note.subformData.trainingReply;
+    // Round-1 #2 — callDirection is stored ONLY as 'outbound' (absent = inbound).
+    case 'outbound':   return !!(note.subformData && note.subformData.callDirection === 'outbound');
     case 'all':
     default:           return true;
   }
@@ -6184,16 +6669,20 @@ function cnRenderHistoryStack_() {
 /** Per-flag-type count chips for a History date group. action/training/review
  *  come from flagType; urgent from subformData.flags via cnIsUrgent_. */
 function cnHistGroupChips_(notes) {
-  var c = { action: 0, training: 0, review: 0, urgent: 0 };
+  var c = { action: 0, training: 0, review: 0, urgent: 0, outbound: 0 };
   notes.forEach(function (n) {
     if (n.flagType && c[n.flagType] != null) c[n.flagType]++;
     if (cnIsUrgent_(n)) c.urgent++;
+    // Round-1 #2 follow-on — outbound-call count per date group (renders only
+    // when > 0, so the usual all-inbound day is byte-identical).
+    if (n.subformData && n.subformData.callDirection === 'outbound') c.outbound++;
   });
   var defs = [
     ['urgent', 'urgent', icon('flag', 11)],
     ['action', 'action', icon('flag', 11)],
     ['training', 'training', icon('bulb', 11)],
     ['review', 'review', icon('thumbsUp', 11)],
+    ['outbound', 'outbound', icon('outbox', 11)],
   ];
   var out = '';
   defs.forEach(function (d) {
@@ -6250,10 +6739,11 @@ function cnRenderResultCard_(note, repName) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)} · ${esc(note.dateLocal || '')}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${repBit}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${repBit}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
+          ${cnReviewCommentLineHtml_(note)}
         </div>
         <div class="cn-card-actions">${pills.join('')}</div>
       </div>
@@ -6764,8 +7254,9 @@ function cnMgrRenderReadonlyCard_(note) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnDirectionPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
+          ${cnReviewCommentLineHtml_(note)}
           ${threadHtml}
           ${resolution}
         </div>
@@ -6945,6 +7436,8 @@ function cnMgrRenderQueue_(host, results) {
           <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
           <br>${esc(n.issue || '')}
           ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+          ${(n.flagType === 'review' && n.subformData && n.subformData.reviewComment)
+            ? '<br><span style="color:var(--success-deep);font-style:italic">' + esc(n.subformData.reviewComment) + '</span>' : ''}
         </div>
       </div>
     `;

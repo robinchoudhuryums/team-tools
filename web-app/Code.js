@@ -3192,7 +3192,7 @@ function updateCallNote(noteId, payload) {
 /** Sets (or clears) the flag type on a note. Pass '' to clear.
  *  Optional trainingQuestion: when flagging as 'training', merges
  *  the question into subformData so it appears in digests/Q&A. */
-function setCallNoteFlag(noteId, flagType, trainingQuestion) {
+function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -3241,6 +3241,12 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion) {
       // M-15) — an uncapped write can push the SubformData cell toward the ~50k
       // Sheets limit, after which EVERY later metadata write to the note throws.
       subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
+    if (t === 'review' && reviewComment) {
+      // Round-1 pilot #1 — optional review comment from the card toggle; the
+      // trainingQuestion write above, mirrored (same trim + cell-size cap).
+      subformData.reviewComment = String(reviewComment).trim().slice(0, 2000);
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
     // Mirror the primary flag into subformData.flags so the form toolbar
@@ -7700,6 +7706,16 @@ function sanitizeCallNotePayload_(p) {
     // un-chipped. Bounded enum only; anything else drops.
     const it = s(rawSub.intakeType).toLowerCase();
     if (it === 'ppd' || it === 'pmd' || it === 'pap') subformData.intakeType = it;
+    // Round-1 pilot #1 (2026-08-21): optional comment on a review-flagged note —
+    // the trainingQuestion mechanism mirrored (same trim + 2000-char cell guard).
+    const rc = s(rawSub.reviewComment);
+    if (rc) subformData.reviewComment = rc.slice(0, 2000);
+    // Round-1 pilot #2: call direction. Stored ONLY as 'outbound' — absent =
+    // inbound (the overwhelming default), so tens of thousands of existing
+    // notes need no migration and anything else drops (bounded enum, the
+    // intakeType posture).
+    const cd = s(rawSub.callDirection).toLowerCase();
+    if (cd === 'outbound') subformData.callDirection = 'outbound';
     if (Object.keys(subformData).length === 0) subformData = null;
   }
   // Merge tags/flags into subformData so the schema stays in one column
@@ -7847,6 +7863,9 @@ function callNoteMatchesFilter_(note, filter) {
     case 'review':     return note.flagType === 'review';
     case 'unresolved': return note.flagType === 'action' && !note.resolved;
     case 'unsent':     return !note.emailedAt;
+    // Round-1 pilot #2 — mirrors the client cnNoteMatchesFilter_ case:
+    // callDirection is stored ONLY as 'outbound' (absent = inbound).
+    case 'outbound':   return !!(note.subformData && note.subformData.callDirection === 'outbound');
     case 'all':
     default:           return true;
   }
@@ -8110,6 +8129,73 @@ function computeCnEmailHash_(htmlBody, subject, to) {
   return out;
 }
 
+/** Round-1 pilot feedback #8 (2026-08-21) — rep-initiated correspondence
+ *  should read as coming from the AGENT, not the deploying account. The web
+ *  app runs as USER_DEPLOYING, so the true From ADDRESS cannot change (MailApp
+ *  always sends as the deployer; a neutral shared sender needs a Workspace
+ *  "Send mail as" alias on the deployer account — an operator action, not
+ *  code). What code controls is the display NAME recipients see and where a
+ *  reply lands: name = the agent + org, replyTo = the agent's own inbox.
+ *  Returns {} for a missing/partial emp so Object.assign is a no-op and the
+ *  send proceeds with the system identity rather than failing.
+ *  SCOPE: rep-initiated sends ONLY (dept email, external email, the three
+ *  intake sends) — automated digests/alerts/exports deliberately keep the
+ *  system identity, and the notifyAfter/best-effort senders are untouched. */
+function repSenderOpts_(emp) {
+  const opts = {};
+  if (emp && emp.name) opts.name = String(emp.name) + ' · Universal Medical Supply';
+  if (emp && emp.email) opts.replyTo = String(emp.email);
+  return opts;
+}
+
+/** Round-1 #8 follow-on — the NEUTRAL shared sender, dormant until configured
+ *  (the WHATSNEW_KB_ID posture). Script Property `REP_SENDER_FROM` names a
+ *  Gmail "Send mail as" alias of the DEPLOYING account (the operator creates
+ *  it in Gmail settings first); when set AND registered, rep-initiated emails
+ *  send from that address via GmailApp (which honors `from` for registered
+ *  aliases — MailApp cannot). Validated against GmailApp.getAliases() so a
+ *  typo'd/unregistered property FALLS BACK to the deployer identity with a
+ *  console warning instead of throwing every send (fail-safe — a bad property
+ *  can never break email). Cached per execution; any throw resolves to ''. */
+let _repSenderFromResolved = null;
+function repSenderFrom_() {
+  if (_repSenderFromResolved !== null) return _repSenderFromResolved;
+  let resolved = '';
+  try {
+    const want = String(PropertiesService.getScriptProperties().getProperty('REP_SENDER_FROM') || '').trim();
+    if (want) {
+      const aliases = GmailApp.getAliases() || [];
+      const ok = aliases.some(function (a) { return String(a).toLowerCase() === want.toLowerCase(); });
+      if (ok) resolved = want;
+      else console.warn('REP_SENDER_FROM="' + want + '" is not a registered Send-mail-as alias of the deploying account — falling back to the deployer identity. Add the alias in Gmail settings (Accounts → Send mail as) first.');
+    }
+  } catch (e) { console.warn('repSenderFrom_ failed: ' + e.message); }
+  _repSenderFromResolved = resolved;
+  return resolved;
+}
+
+/** Sends ONE rep-initiated email with the agent identity applied (round-1 #8):
+ *  display name + replyTo always (repSenderOpts_), and the neutral From
+ *  address too when REP_SENDER_FROM is configured (repSenderFrom_). `opts` is
+ *  the MailApp single-object form ({to, subject, body?, htmlBody?, cc?, bcc?,
+ *  attachments?, inlineImages?}). Throws exactly like MailApp.sendEmail on a
+ *  genuine send failure, so every caller's existing try/catch semantics are
+ *  unchanged. GmailApp adds no new OAuth scope here (the Spanish-inbox
+ *  feature already uses it) and shares the MailApp send quota. */
+function sendRepEmail_(emp, opts) {
+  const merged = Object.assign({}, opts, repSenderOpts_(emp));
+  const from = repSenderFrom_();
+  if (from) {
+    // GmailApp's signature is positional (to, subject, body, options) — the
+    // options object must NOT repeat to/subject/body.
+    const gOpts = Object.assign({}, merged, { from: from });
+    delete gOpts.to; delete gOpts.subject; delete gOpts.body;
+    GmailApp.sendEmail(merged.to, merged.subject, merged.body || '', gOpts);
+  } else {
+    MailApp.sendEmail(merged);
+  }
+}
+
 /** Actually sends the email composed for a note. Stamps EmailedAt +
  *  EmailDepartments on the note row, writes a CallNoteEmail audit row.
  *
@@ -8197,7 +8283,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
-        MailApp.sendEmail({
+        sendRepEmail_(emp, {
           to: recipientList.internalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
@@ -8205,7 +8291,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           htmlBody: sentHtml,
         });
         internalSent = true;
-        MailApp.sendEmail({
+        sendRepEmail_(emp, {
           to: recipientList.externalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
@@ -8213,7 +8299,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           htmlBody: htmlBody,   // no CTA
         });
       } else {
-        MailApp.sendEmail({
+        sendRepEmail_(emp, {
           to: recipientList.to,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
@@ -8951,7 +9037,7 @@ function sendExternalEmail(payload) {
       htmlBody: htmlBody,
     };
     if (attachments.length > 0) emailOpts.attachments = attachments;
-    MailApp.sendEmail(emailOpts);
+    sendRepEmail_(emp, emailOpts);   // Round-1 #8 — agent identity (+ neutral alias when configured)
   } catch (sendErr) {
     return { success: false, error: 'Email send failed: ' + sendErr.message };
   }
@@ -12067,29 +12153,40 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
     return (n.flagType === 'training' && n.subformData && n.subformData.trainingReply)
       ? String(n.subformData.trainingReply).trim() : '';
   };
+  // Round-1 pilot #1 (2026-08-21): review-flagged notes may carry an optional
+  // rep comment in subformData.reviewComment (the trainingQuestion mirror) —
+  // surface it in the Review Candidates digest the same way.
+  const rc = function (n) {
+    return (n.flagType === 'review' && n.subformData && n.subformData.reviewComment)
+      ? String(n.subformData.reviewComment).trim() : '';
+  };
   const itemsHtml = notes.map(function (n) {
     const q = tq(n);
     const reply = tr(n);
+    const comment = rc(n);
     const qLine = q ? `<br><span style="color:${P.accentDeep};font-size:12px;font-style:italic;">Q: ${esc_(q)}</span>` : '';
     const rLine = reply ? `<br><span style="color:${P.goodDeep};font-size:12px;">A: ${esc_(reply)}</span>` : '';
+    const cLine = comment ? `<br><span style="color:${P.goodDeep};font-size:12px;font-style:italic;">Comment: ${esc_(comment)}</span>` : '';
     return `<tr>` +
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
         `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
-        qLine + rLine +
+        qLine + rLine + cLine +
       `</td>` +
       `</tr>`;
   }).join('');
   const itemsText = notes.map(function (n) {
     const q = tq(n);
     const reply = tr(n);
+    const comment = rc(n);
     return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
            `    ${n.issue || ''}` +
            (n.resolution ? `\n    → ${n.resolution}` : '') +
            (q ? `\n    Q: ${q}` : '') +
-           (reply ? `\n    A: ${reply}` : '');
+           (reply ? `\n    A: ${reply}` : '') +
+           (comment ? `\n    Comment: ${comment}` : '');
   }).join('\n\n');
 
   // Operator 2026-08-13 (email-alignment audit): shares the branded chrome
@@ -13520,6 +13617,7 @@ function getSpanishInboxPending(days) {
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
+    const claims = spanishClaimsMap_();   // pilot round 2 — advisory claim per thread
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
@@ -13543,10 +13641,16 @@ function getSpanishInboxPending(days) {
         snippet: bodyRaw.slice(0, 240),
         hasMore: bodyRaw.length > 240,
         permalink: th.getPermalink(),
+        claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
-    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
+    // Round 2 additive fields: `members` (the assign-select options — the same
+    // internal team emails getSpanishInboxResolved already ships behind this
+    // gate) and `self` (the caller's lowercased email, so the client can tell
+    // "claimed by me" apart without a second identity source).
+    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
+      members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -13713,6 +13817,352 @@ function resolveSpanishThread(threadId) {
     writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
     return { success: true };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
+}
+
+// ── Spanish inbox — claim / assign (pilot round 2, 2026-08-24) ──────────────
+// Pilot ask #4: agents mark that they are WORKING a pending request so
+// teammates don't duplicate the work, and managers can assign one to a
+// specific agent. ADVISORY by design — a claim locks nothing (two agents
+// racing resolves socially), which keeps the concurrency story trivial.
+// Same store posture as SpanishManualResolved: a small APPEND-ONLY tab on the
+// ADP sheet, PHI-free (threadId + internal emails + ms-number only — never
+// subject/body), latest row per thread wins, a 'release' row clears it.
+const SPANISH_CLAIMS_TAB = 'SpanishClaims';
+const SPANISH_CLAIMS_SCAN = 1000;   // bounded tail — the map read stays cheap
+
+function getOrCreateSpanishClaimsSheet_() {
+  const ss = getAdpSS_();
+  let sh = ss.getSheetByName(SPANISH_CLAIMS_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(SPANISH_CLAIMS_TAB);
+    sh.appendRow([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'Action', 'Claimant', 'Actor', 'AtMs']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** PURE (Node-pinned) — fold the append-only claim rows (OLDEST→NEWEST within
+ *  the scanned tail) into { threadId: {by, assignedBy, atMs} }. The LATEST row
+ *  per thread wins (unlike spanishManualResolvedMap_'s first-wins, which is
+ *  fine there only because resolve is idempotent — claims genuinely change
+ *  hands); a 'release' row clears the claim; junk rows are skipped.
+ *  rows = [[threadId, action, claimant, actor, atMs], …]. */
+function spanishClaimsFold_(rows) {
+  const out = {};
+  (rows || []).forEach(function (r) {
+    const tid = String((r && r[0]) || '').trim();
+    if (!tid) return;
+    const action = String((r && r[1]) || '').trim().toLowerCase();
+    if (action === 'release') { delete out[tid]; return; }
+    if (action !== 'claim') return;
+    const by = String((r && r[2]) || '').trim().toLowerCase();
+    if (!by) return;
+    const actor = String((r && r[3]) || '').trim().toLowerCase();
+    out[tid] = { by: by, assignedBy: (actor && actor !== by) ? actor : '', atMs: Number(r[4]) || 0 };
+  });
+  return out;
+}
+
+/** Bounded-tail claim map. Best-effort — no tab yet reads as no claims. */
+function spanishClaimsMap_() {
+  try {
+    const sh = getAdpSS_().getSheetByName(SPANISH_CLAIMS_TAB);
+    if (!sh) return {};
+    const last = sh.getLastRow();
+    if (last < 2) return {};
+    const start = Math.max(2, last - SPANISH_CLAIMS_SCAN + 1);
+    return spanishClaimsFold_(sh.getRange(start, 2, last - start + 1, 5).getValues());
+  } catch (e) { Logger.log('spanishClaimsMap_ skipped: ' + e.message); return {}; }
+}
+
+/** Claim a pending request (self), or — manager only — ASSIGN it to a
+ *  configured member. Gated on canSeeSpanishInbox_ and SCOPE-GUARDED like
+ *  resolveSpanishThread (the thread must be addressed to the configured inbox).
+ *  A non-manager can claim only an UNCLAIMED thread (or re-claim their own);
+ *  a manager can always reassign. Locked (INV-01 — it appends); PHI-free
+ *  audit row (threadId + claimant email — internal identities, never
+ *  subject/body). */
+function claimSpanishThread(threadId, assigneeEmail) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured.' };
+    const tid = String(threadId || '').trim();
+    if (!tid) return { error: 'Missing thread id.' };
+    const self = String(emp.email || '').trim().toLowerCase();
+    const claimant = String(assigneeEmail || '').trim().toLowerCase() || self;
+    if (claimant !== self) {
+      if (!emp.isManager) return { error: 'Only a manager can assign a request to someone else.' };
+      if (!getSpanishInboxMembers_()[claimant]) {
+        return { error: 'Assignee must be a configured Spanish Inbox member (Manage → Admin → Config → Spanish bilingual members).' };
+      }
+    }
+    const th = GmailApp.getThreadById(tid);
+    if (!th) return { error: 'Thread not found.' };
+    const msgs = th.getMessages();
+    if (!msgs.length) return { error: 'Empty thread.' };
+    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+      return { error: 'Not a Spanish-inbox thread.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const cur = spanishClaimsMap_()[tid];
+      if (cur && cur.by === claimant) return { success: true, already: true, claim: cur };
+      // Advisory, but not a free-for-all: only a manager reassigns over
+      // someone ELSE's live claim (the point of claiming is that teammates
+      // back off — a silent steal defeats it).
+      if (cur && cur.by !== claimant && !emp.isManager) {
+        return { error: 'Already claimed by ' + cur.by + ' — ask them (or a manager) to release it first.' };
+      }
+      getOrCreateSpanishClaimsSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'claim', claimant, self, Date.now(),
+      ]);
+    } finally { lock.releaseLock(); }
+    writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0,
+      'threadId=' + tid + '; claim=' + claimant + (claimant !== self ? '; assigned' : ''));
+    return { success: true, claim: { by: claimant, assignedBy: claimant !== self ? self : '', atMs: Date.now() } };
+  } catch (err) { return { error: 'Claim failed: ' + err.message }; }
+}
+
+/** Release a claim — the claimant themself, or a manager. No Gmail scope
+ *  guard needed here: a release only ever CLEARS an existing claim row (it
+ *  can't seed junk for arbitrary thread ids), and requiring one would cost a
+ *  Gmail read to remove a chip. Locked; idempotent; PHI-free audit row. */
+function releaseSpanishThread(threadId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    const tid = String(threadId || '').trim();
+    if (!tid) return { error: 'Missing thread id.' };
+    const self = String(emp.email || '').trim().toLowerCase();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const cur = spanishClaimsMap_()[tid];
+      if (!cur) return { success: true, already: true };
+      if (cur.by !== self && !emp.isManager) {
+        return { error: 'Only the claimant or a manager can release this claim.' };
+      }
+      getOrCreateSpanishClaimsSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'release', cur.by, self, Date.now(),
+      ]);
+    } finally { lock.releaseLock(); }
+    writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0, 'threadId=' + tid + '; release');
+    return { success: true };
+  } catch (err) { return { error: 'Release failed: ' + err.message }; }
+}
+
+// ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
+// Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
+// — a rep schedules a reminder for a specific call and the SHELL reminder
+// ticker (chime + sticky toast, every open window incl. the pinned pop-out)
+// fires it at lead time. CALLER-SCOPED v1: a rep sees/edits only their own.
+// STORE: the forms PHI store (getFormsSS_ — the label plausibly names a
+// patient, so it belongs beside FormTokens/FormSubmissions, never the KB or
+// a PHI-free tab). Times are EPOCH-MS NUMBER cells (the SpanishManualResolved
+// discipline — immune to the whole Sheets date/locale-coercion class).
+// DELIVERY LIMIT (documented, not fixable here): Apps Script web apps have no
+// background push — a closed browser gets nothing. The reminder serves a rep
+// with the app open, which is the pilot's case (the pinned pop-out).
+const SCHED_CALLS_TAB = 'ScheduledCalls';
+const SCHED_CALLS_SCAN = 2000;      // bounded tail — the read stays cheap
+const SCHED_ACTIVE_CAP = 20;        // per-rep active bound (stale ones surface in the list)
+const SCHED_LABEL_MAX = 300;
+const SCHED_MAX_DAYS_AHEAD = 60;
+const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CREATED_MS: 6 };
+
+function getOrCreateScheduledCallsSheet_() {
+  const ss = getFormsSS_();
+  let sh = ss.getSheetByName(SCHED_CALLS_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(SCHED_CALLS_TAB);
+    sh.appendRow(['Id', 'EmpId', 'WhenMs', 'LeadMin', 'Label', 'Status', 'CreatedAtMs']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** PURE (Node-pinned) — shape validation for a create. Date/time reuse the
+ *  INV-04 regexes; the label is trimmed + cell-capped (a blank one gets a
+ *  neutral default); leadMin clamps to 0..120 with a 5-min default. Returns
+ *  {error} or the canonicalized {label, leadMin}. */
+function schedValidateShape_(dateStr, timeStr, label, leadMin) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ''))) return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(timeStr || ''))) return { error: 'Invalid time format (expected HH:mm).' };
+  const lab = String(label == null ? '' : label).trim().slice(0, SCHED_LABEL_MAX) || 'Scheduled call';
+  let lead = parseInt(leadMin, 10);
+  if (!isFinite(lead) || lead < 0) lead = 5;
+  if (lead > 120) lead = 120;
+  return { label: lab, leadMin: lead };
+}
+
+/** Bounded-tail read of ONE rep's ACTIVE reminders (+ their live rowIndex for
+ *  the status write). The status compare is trimmed + lowercased in this ONE
+ *  reader (the DR.STATUS/INV-183 lesson applied from birth). */
+function schedReadMine_(sh, empId) {
+  const out = [];
+  const last = sh.getLastRow();
+  if (last < 2) return out;
+  const start = Math.max(2, last - SCHED_CALLS_SCAN + 1);
+  const rows = sh.getRange(start, 1, last - start + 1, 7).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][SC.EMP_ID] || '').trim() !== String(empId || '').trim()) continue;
+    if (String(rows[i][SC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+    out.push({
+      id: String(rows[i][SC.ID] || ''),
+      whenMs: Number(rows[i][SC.WHEN_MS]) || 0,
+      leadMin: Number(rows[i][SC.LEAD_MIN]) || 0,
+      label: String(rows[i][SC.LABEL] || ''),
+      status: 'active',
+      rowIndex: start + i,
+    });
+  }
+  return out;
+}
+
+/** Create a reminder. Caller-scoped; locked (INV-01); the wall time is parsed
+ *  in the REP's OWN timezone server-side (Utilities.parseDate — no client tz
+ *  arithmetic to get wrong). The shared-AuditLog row is PHI-FREE: the label
+ *  may name a patient, so it persists ONLY in the PHI store and the audit row
+ *  carries the id alone (the INV-32 discipline). */
+function createScheduledCall(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const p = payload || {};
+    const v = schedValidateShape_(p.date, p.time, p.label, p.leadMin);
+    if (v.error) return v;
+    const whenMs = Utilities.parseDate(String(p.date) + ' ' + String(p.time), empTz_(emp), 'yyyy-MM-dd HH:mm').getTime();
+    const now = Date.now();
+    if (!isFinite(whenMs)) return { error: 'Could not parse that date/time.' };
+    if (whenMs < now - 60000) return { error: 'That time is in the past (times are in YOUR profile timezone).' };
+    if (whenMs > now + SCHED_MAX_DAYS_AHEAD * 86400000) {
+      return { error: 'Reminders can be scheduled at most ' + SCHED_MAX_DAYS_AHEAD + ' days ahead.' };
+    }
+    const sh = getOrCreateScheduledCallsSheet_();
+    if (schedReadMine_(sh, emp.id).length >= SCHED_ACTIVE_CAP) {
+      return { error: 'You already have ' + SCHED_ACTIVE_CAP + ' active reminders — mark some done or cancel them first.' };
+    }
+    const id = Utilities.getUuid();
+    sh.appendRow([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]);
+    writeAuditLog_(emp, 'ScheduledCallCreate', '', '', false, 0, 'id=' + id);
+    return { success: true, call: { id: id, whenMs: whenMs, leadMin: v.leadMin, label: v.label, status: 'active' } };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The caller's own active reminders, soonest first (cap 50 returned).
+ *  Read-only; no tab yet = no reminders, never an error. */
+function getMyScheduledCalls() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
+    if (!sh) return { calls: [] };
+    const mine = schedReadMine_(sh, emp.id);
+    mine.sort(function (a, b) { return a.whenMs - b.whenMs; });
+    return { calls: mine.slice(0, 50).map(function (c) {
+      return { id: c.id, whenMs: c.whenMs, leadMin: c.leadMin, label: c.label, status: c.status };
+    }) };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Mark done / cancel — the rep's OWN rows only (another rep's id reads as
+ *  not-found, so existence never leaks). Locked; PHI-free audit row. */
+function setScheduledCallStatus(id, status) {
+  const st = String(status || '').trim().toLowerCase();
+  if (st !== 'done' && st !== 'cancelled') return { error: 'Status must be done or cancelled.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
+    if (!sh) return { error: 'Reminder not found.' };
+    const wanted = String(id || '').trim();
+    const hit = schedReadMine_(sh, emp.id).filter(function (c) { return c.id === wanted; })[0];
+    if (!hit) return { error: 'Reminder not found.' };
+    sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(st);
+    writeAuditLog_(emp, 'ScheduledCallStatus', '', '', false, 0, 'id=' + hit.id + '; ' + st);
+    return { success: true };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Per-rep scratchpad (pilot round 3 #5 — server-backed sticky notes) ──────
+// Personal scratch space that follows the rep across browsers/devices —
+// operator decision: stored in the rep's OWN per-rep Call Notes spreadsheet
+// (a `Scratchpad` tab beside their Notes), so it inherits that store's
+// PHI-class handling and per-rep isolation BY CONSTRUCTION (no cross-rep
+// read path exists — the resolver is the caller's own callNotesSheetId, the
+// INV-167-guarded field the employee builders populate).
+const SCRATCHPAD_TAB = 'Scratchpad';
+const SCRATCHPAD_MAX_CHARS = 40000;   // comfortably under the ~50k cell limit
+
+/** The caller's Scratchpad tab. createIfMissing provisions it with cell A1
+ *  PRE-FORMATTED as PLAIN TEXT ('@') — a scratchpad beginning "5/12" or
+ *  "0123" would otherwise be COERCED to a Date/number on read (the
+ *  normalizeDate_ class, dodged at write time instead of recovered). */
+function scratchpadSheet_(emp, createIfMissing) {
+  if (!emp || !emp.callNotesSheetId) {
+    throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');
+  }
+  const ss = SpreadsheetApp.openById(emp.callNotesSheetId);
+  let sh = ss.getSheetByName(SCRATCHPAD_TAB);
+  if (!sh && createIfMissing) {
+    sh = ss.insertSheet(SCRATCHPAD_TAB);
+    sh.getRange('A1').setNumberFormat('@');
+  }
+  return sh;
+}
+
+/** Read-only. No tab yet = an empty scratchpad, never an error. */
+function getMyScratchpad() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = scratchpadSheet_(emp, false);
+    if (!sh) return { content: '', updatedAtMs: null };
+    const v = sh.getRange('A1').getValue();
+    // Belt-and-braces for a hand-made tab without the '@' format: a coerced
+    // cell String()s rather than throwing (content fidelity is only
+    // guaranteed for app-written cells, which are format-pinned).
+    const content = v == null ? '' : (typeof v === 'string' ? v : String(v));
+    const ms = Number(sh.getRange('B1').getValue());
+    return { content: content, updatedAtMs: isFinite(ms) && ms > 0 ? ms : null, maxChars: SCRATCHPAD_MAX_CHARS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Save (whole-document replace; last write wins across windows — stated in
+ *  the modal copy). USER lock, not the script lock (the kbRecordView /
+ *  INV-01-documented-exception posture): a debounced autosave to the rep's
+ *  OWN sheet must never queue punch/note writes behind it, and the user lock
+ *  still serializes one rep's double-fires. Over-cap REFUSES with an
+ *  actionable error (the INV-96 posture — never a silent truncate: this is
+ *  the rep's document). NO audit row per save (high-frequency, own-store,
+ *  non-privileged — the kbRecordView precedent; INV-32 governs call-NOTE
+ *  actions, which this is not). */
+function saveMyScratchpad(content) {
+  const lock = LockService.getUserLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const text = String(content == null ? '' : content);
+    if (text.length > SCRATCHPAD_MAX_CHARS) {
+      return { error: 'Scratchpad is over the ' + SCRATCHPAD_MAX_CHARS + '-character limit (' + text.length + ') — trim it and save again.' };
+    }
+    const sh = scratchpadSheet_(emp, true);
+    const now = Date.now();
+    sh.getRange('A1').setValue(text);
+    sh.getRange('B1').setValue(now);   // epoch-ms NUMBER cell — coercion-immune
+    return { success: true, updatedAtMs: now };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 // ── Inter-department request tracking (Part B) ──────────────────────────────
@@ -17296,10 +17746,20 @@ function intakeCatalogIssues_(rows) {
     if (!cell(4)) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
         detail: 'blank — the HCPCS code renders with no brochure link' });
+    } else if (!intakeHttpOnly_(cell(4))) {
+      // seams-18 F1 follow-on (INV-187): every sink (rec cards, sent email,
+      // Catalog tab) scheme-whitelists this column, so a non-http value —
+      // usually a schemeless "www.x.com" — SILENTLY renders no link anywhere.
+      // Name it here so the silence is visible to the operator.
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
+        detail: 'not an http(s) URL — "' + cell(4) + '" renders no brochure link anywhere (add the https:// prefix)' });
     }
     if (!cell(5)) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
         detail: 'blank — the result card renders no device image for the agent to send' });
+    } else if (!intakeHttpOnly_(cell(5))) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
+        detail: 'not an http(s) URL — "' + cell(5) + '" renders no device image anywhere (add the https:// prefix)' });
     }
   });
   return out;
@@ -18240,7 +18700,7 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
     if (oversize) return { success: false, error: oversize };
 
-    MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
+    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });   // Round-1 #8
 
     let storeWarning = null;
     try {
@@ -18316,7 +18776,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const oversize = intakeStoreOversizeError_([answersJson]);
   if (oversize) return { success: false, error: oversize };
 
-  MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
+  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
 
   let storeWarning = null;
   try {
@@ -19276,12 +19736,14 @@ function kbGetUsageStats() {
       });
     }
     const fb = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
+    const cc = kbCommentCounts_();    // round-3 FO — surface discussion volume
     const items = ids
       .filter(function (id) { return !!titles[id]; })   // deleted items drop out
       .map(function (id) {
         return {
           id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount,
           helpful: (fb[id] && fb[id].helpful) || 0, notHelpful: (fb[id] && fb[id].notHelpful) || 0,
+          comments: cc[id] || 0,
         };
       })
       .sort(function (a, b) { return b.count - a.count; })
@@ -19364,6 +19826,7 @@ function kbGetReviewDue() {
     });
     const stale = kbStaleFlags_(reviewedTsByItem);
     const fb = kbFeedbackCounts_();
+    const cc = kbCommentCounts_();    // round-3 FO — discussion volume chip
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
     const items = [];
     rows.forEach(function (r) {
@@ -19391,6 +19854,7 @@ function kbGetReviewDue() {
         staleNote: (stale[id] && stale[id].lastNote) || '',
         helpful: (fb[id] && fb[id].helpful) || 0,
         notHelpful: (fb[id] && fb[id].notHelpful) || 0,
+        comments: cc[id] || 0,
       });
     });
     items.sort(function (a, b) {
@@ -19490,6 +19954,29 @@ function kbFeedbackCounts_() {
   return out;
 }
 
+/** Round-3 FO — ACTIVE comment count per item over the bounded KbComments
+ *  tail (the kbFeedbackCounts_ shape: best-effort, empty map on any failure).
+ *  Folded into the SAME manager Most-used + Review-due rows rather than a new
+ *  ranked block/endpoint — "which items generate discussion" rides the
+ *  existing analytics surfaces, and kbFbCountHtml_ renders the chip. */
+function kbCommentCounts_() {
+  const out = {};
+  try {
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return out;
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_COMMENTS_HEADERS.length).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KBC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+      const id = String(rows[i][KBC.ITEM_ID] || '').trim();
+      if (!id) continue;
+      out[id] = (out[id] || 0) + 1;
+    }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
 /** #3 — probe KB embeds for Drive reachability (deleted/moved file or lost
  *  deployer access — a silently-broken embed that renders a dead /preview iframe
  *  with no error anywhere). Bounded (cap) + best-effort; PHI-free (KB is PHI-free
@@ -19557,6 +20044,190 @@ function kbFlagItem(itemId, kind, note) {
     ]);
     if (k === 'stale') writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Reference comments, Phase A (pilot round 3 #6) ──────────────────────────
+// A visible per-article comment thread — the DISCUSSION complement to the
+// private kbFlagItem signal (INV-139). Append-only `KbComments` tab in the KB
+// spreadsheet (PHI-free-by-policy like every KB store — the UI carries the
+// reminder); moderation is SOFT-delete (Status='deleted', the append-only
+// posture — rows are never removed), author-or-manager. Phase A surfaces
+// comments in the Reference TAB reader only — the Ctrl/⌘+K drawer is the
+// mid-call surface and stays comment-free (the INV-139 drawer-parity
+// follow-on shape; add it there only if reps ask).
+const KB_COMMENTS_TAB = 'KbComments';
+const KB_COMMENTS_HEADERS = ['CommentId', 'ItemId', 'EmpId', 'EmpName', 'Text', 'AtMs', 'Status'];
+const KBC = { ID: 0, ITEM_ID: 1, EMP_ID: 2, EMP_NAME: 3, TEXT: 4, AT_MS: 5, STATUS: 6 };
+const KB_COMMENT_MAX_CHARS = 2000;
+const KB_COMMENTS_SCAN = 2000;      // bounded tail — reads stay cheap as the tab grows
+const KB_COMMENTS_LIST_CAP = 100;   // payload cap; pre-slice total reported (INV-169)
+
+function getOrCreateKbCommentsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_COMMENTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_COMMENTS_TAB);
+    sheet.appendRow(KB_COMMENTS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_COMMENTS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Existence + visibility check for a comment target — the getReferenceItem
+ *  boundary applied here: a DRAFT item is indistinguishable from not-found
+ *  for a non-admin, so commenting can't probe draft existence (INV-140/147).
+ *  Bounded: id + status columns only, never BodyMd. */
+function kbCommentTargetOk_(emp, itemId) {
+  const sheet = getOrCreateKbSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return false;
+  const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== itemId) continue;
+    const status = kbRowStatus_(sheet.getRange(i + 2, KB.STATUS + 1).getValue());
+    return status !== KB_STATUS_DRAFT || !!emp.isAdmin;
+  }
+  return false;
+}
+
+/** Add a comment. Rep-callable, locked (INV-01 — the kbFlagItem posture).
+ *  Over-cap REFUSES (a comment is the rep's words — never silently cut).
+ *  Audit row is id-only: the comment TEXT lives in the KB store, never the
+ *  shared AuditLog (the INV-32 discipline). */
+function kbAddComment(itemId, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const id = String(itemId || '').trim().substring(0, 100);
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const t = String(text || '').trim();
+    if (!t) return { success: false, error: 'Write a comment first.' };
+    if (t.length > KB_COMMENT_MAX_CHARS) {
+      return { success: false, error: 'Comments are capped at ' + KB_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and post again.' };
+    }
+    if (!kbCommentTargetOk_(emp, id)) return { success: false, error: 'Not found.' };
+    const commentId = Utilities.getUuid();
+    getOrCreateKbCommentsSheet_().appendRow([
+      commentId, id, emp.id, emp.name, t, Date.now(), 'active',   // AtMs: NUMBER cell — coercion-immune
+    ]);
+    writeAuditLog_(emp, 'KbCommentAdd', '', '', false, 0, 'id=' + id + '; commentId=' + commentId, emp.email);
+    return { success: true, commentId: commentId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The item's ACTIVE comments, oldest-first. Rep-callable, read-only, bounded
+ *  tail; payload-capped with the pre-slice total (INV-169 — the client says
+ *  "showing N of M"). Draft targets read as empty for non-admins (no leak). */
+function kbGetComments(itemId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const id = String(itemId || '').trim();
+    if (!id || !kbCommentTargetOk_(emp, id)) return { comments: [], total: 0, cap: KB_COMMENTS_LIST_CAP, canModerate: false };
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { comments: [], total: 0, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_COMMENTS_HEADERS.length).getValues();
+    const all = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KBC.ITEM_ID] || '') !== id) continue;
+      if (String(rows[i][KBC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+      all.push({
+        commentId: String(rows[i][KBC.ID] || ''),
+        empId: String(rows[i][KBC.EMP_ID] || ''),
+        name: String(rows[i][KBC.EMP_NAME] || ''),
+        text: String(rows[i][KBC.TEXT] || ''),
+        atMs: Number(rows[i][KBC.AT_MS]) || 0,
+        mine: String(rows[i][KBC.EMP_ID] || '') === String(emp.id),
+      });
+    }
+    return { comments: all.slice(0, KB_COMMENTS_LIST_CAP), total: all.length, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Remove (soft-delete) a comment — its AUTHOR or a manager (moderation).
+ *  The refusal is deliberately NOT the manager-gate string: this is a
+ *  per-row ownership rule, not a gated endpoint. Locked; audit row id-only. */
+function kbDeleteComment(commentId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const wanted = String(commentId || '').trim();
+    if (!wanted) return { success: false, error: 'Missing comment id.' };
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const ids = sheet.getRange(start, KBC.ID + 1, last - start + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') !== wanted) continue;
+      const rowIdx = start + i;
+      const row = sheet.getRange(rowIdx, 1, 1, KB_COMMENTS_HEADERS.length).getValues()[0];
+      if (String(row[KBC.STATUS] || '').trim().toLowerCase() !== 'active') {
+        return { success: true, already: true };
+      }
+      if (String(row[KBC.EMP_ID] || '') !== String(emp.id) && !emp.isManager) {
+        return { success: false, error: 'You can only remove your own comments.' };
+      }
+      sheet.getRange(rowIdx, KBC.STATUS + 1).setValue('deleted');
+      writeAuditLog_(emp, 'KbCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Comment not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round-3 FO — edit a comment in place. AUTHOR-only, deliberately narrower
+ *  than delete's author-or-manager: moderation is REMOVAL — a manager
+ *  rewriting a rep's words under the rep's name is a worse surface than
+ *  removing them. Active rows only (an edited-after-delete row reads as not
+ *  found); over-cap REFUSES (the kbAddComment rule); the KbComments tab is a
+ *  casual PHI-free discussion surface, NOT an attested record, so in-place
+ *  Text mutation is acceptable (unlike FormSubmissions/DocSignatures —
+ *  §164.312(c) does not reach it). Audit row id-only (INV-32). */
+function kbEditComment(commentId, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const wanted = String(commentId || '').trim();
+    if (!wanted) return { success: false, error: 'Missing comment id.' };
+    const t = String(text || '').trim();
+    if (!t) return { success: false, error: 'Write a comment first.' };
+    if (t.length > KB_COMMENT_MAX_CHARS) {
+      return { success: false, error: 'Comments are capped at ' + KB_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and save again.' };
+    }
+    const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
+    const ids = sheet.getRange(start, KBC.ID + 1, last - start + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') !== wanted) continue;
+      const rowIdx = start + i;
+      const row = sheet.getRange(rowIdx, 1, 1, KB_COMMENTS_HEADERS.length).getValues()[0];
+      if (String(row[KBC.STATUS] || '').trim().toLowerCase() !== 'active') {
+        return { success: false, error: 'Comment not found.' };
+      }
+      if (String(row[KBC.EMP_ID] || '') !== String(emp.id)) {
+        return { success: false, error: 'You can only edit your own comments.' };
+      }
+      sheet.getRange(rowIdx, KBC.TEXT + 1).setValue(t);
+      writeAuditLog_(emp, 'KbCommentEdit', '', '', false, 0, 'commentId=' + wanted, emp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Comment not found.' };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
