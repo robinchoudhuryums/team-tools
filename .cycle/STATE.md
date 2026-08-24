@@ -78,11 +78,20 @@ Updated: 2026-08-21
   pins + 2 veteran intake ordering pins repointed at the wrapper send, all
   bite-checked), DOM 75. Explicitly NOT done here: roadmap round 2 (its own
   round) and the operator-only items (CDR col-4, FORMS_SS_ID).
-- Roadmap rounds 2–3 approved in sequence: (2) Spanish Inbox claim/assign +
-  scheduled-call reminders; (3) intake arrow-key nav, server-backed
-  scratchpad (operator chose per-rep-sheet storage), Reference comments
-  Phase A. Operator answers on record: sender v1 = name+replyTo (alias
-  later); scratchpad = server-backed.
+- **Round 2 implemented** (2026-08-24, /broad-implement "roadmap round 2") —
+  block `.cycle/blocks/19pre-pilot-round2-broad-implement.md`, feature commit
+  + 3188e79 (flex-wrap fix). Spanish Inbox claim/assign (SpanishClaims tab,
+  advisory latest-wins fold, member self-claim / manager assign / steal
+  guard, card pill + controls) + scheduled-call reminders (ScheduledCalls
+  tab on the FORMS PHI store, epoch-ms cells, shell-ticker delivery with
+  cross-window dedupe + INV-190 fetch discipline, CN bell modal + card
+  More-menu prefill). Pure 600→607 (7 pins, 8 bites), DOM 75; Tests.js
+  omnibus Spanish set gained claim/release cases (run post-deploy).
+  /sync-docs owed (now THREE blocks' doc lists).
+- Roadmap round 3 remains: intake arrow-key nav, server-backed scratchpad
+  (operator chose per-rep-sheet storage), Reference comments Phase A.
+  Operator answers on record: sender v1 = name+replyTo (alias later);
+  scratchpad = server-backed.
 
 ## Open follow-on items
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
@@ -104,11 +113,11 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-Cycle 18 is CLOSED. Pilot-feedback Round 1 (c15eec7) + its follow-ons
-(86c64df — dormant neutral sender, copy token, outbound chip, catalog
-warning) are implemented + tested on `claude/team-tools-roadmap-6e2l97`
-and pushed — awaiting the operator's PR/merge decision, the combined
-deploy (with PR #176/#177), and /sync-docs for BOTH blocks' doc lists
-(round 1's + the follow-ons' REP_SENDER_FROM / E-F-URL entries). Next
-implementation work: roadmap round 2 (Spanish claim/assign, then
-scheduled-call reminders).
+Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
+(86c64df) and Round 2 (Spanish claim/assign + scheduled-call reminders,
+through 3188e79) are implemented + tested on
+`claude/team-tools-roadmap-6e2l97` and pushed — awaiting the operator's
+PR/merge decision, the combined deploy (with PR #176/#177), and
+/sync-docs for all THREE blocks' doc lists. Next implementation work:
+roadmap round 3 (intake arrow-key nav, server-backed scratchpad,
+Reference comments Phase A).
