@@ -131,6 +131,10 @@ const SCENARIOS = [
   // one scenario — the reference/training dark-parity lesson, batch ⑦).
   ['cn-sched-modal-dark-wide',     { tool: 'callNotes', tab: 'callNotes' }, WIDE,    'dark',  '', 'cnOpenSchedModal_()'],
   ['cn-sched-modal-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', 'cnOpenSchedModal_()'],
+  // Round-3 follow-ons: the OPEN Reference reader — comments thread (edit/
+  // delete cluster, add form) + the feedback bar were unshootable while the
+  // matrix only walked the Reference landing.
+  ['reference-reader-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('kb-1')"],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

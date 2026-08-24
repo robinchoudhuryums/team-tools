@@ -11697,6 +11697,27 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.ok(/var\(--line\)/.test(rule[0]) && /var\(--muted\)/.test(rule[0]), 'token-based colors');
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(rule[0]), 'no raw hex in the rule');
   });
+
+  test('R3 FO: every icon(\'name\') literal is a real ICONS key (derived — INV-179)', () => {
+    // icon('unknown') SILENTLY returns '' — the comment-edit pencil shipped
+    // as a 4px empty button because icon('pencil') matched nothing (the real
+    // key is 'adjust'; "pencil" appears only in the ICONS COMMENT, which is
+    // exactly what a grep-for-existence check matched — the INV-188 trap
+    // pointed at markup). Found only by MEASURING the live button box.
+    const iconsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_icons.html'), 'utf8');
+    const stripAll = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/<!--[\s\S]*?-->/g, '');
+    // Anchor on the VALUE shape (`: '<` — every glyph is an SVG-path string),
+    // not indentation: a fixed-indent anchor matched only 19 of 57 keys.
+    const keys = new Set([...stripAll(iconsSrc).matchAll(/^\s*([\w]+):\s*'</gm)].map((m) => m[1]));
+    assert.ok(keys.size >= 30 && keys.has('adjust') && keys.has('bell'), 'derived a plausible ICONS key set');
+    const files = PARSE_GUARD_PARTIALS.concat(['modals.html', 'index.html']);
+    const bad = [];
+    files.forEach((f) => {
+      let src; try { src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'); } catch (e) { return; }
+      [...stripAll(src).matchAll(/\bicon\('([\w-]+)'/g)].forEach((m) => { if (!keys.has(m[1])) bad.push(f + ': ' + m[1]); });
+    });
+    assert.deepStrictEqual(bad, [], 'icon() literals that resolve to NO glyph (silent empty button)');
+  });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

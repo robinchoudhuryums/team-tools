@@ -2915,7 +2915,7 @@ function kbRenderComments_(host, id, res) {
     // server enforces both; these buttons just match its contract).
     var edit = c.mine
       ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Edit your comment"' +
-        ' title="Edit this comment" onclick="kbEditComment_(this, \'' + esc(id) + '\')">' + icon('pencil', 12) + '</button>'
+        ' title="Edit this comment" onclick="kbEditComment_(this, \'' + esc(id) + '\')">' + icon('adjust', 12) + '</button>'
       : '';
     var del = (c.mine || res.canModerate)
       ? '<button class="kb-cmt-del" data-kb-cmt="' + esc(c.commentId) + '" aria-label="Remove comment by ' + esc(c.name) + '"' +

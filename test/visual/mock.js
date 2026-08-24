@@ -318,6 +318,11 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // Pilot round 3 — scratchpad + Reference comments (shapes mirror the
     // server returns; pinned like the sched fixture above).
     getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000 },
+    // The reader scenario opens this article via the post hook — shape
+    // mirrors getReferenceItem's article return (id/title/department/status/
+    // type/bodyMd; INV-185).
+    getReferenceItem: { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', status: 'published', type: 'article',
+      bodyMd: '# HIPAA refresher\n\nMinimum-necessary rule: share only what the task needs.\n\n- Verify the caller before any PHI\n- Fax cover sheets on every outbound fax' },
     kbGetComments: { comments: [
       { commentId: 'c-1', empId: 'E-1090', name: 'Leo Kim', text: 'The PAR fax number changed last month — worth updating the table.', atMs: Date.now() - 86400000, mine: false },
       { commentId: 'c-2', empId: 'E-1042', name: 'Avery Blake', text: 'Updated — thanks for flagging.', atMs: Date.now() - 3600000, mine: true }],
