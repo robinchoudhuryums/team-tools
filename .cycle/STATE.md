@@ -97,6 +97,22 @@ Updated: 2026-08-21
   claim paragraph; INV-190 section (d); running test total 585→607; the
   consolidated Operator State Checklist round entry). Harnesses green after
   the edits (pure 607 / DOM 75). No doc lists owed.
+- **Round-2 FOLLOW-ONS implemented** (2026-08-24, /broad-implement) —
+  commits d748f2f + 39cb0c5, block
+  `.cycle/blocks/19pre-pilot-round2-followons-broad-implement.md`. Three
+  items: Spanish pending fixture claim-state (all three claim states on
+  camera; claimed item leads for the dashboard slide) + the matrix's FIRST
+  modal scenario (`cn-sched-modal-light-wide` via a new optional shoot.mjs
+  `post` hook), `test_scheduledCalls_flow` in Tests.js (+ the
+  cleanupTestData ScheduledCalls TEST_ sweep — runs at the post-deploy
+  runAllTests()), and the claim pill on the Dashboard Spanish card preview
+  (shared `spanishClaimPillHtml_`, typeof-guarded). Pure 607→612 (5 pins;
+  7 mutations / 7 bites — TWO pins strengthened when their first bite
+  exposed them: a joined-string indexOf substring-matched `at` inside
+  `atMs`, and a first-item-only shape check missed item 2). DOM 75. The
+  three affected visual scenarios shot clean and were eyeballed.
+  /sync-docs owed: test total 607→612 + the Visual Audit Stage's
+  modal-coverage sentence.
 - Roadmap round 3 remains: intake arrow-key nav, server-backed scratchpad
   (operator chose per-rep-sheet storage), Reference comments Phase A.
   Operator answers on record: sender v1 = name+replyTo (alias later);
@@ -123,11 +139,14 @@ Updated: 2026-08-21
 
 ## Where I left off
 Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
-(86c64df) and Round 2 (Spanish claim/assign + scheduled-call reminders,
-through 3188e79) are implemented + tested on
-`claude/team-tools-roadmap-6e2l97` and pushed, and /sync-docs for all
-THREE blocks is APPLIED (3d80176). Awaiting the operator's PR/merge
-decision and the combined deploy (with PR #176/#177) + post-deploy
-runAllTests() + email spot-check. Next implementation work: roadmap
-round 3 (intake arrow-key nav, server-backed scratchpad, Reference
-comments Phase A).
+(86c64df), Round 2 (through 3188e79) and the Round-2 FOLLOW-ONS
+(d748f2f + 39cb0c5 — visual claim/sched fixtures + modal scenario,
+sched editor test, dashboard claim pill) are implemented + tested on
+`claude/team-tools-roadmap-6e2l97` and pushed. /sync-docs is APPLIED
+for the first three blocks (3d80176); a SMALL /sync-docs remains for
+the round-2 follow-ons (test total 607→612, the Visual Audit Stage
+modal-coverage sentence). Awaiting the operator's PR/merge decision
+and the combined deploy (with PR #176/#177) + post-deploy
+runAllTests() (now incl. scheduledCalls_flow) + email spot-check.
+Next implementation work: roadmap round 3 (intake arrow-key nav,
+server-backed scratchpad, Reference comments Phase A).
