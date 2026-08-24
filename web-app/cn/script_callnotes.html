@@ -318,6 +318,12 @@
     transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
   }
   .cn-help-fab:hover { color: var(--ink); border-color: var(--border-strong); }
+  /* Pilot round 3 — the header fabs (scratchpad / bell / ?) are ONE flex
+     group, i.e. ONE .cn-head grid item. Bare buttons were each their own
+     grid item in the 2-column head, so the third fab scattered them across
+     two extra grid rows (measured on the round-3 full re-shoot). */
+  .cn-head-fabs { display: flex; align-items: center; gap: 8px; justify-self: start; }
+  .cn-head-fabs .cn-help-fab { margin-left: 0; }
   /* Save & Compose loading state — envelope bobs while the save confirms */
   .cn-compose-loading {
     display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -2547,9 +2553,11 @@ function cnRenderNotesView(area) {
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Week</div></div>
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
-        <button type="button" class="cn-help-fab" id="cn-scratch-btn" title="Scratchpad — personal notes that follow you across devices" aria-label="Scratchpad">${icon('fileText', 14)}</button>
-        <button type="button" class="cn-help-fab" id="cn-sched-btn" title="Scheduled call reminders" aria-label="Scheduled call reminders">${icon('bell', 14)}</button>
-        <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
+        <div class="cn-head-fabs">
+          <button type="button" class="cn-help-fab" id="cn-scratch-btn" title="Scratchpad — personal notes that follow you across devices" aria-label="Scratchpad">${icon('fileText', 14)}</button>
+          <button type="button" class="cn-help-fab" id="cn-sched-btn" title="Scheduled call reminders" aria-label="Scheduled call reminders">${icon('bell', 14)}</button>
+          <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
+        </div>
       </div>
     `}
     <div class="cn-rolling">
