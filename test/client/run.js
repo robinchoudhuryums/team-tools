@@ -11356,5 +11356,110 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-2 pilot FOLLOW-ONS (2026-08-24) — Spanish fixture claim-state +
+// sched-modal scenario (INV-185 gaps named by the round-2 block), the
+// Dashboard Spanish-card claim pill, and the editor sched-flow test's
+// registration + cleanup sweep.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / sched editor test');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const mockRaw = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+
+  test('R2-FU: dashboard Spanish card renders the SHARED claim pill (typeof-guarded, self from the payload)', () => {
+    const card = strip(extractFunction('tc/script_clock.html', 'clkDashSpanishCard_'));
+    // Reuses the metrics partial's pure pill — a paraphrase here would be the
+    // INV-185 drift class in production code.
+    assert.ok(/typeof spanishClaimPillHtml_ === 'function'/.test(card),
+      'the cross-partial call is typeof-guarded');
+    assert.ok(/spanishClaimPillHtml_\(r, \(pendingRes && pendingRes\.self\) \|\| ''\)/.test(card),
+      'the pill takes the previewed item + the payload self');
+    assert.ok(/ago<\/span>' \+ claimPill \+ '<\/div>/.test(card),
+      'the pill lands in the .dash-sp-from preview line');
+    const clkCss = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+    assert.ok(/\.dash-sp-from \.sp-claim-pill \{/.test(clkCss), 'the inline-pill spacing rule exists');
+  });
+
+  test('R2-FU: Spanish pending FIXTURE carries claim/members/self — all three claim states shootable', () => {
+    // Extract from RAW source (INV-188 inverse: the fixture rows carry
+    // https:// permalinks, which a naive //-stripper eats along with the
+    // rows' closing braces — the seams-18 F3 lesson).
+    const block = /getSpanishInboxPending: \{ pending: \[([\s\S]*?)\n      medianMinutes/.exec(mockRaw);
+    assert.ok(block, 'found the pending fixture block');
+    assert.ok(/members: \[/.test(mockRaw.slice(block.index, block.index + block[0].length + 400)),
+      'fixture ships members');
+    const selfM = /self: '([^']+)'/.exec(mockRaw.slice(block.index, block.index + block[0].length + 400));
+    assert.ok(selfM, 'fixture ships self');
+    // Claim keys derive from the server fold's own object literal — the
+    // seams-18 F3 pattern (a hand-copied key list here would drift exactly
+    // like the fixture it checks).
+    const fold = strip(extractRawFunction('Code.js', 'spanishClaimsFold_'));
+    const lit = /out\[tid\] = \{([\s\S]*?)\};/.exec(fold);
+    assert.ok(lit, 'found the fold\'s claim literal');
+    const srvKeys = [...lit[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+    const claims = [...block[1].matchAll(/claim: \{([^}]*)\}/g)];
+    assert.ok(claims.length >= 2, 'at least two CLAIMED items (other + self)');
+    claims.forEach((c) => {
+      const keys = [...c[1].matchAll(/(\w+):\s/g)].map((m) => m[1]);
+      keys.forEach((k) => assert.ok(srvKeys.indexOf(k) >= 0,
+        'fixture claim key "' + k + '" is not a server fold key (' + srvKeys + ')'));
+      assert.ok(keys.indexOf('by') >= 0, 'every claim carries by');
+    });
+    assert.ok(/claim: null/.test(block[1]), 'an UNCLAIMED item stays on camera (Claim button state)');
+    assert.ok(block[1].indexOf("claim: { by: '" + selfM[1] + "'") >= 0,
+      'one item is claimed by SELF (the "you" pill state)');
+  });
+
+  test('R2-FU: sched FIXTURE mirrors the server shape; the overdue item can never toast over the shot', () => {
+    const fx = /getMyScheduledCalls: \{ calls: \[([\s\S]*?)\] \}/.exec(mockRaw);
+    assert.ok(fx, 'found the getMyScheduledCalls fixture');
+    // Item keys EQUAL the server's return map (derived — the F3 pattern).
+    const srv = strip(extractRawFunction('Code.js', 'getMyScheduledCalls'));
+    const ret = /return \{ (\w+: c\.\w+[\s\S]*?)\};/.exec(srv);
+    assert.ok(ret, 'found the server\'s per-call return map');
+    const srvKeys = [...ret[1].matchAll(/(\w+): c\./g)].map((m) => m[1]).sort().join('|');
+    const firstItem = /\{([^}]*)\}/.exec(fx[1]);
+    const fxKeys = [...firstItem[1].matchAll(/(\w+):\s/g)].map((m) => m[1]).sort().join('|');
+    assert.strictEqual(fxKeys, srvKeys,
+      'sched fixture item keys must EQUAL the server call shape — the liveStatus drift class');
+    // The overdue item sits BEYOND the schedTick_ fire window, so the modal
+    // scenario shows the overdue tone WITHOUT a sticky toast covering it.
+    const lateM = /SCHED_FIRE_LATE_MS = ([\d *]+);/.exec(
+      fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+    assert.ok(lateM, 'found SCHED_FIRE_LATE_MS');
+    const lateMs = Function('return (' + lateM[1] + ')')();
+    const overdueM = /Date\.now\(\) - ([\d *]+),/.exec(fx[1]);
+    assert.ok(overdueM, 'fixture has a past-due item');
+    assert.ok(Function('return (' + overdueM[1] + ')')() > lateMs,
+      'the overdue offset exceeds the fire window (' + lateMs + 'ms)');
+  });
+
+  test('R2-FU: shoot.mjs consumes the post hook and the sched-modal scenario uses it', () => {
+    const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+    assert.ok(/query, post\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element');
+    assert.ok(/if \(post\) \{/.test(shoot), 'the hook is consumed after nav');
+    assert.ok(/\['cn-sched-modal-light-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot),
+      'the sched-modal scenario opens the modal via the hook');
+  });
+
+  test('R2-FU: the editor sched-flow test is registered and cleanupTestData sweeps ScheduledCalls', () => {
+    const tests = strip(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+    assert.ok(/_integrationTest\('scheduledCalls_flow',\s*test_scheduledCalls_flow\)/.test(tests),
+      'test_scheduledCalls_flow is in the run list');
+    assert.ok(/function test_scheduledCalls_flow\(\)/.test(tests), 'the test exists');
+    const cleanup = /function cleanupTestData\(\) \{([\s\S]*?)\n\}/.exec(tests);
+    assert.ok(cleanup && /getSheetByName\(SCHED_CALLS_TAB\), 'TEST_', SC\.EMP_ID/.test(cleanup[1]),
+      'cleanupTestData sweeps ScheduledCalls by the TEST_ EmpId prefix (INV-21)');
+    // The sweep must use getSheetByName, never provision as a side effect.
+    assert.ok(!/getOrCreateScheduledCallsSheet_/.test(cleanup[1]),
+      'cleanup never provisions the tab');
+    // INV-32 inside the test itself: it asserts the audit row is label-free.
+    const flow = /function test_scheduledCalls_flow\(\)[\s\S]*?\n\}/.exec(tests)[0];
+    assert.ok(/indexOf\('TEST_SCHED'\) < 0/.test(flow),
+      'the flow test pins the PHI-free audit row');
+  });
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

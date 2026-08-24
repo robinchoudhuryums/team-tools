@@ -666,6 +666,12 @@ function cleanupTestData() {
       }
     }
   } catch (e) { Logger.log('cleanupTestData: forms-store backstop skipped: ' + e.message); }
+  // Pilot round 2 — ScheduledCalls (same forms store): rows are keyed by
+  // EmpId, so the standard TEST_-prefix sweep applies. getSheetByName only
+  // (never getOrCreate*) so a bare environment isn't provisioned by cleanup.
+  try {
+    _cleanupRowsByPrefix(getFormsSS_().getSheetByName(SCHED_CALLS_TAB), 'TEST_', SC.EMP_ID, 2);
+  } catch (e) { Logger.log('cleanupTestData: scheduled-calls sweep skipped: ' + e.message); }
 
   // Reset test employee balances back to defaults
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
@@ -1144,6 +1150,8 @@ function _runAllTests() {
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
+  // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
+  _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -5220,6 +5228,99 @@ function test_deptReq_incomingAndMemberResolve() {
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
     drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
+  }
+}
+
+// ── Pilot round 2 — scheduled-call reminders (create → list → status) ───────
+// Runs against the LIVE forms store (the public-form tests' posture): rows are
+// keyed by the TEST_ EmpId, per-test finally deletes them, and cleanupTestData
+// carries the ScheduledCalls TEST_-prefix backstop for a killed run (INV-21).
+// Date derivation obeys the mixed-frame rule (Editor-test hazard (a)): the
+// wall time is formatted in the TARGET rep's OWN tz — the same frame
+// createScheduledCall parses in — and "tomorrow 10:30" is future at every
+// possible run time, so the test is never time-of-day dependent.
+function test_scheduledCalls_flow() {
+  let createdId = null;
+  try {
+    // Create as the India rep, tomorrow 10:30 in THEIR tz.
+    let create;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      const emp = getEmployeeInfo_();
+      if (!emp) _skipTest('India test emp not resolvable');
+      const dateStr = Utilities.formatDate(new Date(Date.now() + 86400000), empTz_(emp), 'yyyy-MM-dd');
+      create = createScheduledCall({ date: dateStr, time: '10:30', label: 'TEST_SCHED call-back — patient X', leadMin: 5 });
+    });
+    _assertEq(create.success, true, 'create succeeds');
+    _assertTrue(create.call && create.call.id, 'create returns the call with an id');
+    _assertTrue(Number(create.call.whenMs) > Date.now(), 'whenMs parsed into the future');
+    _assertEq(create.call.leadMin, 5, 'leadMin canonicalized');
+    createdId = create.call.id;
+
+    // INV-32: the audit row carries the id ONLY — the label (which may name a
+    // patient) must never reach the shared AuditLog.
+    const auditSheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
+    const aData = auditSheet.getDataRange().getValues();
+    let auditNotes = null;
+    for (let i = aData.length - 1; i >= Math.max(1, aData.length - 25); i--) {
+      if (String(aData[i][AUDIT.ACTION]) === 'ScheduledCallCreate'
+          && String(aData[i][AUDIT.NOTES]).indexOf(createdId) >= 0) { auditNotes = String(aData[i][AUDIT.NOTES]); break; }
+    }
+    _assertTrue(auditNotes !== null, 'ScheduledCallCreate audit row written with the id');
+    _assertTrue(auditNotes.indexOf('TEST_SCHED') < 0, 'audit row is PHI-free — the label never reaches the AuditLog');
+
+    // List: the owner sees it, soonest-first shape fields present.
+    let mine;
+    _asUser(_TEST_INDIA_EMAIL, function () { mine = getMyScheduledCalls(); });
+    _assertTrue(mine && Array.isArray(mine.calls), 'list returns calls[]');
+    const hit = mine.calls.filter(function (c) { return c.id === createdId; })[0];
+    _assertTrue(!!hit, 'owner sees the created reminder');
+    _assertEq(hit.status, 'active', 'listed as active');
+
+    // Cross-rep isolation: another rep neither sees it nor can touch it —
+    // a foreign id reads as not-found (existence never leaks).
+    let phList, phStatus;
+    _asUser(_TEST_PH_EMAIL, function () {
+      phList = getMyScheduledCalls();
+      phStatus = setScheduledCallStatus(createdId, 'done');
+    });
+    _assertTrue(phList.calls.every(function (c) { return c.id !== createdId; }),
+      'another rep does not see it');
+    _assertContains(phStatus.error, 'not found', 'another rep cannot change its status');
+
+    // Status whitelist + the done transition.
+    let bad, done, after;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      bad = setScheduledCallStatus(createdId, 'snoozed');
+      done = setScheduledCallStatus(createdId, 'done');
+      after = getMyScheduledCalls();
+    });
+    _assertContains(bad.error, 'done or cancelled', 'off-whitelist status rejected');
+    _assertEq(done.success, true, 'owner marks it done');
+    _assertTrue(after.calls.every(function (c) { return c.id !== createdId; }),
+      'a done reminder leaves the active list');
+
+    // Validation rejects: shape, past, horizon — nothing written for any.
+    let vBad;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      const emp = getEmployeeInfo_();
+      const tz = empTz_(emp);
+      const yest = Utilities.formatDate(new Date(Date.now() - 86400000), tz, 'yyyy-MM-dd');
+      const far = Utilities.formatDate(new Date(Date.now() + 90 * 86400000), tz, 'yyyy-MM-dd');
+      vBad = [
+        createScheduledCall({ date: 'not-a-date', time: '10:30', label: 'x', leadMin: 5 }),
+        createScheduledCall({ date: yest, time: '10:30', label: 'x', leadMin: 5 }),
+        createScheduledCall({ date: far, time: '10:30', label: 'x', leadMin: 5 }),
+      ];
+    });
+    _assertContains(vBad[0].error, 'Invalid date', 'bad date shape rejected');
+    _assertContains(vBad[1].error, 'past', 'past time rejected');
+    _assertContains(vBad[2].error, 'days ahead', 'beyond-horizon rejected');
+  } finally {
+    // Per-test cleanup: drop the TEST_-EmpId rows this run appended (the
+    // cleanupTestData sweep is the killed-run backstop). getSheetByName only.
+    try {
+      _cleanupRowsByPrefix(getFormsSS_().getSheetByName(SCHED_CALLS_TAB), 'TEST_', SC.EMP_ID, 2);
+    } catch (e) { Logger.log('sched cleanup skipped: ' + e.message); }
   }
 }
 

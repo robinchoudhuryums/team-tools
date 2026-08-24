@@ -293,10 +293,28 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
+    // Pilot round 2 — the pending payload carries `claim` per item (shape
+    // {by, assignedBy, atMs} — Code.js getSpanishInboxPending) + `members` +
+    // `self`. All THREE claim states are on camera: unclaimed (Claim button),
+    // claimed-by-other (name pill + manager Release/Assign), claimed-by-you
+    // ("you" pill). The fixture predating these fields was the round-2 block's
+    // named INV-185 gap.
     getSpanishInboxPending: { pending: [
-      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1' },
-      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2' }],
-      medianMinutes: 45, truncated: false },
+      // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
+      // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
+      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null },
+      { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } }],
+      medianMinutes: 45, truncated: false,
+      members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
+      self: 'avery@umsupply.com' },
+    // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
+    // overdue (PAST the 30-min schedTick_ fire window, so the sched-modal
+    // scenario shows the overdue tone WITHOUT a sticky toast covering the
+    // shot). Shape mirrors getMyScheduledCalls' return map (pinned).
+    getMyScheduledCalls: { calls: [
+      { id: 'sc-2', whenMs: Date.now() - 2 * 3600000, leadMin: 5, label: 'Call back — J. Rivera · insurance question', status: 'active' },
+      { id: 'sc-1', whenMs: Date.now() + 3600000, leadMin: 5, label: 'Translated call — Maria G · TRX 12345', status: 'active' }] },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
@@ -304,7 +322,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       truncated: false },
-    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 2, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 14, truncated: false },
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 3, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 15, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {

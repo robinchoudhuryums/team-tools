@@ -251,6 +251,8 @@
   .dash-sp-arrow:hover { background: var(--paper-2); border-color: var(--border-strong); }
   .dash-sp-req { background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
   .dash-sp-from { font-size: 13px; font-weight: 600; color: var(--ink); }
+  /* Pilot round-2 follow-on: the shared claim pill inline on the preview line. */
+  .dash-sp-from .sp-claim-pill { margin-left: 6px; vertical-align: middle; }
   .dash-sp-age { font-weight: 400; color: var(--muted); }
   .dash-sp-snip { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
   .dash-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--info-deep); margin-top: 8px; }
@@ -1046,6 +1048,14 @@ function clkDashSpanishCard_(res, pendingRes) {
     var snip = String(r.snippet || r.subject || '').replace(/\s+/g, ' ').trim();
     if (snip.length > 130) snip = snip.slice(0, 130) + '…';
     var median = res.medianMinutes != null ? '· median reply ' + res.medianMinutes + 'm' : '';
+    // Pilot round-2 follow-on: claim info on the preview. Reuses the metrics
+    // partial's pure pill ("you" for the caller's own claim; escapes
+    // internally) — a paraphrase here would be the INV-185 drift class.
+    // typeof-guarded (cross-partial, the cnStopAmbientPolling_ pattern);
+    // `self` rides the pending payload (additive — absent on an old server).
+    var claimPill = (typeof spanishClaimPillHtml_ === 'function')
+      ? spanishClaimPillHtml_(r, (pendingRes && pendingRes.self) || '')
+      : '';
     var nav = n > 1
       ? '<span class="dash-sp-nav"><button class="dash-sp-arrow" aria-label="Previous request" onclick="clkSpNav_(-1)">' + icon('chevronLeft', 13) + '</button>' +
         '<span class="mono">' + (idx + 1) + ' / ' + n + '</span>' +
@@ -1056,7 +1066,7 @@ function clkDashSpanishCard_(res, pendingRes) {
         '<span class="dash-sp-median mono">' + esc(median) + '</span>' + nav +
       '</div>' +
       '<div class="dash-sp-req">' +
-        '<div class="dash-sp-from">' + esc(r.requester || 'Unknown') + ' <span class="dash-sp-age">· ' + esc(age) + ' ago</span></div>' +
+        '<div class="dash-sp-from">' + esc(r.requester || 'Unknown') + ' <span class="dash-sp-age">· ' + esc(age) + ' ago</span>' + claimPill + '</div>' +
         '<div class="dash-sp-snip">' + esc(snip) + '</div>' +
       '</div>' + openLink;
   }

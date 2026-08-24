@@ -33,7 +33,11 @@ const COMPACT = { width: 480, height: 800 };
 const COMPACT_SM = { width: 360, height: 640 };
 const MOBILE = { width: 390, height: 844 };
 
-// [name, {tool, tab}, viewport, mode, query]
+// [name, {tool, tab}, viewport, mode, query, post?]
+// `post` (optional 6th element) is a JS expression evaluated in the page AFTER
+// the nav settles — the first mechanism for shooting a MODAL state (the
+// Visual Audit Stage lists modal/overlay states as an uncovered gap; tab
+// landings alone cannot reach them).
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
@@ -116,13 +120,19 @@ const SCENARIOS = [
   // compact grids still hold (2-up trio, 84px labels) and only the type
   // scales; this scenario is the stacked side of that boundary, on camera.
   ['cn-log-light-compact-sm', { tool: 'callNotes', tab: 'callNotes' }, COMPACT_SM, 'light', '?compact=1'],
+  // Pilot round 2 (2026-08-24): the scheduled-call reminders modal — the
+  // matrix's first modal-state scenario (via the `post` hook). The fixture
+  // carries one upcoming + one 2h-overdue item, so the overdue tone and the
+  // Done/Cancel controls are on camera; the create form's label-for naming is
+  // what a11y-names.mjs cannot reach (it walks tab landings too).
+  ['cn-sched-modal-light-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'light', '', 'cnOpenSchedModal_()'],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
-for (const [name, nav, vp, mode, query] of SCENARIOS) {
+for (const [name, nav, vp, mode, query, post] of SCENARIOS) {
   if (only && !only.some((o) => name.includes(o))) continue;
   const ctx = await browser.newContext({ viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' });
   const page = await ctx.newPage();
@@ -141,6 +151,10 @@ for (const [name, nav, vp, mode, query] of SCENARIOS) {
   if (nav.tool) {
     await page.evaluate(([tool, tab]) => { try { window.enterTool(tool, tab || undefined); } catch (e) { console.error('enterTool threw: ' + e.message); } }, [nav.tool, nav.tab]);
     await page.waitForTimeout(1800);
+  }
+  if (post) {
+    await page.evaluate((code) => { try { (0, eval)(code); } catch (e) { console.error('post hook threw: ' + e.message); } }, post);
+    await page.waitForTimeout(1000);
   }
   // Compact/mobile use viewport-clipped frames: a fullPage capture PAINTS
   // off-viewport fixed elements (the closed KB drawer, the mobile nav) into
