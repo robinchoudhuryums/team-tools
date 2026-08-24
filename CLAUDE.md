@@ -8077,10 +8077,15 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    modal is covered in light/dark/compact this way, and its FIRST dark shot
    immediately caught unstyled native buttons (`.cn-act-btn` is styled only
    under `.cn-card-actions`) that every light shot had made look merely plain.
-   A new modal scenario is one tuple entry, not harness work.
+   A new modal scenario is one tuple entry, not harness work — the round-3
+   follow-ons used the same hook for `reference-reader-light-wide` (the OPEN
+   Reference reader: article + feedback bar + comment thread), whose first
+   shot led to measuring an invisible 4px edit button (`icon('pencil')`
+   resolved to NO glyph — the key is `adjust`; now tripwired, see the icon-key
+   pin).
    **Still uncovered: Manage → Coverage, Sent Forms, EmpDocs
-   My Docs, and most OTHER modal/overlay states** (only the sched modal has
-   `post` scenarios so far),
+   My Docs, and most OTHER modal/overlay states** (only the sched modal and
+   the Reference reader have `post` scenarios so far),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
    width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED
    component, also the CN search field tabs) kept a 25px page overflow at
