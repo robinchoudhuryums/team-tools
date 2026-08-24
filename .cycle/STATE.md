@@ -67,6 +67,17 @@ Updated: 2026-08-21
   /sync-docs is OWED for it (the block lists the exact CLAUDE.md updates:
   INV-143 whitelist keys, SubformData gotcha, setCallNoteFlag 4th arg,
   draft-blob shape, operator-round entry).
+- **Round-1 FOLLOW-ONS implemented** (2026-08-24, /broad-implement
+  "follow-on items") — commit 86c64df, block
+  `.cycle/blocks/19pre-pilot-round1-followons-broad-implement.md`. Four
+  items: the DORMANT neutral-sender alias (`REP_SENDER_FROM` Script
+  Property + `sendRepEmail_` wrapper over all six rep sends),
+  {callDirection} copy-template token (default template unchanged),
+  outbound History group chip, and the intakeCatalogIssues_ non-http E/F
+  warning (closes STATE's seams-18 F1 open follow-on). Pure 595→600 (5 new
+  pins + 2 veteran intake ordering pins repointed at the wrapper send, all
+  bite-checked), DOM 75. Explicitly NOT done here: roadmap round 2 (its own
+  round) and the operator-only items (CDR col-4, FORMS_SS_ID).
 - Roadmap rounds 2–3 approved in sequence: (2) Spanish Inbox claim/assign +
   scheduled-call reminders; (3) intake arrow-key nav, server-backed
   scratchpad (operator chose per-rep-sheet storage), Reference comments
@@ -74,12 +85,13 @@ Updated: 2026-08-21
   later); scratchpad = server-backed.
 
 ## Open follow-on items
-- Code.js: `intakeHttpOnly_` drops schemeless operator URLs (`www.x.com`)
-  — matches the client twin's shipped behavior; if an operator ever types
-  one, the link silently doesn't render. A catalog-issues WARNING for
-  non-http col E/F values would make it visible (INV-187 spirit).
+- ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
+  (round-1 follow-ons FO-D, commit 86c64df)
 - CDR col-4 header one-liner (cycle 15, still open — operator)
 - `FORMS_SS_ID` segregation recommendation (standing operator item)
+- To ACTIVATE the neutral sender (optional): Gmail "Send mail as" alias on
+  the deploying account + Script Property `REP_SENDER_FROM` (operator; no
+  redeploy — dormant until both halves exist)
 
 ## Decisions made (so the next session doesn't re-litigate)
 - F3's shape pin extracts keys colon-space over the WHOLE return block
@@ -92,9 +104,11 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-Cycle 18 is CLOSED. Pilot-feedback Round 1 (sender identity / review
-comments / call direction) is implemented + tested + committed (c15eec7)
-on `claude/team-tools-roadmap-6e2l97` and pushed — awaiting the operator's
-PR/merge decision, the combined deploy (with PR #176/#177), and /sync-docs
-for the round-1 doc updates. Next implementation work: roadmap round 2
-(Spanish claim/assign, then scheduled-call reminders).
+Cycle 18 is CLOSED. Pilot-feedback Round 1 (c15eec7) + its follow-ons
+(86c64df — dormant neutral sender, copy token, outbound chip, catalog
+warning) are implemented + tested on `claude/team-tools-roadmap-6e2l97`
+and pushed — awaiting the operator's PR/merge decision, the combined
+deploy (with PR #176/#177), and /sync-docs for BOTH blocks' doc lists
+(round 1's + the follow-ons' REP_SENDER_FROM / E-F-URL entries). Next
+implementation work: roadmap round 2 (Spanish claim/assign, then
+scheduled-call reminders).
