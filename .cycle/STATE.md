@@ -113,10 +113,37 @@ Updated: 2026-08-21
   three affected visual scenarios shot clean and were eyeballed.
   /sync-docs owed: test total 607→612 + the Visual Audit Stage's
   modal-coverage sentence.
-- Roadmap round 3 remains: intake arrow-key nav, server-backed scratchpad
-  (operator chose per-rep-sheet storage), Reference comments Phase A.
-  Operator answers on record: sender v1 = name+replyTo (alias later);
-  scratchpad = server-backed.
+- **Round 3 implemented + full 47-scenario matrix re-shot** (2026-08-24,
+  /broad-implement "full 43-scenario re-shoot, dark/compact sched-modal
+  variants, roadmap round 3") — commits ef489ad + 637bdc9 + 7b62a6b +
+  3d87ebc + ba10a49, block
+  `.cycle/blocks/19pre-pilot-round3-broad-implement.md`. Three
+  capabilities: intake arrow-key field nav (the CN boundary-hop pattern);
+  server-backed scratchpad (per-rep CN sheet `Scratchpad` tab,
+  `setNumberFormat('@')` coercion pin, USER-lock save — documented INV-01
+  exception, CN header fab + autosave modal with flush-on-close); Reference
+  comments Phase A (`KbComments` tab, add/soft-delete author-or-manager,
+  draft targets invisible, id-only audit rows, Reference TAB only — the
+  drawer stays comment-free by the INV-139 parity shape). Plus the two new
+  sched-modal scenarios (dark-wide, light-compact via the `post` hook →
+  matrix 47) whose FIRST dark shot caught a round-2 latent: the sched
+  modal's `.cn-act-btn`s were unstyled native buttons (white boxes in dark
+  mode — now a scoped token rule), and the full re-shoot caught the CN
+  header fabs scattering as separate grid items (now ONE `.cn-head-fabs`
+  group). Pure 612→619 (7 pins; 9 mutations / 9 bites after one
+  strengthen — the caret-edge pin needed a boundary-anchored-selection
+  case), DOM 75. Editor suite +2 (`scratchpad_saveReadRoundTrip`,
+  `kb_comments_flow` — run at the post-deploy runAllTests()). All 47 PNGs
+  machine-clean (0 missing, 0 overflowPx) and eyeballed.
+  /sync-docs owed (merged with the round-2-followons list): test total
+  612→619 + editor ≈307; matrix 47 + modal-coverage sentence; the round-3
+  features (Scratchpad tab in the per-rep store row, KbComments in the KB
+  store row + endpoints + KbCommentAdd audit action, intake arrow nav,
+  the cn-head-fabs note); INV-01 exception list + saveMyScratchpad;
+  localStorage + INV-136 counts UNCHANGED.
+- Operator answers on record: sender v1 = name+replyTo (alias later);
+  scratchpad = server-backed (per-rep sheet). Roadmap rounds 1–3 are now
+  ALL implemented; no approved roadmap items remain unbuilt.
 
 ## Open follow-on items
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
@@ -139,14 +166,16 @@ Updated: 2026-08-21
 
 ## Where I left off
 Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
-(86c64df), Round 2 (through 3188e79) and the Round-2 FOLLOW-ONS
-(d748f2f + 39cb0c5 — visual claim/sched fixtures + modal scenario,
-sched editor test, dashboard claim pill) are implemented + tested on
-`claude/team-tools-roadmap-6e2l97` and pushed. /sync-docs is APPLIED
-for the first three blocks (3d80176); a SMALL /sync-docs remains for
-the round-2 follow-ons (test total 607→612, the Visual Audit Stage
-modal-coverage sentence). Awaiting the operator's PR/merge decision
-and the combined deploy (with PR #176/#177) + post-deploy
-runAllTests() (now incl. scheduledCalls_flow) + email spot-check.
-Next implementation work: roadmap round 3 (intake arrow-key nav,
-server-backed scratchpad, Reference comments Phase A).
+(86c64df), Round 2 (through 3188e79), Round-2 FOLLOW-ONS (d748f2f +
+39cb0c5), and ROUND 3 (ef489ad → ba10a49 — intake arrow nav,
+server-backed scratchpad, Reference comments Phase A, matrix → 47 with
+the sched-modal dark/compact variants, plus the two visual fixes the
+re-shoot caught) are ALL implemented + tested on
+`claude/team-tools-roadmap-6e2l97` and pushed. The approved roadmap is
+complete. ONE /sync-docs remains, covering the round-2-followons +
+round-3 doc lists together (test totals 607→619, matrix 47 +
+modal-coverage sentence, the round-3 features/store rows/INV-01
+exception). Awaiting the operator's PR/merge decision and the combined
+deploy (with PR #176/#177) + post-deploy runAllTests() (now incl.
+scheduledCalls_flow, scratchpad_saveReadRoundTrip, kb_comments_flow) +
+email spot-check.
