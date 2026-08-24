@@ -1012,6 +1012,22 @@
   .cn-sched-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
   .cn-sched-acts { display: inline-flex; gap: 4px; flex-shrink: 0; }
   .cn-sched-acts .cn-act-btn { width: auto; }
+  /* .cn-act-btn is otherwise styled ONLY under .cn-card-actions, so the
+     sched modal's ✓ / × / Close buttons rendered as UNSTYLED native
+     buttons — glaring white boxes in dark mode, caught the moment the
+     round-3 dark modal scenario was shot. Token-based mirror of the
+     card-actions treatment, scoped to this modal. */
+  .cn-sched-modal .cn-act-btn {
+    appearance: none; border: 1px solid var(--line); background: transparent;
+    min-width: 26px; min-height: 26px; padding: 0 5px;
+    border-radius: var(--radius-pill);
+    cursor: pointer; color: var(--muted); font: inherit; font-size: 12.5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .cn-sched-modal .cn-act-btn:hover {
+    background: var(--paper-2); color: var(--ink); border-color: var(--border-strong);
+  }
   .cn-sched-empty {
     font-size: 13px; color: var(--muted); border: 1px dashed var(--line);
     border-radius: var(--radius); padding: 12px; text-align: center; margin-top: 12px;
