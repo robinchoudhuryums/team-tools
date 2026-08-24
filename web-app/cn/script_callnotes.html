@@ -985,6 +985,32 @@
     50%      { opacity: .35; }
   }
 
+  /* Round-2 pilot — scheduled-call reminders modal (create form + upcoming
+     list). Intrinsic 2-col grid inside the modal; the full-width rows span. */
+  .cn-sched-hint { font-size: 12px; color: var(--muted); margin: 4px 0 12px; line-height: 1.45; }
+  .cn-sched-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+  .cn-sched-row { display: flex; flex-direction: column; gap: 4px; }
+  .cn-sched-row.full { grid-column: 1 / -1; }
+  .cn-sched-row label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  }
+  .cn-sched-row input, .cn-sched-row select {
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px; background: var(--paper-card); color: var(--ink);
+  }
+  .cn-sched-form .btn-modal-ok { grid-column: 1 / -1; margin-top: 2px; }
+  .cn-sched-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .cn-sched-when { font-family: var(--mono); font-size: 11.5px; color: var(--info-deep); flex-shrink: 0; }
+  .cn-sched-item.overdue .cn-sched-when { color: var(--warning-deep); }
+  .cn-sched-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  .cn-sched-acts { display: inline-flex; gap: 4px; flex-shrink: 0; }
+  .cn-sched-acts .cn-act-btn { width: auto; }
+  .cn-sched-empty {
+    font-size: 13px; color: var(--muted); border: 1px dashed var(--line);
+    border-radius: var(--radius); padding: 12px; text-align: center; margin-top: 12px;
+  }
+
   /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
      (the training-question line mirrored, in the review flag's green). */
   .cn-card-review-c {
@@ -2511,6 +2537,7 @@ function cnRenderNotesView(area) {
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Week</div></div>
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
+        <button type="button" class="cn-help-fab" id="cn-sched-btn" title="Scheduled call reminders" aria-label="Scheduled call reminders">${icon('bell', 14)}</button>
         <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
       </div>
     `}
@@ -3105,6 +3132,8 @@ function cnWireActiveForm_() {
   }
   var helpBtn = document.getElementById('cn-help-btn');
   if (helpBtn) helpBtn.addEventListener('click', cnOpenShortcutsOverlay_);
+  var schedBtn = document.getElementById('cn-sched-btn');
+  if (schedBtn) schedBtn.addEventListener('click', function () { cnOpenSchedModal_(); });
   var extBtn = document.getElementById('cn-ext-email-btn');
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
@@ -4116,6 +4145,7 @@ function cnInstallCardDelegation_(area) {
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
       case 'timeline':    cnOpenPatientTimeline_(btn.dataset.trx); break;
       case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
+      case 'sched':       cnOpenSchedModal_({ label: cnSchedPrefillFromNote_(noteId) }); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
   });
@@ -4417,7 +4447,8 @@ function cnRenderCardCore_(note, expandable) {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
-                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn;
+                var schedBtn2 = '<button class="cn-act-btn" title="Schedule a call-back reminder for this call" data-cn-action="sched">' + icon('bell', 14) + '</button>';
+                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn + schedBtn2;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more" aria-expanded="false" aria-haspopup="true">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -4507,6 +4538,153 @@ function cnExtEmailPillHtml_(note) {
   const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
   return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
     icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
+}
+
+// ── Scheduled-call reminders — UI (pilot round 2, 2026-08-24) ───────────────
+// The DATA + delivery live in the shell (SCHED_STATE / schedTick_ in
+// script_core.html — reminders must fire in the pinned pop-out, not just this
+// tab). This modal is the CRUD surface: create (date/time in the REP's own
+// profile timezone — the server parses the wall time in empTz_), an upcoming
+// list, Done / Cancel. Reached from the Log header bell and from a note
+// card's More menu ("Schedule a call-back reminder", prefilled from the note).
+
+function cnSchedPrefillFromNote_(noteId) {
+  var n = cnFindNoteAnywhere_(noteId);
+  if (!n) return '';
+  var who = (n.caller && n.caller.trim()) || (n.callback && n.callback.trim()) || '';
+  var trx = (n.patientAndTrx && n.patientAndTrx.trim()) || '';
+  return ('Call back ' + who + (trx ? ' · ' + trx : '')).trim();
+}
+
+function cnOpenSchedModal_(opts) {
+  var overlay = ensureOverlay('cn-sched-overlay', { label: 'Scheduled call reminders', onClose: cnCloseSchedModal_ });
+  var today = '';
+  try { today = isoDateTz(empTz()); } catch (e) {}
+  overlay.innerHTML =
+    '<div class="modal cn-sched-modal" style="max-width:480px">' +
+      '<h3 style="margin-top:0">Scheduled call reminders</h3>' +
+      '<p class="cn-sched-hint">A chime + alert fires in any open Team Tools window at the lead time. ' +
+      'Times are in YOUR profile timezone. The app must be open somewhere — a closed browser gets nothing.</p>' +
+      '<div class="cn-sched-form">' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-date">Date</label>' +
+          '<input type="date" id="cn-sched-date" value="' + esc(today) + '" min="' + esc(today) + '">' +
+        '</div>' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-time">Time</label>' +
+          '<input type="time" id="cn-sched-time">' +
+        '</div>' +
+        '<div class="cn-sched-row full">' +
+          '<label for="cn-sched-label">What / who</label>' +
+          '<input type="text" id="cn-sched-label" maxlength="300" value="' + esc((opts && opts.label) || '') + '"' +
+            ' placeholder="e.g. Translated call — Maria G · TRX 12345">' +
+        '</div>' +
+        '<div class="cn-sched-row">' +
+          '<label for="cn-sched-lead">Remind me</label>' +
+          '<select id="cn-sched-lead">' +
+            '<option value="0">At the time</option>' +
+            '<option value="5" selected>5 min before</option>' +
+            '<option value="10">10 min before</option>' +
+            '<option value="15">15 min before</option>' +
+            '<option value="30">30 min before</option>' +
+          '</select>' +
+        '</div>' +
+        '<button type="button" class="btn-modal-ok" id="cn-sched-create" onclick="cnSchedCreate_(this)">' +
+          icon('bell', 13) + ' Schedule reminder</button>' +
+      '</div>' +
+      '<div id="cn-sched-list"></div>' +
+      '<div style="text-align:right;margin-top:12px">' +
+        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-sched-overlay\'))">Close</button>' +
+      '</div>' +
+    '</div>';
+  cnSchedRenderList_();
+  // The shell list may be stale (created in another window / never fetched) —
+  // refresh on open; cnSchedListChanged_ re-renders when it lands.
+  if (typeof schedFetch_ === 'function') schedFetch_(true);
+}
+
+function cnCloseSchedModal_() { /* idempotent — no module state to clear */ }
+
+/** Hook the shell's schedFetch_ calls after every list refresh (typeof-guarded
+ *  there). Re-renders only while the modal is actually open. */
+function cnSchedListChanged_() {
+  var overlay = document.getElementById('cn-sched-overlay');
+  if (overlay && overlay.classList.contains('open')) cnSchedRenderList_();
+}
+
+function cnSchedFmt_(whenMs) {
+  try {
+    var tz = (typeof empTz === 'function' && empTz()) || undefined;
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      .format(new Date(Number(whenMs)));
+  } catch (e) { return ''; }
+}
+
+function cnSchedRenderList_() {
+  var host = document.getElementById('cn-sched-list');
+  if (!host) return;
+  var items = (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) ? SCHED_STATE.items : null;
+  if (!items || !items.length) {
+    host.innerHTML = '<div class="cn-sched-empty">No upcoming reminders.</div>';
+    return;
+  }
+  var nowMs = Date.now();
+  host.innerHTML = '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
+    items.map(function (it) {
+      var overdue = Number(it.whenMs) < nowMs;
+      return '<div class="cn-sched-item' + (overdue ? ' overdue' : '') + '">' +
+        '<span class="cn-sched-when">' + esc(cnSchedFmt_(it.whenMs)) + (overdue ? ' · overdue' : '') + '</span>' +
+        '<span class="cn-sched-lbl">' + esc(it.label || '') + '</span>' +
+        '<span class="cn-sched-acts">' +
+          '<button type="button" class="cn-act-btn" title="Mark done" aria-label="Mark reminder done: ' + esc(it.label || '') + '"' +
+            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'done\')">' + icon('check', 13) + '</button>' +
+          '<button type="button" class="cn-act-btn" title="Cancel reminder" aria-label="Cancel reminder: ' + esc(it.label || '') + '"' +
+            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'cancelled\')">' + icon('x', 13) + '</button>' +
+        '</span>' +
+      '</div>';
+    }).join('');
+}
+
+function cnSchedCreate_(btn) {
+  var date = (document.getElementById('cn-sched-date') || {}).value || '';
+  var time = (document.getElementById('cn-sched-time') || {}).value || '';
+  var label = (document.getElementById('cn-sched-label') || {}).value || '';
+  var lead = (document.getElementById('cn-sched-lead') || {}).value || '5';
+  if (!date || !time) { showToast('Pick a date and a time first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || r.error || !r.success) { showToast((r && r.error) || 'Could not schedule', 'toast-error'); return; }
+      // Keep the shell list in step without waiting on a refetch.
+      if (typeof SCHED_STATE !== 'undefined') {
+        SCHED_STATE.items = (SCHED_STATE.items || []).concat([r.call])
+          .sort(function (a, b) { return Number(a.whenMs) - Number(b.whenMs); });
+        SCHED_STATE.fetchedAt = Date.now();
+      }
+      var t = document.getElementById('cn-sched-time'); if (t) t.value = '';
+      var l = document.getElementById('cn-sched-label'); if (l) l.value = '';
+      cnSchedRenderList_();
+      showToast('Reminder scheduled', 'toast-success');
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not schedule', 'toast-error'); })
+    .createScheduledCall({ date: date, time: time, label: label, leadMin: parseInt(lead, 10) });
+}
+
+function cnSchedStatus_(btn, id, status) {
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false;
+      if (!r || r.error || !r.success) { showToast((r && r.error) || 'Update failed', 'toast-error'); return; }
+      if (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) {
+        SCHED_STATE.items = SCHED_STATE.items.filter(function (it) { return it.id !== id; });
+      }
+      cnSchedRenderList_();
+      showToast(status === 'done' ? 'Marked done' : 'Reminder cancelled', 'toast-success');
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Update failed', 'toast-error'); })
+    .setScheduledCallStatus(id, status);
 }
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────

@@ -13617,6 +13617,7 @@ function getSpanishInboxPending(days) {
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
+    const claims = spanishClaimsMap_();   // pilot round 2 — advisory claim per thread
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
@@ -13640,10 +13641,16 @@ function getSpanishInboxPending(days) {
         snippet: bodyRaw.slice(0, 240),
         hasMore: bodyRaw.length > 240,
         permalink: th.getPermalink(),
+        claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
-    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
+    // Round 2 additive fields: `members` (the assign-select options — the same
+    // internal team emails getSpanishInboxResolved already ships behind this
+    // gate) and `self` (the caller's lowercased email, so the client can tell
+    // "claimed by me" apart without a second identity source).
+    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
+      members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
@@ -13810,6 +13817,280 @@ function resolveSpanishThread(threadId) {
     writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
     return { success: true };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
+}
+
+// ── Spanish inbox — claim / assign (pilot round 2, 2026-08-24) ──────────────
+// Pilot ask #4: agents mark that they are WORKING a pending request so
+// teammates don't duplicate the work, and managers can assign one to a
+// specific agent. ADVISORY by design — a claim locks nothing (two agents
+// racing resolves socially), which keeps the concurrency story trivial.
+// Same store posture as SpanishManualResolved: a small APPEND-ONLY tab on the
+// ADP sheet, PHI-free (threadId + internal emails + ms-number only — never
+// subject/body), latest row per thread wins, a 'release' row clears it.
+const SPANISH_CLAIMS_TAB = 'SpanishClaims';
+const SPANISH_CLAIMS_SCAN = 1000;   // bounded tail — the map read stays cheap
+
+function getOrCreateSpanishClaimsSheet_() {
+  const ss = getAdpSS_();
+  let sh = ss.getSheetByName(SPANISH_CLAIMS_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(SPANISH_CLAIMS_TAB);
+    sh.appendRow([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'Action', 'Claimant', 'Actor', 'AtMs']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** PURE (Node-pinned) — fold the append-only claim rows (OLDEST→NEWEST within
+ *  the scanned tail) into { threadId: {by, assignedBy, atMs} }. The LATEST row
+ *  per thread wins (unlike spanishManualResolvedMap_'s first-wins, which is
+ *  fine there only because resolve is idempotent — claims genuinely change
+ *  hands); a 'release' row clears the claim; junk rows are skipped.
+ *  rows = [[threadId, action, claimant, actor, atMs], …]. */
+function spanishClaimsFold_(rows) {
+  const out = {};
+  (rows || []).forEach(function (r) {
+    const tid = String((r && r[0]) || '').trim();
+    if (!tid) return;
+    const action = String((r && r[1]) || '').trim().toLowerCase();
+    if (action === 'release') { delete out[tid]; return; }
+    if (action !== 'claim') return;
+    const by = String((r && r[2]) || '').trim().toLowerCase();
+    if (!by) return;
+    const actor = String((r && r[3]) || '').trim().toLowerCase();
+    out[tid] = { by: by, assignedBy: (actor && actor !== by) ? actor : '', atMs: Number(r[4]) || 0 };
+  });
+  return out;
+}
+
+/** Bounded-tail claim map. Best-effort — no tab yet reads as no claims. */
+function spanishClaimsMap_() {
+  try {
+    const sh = getAdpSS_().getSheetByName(SPANISH_CLAIMS_TAB);
+    if (!sh) return {};
+    const last = sh.getLastRow();
+    if (last < 2) return {};
+    const start = Math.max(2, last - SPANISH_CLAIMS_SCAN + 1);
+    return spanishClaimsFold_(sh.getRange(start, 2, last - start + 1, 5).getValues());
+  } catch (e) { Logger.log('spanishClaimsMap_ skipped: ' + e.message); return {}; }
+}
+
+/** Claim a pending request (self), or — manager only — ASSIGN it to a
+ *  configured member. Gated on canSeeSpanishInbox_ and SCOPE-GUARDED like
+ *  resolveSpanishThread (the thread must be addressed to the configured inbox).
+ *  A non-manager can claim only an UNCLAIMED thread (or re-claim their own);
+ *  a manager can always reassign. Locked (INV-01 — it appends); PHI-free
+ *  audit row (threadId + claimant email — internal identities, never
+ *  subject/body). */
+function claimSpanishThread(threadId, assigneeEmail) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured.' };
+    const tid = String(threadId || '').trim();
+    if (!tid) return { error: 'Missing thread id.' };
+    const self = String(emp.email || '').trim().toLowerCase();
+    const claimant = String(assigneeEmail || '').trim().toLowerCase() || self;
+    if (claimant !== self) {
+      if (!emp.isManager) return { error: 'Only a manager can assign a request to someone else.' };
+      if (!getSpanishInboxMembers_()[claimant]) {
+        return { error: 'Assignee must be a configured Spanish Inbox member (Manage → Admin → Config → Spanish bilingual members).' };
+      }
+    }
+    const th = GmailApp.getThreadById(tid);
+    if (!th) return { error: 'Thread not found.' };
+    const msgs = th.getMessages();
+    if (!msgs.length) return { error: 'Empty thread.' };
+    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+      return { error: 'Not a Spanish-inbox thread.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const cur = spanishClaimsMap_()[tid];
+      if (cur && cur.by === claimant) return { success: true, already: true, claim: cur };
+      // Advisory, but not a free-for-all: only a manager reassigns over
+      // someone ELSE's live claim (the point of claiming is that teammates
+      // back off — a silent steal defeats it).
+      if (cur && cur.by !== claimant && !emp.isManager) {
+        return { error: 'Already claimed by ' + cur.by + ' — ask them (or a manager) to release it first.' };
+      }
+      getOrCreateSpanishClaimsSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'claim', claimant, self, Date.now(),
+      ]);
+    } finally { lock.releaseLock(); }
+    writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0,
+      'threadId=' + tid + '; claim=' + claimant + (claimant !== self ? '; assigned' : ''));
+    return { success: true, claim: { by: claimant, assignedBy: claimant !== self ? self : '', atMs: Date.now() } };
+  } catch (err) { return { error: 'Claim failed: ' + err.message }; }
+}
+
+/** Release a claim — the claimant themself, or a manager. No Gmail scope
+ *  guard needed here: a release only ever CLEARS an existing claim row (it
+ *  can't seed junk for arbitrary thread ids), and requiring one would cost a
+ *  Gmail read to remove a chip. Locked; idempotent; PHI-free audit row. */
+function releaseSpanishThread(threadId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    const tid = String(threadId || '').trim();
+    if (!tid) return { error: 'Missing thread id.' };
+    const self = String(emp.email || '').trim().toLowerCase();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const cur = spanishClaimsMap_()[tid];
+      if (!cur) return { success: true, already: true };
+      if (cur.by !== self && !emp.isManager) {
+        return { error: 'Only the claimant or a manager can release this claim.' };
+      }
+      getOrCreateSpanishClaimsSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'release', cur.by, self, Date.now(),
+      ]);
+    } finally { lock.releaseLock(); }
+    writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0, 'threadId=' + tid + '; release');
+    return { success: true };
+  } catch (err) { return { error: 'Release failed: ' + err.message }; }
+}
+
+// ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
+// Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
+// — a rep schedules a reminder for a specific call and the SHELL reminder
+// ticker (chime + sticky toast, every open window incl. the pinned pop-out)
+// fires it at lead time. CALLER-SCOPED v1: a rep sees/edits only their own.
+// STORE: the forms PHI store (getFormsSS_ — the label plausibly names a
+// patient, so it belongs beside FormTokens/FormSubmissions, never the KB or
+// a PHI-free tab). Times are EPOCH-MS NUMBER cells (the SpanishManualResolved
+// discipline — immune to the whole Sheets date/locale-coercion class).
+// DELIVERY LIMIT (documented, not fixable here): Apps Script web apps have no
+// background push — a closed browser gets nothing. The reminder serves a rep
+// with the app open, which is the pilot's case (the pinned pop-out).
+const SCHED_CALLS_TAB = 'ScheduledCalls';
+const SCHED_CALLS_SCAN = 2000;      // bounded tail — the read stays cheap
+const SCHED_ACTIVE_CAP = 20;        // per-rep active bound (stale ones surface in the list)
+const SCHED_LABEL_MAX = 300;
+const SCHED_MAX_DAYS_AHEAD = 60;
+const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CREATED_MS: 6 };
+
+function getOrCreateScheduledCallsSheet_() {
+  const ss = getFormsSS_();
+  let sh = ss.getSheetByName(SCHED_CALLS_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(SCHED_CALLS_TAB);
+    sh.appendRow(['Id', 'EmpId', 'WhenMs', 'LeadMin', 'Label', 'Status', 'CreatedAtMs']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** PURE (Node-pinned) — shape validation for a create. Date/time reuse the
+ *  INV-04 regexes; the label is trimmed + cell-capped (a blank one gets a
+ *  neutral default); leadMin clamps to 0..120 with a 5-min default. Returns
+ *  {error} or the canonicalized {label, leadMin}. */
+function schedValidateShape_(dateStr, timeStr, label, leadMin) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ''))) return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(timeStr || ''))) return { error: 'Invalid time format (expected HH:mm).' };
+  const lab = String(label == null ? '' : label).trim().slice(0, SCHED_LABEL_MAX) || 'Scheduled call';
+  let lead = parseInt(leadMin, 10);
+  if (!isFinite(lead) || lead < 0) lead = 5;
+  if (lead > 120) lead = 120;
+  return { label: lab, leadMin: lead };
+}
+
+/** Bounded-tail read of ONE rep's ACTIVE reminders (+ their live rowIndex for
+ *  the status write). The status compare is trimmed + lowercased in this ONE
+ *  reader (the DR.STATUS/INV-183 lesson applied from birth). */
+function schedReadMine_(sh, empId) {
+  const out = [];
+  const last = sh.getLastRow();
+  if (last < 2) return out;
+  const start = Math.max(2, last - SCHED_CALLS_SCAN + 1);
+  const rows = sh.getRange(start, 1, last - start + 1, 7).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][SC.EMP_ID] || '').trim() !== String(empId || '').trim()) continue;
+    if (String(rows[i][SC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+    out.push({
+      id: String(rows[i][SC.ID] || ''),
+      whenMs: Number(rows[i][SC.WHEN_MS]) || 0,
+      leadMin: Number(rows[i][SC.LEAD_MIN]) || 0,
+      label: String(rows[i][SC.LABEL] || ''),
+      status: 'active',
+      rowIndex: start + i,
+    });
+  }
+  return out;
+}
+
+/** Create a reminder. Caller-scoped; locked (INV-01); the wall time is parsed
+ *  in the REP's OWN timezone server-side (Utilities.parseDate — no client tz
+ *  arithmetic to get wrong). The shared-AuditLog row is PHI-FREE: the label
+ *  may name a patient, so it persists ONLY in the PHI store and the audit row
+ *  carries the id alone (the INV-32 discipline). */
+function createScheduledCall(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const p = payload || {};
+    const v = schedValidateShape_(p.date, p.time, p.label, p.leadMin);
+    if (v.error) return v;
+    const whenMs = Utilities.parseDate(String(p.date) + ' ' + String(p.time), empTz_(emp), 'yyyy-MM-dd HH:mm').getTime();
+    const now = Date.now();
+    if (!isFinite(whenMs)) return { error: 'Could not parse that date/time.' };
+    if (whenMs < now - 60000) return { error: 'That time is in the past (times are in YOUR profile timezone).' };
+    if (whenMs > now + SCHED_MAX_DAYS_AHEAD * 86400000) {
+      return { error: 'Reminders can be scheduled at most ' + SCHED_MAX_DAYS_AHEAD + ' days ahead.' };
+    }
+    const sh = getOrCreateScheduledCallsSheet_();
+    if (schedReadMine_(sh, emp.id).length >= SCHED_ACTIVE_CAP) {
+      return { error: 'You already have ' + SCHED_ACTIVE_CAP + ' active reminders — mark some done or cancel them first.' };
+    }
+    const id = Utilities.getUuid();
+    sh.appendRow([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]);
+    writeAuditLog_(emp, 'ScheduledCallCreate', '', '', false, 0, 'id=' + id);
+    return { success: true, call: { id: id, whenMs: whenMs, leadMin: v.leadMin, label: v.label, status: 'active' } };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The caller's own active reminders, soonest first (cap 50 returned).
+ *  Read-only; no tab yet = no reminders, never an error. */
+function getMyScheduledCalls() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
+    if (!sh) return { calls: [] };
+    const mine = schedReadMine_(sh, emp.id);
+    mine.sort(function (a, b) { return a.whenMs - b.whenMs; });
+    return { calls: mine.slice(0, 50).map(function (c) {
+      return { id: c.id, whenMs: c.whenMs, leadMin: c.leadMin, label: c.label, status: c.status };
+    }) };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Mark done / cancel — the rep's OWN rows only (another rep's id reads as
+ *  not-found, so existence never leaks). Locked; PHI-free audit row. */
+function setScheduledCallStatus(id, status) {
+  const st = String(status || '').trim().toLowerCase();
+  if (st !== 'done' && st !== 'cancelled') return { error: 'Status must be done or cancelled.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
+    if (!sh) return { error: 'Reminder not found.' };
+    const wanted = String(id || '').trim();
+    const hit = schedReadMine_(sh, emp.id).filter(function (c) { return c.id === wanted; })[0];
+    if (!hit) return { error: 'Reminder not found.' };
+    sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(st);
+    writeAuditLog_(emp, 'ScheduledCallStatus', '', '', false, 0, 'id=' + hit.id + '; ' + st);
+    return { success: true };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 // ── Inter-department request tracking (Part B) ──────────────────────────────

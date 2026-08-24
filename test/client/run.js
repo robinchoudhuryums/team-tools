@@ -11210,5 +11210,151 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Round-2 pilot features (2026-08-24) — Spanish Inbox claim/assign (#4) +
+// scheduled-call reminders (#3).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminders');
+{
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // #4 — the pure claim fold: append-only rows, LATEST wins, release clears.
+  const foldCtx = { console, Object, String, Number, Array };
+  vm.createContext(foldCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishClaimsFold_'), foldCtx, { filename: 'Code.js#spanishClaimsFold_' });
+  test('R2 #4: spanishClaimsFold_ — latest row wins, release clears, assignedBy only on assign', () => {
+    const f = foldCtx.spanishClaimsFold_;
+    const m = f([
+      ['t1', 'claim', 'maria@x.com', 'maria@x.com', 100],
+      ['t2', 'claim', 'luis@x.com', 'boss@x.com', 200],     // manager assign
+      ['t1', 'release', 'maria@x.com', 'maria@x.com', 300],
+      ['t3', 'claim', 'ana@x.com', 'ana@x.com', 400],
+      ['t3', 'claim', 'luis@x.com', 'boss@x.com', 500],     // reassigned — latest wins
+      ['', 'claim', 'junk@x.com', 'junk@x.com', 600],       // no threadId — skipped
+      ['t4', 'weird', 'x@x.com', 'x@x.com', 700],           // unknown action — skipped
+    ]);
+    assert.strictEqual(m.t1, undefined, 'a release clears the claim');
+    assert.strictEqual(m.t2.by, 'luis@x.com');
+    assert.strictEqual(m.t2.assignedBy, 'boss@x.com', 'actor ≠ claimant records the assigner');
+    assert.strictEqual(m.t3.by, 'luis@x.com', 'the LATEST claim row wins (claims genuinely change hands)');
+    assert.strictEqual(m.t4, undefined, 'unknown actions are skipped');
+    const self = f([['t5', 'claim', 'Ana@X.com ', 'ana@x.com', 1]]);
+    assert.strictEqual(self.t5.by, 'ana@x.com', 'claimant is trimmed + lowercased');
+    assert.strictEqual(self.t5.assignedBy, '', 'a self-claim carries no assigner');
+  });
+
+  test('R2 #4: claim/release endpoints — gate, scope guard, assign rules, steal guard, lock, PHI-free audit', () => {
+    const claim = strip(extractRawFunction('Code.js', 'claimSpanishThread'));
+    const rel = strip(extractRawFunction('Code.js', 'releaseSpanishThread'));
+    [['claimSpanishThread', claim], ['releaseSpanishThread', rel]].forEach(([label, src]) => {
+      assert.ok(/canSeeSpanishInbox_\(emp\)/.test(src), label + ' carries the Spanish gate (INV-31 amendment)');
+      assert.ok(/waitLock\(15000\)/.test(src) && /releaseLock\(\)/.test(src), label + ' is locked (INV-01)');
+      assert.ok(/SpanishInboxClaim/.test(src), label + ' writes the audit row');
+      assert.ok(!/getSubject|getPlainBody/.test(src), label + ' never touches subject/body (PHI-free store + audit)');
+    });
+    // Claim only: the resolve-style Gmail scope guard, the manager-only assign
+    // (member-validated), and the no-silent-steal rule for non-managers.
+    assert.ok(/spanishAddrListIncludes_/.test(claim), 'claim is scope-guarded like resolveSpanishThread');
+    assert.ok(/Only a manager can assign/.test(claim), 'assigning someone else requires isManager');
+    assert.ok(/getSpanishInboxMembers_\(\)\[claimant\]/.test(claim), 'an assignee must be a configured member');
+    assert.ok(/cur\.by !== claimant && !emp\.isManager/.test(claim), 'a non-manager cannot claim over someone ELSE\'s live claim');
+    // Release: claimant-or-manager only, and idempotent on no claim.
+    assert.ok(/cur\.by !== self && !emp\.isManager/.test(rel), 'release is claimant-or-manager only');
+    assert.ok(/already: true/.test(rel), 'releasing an unclaimed thread is a friendly no-op');
+  });
+
+  test('R2 #4: the pending payload carries claim/members/self (additive fields)', () => {
+    const src = strip(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+    assert.ok(/spanishClaimsMap_\(\)/.test(src), 'reads the claim map once per scan');
+    assert.ok(/claim: claims\[th\.getId\(\)\] \|\| null/.test(src), 'each pending item carries its claim (null = unclaimed)');
+    assert.ok(/members: Object\.keys\(members\)/.test(src), 'ships the assign-select options');
+    assert.ok(/self: String\(emp\.email/.test(src), 'ships the caller identity for "claimed by me"');
+  });
+
+  test('R2 #4: claim pill + controls render by role (client, behavioural)', () => {
+    const pill = sb.spanishClaimPillHtml_, ctl = sb.spanishClaimControlsHtml_;
+    assert.strictEqual(pill({ claim: null }, 'me@x.com'), '', 'unclaimed → no pill');
+    assert.ok(/>you</.test(pill({ claim: { by: 'me@x.com' } }, 'me@x.com')), 'own claim reads "you"');
+    assert.ok(/maria/.test(pill({ claim: { by: 'maria@x.com' } }, 'me@x.com')), 'someone else\'s claim names them');
+    const esc1 = pill({ claim: { by: '<img>@x.com' } }, 'me@x.com');
+    assert.ok(esc1.indexOf('<img>') < 0, 'claimant strings are esc()\'d');
+    // Controls: Claim when unclaimed; Release for the claimant or a manager;
+    // the Assign select is manager-only and lists the members.
+    assert.ok(/spanishClaim_/.test(ctl({ threadId: 't', claim: null }, 'me@x.com', false, [])), 'member sees Claim');
+    assert.ok(!/sp-assign/.test(ctl({ threadId: 't', claim: null }, 'me@x.com', false, ['a@x.com'])), 'non-manager never sees Assign');
+    assert.ok(/spanishRelease_/.test(ctl({ threadId: 't', claim: { by: 'me@x.com' } }, 'me@x.com', false, [])), 'claimant sees Release');
+    assert.ok(!/spanishRelease_/.test(ctl({ threadId: 't', claim: { by: 'other@x.com' } }, 'me@x.com', false, [])),
+      'a non-manager teammate gets NO release on someone else\'s claim');
+    const mgr = ctl({ threadId: 't', claim: { by: 'other@x.com' } }, 'me@x.com', true, ['a@x.com', 'b@x.com']);
+    assert.ok(/spanishRelease_/.test(mgr) && /sp-assign/.test(mgr) && /a@x\.com/.test(mgr), 'manager gets Release + Assign over members');
+  });
+
+  // #3 — scheduled-call reminders.
+  const svCtx = { console, Object, String, Number, parseInt, isFinite };
+  vm.createContext(svCtx);
+  const labMax = codeSrc.match(/const (SCHED_LABEL_MAX = \d+);/);
+  assert.ok(labMax, 'SCHED_LABEL_MAX found');
+  vm.runInContext('const ' + labMax[1] + ';', svCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'schedValidateShape_'), svCtx, { filename: 'Code.js#schedValidateShape_' });
+  test('R2 #3: schedValidateShape_ — INV-04 regexes, label default + cap, lead clamp', () => {
+    const v = svCtx.schedValidateShape_;
+    assert.ok(/date format/.test(v('2026-8-1', '10:00', 'x', 5).error), 'loose date rejected');
+    assert.ok(/time format/.test(v('2026-08-24', '24:00', 'x', 5).error), '24:00 rejected (the INV-04 hour class)');
+    const ok = v('2026-08-24', '14:30', '  call Maria  ', '10');
+    assert.strictEqual(ok.label, 'call Maria');
+    assert.strictEqual(ok.leadMin, 10);
+    assert.strictEqual(v('2026-08-24', '14:30', '', null).label, 'Scheduled call', 'blank label gets a neutral default');
+    assert.strictEqual(v('2026-08-24', '14:30', 'a'.repeat(999), 5).label.length, 300, 'label is cell-capped');
+    assert.strictEqual(v('2026-08-24', '14:30', 'x', 999).leadMin, 120, 'lead clamps to 120');
+    assert.strictEqual(v('2026-08-24', '14:30', 'x', -3).leadMin, 5, 'bad lead falls back to 5');
+  });
+
+  test('R2 #3: server endpoints — caller-scoped, locked, rep-tz parse, PHI-free audit, bounded reads', () => {
+    const create = strip(extractRawFunction('Code.js', 'createScheduledCall'));
+    assert.ok(/Utilities\.parseDate\([\s\S]*empTz_\(emp\)/.test(create), 'the wall time parses in the REP\'s own tz server-side');
+    assert.ok(/SCHED_MAX_DAYS_AHEAD/.test(create) && /in the past/.test(create), 'both horizon ends are checked');
+    assert.ok(/SCHED_ACTIVE_CAP/.test(create), 'per-rep active cap consulted');
+    assert.ok(/waitLock\(15000\)/.test(create), 'create is locked');
+    // The LABEL may name a patient: it must reach the PHI store row but NEVER
+    // the shared AuditLog (INV-32). The audit note is the id alone.
+    const auditCall = /writeAuditLog_\(emp, 'ScheduledCallCreate'[^;]*;/.exec(create);
+    assert.ok(auditCall && /'id=' \+ id\)/.test(auditCall[0]) && !/label/i.test(auditCall[0]),
+      'the audit row carries the id ONLY — never the (PHI-adjacent) label');
+    const mine = strip(extractRawFunction('Code.js', 'schedReadMine_'));
+    assert.ok(/SCHED_CALLS_SCAN/.test(mine), 'bounded tail read');
+    assert.ok(/\.trim\(\)\.toLowerCase\(\) !== 'active'/.test(mine), 'status normalized in the ONE reader (the DR.STATUS lesson, from birth)');
+    const st = strip(extractRawFunction('Code.js', 'setScheduledCallStatus'));
+    assert.ok(/st !== 'done' && st !== 'cancelled'/.test(st), 'status whitelist');
+    assert.ok(/schedReadMine_\(sh, emp\.id\)/.test(st), 'status writes are scoped to the caller\'s OWN rows');
+    const list = strip(extractRawFunction('Code.js', 'getMyScheduledCalls'));
+    assert.ok(/schedReadMine_\(sh, emp\.id\)/.test(list), 'list is caller-scoped');
+    assert.ok(!/rowIndex/.test(/return \{ calls:[\s\S]*?\}\) \}/.exec(list)[0]), 'the live rowIndex never leaves the server');
+  });
+
+  test('R2 #3: schedDue_ fires in the lead window only; the ticker + fetch discipline is wired', () => {
+    const due = sb.schedDue_;
+    const item = { status: 'active', whenMs: 1000000, leadMin: 5 };
+    assert.strictEqual(due(item, 1000000 - 5 * 60000), true, 'fires at lead time');
+    assert.strictEqual(due(item, 1000000 - 5 * 60000 - 1), false, 'not before lead');
+    assert.strictEqual(due(item, 1000000 + 30 * 60000), true, 'still fires up to 30 min late');
+    assert.strictEqual(due(item, 1000000 + 30 * 60000 + 1), false, 'stops nagging past the late cutoff');
+    assert.strictEqual(due({ status: 'done', whenMs: 1000000, leadMin: 5 }, 1000000), false, 'non-active never fires');
+    assert.strictEqual(due({ status: 'active', whenMs: 0, leadMin: 5 }, 1000000), false, 'junk whenMs never fires');
+    const core = strip(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+    assert.ok(/schedTick_\(\);/.test(strip(extractFunction('script_core.html', 'remindersTick_'))),
+      'the shell ticker runs the scheduled-call section');
+    assert.ok(/remindOnce_\('sched:' \+ it\.id/.test(core), 'firing dedupes cross-window via the shared fired-set');
+    assert.ok(/!force && Date\.now\(\) - SCHED_STATE\.fetchedAt < SCHED_REFRESH_MS/.test(core),
+      'the refetch is throttled — the ticker must not add a per-minute RPC (INV-190 cost rule)');
+    assert.ok(/if \(sawActive\) schedFetch_\(false\)/.test(core), 'only a NON-EMPTY list keeps polling');
+    // Cross-partial hook (the INV-148 pattern): core calls the CN modal's
+    // refresh typeof-guarded; the CN partial defines it.
+    assert.ok(/typeof cnSchedListChanged_ === 'function'/.test(core), 'core hook is typeof-guarded');
+    const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+    assert.ok(/function cnSchedListChanged_\(\)/.test(cn), 'the CN partial defines the hook');
+    assert.ok(/case 'sched':\s*cnOpenSchedModal_/.test(cn), 'the card More-menu action dispatches to the modal');
+  });
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

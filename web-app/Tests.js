@@ -5136,7 +5136,11 @@ function test_managerGates_rejectNonManager() {
    ['getSpanishInboxPending', function () { return getSpanishInboxPending(30); }],
    ['getSpanishInboxResolved', function () { return getSpanishInboxResolved(30); }],
    ['getSpanishInboxThreadBody', function () { return getSpanishInboxThreadBody('x'); }],
-   ['resolveSpanishThread', function () { return resolveSpanishThread('x'); }]]
+   ['resolveSpanishThread', function () { return resolveSpanishThread('x'); }],
+   // Pilot round 2 — claim/assign are Spanish-gated like the rest (and must
+   // reject BEFORE any Gmail/store/AuditLog access, same as resolve).
+   ['claimSpanishThread', function () { return claimSpanishThread('x', null); }],
+   ['releaseSpanishThread', function () { return releaseSpanishThread('x'); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-member rep');

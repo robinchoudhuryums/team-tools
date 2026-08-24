@@ -1955,6 +1955,7 @@ function remindersStart_() {
   REMIND_TIMER = setInterval(remindersTick_, 60000);
   setTimeout(remindersTick_, 5000);               // off the boot critical path
   setTimeout(tzMismatchCheck_, 6000);             // same off-critical-path posture
+  setTimeout(function () { schedFetch_(true); }, 7000);   // scheduled-call list — same posture
   // The shell just loaded a fresh getEmployeeState, so the boot snapshot
   // counts as confirmed — a not-clocked-in rep who starts working right away
   // is reminded on an early tick instead of waiting out a refresh round-trip.
@@ -2077,7 +2078,87 @@ function remindersTick_() {
         remindMaybeRefreshState_();
       }
     }
+
+    // (d) Scheduled-call reminders (pilot round 2). Rep-created, so they fire
+    // on ANY day — a self-scheduled Saturday call is deliberate (the INV-190
+    // per-branch rule: the dayOff gate covers only the inferred-schedule
+    // reminders). Zero server calls in the common case; see schedFetch_ for
+    // the refresh discipline.
+    schedTick_();
   } catch (e) {}
+}
+
+// ── Scheduled-call reminders — shell state + delivery (pilot round 2) ───────
+// The LIST lives here (not in a view) so the ticker fires in every window,
+// the pinned pop-out included — the same reasoning that moved break reminders
+// to the shell. Refresh discipline (the INV-190 cost rule): one fetch at
+// boot, one after every mutation (the CN modal calls schedFetch_(true)), and
+// a 10-min re-fetch ONLY while the rep actually HAS active reminders (an
+// empty list never polls — a reminder created in ANOTHER window appears here
+// on the next boot/mutation, a documented v1 limit).
+var SCHED_STATE = { items: null, fetchedAt: 0, inflight: false };
+var SCHED_REFRESH_MS = 10 * 60 * 1000;
+var SCHED_FIRE_LATE_MS = 30 * 60 * 1000;   // stop nagging half an hour past due
+
+/** PURE (Node-pinned) — should this reminder fire at nowMs? Active only;
+ *  fires from (whenMs − lead) until 30 min past due (a reopened browser
+ *  hours later shows the item as overdue in the list instead of chiming). */
+function schedDue_(item, nowMs) {
+  if (!item || item.status !== 'active') return false;
+  var when = Number(item.whenMs);
+  if (!isFinite(when) || when <= 0) return false;
+  var lead = (isFinite(Number(item.leadMin)) ? Number(item.leadMin) : 5) * 60000;
+  return nowMs >= when - lead && nowMs <= when + SCHED_FIRE_LATE_MS;
+}
+
+function schedFmtTime_(whenMs) {
+  try {
+    var tz = (typeof empTz === 'function' && empTz()) || undefined;
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
+      .format(new Date(whenMs));
+  } catch (e) { return ''; }
+}
+
+function schedTick_() {
+  var items = SCHED_STATE.items;
+  if (!items || !items.length) return;
+  var nowMs = Date.now();
+  var sawActive = false;
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    if (it && it.status === 'active') sawActive = true;
+    if (!schedDue_(it, nowMs)) continue;
+    var t = schedFmtTime_(Number(it.whenMs));
+    var mins = Math.max(0, Math.round((Number(it.whenMs) - nowMs) / 60000));
+    // The label is the rep's own text (their browser, their reminder) — the
+    // sticky toast + chime ride the standard channels; remindOnce_ dedupes
+    // across windows via the shared fired-set.
+    remindOnce_('sched:' + it.id,
+      '📞 Scheduled call' + (t ? ' at ' + t : '') + (mins > 0 ? ' (in ' + mins + ' min)' : ' — now') +
+      ': ' + it.label, 'toast-info');
+  }
+  if (sawActive) schedFetch_(false);   // keep a non-empty list fresh (throttled)
+}
+
+function schedFetch_(force) {
+  if (SCHED_STATE.inflight) return;
+  if (!force && Date.now() - SCHED_STATE.fetchedAt < SCHED_REFRESH_MS) return;
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  SCHED_STATE.inflight = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      SCHED_STATE.inflight = false;
+      SCHED_STATE.fetchedAt = Date.now();
+      if (r && !r.error && Array.isArray(r.calls)) {
+        SCHED_STATE.items = r.calls;
+        // Let an open reminders modal refresh its list (typeof-guarded — the
+        // hook lives in the Call Notes partial; the cnStopAmbientPolling_
+        // cross-partial pattern).
+        if (typeof cnSchedListChanged_ === 'function') { try { cnSchedListChanged_(); } catch (e) {} }
+      }
+    })
+    .withFailureHandler(function () { SCHED_STATE.inflight = false; })
+    .getMyScheduledCalls();
 }
 
 /** 'in' | 'out' | 'unknown' from the last known punch snapshot. Deliberately
