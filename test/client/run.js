@@ -4370,8 +4370,13 @@ test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
   const acct = extractRawFunction('Code.js', 'intakeSendAcct_');
   [ppd, acct].forEach((src, i) => {
     const label = i === 0 ? 'intakeSendPPD' : 'intakeSendAcct_';
+    // (Round-1 #8 repointed the send from bare MailApp.sendEmail to the
+    // sendRepEmail_ agent-identity wrapper — the ordering property is the
+    // same; guard the anchor against -1 so a renamed call can't pass a <.)
+    const sendAt = src.indexOf('sendRepEmail_(emp');
+    assert.ok(sendAt >= 0, label + ' sends through the agent-identity wrapper');
     assert.ok(src.indexOf('intakeStoreOversizeError_') >= 0, label + ' consults the cap');
-    assert.ok(src.indexOf('intakeStoreOversizeError_') < src.indexOf('MailApp.sendEmail'),
+    assert.ok(src.indexOf('intakeStoreOversizeError_') < sendAt,
       label + ' caps BEFORE the send (no email without a record)');
     assert.ok(src.indexOf('intakeStoreFailWarn_') >= 0, label + ' surfaces store failures');
     assert.ok(src.indexOf('storeWarning: storeWarning') >= 0, label + ' returns storeWarning');
@@ -4960,20 +4965,26 @@ test('F9: well-formed capacities are completely unchanged', () => {
 });
 
 // The validator that keeps the fail-closed direction from being silent.
+// (Round-1 follow-on: it now scheme-checks E/F through the REAL server
+// intakeHttpOnly_ — load both so the free-var reference resolves, and the
+// fixtures carry REAL https URLs, since 'pdf'/'img' placeholders are exactly
+// the schemeless class the new warning names.)
 const intakeCatalogIssues_ = new Function(
+  extractRawFunction('Code.js', 'intakeHttpOnly_') + ';' +
   extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
 
 test('F9: the catalog validator names the rows the engine cannot recommend', () => {
+  const P = 'https://x.test/p.pdf', I = 'https://x.test/i.png';
   const rows = [
-    ['ok',      'K0823', '350',     'C', 'pdf', 'img'],   // clean
-    ['blank',   'K0824', '',        'S', 'pdf', 'img'],   // error: no capacity
-    ['bad',     'K0825', 'n/a',     'S', 'pdf', 'img'],   // error: non-numeric
-    ['halfrng', 'K0826', '300-',    'S', 'pdf', 'img'],   // error: unreadable range
-    ['inv',     'K0827', '450-300', 'S', 'pdf', 'img'],   // error: inverted range
-    ['seat',    'K0828', '350',     'x', 'pdf', 'img'],   // error: no s/c
-    ['endash',  'K0829', '300–450', 'S', 'pdf', 'img'], // warn: non-ASCII dash
-    ['noimg',   'K0830', '350',     'S', 'pdf', ''],      // warn: no image
-    ['',        '',      '',        '',  '',    ''],      // trailing blank row — ignored
+    ['ok',      'K0823', '350',     'C', P, I],   // clean
+    ['blank',   'K0824', '',        'S', P, I],   // error: no capacity
+    ['bad',     'K0825', 'n/a',     'S', P, I],   // error: non-numeric
+    ['halfrng', 'K0826', '300-',    'S', P, I],   // error: unreadable range
+    ['inv',     'K0827', '450-300', 'S', P, I],   // error: inverted range
+    ['seat',    'K0828', '350',     'x', P, I],   // error: no s/c
+    ['endash',  'K0829', '300–450', 'S', P, I], // warn: non-ASCII dash
+    ['noimg',   'K0830', '350',     'S', P, ''],  // warn: no image
+    ['',        '',      '',        '',  '', ''], // trailing blank row — ignored
   ];
   const issues = intakeCatalogIssues_(rows);
   const errs = issues.filter((x) => x.severity === 'error');
@@ -4991,8 +5002,28 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
   // A clean catalog must produce NOTHING, or the card can never reach green —
   // the "what does this read on a healthy system" rule.
   assert.deepStrictEqual(
-    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', 'pdf', 'img']]), [],
+    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', P, I]]), [],
     'a well-formed catalog raises no issues at all');
+});
+
+test('R1 follow-on: a non-http pdfLink/imageUrl is a NAMED warning, not a silent dead link', () => {
+  // Every sink (rec cards, sent email, Catalog tab) scheme-whitelists E/F
+  // (seams-18 F1), so a schemeless "www.x.com" silently renders NO link —
+  // INV-187 says the operator must be able to see that from the health card.
+  const issues = intakeCatalogIssues_([
+    ['schemeless', 'K0831', '350', 'S', 'www.x.test/p.pdf', 'javascript:alert(1)'],
+  ]);
+  const pdf = issues.find((x) => x.field === 'pdfLink');
+  const img = issues.find((x) => x.field === 'imageUrl');
+  assert.ok(pdf && pdf.severity === 'warn' && /http\(s\) URL/.test(pdf.detail),
+    'schemeless pdfLink is a warning naming the https:// fix');
+  assert.ok(img && img.severity === 'warn' && /http\(s\) URL/.test(img.detail),
+    'non-http imageUrl (incl. a javascript: scheme) is a warning');
+  // The check goes through the REAL intakeHttpOnly_ (the F1 twin), so real
+  // https URLs — including ones with query strings — stay clean.
+  assert.deepStrictEqual(
+    intakeCatalogIssues_([['q', 'K0832', '350', 'S', 'https://x.test/p.pdf?v=2', 'HTTP://x.test/i.png']]), [],
+    'http(s) in any case, with query strings, raises nothing');
 });
 
 test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from clean', () => {
@@ -9010,7 +9041,10 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   assert.ok(ppd.indexOf("intakeFeedbackCta_(submissionId, 'PPD')") > ppd.indexOf('intakeBodyHash_(baseBody, subject)'),
     'PPD: CTA joins the final body after the hash check');
   const mintAt = ppd.indexOf('const submissionId = Utilities.getUuid()');
-  assert.ok(mintAt > 0 && mintAt < ppd.indexOf('MailApp.sendEmail'),
+  // (Round-1 #8: the send is the sendRepEmail_ wrapper now; keep the -1 guard.)
+  const ppdSendAt = ppd.indexOf('sendRepEmail_(emp');
+  assert.ok(ppdSendAt > 0, 'PPD send found');
+  assert.ok(mintAt > 0 && mintAt < ppdSendAt,
     'PPD: the id is minted (and BEFORE the send) so the button can reference it — indexOf -1 would pass a < check');
   const cta = nc(extractRawFunction('Code.js', 'intakeFeedbackCta_'));
   assert.ok(/if \(!base\) return '';/.test(cta), 'no resolvable exec URL → no button (never a dead one)');
@@ -11019,19 +11053,116 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
       'missing emp → empty options object (Object.assign no-op — the send proceeds with system identity, never throws)');
     assert.deepStrictEqual(Object.keys(r1Ctx.repSenderOpts_({})), [], 'partial emp never emits undefined name/replyTo');
   });
-  test('R1 #8: every rep-initiated sender routes its MailApp options through repSenderOpts_', () => {
+  test('R1 #8: every rep-initiated sender routes through sendRepEmail_ (identity + optional alias)', () => {
     // The four rep-initiated correspondence senders. Automated digests /
     // alerts / exports deliberately keep the system identity — they are NOT
     // in this list, and adding the opts there would misattribute system mail.
+    // (Round-1 follow-on: the call sites moved from inline
+    // Object.assign(..., repSenderOpts_(emp)) to the sendRepEmail_ wrapper so
+    // the neutral-alias branch lives in ONE place.)
     ['emailFromCallNote', 'sendExternalEmail', 'intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
       const src = strip(extractRawFunction('Code.js', fn));
-      assert.ok(/repSenderOpts_\(emp\)/.test(src), fn + ' applies the agent sender identity');
+      assert.ok(/sendRepEmail_\(emp/.test(src), fn + ' sends through the agent-identity wrapper');
+      assert.ok(!/MailApp\.sendEmail/.test(src),
+        fn + ' must not ALSO send bare MailApp — a send outside the wrapper loses the identity');
     });
     // emailFromCallNote has THREE sends (split-CTA internal + external, and
     // the single-recipient path) — each must carry the identity.
     const efc = strip(extractRawFunction('Code.js', 'emailFromCallNote'));
-    assert.strictEqual((efc.match(/repSenderOpts_\(emp\)/g) || []).length, 3,
+    assert.strictEqual((efc.match(/sendRepEmail_\(emp/g) || []).length, 3,
       'all three emailFromCallNote sends carry the sender identity');
+    // And the wrapper itself merges repSenderOpts_ into every branch.
+    const wrap = strip(extractRawFunction('Code.js', 'sendRepEmail_'));
+    assert.ok(/repSenderOpts_\(emp\)/.test(wrap), 'the wrapper applies name + replyTo');
+  });
+
+  // Follow-on: the neutral shared sender (Script Property REP_SENDER_FROM),
+  // dormant until configured. Behavioural, through the REAL fns with stubbed
+  // PropertiesService / GmailApp / MailApp.
+  const mkSenderCtx = (prop, aliases) => {
+    const ctx = {
+      console: { warn: () => {} }, Object, String, Boolean,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'REP_SENDER_FROM' ? prop : null) }) },
+      GmailApp: {
+        getAliases: () => { if (aliases === 'THROW') throw new Error('no gmail'); return aliases; },
+        sent: null,
+        sendEmail: function (to, subject, body, opts) { this.sent = { to, subject, body, opts }; },
+      },
+      MailApp: { sent: null, sendEmail: function (o) { this.sent = o; } },
+      _repSenderFromResolved: null,
+    };
+    vm.createContext(ctx);
+    ['repSenderOpts_', 'repSenderFrom_', 'sendRepEmail_'].forEach((fn) => {
+      vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn });
+    });
+    return ctx;
+  };
+  test('R1 follow-on: repSenderFrom_ resolves ONLY a registered alias; everything else falls back to ""', () => {
+    assert.strictEqual(mkSenderCtx(null, ['a@x.test']).repSenderFrom_(), '', 'unset property → deployer identity (dormant default)');
+    assert.strictEqual(mkSenderCtx(' Team@x.test ', ['team@x.test']).repSenderFrom_(), 'Team@x.test',
+      'set + registered (case-insensitive, trimmed) → the alias');
+    assert.strictEqual(mkSenderCtx('team@x.test', ['other@x.test']).repSenderFrom_(), '',
+      'set but NOT a registered Send-mail-as alias → fall back, never throw every send');
+    assert.strictEqual(mkSenderCtx('team@x.test', 'THROW').repSenderFrom_(), '',
+      'a GmailApp failure resolves to "" (fail-safe — a bad property can never break email)');
+  });
+  test('R1 follow-on: sendRepEmail_ picks GmailApp-with-from ONLY when the alias resolves', () => {
+    // No alias → MailApp single-object form, identity merged in.
+    const c1 = mkSenderCtx(null, []);
+    c1.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: '<b>h</b>' });
+    assert.ok(c1.MailApp.sent && !c1.GmailApp.sent, 'dormant → MailApp path');
+    assert.strictEqual(c1.MailApp.sent.replyTo, 'jane@x.test');
+    assert.ok(/^Jane/.test(c1.MailApp.sent.name));
+    // Alias configured → GmailApp positional form with from + identity, and
+    // the options object must NOT repeat to/subject/body (GmailApp rejects it).
+    const c2 = mkSenderCtx('team@x.test', ['team@x.test']);
+    c2.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', body: 'txt', htmlBody: '<b>h</b>', cc: 'c@d.e' });
+    assert.ok(c2.GmailApp.sent && !c2.MailApp.sent, 'configured → GmailApp path');
+    assert.strictEqual(c2.GmailApp.sent.to, 'a@b.c');
+    assert.strictEqual(c2.GmailApp.sent.body, 'txt');
+    assert.strictEqual(c2.GmailApp.sent.opts.from, 'team@x.test');
+    assert.strictEqual(c2.GmailApp.sent.opts.replyTo, 'jane@x.test');
+    assert.strictEqual(c2.GmailApp.sent.opts.cc, 'c@d.e');
+    ['to', 'subject', 'body'].forEach((k) =>
+      assert.ok(!(k in c2.GmailApp.sent.opts), 'options must not repeat positional "' + k + '"'));
+    // No plain body (the intake shape) → empty-string body, never undefined.
+    const c3 = mkSenderCtx('team@x.test', ['team@x.test']);
+    c3.sendRepEmail_({ name: 'J', email: 'j@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: 'h' });
+    assert.strictEqual(c3.GmailApp.sent.body, '', 'missing body → "" for the positional arg');
+  });
+
+  // Follow-on: {callDirection} is an OPERATOR-AVAILABLE copy token; the
+  // DEFAULT template deliberately omits it so existing pastes are unchanged.
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatTimestampForCopy_');
+  const cnFormatNoteForCopy_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatNoteForCopy_');
+  test('R1 follow-on: {callDirection} substitutes Outbound/Inbound; the default template omits it', () => {
+    sb.CN_STATE.autoCopyFormat = 'Dir: {callDirection} · {caller}';
+    try {
+      assert.strictEqual(
+        cnFormatNoteForCopy_r1({ caller: 'Jane', subformData: { callDirection: 'outbound' } }),
+        'Dir: Outbound · Jane');
+      assert.strictEqual(
+        cnFormatNoteForCopy_r1({ caller: 'Jane' }),
+        'Dir: Inbound · Jane', 'absent direction pastes as Inbound (the default)');
+    } finally { delete sb.CN_STATE.autoCopyFormat; }
+    // Default paste stays byte-identical: neither the server CONFIG default
+    // nor the client fallback carries the token (operator opts in by editing
+    // CONFIG.CALL_NOTES.AUTO_COPY_FORMAT — the documented tuning point).
+    assert.ok(!/callDirection/.test(codeSrc.match(/AUTO_COPY_FORMAT:[\s\S]{0,400}?Resolution: \{resolution\}/)[0]),
+      'the shipped default template must not grow the token silently');
+  });
+
+  // Follow-on: outbound count chip in the History date-group header.
+  const cnHistGroupChips_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnHistGroupChips_');
+  test('R1 follow-on: history group chips count outbound notes (and render nothing on an all-inbound day)', () => {
+    const out = cnHistGroupChips_r1([
+      { flagType: 'action', subformData: { callDirection: 'outbound' } },
+      { flagType: '', subformData: { callDirection: 'outbound' } },
+      { flagType: 'review', subformData: {} },
+    ]);
+    assert.ok(/cn-hg-outbound[^>]*title="2 outbound"/.test(out), 'outbound chip carries the count');
+    const allInbound = cnHistGroupChips_r1([{ flagType: '', subformData: {} }]);
+    assert.ok(!/outbound/.test(allInbound), 'an all-inbound group renders no outbound chip (byte-identical to before)');
   });
 
   // Client half — filter case, pills, and the draft/snapshot round-trip.

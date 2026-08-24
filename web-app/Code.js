@@ -8148,6 +8148,54 @@ function repSenderOpts_(emp) {
   return opts;
 }
 
+/** Round-1 #8 follow-on — the NEUTRAL shared sender, dormant until configured
+ *  (the WHATSNEW_KB_ID posture). Script Property `REP_SENDER_FROM` names a
+ *  Gmail "Send mail as" alias of the DEPLOYING account (the operator creates
+ *  it in Gmail settings first); when set AND registered, rep-initiated emails
+ *  send from that address via GmailApp (which honors `from` for registered
+ *  aliases — MailApp cannot). Validated against GmailApp.getAliases() so a
+ *  typo'd/unregistered property FALLS BACK to the deployer identity with a
+ *  console warning instead of throwing every send (fail-safe — a bad property
+ *  can never break email). Cached per execution; any throw resolves to ''. */
+let _repSenderFromResolved = null;
+function repSenderFrom_() {
+  if (_repSenderFromResolved !== null) return _repSenderFromResolved;
+  let resolved = '';
+  try {
+    const want = String(PropertiesService.getScriptProperties().getProperty('REP_SENDER_FROM') || '').trim();
+    if (want) {
+      const aliases = GmailApp.getAliases() || [];
+      const ok = aliases.some(function (a) { return String(a).toLowerCase() === want.toLowerCase(); });
+      if (ok) resolved = want;
+      else console.warn('REP_SENDER_FROM="' + want + '" is not a registered Send-mail-as alias of the deploying account — falling back to the deployer identity. Add the alias in Gmail settings (Accounts → Send mail as) first.');
+    }
+  } catch (e) { console.warn('repSenderFrom_ failed: ' + e.message); }
+  _repSenderFromResolved = resolved;
+  return resolved;
+}
+
+/** Sends ONE rep-initiated email with the agent identity applied (round-1 #8):
+ *  display name + replyTo always (repSenderOpts_), and the neutral From
+ *  address too when REP_SENDER_FROM is configured (repSenderFrom_). `opts` is
+ *  the MailApp single-object form ({to, subject, body?, htmlBody?, cc?, bcc?,
+ *  attachments?, inlineImages?}). Throws exactly like MailApp.sendEmail on a
+ *  genuine send failure, so every caller's existing try/catch semantics are
+ *  unchanged. GmailApp adds no new OAuth scope here (the Spanish-inbox
+ *  feature already uses it) and shares the MailApp send quota. */
+function sendRepEmail_(emp, opts) {
+  const merged = Object.assign({}, opts, repSenderOpts_(emp));
+  const from = repSenderFrom_();
+  if (from) {
+    // GmailApp's signature is positional (to, subject, body, options) — the
+    // options object must NOT repeat to/subject/body.
+    const gOpts = Object.assign({}, merged, { from: from });
+    delete gOpts.to; delete gOpts.subject; delete gOpts.body;
+    GmailApp.sendEmail(merged.to, merged.subject, merged.body || '', gOpts);
+  } else {
+    MailApp.sendEmail(merged);
+  }
+}
+
 /** Actually sends the email composed for a note. Stamps EmailedAt +
  *  EmailDepartments on the note row, writes a CallNoteEmail audit row.
  *
@@ -8235,29 +8283,29 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
-        MailApp.sendEmail(Object.assign({
+        sendRepEmail_(emp, {
           to: recipientList.internalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
           htmlBody: sentHtml,
-        }, repSenderOpts_(emp)));
+        });
         internalSent = true;
-        MailApp.sendEmail(Object.assign({
+        sendRepEmail_(emp, {
           to: recipientList.externalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody,
           htmlBody: htmlBody,   // no CTA
-        }, repSenderOpts_(emp)));
+        });
       } else {
-        MailApp.sendEmail(Object.assign({
+        sendRepEmail_(emp, {
           to: recipientList.to,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
           htmlBody: sentHtml,
-        }, repSenderOpts_(emp)));
+        });
       }
     } catch (sendErr) {
       // C17-11 (cycle 17): if the INTERNAL dept copy already went out, it is
@@ -8982,14 +9030,14 @@ function sendExternalEmail(payload) {
 
   // ── Send ──────────────────────────────────────────────────────────
   try {
-    const emailOpts = Object.assign({
+    const emailOpts = {
       to: recipientEmail,
       subject: subject,
       body: textBody,
       htmlBody: htmlBody,
-    }, repSenderOpts_(emp));   // Round-1 #8 — agent display name + replyTo
+    };
     if (attachments.length > 0) emailOpts.attachments = attachments;
-    MailApp.sendEmail(emailOpts);
+    sendRepEmail_(emp, emailOpts);   // Round-1 #8 — agent identity (+ neutral alias when configured)
   } catch (sendErr) {
     return { success: false, error: 'Email send failed: ' + sendErr.message };
   }
@@ -17345,10 +17393,20 @@ function intakeCatalogIssues_(rows) {
     if (!cell(4)) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
         detail: 'blank — the HCPCS code renders with no brochure link' });
+    } else if (!intakeHttpOnly_(cell(4))) {
+      // seams-18 F1 follow-on (INV-187): every sink (rec cards, sent email,
+      // Catalog tab) scheme-whitelists this column, so a non-http value —
+      // usually a schemeless "www.x.com" — SILENTLY renders no link anywhere.
+      // Name it here so the silence is visible to the operator.
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
+        detail: 'not an http(s) URL — "' + cell(4) + '" renders no brochure link anywhere (add the https:// prefix)' });
     }
     if (!cell(5)) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
         detail: 'blank — the result card renders no device image for the agent to send' });
+    } else if (!intakeHttpOnly_(cell(5))) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
+        detail: 'not an http(s) URL — "' + cell(5) + '" renders no device image anywhere (add the https:// prefix)' });
     }
   });
   return out;
@@ -18289,8 +18347,7 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
     if (oversize) return { success: false, error: oversize };
 
-    MailApp.sendEmail(Object.assign({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html },
-      repSenderOpts_(emp)));   // Round-1 #8 — agent display name + replyTo
+    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });   // Round-1 #8
 
     let storeWarning = null;
     try {
@@ -18366,8 +18423,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const oversize = intakeStoreOversizeError_([answersJson]);
   if (oversize) return { success: false, error: oversize };
 
-  MailApp.sendEmail(Object.assign({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj },
-    repSenderOpts_(emp)));   // Round-1 #8 — agent display name + replyTo
+  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
 
   let storeWarning = null;
   try {

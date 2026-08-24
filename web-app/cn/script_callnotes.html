@@ -1838,6 +1838,7 @@
   .cn-hg-action   { color: var(--warning-deep); border-color: var(--warn-soft); }
   .cn-hg-training { color: var(--info-deep);    border-color: var(--accent-soft); }
   .cn-hg-review   { color: var(--success-deep); border-color: var(--good-soft); }
+  .cn-hg-outbound { color: var(--info-deep);    border-color: var(--info-soft); }
   .cn-hg-urgent   { color: var(--danger-deep);  border-color: var(--destructive-soft); }
   .cn-hist-groupbody { overflow: hidden; }
   .cn-hist-group.collapsed .cn-hist-groupbody { display: none; }
@@ -3984,6 +3985,11 @@ function cnFormatNoteForCopy_(note) {
     issue:         note.issue || '',
     transferredTo: transferred,
     resolution:    note.resolution || '',
+    // Round-1 #2 follow-on — available to the operator's template (add a
+    // "Direction: {callDirection}" line via CONFIG.CALL_NOTES.AUTO_COPY_FORMAT
+    // if the CRM wants it); the DEFAULT template deliberately omits it so
+    // existing pastes are byte-identical.
+    callDirection: (note.subformData && note.subformData.callDirection === 'outbound') ? 'Outbound' : 'Inbound',
   };
   return fmt.replace(/\{(\w+)\}/g, function (m, key) {
     return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : m;
@@ -6341,16 +6347,20 @@ function cnRenderHistoryStack_() {
 /** Per-flag-type count chips for a History date group. action/training/review
  *  come from flagType; urgent from subformData.flags via cnIsUrgent_. */
 function cnHistGroupChips_(notes) {
-  var c = { action: 0, training: 0, review: 0, urgent: 0 };
+  var c = { action: 0, training: 0, review: 0, urgent: 0, outbound: 0 };
   notes.forEach(function (n) {
     if (n.flagType && c[n.flagType] != null) c[n.flagType]++;
     if (cnIsUrgent_(n)) c.urgent++;
+    // Round-1 #2 follow-on — outbound-call count per date group (renders only
+    // when > 0, so the usual all-inbound day is byte-identical).
+    if (n.subformData && n.subformData.callDirection === 'outbound') c.outbound++;
   });
   var defs = [
     ['urgent', 'urgent', icon('flag', 11)],
     ['action', 'action', icon('flag', 11)],
     ['training', 'training', icon('bulb', 11)],
     ['review', 'review', icon('thumbsUp', 11)],
+    ['outbound', 'outbound', icon('outbox', 11)],
   ];
   var out = '';
   defs.forEach(function (d) {
