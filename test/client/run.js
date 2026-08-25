@@ -4156,7 +4156,11 @@ test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free 
   // F(cycle-8): the scope guard is the EXACT-address matcher, not the old raw
   // substring indexOf (which passed xspanishcalls@… / the address inside a
   // display name).
-  assert.ok(/spanishAddrListIncludes_\s*\(/.test(src), 'scope guard — exact-address match against To/Cc');
+  // REWRITTEN in place (operator 2026-08-25, the accrual precedent): the
+  // scope check moved into the shared spanishThreadInScope_ predicate when
+  // the 8x8 voicemail fold widened it — three sites drifting on a security
+  // check is the parallel-source class. The predicate itself is pinned below.
+  assert.ok(/spanishThreadInScope_\s*\(/.test(src), 'scope guard — routes through the ONE predicate');
   assert.ok(!/recips\.indexOf\(addr\)/.test(src), 'the substring guard must not return');
   assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it appends)');
   assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
@@ -11260,7 +11264,7 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
     });
     // Claim only: the resolve-style Gmail scope guard, the manager-only assign
     // (member-validated), and the no-silent-steal rule for non-managers.
-    assert.ok(/spanishAddrListIncludes_/.test(claim), 'claim is scope-guarded like resolveSpanishThread');
+    assert.ok(/spanishThreadInScope_\s*\(/.test(claim), 'claim routes through the shared scope predicate (rewritten 2026-08-25 for the VM fold)');
     assert.ok(/Only a manager can assign/.test(claim), 'assigning someone else requires isManager');
     assert.ok(/getSpanishInboxMembers_\(\)\[claimant\]/.test(claim), 'an assignee must be a configured member');
     assert.ok(/cur\.by !== claimant && !emp\.isManager/.test(claim), 'a non-manager cannot claim over someone ELSE\'s live claim');
@@ -11906,6 +11910,105 @@ test('wiring: both preview paths gate through the check; unselect branches exist
   // The notes textarea is addressable through the shared accessor fallback
   // (data-intk-qnum) so drafts/restore ride with zero bespoke plumbing.
   assert.ok(/data-intk-qnum="notes"/.test(src), 'notes rides the accessor fallback selector');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 2 (2026-08-25) — 8x8 A_Q_Spanish voicemail notifications fold
+// into the Spanish Inbox pending/resolved lists via a sender+subject filter
+// over the deployer's mailbox (8x8 mails members individually, never the
+// group address). The by-id scope guard widened through ONE shared predicate.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — Spanish voicemail fold (operator batch 2)');
+
+const _vmCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'emailAddrOnly_'), _vmCtx, { filename: 'emailAddrOnly_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishAddrListIncludes_'), _vmCtx, { filename: 'spanishAddrListIncludes_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmMatch_'), _vmCtx, { filename: 'spanishVmMatch_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmCaller_'), _vmCtx, { filename: 'spanishVmCaller_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmQuery_'), _vmCtx, { filename: 'spanishVmQuery_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishThreadInScope_'), _vmCtx, { filename: 'spanishThreadInScope_' });
+
+test('spanishVmMatch_/Caller_/Query_ — exact sender, ci subject, both halves REQUIRED', () => {
+  const g = (expr) => vm.runInContext(expr, _vmCtx);
+  const S = 'no-reply@8x8.com', F = 'via A_Q_Spanish';
+  const call = (from, subj, sender, filter) =>
+    g('spanishVmMatch_(' + [from, subj, sender, filter].map((x) => JSON.stringify(x)).join(',') + ')');
+  assert.strictEqual(call('8x8 <no-reply@8x8.com>', 'New voicemail from Ana Diaz via A_Q_Spanish', S, F), true, 'the real notification matches');
+  assert.strictEqual(call('no-reply@8x8.com', 'new VOICEMAIL from X VIA a_q_spanish', S, F), true, 'subject match is case-insensitive');
+  assert.strictEqual(call('evil@attacker.com', 'New voicemail from X via A_Q_Spanish', S, F), false, 'sender is an EXACT address match — a matching subject from anyone else never qualifies');
+  assert.strictEqual(call('no-reply@8x8.com', 'Your invoice', S, F), false, 'a non-VM 8x8 mail never qualifies');
+  // Both halves required: a half-configured filter must not widen the scan.
+  assert.strictEqual(call('no-reply@8x8.com', 'New voicemail from X via A_Q_Spanish', '', F), false, 'blank sender → OFF');
+  assert.strictEqual(call('no-reply@8x8.com', 'New voicemail from X via A_Q_Spanish', S, ''), false, 'blank filter → OFF');
+  assert.strictEqual(g('spanishVmCaller_("New voicemail from David Dhruv Mishra via A_Q_Spanish")'), 'David Dhruv Mishra', 'caller parsed from the operator sample');
+  assert.strictEqual(g('spanishVmCaller_("Missed call summary")'), '', 'non-VM shape → empty (falls back to the sender)');
+  const q = g('spanishVmQuery_("no-reply@8x8.com", "via \\"A_Q\\" Spanish", 7)');
+  assert.ok(q.indexOf('from:no-reply@8x8.com') === 0 && /subject:"via A_Q Spanish"/.test(q) && /newer_than:7d/.test(q),
+    'query quotes the filter and strips embedded quotes (no Gmail-query breakout)');
+});
+
+test('spanishThreadInScope_ — inbox-addressed OR configured VM shape, nothing else', () => {
+  // The getters read Script Properties; stub them at the ctx level.
+  vm.runInContext('var getSpanishVmSender_ = function () { return "no-reply@8x8.com"; };' +
+    'var getSpanishVmFilter_ = function () { return "via A_Q_Spanish"; };', _vmCtx);
+  const mk = (to, cc, from, subj) => {
+    _vmCtx.__msg = { getTo: () => to, getCc: () => cc, getFrom: () => from, getSubject: () => subj };
+    return vm.runInContext('spanishThreadInScope_(__msg, "spanishcalls@umsupply.com")', _vmCtx);
+  };
+  assert.strictEqual(mk('spanishcalls@umsupply.com', '', 'someone@x.com', 'Ayuda'), true, 'To the inbox → in scope');
+  assert.strictEqual(mk('a@x.com', 'Spanish Calls <spanishcalls@umsupply.com>', 'someone@x.com', 'Ayuda'), true, 'Cc the inbox → in scope (the cycle-8 brace-OR contract)');
+  assert.strictEqual(mk('rep@umsupply.com', '', 'no-reply@8x8.com', 'New voicemail from Ana via A_Q_Spanish'), true, 'a configured VM notification → in scope');
+  assert.strictEqual(mk('rep@umsupply.com', '', 'someone@x.com', 'Ayuda'), false, 'anything else stays OUT — the by-id endpoints cannot probe arbitrary threads');
+  // With the VM filter unconfigured the predicate collapses to inbox-only.
+  vm.runInContext('getSpanishVmFilter_ = function () { return ""; };', _vmCtx);
+  assert.strictEqual(mk('rep@umsupply.com', '', 'no-reply@8x8.com', 'New voicemail from Ana via A_Q_Spanish'), false, 'half-configured → VM arm OFF');
+});
+
+test('wiring: the fold rides both lists, first-message re-check, one predicate at all three by-id sites', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const grab = (name) => {
+    const i = code.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0;
+    for (let k = code.indexOf('{', i); k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (d === 0) return nc(code.slice(i, k + 1)); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const pend = grab('getSpanishInboxPending'), res = grab('getSpanishInboxResolved');
+  [pend, res].forEach((src, i) => {
+    assert.ok(/spanishVmQuery_\(/.test(src), ['pending', 'resolved'][i] + ' runs the VM scan');
+    assert.ok(/kind: 'voicemail'/.test(src), ['pending', 'resolved'][i] + ' tags VM items');
+    // The Gmail query matches subject across the THREAD; the first message is
+    // re-checked so a stray reply-match can't smuggle a foreign thread in.
+    assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(src), ['pending', 'resolved'][i] + ' re-checks the FIRST message');
+  });
+  // Both halves gate the fold (fail-quiet, never fail-wide).
+  assert.ok(/vmSender && vmFilter/.test(pend), 'pending fold gated on BOTH filter halves');
+  assert.ok(/vmSenderR && vmFilterR/.test(res), 'resolved fold gated on BOTH filter halves');
+  // The resolved fold admits ONLY manually-resolved VM threads (a VM has no
+  // reply-based resolution semantics) and ships a NULL duration — "clicked
+  // resolved N hours after the voicemail" is not a response time.
+  const vmFold = res.slice(res.indexOf('vmSenderR &&'));
+  assert.ok(/if \(!man \|\| seenR/.test(vmFold), 'resolved fold: manual-map rows only');
+  assert.ok(/resolveMinutes: null/.test(vmFold), 'VM duration is null, never a fake response time');
+  // VM truncation folds into the ONE truncated flag (INV-169/SPANISH cap).
+  assert.ok(/vmTruncated/.test(pend) && /\|\| vmTruncated/.test(pend), 'VM cap rides the truncated flag');
+  // The by-id scope family: ThreadBody + resolve + claim all route through
+  // the ONE predicate — no site keeps a private copy to drift.
+  const sites = ['getSpanishInboxThreadBody', 'resolveSpanishThread', 'claimSpanishThread'];
+  sites.forEach((f) => assert.ok(/spanishThreadInScope_\(/.test(grab(f)), f + ' uses the shared predicate'));
+  // release deliberately has NO Gmail read; it must NOT grow one via the predicate.
+  assert.ok(!/spanishThreadInScope_/.test(grab('releaseSpanishThread')), 'release stays Gmail-free');
+  // Client: both card builders render the VM pill; the pill is kind-gated.
+  const mf = extractScript('metrics/script_metrics.html');
+  assert.ok(/spanishVmPillHtml_\(t\)/.test(mf.slice(mf.indexOf('function spanishResolvedCard_'))), 'resolved card carries the pill');
+  const pillFn = extractFunction('metrics/script_metrics.html', 'spanishVmPillHtml_');
+  assert.ok(/kind === 'voicemail'/.test(pillFn), 'pill renders only for kind voicemail');
 });
 
 

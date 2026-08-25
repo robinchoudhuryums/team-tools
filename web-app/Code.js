@@ -71,6 +71,14 @@ const CONFIG = {
   // mailbox receives the threads to scan. Script Properties override these.
   SPANISH_INBOX_ADDRESS:        'spanishcalls@universalmedsupply.com',
   SPANISH_INBOX_MEMBERS:        '',
+  // 8x8 A_Q_Spanish voicemail notifications (operator 2026-08-25): 8x8 emails
+  // each MEMBER's individual inbox, never the group address — so the scanner
+  // (which reads the DEPLOYER's mailbox) folds them in via a sender + subject
+  // filter instead. Script Properties SPANISH_VM_SENDER /
+  // SPANISH_VM_SUBJECT_FILTER override without a redeploy; blanking EITHER
+  // property disables the voicemail fold entirely (fail-quiet, not fail-wide).
+  SPANISH_VM_SENDER:            'no-reply@8x8.com',
+  SPANISH_VM_SUBJECT_FILTER:    'via A_Q_Spanish',
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -13447,6 +13455,55 @@ function getSpanishInboxMembers_() {
   return set;
 }
 
+/** 8x8 voicemail-notification filter (operator 2026-08-25). Both halves must
+ *  be non-empty for the voicemail fold to run — a half-configured filter would
+ *  either match every 8x8 mail (no subject filter) or arbitrary senders (no
+ *  sender filter), and either direction pulls unrelated mail into a
+ *  PHI-adjacent surface. Fail direction: blank = no voicemails, never a
+ *  wider scan. */
+function getSpanishVmSender_() {
+  let v = '';
+  try { v = PropertiesService.getScriptProperties().getProperty('SPANISH_VM_SENDER'); } catch (e) {}
+  if (v == null) v = CONFIG.SPANISH_VM_SENDER;
+  return String(v == null ? '' : v).trim().toLowerCase();
+}
+function getSpanishVmFilter_() {
+  let v = '';
+  try { v = PropertiesService.getScriptProperties().getProperty('SPANISH_VM_SUBJECT_FILTER'); } catch (e) {}
+  if (v == null) v = CONFIG.SPANISH_VM_SUBJECT_FILTER;
+  return String(v == null ? '' : v).trim();
+}
+/** Pure: is this first message an A_Q_Spanish voicemail notification?
+ *  EXACT sender address match + case-insensitive subject substring — both
+ *  required (Node-pinned). */
+function spanishVmMatch_(fromHeader, subject, sender, filter) {
+  if (!sender || !filter) return false;
+  if (emailAddrOnly_(fromHeader) !== String(sender).trim().toLowerCase()) return false;
+  return String(subject || '').toLowerCase().indexOf(String(filter).toLowerCase()) >= 0;
+}
+/** Pure: caller name out of an 8x8 VM subject ("New voicemail from X via
+ *  A_Q_Spanish" → "X"); '' when the shape doesn't match (the caller then
+ *  falls back to the sender address). Node-pinned. */
+function spanishVmCaller_(subject) {
+  const m = String(subject || '').match(/^New voicemail from (.+?) via /i);
+  return m ? m[1].trim() : '';
+}
+/** The VM Gmail query — sender + quoted subject filter over the same window
+ *  the main scan uses. */
+function spanishVmQuery_(sender, filter, days) {
+  return 'from:' + sender + ' subject:"' + String(filter).replace(/"/g, '') + '" newer_than:' + days + 'd';
+}
+/** ONE scope predicate for the by-id Spanish endpoints (ThreadBody / resolve /
+ *  claim): a thread is in scope when its FIRST message is addressed to the
+ *  configured inbox (To or Cc, exact address match) OR is a configured 8x8
+ *  voicemail notification. Factored from the three inline checks when the
+ *  voicemail fold widened the definition (operator 2026-08-25) — three sites
+ *  drifting on a security check is the parallel-source class. */
+function spanishThreadInScope_(firstMsg, addr) {
+  if (spanishAddrListIncludes_(String(firstMsg.getTo() || '') + ',' + String(firstMsg.getCc() || ''), addr)) return true;
+  return spanishVmMatch_(firstMsg.getFrom(), firstMsg.getSubject(), getSpanishVmSender_(), getSpanishVmFilter_());
+}
+
 /** Spanish Inbox access predicate — managers OR a bilingual rep listed in
  *  SPANISH_INBOX_MEMBERS (the same roster used to detect "resolved by a member";
  *  the reps who actually action the inbox). INV-31 amendment: the four Spanish
@@ -13644,12 +13701,54 @@ function getSpanishInboxPending(days) {
         claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
       });
     });
+    // Operator 2026-08-25: fold in 8x8 A_Q_Spanish VOICEMAIL notifications.
+    // 8x8 mails each member's individual inbox (never the group address), so
+    // these ride a sender+subject filter over the same deployer mailbox. A VM
+    // has no reply-based resolution semantics (nobody replies to no-reply@) —
+    // it leaves pending via the manual mark-resolved / claim machinery; a
+    // member reply on the notification thread also counts, mirroring the main
+    // loop. Both filter halves blank/unset → the fold is OFF (fail-quiet).
+    let vmTruncated = false;
+    const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
+    if (vmSender && vmFilter) {
+      const seen = {};
+      out.forEach(function (x) { seen[x.threadId] = true; });
+      const vmThreads = GmailApp.search(spanishVmQuery_(vmSender, vmFilter, d), 0, SPANISH_THREAD_SCAN_MAX);
+      vmTruncated = vmThreads.length >= SPANISH_THREAD_SCAN_MAX;
+      vmThreads.forEach(function (th) {
+        if (seen[th.getId()] || manual[th.getId()]) return;
+        const msgs = th.getMessages();
+        if (!msgs.length) return;
+        const req = msgs[0];
+        // The query matches subject across the THREAD; re-check the first
+        // message so a stray reply-match can't smuggle a foreign thread in.
+        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSender, vmFilter)) return;
+        let resolved = false;
+        for (let i = 1; i < msgs.length; i++) {
+          const from = emailAddrOnly_(msgs[i].getFrom());
+          if (haveMembers ? !!members[from] : !!from) { resolved = true; break; }
+        }
+        if (resolved) return;
+        out.push({
+          threadId: th.getId(),
+          kind: 'voicemail',
+          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
+          ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
+          subject: req.getSubject() || '(no subject)',
+          snippet: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+          hasMore: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().length > 240,
+          permalink: th.getPermalink(),
+          claim: claims[th.getId()] || null,
+        });
+      });
+    }
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this
     // gate) and `self` (the caller's lowercased email, so the client can tell
     // "claimed by me" apart without a second identity source).
-    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
+    return { address: addr, days: d, pending: out,
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmTruncated,
       members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
@@ -13703,6 +13802,35 @@ function getSpanishInboxResolved(days) {
         permalink: th.getPermalink(),
       });
     });
+    // Operator 2026-08-25: manually-resolved VOICEMAILS join the resolved list
+    // (and therefore the resolution-share chart, which attributes manual
+    // resolves to whoever clicked). No resolveMinutes for a VM — the clock
+    // would measure "notification arrived → someone clicked resolved", which
+    // is not a response time — so the duration is null and consumers skip it.
+    const vmSenderR = getSpanishVmSender_(), vmFilterR = getSpanishVmFilter_();
+    if (vmSenderR && vmFilterR) {
+      const seenR = {};
+      out.forEach(function (x) { seenR[x.threadId] = true; });
+      GmailApp.search(spanishVmQuery_(vmSenderR, vmFilterR, d), 0, SPANISH_THREAD_SCAN_MAX).forEach(function (th) {
+        const man = manual[th.getId()];
+        if (!man || seenR[th.getId()]) return;
+        const msgs = th.getMessages();
+        if (!msgs.length) return;
+        const req = msgs[0];
+        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSenderR, vmFilterR)) return;
+        out.push({
+          threadId: th.getId(),
+          kind: 'voicemail',
+          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
+          resolver: man.by,
+          manual: true,
+          resolveMinutes: null,
+          resolvedAtMs: Math.max(req.getDate().getTime(), man.ms || 0),
+          subject: req.getSubject() || '(no subject)',
+          permalink: th.getPermalink(),
+        });
+      });
+    }
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
     // Resolution-share chart (operator 2026-08-17): ship the configured member
     // list so a member who resolved NOTHING renders as a zero bar — the
@@ -13731,8 +13859,10 @@ function getSpanishInboxThreadBody(threadId) {
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
     const first = msgs[0];
-    if (!spanishAddrListIncludes_(String(first.getTo() || '') + ',' + String(first.getCc() || ''), addr))
-      return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
+    // ONE scope predicate (inbox-addressed OR a configured 8x8 VM notification
+    // — operator 2026-08-25); exact address match per F(cycle-8).
+    if (!spanishThreadInScope_(first, addr))
+      return { error: 'Not a Spanish-inbox thread.' };
     return {
       threadId: String(threadId),
       subject: first.getSubject() || '(no subject)',
@@ -13804,7 +13934,7 @@ function resolveSpanishThread(threadId) {
     if (!th) return { error: 'Thread not found.' };
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
-    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+    if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
@@ -13903,7 +14033,7 @@ function claimSpanishThread(threadId, assigneeEmail) {
     if (!th) return { error: 'Thread not found.' };
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
-    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+    if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);

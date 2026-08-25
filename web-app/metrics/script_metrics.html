@@ -2199,7 +2199,7 @@ function spanishResolvedCard_(t) {
   var took = spanishFmtDur_(t.resolveMinutes);
   var when = spanishFmtDateTime_(t.resolvedAtMs);
   return '<div class="sp-task st-resolved">' +
-    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) +
       '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" style="color:var(--muted)">' +
@@ -2293,6 +2293,16 @@ function spanishNavTo_(btn) {
 // skip it; managers can assign. Server truth lives in the SpanishClaims tab
 // (claimSpanishThread / releaseSpanishThread); the pending payload carries
 // `claim` per item + `members` + `self`.
+
+/** Voicemail pill (operator 2026-08-25) — 8x8 A_Q_Spanish VM notifications
+ *  fold into pending/resolved with kind:'voicemail'; the pill is how a rep
+ *  tells "call this person back" from "answer this email". Info-toned — a
+ *  voicemail is a channel, not a verdict. */
+function spanishVmPillHtml_(t) {
+  return (t && t.kind === 'voicemail')
+    ? '<span class="sp-vm-pill">' + icon('mail', 10) + ' voicemail</span>'
+    : '';
+}
 
 /** PURE (Node-pinned) — the claim pill for the card head. "you" for the
  *  caller's own claim; the tooltip carries the full email + how it was
@@ -2400,7 +2410,7 @@ function spanishTaskCard_(t) {
   var claimPill = spanishClaimPillHtml_(t, pd.self || '');
   var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
   return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
-    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + claimPill +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + claimPill +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
