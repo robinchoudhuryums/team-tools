@@ -12425,6 +12425,130 @@ test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built 
     'and stays quiet mid-save and on the Save&Compose rollback path (that note is being deleted)');
 });
 
+// ────────────────────────────────────────────────────────────────────────────
+// Operator 2026-08-25 — file ingest into Reference. Two features: a CSV that
+// REPLACES an allowlisted KB sheet tab (a queryable dataset), and a local file
+// dropped into the editor (an article, or an embed when the format can't be
+// read).
+console.log('\nreference — data-table import + editor file ingest');
+
+const _kbiCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'kbParseCsv_'), _kbiCtx, { filename: 'kbParseCsv_' });
+vm.runInContext(extractRawFunction('Code.js', 'kbDataTableSummary_'), _kbiCtx, { filename: 'kbDataTableSummary_' });
+
+test('DT-1: kbParseCsv_ — quoted commas, "" escapes, embedded newlines, CRLF, ragged rows padded', () => {
+  const run = (t) => vm.runInContext('kbParseCsv_(' + JSON.stringify(t) + ')', _kbiCtx);
+  // The payor file's names contain commas inside quotes — a naive split on ','
+  // shifts every column after the first one, which is the whole reason this
+  // parser exists rather than a one-liner.
+  const g = run('Name,Status\r\n"Ambetter (AR, FL, GA)",In-Network\r\n"He said ""yes""",TRY\n');
+  assert.strictEqual(g.length, 3, 'CRLF and a trailing newline yield exactly the real rows');
+  assert.strictEqual(g[1].join('|'), 'Ambetter (AR, FL, GA)|In-Network', 'a quoted comma stays INSIDE its field');
+  assert.strictEqual(g[2][0], 'He said "yes"', '"" unescapes to one quote');
+  const nl = run('A,B\n"line one\nline two",x\n');
+  assert.strictEqual(nl.length, 2, 'a newline inside quotes does NOT start a row');
+  assert.strictEqual(nl[1][0], 'line one\nline two', 'and is preserved in the value');
+  const ragged = run('A,B,C\n1,2\n');
+  assert.strictEqual(ragged[1].length, 3, 'short rows pad to the widest row (a rectangular grid)');
+  assert.strictEqual(run('﻿A,B\n1,2\n')[0][0], 'A', 'a BOM (Excel writes one) is stripped');
+  assert.strictEqual(run('').length, 0, 'empty input is an empty grid, never a throw');
+});
+
+test('DT-2: kbDataTableSummary_ — reports duplicates/blanks/odd headers, never "fixes" them', () => {
+  const run = (grid, spec) => vm.runInContext(
+    'kbDataTableSummary_(' + JSON.stringify(grid) + ',' + spec + ')', _kbiCtx);
+  const spec = '({ nameHeader: /payor|plan|name|insur/i, minCols: 2 })';
+  const grid = [['Insurance', 'Status'], ['Aetna', 'X'], ['aetna', 'TRY'], ['', 'X'], ['Cigna', 'NO']];
+  const r = run(grid, spec);
+  assert.strictEqual(r.rows, 4, 'the header row is not a data row');
+  assert.strictEqual(r.cols, 2);
+  assert.strictEqual(r.duplicateNames.length, 1, 'a case-insensitive duplicate is REPORTED');
+  assert.ok(/rows 2, 3/.test(r.duplicateNames[0]), 'with the sheet row numbers the operator will look at');
+  assert.strictEqual(r.blankNameCount, 1, 'a blank name is reported — it can never match a search');
+  assert.strictEqual(r.warnings.length, 0, 'a well-formed file warns about NOTHING (the INV-186 rule)');
+  // The name-column check exists because the lookup searches column 1 — a CSV
+  // with something else first returns nothing for every real query, which
+  // reads to a rep as "we do not take that plan".
+  const wrong = run([['Notes', 'Payor'], ['x', 'Aetna']], spec);
+  assert.ok(wrong.warnings.some((w) => /first column is "Notes"/.test(w)), 'a wrong first column is warned about');
+  const thin = run([['Insurance'], ['Aetna']], spec);
+  assert.ok(thin.warnings.some((w) => /at least 2/.test(w)), 'too few columns is warned about');
+});
+
+test('DT-3: the import is allowlisted, dry by default, admin-gated, plain-text-formatted, audited', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'kbImportDataTable'));
+  // The ALLOWLIST is the boundary: an admin-gated endpoint that can overwrite
+  // ANY tab of the KB store is a categorically worse thing than one that
+  // refreshes a known dataset.
+  assert.ok(/hasOwnProperty\.call\(KB_DATA_TABLES, String\(tabKey\)\)/.test(f),
+    'the target tab must be in KB_DATA_TABLES — never an arbitrary caller-supplied name');
+  assert.ok(/Unknown data table/.test(f), 'and an unlisted tab is refused by name');
+  assert.ok(/dryRun = o\.dryRun !== false/.test(f), 'dryRun defaults TRUE — a bare call can never write');
+  const gate = f.indexOf("'Admin access required.'");
+  const write = f.indexOf('range.setValues(grid)');
+  assert.ok(gate > -1 && write > -1 && gate < write, 'the admin gate fires before any write (INV-136)');
+  assert.ok(/setNumberFormat\('@'\)/.test(f) && f.indexOf("setNumberFormat('@')") < write,
+    'the range is pinned to plain text BEFORE the write — a payor named "Aetna 5-2024" must not coerce to a date');
+  assert.ok(/waitLock\(15000\)/.test(f) && /releaseLock\(\)/.test(f), 'the write is locked (INV-01)');
+  assert.ok(/writeAuditLog_\(emp, 'KbDataTableImport'/.test(f), 'and audited (PHI-free counts)');
+  // The SAME server parse drives the preview and the write — a client-side
+  // CSV parser would be a second source of truth for what the file contains.
+  const client = nc(extractScript('cn/script_callnotes.html'));
+  assert.ok(!/function cnParseCsv|split\(['"]\\n['"]\).*split\(['"],['"]\)/.test(client),
+    'the client never parses the CSV itself');
+  assert.ok(/dryRun: true/.test(client) && /dryRun: false/.test(client), 'it asks the server twice — preview then write');
+});
+
+test('KBI-1: kbIngestPlan_ routes by extension — text/csv locally, office via Drive, the rest as an embed', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .match(/const KB_INGEST_TEXT_EXT[\s\S]*?\n\};/)[0], ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'kbIngestPlan_'), ctx);
+  const plan = (n) => vm.runInContext('kbIngestPlan_(' + JSON.stringify(n) + ')', ctx);
+  assert.strictEqual(plan('policy.md').kind, 'text');
+  assert.strictEqual(plan('NOTES.TXT').kind, 'text', 'extension matching is case-insensitive');
+  assert.strictEqual(plan('payors.csv').kind, 'csv');
+  assert.strictEqual(plan('handbook.docx').kind, 'convert');
+  assert.strictEqual(plan('handbook.docx').driveKind, 'doc');
+  assert.strictEqual(plan('rates.xlsx').driveKind, 'sheet', 'a spreadsheet converts to a Sheet, not a Doc');
+  // A .pdf CANNOT become an article — we never pretend otherwise.
+  assert.strictEqual(plan('scan.pdf').kind, 'embed');
+  assert.strictEqual(plan('archive.zip').kind, 'embed');
+  assert.strictEqual(plan('').kind, 'reject', 'a nameless file is refused rather than guessed at');
+});
+
+test('KBI-2: ingest reuses the production converters, needs no advanced service, and names every degradation', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'kbIngestFile'));
+  assert.ok(/'Admin access required\.'/.test(f), 'admin-gated (INV-136 — the converter tier)');
+  assert.ok(!/waitLock/.test(f), 'no ScriptLock — the only write is a Drive file, and holding the global lock through an upload would stall every punch');
+  assert.ok(!/getOrCreateKbSheet_|kbSaveItem/.test(f), 'READ-ONLY w.r.t. the KB sheet — the normal Save persists it (INV-115)');
+  // A CSV goes through the SAME converter an imported Sheet does — one
+  // markdown generator, not two.
+  assert.ok(/kbSheetGridToMarkdown_\(/.test(f), 'CSV reuses the production sheet converter');
+  assert.ok(/kbConvertDriveSheet\(|kbConvertDriveDoc\(/.test(f),
+    'a converted upload is handed to the EXISTING converter, so both entry paths produce the same article');
+  // The whole point of the REST call: no declared dependency that a restricted
+  // domain could turn into an authorization failure for the whole project.
+  // Two VIEWS of the same function, on purpose (the seams-18 F3 rule): the
+  // BAN scans the comment-stripped text so a rationale comment can't satisfy
+  // it, but the URL is matched on RAW source — the naive // stripper eats
+  // `https://` and would silently pass this assertion against nothing.
+  const upRaw = extractRawFunction('Code.js', 'kbDriveUpload_');
+  const up = nc(upRaw);
+  assert.ok(/ScriptApp\.getOAuthToken\(\)/.test(up), 'it signs with the token the project already holds');
+  assert.ok(upRaw.indexOf("UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files") >= 0,
+    'conversion goes through the Drive REST upload endpoint, not an advanced service');
+  assert.ok(!/\bDrive\.Files\b/.test(up) && !/\bDrive\.Files\b/.test(f), 'the advanced Drive service is never referenced');
+  const appsscript = fs.readFileSync(path.join(__dirname, '../../web-app/appsscript.json'), 'utf8');
+  assert.ok(!/enabledAdvancedServices/.test(appsscript),
+    'and nothing is declared in appsscript.json — a restricted domain costs the CONVERSION, never the deploy');
+  // Every fallback SAYS what the reader loses (INV-187).
+  assert.ok(/only its TITLE is searchable/.test(f), 'the embed fallback names the consequence');
+  assert.ok(/could not be converted/.test(f), 'and a refused conversion names itself rather than silently embedding');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
