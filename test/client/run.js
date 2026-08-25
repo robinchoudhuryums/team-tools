@@ -11938,6 +11938,10 @@ test('spanishVmMatch_/Caller_/Query_ — exact sender, ci subject, both halves R
   assert.strictEqual(call('8x8 <no-reply@8x8.com>', 'New voicemail from Ana Diaz via A_Q_Spanish', S, F), true, 'the real notification matches');
   assert.strictEqual(call('no-reply@8x8.com', 'new VOICEMAIL from X VIA a_q_spanish', S, F), true, 'subject match is case-insensitive');
   assert.strictEqual(call('evil@attacker.com', 'New voicemail from X via A_Q_Spanish', S, F), false, 'sender is an EXACT address match — a matching subject from anyone else never qualifies');
+  // A display-name spoof carries the real address as TEXT while the actual
+  // address is the attacker's — the case that separates emailAddrOnly_ from a
+  // substring test (the first bite-check of this pin exposed exactly that gap).
+  assert.strictEqual(call('"no-reply@8x8.com" <evil@attacker.com>', 'New voicemail from X via A_Q_Spanish', S, F), false, 'display-name spoof never qualifies');
   assert.strictEqual(call('no-reply@8x8.com', 'Your invoice', S, F), false, 'a non-VM 8x8 mail never qualifies');
   // Both halves required: a half-configured filter must not widen the scan.
   assert.strictEqual(call('no-reply@8x8.com', 'New voicemail from X via A_Q_Spanish', '', F), false, 'blank sender → OFF');
