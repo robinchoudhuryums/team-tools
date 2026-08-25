@@ -5152,6 +5152,9 @@ function test_managerGates_rejectNonManager() {
     // SPANISH_INBOX_MEMBERS rep — not pure manager-only; asserted separately below.)
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
+    // Intake volume (Team Metrics block, operator 2026-08-25) — gate precedes
+    // any submission-tab read.
+    ['getIntakeVolumeStats',           function () { return getIntakeVolumeStats(); }],
     // Coaching (Training module) — the gate fires BEFORE any HR_DOCS_SS_ID
     // access, so these run safely even where the property is unset.
     ['createCoaching',                 function () { return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', whatHappened: 'gate' }); }],

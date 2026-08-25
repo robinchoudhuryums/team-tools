@@ -156,7 +156,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // Fifth instance of the INV-185 drift class, so: a fixture whose response
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
-      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6,
+      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, intakeNotes: 3, noteCoverage: 85, missingCount: 6,
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
@@ -182,20 +182,29 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
-      noteCount: 218, noteCoverage: 86, trend: trend30(),
+      noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
       transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
     // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
     // against `transferred`, never a free-floating number. Getting that wrong
     // is how V-14 produced a screenshot the server could not have produced.
+    // Batch 6 (operator 2026-08-25): the Team Metrics intake-volume block.
+    getIntakeVolumeStats: { months: [
+      { month: '2026-08', ppd: 14, pmd: 6, pap: 4, total: 24 },
+      { month: '2026-07', ppd: 18, pmd: 9, pap: 5, total: 32 },
+      { month: '2026-06', ppd: 11, pmd: 7, pap: 3, total: 21 },
+      { month: '2026-05', ppd: 16, pmd: 4, pap: 6, total: 26 },
+      { month: '2026-04', ppd: 9, pmd: 8, pap: 2, total: 19 },
+      { month: '2026-03', ppd: 13, pmd: 5, pap: 4, total: 22 },
+    ], failedTypes: [] },
     getTeamMetrics: (function () {
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
           totalMissed: missed, pctAnswered: Math.round((ans / rung) * 1000) / 10,
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
-          noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, hasCdrData: true,
+          noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
           transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
           queues: queues, queueTotal: qt, queueUnattributed: Math.max(0, transferred - qt),
           hasTransferData: true };

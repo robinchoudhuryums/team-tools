@@ -7356,19 +7356,23 @@ test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavior
   const data = {
     reps: [
       { repName: 'Nina Patel', totalRung: 52, totalAnswered: 44, totalMissed: 8, pctAnswered: 84.6,
-        attSeconds: 238, attFormatted: '0:03:58', noteCount: 41, noteCoverage: 93, transferred: 21 },
+        attSeconds: 238, attFormatted: '0:03:58', noteCount: 41, intakeNotes: 5, noteCoverage: 93, transferred: 21 },
       { repName: 'Leo Kim', totalRung: 29, totalAnswered: 27, totalMissed: 2, pctAnswered: 93.1,
-        attSeconds: 260, attFormatted: '0:04:20', noteCount: 0, noteCountUnavailable: true, noteCoverage: null, transferred: 3 },
+        attSeconds: 260, attFormatted: '0:04:20', noteCount: 0, noteCountUnavailable: true, intakeNotes: null, noteCoverage: null, transferred: 3 },
     ],
     queueRows: [{ queue: 'A_Q_Sales', transferred: 6, reps: 2 }],
     groupRows: [{ group: 'Sales', transferred: 6, queues: ['A_Q_Sales'], reps: 2 }],
   };
+  // REWRITTEN in place (operator batch 6, 2026-08-25 — the accrual
+  // precedent): the Intake column joined between Notes and Coverage.
   const tsv = mTeamTableTsv_(data, 'combined', { key: 'pctAnswered', dir: 'desc' });
   const lines = tsv.split('\n');
-  assert.strictEqual(lines[0], ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Coverage', 'Transfers'].join('\t'));
+  assert.strictEqual(lines[0], ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage', 'Transfers'].join('\t'));
   assert.ok(lines[1].indexOf('Leo Kim') === 0, 'rows follow the CURRENT sort (93.1 desc first)');
   assert.strictEqual(lines[1].split('\t')[6], '', 'an unreadable notes Sheet exports as BLANK, never 0 (INV-187)');
-  assert.strictEqual(lines[1].split('\t')[7], '', 'null coverage exports blank');
+  assert.strictEqual(lines[1].split('\t')[7], '', 'a null intake count exports BLANK too (absence is not 0)');
+  assert.strictEqual(lines[2].split('\t')[7], '5', 'a known intake count exports the number');
+  assert.strictEqual(lines[1].split('\t')[8], '', 'null coverage exports blank');
   assert.ok(tsv.indexOf('<') === -1, 'plain values only — never HTML');
   const qTsv = mTeamTableTsv_(data, 'queue', null);
   assert.strictEqual(qTsv.split('\n')[0], 'Queue\tTransferred\tReps');

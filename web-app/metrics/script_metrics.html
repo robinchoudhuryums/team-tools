@@ -814,6 +814,14 @@ function mRenderMyStats_(data) {
     ? mRailRow_('Notes filed', '—', 'warn', 'notes Sheet unreadable — count unavailable')
     : mRailRow_('Notes filed', data.noteCount,
         data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
+  // Batch 6 (operator 2026-08-25): intake-call count — the explainer beside
+  // ATT (intake/order-creation calls run long by nature). Absent field (old
+  // cached payload) or null (failed read) → no row; a zero renders (a real
+  // zero is informative next to a high ATT).
+  if (data.intakeNotes != null) {
+    html += mRailRow_('Intake calls', data.intakeNotes,
+      data.intakeNotes > 0 ? 'PPD / account-creation — these run long' : null);
+  }
   html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
     { values: trend.map(function (t) { return t.answered; }) });
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
@@ -1633,6 +1641,10 @@ function mRenderTeamMetrics_(data) {
         // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
         // not "0" — a zero here reads as a rep who logged nothing.
         { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.noteCountUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.noteCount); } },
+        // Batch 6 (operator 2026-08-25): intake-flagged notes — the visual
+        // correlation beside ATT (never a modeled "adjusted ATT"; per-call
+        // CDR attribution does not exist in this data). Null read → em dash.
+        { key: 'intakeNotes', label: 'Intake', numeric: true, sortable: true, cell: function (r) { return r.intakeNotes == null ? '<span style="color:var(--muted)" title="count unavailable">—</span>' : (r.intakeNotes > 0 ? esc(r.intakeNotes) : '<span style="color:var(--muted)">0</span>'); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
       ].concat(hasQueues ? [
         // Phase 2 — the TRANSFERS column is the only one that can carry a
@@ -1712,7 +1724,51 @@ function mRenderTeamMetrics_(data) {
     '</div>';
   }
 
+  // Batch 6 (operator 2026-08-25): the monthly intake-volume block — manager
+  // view only (the rep aggregate view never fetches it), lazy-loaded after
+  // the main render so the table never waits on the submission-tab read.
+  if (!data.repView) html += '<div id="m-intake-vol"></div>';
+
   el.innerHTML = html;
+  if (!data.repView) mLoadIntakeVolume_();
+}
+
+/** Intake volume · trailing months — real monthly counts (the honest answer
+ *  to "average occurrences per month"), from the submission tabs. Best-effort:
+ *  a failure renders the error card in ITS slot only (A12); an unreadable
+ *  form-type is NAMED, never a silent 0 column (INV-187). */
+function mLoadIntakeVolume_() {
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var host = document.getElementById('m-intake-vol');
+      if (!host) return;
+      if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Intake volume unavailable.'); return; }
+      var months = res.months || [];
+      if (!months.some(function (m) { return m.total > 0; })) { host.innerHTML = ''; return; }   // nothing sent yet — no empty block
+      var note = (res.failedTypes && res.failedTypes.length)
+        ? '<div class="m-vol-note" role="alert">' + esc(res.failedTypes.join(', ')) + ' tab(s) could not be read — those columns may be incomplete.</div>'
+        : '';
+      host.innerHTML = '<h2 class="card-label" style="margin-top:var(--space-lg)">Intake volume <span style="color:var(--muted-2);font-weight:400">· by month sent</span></h2>' +
+        note +
+        mtRenderTable_({
+          columns: [
+            { key: 'month', label: 'Month', cell: function (r) { return esc(r.month); } },
+            { key: 'ppd', label: 'PPD', numeric: true, cell: function (r) { return esc(r.ppd); } },
+            { key: 'pmd', label: 'PMD', numeric: true, cell: function (r) { return esc(r.pmd); } },
+            { key: 'pap', label: 'PAP', numeric: true, cell: function (r) { return esc(r.pap); } },
+            { key: 'total', label: 'Total', numeric: true, cell: function (r) { return '<b>' + esc(r.total) + '</b>'; } },
+          ],
+          rows: months,
+        });
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var host = document.getElementById('m-intake-vol');
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Intake volume unavailable.');
+    })
+    .getIntakeVolumeStats();
 }
 
 /** #3 — Match-diagnostics disclosure (aria-expanded kept in step, INV-174). */
@@ -1753,7 +1809,7 @@ function mTeamTableTsv_(data, scope, sort) {
     });
   } else {
     var hasTr = !!(data.queueRows && data.queueRows.length);
-    var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Coverage'];
+    var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage'];
     if (hasTr) head.push('Transfers');
     out.push(head.join('\t'));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
@@ -1762,6 +1818,7 @@ function mTeamTableTsv_(data, scope, sort) {
         (r.pctAnswered != null ? r.pctAnswered + '%' : ''),
         r.attFormatted,
         (r.noteCountUnavailable ? '' : r.noteCount),
+        (r.intakeNotes == null ? '' : r.intakeNotes),   // batch 6 — an unavailable count exports BLANK, never 0
         (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
       if (hasTr) row.push(r.transferred);
       out.push(row.join('\t'));

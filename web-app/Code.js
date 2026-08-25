@@ -16864,6 +16864,99 @@ function cnCountNotesResult_(emp, from, to) {
 }
 
 
+/** Operator 2026-08-25 (batch 6) — count the rep's INTAKE-flagged notes in a
+ *  range: rows whose SubformData carries `intakeType` (set by the intake
+ *  auto-log, INV-143's bounded enum — ppd/pmd/pap). The DATA already existed;
+ *  this makes it countable so long intake calls are EXPLAINABLE next to ATT
+ *  instead of silently inflating it. Per-call CDR attribution does NOT exist
+ *  (DQE is one row per agent+date — the settled cycle-14 Phase 0 fact), so
+ *  this is deliberately a COUNT beside the KPI, never a modeled "adjusted
+ *  ATT" — an invented subtraction would be presented as data (INV-187).
+ *  Same outcome contract as cnCountNotesResult_: {count, unavailable,
+ *  unenrolled} — a failed read is never a confident 0. 2-column bounded read
+ *  (the taxonomy pattern) + a substring pre-filter before any JSON.parse. */
+function cnCountIntakeNotesResult_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
+  try {
+    const sheet = getCallNotesSheet_(emp);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
+    const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+    const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
+    let n = 0;
+    for (let i = 0; i < dateCol.length; i++) {
+      const d = normalizeDate_(dateCol[i][0]);
+      if (d < from || d > to) continue;
+      const raw = String(subCol[i][0] || '');
+      if (raw.indexOf('"intakeType"') < 0) continue;
+      try {
+        const sd = JSON.parse(raw);
+        if (sd && sd.intakeType) n++;
+      } catch (e) { /* corrupt blob never breaks a count (callNoteRowToObject_ posture) */ }
+    }
+    return { count: n, unavailable: false, unenrolled: false };
+  } catch (e) {
+    console.warn('cnCountIntakeNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
+    return { count: 0, unavailable: true, unenrolled: false };
+  }
+}
+
+/** Pure (Node-pinned) — bucket submission timestamps into trailing calendar
+ *  months. tsByType = {PPD: [ts...], PMD: [...], PAP: [...]}; months = how
+ *  many trailing months incl. the current (todayIso anchors the newest).
+ *  Returns newest-first rows {month:'yyyy-MM', ppd, pmd, pap, total}. */
+function intakeVolumeBuckets_(tsByType, months, todayIso) {
+  const out = [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return out;
+  let y = parseInt(todayIso.slice(0, 4), 10), m = parseInt(todayIso.slice(5, 7), 10);
+  const keys = [];
+  for (let i = 0; i < months; i++) {
+    keys.push(y + '-' + String(m).padStart(2, '0'));
+    m--; if (m < 1) { m = 12; y--; }
+  }
+  keys.forEach(function (mk) {
+    const row = { month: mk, ppd: 0, pmd: 0, pap: 0, total: 0 };
+    ['PPD', 'PMD', 'PAP'].forEach(function (ft) {
+      ((tsByType || {})[ft] || []).forEach(function (ts) {
+        if (String(ts || '').slice(0, 7) === mk) { row[ft.toLowerCase()]++; row.total++; }
+      });
+    });
+    out.push(row);
+  });
+  return out;
+}
+
+/** Intake volume per month (manager-gated, read-only, PHI-free — counts
+ *  only). Sourced from the SUBMISSION tabs' Timestamp column (every send =
+ *  one row), bounded tail per tab. Answers "average occurrences per month"
+ *  with real monthly counts rather than a single averaged number. */
+const INTAKE_VOLUME_MONTHS = 6;
+const INTAKE_VOLUME_SCAN_MAX = 4000;
+function getIntakeVolumeStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const tsByType = {};
+    const failed = [];
+    INTAKE_FORM_TYPES_.forEach(function (ft) {
+      try {
+        const sheet = getIntakeSubmissionSheet_(ft);
+        const last = sheet.getLastRow();
+        if (last < 2) { tsByType[ft] = []; return; }
+        const start = Math.max(2, last - INTAKE_VOLUME_SCAN_MAX + 1);
+        tsByType[ft] = sheet.getRange(start, 2, last - start + 1, 1).getValues()
+          .map(function (r) { return intakeTsString_(r[0]); });
+      } catch (e) { failed.push(ft); }
+    });
+    const today = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+    return {
+      months: intakeVolumeBuckets_(tsByType, INTAKE_VOLUME_MONTHS, today),
+      failedTypes: failed,   // INV-187: an unreadable tab is named, never a silent 0 column
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+
 // ════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD METRICS (Time Clock → Dashboard)
 //  Period-aggregated own + cohort-guarded team CDR for the Dashboard carousels.
@@ -17207,10 +17300,14 @@ function getMyMetrics(date) {
     // result feeds the Clock coverage strip's "File N missing" CTA.
     var noteRes = cnCountNotesResult_(emp, date, date);
     var noteCount = noteRes.count;
+    // Operator 2026-08-25 (batch 6): intake-flagged note count — additive,
+    // null on a failed read (absence ≠ 0, INV-180/187).
+    var intakeRes = cnCountIntakeNotesResult_(emp, date, date);
 
     var result = {
       date: date,
       repName: emp.name,
+      intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
       cdr: todayCdr ? {
         totalRung:    todayCdr.totalRung,
         totalAnswered: todayCdr.totalAnswered,
@@ -17331,8 +17428,10 @@ function getMyMetricsRange(from, to) {
 
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
+    var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
     var rangeResult = {
       from: from, to: to, repName: emp.name,
+      intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
       cdr: c ? {
         totalRung:    c.totalRung,
         totalAnswered: c.totalAnswered,
@@ -17554,8 +17653,14 @@ function getTeamMetrics(dateOrFrom, to) {
       var noteRes = cnCountNotesResult_(
         { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
       var noteCount = noteRes.count;
+      // Batch 6 (2026-08-25): intake-flagged count per rep — the visual
+      // correlation beside ATT ("this rep's long talk time carried N intake
+      // calls"), never a modeled adjustment. Null on a failed read.
+      var intakeRes = cnCountIntakeNotesResult_(
+        { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
 
       var rep = {
+        intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
         repId: rm.repId, repName: rm.repName,
         totalRung:    cdr ? cdr.totalRung    : 0,
         totalAnswered: cdr ? cdr.totalAnswered : 0,
@@ -17591,6 +17696,10 @@ function getTeamMetrics(dateOrFrom, to) {
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
         if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
+        // Batch 6: intake total — sum of the KNOWN counts; any failed rep
+        // read marks the total partial (the client renders ≥, INV-187).
+        if (rep.intakeNotes != null) teamTotals.intakeNotes = (teamTotals.intakeNotes || 0) + rep.intakeNotes;
+        else teamTotals.intakeNotesPartial = true;
         // Phase 2 — team roll-up + the by-queue view's rows. Only reps that
         // made the table contribute, so the two modes always describe the same
         // population.
