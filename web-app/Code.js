@@ -19838,6 +19838,101 @@ function kbGetRelated(itemId) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
+// A ~1,000-row payor/HCPCS acceptance sheet lives with another dept and was
+// too slow to reference mid-call. The operator's cleaned CSV imports into an
+// `InsurancePayors` tab in the KB spreadsheet (PHI-free by policy — plan
+// names + acceptance criteria only, never a patient), and this endpoint is a
+// DETERMINISTIC search over it: a wrong in/out-of-network answer is a billing
+// error, and deterministic matching's failure mode is "no match" (visible),
+// not a confident wrong answer. Reps read via the server and never open the
+// sheet (the KB posture).
+//
+// Bounded read (the INV-46 family): the NAME column is scanned for scoring;
+// only the top-N matched rows are fetched full-width. Column semantics are
+// discovered BY HEADER NAME (the csrTransferQueueColumns_ precedent — the
+// operator's other CSV pages vary in shape, so fixed positions would drift):
+// waystar/network/qualif/reimbur match the known fields; EVERY other
+// non-empty header is a generic attribute column (the per-HCPCS acceptance
+// grid, the Hawaii marker, whatever a future import adds) passed through
+// VERBATIM — the operator rule: unknown tokens render as-is in neutral tone,
+// never guessed at.
+const INS_PAYOR_TAB = 'InsurancePayors';
+const INS_PAYOR_TOP = 8;
+const INS_PAYOR_MAX_ROWS = 5000;
+
+/** Pure (Node-pinned): score a payor name against query tokens. 0 = no
+ *  match. Whole-query substring dominates, then all-tokens-present, then
+ *  per-token hits; earlier match position breaks ties. */
+function insPayorScore_(name, query) {
+  const n = String(name || '').toLowerCase();
+  const q = String(query || '').toLowerCase().trim();
+  if (!n || !q) return 0;
+  let score = 0;
+  const pos = n.indexOf(q);
+  if (pos >= 0) score += 100 - Math.min(50, pos);   // whole query as a substring
+  const toks = q.split(/\s+/).filter(function (t) { return t.length >= 2; });
+  if (!toks.length) return score;
+  let hits = 0;
+  toks.forEach(function (t) { if (n.indexOf(t) >= 0) { hits++; score += 10; } });
+  if (hits === toks.length) score += 30;            // every token present
+  return hits ? score : score;                      // substring-only still counts
+}
+
+/** Pure (Node-pinned): one payor row → the result object, columns resolved by
+ *  header name. Unmatched non-empty headers become generic details entries. */
+function insPayorRowObj_(headers, row) {
+  const out = { name: String(row[0] == null ? '' : row[0]).trim(), waystar: '', networkStatus: '', qualification: '', reimbursement: '', details: [] };
+  for (let c = 1; c < headers.length; c++) {
+    const h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (!h) continue;
+    const v = String(row[c] == null ? '' : row[c]).trim();
+    if (/waystar/i.test(h)) out.waystar = v;
+    else if (/network/i.test(h)) out.networkStatus = v;
+    else if (/qualif/i.test(h)) out.qualification = v;   // the source header is misspelled "Qualifaction" — match the stem
+    else if (/reimbur/i.test(h)) out.reimbursement = v;
+    else if (v) out.details.push({ label: h, value: v });
+  }
+  return out;
+}
+
+/** Rep-callable, read-only, no lock. Returns the top-N payor matches for a
+ *  query — never a single confident guess: ties and near-misses ride along so
+ *  the REP judges ambiguity. A no-match result carries notFound:true (the
+ *  client renders the operator's "plan not listed → follow the TRY criteria"
+ *  guidance). Unconfigured (no tab) says exactly what to create. */
+function searchInsurancePayors(query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const q = String(query || '').trim();
+    if (q.length < 2) return { matches: [], total: 0 };
+    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
+    if (!sh) return { error: 'Insurance lookup is not set up yet — import the payor CSV into a tab named "' + INS_PAYOR_TAB + '" in the KB spreadsheet.' };
+    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+    if (last < 2) return { matches: [], total: 0 };
+    const width = sh.getLastColumn();
+    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    // Name-column scan for scoring; full rows fetched only for the top N.
+    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    const scored = [];
+    for (let i = 0; i < names.length; i++) {
+      const sc = insPayorScore_(names[i][0], q);
+      if (sc > 0) scored.push({ i: i, score: sc });
+    }
+    scored.sort(function (a, b) { return b.score - a.score; });
+    const top = scored.slice(0, INS_PAYOR_TOP);
+    const matches = top.map(function (t) {
+      // getDisplayValues — a foreign-authored sheet's formats are not ours to
+      // reinterpret (the INV-64 discipline).
+      const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
+      return insPayorRowObj_(headers, row);
+    });
+    return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP };
+  } catch (err) { return { error: 'Insurance lookup failed: ' + err.message }; }
+}
+
+
 function kbGetUsageStats() {
   try {
     const callerEmp = getEmployeeInfo_();

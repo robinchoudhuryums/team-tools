@@ -12016,6 +12016,93 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
 });
 
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 3 (2026-08-25) — insurance payor lookup: a deterministic
+// search over the InsurancePayors tab (KB spreadsheet), surfaced on the
+// Reference landing + the Ctrl/⌘+K drawer. Deterministic over RAG on purpose:
+// a wrong network-status answer is a billing error, and deterministic
+// matching fails VISIBLY (no match → the operator's TRY guidance).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — insurance payor lookup (operator batch 3)');
+
+const _insCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'insPayorScore_'), _insCtx, { filename: 'insPayorScore_' });
+vm.runInContext(extractRawFunction('Code.js', 'insPayorRowObj_'), _insCtx, { filename: 'insPayorRowObj_' });
+vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), _insCtx, { filename: 'insToneCls_' });
+
+test('insPayorScore_ — substring dominates, all-tokens bonus, zero on no hit', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  const sc = (n, q) => g('insPayorScore_(' + JSON.stringify(n) + ',' + JSON.stringify(q) + ')');
+  assert.strictEqual(sc('Texas Medicaid', 'zzz'), 0, 'no hit → 0 (never a weak false match)');
+  assert.ok(sc('Texas Medicaid', 'texas medicaid') > sc('Medicaid - Molina', 'texas medicaid'), 'whole-phrase substring beats partial token hits');
+  assert.ok(sc('Medicaid - Molina', 'molina medicaid') > sc('Medicaid - Superior', 'molina medicaid'), 'all tokens present beats one');
+  assert.ok(sc('Aetna Better Health of Ohio (MMP)', 'aetna ohio') > 0, 'scattered tokens still match');
+  assert.strictEqual(sc('', 'x'), 0); assert.strictEqual(sc('X', ''), 0);
+});
+
+test('insPayorRowObj_ — columns resolved BY HEADER NAME; everything else is a verbatim detail', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  // The real CSV header set, misspelled "Qualifaction" included — the stem
+  // match is what survives the other dept fixing their typo.
+  _insCtx.__h = ['Insurance', 'Waystar Reference #', 'Network Status', 'Qualifaction Process', 'Reimbursement Status', 'K0800', 'K0821/23/16', 'Z = Hawaii Only', ''];
+  _insCtx.__r = ['Texas Medicaid', 'SKTX0', 'In-Network', 'Yes', '', 'Not Accepted', 'Accepted', '', 'junk-in-headerless-col'];
+  const o = g('insPayorRowObj_(__h, __r)');
+  assert.strictEqual(o.name, 'Texas Medicaid');
+  assert.strictEqual(o.waystar, 'SKTX0');
+  assert.strictEqual(o.networkStatus, 'In-Network');
+  assert.strictEqual(o.qualification, 'Yes', 'the misspelled header still resolves (stem match)');
+  assert.strictEqual(o.reimbursement, '');
+  assert.strictEqual(o.details.map((d) => d.label).join('|'), 'K0800|K0821/23/16', 'non-fixed headers become generic details; BLANK cells and headerless columns are dropped');
+  assert.strictEqual(o.details[0].value, 'Not Accepted', 'values pass through verbatim — no translation server-side');
+});
+
+test('insToneCls_ — the legend tone map; unknown tokens stay NEUTRAL', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  const t = (v) => g('insToneCls_(' + JSON.stringify(v) + ')');
+  assert.strictEqual(t('Accepted'), 'good');
+  assert.strictEqual(t('x'), 'good', 'lowercase X per the legend (case-insensitive)');
+  assert.strictEqual(t('In-Network'), 'good');
+  assert.strictEqual(t('Not Accepted'), 'bad');
+  assert.strictEqual(t('Out-of-Network'), 'bad');
+  assert.strictEqual(t('Out-of-Network Benefits'), 'warn', 'OON *Benefits* is NOT the hard no');
+  assert.strictEqual(t('OON W/ PA'), 'warn');
+  assert.strictEqual(t('Plan Specific'), 'warn');
+  assert.strictEqual(t('Location-based ( 285-325 lb)'), 'warn');
+  assert.strictEqual(t('Location-based ( Up To 285) & SI/PR'), 'warn', 'combined criteria stay warn (must meet both)');
+  assert.strictEqual(t('SI/PR'), 'warn');
+  assert.strictEqual(t('PR'), 'warn');
+  assert.strictEqual(t('TRY'), 'info');
+  assert.strictEqual(t('Hawaii only'), 'info');
+  assert.strictEqual(t('Y'), '', 'the 6 stray Y cells render VERBATIM in neutral tone — never a guessed verdict (operator rule)');
+  assert.strictEqual(t(''), '');
+  assert.strictEqual(t('approved'), '', 'an unknown word containing "pr" mid-token is not PR');
+});
+
+test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [hidden] on the client', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(srv) && /Not authorized/.test(srv), 'rep gate');
+  assert.ok(/getRange\(2, 1, last - 1, 1\)/.test(srv), 'NAME-column scan for scoring (the INV-46 bounded-reader family)');
+  assert.ok(!/waitLock/.test(srv), 'read-only — no lock');
+  assert.ok((srv.match(/getDisplayValues\(\)/g) || []).length >= 3, 'getDisplayValues throughout (INV-64 — a foreign-authored sheet)');
+  assert.ok(/INS_PAYOR_TOP/.test(srv) && /total: scored\.length/.test(srv), 'top-N cap with the TRUE total reported (INV-169)');
+  assert.ok(/INS_PAYOR_TAB/.test(srv) && /not set up yet/.test(srv), 'unconfigured names the exact tab to create');
+  const kb = nc(extractScript('kb/script_kb.html'));
+  assert.ok((kb.match(/insLookupSecHtml_\('(-d)?'\)/g) || []).length === 2, 'ONE shared section, two hosts (landing + drawer)');
+  const inputFn = nc(extractFunction('kb/script_kb.html', 'insLookupInput_'));
+  assert.ok(/\+\+KB_INS\.seq/.test(inputFn) && (inputFn.match(/mySeq !== KB_INS\.seq/g) || []).length === 2, 'seq token guards BOTH async handlers (INV-156)');
+  assert.ok(/errorStateHtml_/.test(inputFn), 'transport failure renders the error card (A12)');
+  const renderFn = nc(extractFunction('kb/script_kb.html', 'insRenderResults_'));
+  assert.ok(/errorStateHtml_/.test(renderFn), 'server {error} renders the error card too');
+  assert.ok(/TRY<\/b> rules/.test(renderFn), 'not-found renders the operator TRY guidance, never an empty state');
+  assert.ok(/status not recorded/.test(renderFn), 'blank network status SAYS so (INV-187), never a blank pill');
+  assert.ok(/esc\(m\.name\)/.test(renderFn) && /esc\(d\.value\)/.test(renderFn), 'every payor string esc()d before innerHTML');
+  assert.ok(/\.kb-ins-grid\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8')),
+    'the display-setting grid carries its [hidden] companion (the documented trap)');
+});
+
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
