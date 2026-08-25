@@ -12349,6 +12349,82 @@ test('B6 client wiring: rail row null-gated, table em-dash, volume block manager
 });
 
 
+// ────────────────────────────────────────────────────────────────────────────
+// Operator post-deploy round (2026-08-25) — the email composer's Preview
+// loader + the EDITABLE Note Reference (a mini note template).
+console.log('\ncomposer — preview loader + editable note reference');
+
+test('CMP-1: Preview shows an in-button loader and is RESTORED on both failure paths', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(extractScript('cn/script_callnotes.html'));
+  assert.ok(/id="cnC-preview-btn"/.test(cn), 'the Preview button carries a stable id to drive');
+  const busy = nc(extractFunction('cn/script_callnotes.html', 'cnComposerSetPreviewBtnBusy_'));
+  assert.ok(/btn\.disabled = true/.test(busy) && /lo-dots/.test(busy),
+    'busy = disabled + the shared Role-D .lo-dots loader (not a bespoke spinner)');
+  const idle = nc(extractFunction('cn/script_callnotes.html', 'cnComposerSetPreviewBtnIdle_'));
+  assert.ok(/btn\.disabled = false/.test(idle), 'idle re-enables the button');
+  const run = nc(extractFunction('cn/script_callnotes.html', 'cnComposerRunPreview_'));
+  assert.ok(/cnComposerSetPreviewBtnBusy_\(btn, 'Building preview…'\)/.test(run), 'the RPC is preceded by the busy state');
+  // BOTH failure shapes restore it — a server {error} and a transport failure.
+  assert.strictEqual((run.match(/cnComposerSetPreviewBtnIdle_\(btn\)/g) || []).length, 2,
+    'restored on the {error} branch AND the transport failure (success re-renders into the preview step, so it needs none)');
+});
+
+test('CMP-2: the note reference is EDITABLE, raw-markered, named, and read-only while pending', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractFunction('cn/script_callnotes.html', 'cnComposerNoteRefHtml_'));
+  assert.ok(/contenteditable="true"/.test(f), 'the fields are editable (the .ce vocabulary, like the main template)');
+  assert.ok(/role="textbox"/.test(f) && /aria-labelledby="cnC-nrl-/.test(f),
+    'every field announces a name (INV-195 — a placeholder is not one)');
+  // The LOAD-BEARING one: the editable branch must show RAW text. cnFmtHtml_ is
+  // a RENDER step; editing rendered HTML would destroy the markers on the way
+  // back (a **bold** would come back as <strong> and save as literal markup).
+  const editable = f.slice(f.indexOf('const rows ='));
+  assert.ok(!/cnFmtHtml_/.test(editable), 'the EDITABLE rows render raw esc()d text, never the formatter output');
+  assert.ok(/esc\(v\)/.test(editable), 'and the raw value is still escaped into the DOM');
+  // The pending branch (Save & Compose mid-flight) has no server row to update.
+  const pending = f.slice(f.indexOf('_pending'), f.indexOf('const rows ='));
+  assert.ok(/cnFmtHtml_\(esc\(v\)\)/.test(pending) && !/contenteditable/.test(pending),
+    'a still-saving note renders READ-ONLY (formatted), not an edit that cannot commit');
+});
+
+test('CMP-3: edits commit through updateCallNote — no new endpoint, state replaced before the instance guard', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const save = nc(extractFunction('cn/script_callnotes.html', 'cnComposerSaveNoteEdits_'));
+  assert.ok(/\.updateCallNote\(c\.noteId, payload\)/.test(save),
+    'reuses the card editor’s caller-scoped + locked + audited endpoint (no second write path)');
+  assert.ok(/if \(c\.savingNote\) return;/.test(save), 'double-fire guard while the write is in flight (INV-56 posture)');
+  assert.ok(/if \(dirty\.length === 0\) \{ if \(then\) then\(true\); return; \}/.test(save),
+    'a clean form is a no-op that still continues the chain — never a needless write');
+  // The server row IS updated, so the cached note must be replaced even if the
+  // composer was closed meanwhile; guarding that early would leave every card
+  // rendering pre-edit text against a corrected note.
+  const replaceAt = save.indexOf('cnReplaceNoteInState_(res.note)');
+  const guardAt = save.indexOf('if (CN_STATE.composer !== c) return;');
+  assert.ok(replaceAt > -1 && guardAt > -1 && replaceAt < guardAt,
+    'state replace + re-render happen BEFORE the composer instance guard');
+  assert.ok(/c\.note = res\.note;/.test(save),
+    're-points the held note at the server copy — cnReplaceNoteInState_ swaps the array slot (the r3 lastSaveUndo lesson)');
+});
+
+test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built from the note as sent (INV-41)', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const go = nc(extractFunction('cn/script_callnotes.html', 'cnComposerGoToPreview_'));
+  const dirtyAt = go.indexOf('cnComposerNoteDirtyFields_().length > 0');
+  const saveAt = go.indexOf('cnComposerSaveNoteEdits_(');
+  const runAt = go.lastIndexOf('cnComposerRunPreview_()');
+  assert.ok(dirtyAt > -1 && saveAt > -1 && runAt > -1, 'the dirty branch, the save and the preview are all present');
+  assert.ok(saveAt < runAt, 'the save is chained BEFORE the preview — previewing first would render (and email) the STALE note');
+  assert.ok(/if \(!ok\) \{ cnComposerSetPreviewBtnIdle_\(btn\); return; \}/.test(go),
+    'a failed save aborts the chain and restores the button — never a preview of unsaved text');
+  assert.ok(/if \(c\.previewing \|\| c\.savingNote\) return;/.test(go), 'either in-flight RPC blocks a second click');
+  // Uncommitted edits are DISCARDED on close — say so rather than lose them.
+  const close = nc(extractFunction('cn/script_callnotes.html', 'cnCloseComposerModal_'));
+  assert.ok(/Note edits discarded/.test(close), 'closing with unsaved edits toasts instead of silently dropping them');
+  assert.ok(/!CN_STATE\.composer\.savingNote && !CN_STATE\.composeFlow/.test(close),
+    'and stays quiet mid-save and on the Save&Compose rollback path (that note is being deleted)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
