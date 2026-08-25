@@ -17752,8 +17752,8 @@ function getMetricsAmbient() {
 //  (intakeFilterRecommendations_) is server-authoritative + Node-tested.
 // ════════════════════════════════════════════════════════════════════════════
 
-const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient'];
-const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount'];
+const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
+const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 
 // Per-form structural layout (0-based FORM_RANGE row index → role). Ported from
 // the bound tool's AC_CONFIG / PAP_CONFIG. The question LABELS arrive from the
@@ -17926,6 +17926,11 @@ function getIntakeSubmissionSheet_(formType) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  } else if (sheet.getLastColumn() < headers.length) {
+    // Amend-&-re-send (operator 2026-08-25) added the trailing AmendsId
+    // column — self-heal the header once (the INV-126/135 pattern; legacy
+    // rows read the cell as blank = not an amendment).
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   }
   return sheet;
 }
@@ -18747,6 +18752,66 @@ function intakeDecodeImages_(images) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── PPD ──
+// ── Amend & re-send (operator 2026-08-25 — batch 4) ─────────────────────────
+// The submission tabs are APPEND-ONLY (the §164.312(c) discipline shared with
+// FormSubmissions) — an amendment is a NEW submission row linked to the
+// original via the trailing AmendsId column; the original row is never
+// touched. Both the USER and the RECIPIENT always see it is an amendment:
+// the subject gains an "AMENDED: " prefix and the email opens with a banner
+// naming the original send date + the changed fields (both applied AFTER the
+// INV-41 hash check, the feedbackCta/drResolveCta placement, so the
+// preview-hash contract over the BASE body/subject is untouched).
+
+/** Pure (Node-pinned): the answer keys whose trimmed values differ. Union of
+ *  keys, insertion-ordered old→new. An EMPTY diff means a re-send — the
+ *  banner says so instead of implying content changed. */
+function intakeAmendDiff_(oldAnswers, newAnswers) {
+  const a = oldAnswers || {}, b = newAnswers || {};
+  const keys = Object.keys(a);
+  Object.keys(b).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+  return keys.filter(function (k) {
+    return String(a[k] == null ? '' : a[k]).trim() !== String(b[k] == null ? '' : b[k]).trim();
+  });
+}
+
+/** The amendment banner (email-safe: table/inline styles only — no flex). */
+function intakeAmendBannerHtml_(sentTs, changedLabels) {
+  const P = CN_EMAIL_PALETTE;
+  const what = (changedLabels && changedLabels.length)
+    ? 'Changed: ' + changedLabels.slice(0, 8).map(function (l) { return esc_(l); }).join('; ') +
+      (changedLabels.length > 8 ? '; and ' + (changedLabels.length - 8) + ' more' : '')
+    : 'Content unchanged — this is a re-send of the original.';
+  return '<table style="border-collapse:collapse;width:100%;margin-bottom:14px;"><tr>' +
+    '<td style="background:' + P.warnSoft + ';border:1px solid ' + P.warnBorder + ';border-radius:6px;padding:10px 14px;">' +
+      '<div style="font-weight:700;color:' + P.brand + ';">AMENDED SUBMISSION</div>' +
+      '<div style="font-size:13px;color:' + P.muted2 + ';margin-top:2px;">Supersedes the version sent ' + esc_(sentTs) + '. ' + what + '</div>' +
+    '</td></tr></table>';
+}
+
+/** Locate + validate the amendment source: must exist for this form type and
+ *  belong to the CALLER (owner-only — an amendment sends under the sender's
+ *  name; the IntakeFeedback forged-id rule applied to a write). Bounded
+ *  id-column scan. Returns { ts, answers } or null. */
+function intakeAmendSource_(ft, amendsId, emp) {
+  const id = String(amendsId || '').trim();
+  if (!id) return null;
+  const sheet = getIntakeSubmissionSheet_(ft);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const isPpd = ft === 'PPD';
+  const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+  const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== id) continue;
+    const row = sheet.getRange(i + 2, 1, 1, width).getValues()[0];
+    if (String(row[2] || '').trim() !== emp.id) return null;   // owner-only
+    let answers = {};
+    try { answers = JSON.parse(isPpd ? row[6] : row[7]) || {}; } catch (e) {}
+    return { ts: intakeTsString_(row[1]), answers: answers };
+  }
+  return null;
+}
+
 function intakePreviewPPD(payload) {
   try {
     const emp = getEmployeeInfo_();
@@ -18811,14 +18876,31 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
       return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
+    // Amend & re-send (operator 2026-08-25): validate the source BEFORE the
+    // send — a bad/foreign id fails the whole send rather than silently
+    // sending an unmarked amendment.
+    const amendId = String(payload.amendsSubmissionId || '').trim();
+    let amendSrc = null;
+    if (amendId) {
+      amendSrc = intakeAmendSource_('PPD', amendId, emp);
+      if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+    }
     // The submission id is minted BEFORE the send so the feedback button can
-    // reference it; the CTA rides the FINAL body only (post-hash-check — the
-    // drResolveCtaHtml_ pattern), so the INV-41 preview contract, which covers
-    // the BASE body, is untouched. No resolvable exec URL → no button.
+    // reference it; the CTA + the amendment banner/prefix ride the FINAL body
+    // only (post-hash-check — the drResolveCtaHtml_ pattern), so the INV-41
+    // preview contract, which covers the BASE body + subject, is untouched.
     const submissionId = Utilities.getUuid();
-    const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
+    let amendBanner = '', sendSubject = subject;
+    if (amendSrc) {
+      const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
+      const labelByKey = {};
+      (payload.rows || []).forEach(function (r) { if (r.qNum) labelByKey[r.qNum] = r.label || r.qNum; });
+      amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('Q' + k); }));
+      sendSubject = 'AMENDED: ' + subject;
+    }
+    const finalBody = amendBanner + intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
       + intakeFeedbackCta_(submissionId, 'PPD');
-    const html = intakeEmailShell_(subject, finalBody, 'Intake · PPD');
+    const html = intakeEmailShell_(sendSubject, finalBody, 'Intake · PPD');
 
     // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
     // spirit — the public form path has had these caps since the hardening
@@ -18830,19 +18912,20 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
     if (oversize) return { success: false, error: oversize };
 
-    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });   // Round-1 #8
+    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: sendSubject, htmlBody: html });   // Round-1 #8
 
     let storeWarning = null;
     try {
       getIntakeSubmissionSheet_('PPD').appendRow([
         submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
         patientInfo, String(payload.language || 'EN'),
-        answersJson, recJson, selJson, recipient,
+        answersJson, recJson, selJson, recipient, amendId,
       ]);
     } catch (e) { storeWarning = intakeStoreFailWarn_(emp, 'PPD', submissionId, e); }
 
     writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
-      'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient), emp.email);
+      'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) +
+      (amendId ? '; amends=' + amendId : ''), emp.email);
 
     return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
   } catch (err) { return { success: false, error: err.message }; }
@@ -18883,9 +18966,26 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   }
   const recipient = intakeResolveRecipient_(formType, recipientSpec);
 
+  // Amend & re-send (operator 2026-08-25) — see intakeSendPPD; validated
+  // before the send, applied post-hash.
+  const amendId = String(payload.amendsSubmissionId || '').trim();
+  let amendSrc = null;
+  if (amendId) {
+    amendSrc = intakeAmendSource_(formType, amendId, emp);
+    if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+  }
+  let sendSubject = subject, amendBanner = '';
+  if (amendSrc) {
+    const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
+    const labelByKey = {};
+    (payload.rows || []).forEach(function (r) { if (r.qIndex != null && !r.isHeader) labelByKey[r.qIndex] = r.label || String(r.qIndex); });
+    amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('#' + k); }));
+    sendSubject = 'AMENDED: ' + subject;
+  }
+
   // Images ride at send only (not part of the preview hash). Append the image
   // section to the inner body, then wrap — no brittle string surgery.
-  let innerBody = body;
+  let innerBody = amendBanner + body;
   let inlineImagesObj = {};
   const imgCount = (images && images.length) ? Math.min(images.length, CONFIG.INTAKE.MAX_IMAGES) : 0;
   if (imgCount > 0) {
@@ -18897,7 +18997,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   // no preview-hash over the inner body sections the CTA joins, but the same
   // final-body-only placement keeps the two send paths uniform.
   const submissionId = Utilities.getUuid();
-  const htmlBody = intakeEmailShell_(subject, innerBody + intakeFeedbackCta_(submissionId, formType),
+  const htmlBody = intakeEmailShell_(sendSubject, innerBody + intakeFeedbackCta_(submissionId, formType),
     'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
 
   // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
@@ -18906,19 +19006,20 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const oversize = intakeStoreOversizeError_([answersJson]);
   if (oversize) return { success: false, error: oversize };
 
-  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
+  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: sendSubject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
 
   let storeWarning = null;
   try {
     getIntakeSubmissionSheet_(formType).appendRow([
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
-      answersJson, recipient, imgCount,
+      answersJson, recipient, imgCount, amendId,
     ]);
   } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
-    'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount, emp.email);
+    'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount +
+    (amendId ? '; amends=' + amendId : ''), emp.email);
 
   return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
 }
@@ -18984,18 +19085,33 @@ function intakeListMySubmissions() {
       const n = last - 1;
       const rows = sheet.getRange(2, 1, n, metaWidth).getValues();
       const recips = sheet.getRange(2, recipCol + 1, n, 1).getValues();
+      // Amend & re-send (operator 2026-08-25): the trailing AmendsId column —
+      // a legacy tab narrower than the healed header reads as blank.
+      const amendCol = (isPpd ? INTAKE_PPD_SUB_HEADERS : INTAKE_ACCT_SUB_HEADERS).length;   // 1-based
+      const amends = sheet.getLastColumn() >= amendCol ? sheet.getRange(2, amendCol, n, 1).getValues() : null;
+      // id → the amending submission's {id, ts}: an item someone amended
+      // renders "superseded". Built over the FULL tab (pre-visibility) so a
+      // manager view and the owner view agree.
+      const superseded = {};
+      if (amends) for (let i = 0; i < n; i++) {
+        const src = String(amends[i][0] || '').trim();
+        if (src) superseded[src] = { submissionId: String(rows[i][0] || ''), timestamp: intakeTsString_(rows[i][1]) };
+      }
       for (let i = 0; i < rows.length; i++) {
         const repId = String(rows[i][2] || '').trim();
         if (!emp.isManager && repId !== emp.id) continue;
+        const sid = String(rows[i][0] || '');
         out.push({
           formType: ft,
-          submissionId: String(rows[i][0] || ''),
+          submissionId: sid,
           timestamp: intakeTsString_(rows[i][1]),
           repId: repId,
           repName: String(rows[i][3] || ''),
           patientInfo: String(rows[i][4] || ''),
           language: isPpd ? String(rows[i][5] || 'EN') : String(rows[i][6] || 'EN'),
           recipient: String(recips[i][0] || ''),
+          amendsId: amends ? String(amends[i][0] || '').trim() : '',
+          supersededBy: superseded[sid] || null,
         });
       }
     });
@@ -19040,9 +19156,27 @@ function intakeGetSubmission(formType, submissionId) {
       return { error: 'You can only view your own intake submissions.' };
     }
     const parse = function (raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } };
+    // Amend & re-send (operator 2026-08-25): AmendsId is the LAST header
+    // column (index width-1 in the fetched row — a legacy row reads blank);
+    // supersededBy needs one bounded pass over that column to find a LATER
+    // amendment pointing at this id (last match wins = the newest).
+    let supersededBy = null;
+    const amendColD = width;   // 1-based — AmendsId is the trailing header col
+    if (sheet.getLastColumn() >= amendColD) {
+      const amendsAll = sheet.getRange(2, amendColD, last - 1, 1).getValues();
+      for (let i = 0; i < amendsAll.length; i++) {
+        if (String(amendsAll[i][0] || '').trim() === id) {
+          const meta = sheet.getRange(i + 2, 1, 1, 2).getValues()[0];
+          supersededBy = { submissionId: String(meta[0] || ''), timestamp: intakeTsString_(meta[1]) };
+        }
+      }
+    }
     const result = {
       formType: ft,
       submissionId: id,
+      isOwn: repId === emp.id,
+      amendsId: String(row[width - 1] == null ? '' : row[width - 1]).trim(),
+      supersededBy: supersededBy,
       feedback: intakeFeedbackFor_(ft, id),   // recipient feedback, all three forms (2026-08-13)
       timestamp: intakeTsString_(row[1]),
       repId: repId,

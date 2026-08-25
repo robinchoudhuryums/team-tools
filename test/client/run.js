@@ -7748,8 +7748,16 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
   // expression — the 2026-08-13 feedback CTA rides it — so scan a window
   // after each call rather than one rigid arg shape).
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  const callSites = code.split('intakeEmailShell_(subject,').slice(1);
+  // REWRITTEN in place (operator 2026-08-25, the accrual precedent): the two
+  // SEND sites now pass `sendSubject` (the amend flow's post-hash "AMENDED: "
+  // prefix rides the variable); the two PREVIEW sites keep the base subject.
+  const callSites = code.split('intakeEmailShell_(').slice(1)
+    .filter(function (c) { return c.indexOf('title,') !== 0; });   // drop the definition itself
   assert.strictEqual(callSites.length, 4, 'four intakeEmailShell_ call sites');
+  assert.strictEqual(callSites.filter(function (c) { return c.indexOf('sendSubject,') === 0; }).length, 2,
+    'both SEND sites use the amend-aware subject');
+  assert.strictEqual(callSites.filter(function (c) { return c.indexOf('subject,') === 0; }).length, 2,
+    'both PREVIEW sites hash/render the BASE subject (the INV-41 contract)');
   callSites.forEach(function (c, i) {
     assert.ok(c.slice(0, 220).indexOf("'Intake · ") >= 0, 'call site ' + (i + 1) + ' names its form');
   });
@@ -12100,6 +12108,92 @@ test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [
   assert.ok(/esc\(m\.name\)/.test(renderFn) && /esc\(d\.value\)/.test(renderFn), 'every payor string esc()d before innerHTML');
   assert.ok(/\.kb-ins-grid\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8')),
     'the display-setting grid carries its [hidden] companion (the documented trap)');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 4 (2026-08-25) — Amend & re-send for intake submissions.
+// The submission tabs stay APPEND-ONLY: an amendment is a NEW row linked via
+// the trailing AmendsId column, and BOTH sides always see the marking (the
+// AMENDED subject prefix + banner for the recipient; chips/banners in the
+// Sent tab for the user). The prefix/banner ride POST-hash (the feedbackCta
+// placement) so INV-41's preview contract over the base body is untouched.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — intake amend & re-send (operator batch 4)');
+
+const _amdCtx = vm.createContext({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+  CN_EMAIL_PALETTE: { warnSoft: '#fbf1d9', warnBorder: '#f0d9a8', brand: '#223b5d', muted2: '#5f6878' } });
+vm.runInContext(extractRawFunction('Code.js', 'intakeAmendDiff_'), _amdCtx, { filename: 'intakeAmendDiff_' });
+vm.runInContext(extractRawFunction('Code.js', 'intakeAmendBannerHtml_'), _amdCtx, { filename: 'intakeAmendBannerHtml_' });
+
+test('intakeAmendDiff_ — changed/added/removed keys, whitespace-insensitive, empty on identical', () => {
+  const g = (e) => vm.runInContext(e, _amdCtx);
+  const d = (a, b) => g('intakeAmendDiff_(' + JSON.stringify(a) + ',' + JSON.stringify(b) + ').join("|")');
+  assert.strictEqual(d({ '1': 'Yes', '38': '250' }, { '1': 'Yes', '38': '250' }), '', 'identical → empty (the banner then says re-send)');
+  assert.strictEqual(d({ '1': 'Yes', '38': '250' }, { '1': 'No', '38': '250' }), '1', 'a changed value');
+  assert.strictEqual(d({ '1': 'Yes' }, { '1': 'Yes', notes: 'call pm' }), 'notes', 'an ADDED key counts');
+  assert.strictEqual(d({ '1': 'Yes', '5': 'x' }, { '1': 'Yes' }), '5', 'a REMOVED key counts');
+  assert.strictEqual(d({ '1': ' Yes ' }, { '1': 'Yes' }), '', 'whitespace-only difference is NOT a change');
+});
+
+test('intakeAmendBannerHtml_ — names the original send, lists changes, says re-send when unchanged', () => {
+  const g = (e) => vm.runInContext(e, _amdCtx);
+  const withChanges = g('intakeAmendBannerHtml_("2026-08-20 10:00:00", ["Weight (Q38)", "Notes"])');
+  assert.ok(/AMENDED SUBMISSION/.test(withChanges) && /Supersedes the version sent 2026-08-20 10:00:00/.test(withChanges), 'banner names the original');
+  assert.ok(/Changed: Weight \(Q38\); Notes/.test(withChanges), 'changed fields listed');
+  const unchanged = g('intakeAmendBannerHtml_("2026-08-20 10:00:00", [])');
+  assert.ok(/Content unchanged — this is a re-send/.test(unchanged), 'an unchanged amend is HONESTLY labeled a re-send');
+  const many = g('intakeAmendBannerHtml_("t", ["a","b","c","d","e","f","g","h","i","j"])');
+  assert.ok(/and 2 more/.test(many), 'change list caps at 8 + a named remainder (INV-169 spirit)');
+  const hostile = g('intakeAmendBannerHtml_("t", ["<img src=x>"])');
+  assert.ok(hostile.indexOf('<img') < 0 && /&lt;img/.test(hostile), 'labels esc_d — the email body boundary (INV-89)');
+  assert.ok(!/display:\s*flex|[^-]gap:|filter:/.test(hostile + withChanges), 'email-safe: no flex/gap/filter');
+});
+
+test('wiring: validate-before-send, post-hash marking, owner-only source, append-only chain', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const grab = (name) => {
+    const i = code.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0;
+    for (let k = code.indexOf('{', i); k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (d === 0) return nc(code.slice(i, k + 1)); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const src = grab('intakeAmendSource_');
+  assert.ok(/!== emp\.id\) return null/.test(src), 'OWNER-only: a foreign submission id resolves to null (the IntakeFeedback forged-id rule on a write path)');
+  ['intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
+    const f = grab(fn);
+    assert.ok(/intakeAmendSource_\(/.test(f) && /was not found \(or is not yours\)/.test(f), fn + ' validates the source and FAILS the send on a bad id');
+    // Post-hash order: the AMENDED prefix/banner must come AFTER the
+    // expectedBodyHash compare — the preview contract covers the BASE.
+    const hashAt = f.indexOf('expectedBodyHash)');
+    const amendAt = f.indexOf("'AMENDED: '");
+    assert.ok(hashAt >= 0 && amendAt > hashAt, fn + ': marking applied post-hash (INV-41 untouched)');
+    assert.ok(/amendId,\n\s*\]\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
+    assert.ok(/amends=/.test(f), fn + ' audit row carries amends= (id only — PHI-free, INV-32)');
+  });
+  // Schema: trailing AmendsId on BOTH header constants + the one-shot self-heal.
+  assert.ok(/'Recipient','AmendsId'\]/.test(code) && /'ImageCount','AmendsId'\]/.test(code), 'both header constants gained the TRAILING column');
+  assert.ok(/getLastColumn\(\) < headers\.length/.test(grab('getIntakeSubmissionSheet_')), 'legacy tabs self-heal the header (the INV-126/135 pattern)');
+  // Client: collectors carry amendsSubmissionId from amendOf; clear kills it;
+  // the prefill consumes AFTER the draft restore in BOTH enters.
+  const ic = nc(extractScript('intake/script_intake.html'));
+  assert.strictEqual((ic.match(/amendsSubmissionId: \(INTAKE_STATE(\.ppd|\[form\])\.amendOf/g) || []).length, 2, 'both collectors attach the amend id');
+  assert.ok(/INTAKE_STATE\[form\]\.amendOf = null;\s*\n/.test(ic), 'clear/send-success detaches the amend');
+  [/intakeRestoreDraft_\('ppd'\)[\s\S]{0,300}intakeConsumeAmendPrefill_\('ppd'\)/, /intakeRestoreDraft_\(form\)[\s\S]{0,300}intakeConsumeAmendPrefill_\(form\)/].forEach((re, i) =>
+    assert.ok(re.test(ic), ['ppd', 'acct'][i] + ' enter consumes the amend prefill AFTER the draft restore (the snapshot must win)'));
+  // Detail: the button is gated OWN + not-superseded; both chain banners render.
+  const det = extractFunction('intake/script_intake.html', 'intakeRenderSentDetail_');
+  assert.ok(/d\.isOwn && !d\.supersededBy/.test(det), 'Amend button: owner-only and never on a superseded row');
+  assert.ok(/Superseded by an amended copy/.test(det) && /AMENDED copy of an earlier/.test(det), 'both chain directions banner');
+  // List chips: both directions marked.
+  const list = extractFunction('intake/script_intake.html', 'intakeRenderSentList_');
+  assert.ok(/amended copy/.test(list) && /superseded/.test(list), 'list marks both sides of the chain');
 });
 
 

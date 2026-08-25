@@ -176,6 +176,14 @@
   .intk-yr-sub { display: flex; flex-wrap: wrap; gap: 6px; }
 
   .intk-row textarea { resize: vertical; min-height: 58px; }
+  /* Amend & re-send (operator 2026-08-25) */
+  .intk-amend-chip { display: inline-block; margin-left: 7px; font-family: var(--mono); font-size: .64rem; text-transform: uppercase; letter-spacing: .05em; color: var(--info-deep); background: var(--info-soft); border-radius: var(--radius-pill); padding: 1px 8px; vertical-align: middle; }
+  .intk-amend-chip.superseded { color: var(--warning-deep); background: var(--warn-soft); }
+  .intk-amend-banner { display: flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; }
+  .intk-amend-banner.superseded { color: var(--warning-deep); background: var(--warn-soft); }
+  .intk-amend-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; }
+  .intk-amend-x { appearance: none; background: none; border: none; font: inherit; font-size: .76rem; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+  .intk-amend-x:hover { color: var(--ink); }
   /* Strongly-recommended-blank mark (operator 2026-08-25) — set by the
      pre-preview check, cleared when the field gains a value. Warn tokens
      only — a recommendation, never an error tone. */
@@ -722,6 +730,7 @@ function enterIntakePpdView(area) {
   intakePpdApplyReveals_(form);   // hide Q33a etc. per restored parent answers
   intakePpdUpdateProgress_();
   intakeConsumeNavHint_();
+  intakeConsumeAmendPrefill_('ppd');   // amend snapshot AFTER the draft restore
 }
 
 // ── Pilot round 3 (#7): arrow-key field navigation ──────────────────────────
@@ -1612,7 +1621,8 @@ function intakeCollectPpd_() {
   rows.push({ isHeader: true, label: nlc.title });
   rows.push({ qNum: 'notes', label: nlc.label, value: notesVal, isSecondary: false });
   var patientEl = document.getElementById('intk-ppd-patient');
-  return { patientInfo: patientEl ? patientEl.value.trim() : '', answers: answers, rows: rows, language: lang };
+  return { patientInfo: patientEl ? patientEl.value.trim() : '', answers: answers, rows: rows, language: lang,
+    amendsSubmissionId: (INTAKE_STATE.ppd.amendOf && INTAKE_STATE.ppd.amendOf.submissionId) || '' };
 }
 
 // ── Strongly-recommended-field soft check (operator 2026-08-25) ────────────
@@ -1716,6 +1726,7 @@ function intakePpdPreviewGo_(payload) {
       if (currentView !== requested) return;
       if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
       INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload };
+      if (payload.amendsSubmissionId) showToast('Amending — the sent email will carry the AMENDED banner + subject prefix.', 'toast-info');
       intakeOpenPpdPreviewModal_(res.html, res.recommendations);
     })
     .withFailureHandler(function (err) { if (currentView === requested) showToast('Preview failed: ' + (err.message || err), 'toast-error'); })
@@ -1964,6 +1975,7 @@ function intakeEnterAcct_(form, title, area) {
   intakeRestoreDraft_(form);
   intakeAcctUpdateProgress_(form);
   intakeConsumeNavHint_();
+  intakeConsumeAmendPrefill_(form);   // amend snapshot AFTER the draft restore
 }
 
 // Progress for the account forms: count answered (non-header) fields and drive
@@ -2077,6 +2089,7 @@ function intakeCollectAcct_(form) {
     patientInfo: String(answers[1] || '').trim(),
     dob: String(answers[5] || '').trim(),
     answers: answers, rows: rows, language: lang,
+    amendsSubmissionId: (INTAKE_STATE[form].amendOf && INTAKE_STATE[form].amendOf.submissionId) || '',
   };
 }
 
@@ -2095,6 +2108,7 @@ function intakeAcctPreviewGo_(form, payload) {
       if (currentView !== requested) return;
       if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
       INTAKE_STATE.preview = { formType: form.toUpperCase(), form: form, bodyHash: res.bodyHash, subject: res.subject, payload: payload };
+      if (payload.amendsSubmissionId) showToast('Amending — the sent email will carry the AMENDED banner + subject prefix.', 'toast-info');
       intakeBuildAcctModal_(form, res.html);
     })
     .withFailureHandler(function (err) { if (currentView === requested) showToast('Preview failed: ' + (err.message || err), 'toast-error'); })
@@ -2596,9 +2610,15 @@ function intakeRenderSentList_(subs, isManager) {
         ? ' · server holds ' + INTAKE_STATE.sentTotal + ' total (list capped)' : '') +
       ' (newest first, max 100)</div>' +
     subs.map(function (s, i) {
+      // Amend & re-send (operator 2026-08-25): an AMENDED copy carries an
+      // info chip; the ORIGINAL it superseded carries a warn chip — both
+      // sides of the chain are always visibly marked.
+      var chain = '';
+      if (s.amendsId) chain += '<span class="intk-amend-chip">amended copy</span>';
+      if (s.supersededBy) chain += '<span class="intk-amend-chip superseded">superseded</span>';
       return '<div class="intk-sent-row">' +
         intakeFormPill_(s.formType) +
-        '<div><div style="font-weight:600">' + esc(s.patientInfo || '(no patient label)') + '</div>' +
+        '<div><div style="font-weight:600">' + esc(s.patientInfo || '(no patient label)') + chain + '</div>' +
           '<div class="intk-sent-meta">' + esc(s.timestamp) +
           (isManager ? ' · ' + esc(s.repName) : '') + ' · to ' + esc(s.recipient) + '</div></div>' +
         '<button class="intk-btn" data-sent-idx="' + i + '" onclick="intakeOpenSent_(this)">View</button>' +
@@ -2619,6 +2639,7 @@ function intakeOpenSent_(btn) {
       btn.disabled = false;
       if (!res || res.error) { showToast((res && res.error) || 'Could not load the submission', 'toast-error'); return; }
       if (currentView !== requestedView) return;
+      INTAKE_STATE.sentDetail = res;   // the amend button reads it back
       intakeOpenModal_(res.formType + ' — ' + (res.patientInfo || res.submissionId), intakeRenderSentDetail_(res));
     })
     .withFailureHandler(function (err) {
@@ -2714,7 +2735,92 @@ function intakeRenderSentDetail_(d) {
   }
   var meta = '<div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">' +
     esc(d.timestamp) + ' · sent by ' + esc(d.repName) + ' · to ' + esc(d.recipient) + '</div>';
-  return meta + '<div class="intk-grid">' + rowsHtml + fbHtml + '</div>';
+  // Amend & re-send (operator 2026-08-25). Both chain directions banner-first:
+  // a superseded original must never read as the current version.
+  var amendHtml = '';
+  if (d.supersededBy) {
+    amendHtml += '<div class="intk-amend-banner superseded">' + icon('info', 13) +
+      ' Superseded by an amended copy sent ' + esc(d.supersededBy.timestamp || '') + '.</div>';
+  }
+  if (d.amendsId) {
+    amendHtml += '<div class="intk-amend-banner">' + icon('info', 13) +
+      ' This is an AMENDED copy of an earlier submission.</div>';
+  }
+  // Owner-only: an amendment sends under the SENDER's name, so only the
+  // original sender gets the button (a manager still sees the chain banners).
+  var actions = (d.isOwn && !d.supersededBy)
+    ? '<div style="margin:10px 0"><button class="intk-btn" onclick="intakeBeginAmend_()">' +
+        icon('adjust', 13) + ' Amend &amp; re-send</button>' +
+        '<span style="font-size:.76rem;color:var(--muted);margin-left:8px">Opens the form prefilled — the new send is clearly marked AMENDED to you and the recipient.</span></div>'
+    : '';
+  return amendHtml + meta + actions + '<div class="intk-grid">' + rowsHtml + fbHtml + '</div>';
+}
+
+/** Begin the amend flow from the open Sent detail: park the prefill, navigate
+ *  to the form tab, and let the enter consume it (the COACH_PREFILL /
+ *  CLK_NAV_HINT handoff pattern — the enter's own draft restore runs first,
+ *  then the amendment snapshot overwrites it). */
+function intakeBeginAmend_() {
+  var d = INTAKE_STATE.sentDetail;
+  if (!d) return;
+  var form = d.formType === 'PPD' ? 'ppd' : (d.formType === 'PMD' ? 'pmd' : 'pap');
+  var tab = form === 'ppd' ? 'intakePpd' : (form === 'pmd' ? 'intakePmdAccount' : 'intakePapAccount');
+  window.INTAKE_AMEND_PREFILL = {
+    form: form,
+    submissionId: d.submissionId,
+    timestamp: d.timestamp,
+    patientInfo: d.patientInfo || '',
+    dob: d.dob || '',
+    answers: d.answers || {},
+    language: d.language || 'EN',
+  };
+  intakeCloseModal_();
+  enterTool('intake', tab);
+}
+
+/** Consume a parked amendment prefill at the END of a form view enter (after
+ *  the draft restore, so the amendment snapshot wins). Also re-renders the
+ *  amend banner when amendOf survives an internal nav. */
+function intakeConsumeAmendPrefill_(form) {
+  var p = window.INTAKE_AMEND_PREFILL;
+  if (p && p.form === form) {
+    window.INTAKE_AMEND_PREFILL = null;
+    if ((p.language === 'ES') !== (INTAKE_STATE[form].lang === 'ES')) {
+      // Match the original's language BEFORE applying answers (a re-render
+      // would wipe them). intakeSetLang_ re-enters the view, so re-park the
+      // prefill and let the fresh enter consume it.
+      window.INTAKE_AMEND_PREFILL = p;
+      intakeSetLang_(form, p.language === 'ES' ? 'ES' : 'EN');
+      return;
+    }
+    INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
+    intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
+    showToast('Amending the submission sent ' + p.timestamp + ' — the new send will be marked AMENDED.', 'toast-info');
+  }
+  intakeRenderAmendBar_(form);
+}
+
+/** The in-form amendment banner (with a detach ×). Mounted above the form
+ *  sections; idempotent per render. */
+function intakeRenderAmendBar_(form) {
+  var root = intakeFormRoot_(form);
+  if (!root || !root.parentElement) return;
+  var existing = root.parentElement.querySelector('.intk-amend-bar');
+  if (existing) existing.remove();
+  var st = INTAKE_STATE[form].amendOf;
+  if (!st) return;
+  var bar = document.createElement('div');
+  bar.className = 'intk-amend-bar';
+  bar.innerHTML = icon('info', 13) + ' Amending the submission sent <b>' + esc(st.timestamp || '') + '</b> — ' +
+    'Send will deliver a clearly-marked AMENDED copy. ' +
+    '<button type="button" class="intk-amend-x" aria-label="Stop amending — send as a new submission" ' +
+      'onclick="intakeDetachAmend_(\'' + esc(form) + '\')">' + icon('x', 12) + ' detach</button>';
+  root.parentElement.insertBefore(bar, root);
+}
+function intakeDetachAmend_(form) {
+  INTAKE_STATE[form].amendOf = null;
+  intakeRenderAmendBar_(form);
+  showToast('Detached — this will send as a new submission, not an amendment.', '');
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────
@@ -2784,6 +2890,7 @@ function intakeApplyAcctAnswers_(form, answers) {
 
 function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
+  INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;
