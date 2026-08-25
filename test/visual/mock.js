@@ -323,7 +323,10 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
       { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
       { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null },
-      { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } }],
+      { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
+      // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
+      // sender+subject fold) so the VM pill is on camera.
+      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null }],
       medianMinutes: 45, truncated: false,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       self: 'avery@umsupply.com' },
