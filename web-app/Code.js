@@ -19876,7 +19876,7 @@ function insPayorScore_(name, query) {
   let hits = 0;
   toks.forEach(function (t) { if (n.indexOf(t) >= 0) { hits++; score += 10; } });
   if (hits === toks.length) score += 30;            // every token present
-  return hits ? score : score;                      // substring-only still counts
+  return score;
 }
 
 /** Pure (Node-pinned): one payor row → the result object, columns resolved by
