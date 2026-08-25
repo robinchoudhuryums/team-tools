@@ -8565,6 +8565,20 @@ function generateOOPResolutionText_(selections) {
   return text;
 }
 
+/** Marker text formatting — the SERVER twin of the client cnFmtHtml_
+ *  (cn/script_callnotes.html); the three marker regexes are pinned
+ *  byte-equal (the INV-72 parallel-source family). Input MUST already be
+ *  esc_'d; output is email-safe (strong/u/inline-styled span — no <mark>,
+ *  whose default rendering varies across mail clients; hex from
+ *  CN_EMAIL_PALETTE per the email-color rule). */
+function cnFmtEmailHtml_(escaped) {
+  var out = String(escaped == null ? '' : escaped);
+  out = out.replace(/==([^=\n]+)==/g, '<span style="background:' + CN_EMAIL_PALETTE.warnSoft + ';border-radius:2px;">$1</span>');
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/__([^_\n]+)__/g, '<u>$1</u>');
+  return out;
+}
+
 function buildCallNoteEmailHtml_(callData, selections) {
   const P = CN_EMAIL_PALETTE;
   let updateInfo = selections.updateInfo;
@@ -8633,7 +8647,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
   if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
     resolutionText = esc_(generateOOPResolutionText_(selections)).replace(/\n/g, '<br>');
   } else {
-    resolutionText = esc_(resolutionText);
+    resolutionText = cnFmtEmailHtml_(esc_(resolutionText));
   }
 
   // ── Call Details table — UMS navy header + pale-blue alternating rows
@@ -8643,7 +8657,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
     ['Caller Name',     esc_(callData.callerName), false],
     ['Relationship',    esc_(callData.relationship), false],
     ['Patient & TRX',   esc_(callData.patientAndTrx), true],
-    ['Issue',           esc_(callData.issue), false],
+    ['Issue',           cnFmtEmailHtml_(esc_(callData.issue)), false],
     ['Transferred To',  esc_(callData.transferredTo), false],
     ['Resolution',      resolutionText, false],
   ];
@@ -11577,7 +11591,7 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.caller || n.patientAndTrx || '—')}</strong>` +
         (n.patientAndTrx ? ` <span style="color:${P.muted};font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc_(n.patientAndTrx)}</span>` : '') +
-        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        `<br><span style="color:${P.muted};font-size:12px;">${cnFmtEmailHtml_(esc_(n.issue || ''))}</span>` +
       `</td>` +
       `</tr>`;
   }).join('');
@@ -12002,7 +12016,7 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
     if (s.key === 'urgent') {
       html += table(d.urgent.map(function (n) {
         return row2('<strong>' + esc_(n.repName) + '</strong> · ' + esc_(n.caller || n.patientAndTrx || '—') +
-          (n.issue ? '<br><span style="color:' + P.muted + ';font-size:12px;">' + esc_(n.issue) + '</span>' : ''),
+          (n.issue ? '<br><span style="color:' + P.muted + ';font-size:12px;">' + cnFmtEmailHtml_(esc_(n.issue)) + '</span>' : ''),
           n.dateLocal || '');
       }).join(''));
       text += d.urgent.map(function (n) {
@@ -12179,7 +12193,7 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
-        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        `<br><span style="color:${P.muted};font-size:12px;">${cnFmtEmailHtml_(esc_(n.issue || ''))}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
         qLine + rLine + cLine +
       `</td>` +

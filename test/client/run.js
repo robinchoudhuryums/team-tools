@@ -1673,6 +1673,10 @@ COUPLING_REGISTRY.forEach((c) => {
 // in CLAUDE.md) that cannot be machine-checked — kept in the index so the
 // full inventory lives in ONE place.
 const MIRROR_INDEX = [
+  // Operator batch 5 (2026-08-25): the note-formatting marker regexes are a
+  // client↔server pair (cards vs the email builder).
+  { pair: 'client cnFmtHtml_ marker regexes ↔ server cnFmtEmailHtml_ (batch 5)',
+    guards: ['B5: the three marker regexes are byte-equal client and server'] },
   // Cycle-15 F4: the visual fixture is a MIRROR too — it was outside this
   // registry and had already drifted from the server fold.
   { pair: 'test/visual mock.js groupQueueRows_/CDR_QUEUE_GROUPS ↔ Code.js (F4)',
@@ -11152,6 +11156,7 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
   // Follow-on: {callDirection} is an OPERATOR-AVAILABLE copy token; the
   // DEFAULT template deliberately omits it so existing pastes are unchanged.
   loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatTimestampForCopy_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnStripFmt_');   // batch-5 dep: markers strip out of the CRM copy
   const cnFormatNoteForCopy_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatNoteForCopy_');
   test('R1 follow-on: {callDirection} substitutes Outbound/Inbound; the default template omits it', () => {
     sb.CN_STATE.autoCopyFormat = 'Dir: {callDirection} · {caller}';
@@ -12198,6 +12203,66 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
   // List chips: both directions marked.
   const list = extractFunction('intake/script_intake.html', 'intakeRenderSentList_');
   assert.ok(/amended copy/.test(list) && /superseded/.test(list), 'list marks both sides of the chain');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 5 (2026-08-25) — marker text formatting in call notes:
+// **bold** / __underline__ / ==highlight== render AFTER esc() on cards and in
+// the dept email; the CRM copy strips paired markers; storage stays plain
+// text everywhere.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\ncn — marker text formatting (operator batch 5)');
+
+// cnFmtHtml_ reads the module-level CN_FMT_RULES — evaluate the declaration
+// into the sandbox first (it is an ARRAY, so extractClientObject's `= {`
+// anchor cannot grab it).
+vm.runInContext(extractScript('cn/script_callnotes.html').match(/var CN_FMT_RULES[\s\S]*?\n\];/)[0], sb, { filename: 'CN_FMT_RULES' });
+const cnFmtHtml_b5 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFmtHtml_');
+const cnStripFmt_b5 = loadFunction(sb, 'cn/script_callnotes.html', 'cnStripFmt_');
+
+test('cnFmtHtml_/cnStripFmt_ — paired markers transform/strip; unpaired stay content; escape-first', () => {
+  assert.strictEqual(cnFmtHtml_b5('sent **rush** order'), 'sent <strong>rush</strong> order');
+  assert.strictEqual(cnFmtHtml_b5('__by Friday__ and ==call first=='), '<u>by Friday</u> and <mark class="cn-hl">call first</mark>');
+  assert.strictEqual(cnFmtHtml_b5('2 ** 3 is not bold'), '2 ** 3 is not bold', 'an unpaired marker is content');
+  // The input contract is ESCAPED text — a hostile payload arrives inert and
+  // the formatter can only wrap it, never revive it.
+  assert.strictEqual(cnFmtHtml_b5('**&lt;img src=x&gt;**'), '<strong>&lt;img src=x&gt;</strong>', 'markers wrap escaped text; nothing unescapes');
+  assert.strictEqual(cnStripFmt_b5('sent **rush** __now__ ==ok=='), 'sent rush now ok', 'the CRM paste is clean plain text');
+  assert.strictEqual(cnStripFmt_b5('2 ** 3 stays'), '2 ** 3 stays', 'unpaired markers survive the strip (they are content)');
+  assert.strictEqual(cnFmtHtml_b5('**a\nb**'), '**a\nb**', 'markers never span lines');
+});
+
+test('B5: the three marker regexes are byte-equal client and server', () => {
+  const rx = /\/(==|\\\*\\\*|__)\(\[\^[^\]]+\]\+\)(==|\\\*\\\*|__)\/g/g;
+  const cli = extractFunction('cn/script_callnotes.html', 'cnFmtHtml_') +
+    fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8').match(/var CN_FMT_RULES[\s\S]{0,400}?\];/)[0];
+  const srv = extractRawFunction('Code.js', 'cnFmtEmailHtml_');
+  const cliRx = (cli.match(rx) || []).sort();
+  const srvRx = (srv.match(rx) || []).sort();
+  assert.ok(srvRx.length === 3, 'server carries the three marker regexes (got ' + srvRx.length + ')');
+  assert.deepStrictEqual(cliRx.slice(0, 3), srvRx, 'client and server marker regexes byte-equal (the INV-72 family)');
+});
+
+test('B5 wiring: cards render formatted, copy strips, email applies post-esc_, keyboard replaces native bold', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(extractScript('cn/script_callnotes.html'));
+  assert.strictEqual((cn.match(/cnFmtHtml_\(esc\(/g) || []).length >= 7, true,
+    'issue/resolution render sites route esc() THROUGH the formatter (cards, search, mgr card, prior-calls, composer reference)');
+  assert.ok(/issue:\s*cnStripFmt_\(note\.issue/.test(cn) && /resolution:\s*cnStripFmt_\(note\.resolution/.test(cn),
+    'the CRM copy map strips both long-form fields');
+  // The keyboard branch: preventDefault ALWAYS in a .ce (native contenteditable
+  // bold wrote <b> tags that did not survive the plain-text save).
+  assert.ok(/fmtMk\) \{\s*e\.preventDefault\(\);/.test(cn) && /cnWrapSelection_\(el, fmtMk\)/.test(cn), 'B/U/Shift+H wrap markers instead of native formatting');
+  assert.ok(/execCommand\('insertText'/.test(nc(extractFunction('cn/script_callnotes.html', 'cnWrapSelection_'))), 'wrap inserts TEXT (undo stack intact, no HTML)');
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(/cnFmtEmailHtml_\(esc_\(callData\.issue\)\)/.test(code), 'email Issue row formatted post-esc_');
+  assert.ok(/resolutionText = cnFmtEmailHtml_\(esc_\(resolutionText\)\)/.test(code), 'email Resolution formatted on the FREE-TEXT branch only');
+  assert.ok(!/cnFmtEmailHtml_\(esc_\(generateOOPResolutionText_/.test(code), 'the server-generated OOP resolution is NOT marker-processed');
+  assert.strictEqual((code.match(/cnFmtEmailHtml_\(esc_\(n\.issue/g) || []).length, 3, 'the three digest issue lines are formatted too (no raw ** in a manager digest)');
+  assert.ok(/mark\.cn-hl \{ background: var\(--warn-soft\)/.test(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8')),
+    'the highlight uses the warn-soft token (in-app; the email uses the palette hex)');
 });
 
 

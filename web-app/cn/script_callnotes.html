@@ -1750,6 +1750,10 @@
     color: var(--muted);
   }
 
+  /* Marker formatting (operator 2026-08-25) — ==highlight== renders as a
+     quiet warn-soft wash; bold/underline use the native elements. */
+  mark.cn-hl { background: var(--warn-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+
   /* ── Feature 2: Keyboard shortcuts help overlay ────────────────── */
   .cn-shortcuts-modal {
     background: var(--paper-card);
@@ -2600,6 +2604,9 @@ function cnRenderNotesView(area) {
           <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
           <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
           <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
+          <tr><td>Bold selection <span style="color:var(--muted)">(**text**)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>B</kbd></td></tr>
+          <tr><td>Underline selection <span style="color:var(--muted)">(__text__)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>U</kbd></td></tr>
+          <tr><td>Highlight selection <span style="color:var(--muted)">(==text==)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd></td></tr>
           <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
           <tr><td>Undo Clear / Undo Save</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd> <span style="color:var(--muted)">(30s, empty form)</span></td></tr>
           <tr><td>Next Field</td><td><kbd>Tab</kbd> or <kbd>Enter</kbd></td></tr>
@@ -2964,6 +2971,22 @@ function cnWireActiveForm_() {
           onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
         });
         return;
+      }
+      // Operator 2026-08-25 (batch 5) — marker formatting: ⌘/Ctrl+B / U wrap
+      // the selection in ** / __, ⌘/Ctrl+Shift+H in == (highlight). Always
+      // preventDefault in a .ce: the browser's NATIVE contenteditable
+      // bold/underline wrote <b>/<u> tags that silently did not survive the
+      // plain-text save — a marker pair does.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && el.isContentEditable) {
+        var fmtMk = null;
+        if (!e.shiftKey && (e.key === 'b' || e.key === 'B')) fmtMk = '**';
+        else if (!e.shiftKey && (e.key === 'u' || e.key === 'U')) fmtMk = '__';
+        else if (e.shiftKey && (e.key === 'h' || e.key === 'H')) fmtMk = '==';
+        if (fmtMk) {
+          e.preventDefault();
+          if (!e.repeat) cnWrapSelection_(el, fmtMk);
+          return;
+        }
       }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') { e.preventDefault(); cnFormToggleFlag_('action'); return; }
@@ -4022,6 +4045,53 @@ function cnFallbackCopy_(text) {
   } catch (e) { /* clipboard truly unavailable; toast is the only signal */ }
 }
 
+// ── Marker text formatting (operator 2026-08-25 — batch 5) ─────────────────
+// Notes stay PLAIN TEXT in every store (search/export/caps unchanged); the
+// markers **bold** / __underline__ / ==highlight== render as real formatting
+// AFTER HTML-escaping (the kbMd_ order — the escape boundary is untouched, so
+// a marker can never smuggle markup). The server email builder mirrors these
+// three regexes in cnFmtEmailHtml_ (pinned byte-equal — the INV-72 family);
+// the CRM copy STRIPS paired markers so pastes stay clean.
+var CN_FMT_RULES = [
+  [/==([^=\n]+)==/g, '<mark class="cn-hl">$1</mark>'],
+  [/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>'],
+  [/__([^_\n]+)__/g, '<u>$1</u>'],
+];
+/** escaped-text → formatted HTML. Input MUST already be esc()'d. */
+function cnFmtHtml_(escaped) {
+  var out = String(escaped == null ? '' : escaped);
+  for (var i = 0; i < CN_FMT_RULES.length; i++) out = out.replace(CN_FMT_RULES[i][0], CN_FMT_RULES[i][1]);
+  return out;
+}
+/** Remove PAIRED markers (keep the text) — the CRM paste is plain text. An
+ *  unpaired ** / __ / == is left alone (it is content, not a marker). */
+function cnStripFmt_(text) {
+  var out = String(text == null ? '' : text);
+  out = out.replace(/==([^=\n]+)==/g, '$1');
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+  out = out.replace(/__([^_\n]+)__/g, '$1');
+  return out;
+}
+/** Wrap the selection (or an empty pair at the caret) in a marker — bound to
+ *  ⌘/Ctrl+B / U / Shift+H in the form's contenteditable fields. Uses
+ *  execCommand('insertText') so the browser's undo stack stays intact, and
+ *  REPLACES the native contenteditable bold/underline (which wrote <b>/<u>
+ *  tags into the div that silently did not survive the plain-text save). */
+function cnWrapSelection_(el, marker) {
+  try {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) return;
+    var text = sel.toString();
+    if (text) {
+      document.execCommand('insertText', false, marker + text + marker);
+    } else {
+      document.execCommand('insertText', false, marker + marker);
+      // step the caret back INTO the pair so typing lands between the markers
+      for (var i = 0; i < marker.length; i++) sel.modify('move', 'backward', 'character');
+    }
+  } catch (e) { /* formatting is decoration — never break typing */ }
+}
+
 function cnFormatNoteForCopy_(note) {
   // Default mirrors the server's CONFIG.CALL_NOTES.AUTO_COPY_FORMAT so first
   // copies (before cnLoadToday_ populates autoCopyFormat) use the same shape.
@@ -4048,9 +4118,9 @@ function cnFormatNoteForCopy_(note) {
     caller:        note.caller || '',
     relationship:  note.relationship || '',
     patientAndTrx: note.patientAndTrx || '',
-    issue:         note.issue || '',
+    issue:         cnStripFmt_(note.issue || ''),   // markers are display-only — the CRM paste stays clean
     transferredTo: transferred,
-    resolution:    note.resolution || '',
+    resolution:    cnStripFmt_(note.resolution || ''),
     // Round-1 #2 follow-on — available to the operator's template (add a
     // "Direction: {callDirection}" line via CONFIG.CALL_NOTES.AUTO_COPY_FORMAT
     // if the CRM wants it); the DEFAULT template deliberately omits it so
@@ -4376,7 +4446,7 @@ function cnRenderCardCore_(note, expandable) {
 
   const callerLine = cnCallerDisplay_(note);
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
-  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
+  const issue = note.issue ? cnFmtHtml_(esc(note.issue)) : '<em>—</em>';
   // Training notes carry a free-text question in subformData; surface it as a
   // distinct sub-line under the issue so the rep (and a manager peeking) can
   // see what's being asked at a glance. If the manager has written a reply,
@@ -4388,7 +4458,7 @@ function cnRenderCardCore_(note, expandable) {
   const detailLine = detailParts.length > 0
     ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
   const resolutionLine = note.resolution
-    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
+    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${cnFmtHtml_(esc(note.resolution))}</div>` : '';
   // Round 2 · 8g — render multi-turn Q&A thread for training-flagged notes.
   // Reads subformData.feedback[] (new shape) and falls back to the legacy
   // trainingQuestion + trainingReply pair for older notes.
@@ -5806,9 +5876,9 @@ function cnRenderComposerFormStep_() {
           ${c.note.caller     ? '<dt>Caller</dt><dd>' + esc(c.note.caller) + '</dd>' : ''}
           ${c.note.relationship ? '<dt>Relationship</dt><dd>' + esc(c.note.relationship) + '</dd>' : ''}
           ${c.note.patientAndTrx ? '<dt>Patient / TRX</dt><dd>' + esc(c.note.patientAndTrx) + '</dd>' : ''}
-          ${c.note.issue      ? '<dt>Issue</dt><dd>' + esc(c.note.issue) + '</dd>' : ''}
+          ${c.note.issue      ? '<dt>Issue</dt><dd>' + cnFmtHtml_(esc(c.note.issue)) + '</dd>' : ''}
           ${c.note.transferredTo ? '<dt>Transferred To</dt><dd>' + esc(c.note.transferredTo) + '</dd>' : ''}
-          ${c.note.resolution ? '<dt>Resolution</dt><dd>' + esc(c.note.resolution) + '</dd>' : ''}
+          ${c.note.resolution ? '<dt>Resolution</dt><dd>' + cnFmtHtml_(esc(c.note.resolution)) + '</dd>' : ''}
         </dl>
       </div>
 
@@ -6720,7 +6790,7 @@ function cnRenderResultCard_(note, repName) {
   const isUrgent = cnIsUrgent_(note);
   const callerLine = cnCallerDisplay_(note);
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
-  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
+  const issue = note.issue ? cnFmtHtml_(esc(note.issue)) : '<em>—</em>';
   const detailParts = [];
   if (note.callback) detailParts.push(esc(note.callback));
   if (note.relationship) detailParts.push(esc(note.relationship));
@@ -6728,7 +6798,7 @@ function cnRenderResultCard_(note, repName) {
   const detailLine = detailParts.length
     ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
   const resolutionLine = note.resolution
-    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
+    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${cnFmtHtml_(esc(note.resolution))}</div>` : '';
   const repBit = repName ? `<span class="cn-result-rep">${esc(repName)}</span>` : '';
   const pills = [];
   if (note._archived) pills.push(`<span class="kicker-pill" title="From the cold NotesArchive — read-only">archived</span>`);
@@ -7201,7 +7271,7 @@ function cnMgrRenderReadonlyCard_(note) {
   const flagCls = note.flagType ? ' flag-' + note.flagType : '';
   const callerLine = cnCallerDisplay_(note);
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
-  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
+  const issue = note.issue ? cnFmtHtml_(esc(note.issue)) : '<em>—</em>';
   // Render the multi-turn thread (read-only) for ANY note that has one — a
   // training Q&A or general manager comments (item 9). Returns '' when empty.
   const threadHtml = cnRenderQAThread_(note, { readonly: true });
@@ -7235,7 +7305,7 @@ function cnMgrRenderReadonlyCard_(note) {
     `;
   }
   const resolution = note.resolution
-    ? `<div class="cn-card-issue" style="color:var(--muted);font-style:italic;margin-top:2px">→ ${esc(note.resolution)}</div>`
+    ? `<div class="cn-card-issue" style="color:var(--muted);font-style:italic;margin-top:2px">→ ${cnFmtHtml_(esc(note.resolution))}</div>`
     : '';
   const flagPill = note.flagType
     ? `<span class="adj-pill" style="text-transform:uppercase;font-size:10px;letter-spacing:.06em">${esc(note.flagType)}${note.flagType === 'action' && note.resolved ? ' · resolved' : ''}</span>`
@@ -7434,8 +7504,8 @@ function cnMgrRenderQueue_(host, results) {
         </div>
         <div class="cn-search-result-body">
           <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
-          <br>${esc(n.issue || '')}
-          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+          <br>${cnFmtHtml_(esc(n.issue || ''))}
+          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + cnFmtHtml_(esc(n.resolution)) + '</span>' : ''}
           ${(n.flagType === 'review' && n.subformData && n.subformData.reviewComment)
             ? '<br><span style="color:var(--success-deep);font-style:italic">' + esc(n.subformData.reviewComment) + '</span>' : ''}
         </div>
