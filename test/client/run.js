@@ -12171,7 +12171,11 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
     assert.ok(/intakeAmendSource_\(/.test(f) && /was not found \(or is not yours\)/.test(f), fn + ' validates the source and FAILS the send on a bad id');
     // Post-hash order: the AMENDED prefix/banner must come AFTER the
     // expectedBodyHash compare — the preview contract covers the BASE.
-    const hashAt = f.indexOf('expectedBodyHash)');
+    // Anchor on the hash COMPARE, not 'expectedBodyHash' bare — that string
+    // also sits in the function SIGNATURE at position ~47, which made the
+    // first write of this assertion vacuously true (caught when a pre-hash
+    // mutation failed to bite; the INV-188 family: anchor on the operation).
+    const hashAt = f.indexOf('!== expectedBodyHash');
     const amendAt = f.indexOf("'AMENDED: '");
     assert.ok(hashAt >= 0 && amendAt > hashAt, fn + ': marking applied post-hash (INV-41 untouched)');
     assert.ok(/amendId,\n\s*\]\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
