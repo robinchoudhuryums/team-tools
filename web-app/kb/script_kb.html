@@ -84,6 +84,34 @@
   .kb-dept.collapsed .kb-dept-body { max-height: 0; }
   .kb-dept.collapsed .kb-chevron { transform: rotate(-90deg); }
 
+  /* Insurance payor lookup (operator 2026-08-25 — batch 3) */
+  .kb-ins-input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
+  .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
+  .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .kb-ins-name { font-weight: 600; font-size: .9rem; }
+  .kb-ins-pill { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; border-radius: var(--radius-pill); padding: 2px 9px; white-space: nowrap; }
+  .kb-ins-pill.good { background: var(--good-soft); color: var(--success-deep); }
+  .kb-ins-pill.bad  { background: var(--danger-soft); color: var(--danger-deep); }
+  .kb-ins-pill.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ins-pill.info { background: var(--info-soft); color: var(--info-deep); }
+  .kb-ins-pill.none { background: var(--paper-2); color: var(--muted); text-transform: none; letter-spacing: 0; font-family: var(--ui); }
+  .kb-ins-meta { font-size: .76rem; color: var(--muted); margin-top: 3px; }
+  .kb-ins-det-btn { background: none; border: none; font: inherit; font-size: .76rem; color: var(--info-deep); cursor: pointer; padding: 4px 0 0; display: inline-flex; align-items: center; gap: 4px; }
+  .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 10px; margin-top: 7px; }
+  .kb-ins-grid[hidden] { display: none; }   /* the [hidden] gotcha — the class display wins otherwise */
+  .kb-ins-cell { display: flex; justify-content: space-between; gap: 6px; font-size: .74rem; border-bottom: 1px dashed var(--line); padding: 2px 0; }
+  .kb-ins-cell .c { font-family: var(--mono); color: var(--muted-2); }
+  .kb-ins-cell .v { text-align: right; }
+  .kb-ins-cell .v.good { color: var(--success-deep); }
+  .kb-ins-cell .v.bad { color: var(--danger-deep); }
+  .kb-ins-cell .v.warn { color: var(--warning-deep); }
+  .kb-ins-cell .v.info { color: var(--info-deep); }
+  .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
+  .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
+  .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
+  .kb-ins-legend dd { margin: 0 0 5px; }
+  .kb-ins-more { font-size: .74rem; color: var(--muted); margin-top: 6px; font-style: italic; }
+
   /* §4 — landing panel (right side when nothing is selected) */
   .kb-land { max-width: 760px; }
   .kb-land-sec { margin-bottom: 22px; }
@@ -2300,6 +2328,131 @@ function kbToggleDept_(btn) {
 /** Landing panel (right side, nothing selected): Recently viewed (localStorage
  *  recents) + Most used + Review due (both manager-only, from the cached usage /
  *  review-due loads). Dept/icon context is looked up from the loaded tree. */
+// ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
+// One shared section renderer, two hosts (Reference landing + the Ctrl/⌘+K
+// drawer home — the comments Phase B dual-host pattern: per-host suffixed ids,
+// handlers scoped from the control). Values render VERBATIM; the tone map and
+// the legend TRANSLATE known acceptance tokens (the operator's legend,
+// 2026-08-25) — an unknown token renders in neutral tone rather than being
+// guessed at, and a missing network status says "status not recorded".
+var INS_LEGEND = [
+  ['Accepted / X', 'We can accept orders for patients with this plan.'],
+  ['Not Accepted / NO', 'Don’t accept orders for this payor.'],
+  ['Location-based', 'Only if the patient is in one of the big cities listed on the source sheet’s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.'],
+  ['Location-based (285–325 lb)', 'The location rules above, and the patient must be 285–325 lb.'],
+  ['TRY', 'Submit to test authorization — credentialing then decides whether this payor stays accepted.'],
+  ['SI/PR', 'Accept only with secondary insurance covering any patient responsibility — or the patient is told PR may be collected up front by delivery.'],
+  ['PR', 'Proceed as normal, but tell the patient there may be a patient-responsibility cost before delivery; the amount is known once the device is determined.'],
+  ['A & B (combined)', 'Must meet BOTH criteria.'],
+  ['Plan not listed', 'Follow the TRY criteria.'],
+];
+
+/** PURE (Node-pinned) — tone class for an acceptance / network-status value.
+ *  Order matters: negatives before the bare "accepted" substring, qualifiers
+ *  before positives, and anything unrecognized is NEUTRAL ('') — verbatim
+ *  display, never a guessed verdict. */
+function insToneCls_(value) {
+  var v = String(value == null ? '' : value).trim().toLowerCase();
+  if (!v) return '';
+  if (v.indexOf('not accepted') >= 0 || v === 'no') return 'bad';
+  if (v === 'out-of-network') return 'bad';
+  if (v.indexOf('oon') >= 0 || v.indexOf('out-of-network') >= 0 || v.indexOf('plan specific') >= 0) return 'warn';
+  if (v.indexOf('location') >= 0 || v.indexOf('si/pr') >= 0 || /(^|[^a-z])pr([^a-z]|$)/.test(v) || v.indexOf('&') >= 0) return 'warn';
+  if (v.indexOf('try') >= 0) return 'info';
+  if (v.indexOf('hawaii') >= 0) return 'info';
+  if (v.indexOf('in-network') >= 0 || v.indexOf('accepted') >= 0 || v === 'x' || v === 'yes') return 'good';
+  return '';
+}
+
+var KB_INS = { seq: 0, timer: null };
+
+/** The lookup section (shared by both hosts; suffix '' = Reference landing,
+ *  '-d' = drawer). */
+function insLookupSecHtml_(suffix) {
+  return '<label class="kb-land-h" for="kb-ins-input' + suffix + '">' + icon('search', 13) + ' Insurance lookup</label>' +
+    '<input type="text" class="kb-ins-input" id="kb-ins-input' + suffix + '" autocomplete="off" ' +
+      'placeholder="Payor / plan name…" oninput="insLookupInput_(this)">' +
+    '<div class="kb-ins-results" id="kb-ins-results' + suffix + '"></div>' +
+    '<button type="button" class="kb-ins-det-btn" aria-expanded="false" aria-controls="kb-ins-legend' + suffix + '" ' +
+      'onclick="insToggleLegend_(this)">' + icon('info', 12) + ' Acceptance legend</button>' +
+    '<dl class="kb-ins-legend" id="kb-ins-legend' + suffix + '" hidden>' +
+      INS_LEGEND.map(function (e) { return '<dt>' + esc(e[0]) + '</dt><dd>' + esc(e[1]) + '</dd>'; }).join('') +
+    '</dl>';
+}
+function insToggleLegend_(btn) {
+  var dl = document.getElementById(btn.getAttribute('aria-controls'));
+  if (!dl) return;
+  dl.hidden = !dl.hidden;
+  btn.setAttribute('aria-expanded', dl.hidden ? 'false' : 'true');
+}
+
+/** Debounced search — a seq token guards the async render (INV-156: two
+ *  hosts + out-of-order responses must not cross-paint). */
+function insLookupInput_(inp) {
+  var suffix = inp.id === 'kb-ins-input-d' ? '-d' : '';
+  var q = String(inp.value || '').trim();
+  if (KB_INS.timer) clearTimeout(KB_INS.timer);
+  var host = document.getElementById('kb-ins-results' + suffix);
+  if (q.length < 2) { if (host) host.innerHTML = ''; return; }
+  KB_INS.timer = setTimeout(function () {
+    var mySeq = ++KB_INS.seq;
+    if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (mySeq !== KB_INS.seq) return;
+        insRenderResults_(suffix, q, res);
+      })
+      .withFailureHandler(function (err) {
+        if (mySeq !== KB_INS.seq) return;
+        var h = document.getElementById('kb-ins-results' + suffix);
+        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
+      })
+      .searchInsurancePayors(q);
+  }, 350);
+}
+
+function insRenderResults_(suffix, q, res) {
+  var host = document.getElementById('kb-ins-results' + suffix);
+  if (!host) return;
+  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  if (res.notFound || !(res.matches || []).length) {
+    // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
+    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
+      'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
+    return;
+  }
+  var html = '';
+  res.matches.forEach(function (m, i) {
+    var ns = String(m.networkStatus || '').trim();
+    var pill = ns
+      ? '<span class="kb-ins-pill ' + esc(insToneCls_(ns)) + '">' + esc(ns) + '</span>'
+      : '<span class="kb-ins-pill none">status not recorded</span>';
+    var meta = [];
+    if (m.waystar) meta.push('Waystar ' + esc(m.waystar));
+    if (m.qualification) meta.push('Qualification: ' + esc(m.qualification));
+    if (m.reimbursement) meta.push('Reimbursement: ' + esc(m.reimbursement));
+    var det = (m.details || []);
+    var detId = 'kb-ins-det' + suffix + '-' + i;
+    var detHtml = det.length
+      ? '<button type="button" class="kb-ins-det-btn" aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
+          icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
+        '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
+          det.map(function (d) {
+            return '<div class="kb-ins-cell"><span class="c">' + esc(d.label) + '</span>' +
+              '<span class="v ' + esc(insToneCls_(d.value)) + '">' + esc(d.value) + '</span></div>';
+          }).join('') + '</div>'
+      : '';
+    html += '<div class="kb-ins-card">' +
+      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + pill + '</div>' +
+      (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
+      detHtml + '</div>';
+  });
+  if (res.total > res.matches.length) {
+    html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';
+  }
+  host.innerHTML = html;
+}
+
 function kbRenderLanding_() {
   var main = document.getElementById('kb-main'); if (!main) return;
   var prefs = kbPanelPrefs_();
@@ -2308,6 +2461,11 @@ function kbRenderLanding_() {
   (KB_STATE.tree || []).forEach(function (it) { treeById[it.id] = it; });
 
   var h = '<div class="kb-land">';
+
+  // Insurance lookup (operator 2026-08-25) — the mid-call payor check, ahead
+  // of the content blocks. The typed query is transient (a re-render clears
+  // it) — the lookup is a point question, not state worth persisting.
+  h += '<div class="kb-land-sec">' + insLookupSecHtml_('') + '</div>';
 
   // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
   var bookmarks = prefs.bookmarks || [];
@@ -3706,6 +3864,8 @@ function kbDrawerRenderHome_() {
   var body = document.getElementById('kbd-body'); if (!body) return;
   var prefs = kbPanelPrefs_();
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
+  // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
+  html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';

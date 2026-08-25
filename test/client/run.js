@@ -1673,6 +1673,10 @@ COUPLING_REGISTRY.forEach((c) => {
 // in CLAUDE.md) that cannot be machine-checked — kept in the index so the
 // full inventory lives in ONE place.
 const MIRROR_INDEX = [
+  // Operator batch 5 (2026-08-25): the note-formatting marker regexes are a
+  // client↔server pair (cards vs the email builder).
+  { pair: 'client cnFmtHtml_ marker regexes ↔ server cnFmtEmailHtml_ (batch 5)',
+    guards: ['B5: the three marker regexes are byte-equal client and server'] },
   // Cycle-15 F4: the visual fixture is a MIRROR too — it was outside this
   // registry and had already drifted from the server fold.
   { pair: 'test/visual mock.js groupQueueRows_/CDR_QUEUE_GROUPS ↔ Code.js (F4)',
@@ -4156,7 +4160,11 @@ test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free 
   // F(cycle-8): the scope guard is the EXACT-address matcher, not the old raw
   // substring indexOf (which passed xspanishcalls@… / the address inside a
   // display name).
-  assert.ok(/spanishAddrListIncludes_\s*\(/.test(src), 'scope guard — exact-address match against To/Cc');
+  // REWRITTEN in place (operator 2026-08-25, the accrual precedent): the
+  // scope check moved into the shared spanishThreadInScope_ predicate when
+  // the 8x8 voicemail fold widened it — three sites drifting on a security
+  // check is the parallel-source class. The predicate itself is pinned below.
+  assert.ok(/spanishThreadInScope_\s*\(/.test(src), 'scope guard — routes through the ONE predicate');
   assert.ok(!/recips\.indexOf\(addr\)/.test(src), 'the substring guard must not return');
   assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it appends)');
   assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
@@ -7348,19 +7356,23 @@ test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavior
   const data = {
     reps: [
       { repName: 'Nina Patel', totalRung: 52, totalAnswered: 44, totalMissed: 8, pctAnswered: 84.6,
-        attSeconds: 238, attFormatted: '0:03:58', noteCount: 41, noteCoverage: 93, transferred: 21 },
+        attSeconds: 238, attFormatted: '0:03:58', noteCount: 41, intakeNotes: 5, noteCoverage: 93, transferred: 21 },
       { repName: 'Leo Kim', totalRung: 29, totalAnswered: 27, totalMissed: 2, pctAnswered: 93.1,
-        attSeconds: 260, attFormatted: '0:04:20', noteCount: 0, noteCountUnavailable: true, noteCoverage: null, transferred: 3 },
+        attSeconds: 260, attFormatted: '0:04:20', noteCount: 0, noteCountUnavailable: true, intakeNotes: null, noteCoverage: null, transferred: 3 },
     ],
     queueRows: [{ queue: 'A_Q_Sales', transferred: 6, reps: 2 }],
     groupRows: [{ group: 'Sales', transferred: 6, queues: ['A_Q_Sales'], reps: 2 }],
   };
+  // REWRITTEN in place (operator batch 6, 2026-08-25 — the accrual
+  // precedent): the Intake column joined between Notes and Coverage.
   const tsv = mTeamTableTsv_(data, 'combined', { key: 'pctAnswered', dir: 'desc' });
   const lines = tsv.split('\n');
-  assert.strictEqual(lines[0], ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Coverage', 'Transfers'].join('\t'));
+  assert.strictEqual(lines[0], ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage', 'Transfers'].join('\t'));
   assert.ok(lines[1].indexOf('Leo Kim') === 0, 'rows follow the CURRENT sort (93.1 desc first)');
   assert.strictEqual(lines[1].split('\t')[6], '', 'an unreadable notes Sheet exports as BLANK, never 0 (INV-187)');
-  assert.strictEqual(lines[1].split('\t')[7], '', 'null coverage exports blank');
+  assert.strictEqual(lines[1].split('\t')[7], '', 'a null intake count exports BLANK too (absence is not 0)');
+  assert.strictEqual(lines[2].split('\t')[7], '5', 'a known intake count exports the number');
+  assert.strictEqual(lines[1].split('\t')[8], '', 'null coverage exports blank');
   assert.ok(tsv.indexOf('<') === -1, 'plain values only — never HTML');
   const qTsv = mTeamTableTsv_(data, 'queue', null);
   assert.strictEqual(qTsv.split('\n')[0], 'Queue\tTransferred\tReps');
@@ -7744,8 +7756,16 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
   // expression — the 2026-08-13 feedback CTA rides it — so scan a window
   // after each call rather than one rigid arg shape).
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  const callSites = code.split('intakeEmailShell_(subject,').slice(1);
+  // REWRITTEN in place (operator 2026-08-25, the accrual precedent): the two
+  // SEND sites now pass `sendSubject` (the amend flow's post-hash "AMENDED: "
+  // prefix rides the variable); the two PREVIEW sites keep the base subject.
+  const callSites = code.split('intakeEmailShell_(').slice(1)
+    .filter(function (c) { return c.indexOf('title,') !== 0; });   // drop the definition itself
   assert.strictEqual(callSites.length, 4, 'four intakeEmailShell_ call sites');
+  assert.strictEqual(callSites.filter(function (c) { return c.indexOf('sendSubject,') === 0; }).length, 2,
+    'both SEND sites use the amend-aware subject');
+  assert.strictEqual(callSites.filter(function (c) { return c.indexOf('subject,') === 0; }).length, 2,
+    'both PREVIEW sites hash/render the BASE subject (the INV-41 contract)');
   callSites.forEach(function (c, i) {
     assert.ok(c.slice(0, 220).indexOf("'Intake · ") >= 0, 'call site ' + (i + 1) + ' names its form');
   });
@@ -11140,6 +11160,7 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
   // Follow-on: {callDirection} is an OPERATOR-AVAILABLE copy token; the
   // DEFAULT template deliberately omits it so existing pastes are unchanged.
   loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatTimestampForCopy_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnStripFmt_');   // batch-5 dep: markers strip out of the CRM copy
   const cnFormatNoteForCopy_r1 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFormatNoteForCopy_');
   test('R1 follow-on: {callDirection} substitutes Outbound/Inbound; the default template omits it', () => {
     sb.CN_STATE.autoCopyFormat = 'Dir: {callDirection} · {caller}';
@@ -11260,7 +11281,7 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
     });
     // Claim only: the resolve-style Gmail scope guard, the manager-only assign
     // (member-validated), and the no-silent-steal rule for non-managers.
-    assert.ok(/spanishAddrListIncludes_/.test(claim), 'claim is scope-guarded like resolveSpanishThread');
+    assert.ok(/spanishThreadInScope_\s*\(/.test(claim), 'claim routes through the shared scope predicate (rewritten 2026-08-25 for the VM fold)');
     assert.ok(/Only a manager can assign/.test(claim), 'assigning someone else requires isManager');
     assert.ok(/getSpanishInboxMembers_\(\)\[claimant\]/.test(claim), 'an assignee must be a configured member');
     assert.ok(/cur\.by !== claimant && !emp\.isManager/.test(claim), 'a non-manager cannot claim over someone ELSE\'s live claim');
@@ -11799,5 +11820,535 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Intake polish batch (operator 2026-08-25) — unselect toggle, PPD notes,
+// strongly-recommended soft check. The DOM behaviours (click-to-clear, mark +
+// self-clear, notes collection) live in the DOM harness; these pins cover the
+// pure core + the mapping drift guards + the wiring the DOM tests can't see.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nintake — polish batch (unselect / notes / recommended check)');
+
+const _rwCtx = vm.createContext({});
+vm.runInContext('var INTAKE_RECOMMENDED = ' + extractClientObject('intake/script_intake.html', 'INTAKE_RECOMMENDED') + ';', _rwCtx, { filename: 'INTAKE_RECOMMENDED' });
+vm.runInContext(extractRawFunction('intake/script_intake.html', 'intakeRecommendedBlanks_'), _rwCtx, { filename: 'intakeRecommendedBlanks_' });
+vm.runInContext('var INTAKE_PMD_Q = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PMD_Q') + ';', _rwCtx, { filename: 'INTAKE_PMD_Q' });
+vm.runInContext('var INTAKE_PAP_Q = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PAP_Q') + ';', _rwCtx, { filename: 'INTAKE_PAP_Q' });
+vm.runInContext('var INTAKE_PMD_CLIENT = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PMD_CLIENT') + ';', _rwCtx, { filename: 'INTAKE_PMD_CLIENT' });
+vm.runInContext('var INTAKE_PAP_CLIENT = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PAP_CLIENT') + ';', _rwCtx, { filename: 'INTAKE_PAP_CLIENT' });
+
+test('recommended lists: the operator field numbers resolve to the RIGHT bank labels (drift guard)', () => {
+  const g = (expr) => vm.runInContext(expr, _rwCtx);
+  // The lists store ARRAY indices (headers occupy indices), so a bank edit
+  // that inserts/reorders a question would silently repoint every warning at
+  // the wrong field — this pin makes that a CI failure instead (INV-185
+  // applied to a config↔bank coupling).
+  const pmdWant = {
+    1: 'Patient Full Name', 2: 'Primary Contact', 5: 'DOB', 6: 'Home Address',
+    8: 'Primary Insurance', 12: 'PCP Name', 13: 'MDO Ph#', 15: 'Height',
+    16: 'Weight', 17: 'mobility devices', 22: 'Power Mobility Evaluation',
+  };
+  const papWant = {
+    1: 'Patient Full Name', 2: 'Primary Contact', 5: 'DOB', 6: 'Home Address',
+    8: 'Primary Insurance', 12: 'PCP Name', 13: 'MDO Ph#',
+    19: 'Already have a CPAP', 23: 'PAP Supplies',
+  };
+  const pmdBank = g('INTAKE_PMD_Q').EN, papBank = g('INTAKE_PAP_Q').EN;
+  const rec = g('INTAKE_RECOMMENDED');
+  assert.strictEqual(rec.pmd.join('|'), Object.keys(pmdWant).join('|'), 'PMD index set is exactly the operator list');
+  assert.strictEqual(rec.pap.join('|'), Object.keys(papWant).join('|'), 'PAP index set is exactly the operator list');
+  Object.keys(pmdWant).forEach((i) =>
+    assert.ok(String(pmdBank[i]).indexOf(pmdWant[i]) >= 0, 'PMD idx ' + i + ' is still "' + pmdWant[i] + '" (got: ' + pmdBank[i] + ')'));
+  Object.keys(papWant).forEach((i) =>
+    assert.ok(String(papBank[i]).indexOf(papWant[i]) >= 0, 'PAP idx ' + i + ' is still "' + papWant[i] + '" (got: ' + papBank[i] + ')'));
+  // No listed index may be a section header (headers are not fields).
+  const pmdHdr = g('INTAKE_PMD_CLIENT').headers, papHdr = g('INTAKE_PAP_CLIENT').headers;
+  rec.pmd.forEach((i) => assert.ok(pmdHdr.indexOf(i) < 0, 'PMD idx ' + i + ' is not a header'));
+  rec.pap.forEach((i) => assert.ok(papHdr.indexOf(i) < 0, 'PAP idx ' + i + ' is not a header'));
+  // PPD: exactly Q1–Q23 + 37, 38, 39a, 44 (the Q40 conditional lives in the
+  // function, not the list — asserted behaviourally below).
+  const ppdWant = [];
+  for (let i = 1; i <= 23; i++) ppdWant.push(String(i));
+  assert.strictEqual(rec.ppd.join('|'), ppdWant.concat(['37', '38', '39a', '44']).join('|'), 'PPD qNum list exact');
+});
+
+test('intakeRecommendedBlanks_: blanks flagged, filled skipped, Q40 hours conditional', () => {
+  const run = (form, vals) => vm.runInContext(
+    'intakeRecommendedBlanks_(' + JSON.stringify(form) + ', function (k) { return (' + JSON.stringify(vals) + ')[k]; })', _rwCtx);
+  // PPD: everything answered except Q5 + Q38 → exactly those two.
+  const full = {}; for (let i = 1; i <= 23; i++) full[String(i)] = 'x';
+  Object.assign(full, { '37': '61', '38': '250', '39a': 'House', '44': 'No' });
+  const v1 = Object.assign({}, full); delete v1['5']; v1['38'] = '  ';
+  assert.strictEqual(run('ppd', v1).map((b) => b.key).join('|'), '5|38', 'blank + whitespace-only both flag');
+  // Q40 = bare 'Yes' (toggle set, hours blank) → flagged hoursOnly; a complete
+  // 'Yes: 12 hours' or a 'No' never flags.
+  const v2 = Object.assign({}, full, { '40': 'Yes' });
+  const b2 = run('ppd', v2);
+  assert.strictEqual(b2.length, 1);
+  assert.strictEqual(b2[0].key, '40');
+  assert.strictEqual(b2[0].hoursOnly, true, 'Yes-without-hours is the operator conditional');
+  assert.strictEqual(run('ppd', Object.assign({}, full, { '40': 'Yes: 12 hours' })).length, 0, 'complete Q40 passes');
+  assert.strictEqual(run('ppd', Object.assign({}, full, { '40': 'No' })).length, 0, 'No passes');
+  // Non-PPD forms have no Q40 conditional.
+  const pmdVals = {}; [1, 2, 5, 6, 8, 12, 13, 15, 16, 17, 22].forEach((i) => { pmdVals[i] = 'x'; });
+  assert.strictEqual(run('pmd', pmdVals).length, 0, 'fully-answered PMD is clean');
+  delete pmdVals[8];
+  assert.strictEqual(run('pmd', pmdVals).map((b) => b.key).join('|'), '8', 'only the listed blank flags');
+});
+
+test('wiring: both preview paths gate through the check; unselect branches exist; sent detail renders notes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const src = nc(extractScript('intake/script_intake.html'));
+  // BOTH preview entry points route through the soft check (never a hard
+  // block — the check resolves a boolean and the Go half fires only on true).
+  assert.ok(/intakeWarnRecommended_\('ppd'\)\.then/.test(src), 'PPD preview gated');
+  assert.ok(/intakeWarnRecommended_\(form\)\.then/.test(src), 'account preview gated');
+  assert.ok(/function intakePpdPreviewGo_/.test(src) && /function intakeAcctPreviewGo_/.test(src), 'the RPC halves exist');
+  // The third single-select handler family (ynreveal — Q45) carries the
+  // toggle-off too: an already-on branch that clears AND hides+empties the
+  // revealed sub-multi (intakePick_ + ynnum are DOM-tested behaviourally).
+  const grab = (name) => {
+    const i = src.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0, j = src.indexOf('{', i);
+    for (let k = j; k < src.length; k++) {
+      if (src[k] === '{') d++;
+      else if (src[k] === '}') { d--; if (d === 0) return src.slice(i, k + 1); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const yr = grab('intakeYrPickYn_');
+  assert.ok(/classList\.contains\('on'\)/.test(yr), 'ynreveal has the already-on branch');
+  const yrClear = yr.slice(yr.indexOf("contains('on')"));
+  assert.ok(/display = 'none'/.test(yrClear) && /\.intk-multi-btn\.on/.test(yrClear),
+    'the clear hides the sub-list and unselects its chips');
+  // Sent detail renders the stored notes (escaped) only when present.
+  const det = grab('intakeRenderSentDetail_');
+  assert.ok(/\.notes/.test(det) && /esc\(String\(notesStored\)\)/.test(det), 'stored notes render escaped');
+  // The notes textarea is addressable through the shared accessor fallback
+  // (data-intk-qnum) so drafts/restore ride with zero bespoke plumbing.
+  assert.ok(/data-intk-qnum="notes"/.test(src), 'notes rides the accessor fallback selector');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 2 (2026-08-25) — 8x8 A_Q_Spanish voicemail notifications fold
+// into the Spanish Inbox pending/resolved lists via a sender+subject filter
+// over the deployer's mailbox (8x8 mails members individually, never the
+// group address). The by-id scope guard widened through ONE shared predicate.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — Spanish voicemail fold (operator batch 2)');
+
+const _vmCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'emailAddrOnly_'), _vmCtx, { filename: 'emailAddrOnly_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishAddrListIncludes_'), _vmCtx, { filename: 'spanishAddrListIncludes_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmMatch_'), _vmCtx, { filename: 'spanishVmMatch_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmCaller_'), _vmCtx, { filename: 'spanishVmCaller_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmQuery_'), _vmCtx, { filename: 'spanishVmQuery_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishThreadInScope_'), _vmCtx, { filename: 'spanishThreadInScope_' });
+
+test('spanishVmMatch_/Caller_/Query_ — exact sender, ci subject, both halves REQUIRED', () => {
+  const g = (expr) => vm.runInContext(expr, _vmCtx);
+  const S = 'no-reply@8x8.com', F = 'via A_Q_Spanish';
+  const call = (from, subj, sender, filter) =>
+    g('spanishVmMatch_(' + [from, subj, sender, filter].map((x) => JSON.stringify(x)).join(',') + ')');
+  assert.strictEqual(call('8x8 <no-reply@8x8.com>', 'New voicemail from Ana Diaz via A_Q_Spanish', S, F), true, 'the real notification matches');
+  assert.strictEqual(call('no-reply@8x8.com', 'new VOICEMAIL from X VIA a_q_spanish', S, F), true, 'subject match is case-insensitive');
+  assert.strictEqual(call('evil@attacker.com', 'New voicemail from X via A_Q_Spanish', S, F), false, 'sender is an EXACT address match — a matching subject from anyone else never qualifies');
+  // A display-name spoof carries the real address as TEXT while the actual
+  // address is the attacker's — the case that separates emailAddrOnly_ from a
+  // substring test (the first bite-check of this pin exposed exactly that gap).
+  assert.strictEqual(call('"no-reply@8x8.com" <evil@attacker.com>', 'New voicemail from X via A_Q_Spanish', S, F), false, 'display-name spoof never qualifies');
+  assert.strictEqual(call('no-reply@8x8.com', 'Your invoice', S, F), false, 'a non-VM 8x8 mail never qualifies');
+  // Both halves required: a half-configured filter must not widen the scan.
+  assert.strictEqual(call('no-reply@8x8.com', 'New voicemail from X via A_Q_Spanish', '', F), false, 'blank sender → OFF');
+  assert.strictEqual(call('no-reply@8x8.com', 'New voicemail from X via A_Q_Spanish', S, ''), false, 'blank filter → OFF');
+  assert.strictEqual(g('spanishVmCaller_("New voicemail from David Dhruv Mishra via A_Q_Spanish")'), 'David Dhruv Mishra', 'caller parsed from the operator sample');
+  assert.strictEqual(g('spanishVmCaller_("Missed call summary")'), '', 'non-VM shape → empty (falls back to the sender)');
+  const q = g('spanishVmQuery_("no-reply@8x8.com", "via \\"A_Q\\" Spanish", 7)');
+  assert.ok(q.indexOf('from:no-reply@8x8.com') === 0 && /subject:"via A_Q Spanish"/.test(q) && /newer_than:7d/.test(q),
+    'query quotes the filter and strips embedded quotes (no Gmail-query breakout)');
+});
+
+test('spanishThreadInScope_ — inbox-addressed OR configured VM shape, nothing else', () => {
+  // The getters read Script Properties; stub them at the ctx level.
+  vm.runInContext('var getSpanishVmSender_ = function () { return "no-reply@8x8.com"; };' +
+    'var getSpanishVmFilter_ = function () { return "via A_Q_Spanish"; };', _vmCtx);
+  const mk = (to, cc, from, subj) => {
+    _vmCtx.__msg = { getTo: () => to, getCc: () => cc, getFrom: () => from, getSubject: () => subj };
+    return vm.runInContext('spanishThreadInScope_(__msg, "spanishcalls@umsupply.com")', _vmCtx);
+  };
+  assert.strictEqual(mk('spanishcalls@umsupply.com', '', 'someone@x.com', 'Ayuda'), true, 'To the inbox → in scope');
+  assert.strictEqual(mk('a@x.com', 'Spanish Calls <spanishcalls@umsupply.com>', 'someone@x.com', 'Ayuda'), true, 'Cc the inbox → in scope (the cycle-8 brace-OR contract)');
+  assert.strictEqual(mk('rep@umsupply.com', '', 'no-reply@8x8.com', 'New voicemail from Ana via A_Q_Spanish'), true, 'a configured VM notification → in scope');
+  assert.strictEqual(mk('rep@umsupply.com', '', 'someone@x.com', 'Ayuda'), false, 'anything else stays OUT — the by-id endpoints cannot probe arbitrary threads');
+  // With the VM filter unconfigured the predicate collapses to inbox-only.
+  vm.runInContext('getSpanishVmFilter_ = function () { return ""; };', _vmCtx);
+  assert.strictEqual(mk('rep@umsupply.com', '', 'no-reply@8x8.com', 'New voicemail from Ana via A_Q_Spanish'), false, 'half-configured → VM arm OFF');
+});
+
+test('wiring: the fold rides both lists, first-message re-check, one predicate at all three by-id sites', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const grab = (name) => {
+    const i = code.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0;
+    for (let k = code.indexOf('{', i); k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (d === 0) return nc(code.slice(i, k + 1)); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const pend = grab('getSpanishInboxPending'), res = grab('getSpanishInboxResolved');
+  [pend, res].forEach((src, i) => {
+    assert.ok(/spanishVmQuery_\(/.test(src), ['pending', 'resolved'][i] + ' runs the VM scan');
+    assert.ok(/kind: 'voicemail'/.test(src), ['pending', 'resolved'][i] + ' tags VM items');
+    // The Gmail query matches subject across the THREAD; the first message is
+    // re-checked so a stray reply-match can't smuggle a foreign thread in.
+    assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(src), ['pending', 'resolved'][i] + ' re-checks the FIRST message');
+  });
+  // Both halves gate the fold (fail-quiet, never fail-wide).
+  assert.ok(/vmSender && vmFilter/.test(pend), 'pending fold gated on BOTH filter halves');
+  assert.ok(/vmSenderR && vmFilterR/.test(res), 'resolved fold gated on BOTH filter halves');
+  // The resolved fold admits ONLY manually-resolved VM threads (a VM has no
+  // reply-based resolution semantics) and ships a NULL duration — "clicked
+  // resolved N hours after the voicemail" is not a response time.
+  const vmFold = res.slice(res.indexOf('vmSenderR &&'));
+  assert.ok(/if \(!man \|\| seenR/.test(vmFold), 'resolved fold: manual-map rows only');
+  assert.ok(/resolveMinutes: null/.test(vmFold), 'VM duration is null, never a fake response time');
+  // VM truncation folds into the ONE truncated flag (INV-169/SPANISH cap).
+  assert.ok(/vmTruncated/.test(pend) && /\|\| vmTruncated/.test(pend), 'VM cap rides the truncated flag');
+  // The by-id scope family: ThreadBody + resolve + claim all route through
+  // the ONE predicate — no site keeps a private copy to drift.
+  const sites = ['getSpanishInboxThreadBody', 'resolveSpanishThread', 'claimSpanishThread'];
+  sites.forEach((f) => assert.ok(/spanishThreadInScope_\(/.test(grab(f)), f + ' uses the shared predicate'));
+  // release deliberately has NO Gmail read; it must NOT grow one via the predicate.
+  assert.ok(!/spanishThreadInScope_/.test(grab('releaseSpanishThread')), 'release stays Gmail-free');
+  // Client: both card builders render the VM pill; the pill is kind-gated.
+  const mf = extractScript('metrics/script_metrics.html');
+  assert.ok(/spanishVmPillHtml_\(t\)/.test(mf.slice(mf.indexOf('function spanishResolvedCard_'))), 'resolved card carries the pill');
+  const pillFn = extractFunction('metrics/script_metrics.html', 'spanishVmPillHtml_');
+  assert.ok(/kind === 'voicemail'/.test(pillFn), 'pill renders only for kind voicemail');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 3 (2026-08-25) — insurance payor lookup: a deterministic
+// search over the InsurancePayors tab (KB spreadsheet), surfaced on the
+// Reference landing + the Ctrl/⌘+K drawer. Deterministic over RAG on purpose:
+// a wrong network-status answer is a billing error, and deterministic
+// matching fails VISIBLY (no match → the operator's TRY guidance).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — insurance payor lookup (operator batch 3)');
+
+const _insCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'insPayorScore_'), _insCtx, { filename: 'insPayorScore_' });
+vm.runInContext(extractRawFunction('Code.js', 'insPayorRowObj_'), _insCtx, { filename: 'insPayorRowObj_' });
+vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), _insCtx, { filename: 'insToneCls_' });
+
+test('insPayorScore_ — substring dominates, all-tokens bonus, zero on no hit', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  const sc = (n, q) => g('insPayorScore_(' + JSON.stringify(n) + ',' + JSON.stringify(q) + ')');
+  assert.strictEqual(sc('Texas Medicaid', 'zzz'), 0, 'no hit → 0 (never a weak false match)');
+  assert.ok(sc('Texas Medicaid', 'texas medicaid') > sc('Medicaid - Molina', 'texas medicaid'), 'whole-phrase substring beats partial token hits');
+  assert.ok(sc('Medicaid - Molina', 'molina medicaid') > sc('Medicaid - Superior', 'molina medicaid'), 'all tokens present beats one');
+  assert.ok(sc('Aetna Better Health of Ohio (MMP)', 'aetna ohio') > 0, 'scattered tokens still match');
+  assert.strictEqual(sc('', 'x'), 0); assert.strictEqual(sc('X', ''), 0);
+});
+
+test('insPayorRowObj_ — columns resolved BY HEADER NAME; everything else is a verbatim detail', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  // The real CSV header set, misspelled "Qualifaction" included — the stem
+  // match is what survives the other dept fixing their typo.
+  _insCtx.__h = ['Insurance', 'Waystar Reference #', 'Network Status', 'Qualifaction Process', 'Reimbursement Status', 'K0800', 'K0821/23/16', 'Z = Hawaii Only', ''];
+  _insCtx.__r = ['Texas Medicaid', 'SKTX0', 'In-Network', 'Yes', '', 'Not Accepted', 'Accepted', '', 'junk-in-headerless-col'];
+  const o = g('insPayorRowObj_(__h, __r)');
+  assert.strictEqual(o.name, 'Texas Medicaid');
+  assert.strictEqual(o.waystar, 'SKTX0');
+  assert.strictEqual(o.networkStatus, 'In-Network');
+  assert.strictEqual(o.qualification, 'Yes', 'the misspelled header still resolves (stem match)');
+  assert.strictEqual(o.reimbursement, '');
+  assert.strictEqual(o.details.map((d) => d.label).join('|'), 'K0800|K0821/23/16', 'non-fixed headers become generic details; BLANK cells and headerless columns are dropped');
+  assert.strictEqual(o.details[0].value, 'Not Accepted', 'values pass through verbatim — no translation server-side');
+});
+
+test('insToneCls_ — the legend tone map; unknown tokens stay NEUTRAL', () => {
+  const g = (e) => vm.runInContext(e, _insCtx);
+  const t = (v) => g('insToneCls_(' + JSON.stringify(v) + ')');
+  assert.strictEqual(t('Accepted'), 'good');
+  assert.strictEqual(t('x'), 'good', 'lowercase X per the legend (case-insensitive)');
+  assert.strictEqual(t('In-Network'), 'good');
+  assert.strictEqual(t('Not Accepted'), 'bad');
+  assert.strictEqual(t('Out-of-Network'), 'bad');
+  assert.strictEqual(t('Out-of-Network Benefits'), 'warn', 'OON *Benefits* is NOT the hard no');
+  assert.strictEqual(t('OON W/ PA'), 'warn');
+  assert.strictEqual(t('Plan Specific'), 'warn');
+  assert.strictEqual(t('Location-based ( 285-325 lb)'), 'warn');
+  assert.strictEqual(t('Location-based ( Up To 285) & SI/PR'), 'warn', 'combined criteria stay warn (must meet both)');
+  assert.strictEqual(t('SI/PR'), 'warn');
+  assert.strictEqual(t('PR'), 'warn');
+  assert.strictEqual(t('TRY'), 'info');
+  assert.strictEqual(t('Hawaii only'), 'info');
+  assert.strictEqual(t('Y'), '', 'the 6 stray Y cells render VERBATIM in neutral tone — never a guessed verdict (operator rule)');
+  assert.strictEqual(t(''), '');
+  assert.strictEqual(t('approved'), '', 'an unknown word containing "pr" mid-token is not PR');
+});
+
+test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [hidden] on the client', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(srv) && /Not authorized/.test(srv), 'rep gate');
+  assert.ok(/getRange\(2, 1, last - 1, 1\)/.test(srv), 'NAME-column scan for scoring (the INV-46 bounded-reader family)');
+  assert.ok(!/waitLock/.test(srv), 'read-only — no lock');
+  assert.ok((srv.match(/getDisplayValues\(\)/g) || []).length >= 3, 'getDisplayValues throughout (INV-64 — a foreign-authored sheet)');
+  assert.ok(/INS_PAYOR_TOP/.test(srv) && /total: scored\.length/.test(srv), 'top-N cap with the TRUE total reported (INV-169)');
+  assert.ok(/INS_PAYOR_TAB/.test(srv) && /not set up yet/.test(srv), 'unconfigured names the exact tab to create');
+  const kb = nc(extractScript('kb/script_kb.html'));
+  assert.ok((kb.match(/insLookupSecHtml_\('(-d)?'\)/g) || []).length === 2, 'ONE shared section, two hosts (landing + drawer)');
+  const inputFn = nc(extractFunction('kb/script_kb.html', 'insLookupInput_'));
+  assert.ok(/\+\+KB_INS\.seq/.test(inputFn) && (inputFn.match(/mySeq !== KB_INS\.seq/g) || []).length === 2, 'seq token guards BOTH async handlers (INV-156)');
+  assert.ok(/errorStateHtml_/.test(inputFn), 'transport failure renders the error card (A12)');
+  const renderFn = nc(extractFunction('kb/script_kb.html', 'insRenderResults_'));
+  assert.ok(/errorStateHtml_/.test(renderFn), 'server {error} renders the error card too');
+  assert.ok(/TRY<\/b> rules/.test(renderFn), 'not-found renders the operator TRY guidance, never an empty state');
+  assert.ok(/status not recorded/.test(renderFn), 'blank network status SAYS so (INV-187), never a blank pill');
+  assert.ok(/esc\(m\.name\)/.test(renderFn) && /esc\(d\.value\)/.test(renderFn), 'every payor string esc()d before innerHTML');
+  assert.ok(/\.kb-ins-grid\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8')),
+    'the display-setting grid carries its [hidden] companion (the documented trap)');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 4 (2026-08-25) — Amend & re-send for intake submissions.
+// The submission tabs stay APPEND-ONLY: an amendment is a NEW row linked via
+// the trailing AmendsId column, and BOTH sides always see the marking (the
+// AMENDED subject prefix + banner for the recipient; chips/banners in the
+// Sent tab for the user). The prefix/banner ride POST-hash (the feedbackCta
+// placement) so INV-41's preview contract over the base body is untouched.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — intake amend & re-send (operator batch 4)');
+
+const _amdCtx = vm.createContext({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+  CN_EMAIL_PALETTE: { warnSoft: '#fbf1d9', warnBorder: '#f0d9a8', brand: '#223b5d', muted2: '#5f6878' } });
+vm.runInContext(extractRawFunction('Code.js', 'intakeAmendDiff_'), _amdCtx, { filename: 'intakeAmendDiff_' });
+vm.runInContext(extractRawFunction('Code.js', 'intakeAmendBannerHtml_'), _amdCtx, { filename: 'intakeAmendBannerHtml_' });
+
+test('intakeAmendDiff_ — changed/added/removed keys, whitespace-insensitive, empty on identical', () => {
+  const g = (e) => vm.runInContext(e, _amdCtx);
+  const d = (a, b) => g('intakeAmendDiff_(' + JSON.stringify(a) + ',' + JSON.stringify(b) + ').join("|")');
+  assert.strictEqual(d({ '1': 'Yes', '38': '250' }, { '1': 'Yes', '38': '250' }), '', 'identical → empty (the banner then says re-send)');
+  assert.strictEqual(d({ '1': 'Yes', '38': '250' }, { '1': 'No', '38': '250' }), '1', 'a changed value');
+  assert.strictEqual(d({ '1': 'Yes' }, { '1': 'Yes', notes: 'call pm' }), 'notes', 'an ADDED key counts');
+  assert.strictEqual(d({ '1': 'Yes', '5': 'x' }, { '1': 'Yes' }), '5', 'a REMOVED key counts');
+  assert.strictEqual(d({ '1': ' Yes ' }, { '1': 'Yes' }), '', 'whitespace-only difference is NOT a change');
+});
+
+test('intakeAmendBannerHtml_ — names the original send, lists changes, says re-send when unchanged', () => {
+  const g = (e) => vm.runInContext(e, _amdCtx);
+  const withChanges = g('intakeAmendBannerHtml_("2026-08-20 10:00:00", ["Weight (Q38)", "Notes"])');
+  assert.ok(/AMENDED SUBMISSION/.test(withChanges) && /Supersedes the version sent 2026-08-20 10:00:00/.test(withChanges), 'banner names the original');
+  assert.ok(/Changed: Weight \(Q38\); Notes/.test(withChanges), 'changed fields listed');
+  const unchanged = g('intakeAmendBannerHtml_("2026-08-20 10:00:00", [])');
+  assert.ok(/Content unchanged — this is a re-send/.test(unchanged), 'an unchanged amend is HONESTLY labeled a re-send');
+  const many = g('intakeAmendBannerHtml_("t", ["a","b","c","d","e","f","g","h","i","j"])');
+  assert.ok(/and 2 more/.test(many), 'change list caps at 8 + a named remainder (INV-169 spirit)');
+  const hostile = g('intakeAmendBannerHtml_("t", ["<img src=x>"])');
+  assert.ok(hostile.indexOf('<img') < 0 && /&lt;img/.test(hostile), 'labels esc_d — the email body boundary (INV-89)');
+  assert.ok(!/display:\s*flex|[^-]gap:|filter:/.test(hostile + withChanges), 'email-safe: no flex/gap/filter');
+});
+
+test('wiring: validate-before-send, post-hash marking, owner-only source, append-only chain', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const grab = (name) => {
+    const i = code.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0;
+    for (let k = code.indexOf('{', i); k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (d === 0) return nc(code.slice(i, k + 1)); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const src = grab('intakeAmendSource_');
+  assert.ok(/!== emp\.id\) return null/.test(src), 'OWNER-only: a foreign submission id resolves to null (the IntakeFeedback forged-id rule on a write path)');
+  ['intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
+    const f = grab(fn);
+    assert.ok(/intakeAmendSource_\(/.test(f) && /was not found \(or is not yours\)/.test(f), fn + ' validates the source and FAILS the send on a bad id');
+    // Post-hash order: the AMENDED prefix/banner must come AFTER the
+    // expectedBodyHash compare — the preview contract covers the BASE.
+    // Anchor on the hash COMPARE, not 'expectedBodyHash' bare — that string
+    // also sits in the function SIGNATURE at position ~47, which made the
+    // first write of this assertion vacuously true (caught when a pre-hash
+    // mutation failed to bite; the INV-188 family: anchor on the operation).
+    const hashAt = f.indexOf('!== expectedBodyHash');
+    const amendAt = f.indexOf("'AMENDED: '");
+    assert.ok(hashAt >= 0 && amendAt > hashAt, fn + ': marking applied post-hash (INV-41 untouched)');
+    assert.ok(/amendId,\n\s*\]\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
+    assert.ok(/amends=/.test(f), fn + ' audit row carries amends= (id only — PHI-free, INV-32)');
+  });
+  // Schema: trailing AmendsId on BOTH header constants + the one-shot self-heal.
+  assert.ok(/'Recipient','AmendsId'\]/.test(code) && /'ImageCount','AmendsId'\]/.test(code), 'both header constants gained the TRAILING column');
+  assert.ok(/getLastColumn\(\) < headers\.length/.test(grab('getIntakeSubmissionSheet_')), 'legacy tabs self-heal the header (the INV-126/135 pattern)');
+  // Client: collectors carry amendsSubmissionId from amendOf; clear kills it;
+  // the prefill consumes AFTER the draft restore in BOTH enters.
+  const ic = nc(extractScript('intake/script_intake.html'));
+  assert.strictEqual((ic.match(/amendsSubmissionId: \(INTAKE_STATE(\.ppd|\[form\])\.amendOf/g) || []).length, 2, 'both collectors attach the amend id');
+  assert.ok(/INTAKE_STATE\[form\]\.amendOf = null;\s*\n/.test(ic), 'clear/send-success detaches the amend');
+  [/intakeRestoreDraft_\('ppd'\)[\s\S]{0,300}intakeConsumeAmendPrefill_\('ppd'\)/, /intakeRestoreDraft_\(form\)[\s\S]{0,300}intakeConsumeAmendPrefill_\(form\)/].forEach((re, i) =>
+    assert.ok(re.test(ic), ['ppd', 'acct'][i] + ' enter consumes the amend prefill AFTER the draft restore (the snapshot must win)'));
+  // Detail: the button is gated OWN + not-superseded; both chain banners render.
+  const det = extractFunction('intake/script_intake.html', 'intakeRenderSentDetail_');
+  assert.ok(/d\.isOwn && !d\.supersededBy/.test(det), 'Amend button: owner-only and never on a superseded row');
+  assert.ok(/Superseded by an amended copy/.test(det) && /AMENDED copy of an earlier/.test(det), 'both chain directions banner');
+  // List chips: both directions marked.
+  const list = extractFunction('intake/script_intake.html', 'intakeRenderSentList_');
+  assert.ok(/amended copy/.test(list) && /superseded/.test(list), 'list marks both sides of the chain');
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Operator batch 5 (2026-08-25) — marker text formatting in call notes:
+// **bold** / __underline__ / ==highlight== render AFTER esc() on cards and in
+// the dept email; the CRM copy strips paired markers; storage stays plain
+// text everywhere.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\ncn — marker text formatting (operator batch 5)');
+
+// cnFmtHtml_ reads the module-level CN_FMT_RULES — evaluate the declaration
+// into the sandbox first (it is an ARRAY, so extractClientObject's `= {`
+// anchor cannot grab it).
+vm.runInContext(extractScript('cn/script_callnotes.html').match(/var CN_FMT_RULES[\s\S]*?\n\];/)[0], sb, { filename: 'CN_FMT_RULES' });
+const cnFmtHtml_b5 = loadFunction(sb, 'cn/script_callnotes.html', 'cnFmtHtml_');
+const cnStripFmt_b5 = loadFunction(sb, 'cn/script_callnotes.html', 'cnStripFmt_');
+
+test('cnFmtHtml_/cnStripFmt_ — paired markers transform/strip; unpaired stay content; escape-first', () => {
+  assert.strictEqual(cnFmtHtml_b5('sent **rush** order'), 'sent <strong>rush</strong> order');
+  assert.strictEqual(cnFmtHtml_b5('__by Friday__ and ==call first=='), '<u>by Friday</u> and <mark class="cn-hl">call first</mark>');
+  assert.strictEqual(cnFmtHtml_b5('2 ** 3 is not bold'), '2 ** 3 is not bold', 'an unpaired marker is content');
+  // The input contract is ESCAPED text — a hostile payload arrives inert and
+  // the formatter can only wrap it, never revive it.
+  assert.strictEqual(cnFmtHtml_b5('**&lt;img src=x&gt;**'), '<strong>&lt;img src=x&gt;</strong>', 'markers wrap escaped text; nothing unescapes');
+  assert.strictEqual(cnStripFmt_b5('sent **rush** __now__ ==ok=='), 'sent rush now ok', 'the CRM paste is clean plain text');
+  assert.strictEqual(cnStripFmt_b5('2 ** 3 stays'), '2 ** 3 stays', 'unpaired markers survive the strip (they are content)');
+  assert.strictEqual(cnFmtHtml_b5('**a\nb**'), '**a\nb**', 'markers never span lines');
+});
+
+test('B5: the three marker regexes are byte-equal client and server', () => {
+  const rx = /\/(==|\\\*\\\*|__)\(\[\^[^\]]+\]\+\)(==|\\\*\\\*|__)\/g/g;
+  const cli = extractFunction('cn/script_callnotes.html', 'cnFmtHtml_') +
+    fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8').match(/var CN_FMT_RULES[\s\S]{0,400}?\];/)[0];
+  const srv = extractRawFunction('Code.js', 'cnFmtEmailHtml_');
+  const cliRx = (cli.match(rx) || []).sort();
+  const srvRx = (srv.match(rx) || []).sort();
+  assert.ok(srvRx.length === 3, 'server carries the three marker regexes (got ' + srvRx.length + ')');
+  assert.deepStrictEqual(cliRx.slice(0, 3), srvRx, 'client and server marker regexes byte-equal (the INV-72 family)');
+});
+
+test('B5 wiring: cards render formatted, copy strips, email applies post-esc_, keyboard replaces native bold', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const cn = nc(extractScript('cn/script_callnotes.html'));
+  assert.strictEqual((cn.match(/cnFmtHtml_\(esc\(/g) || []).length >= 7, true,
+    'issue/resolution render sites route esc() THROUGH the formatter (cards, search, mgr card, prior-calls, composer reference)');
+  assert.ok(/issue:\s*cnStripFmt_\(note\.issue/.test(cn) && /resolution:\s*cnStripFmt_\(note\.resolution/.test(cn),
+    'the CRM copy map strips both long-form fields');
+  // The keyboard branch: preventDefault ALWAYS in a .ce (native contenteditable
+  // bold wrote <b> tags that did not survive the plain-text save).
+  assert.ok(/fmtMk\) \{\s*e\.preventDefault\(\);/.test(cn) && /cnWrapSelection_\(el, fmtMk\)/.test(cn), 'B/U/Shift+H wrap markers instead of native formatting');
+  assert.ok(/execCommand\('insertText'/.test(nc(extractFunction('cn/script_callnotes.html', 'cnWrapSelection_'))), 'wrap inserts TEXT (undo stack intact, no HTML)');
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(/cnFmtEmailHtml_\(esc_\(callData\.issue\)\)/.test(code), 'email Issue row formatted post-esc_');
+  assert.ok(/resolutionText = cnFmtEmailHtml_\(esc_\(resolutionText\)\)/.test(code), 'email Resolution formatted on the FREE-TEXT branch only');
+  assert.ok(!/cnFmtEmailHtml_\(esc_\(generateOOPResolutionText_/.test(code), 'the server-generated OOP resolution is NOT marker-processed');
+  assert.strictEqual((code.match(/cnFmtEmailHtml_\(esc_\(n\.issue/g) || []).length, 3, 'the three digest issue lines are formatted too (no raw ** in a manager digest)');
+  assert.ok(/mark\.cn-hl \{ background: var\(--warn-soft\)/.test(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8')),
+    'the highlight uses the warn-soft token (in-app; the email uses the palette hex)');
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Operator batch 6 (2026-08-25) — intake-call analytics. Framing is INV-187
+// all the way down: per-call CDR attribution does not exist (DQE is one row
+// per agent+date — the settled cycle-14 Phase 0 fact), so the feature is
+// honest COUNTS beside the KPIs, never a modeled "adjusted ATT".
+console.log('\noperator batch 6 — intake-call analytics');
+
+const _b6Ctx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'intakeVolumeBuckets_'), _b6Ctx, { filename: 'intakeVolumeBuckets_' });
+
+test('B6: intakeVolumeBuckets_ — trailing months newest-first, year-boundary safe, junk skipped', () => {
+  const run = (ts, months, today) => vm.runInContext(
+    'intakeVolumeBuckets_(' + JSON.stringify(ts) + ',' + months + ',' + JSON.stringify(today) + ')', _b6Ctx);
+  const ts = {
+    PPD: ['2026-01-15 10:00:00', '2026-01-02 09:00:00', '2025-12-30 11:00:00', '2025-10-01 08:00:00'],
+    PMD: ['2025-12-05 12:00:00'],
+    PAP: ['2025-11-20 15:00:00', 'garbage', ''],
+  };
+  const rows = run(ts, 3, '2026-01-15');
+  // vm-realm arrays fail deepStrictEqual against host literals (prototype
+  // identity) — compare by value, the documented lesson.
+  assert.strictEqual(rows.map((r) => r.month).join('|'), '2026-01|2025-12|2025-11', 'newest-first, wrapping the year');
+  assert.strictEqual(rows.map((r) => [r.ppd, r.pmd, r.pap, r.total].join(',')).join('|'),
+    '2,0,0,2|1,1,0,2|0,0,1,1', 'per-type counts land in the right month; a malformed timestamp is skipped, never a crash');
+  assert.strictEqual(rows.reduce((s, r) => s + r.ppd, 0), 3, 'the out-of-window 2025-10 send is counted NOWHERE');
+  assert.strictEqual(run(ts, 3, 'not-a-date').length, 0, 'a bad anchor date yields an empty result, never NaN months');
+  assert.strictEqual(run({}, 2, '2026-08-25').map((r) => r.total).join('|'), '0|0', 'missing type arrays read as zero, not a throw');
+});
+
+test('B6: cnCountIntakeNotesResult_ — bounded 2-col read, pre-filter before parse, failed read is never 0', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'cnCountIntakeNotesResult_'));
+  assert.ok(!/getDataRange\(\)/.test(f), 'never a full-width read of the notes Sheet');
+  assert.ok(/CN\.DATE_LOCAL \+ 1/.test(f) && /CN\.SUBFORM_DATA \+ 1/.test(f), 'exactly the two columns the count needs (the taxonomy pattern)');
+  assert.ok(/normalizeDate_\(/.test(f), 'DateLocal routes through the coercion guard (the CN.DATE_LOCAL gotcha)');
+  const pre = f.indexOf('"intakeType"'), parse = f.indexOf('JSON.parse');
+  assert.ok(pre > -1 && parse > -1 && pre < parse, 'the substring pre-filter runs BEFORE any JSON.parse');
+  assert.ok(/unenrolled: true/.test(f), 'no-sheet is a DISTINCT state from a failed read (INV-35)');
+  assert.ok(/return \{ count: 0, unavailable: true, unenrolled: false \};/.test(f),
+    'the catch returns unavailable — a failed read is never a confident 0 (INV-187, the cnCountNotesResult_ contract)');
+});
+
+test('B6 server wiring: three endpoints attach intakeNotes null-on-unavailable; the volume endpoint is gated + bounded + honest', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.strictEqual((code.match(/intakeNotes: intakeRes\.unavailable \? null : intakeRes\.count/g) || []).length, 3,
+    'getMyMetrics + getMyMetricsRange + getTeamMetrics per-rep all attach null on an unavailable read (never 0)');
+  assert.ok(/if \(rep\.intakeNotes != null\) teamTotals\.intakeNotes = \(teamTotals\.intakeNotes \|\| 0\) \+ rep\.intakeNotes;/.test(code) &&
+    /else teamTotals\.intakeNotesPartial = true;/.test(code),
+    'the team total accumulates only readable reps and FLAGS the partial (the cycle-16 F5 aggregate rule)');
+  const vol = nc(extractRawFunction('Code.js', 'getIntakeVolumeStats'));
+  const gate = vol.indexOf("'Manager access required.'"), firstRead = vol.indexOf('getIntakeSubmissionSheet_');
+  assert.ok(gate > -1 && firstRead > -1 && gate < firstRead, 'the manager gate fires BEFORE any submission-tab read (INV-02)');
+  assert.ok(/INTAKE_VOLUME_SCAN_MAX/.test(vol), 'the per-tab read is a bounded tail, never the whole tab');
+  assert.ok(/intakeTsString_\(/.test(vol), 'Timestamp cells route through the coercion guard');
+  assert.ok(/failed\.push\(ft\)/.test(vol) && /failedTypes: failed/.test(vol),
+    'an unreadable tab is NAMED in the response, never a silent 0 column (INV-187)');
+  assert.ok(!/LockService/.test(vol), 'read-only — no lock');
+});
+
+test('B6 client wiring: rail row null-gated, table em-dash, volume block manager-only + A12 on both failure shapes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  const railGate = m.indexOf('if (data.intakeNotes != null) {'), railRow = m.indexOf("mRailRow_('Intake calls'");
+  assert.ok(railGate > -1 && railRow > -1 && railGate < railRow && railRow - railGate < 120,
+    'the My Stats rail row renders ONLY when the count exists — absence is not 0 (INV-180)');
+  assert.ok(/r\.intakeNotes == null \?/.test(m) && /title="count unavailable"/.test(m),
+    'the Team table renders an em dash with a named reason on a null count');
+  assert.ok(/if \(!data\.repView\) html \+= '<div id="m-intake-vol">/.test(m) &&
+    /if \(!data\.repView\) mLoadIntakeVolume_\(\);/.test(m),
+    'the volume block is manager-view only on BOTH halves (container + fetch) — the rep aggregate never pays for it');
+  const fn = nc(extractFunction('metrics/script_metrics.html', 'mLoadIntakeVolume_'));
+  assert.strictEqual((fn.match(/errorStateHtml_\(/g) || []).length, 2, 'both failure shapes ({error} + transport) render the error card (A12/INV-175)');
+  assert.ok(!/errorStateHtml_\(esc\(/.test(fn), 'no double-escape — the helper escapes internally');
+  assert.strictEqual((fn.match(/currentView !== requestedView/g) || []).length, 2, 'both handlers are nav-guarded (the CN loader pattern)');
+  assert.ok(/host\.innerHTML = '';/.test(fn), 'a genuinely empty history renders NOTHING, not an empty table');
+  assert.ok(/role="alert"/.test(fn) && /esc\(res\.failedTypes\.join/.test(fn), 'failedTypes surfaces as an announced, escaped note');
+});
+
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
+
 process.exit(fail ? 1 : 0);

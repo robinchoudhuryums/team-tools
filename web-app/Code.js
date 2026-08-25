@@ -71,6 +71,14 @@ const CONFIG = {
   // mailbox receives the threads to scan. Script Properties override these.
   SPANISH_INBOX_ADDRESS:        'spanishcalls@universalmedsupply.com',
   SPANISH_INBOX_MEMBERS:        '',
+  // 8x8 A_Q_Spanish voicemail notifications (operator 2026-08-25): 8x8 emails
+  // each MEMBER's individual inbox, never the group address — so the scanner
+  // (which reads the DEPLOYER's mailbox) folds them in via a sender + subject
+  // filter instead. Script Properties SPANISH_VM_SENDER /
+  // SPANISH_VM_SUBJECT_FILTER override without a redeploy; blanking EITHER
+  // property disables the voicemail fold entirely (fail-quiet, not fail-wide).
+  SPANISH_VM_SENDER:            'no-reply@8x8.com',
+  SPANISH_VM_SUBJECT_FILTER:    'via A_Q_Spanish',
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -8557,6 +8565,20 @@ function generateOOPResolutionText_(selections) {
   return text;
 }
 
+/** Marker text formatting — the SERVER twin of the client cnFmtHtml_
+ *  (cn/script_callnotes.html); the three marker regexes are pinned
+ *  byte-equal (the INV-72 parallel-source family). Input MUST already be
+ *  esc_'d; output is email-safe (strong/u/inline-styled span — no <mark>,
+ *  whose default rendering varies across mail clients; hex from
+ *  CN_EMAIL_PALETTE per the email-color rule). */
+function cnFmtEmailHtml_(escaped) {
+  var out = String(escaped == null ? '' : escaped);
+  out = out.replace(/==([^=\n]+)==/g, '<span style="background:' + CN_EMAIL_PALETTE.warnSoft + ';border-radius:2px;">$1</span>');
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/__([^_\n]+)__/g, '<u>$1</u>');
+  return out;
+}
+
 function buildCallNoteEmailHtml_(callData, selections) {
   const P = CN_EMAIL_PALETTE;
   let updateInfo = selections.updateInfo;
@@ -8625,7 +8647,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
   if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
     resolutionText = esc_(generateOOPResolutionText_(selections)).replace(/\n/g, '<br>');
   } else {
-    resolutionText = esc_(resolutionText);
+    resolutionText = cnFmtEmailHtml_(esc_(resolutionText));
   }
 
   // ── Call Details table — UMS navy header + pale-blue alternating rows
@@ -8635,7 +8657,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
     ['Caller Name',     esc_(callData.callerName), false],
     ['Relationship',    esc_(callData.relationship), false],
     ['Patient & TRX',   esc_(callData.patientAndTrx), true],
-    ['Issue',           esc_(callData.issue), false],
+    ['Issue',           cnFmtEmailHtml_(esc_(callData.issue)), false],
     ['Transferred To',  esc_(callData.transferredTo), false],
     ['Resolution',      resolutionText, false],
   ];
@@ -11569,7 +11591,7 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.caller || n.patientAndTrx || '—')}</strong>` +
         (n.patientAndTrx ? ` <span style="color:${P.muted};font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc_(n.patientAndTrx)}</span>` : '') +
-        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        `<br><span style="color:${P.muted};font-size:12px;">${cnFmtEmailHtml_(esc_(n.issue || ''))}</span>` +
       `</td>` +
       `</tr>`;
   }).join('');
@@ -11994,7 +12016,7 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
     if (s.key === 'urgent') {
       html += table(d.urgent.map(function (n) {
         return row2('<strong>' + esc_(n.repName) + '</strong> · ' + esc_(n.caller || n.patientAndTrx || '—') +
-          (n.issue ? '<br><span style="color:' + P.muted + ';font-size:12px;">' + esc_(n.issue) + '</span>' : ''),
+          (n.issue ? '<br><span style="color:' + P.muted + ';font-size:12px;">' + cnFmtEmailHtml_(esc_(n.issue)) + '</span>' : ''),
           n.dateLocal || '');
       }).join(''));
       text += d.urgent.map(function (n) {
@@ -12171,7 +12193,7 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
-        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        `<br><span style="color:${P.muted};font-size:12px;">${cnFmtEmailHtml_(esc_(n.issue || ''))}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
         qLine + rLine + cLine +
       `</td>` +
@@ -13447,6 +13469,55 @@ function getSpanishInboxMembers_() {
   return set;
 }
 
+/** 8x8 voicemail-notification filter (operator 2026-08-25). Both halves must
+ *  be non-empty for the voicemail fold to run — a half-configured filter would
+ *  either match every 8x8 mail (no subject filter) or arbitrary senders (no
+ *  sender filter), and either direction pulls unrelated mail into a
+ *  PHI-adjacent surface. Fail direction: blank = no voicemails, never a
+ *  wider scan. */
+function getSpanishVmSender_() {
+  let v = '';
+  try { v = PropertiesService.getScriptProperties().getProperty('SPANISH_VM_SENDER'); } catch (e) {}
+  if (v == null) v = CONFIG.SPANISH_VM_SENDER;
+  return String(v == null ? '' : v).trim().toLowerCase();
+}
+function getSpanishVmFilter_() {
+  let v = '';
+  try { v = PropertiesService.getScriptProperties().getProperty('SPANISH_VM_SUBJECT_FILTER'); } catch (e) {}
+  if (v == null) v = CONFIG.SPANISH_VM_SUBJECT_FILTER;
+  return String(v == null ? '' : v).trim();
+}
+/** Pure: is this first message an A_Q_Spanish voicemail notification?
+ *  EXACT sender address match + case-insensitive subject substring — both
+ *  required (Node-pinned). */
+function spanishVmMatch_(fromHeader, subject, sender, filter) {
+  if (!sender || !filter) return false;
+  if (emailAddrOnly_(fromHeader) !== String(sender).trim().toLowerCase()) return false;
+  return String(subject || '').toLowerCase().indexOf(String(filter).toLowerCase()) >= 0;
+}
+/** Pure: caller name out of an 8x8 VM subject ("New voicemail from X via
+ *  A_Q_Spanish" → "X"); '' when the shape doesn't match (the caller then
+ *  falls back to the sender address). Node-pinned. */
+function spanishVmCaller_(subject) {
+  const m = String(subject || '').match(/^New voicemail from (.+?) via /i);
+  return m ? m[1].trim() : '';
+}
+/** The VM Gmail query — sender + quoted subject filter over the same window
+ *  the main scan uses. */
+function spanishVmQuery_(sender, filter, days) {
+  return 'from:' + sender + ' subject:"' + String(filter).replace(/"/g, '') + '" newer_than:' + days + 'd';
+}
+/** ONE scope predicate for the by-id Spanish endpoints (ThreadBody / resolve /
+ *  claim): a thread is in scope when its FIRST message is addressed to the
+ *  configured inbox (To or Cc, exact address match) OR is a configured 8x8
+ *  voicemail notification. Factored from the three inline checks when the
+ *  voicemail fold widened the definition (operator 2026-08-25) — three sites
+ *  drifting on a security check is the parallel-source class. */
+function spanishThreadInScope_(firstMsg, addr) {
+  if (spanishAddrListIncludes_(String(firstMsg.getTo() || '') + ',' + String(firstMsg.getCc() || ''), addr)) return true;
+  return spanishVmMatch_(firstMsg.getFrom(), firstMsg.getSubject(), getSpanishVmSender_(), getSpanishVmFilter_());
+}
+
 /** Spanish Inbox access predicate — managers OR a bilingual rep listed in
  *  SPANISH_INBOX_MEMBERS (the same roster used to detect "resolved by a member";
  *  the reps who actually action the inbox). INV-31 amendment: the four Spanish
@@ -13644,12 +13715,54 @@ function getSpanishInboxPending(days) {
         claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
       });
     });
+    // Operator 2026-08-25: fold in 8x8 A_Q_Spanish VOICEMAIL notifications.
+    // 8x8 mails each member's individual inbox (never the group address), so
+    // these ride a sender+subject filter over the same deployer mailbox. A VM
+    // has no reply-based resolution semantics (nobody replies to no-reply@) —
+    // it leaves pending via the manual mark-resolved / claim machinery; a
+    // member reply on the notification thread also counts, mirroring the main
+    // loop. Both filter halves blank/unset → the fold is OFF (fail-quiet).
+    let vmTruncated = false;
+    const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
+    if (vmSender && vmFilter) {
+      const seen = {};
+      out.forEach(function (x) { seen[x.threadId] = true; });
+      const vmThreads = GmailApp.search(spanishVmQuery_(vmSender, vmFilter, d), 0, SPANISH_THREAD_SCAN_MAX);
+      vmTruncated = vmThreads.length >= SPANISH_THREAD_SCAN_MAX;
+      vmThreads.forEach(function (th) {
+        if (seen[th.getId()] || manual[th.getId()]) return;
+        const msgs = th.getMessages();
+        if (!msgs.length) return;
+        const req = msgs[0];
+        // The query matches subject across the THREAD; re-check the first
+        // message so a stray reply-match can't smuggle a foreign thread in.
+        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSender, vmFilter)) return;
+        let resolved = false;
+        for (let i = 1; i < msgs.length; i++) {
+          const from = emailAddrOnly_(msgs[i].getFrom());
+          if (haveMembers ? !!members[from] : !!from) { resolved = true; break; }
+        }
+        if (resolved) return;
+        out.push({
+          threadId: th.getId(),
+          kind: 'voicemail',
+          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
+          ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
+          subject: req.getSubject() || '(no subject)',
+          snippet: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+          hasMore: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().length > 240,
+          permalink: th.getPermalink(),
+          claim: claims[th.getId()] || null,
+        });
+      });
+    }
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this
     // gate) and `self` (the caller's lowercased email, so the client can tell
     // "claimed by me" apart without a second identity source).
-    return { address: addr, days: d, pending: out, truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
+    return { address: addr, days: d, pending: out,
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmTruncated,
       members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
@@ -13703,6 +13816,35 @@ function getSpanishInboxResolved(days) {
         permalink: th.getPermalink(),
       });
     });
+    // Operator 2026-08-25: manually-resolved VOICEMAILS join the resolved list
+    // (and therefore the resolution-share chart, which attributes manual
+    // resolves to whoever clicked). No resolveMinutes for a VM — the clock
+    // would measure "notification arrived → someone clicked resolved", which
+    // is not a response time — so the duration is null and consumers skip it.
+    const vmSenderR = getSpanishVmSender_(), vmFilterR = getSpanishVmFilter_();
+    if (vmSenderR && vmFilterR) {
+      const seenR = {};
+      out.forEach(function (x) { seenR[x.threadId] = true; });
+      GmailApp.search(spanishVmQuery_(vmSenderR, vmFilterR, d), 0, SPANISH_THREAD_SCAN_MAX).forEach(function (th) {
+        const man = manual[th.getId()];
+        if (!man || seenR[th.getId()]) return;
+        const msgs = th.getMessages();
+        if (!msgs.length) return;
+        const req = msgs[0];
+        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSenderR, vmFilterR)) return;
+        out.push({
+          threadId: th.getId(),
+          kind: 'voicemail',
+          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
+          resolver: man.by,
+          manual: true,
+          resolveMinutes: null,
+          resolvedAtMs: Math.max(req.getDate().getTime(), man.ms || 0),
+          subject: req.getSubject() || '(no subject)',
+          permalink: th.getPermalink(),
+        });
+      });
+    }
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
     // Resolution-share chart (operator 2026-08-17): ship the configured member
     // list so a member who resolved NOTHING renders as a zero bar — the
@@ -13731,8 +13873,10 @@ function getSpanishInboxThreadBody(threadId) {
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
     const first = msgs[0];
-    if (!spanishAddrListIncludes_(String(first.getTo() || '') + ',' + String(first.getCc() || ''), addr))
-      return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
+    // ONE scope predicate (inbox-addressed OR a configured 8x8 VM notification
+    // — operator 2026-08-25); exact address match per F(cycle-8).
+    if (!spanishThreadInScope_(first, addr))
+      return { error: 'Not a Spanish-inbox thread.' };
     return {
       threadId: String(threadId),
       subject: first.getSubject() || '(no subject)',
@@ -13804,7 +13948,7 @@ function resolveSpanishThread(threadId) {
     if (!th) return { error: 'Thread not found.' };
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
-    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+    if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
@@ -13903,7 +14047,7 @@ function claimSpanishThread(threadId, assigneeEmail) {
     if (!th) return { error: 'Thread not found.' };
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
-    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+    if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
@@ -16720,6 +16864,99 @@ function cnCountNotesResult_(emp, from, to) {
 }
 
 
+/** Operator 2026-08-25 (batch 6) — count the rep's INTAKE-flagged notes in a
+ *  range: rows whose SubformData carries `intakeType` (set by the intake
+ *  auto-log, INV-143's bounded enum — ppd/pmd/pap). The DATA already existed;
+ *  this makes it countable so long intake calls are EXPLAINABLE next to ATT
+ *  instead of silently inflating it. Per-call CDR attribution does NOT exist
+ *  (DQE is one row per agent+date — the settled cycle-14 Phase 0 fact), so
+ *  this is deliberately a COUNT beside the KPI, never a modeled "adjusted
+ *  ATT" — an invented subtraction would be presented as data (INV-187).
+ *  Same outcome contract as cnCountNotesResult_: {count, unavailable,
+ *  unenrolled} — a failed read is never a confident 0. 2-column bounded read
+ *  (the taxonomy pattern) + a substring pre-filter before any JSON.parse. */
+function cnCountIntakeNotesResult_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
+  try {
+    const sheet = getCallNotesSheet_(emp);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
+    const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+    const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
+    let n = 0;
+    for (let i = 0; i < dateCol.length; i++) {
+      const d = normalizeDate_(dateCol[i][0]);
+      if (d < from || d > to) continue;
+      const raw = String(subCol[i][0] || '');
+      if (raw.indexOf('"intakeType"') < 0) continue;
+      try {
+        const sd = JSON.parse(raw);
+        if (sd && sd.intakeType) n++;
+      } catch (e) { /* corrupt blob never breaks a count (callNoteRowToObject_ posture) */ }
+    }
+    return { count: n, unavailable: false, unenrolled: false };
+  } catch (e) {
+    console.warn('cnCountIntakeNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
+    return { count: 0, unavailable: true, unenrolled: false };
+  }
+}
+
+/** Pure (Node-pinned) — bucket submission timestamps into trailing calendar
+ *  months. tsByType = {PPD: [ts...], PMD: [...], PAP: [...]}; months = how
+ *  many trailing months incl. the current (todayIso anchors the newest).
+ *  Returns newest-first rows {month:'yyyy-MM', ppd, pmd, pap, total}. */
+function intakeVolumeBuckets_(tsByType, months, todayIso) {
+  const out = [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return out;
+  let y = parseInt(todayIso.slice(0, 4), 10), m = parseInt(todayIso.slice(5, 7), 10);
+  const keys = [];
+  for (let i = 0; i < months; i++) {
+    keys.push(y + '-' + String(m).padStart(2, '0'));
+    m--; if (m < 1) { m = 12; y--; }
+  }
+  keys.forEach(function (mk) {
+    const row = { month: mk, ppd: 0, pmd: 0, pap: 0, total: 0 };
+    ['PPD', 'PMD', 'PAP'].forEach(function (ft) {
+      ((tsByType || {})[ft] || []).forEach(function (ts) {
+        if (String(ts || '').slice(0, 7) === mk) { row[ft.toLowerCase()]++; row.total++; }
+      });
+    });
+    out.push(row);
+  });
+  return out;
+}
+
+/** Intake volume per month (manager-gated, read-only, PHI-free — counts
+ *  only). Sourced from the SUBMISSION tabs' Timestamp column (every send =
+ *  one row), bounded tail per tab. Answers "average occurrences per month"
+ *  with real monthly counts rather than a single averaged number. */
+const INTAKE_VOLUME_MONTHS = 6;
+const INTAKE_VOLUME_SCAN_MAX = 4000;
+function getIntakeVolumeStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const tsByType = {};
+    const failed = [];
+    INTAKE_FORM_TYPES_.forEach(function (ft) {
+      try {
+        const sheet = getIntakeSubmissionSheet_(ft);
+        const last = sheet.getLastRow();
+        if (last < 2) { tsByType[ft] = []; return; }
+        const start = Math.max(2, last - INTAKE_VOLUME_SCAN_MAX + 1);
+        tsByType[ft] = sheet.getRange(start, 2, last - start + 1, 1).getValues()
+          .map(function (r) { return intakeTsString_(r[0]); });
+      } catch (e) { failed.push(ft); }
+    });
+    const today = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+    return {
+      months: intakeVolumeBuckets_(tsByType, INTAKE_VOLUME_MONTHS, today),
+      failedTypes: failed,   // INV-187: an unreadable tab is named, never a silent 0 column
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+
 // ════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD METRICS (Time Clock → Dashboard)
 //  Period-aggregated own + cohort-guarded team CDR for the Dashboard carousels.
@@ -17063,10 +17300,14 @@ function getMyMetrics(date) {
     // result feeds the Clock coverage strip's "File N missing" CTA.
     var noteRes = cnCountNotesResult_(emp, date, date);
     var noteCount = noteRes.count;
+    // Operator 2026-08-25 (batch 6): intake-flagged note count — additive,
+    // null on a failed read (absence ≠ 0, INV-180/187).
+    var intakeRes = cnCountIntakeNotesResult_(emp, date, date);
 
     var result = {
       date: date,
       repName: emp.name,
+      intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
       cdr: todayCdr ? {
         totalRung:    todayCdr.totalRung,
         totalAnswered: todayCdr.totalAnswered,
@@ -17187,8 +17428,10 @@ function getMyMetricsRange(from, to) {
 
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
+    var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
     var rangeResult = {
       from: from, to: to, repName: emp.name,
+      intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
       cdr: c ? {
         totalRung:    c.totalRung,
         totalAnswered: c.totalAnswered,
@@ -17410,8 +17653,14 @@ function getTeamMetrics(dateOrFrom, to) {
       var noteRes = cnCountNotesResult_(
         { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
       var noteCount = noteRes.count;
+      // Batch 6 (2026-08-25): intake-flagged count per rep — the visual
+      // correlation beside ATT ("this rep's long talk time carried N intake
+      // calls"), never a modeled adjustment. Null on a failed read.
+      var intakeRes = cnCountIntakeNotesResult_(
+        { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
 
       var rep = {
+        intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
         repId: rm.repId, repName: rm.repName,
         totalRung:    cdr ? cdr.totalRung    : 0,
         totalAnswered: cdr ? cdr.totalAnswered : 0,
@@ -17447,6 +17696,10 @@ function getTeamMetrics(dateOrFrom, to) {
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
         if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
+        // Batch 6: intake total — sum of the KNOWN counts; any failed rep
+        // read marks the total partial (the client renders ≥, INV-187).
+        if (rep.intakeNotes != null) teamTotals.intakeNotes = (teamTotals.intakeNotes || 0) + rep.intakeNotes;
+        else teamTotals.intakeNotesPartial = true;
         // Phase 2 — team roll-up + the by-queue view's rows. Only reps that
         // made the table contribute, so the two modes always describe the same
         // population.
@@ -17622,8 +17875,8 @@ function getMetricsAmbient() {
 //  (intakeFilterRecommendations_) is server-authoritative + Node-tested.
 // ════════════════════════════════════════════════════════════════════════════
 
-const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient'];
-const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount'];
+const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
+const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 
 // Per-form structural layout (0-based FORM_RANGE row index → role). Ported from
 // the bound tool's AC_CONFIG / PAP_CONFIG. The question LABELS arrive from the
@@ -17796,6 +18049,11 @@ function getIntakeSubmissionSheet_(formType) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  } else if (sheet.getLastColumn() < headers.length) {
+    // Amend-&-re-send (operator 2026-08-25) added the trailing AmendsId
+    // column — self-heal the header once (the INV-126/135 pattern; legacy
+    // rows read the cell as blank = not an amendment).
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   }
   return sheet;
 }
@@ -18617,6 +18875,66 @@ function intakeDecodeImages_(images) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── PPD ──
+// ── Amend & re-send (operator 2026-08-25 — batch 4) ─────────────────────────
+// The submission tabs are APPEND-ONLY (the §164.312(c) discipline shared with
+// FormSubmissions) — an amendment is a NEW submission row linked to the
+// original via the trailing AmendsId column; the original row is never
+// touched. Both the USER and the RECIPIENT always see it is an amendment:
+// the subject gains an "AMENDED: " prefix and the email opens with a banner
+// naming the original send date + the changed fields (both applied AFTER the
+// INV-41 hash check, the feedbackCta/drResolveCta placement, so the
+// preview-hash contract over the BASE body/subject is untouched).
+
+/** Pure (Node-pinned): the answer keys whose trimmed values differ. Union of
+ *  keys, insertion-ordered old→new. An EMPTY diff means a re-send — the
+ *  banner says so instead of implying content changed. */
+function intakeAmendDiff_(oldAnswers, newAnswers) {
+  const a = oldAnswers || {}, b = newAnswers || {};
+  const keys = Object.keys(a);
+  Object.keys(b).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+  return keys.filter(function (k) {
+    return String(a[k] == null ? '' : a[k]).trim() !== String(b[k] == null ? '' : b[k]).trim();
+  });
+}
+
+/** The amendment banner (email-safe: table/inline styles only — no flex). */
+function intakeAmendBannerHtml_(sentTs, changedLabels) {
+  const P = CN_EMAIL_PALETTE;
+  const what = (changedLabels && changedLabels.length)
+    ? 'Changed: ' + changedLabels.slice(0, 8).map(function (l) { return esc_(l); }).join('; ') +
+      (changedLabels.length > 8 ? '; and ' + (changedLabels.length - 8) + ' more' : '')
+    : 'Content unchanged — this is a re-send of the original.';
+  return '<table style="border-collapse:collapse;width:100%;margin-bottom:14px;"><tr>' +
+    '<td style="background:' + P.warnSoft + ';border:1px solid ' + P.warnBorder + ';border-radius:6px;padding:10px 14px;">' +
+      '<div style="font-weight:700;color:' + P.brand + ';">AMENDED SUBMISSION</div>' +
+      '<div style="font-size:13px;color:' + P.muted2 + ';margin-top:2px;">Supersedes the version sent ' + esc_(sentTs) + '. ' + what + '</div>' +
+    '</td></tr></table>';
+}
+
+/** Locate + validate the amendment source: must exist for this form type and
+ *  belong to the CALLER (owner-only — an amendment sends under the sender's
+ *  name; the IntakeFeedback forged-id rule applied to a write). Bounded
+ *  id-column scan. Returns { ts, answers } or null. */
+function intakeAmendSource_(ft, amendsId, emp) {
+  const id = String(amendsId || '').trim();
+  if (!id) return null;
+  const sheet = getIntakeSubmissionSheet_(ft);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const isPpd = ft === 'PPD';
+  const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+  const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== id) continue;
+    const row = sheet.getRange(i + 2, 1, 1, width).getValues()[0];
+    if (String(row[2] || '').trim() !== emp.id) return null;   // owner-only
+    let answers = {};
+    try { answers = JSON.parse(isPpd ? row[6] : row[7]) || {}; } catch (e) {}
+    return { ts: intakeTsString_(row[1]), answers: answers };
+  }
+  return null;
+}
+
 function intakePreviewPPD(payload) {
   try {
     const emp = getEmployeeInfo_();
@@ -18681,14 +18999,31 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
       return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
+    // Amend & re-send (operator 2026-08-25): validate the source BEFORE the
+    // send — a bad/foreign id fails the whole send rather than silently
+    // sending an unmarked amendment.
+    const amendId = String(payload.amendsSubmissionId || '').trim();
+    let amendSrc = null;
+    if (amendId) {
+      amendSrc = intakeAmendSource_('PPD', amendId, emp);
+      if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+    }
     // The submission id is minted BEFORE the send so the feedback button can
-    // reference it; the CTA rides the FINAL body only (post-hash-check — the
-    // drResolveCtaHtml_ pattern), so the INV-41 preview contract, which covers
-    // the BASE body, is untouched. No resolvable exec URL → no button.
+    // reference it; the CTA + the amendment banner/prefix ride the FINAL body
+    // only (post-hash-check — the drResolveCtaHtml_ pattern), so the INV-41
+    // preview contract, which covers the BASE body + subject, is untouched.
     const submissionId = Utilities.getUuid();
-    const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
+    let amendBanner = '', sendSubject = subject;
+    if (amendSrc) {
+      const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
+      const labelByKey = {};
+      (payload.rows || []).forEach(function (r) { if (r.qNum) labelByKey[r.qNum] = r.label || r.qNum; });
+      amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('Q' + k); }));
+      sendSubject = 'AMENDED: ' + subject;
+    }
+    const finalBody = amendBanner + intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
       + intakeFeedbackCta_(submissionId, 'PPD');
-    const html = intakeEmailShell_(subject, finalBody, 'Intake · PPD');
+    const html = intakeEmailShell_(sendSubject, finalBody, 'Intake · PPD');
 
     // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
     // spirit — the public form path has had these caps since the hardening
@@ -18700,19 +19035,20 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
     if (oversize) return { success: false, error: oversize };
 
-    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });   // Round-1 #8
+    sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: sendSubject, htmlBody: html });   // Round-1 #8
 
     let storeWarning = null;
     try {
       getIntakeSubmissionSheet_('PPD').appendRow([
         submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
         patientInfo, String(payload.language || 'EN'),
-        answersJson, recJson, selJson, recipient,
+        answersJson, recJson, selJson, recipient, amendId,
       ]);
     } catch (e) { storeWarning = intakeStoreFailWarn_(emp, 'PPD', submissionId, e); }
 
     writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
-      'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient), emp.email);
+      'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) +
+      (amendId ? '; amends=' + amendId : ''), emp.email);
 
     return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
   } catch (err) { return { success: false, error: err.message }; }
@@ -18753,9 +19089,26 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   }
   const recipient = intakeResolveRecipient_(formType, recipientSpec);
 
+  // Amend & re-send (operator 2026-08-25) — see intakeSendPPD; validated
+  // before the send, applied post-hash.
+  const amendId = String(payload.amendsSubmissionId || '').trim();
+  let amendSrc = null;
+  if (amendId) {
+    amendSrc = intakeAmendSource_(formType, amendId, emp);
+    if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+  }
+  let sendSubject = subject, amendBanner = '';
+  if (amendSrc) {
+    const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
+    const labelByKey = {};
+    (payload.rows || []).forEach(function (r) { if (r.qIndex != null && !r.isHeader) labelByKey[r.qIndex] = r.label || String(r.qIndex); });
+    amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('#' + k); }));
+    sendSubject = 'AMENDED: ' + subject;
+  }
+
   // Images ride at send only (not part of the preview hash). Append the image
   // section to the inner body, then wrap — no brittle string surgery.
-  let innerBody = body;
+  let innerBody = amendBanner + body;
   let inlineImagesObj = {};
   const imgCount = (images && images.length) ? Math.min(images.length, CONFIG.INTAKE.MAX_IMAGES) : 0;
   if (imgCount > 0) {
@@ -18767,7 +19120,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   // no preview-hash over the inner body sections the CTA joins, but the same
   // final-body-only placement keeps the two send paths uniform.
   const submissionId = Utilities.getUuid();
-  const htmlBody = intakeEmailShell_(subject, innerBody + intakeFeedbackCta_(submissionId, formType),
+  const htmlBody = intakeEmailShell_(sendSubject, innerBody + intakeFeedbackCta_(submissionId, formType),
     'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
 
   // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
@@ -18776,19 +19129,20 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const oversize = intakeStoreOversizeError_([answersJson]);
   if (oversize) return { success: false, error: oversize };
 
-  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
+  sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: sendSubject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
 
   let storeWarning = null;
   try {
     getIntakeSubmissionSheet_(formType).appendRow([
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
-      answersJson, recipient, imgCount,
+      answersJson, recipient, imgCount, amendId,
     ]);
   } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
-    'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount, emp.email);
+    'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount +
+    (amendId ? '; amends=' + amendId : ''), emp.email);
 
   return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
 }
@@ -18854,18 +19208,33 @@ function intakeListMySubmissions() {
       const n = last - 1;
       const rows = sheet.getRange(2, 1, n, metaWidth).getValues();
       const recips = sheet.getRange(2, recipCol + 1, n, 1).getValues();
+      // Amend & re-send (operator 2026-08-25): the trailing AmendsId column —
+      // a legacy tab narrower than the healed header reads as blank.
+      const amendCol = (isPpd ? INTAKE_PPD_SUB_HEADERS : INTAKE_ACCT_SUB_HEADERS).length;   // 1-based
+      const amends = sheet.getLastColumn() >= amendCol ? sheet.getRange(2, amendCol, n, 1).getValues() : null;
+      // id → the amending submission's {id, ts}: an item someone amended
+      // renders "superseded". Built over the FULL tab (pre-visibility) so a
+      // manager view and the owner view agree.
+      const superseded = {};
+      if (amends) for (let i = 0; i < n; i++) {
+        const src = String(amends[i][0] || '').trim();
+        if (src) superseded[src] = { submissionId: String(rows[i][0] || ''), timestamp: intakeTsString_(rows[i][1]) };
+      }
       for (let i = 0; i < rows.length; i++) {
         const repId = String(rows[i][2] || '').trim();
         if (!emp.isManager && repId !== emp.id) continue;
+        const sid = String(rows[i][0] || '');
         out.push({
           formType: ft,
-          submissionId: String(rows[i][0] || ''),
+          submissionId: sid,
           timestamp: intakeTsString_(rows[i][1]),
           repId: repId,
           repName: String(rows[i][3] || ''),
           patientInfo: String(rows[i][4] || ''),
           language: isPpd ? String(rows[i][5] || 'EN') : String(rows[i][6] || 'EN'),
           recipient: String(recips[i][0] || ''),
+          amendsId: amends ? String(amends[i][0] || '').trim() : '',
+          supersededBy: superseded[sid] || null,
         });
       }
     });
@@ -18910,9 +19279,27 @@ function intakeGetSubmission(formType, submissionId) {
       return { error: 'You can only view your own intake submissions.' };
     }
     const parse = function (raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } };
+    // Amend & re-send (operator 2026-08-25): AmendsId is the LAST header
+    // column (index width-1 in the fetched row — a legacy row reads blank);
+    // supersededBy needs one bounded pass over that column to find a LATER
+    // amendment pointing at this id (last match wins = the newest).
+    let supersededBy = null;
+    const amendColD = width;   // 1-based — AmendsId is the trailing header col
+    if (sheet.getLastColumn() >= amendColD) {
+      const amendsAll = sheet.getRange(2, amendColD, last - 1, 1).getValues();
+      for (let i = 0; i < amendsAll.length; i++) {
+        if (String(amendsAll[i][0] || '').trim() === id) {
+          const meta = sheet.getRange(i + 2, 1, 1, 2).getValues()[0];
+          supersededBy = { submissionId: String(meta[0] || ''), timestamp: intakeTsString_(meta[1]) };
+        }
+      }
+    }
     const result = {
       formType: ft,
       submissionId: id,
+      isOwn: repId === emp.id,
+      amendsId: String(row[width - 1] == null ? '' : row[width - 1]).trim(),
+      supersededBy: supersededBy,
       feedback: intakeFeedbackFor_(ft, id),   // recipient feedback, all three forms (2026-08-13)
       timestamp: intakeTsString_(row[1]),
       repId: repId,
@@ -19707,6 +20094,101 @@ function kbGetRelated(itemId) {
     return { items: items };
   } catch (err) { return { error: err.message }; }
 }
+
+// ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
+// A ~1,000-row payor/HCPCS acceptance sheet lives with another dept and was
+// too slow to reference mid-call. The operator's cleaned CSV imports into an
+// `InsurancePayors` tab in the KB spreadsheet (PHI-free by policy — plan
+// names + acceptance criteria only, never a patient), and this endpoint is a
+// DETERMINISTIC search over it: a wrong in/out-of-network answer is a billing
+// error, and deterministic matching's failure mode is "no match" (visible),
+// not a confident wrong answer. Reps read via the server and never open the
+// sheet (the KB posture).
+//
+// Bounded read (the INV-46 family): the NAME column is scanned for scoring;
+// only the top-N matched rows are fetched full-width. Column semantics are
+// discovered BY HEADER NAME (the csrTransferQueueColumns_ precedent — the
+// operator's other CSV pages vary in shape, so fixed positions would drift):
+// waystar/network/qualif/reimbur match the known fields; EVERY other
+// non-empty header is a generic attribute column (the per-HCPCS acceptance
+// grid, the Hawaii marker, whatever a future import adds) passed through
+// VERBATIM — the operator rule: unknown tokens render as-is in neutral tone,
+// never guessed at.
+const INS_PAYOR_TAB = 'InsurancePayors';
+const INS_PAYOR_TOP = 8;
+const INS_PAYOR_MAX_ROWS = 5000;
+
+/** Pure (Node-pinned): score a payor name against query tokens. 0 = no
+ *  match. Whole-query substring dominates, then all-tokens-present, then
+ *  per-token hits; earlier match position breaks ties. */
+function insPayorScore_(name, query) {
+  const n = String(name || '').toLowerCase();
+  const q = String(query || '').toLowerCase().trim();
+  if (!n || !q) return 0;
+  let score = 0;
+  const pos = n.indexOf(q);
+  if (pos >= 0) score += 100 - Math.min(50, pos);   // whole query as a substring
+  const toks = q.split(/\s+/).filter(function (t) { return t.length >= 2; });
+  if (!toks.length) return score;
+  let hits = 0;
+  toks.forEach(function (t) { if (n.indexOf(t) >= 0) { hits++; score += 10; } });
+  if (hits === toks.length) score += 30;            // every token present
+  return score;
+}
+
+/** Pure (Node-pinned): one payor row → the result object, columns resolved by
+ *  header name. Unmatched non-empty headers become generic details entries. */
+function insPayorRowObj_(headers, row) {
+  const out = { name: String(row[0] == null ? '' : row[0]).trim(), waystar: '', networkStatus: '', qualification: '', reimbursement: '', details: [] };
+  for (let c = 1; c < headers.length; c++) {
+    const h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (!h) continue;
+    const v = String(row[c] == null ? '' : row[c]).trim();
+    if (/waystar/i.test(h)) out.waystar = v;
+    else if (/network/i.test(h)) out.networkStatus = v;
+    else if (/qualif/i.test(h)) out.qualification = v;   // the source header is misspelled "Qualifaction" — match the stem
+    else if (/reimbur/i.test(h)) out.reimbursement = v;
+    else if (v) out.details.push({ label: h, value: v });
+  }
+  return out;
+}
+
+/** Rep-callable, read-only, no lock. Returns the top-N payor matches for a
+ *  query — never a single confident guess: ties and near-misses ride along so
+ *  the REP judges ambiguity. A no-match result carries notFound:true (the
+ *  client renders the operator's "plan not listed → follow the TRY criteria"
+ *  guidance). Unconfigured (no tab) says exactly what to create. */
+function searchInsurancePayors(query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const q = String(query || '').trim();
+    if (q.length < 2) return { matches: [], total: 0 };
+    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
+    if (!sh) return { error: 'Insurance lookup is not set up yet — import the payor CSV into a tab named "' + INS_PAYOR_TAB + '" in the KB spreadsheet.' };
+    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+    if (last < 2) return { matches: [], total: 0 };
+    const width = sh.getLastColumn();
+    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    // Name-column scan for scoring; full rows fetched only for the top N.
+    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    const scored = [];
+    for (let i = 0; i < names.length; i++) {
+      const sc = insPayorScore_(names[i][0], q);
+      if (sc > 0) scored.push({ i: i, score: sc });
+    }
+    scored.sort(function (a, b) { return b.score - a.score; });
+    const top = scored.slice(0, INS_PAYOR_TOP);
+    const matches = top.map(function (t) {
+      // getDisplayValues — a foreign-authored sheet's formats are not ours to
+      // reinterpret (the INV-64 discipline).
+      const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
+      return insPayorRowObj_(headers, row);
+    });
+    return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP };
+  } catch (err) { return { error: 'Insurance lookup failed: ' + err.message }; }
+}
+
 
 function kbGetUsageStats() {
   try {

@@ -1188,6 +1188,7 @@ function _runAllTests() {
   _integrationTest('auditPanel_searchAndHistory',               test_auditPanel_searchAndHistory);
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
+  _integrationTest('insurance_search_requiresEmployee',         test_insurance_search_requiresEmployee);
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
@@ -5151,6 +5152,9 @@ function test_managerGates_rejectNonManager() {
     // SPANISH_INBOX_MEMBERS rep — not pure manager-only; asserted separately below.)
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
+    // Intake volume (Team Metrics block, operator 2026-08-25) — gate precedes
+    // any submission-tab read.
+    ['getIntakeVolumeStats',           function () { return getIntakeVolumeStats(); }],
     // Coaching (Training module) — the gate fires BEFORE any HR_DOCS_SS_ID
     // access, so these run safely even where the property is unset.
     ['createCoaching',                 function () { return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', whatHappened: 'gate' }); }],
@@ -5650,6 +5654,16 @@ function test_adminEmails_subsetOfManagersEnforced() {
 
 // kbRecordView is rep-callable (append-only KbViews row) but must reject an
 // unregistered caller BEFORE touching the KB spreadsheet.
+// Insurance payor lookup (operator 2026-08-25): rep-callable, so the gate case
+// is unregistered-caller-rejected (the kbRecordView idiom). The search logic
+// itself is Node-pinned (insPayorScore_/insPayorRowObj_/insToneCls_).
+function test_insurance_search_requiresEmployee() {
+  const r = _asUser('not-a-registered-user@example.invalid', function () {
+    return searchInsurancePayors('aetna');
+  });
+  _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any sheet read');
+}
+
 function test_kb_recordView_requiresEmployee() {
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return kbRecordView('some-item', 'drawer:callNotes');
