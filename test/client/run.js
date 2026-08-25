@@ -12545,8 +12545,15 @@ test('KBI-2: ingest reuses the production converters, needs no advanced service,
   assert.ok(!/enabledAdvancedServices/.test(appsscript),
     'and nothing is declared in appsscript.json — a restricted domain costs the CONVERSION, never the deploy');
   // Every fallback SAYS what the reader loses (INV-187).
-  assert.ok(/only its TITLE is searchable/.test(f), 'the embed fallback names the consequence');
-  assert.ok(/could not be converted/.test(f), 'and a refused conversion names itself rather than silently embedding');
+  // BOTH embed paths must name the consequence, and they are different
+  // sentences: a REFUSED conversion, and a format that was never convertible.
+  // (The first write of this pin matched one phrase that appears in both, so
+  // deleting either message still passed — weaker than the property.)
+  assert.strictEqual((f.match(/only its TITLE is searchable/g) || []).length, 2,
+    'the refused-conversion note AND the never-convertible fallback each say what the reader loses');
+  assert.ok(/could not be converted to a Google/.test(f), 'a refused conversion names itself rather than silently embedding');
+  assert.ok(/warnings: convertNote \? \[convertNote\]/.test(f),
+    'and the final embed return carries one of them — never an empty warnings list');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
