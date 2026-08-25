@@ -134,6 +134,29 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyCallNotes: { notes: [note(0), note(1), note(2)], autoCopyFormat: '', timezone: 'Asia/Kolkata' },
     getMyPinnedCallNotes: { notes: [note(9, { subformData: { pinned: true, pinnedAt: ts(daysAgo(2), '15:00:00'), flags: [], tags: ['complex-case'] }, dateLocal: daysAgo(2), timestamp: ts(daysAgo(2), '14:58:00'), flagType: '' })] },
     getMyTrainingQA: { items: [], notes: [] },
+    // The editor file-drop: a FUNCTION, because the response shape depends on
+    // the file it was handed (text -> article, other -> embed) and the client
+    // branches on `kind`.
+    kbIngestFile: function (p) {
+      var name = (p && p.name) || 'file';
+      var title = name.replace(/\.[a-z0-9]+$/i, '');
+      if (/\.(md|markdown|txt|text)$/i.test(name)) {
+        return { success: true, kind: 'article', title: title, warnings: [],
+          markdown: '# ' + title + '\n\nIngested from an uploaded file.' };
+      }
+      if (/\.csv$/i.test(name)) {
+        return { success: true, kind: 'article', title: title,
+          warnings: ['A CSV becomes a table for READING. If this is a lookup the app should QUERY (like the payor table), import it under Admin → Config → Reference data tables instead.'],
+          markdown: '| Payor | Status |\n| --- | --- |\n| Aetna | In-Network |' };
+      }
+      if (/\.docx$/i.test(name)) {
+        return { success: true, kind: 'article', title: title, converted: true,
+          warnings: ['2 image(s) marked for export'], markdown: '# ' + title + '\n\nConverted from a Word document.' };
+      }
+      return { success: true, kind: 'embed', title: title,
+        driveUrl: 'https://drive.google.com/file/d/mock-upload/view',
+        warnings: ['Attached as an embedded file — readable in the app, but only its TITLE is searchable. Convert it to a Google Doc or Sheet in Drive and re-drop it to get a full article.'] };
+    },
     // Operator 2026-08-25 — Reference data tables (Admin → Config). Shapes
     // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
     getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',

@@ -22464,6 +22464,186 @@ function kbConvertDriveSheet(payload) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  KB FILE INGEST — drag/drop or pick a LOCAL file in the editor
+//  (operator 2026-08-25)
+//
+//  Until now a document could only enter Reference two ways: paste markdown,
+//  or put the file in Drive by hand and paste its share URL. This takes the
+//  file directly. It is READ-ONLY with respect to the KB sheet — like the two
+//  converters (INV-115), it returns content for REVIEW and the normal
+//  kbSaveItem persists it.
+//
+//  WHAT HAPPENS DEPENDS ON THE FILE, and the split is a capability fact, not a
+//  preference:
+//   • .md/.markdown/.txt — the bytes ARE the article body. No Drive round trip.
+//   • .csv — parsed and handed to the PRODUCTION sheet converter
+//     (kbSheetGridToMarkdown_), so a CSV becomes the same GFM table an
+//     imported Sheet would. No second markdown generator to drift.
+//   • anything else (.docx/.pdf/.xlsx/…) — Apps Script cannot parse these
+//     natively. The file is uploaded to the KB Drive folder and, when the
+//     format is convertible, we ASK DRIVE to convert it (see below) and run
+//     the existing converter over the result. If that is refused, the file
+//     still lands in Drive and comes back as an EMBED — the thing the
+//     operator would have created by hand — with the reason NAMED (INV-187).
+//
+//  THE CONVERSION DELIBERATELY DOES NOT USE THE ADVANCED DRIVE SERVICE. That
+//  would mean declaring a dependency in appsscript.json, and if the domain
+//  restricts the API the whole project's authorization is at risk — a bad
+//  trade for a convenience. Instead we call the Drive REST endpoint with the
+//  token the script ALREADY holds (DriveApp is authorized today for the KB
+//  images folder — same scope), inside a try/catch that degrades to the embed
+//  path. Nothing new is declared and nothing new must be granted.
+const KB_INGEST_MAX_CHARS = 6000000;          // ~4.5MB after base64 decode
+const KB_INGEST_TEXT_EXT = /\.(md|markdown|txt|text)$/i;
+const KB_INGEST_CSV_EXT = /\.csv$/i;
+// Formats Drive can convert to a native Google file. Anything outside this map
+// goes straight to the embed path — we never pretend a .pdf became an article.
+const KB_INGEST_CONVERT = {
+  docx: { mime: 'application/vnd.google-apps.document',    kind: 'doc' },
+  doc:  { mime: 'application/vnd.google-apps.document',    kind: 'doc' },
+  rtf:  { mime: 'application/vnd.google-apps.document',    kind: 'doc' },
+  odt:  { mime: 'application/vnd.google-apps.document',    kind: 'doc' },
+  xlsx: { mime: 'application/vnd.google-apps.spreadsheet', kind: 'sheet' },
+  xls:  { mime: 'application/vnd.google-apps.spreadsheet', kind: 'sheet' },
+  ods:  { mime: 'application/vnd.google-apps.spreadsheet', kind: 'sheet' },
+};
+
+/** Pure (Node-pinned): what to DO with a file, decided by its name alone.
+ *  Kept separate from the I/O so the routing is testable — it is the part
+ *  that decides whether a rep ends up with a searchable article or an
+ *  iframe. */
+function kbIngestPlan_(fileName) {
+  const name = String(fileName || '').trim();
+  if (!name) return { kind: 'reject', reason: 'The file has no name.' };
+  if (KB_INGEST_TEXT_EXT.test(name)) return { kind: 'text' };
+  if (KB_INGEST_CSV_EXT.test(name)) return { kind: 'csv' };
+  const m = /\.([a-z0-9]+)$/i.exec(name);
+  const ext = m ? m[1].toLowerCase() : '';
+  if (Object.prototype.hasOwnProperty.call(KB_INGEST_CONVERT, ext)) {
+    return { kind: 'convert', ext: ext, target: KB_INGEST_CONVERT[ext].mime, driveKind: KB_INGEST_CONVERT[ext].kind };
+  }
+  return { kind: 'embed', ext: ext };
+}
+
+/** Upload bytes to the KB folder, optionally asking Drive to CONVERT them to
+ *  a native Google file. Returns {fileId, converted} or throws. Uses the
+ *  script's own OAuth token via UrlFetchApp — no advanced service, no new
+ *  declared scope (see the section note). */
+function kbDriveUpload_(name, contentType, bytes, targetMime) {
+  const folderId = getOrCreateKbImagesFolder_().getId();
+  if (!targetMime) {
+    const f = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, contentType, name));
+    return { fileId: f.getId(), converted: false };
+  }
+  const boundary = 'kbingest' + Utilities.getUuid();
+  const meta = { name: name, mimeType: targetMime, parents: [folderId] };
+  const head = Utilities.newBlob(
+    '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(meta) + '\r\n' +
+    '--' + boundary + '\r\nContent-Type: ' + (contentType || 'application/octet-stream') + '\r\n\r\n').getBytes();
+  const tail = Utilities.newBlob('\r\n--' + boundary + '--').getBytes();
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'post',
+    contentType: 'multipart/related; boundary=' + boundary,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: head.concat(bytes).concat(tail),
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('Drive conversion refused (HTTP ' + code + ')');
+  const body = JSON.parse(res.getContentText() || '{}');
+  if (!body.id) throw new Error('Drive conversion returned no file id');
+  return { fileId: body.id, converted: true };
+}
+
+/** Ingest one uploaded file for the KB editor. Admin-gated (INV-136 tier —
+ *  KB content authoring, same as the converters it delegates to), READ-ONLY
+ *  w.r.t. the KB sheet, no lock (the only write is a Drive file). */
+function kbIngestFile(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const p = payload || {};
+    const name = String(p.name || '').trim();
+    const b64 = String(p.base64 || '');
+    if (!b64) return { error: 'No file received.' };
+    if (b64.length > KB_INGEST_MAX_CHARS) {
+      return { error: 'That file is too large (limit ~' + Math.round(KB_INGEST_MAX_CHARS / 1400000) + 'MB).' };
+    }
+    const plan = kbIngestPlan_(name);
+    if (plan.kind === 'reject') return { error: plan.reason };
+    const titleGuess = name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+
+    if (plan.kind === 'text') {
+      let text;
+      try { text = Utilities.newBlob(Utilities.base64Decode(b64)).getDataAsString(); }
+      catch (e) { return { error: 'Could not read that file as text.' }; }
+      return { success: true, kind: 'article', markdown: text, title: titleGuess, warnings: [] };
+    }
+
+    if (plan.kind === 'csv') {
+      let text;
+      try { text = Utilities.newBlob(Utilities.base64Decode(b64)).getDataAsString(); }
+      catch (e) { return { error: 'Could not read that file as text.' }; }
+      const grid = kbParseCsv_(text);
+      if (!grid.length) return { error: 'That CSV has no rows.' };
+      // Reuse the PRODUCTION sheet converter — a CSV becomes the same GFM
+      // table an imported Sheet would, with no second generator to drift.
+      const conv = kbSheetGridToMarkdown_({ name: titleGuess, values: grid, merges: [], backgrounds: null });
+      const warnings = (conv.warnings || []).slice();
+      warnings.push('A CSV becomes a table for READING. If this is a lookup the app should QUERY (like the payor table), import it under Admin → Config → Reference data tables instead.');
+      return { success: true, kind: 'article', markdown: conv.markdown, title: titleGuess, warnings: warnings };
+    }
+
+    // Everything else has to reach Drive.
+    const bytes = Utilities.base64Decode(b64);
+    const contentType = String(p.contentType || 'application/octet-stream');
+    let up = null, convertNote = '';
+    if (plan.kind === 'convert') {
+      try { up = kbDriveUpload_(titleGuess || name, contentType, bytes, plan.target); }
+      catch (e) {
+        convertNote = 'This file could not be converted to a Google ' + (plan.driveKind === 'sheet' ? 'Sheet' : 'Doc') +
+          ' (' + e.message + '), so it was attached as an embedded file instead — readable in the app, but only its TITLE is searchable.';
+        up = null;
+      }
+    }
+    if (!up) {
+      try { up = kbDriveUpload_(name, contentType, bytes, null); }
+      catch (e) { return { error: 'Could not upload that file to Drive: ' + e.message }; }
+    }
+    const fileId = up.fileId;
+    if (up.converted) {
+      // Hand the freshly-converted native file to the EXISTING converter, so
+      // the ingest path and the paste-a-Drive-URL path produce byte-identical
+      // articles from the same source.
+      const url = plan.driveKind === 'sheet'
+        ? 'https://docs.google.com/spreadsheets/d/' + fileId + '/edit'
+        : 'https://docs.google.com/document/d/' + fileId + '/edit';
+      const conv = plan.driveKind === 'sheet' ? kbConvertDriveSheet({ driveUrl: url }) : kbConvertDriveDoc({ driveUrl: url });
+      if (conv && !conv.error) {
+        return {
+          success: true, kind: 'article', markdown: conv.markdown || '',
+          title: titleGuess, warnings: (conv.warnings || []).slice(), converted: true,
+        };
+      }
+      // Converted in Drive but the converter refused — the native file is
+      // still better than the original, so embed THAT and say what happened.
+      return {
+        success: true, kind: 'embed', driveUrl: url, title: titleGuess,
+        warnings: [(conv && conv.error) || 'The converted file could not be read as an article — embedded instead.'],
+      };
+    }
+    return {
+      success: true, kind: 'embed',
+      driveUrl: 'https://drive.google.com/file/d/' + fileId + '/view',
+      title: titleGuess,
+      warnings: convertNote ? [convertNote]
+        : ['Attached as an embedded file — readable in the app, but only its TITLE is searchable. Convert it to a Google Doc or Sheet in Drive and re-drop it to get a full article.'],
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 function kbConvertDriveDoc(payload) {
   try {
     const emp = getEmployeeInfo_();

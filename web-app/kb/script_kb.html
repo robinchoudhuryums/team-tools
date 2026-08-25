@@ -190,6 +190,19 @@
   .kb-typetog button { background: var(--paper-2); border: none; padding: 6px 14px; cursor: pointer; font: inherit; color: var(--muted); }
   .kb-typetog button.on { background: var(--accent); color: #fff; }
   .kb-ed-prev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--paper); margin-top: 6px; max-height: 240px; overflow: auto; }
+  /* Operator 2026-08-25 — editor file ingest (drop zone + result note). */
+  .kb-ed-drop {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px dashed var(--border-strong); border-radius: 8px;
+    padding: 14px 12px; margin-bottom: 12px; cursor: pointer; text-align: center;
+    font-size: .78rem; color: var(--muted); background: var(--paper-2);
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .kb-ed-drop:hover, .kb-ed-drop:focus-visible, .kb-ed-drop.is-over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .kb-ed-ingesting { font-size: .78rem; color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .kb-ed-ingested { font-size: .78rem; color: var(--ink); background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+  .kb-ed-warns { margin: 6px 0 0; padding-left: 18px; color: var(--warning-deep); }
+  .kb-ed-warns li { margin: 2px 0; }
   .kb-ed-foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
   /* #4 — draft→publish + revision history */
   .kb-ed-draft { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); cursor: pointer; }
@@ -3528,6 +3541,18 @@ function kbRenderEditor_() {
         '<button type="button" id="kb-tt-article" class="' + (e.type !== 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type !== 'embed') + '" onclick="kbEditorSetType_(\'article\')">Article (markdown)</button>' +
         '<button type="button" id="kb-tt-embed" class="' + (e.type === 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type === 'embed') + '" onclick="kbEditorSetType_(\'embed\')">Embed Drive doc</button>' +
       '</div></div>' +
+      // Operator 2026-08-25 — drop or pick a LOCAL file. What it produces
+      // depends on the format (see kbIngestFile): text/CSV become the article
+      // body with no Drive round trip; a .docx/.xlsx is converted in Drive and
+      // run through the existing converter; anything else lands as an embed
+      // with the reason named. Review-before-save throughout — nothing is
+      // written to the KB until Save.
+      '<div class="kb-ed-drop" id="kb-ed-drop" tabindex="0" role="button"' +
+        ' aria-label="Upload a file to fill this item">' +
+        icon('outbox', 16) + ' <span>Drop a file here, or <u>choose one</u> — .md, .txt, .csv, .docx, .xlsx, or any file to embed</span>' +
+      '</div>' +
+      '<input type="file" id="kb-ed-file" aria-label="File to upload into this item" style="display:none">' +
+      '<div id="kb-ed-ingest"></div>' +
       '<div id="kb-ed-body"></div>' +
     '</div>' +
     '<div class="kb-ed-foot">' +
@@ -3536,7 +3561,87 @@ function kbRenderEditor_() {
       '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
+  kbBindEditorDrop_(ov);
   kbRenderEditorBody_();
+}
+
+/** Wire the editor's file drop zone. Listeners are scoped to the OVERLAY, so
+ *  they die with the modal — the same structural immunity the paste-upload
+ *  listener has (the Intake M7 document-listener leak class). */
+function kbBindEditorDrop_(ov) {
+  var zone = ov.querySelector('#kb-ed-drop');
+  var input = ov.querySelector('#kb-ed-file');
+  if (!zone || !input) return;
+  zone.addEventListener('click', function () { input.click(); });
+  zone.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener('change', function () {
+    if (input.files && input.files[0]) kbIngestFile_(input.files[0]);
+  });
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-over'); });
+  });
+  zone.addEventListener('dragleave', function () { zone.classList.remove('is-over'); });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault(); zone.classList.remove('is-over');
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) kbIngestFile_(f);
+  });
+}
+
+var KB_INGEST_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Read the file, ask the server what it became, and PRE-FILL the editor —
+ *  the kbConvertDriveDoc flow exactly: the manager reviews and the normal
+ *  Save persists it. Nothing is written to the KB here. */
+function kbIngestFile_(file) {
+  var slot = document.getElementById('kb-ed-ingest');
+  if (!slot) return;
+  if (file.size > KB_INGEST_MAX_BYTES) {
+    slot.innerHTML = errorStateHtml_('That file is ' + Math.round(file.size / 1048576) +
+      'MB — the limit is ' + Math.round(KB_INGEST_MAX_BYTES / 1048576) + 'MB.');
+    return;
+  }
+  slot.innerHTML = '<div class="kb-ed-ingesting" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Reading ' + esc(file.name) + '…</div>';
+  var reader = new FileReader();
+  reader.onerror = function () { slot.innerHTML = errorStateHtml_('Could not read that file.'); };
+  reader.onload = function () {
+    var b64 = String(reader.result || '');
+    var comma = b64.indexOf(',');
+    b64 = comma >= 0 ? b64.slice(comma + 1) : b64;
+    var el = document.getElementById('kb-ed-ingest');
+    if (el) el.innerHTML = '<div class="kb-ed-ingesting" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Ingesting ' + esc(file.name) + '…</div>';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        var host = document.getElementById('kb-ed-ingest');
+        if (!host) return;                       // editor closed mid-flight
+        if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Could not ingest that file'); return; }
+        kbSnapshotEditor_();
+        if (!KB_EDIT.title && res.title) KB_EDIT.title = res.title;
+        if (res.kind === 'article') { KB_EDIT.type = 'article'; KB_EDIT.body = res.markdown || ''; }
+        else { KB_EDIT.type = 'embed'; KB_EDIT.driveUrl = res.driveUrl || ''; }
+        var t = document.getElementById('kb-ed-title');
+        if (t && KB_EDIT.title) t.value = KB_EDIT.title;
+        kbTypeTabSet_(document.getElementById('kb-tt-article'), KB_EDIT.type !== 'embed');
+        kbTypeTabSet_(document.getElementById('kb-tt-embed'), KB_EDIT.type === 'embed');
+        kbRenderEditorBody_();
+        var warns = res.warnings || [];
+        host.innerHTML = '<div class="kb-ed-ingested">' +
+          icon('check', 13) + ' <strong>' + esc(file.name) + '</strong> ingested as ' +
+          (res.kind === 'article' ? 'an article' : 'an embedded file') +
+          (res.converted ? ' (converted in Drive first)' : '') +
+          ' — review below, then Save.' +
+          (warns.length ? '<ul class="kb-ed-warns">' + warns.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') +
+        '</div>';
+      })
+      .withFailureHandler(function (err) {
+        var host = document.getElementById('kb-ed-ingest');
+        if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Could not ingest that file');
+      })
+      .kbIngestFile({ name: file.name, contentType: file.type || '', base64: b64 });
+  };
+  reader.readAsDataURL(file);
 }
 
 /** A11 (cycle 13) — set one editor type-tab's visual AND exposed state. Both
