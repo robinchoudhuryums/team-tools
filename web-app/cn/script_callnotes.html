@@ -1647,6 +1647,26 @@
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* Reference data tables (operator 2026-08-25) — CSV upload for an
+     allowlisted KB sheet tab. */
+  .cn-dt-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; background: var(--paper); }
+  .cn-dt-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .cn-dt-title { font-family: var(--ui); font-size: 13px; font-weight: 600; color: var(--ink); }
+  .cn-dt-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .cn-dt-state { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .cn-dt-drop {
+    margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+    padding: 14px 10px; font-size: 12px; color: var(--muted); cursor: pointer;
+    background: var(--paper-2); transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+    text-align: center;
+  }
+  .cn-dt-drop:hover, .cn-dt-drop:focus-visible, .cn-dt-drop.is-over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .cn-dt-prevbox { margin-top: 10px; border-left: 3px solid var(--accent); background: var(--paper-2); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .cn-dt-prevhead { font-size: 12px; color: var(--ink); }
+  .cn-dt-note { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; word-break: break-word; }
+  .cn-dt-warn { font-size: 11px; color: var(--warning-deep); margin-top: 6px; line-height: 1.5; }
+  @media (max-width: 560px) { .cn-dt-state { margin-left: 0; } }
   /* Auto-tag rules — compact editor (operator 2026-08-18): slim hairline rows,
      2-up at wide widths, and the LIST scrolls internally past ~8 visible rows
      so the card never extends indefinitely as rules accumulate (cap 50). */
@@ -10237,6 +10257,196 @@ function cnRenderFlagRows_(registry, values) {
 
 /** Loads the enrollment roster into the Admin tab's enrollment panel and binds
  *  a one-time delegated click handler for the per-rep Provision buttons. */
+// ── Reference data tables (Admin → Config, operator 2026-08-25) ─────────────
+// Upload a CSV into an ALLOWLISTED KB sheet tab. The server owns the parse and
+// the allowlist; the client only reads the file and shows what came back — so
+// there is no client-side CSV parser to drift from the one that writes (the
+// two-stage email posture applied to a destructive import: the same server
+// parse drives the preview and the write, via a dryRun flag).
+const CN_DTABLE_MAX_BYTES = 4 * 1024 * 1024;
+
+function cnAdminLoadDataTables_() {
+  var slot = document.getElementById('cn-admin-dtables');
+  if (!slot) return;
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('cn-admin-dtables');
+      if (!el) return;
+      if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load the data tables'); return; }   // A12
+      el.innerHTML = (res.tables || []).map(cnDTableRowHtml_).join('') || '<div class="no-data">No data tables are configured.</div>';
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('cn-admin-dtables');
+      if (el) el.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load the data tables');
+    })
+    .getKbDataTables();
+}
+
+function cnDTableRowHtml_(t) {
+  // An UNREADABLE tab is not an empty one (INV-187) — say which it is.
+  var state = t.unreadable
+    ? '<span style="color:var(--warning-deep)">could not be read</span>'
+    : (t.present ? esc(String(t.rows)) + ' row(s) · ' + esc(String(t.cols)) + ' column(s)'
+                 : '<span style="color:var(--muted-2)">not imported yet</span>');
+  return '<div class="cn-dt-row" data-dt-key="' + esc(t.key) + '">' +
+    '<div class="cn-dt-head">' +
+      '<div><div class="cn-dt-title">' + esc(t.label) + '</div>' +
+        '<div class="cn-dt-sub">' + esc(t.describe) + ' · tab <code>' + esc(t.tab) + '</code></div></div>' +
+      '<div class="cn-dt-state">' + state + '</div>' +
+    '</div>' +
+    '<div class="cn-dt-drop" tabindex="0" role="button" aria-label="Choose or drop a CSV for ' + esc(t.label) + '"' +
+      ' data-dt-drop="' + esc(t.key) + '">' +
+      icon('outbox', 16) + ' <span>Drop a .csv here, or <u>choose a file</u></span>' +
+    '</div>' +
+    '<input type="file" accept=".csv,text/csv" class="cn-dt-file" id="cn-dt-file-' + esc(t.key) + '"' +
+      ' aria-label="CSV file for ' + esc(t.label) + '" style="display:none">' +
+    '<div class="cn-dt-preview" id="cn-dt-prev-' + esc(t.key) + '"></div>' +
+  '</div>';
+}
+
+/** One delegated set of handlers for every table row — bound once on the
+ *  Admin pane, so a panel reload never stacks listeners. */
+function cnAdminBindDataTables_(pane) {
+  if (!pane || pane._dtBound) return;
+  pane._dtBound = true;
+  pane.addEventListener('click', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (drop) { var f = document.getElementById('cn-dt-file-' + drop.getAttribute('data-dt-drop')); if (f) f.click(); return; }
+    var btn = e.target.closest ? e.target.closest('[data-dt-import]') : null;
+    if (btn) cnDTableImport_(btn.getAttribute('data-dt-import'), btn);
+  });
+  pane.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (!drop) return;
+    e.preventDefault();
+    var f = document.getElementById('cn-dt-file-' + drop.getAttribute('data-dt-drop'));
+    if (f) f.click();
+  });
+  pane.addEventListener('change', function (e) {
+    if (!e.target || !e.target.classList || !e.target.classList.contains('cn-dt-file')) return;
+    var row = e.target.closest('[data-dt-key]');
+    if (row && e.target.files && e.target.files[0]) cnDTableRead_(row.getAttribute('data-dt-key'), e.target.files[0]);
+  });
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    pane.addEventListener(evt, function (e) {
+      var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+      if (!drop) return;
+      e.preventDefault(); drop.classList.add('is-over');
+    });
+  });
+  pane.addEventListener('dragleave', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (drop) drop.classList.remove('is-over');
+  });
+  pane.addEventListener('drop', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (!drop) return;
+    e.preventDefault(); drop.classList.remove('is-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) cnDTableRead_(drop.getAttribute('data-dt-drop'), file);
+  });
+}
+
+/** Read the picked/dropped file and ask the server what it holds (dryRun). */
+function cnDTableRead_(key, file) {
+  var prev = document.getElementById('cn-dt-prev-' + key);
+  if (!prev) return;
+  if (file.size > CN_DTABLE_MAX_BYTES) {
+    prev.innerHTML = errorStateHtml_('That file is ' + Math.round(file.size / 1048576) + 'MB — the limit is ' +
+      Math.round(CN_DTABLE_MAX_BYTES / 1048576) + 'MB. Trim unused columns or split it.');
+    return;
+  }
+  if (!/\.csv$/i.test(file.name || '')) {
+    prev.innerHTML = errorStateHtml_('This table takes a .csv — export the sheet as CSV first (File → Download → Comma-separated values).');
+    return;
+  }
+  prev.innerHTML = '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Reading ' + esc(file.name) + '…</div>';
+  var reader = new FileReader();
+  reader.onerror = function () { prev.innerHTML = errorStateHtml_('Could not read that file.'); };
+  reader.onload = function () {
+    var b64 = String(reader.result || '');
+    var comma = b64.indexOf(',');
+    b64 = comma >= 0 ? b64.slice(comma + 1) : b64;
+    CN_STATE.dtablePending = CN_STATE.dtablePending || {};
+    CN_STATE.dtablePending[key] = { b64: b64, name: file.name };
+    var requestedView = currentView;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (currentView !== requestedView) return;
+        var el = document.getElementById('cn-dt-prev-' + key);
+        if (!el) return;
+        if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Could not read that file'); return; }
+        el.innerHTML = cnDTablePreviewHtml_(key, file.name, res);
+      })
+      .withFailureHandler(function (err) {
+        if (currentView !== requestedView) return;
+        var el = document.getElementById('cn-dt-prev-' + key);
+        if (el) el.innerHTML = errorStateHtml_((err && err.message) || 'Could not read that file');
+      })
+      .kbImportDataTable(key, b64, { dryRun: true });
+  };
+  reader.readAsDataURL(file);
+}
+
+function cnDTablePreviewHtml_(key, fileName, r) {
+  var warn = (r.warnings || []).length
+    ? '<div class="cn-dt-warn" role="alert">' + (r.warnings || []).map(function (w) { return esc(w); }).join('<br>') + '</div>' : '';
+  // Duplicates + blank names are REPORTED, never silently merged — the
+  // operator already decided to keep the duplicate payor rows (2026-08-25).
+  var dupes = (r.duplicateNames || []).length
+    ? '<div class="cn-dt-note">' + esc(String(r.duplicateNames.length)) + ' duplicate name(s) — kept as-is: ' +
+        (r.duplicateNames || []).map(function (d) { return esc(d); }).join(' · ') + '</div>' : '';
+  var blanks = r.blankNameCount
+    ? '<div class="cn-dt-note">' + esc(String(r.blankNameCount)) + ' row(s) have no name in the first column' +
+        ((r.blankNameRows || []).length ? ' (rows ' + (r.blankNameRows || []).join(', ') + (r.blankNameCount > (r.blankNameRows || []).length ? ', …' : '') + ')' : '') +
+        ' — they will import but can never match a search.</div>' : '';
+  var heads = (r.headers || []).slice(0, 8).map(function (h) { return '<code>' + esc(h || '(blank)') + '</code>'; }).join(' ');
+  return '<div class="cn-dt-prevbox">' +
+    '<div class="cn-dt-prevhead">' + esc(fileName) + ' — <strong>' + esc(String(r.rows)) + '</strong> row(s) × ' +
+      esc(String(r.cols)) + ' column(s)</div>' +
+    '<div class="cn-dt-note">Columns: ' + heads + ((r.headers || []).length > 8 ? ' +' + ((r.headers || []).length - 8) + ' more' : '') + '</div>' +
+    warn + dupes + blanks +
+    '<div class="cn-dt-note">Replaces the <strong>' + esc(String(r.replacingRows)) + '</strong> row(s) in <code>' + esc(r.tab) + '</code> today.</div>' +
+    '<button type="button" class="btn-modal-ok" style="margin:10px 0 0" data-dt-import="' + esc(key) + '">Replace ' + esc(r.tab) + '</button>' +
+  '</div>';
+}
+
+function cnDTableImport_(key, btn) {
+  var pend = (CN_STATE.dtablePending || {})[key];
+  if (!pend) { showToast('Pick the file again', 'toast-warn'); return; }
+  uiConfirm({
+    title: 'Replace the table',
+    message: 'This overwrites every row in that tab with the contents of ' + pend.name +
+      '. The previous contents remain recoverable from the KB spreadsheet’s File → Version history. Continue?',
+    confirmLabel: 'Replace',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> Importing…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) {
+          btn.disabled = false; btn.textContent = 'Replace';
+          showToast((res && res.error) || 'Import failed', 'toast-error');
+          return;
+        }
+        showToast('Imported ' + res.rows + ' row(s) into ' + res.tab, 'toast-success');
+        if (CN_STATE.dtablePending) delete CN_STATE.dtablePending[key];
+        cnAdminLoadDataTables_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Replace';
+        showToast('Import failed: ' + ((err && err.message) || 'Server error'), 'toast-error');
+      })
+      .kbImportDataTable(key, pend.b64, { dryRun: false });
+  });
+}
+
 // ── Team-member onboarding (Admin → Config → Team Members) ──────────────────
 
 function cnAdminLoadOnboarding_() {
@@ -10744,6 +10954,16 @@ function cnRenderAdminBody_(cfg) {
       '<button class="btn-modal-ok" id="cn-admin-save-kbai" style="margin:10px 0 0">Save AI Settings</button>' +
     '</div>' : '') +
 
+    // Reference data tables (operator 2026-08-25) — replace an ALLOWLISTED KB
+    // sheet tab from a CSV. The insurance lookup queries a TAB, not an
+    // article, so refreshing it was a manual File → Import → rename; this is
+    // that step, with a preview of what is about to be overwritten.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('clipboardList', 14) + ' Reference data tables</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Upload a CSV to refresh a lookup table the app queries (these are <strong>datasets</strong>, not articles — the insurance lookup searches its columns and tones its answers). Drop a file or pick one, review what it holds, then Replace. The previous contents stay recoverable through the KB spreadsheet’s <strong>File → Version history</strong>.</div>' +
+      '<div id="cn-admin-dtables">' + loSweep() + '</div>' +
+    '</div>' +
+
     // Team-member onboarding (operator request 2026-08-07, pre-pilot): the
     // roster row was the one remaining manual onboarding step. Add form +
     // per-rep readiness + offboard, all served by getOnboardingPanel.
@@ -10770,6 +10990,8 @@ function cnRenderAdminBody_(cfg) {
 
   cnAdminLoadEnrollment_();
   cnAdminLoadOnboarding_();
+  cnAdminBindDataTables_(body);   // ONE delegated bind on the pane — a panel reload never stacks listeners
+  cnAdminLoadDataTables_();
 
   document.getElementById('cn-admin-reconcile').addEventListener('click', function () {
     var btn = this;

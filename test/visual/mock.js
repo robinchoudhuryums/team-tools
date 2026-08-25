@@ -134,6 +134,19 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyCallNotes: { notes: [note(0), note(1), note(2)], autoCopyFormat: '', timezone: 'Asia/Kolkata' },
     getMyPinnedCallNotes: { notes: [note(9, { subformData: { pinned: true, pinnedAt: ts(daysAgo(2), '15:00:00'), flags: [], tags: ['complex-case'] }, dateLocal: daysAgo(2), timestamp: ts(daysAgo(2), '14:58:00'), flagType: '' })] },
     getMyTrainingQA: { items: [], notes: [] },
+    // Operator 2026-08-25 — Reference data tables (Admin → Config). Shapes
+    // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
+    getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',
+      label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
+      rows: 1035, cols: 25, present: true }] },
+    kbImportDataTable: function (key, b64, opts) {
+      var dry = !opts || opts.dryRun !== false;
+      var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
+        headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
+        sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
+        warnings: [], replacingRows: 1035 };
+      return dry ? Object.assign(base, { dryRun: true }) : Object.assign(base, { imported: true });
+    },
     // Operator 2026-08-25 — the composer's editable Note Reference + the
     // Preview loader. BOTH are FUNCTIONS of their arguments (the F14 rule):
     // updateCallNote's response ECHOES the edited fields (the client re-points

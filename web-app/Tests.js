@@ -5119,6 +5119,9 @@ function test_managerGates_rejectNonManager() {
     ['getOnboardingPanel',             function () { return getOnboardingPanel(); }],
     ['getOnboardingCdrReadiness',      function () { return getOnboardingCdrReadiness(); }],
     ['getViewUsageStats',              function () { return getViewUsageStats(); }],
+    ['getKbDataTables',                function () { return getKbDataTables(); }],
+    // dryRun defaults TRUE, so even a gate-test call can never write.
+    ['kbImportDataTable',              function () { return kbImportDataTable('InsurancePayors', '', {}); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],

@@ -20190,6 +20190,211 @@ function searchInsurancePayors(query) {
 }
 
 
+// ════════════════════════════════════════════════════════════════════════════
+//  REFERENCE DATA TABLES — operator-uploaded CSV → a NAMED KB sheet tab
+//  (operator 2026-08-25)
+//
+//  The insurance lookup queries a sheet TAB, not an article: it has its own
+//  search endpoint, tone legend and column semantics, so the payor CSV is a
+//  QUERYABLE DATASET, not prose. Updating it meant File → Import → "Insert new
+//  sheet(s)" → rename the tab by hand, every time — the one manual step left in
+//  that feature. This replaces it with an upload.
+//
+//  THE ALLOWLIST IS THE SECURITY BOUNDARY. `KB_DATA_TABLES` names the only tabs
+//  an upload may write, and each entry says what the app expects of the file.
+//  Without it this would be an arbitrary sheet-writer aimed at the KB store —
+//  an admin-gated endpoint that can overwrite ANY tab is a different (and much
+//  worse) thing than one that can refresh a known dataset. A tab not in the map
+//  is refused BY NAME, and adding one is a deliberate code change beside the
+//  reader that consumes it.
+const KB_DATA_TABLES = {
+  InsurancePayors: {
+    tab: INS_PAYOR_TAB,
+    label: 'Insurance payor acceptance',
+    describe: 'Payor / plan rows behind the Reference insurance lookup',
+    // The FIRST column is the name column searchInsurancePayors scans — a CSV
+    // whose first column is something else would silently search the wrong
+    // field and return nothing for every real query, which reads as "we do not
+    // take that plan". Warn, do not block: the operator owns the source file
+    // and may legitimately re-title the column.
+    // Measured against the operator's real export, whose first column is
+    // titled 'Insurance' — a warning that fires on the actual file is a
+    // false alarm, and false alarms are how a check stops being read
+    // (INV-186 applied to a one-off validator).
+    nameHeader: /payor|plan|name|insur/i,
+    minCols: 2,
+  },
+};
+const KB_DATA_TABLE_MAX_ROWS = 5000;
+const KB_DATA_TABLE_MAX_COLS = 60;
+const KB_DATA_TABLE_MAX_CHARS = 6000000;   // ~4.5MB of CSV after base64 decode
+
+/** Pure (Node-pinned) RFC4180-ish CSV parse. Handles quoted fields with
+ *  embedded commas, quotes ("" escapes) and NEWLINES — the payor file has all
+ *  three, and a naive split on ',' silently shifts every column after the
+ *  first quoted comma, which is the failure mode this exists to prevent.
+ *  Returns a rectangular grid padded to the widest row. */
+function kbParseCsv_(text) {
+  const src = String(text || '').replace(/^﻿/, '');   // strip a BOM — Excel writes one
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+      continue;
+    }
+    if (ch === '"') { inQ = true; continue; }
+    if (ch === ',') { row.push(field); field = ''; continue; }
+    if (ch === '\r') continue;                              // CRLF → LF
+    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
+    field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  // Drop trailing all-empty rows (a file ending in a newline yields one).
+  while (rows.length && rows[rows.length - 1].every(function (c) { return String(c).trim() === ''; })) rows.pop();
+  const width = rows.reduce(function (w, r) { return Math.max(w, r.length); }, 0);
+  return rows.map(function (r) {
+    const out = r.slice();
+    while (out.length < width) out.push('');
+    return out;
+  });
+}
+
+/** Pure (Node-pinned): what the operator is about to overwrite, and anything
+ *  worth knowing before they do. Facts only — a duplicate name or an odd
+ *  header is REPORTED, never silently "fixed" (the operator decides; they
+ *  already chose to keep the duplicate payor rows). */
+function kbDataTableSummary_(grid, spec) {
+  const headers = (grid[0] || []).map(function (h) { return String(h || '').trim(); });
+  const dataRows = grid.length > 1 ? grid.length - 1 : 0;
+  const warnings = [];
+  if (!grid.length) warnings.push('The file has no rows.');
+  if (headers.length < (spec.minCols || 2)) warnings.push('Only ' + headers.length + ' column(s) — this table expects at least ' + (spec.minCols || 2) + '.');
+  if (spec.nameHeader && headers.length && !spec.nameHeader.test(headers[0])) {
+    warnings.push('The first column is "' + (headers[0] || '(blank)') + '" — the lookup searches THAT column, so it should hold the payor/plan name.');
+  }
+  const blankHeaders = headers.filter(function (h) { return !h; }).length;
+  if (blankHeaders) warnings.push(blankHeaders + ' column(s) have no header — those attributes will render with a blank label.');
+  // Duplicate + blank names in the searched column: the operator asked to be
+  // TOLD about these rather than have them merged (2026-08-25).
+  const seen = {}, dupes = [], blanks = [];
+  for (let r = 1; r < grid.length; r++) {
+    const nm = String(grid[r][0] || '').trim();
+    if (!nm) { blanks.push(r + 1); continue; }
+    const k = nm.toLowerCase();
+    if (seen[k]) { if (dupes.length < 12) dupes.push(nm + ' (rows ' + seen[k] + ', ' + (r + 1) + ')'); }
+    else seen[k] = r + 1;
+  }
+  return {
+    headers: headers,
+    rows: dataRows,
+    cols: headers.length,
+    sample: grid.slice(1, 4).map(function (r) { return r.slice(0, 6); }),
+    duplicateNames: dupes,
+    blankNameRows: blanks.slice(0, 12),
+    blankNameCount: blanks.length,
+    warnings: warnings,
+  };
+}
+
+/** Upload a CSV into one ALLOWLISTED KB sheet tab. Admin-gated (INV-136 tier —
+ *  it rewrites a store the whole team reads), locked (INV-01), audited.
+ *  `dryRun` returns the summary WITHOUT writing, so the same parse drives the
+ *  preview and the write — one code path, no client/server parser to drift
+ *  (the two-stage email posture applied to a destructive import).
+ *  The write REPLACES the tab's contents; Sheets' own File → Version history
+ *  is the undo, which the client's confirm says out loud. */
+function kbImportDataTable(tabKey, csvBase64, opts) {
+  const o = opts || {};
+  const dryRun = o.dryRun !== false;          // default DRY — a bare call never writes
+  const lock = dryRun ? null : LockService.getScriptLock();
+  if (lock) lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const spec = Object.prototype.hasOwnProperty.call(KB_DATA_TABLES, String(tabKey)) ? KB_DATA_TABLES[String(tabKey)] : null;
+    if (!spec) return { error: 'Unknown data table: ' + String(tabKey) };
+
+    const b64 = String(csvBase64 || '');
+    if (!b64) return { error: 'No file received.' };
+    if (b64.length > KB_DATA_TABLE_MAX_CHARS) {
+      return { error: 'That file is too large (limit ~' + Math.round(KB_DATA_TABLE_MAX_CHARS / 1400000) + 'MB). Split it or trim unused columns.' };
+    }
+    let text;
+    try { text = Utilities.newBlob(Utilities.base64Decode(b64)).getDataAsString(); }
+    catch (e) { return { error: 'Could not read that file as text — is it a .csv?' }; }
+
+    const grid = kbParseCsv_(text);
+    if (grid.length < 2) return { error: 'That file has no data rows (a header row plus at least one row is required).' };
+    if (grid.length - 1 > KB_DATA_TABLE_MAX_ROWS) {
+      return { error: grid.length - 1 + ' rows exceeds the ' + KB_DATA_TABLE_MAX_ROWS + '-row limit for this table.' };
+    }
+    if (grid[0].length > KB_DATA_TABLE_MAX_COLS) {
+      return { error: grid[0].length + ' columns exceeds the ' + KB_DATA_TABLE_MAX_COLS + '-column limit for this table.' };
+    }
+    const summary = kbDataTableSummary_(grid, spec);
+
+    const ss = getKbSS_();
+    const existing = ss.getSheetByName(spec.tab);
+    summary.tab = spec.tab;
+    summary.label = spec.label;
+    summary.replacingRows = existing ? Math.max(0, existing.getLastRow() - 1) : 0;
+    if (dryRun) { summary.dryRun = true; return summary; }
+
+    const sh = existing || ss.insertSheet(spec.tab);
+    sh.clear();
+    const range = sh.getRange(1, 1, grid.length, grid[0].length);
+    // Plain-text format BEFORE the write: a payor named "Aetna 5-2024" or a
+    // code like "1/2" would otherwise be coerced to a date/number and the
+    // getDisplayValues reader would hand reps a reformatted value that is not
+    // what the operator's file says (INV-64 — a foreign-authored sheet is
+    // never reinterpreted; here we are the one authoring it, so we pin it).
+    range.setNumberFormat('@');
+    range.setValues(grid);
+    sh.setFrozenRows(1);
+    SpreadsheetApp.flush();
+
+    writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
+      'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows);
+    summary.imported = true;
+    return summary;
+  } catch (err) {
+    return { error: 'Import failed: ' + err.message };
+  } finally {
+    if (lock) lock.releaseLock();
+  }
+}
+
+/** Read-only inventory for the Admin panel: every allowlisted table with what
+ *  is in it now. A tab that does not exist yet reports rows 0 rather than an
+ *  error — that is the pre-first-import state, not a fault. */
+function getKbDataTables() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const ss = getKbSS_();
+    const tables = Object.keys(KB_DATA_TABLES).map(function (k) {
+      const spec = KB_DATA_TABLES[k];
+      const out = { key: k, tab: spec.tab, label: spec.label, describe: spec.describe, rows: 0, cols: 0, present: false };
+      try {
+        const sh = ss.getSheetByName(spec.tab);
+        if (sh) {
+          out.present = true;
+          out.rows = Math.max(0, sh.getLastRow() - 1);
+          out.cols = sh.getLastColumn();
+        }
+      } catch (e) { out.unreadable = true; }   // INV-187 — an unreadable tab is not an empty one
+      return out;
+    });
+    return { tables: tables };
+  } catch (err) { return { error: err.message }; }
+}
+
+
 function kbGetUsageStats() {
   try {
     const callerEmp = getEmployeeInfo_();
