@@ -12269,6 +12269,85 @@ test('B5 wiring: cards render formatted, copy strips, email applies post-esc_, k
     'the highlight uses the warn-soft token (in-app; the email uses the palette hex)');
 });
 
+// ────────────────────────────────────────────────────────────────────────────
+// Operator batch 6 (2026-08-25) — intake-call analytics. Framing is INV-187
+// all the way down: per-call CDR attribution does not exist (DQE is one row
+// per agent+date — the settled cycle-14 Phase 0 fact), so the feature is
+// honest COUNTS beside the KPIs, never a modeled "adjusted ATT".
+console.log('\noperator batch 6 — intake-call analytics');
+
+const _b6Ctx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'intakeVolumeBuckets_'), _b6Ctx, { filename: 'intakeVolumeBuckets_' });
+
+test('B6: intakeVolumeBuckets_ — trailing months newest-first, year-boundary safe, junk skipped', () => {
+  const run = (ts, months, today) => vm.runInContext(
+    'intakeVolumeBuckets_(' + JSON.stringify(ts) + ',' + months + ',' + JSON.stringify(today) + ')', _b6Ctx);
+  const ts = {
+    PPD: ['2026-01-15 10:00:00', '2026-01-02 09:00:00', '2025-12-30 11:00:00', '2025-10-01 08:00:00'],
+    PMD: ['2025-12-05 12:00:00'],
+    PAP: ['2025-11-20 15:00:00', 'garbage', ''],
+  };
+  const rows = run(ts, 3, '2026-01-15');
+  // vm-realm arrays fail deepStrictEqual against host literals (prototype
+  // identity) — compare by value, the documented lesson.
+  assert.strictEqual(rows.map((r) => r.month).join('|'), '2026-01|2025-12|2025-11', 'newest-first, wrapping the year');
+  assert.strictEqual(rows.map((r) => [r.ppd, r.pmd, r.pap, r.total].join(',')).join('|'),
+    '2,0,0,2|1,1,0,2|0,0,1,1', 'per-type counts land in the right month; a malformed timestamp is skipped, never a crash');
+  assert.strictEqual(rows.reduce((s, r) => s + r.ppd, 0), 3, 'the out-of-window 2025-10 send is counted NOWHERE');
+  assert.strictEqual(run(ts, 3, 'not-a-date').length, 0, 'a bad anchor date yields an empty result, never NaN months');
+  assert.strictEqual(run({}, 2, '2026-08-25').map((r) => r.total).join('|'), '0|0', 'missing type arrays read as zero, not a throw');
+});
+
+test('B6: cnCountIntakeNotesResult_ — bounded 2-col read, pre-filter before parse, failed read is never 0', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'cnCountIntakeNotesResult_'));
+  assert.ok(!/getDataRange\(\)/.test(f), 'never a full-width read of the notes Sheet');
+  assert.ok(/CN\.DATE_LOCAL \+ 1/.test(f) && /CN\.SUBFORM_DATA \+ 1/.test(f), 'exactly the two columns the count needs (the taxonomy pattern)');
+  assert.ok(/normalizeDate_\(/.test(f), 'DateLocal routes through the coercion guard (the CN.DATE_LOCAL gotcha)');
+  const pre = f.indexOf('"intakeType"'), parse = f.indexOf('JSON.parse');
+  assert.ok(pre > -1 && parse > -1 && pre < parse, 'the substring pre-filter runs BEFORE any JSON.parse');
+  assert.ok(/unenrolled: true/.test(f), 'no-sheet is a DISTINCT state from a failed read (INV-35)');
+  assert.ok(/return \{ count: 0, unavailable: true, unenrolled: false \};/.test(f),
+    'the catch returns unavailable — a failed read is never a confident 0 (INV-187, the cnCountNotesResult_ contract)');
+});
+
+test('B6 server wiring: three endpoints attach intakeNotes null-on-unavailable; the volume endpoint is gated + bounded + honest', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.strictEqual((code.match(/intakeNotes: intakeRes\.unavailable \? null : intakeRes\.count/g) || []).length, 3,
+    'getMyMetrics + getMyMetricsRange + getTeamMetrics per-rep all attach null on an unavailable read (never 0)');
+  assert.ok(/if \(rep\.intakeNotes != null\) teamTotals\.intakeNotes = \(teamTotals\.intakeNotes \|\| 0\) \+ rep\.intakeNotes;/.test(code) &&
+    /else teamTotals\.intakeNotesPartial = true;/.test(code),
+    'the team total accumulates only readable reps and FLAGS the partial (the cycle-16 F5 aggregate rule)');
+  const vol = nc(extractRawFunction('Code.js', 'getIntakeVolumeStats'));
+  const gate = vol.indexOf("'Manager access required.'"), firstRead = vol.indexOf('getIntakeSubmissionSheet_');
+  assert.ok(gate > -1 && firstRead > -1 && gate < firstRead, 'the manager gate fires BEFORE any submission-tab read (INV-02)');
+  assert.ok(/INTAKE_VOLUME_SCAN_MAX/.test(vol), 'the per-tab read is a bounded tail, never the whole tab');
+  assert.ok(/intakeTsString_\(/.test(vol), 'Timestamp cells route through the coercion guard');
+  assert.ok(/failed\.push\(ft\)/.test(vol) && /failedTypes: failed/.test(vol),
+    'an unreadable tab is NAMED in the response, never a silent 0 column (INV-187)');
+  assert.ok(!/LockService/.test(vol), 'read-only — no lock');
+});
+
+test('B6 client wiring: rail row null-gated, table em-dash, volume block manager-only + A12 on both failure shapes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const m = nc(extractScript('metrics/script_metrics.html'));
+  const railGate = m.indexOf('if (data.intakeNotes != null) {'), railRow = m.indexOf("mRailRow_('Intake calls'");
+  assert.ok(railGate > -1 && railRow > -1 && railGate < railRow && railRow - railGate < 120,
+    'the My Stats rail row renders ONLY when the count exists — absence is not 0 (INV-180)');
+  assert.ok(/r\.intakeNotes == null \?/.test(m) && /title="count unavailable"/.test(m),
+    'the Team table renders an em dash with a named reason on a null count');
+  assert.ok(/if \(!data\.repView\) html \+= '<div id="m-intake-vol">/.test(m) &&
+    /if \(!data\.repView\) mLoadIntakeVolume_\(\);/.test(m),
+    'the volume block is manager-view only on BOTH halves (container + fetch) — the rep aggregate never pays for it');
+  const fn = nc(extractFunction('metrics/script_metrics.html', 'mLoadIntakeVolume_'));
+  assert.strictEqual((fn.match(/errorStateHtml_\(/g) || []).length, 2, 'both failure shapes ({error} + transport) render the error card (A12/INV-175)');
+  assert.ok(!/errorStateHtml_\(esc\(/.test(fn), 'no double-escape — the helper escapes internally');
+  assert.strictEqual((fn.match(/currentView !== requestedView/g) || []).length, 2, 'both handlers are nav-guarded (the CN loader pattern)');
+  assert.ok(/host\.innerHTML = '';/.test(fn), 'a genuinely empty history renders NOTHING, not an empty table');
+  assert.ok(/role="alert"/.test(fn) && /esc\(res\.failedTypes\.join/.test(fn), 'failedTypes surfaces as an announced, escaped note');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

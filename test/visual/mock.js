@@ -156,7 +156,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // Fifth instance of the INV-185 drift class, so: a fixture whose response
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
-      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, intakeNotes: 3, noteCoverage: 85, missingCount: 6,
+      return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
