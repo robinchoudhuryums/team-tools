@@ -134,6 +134,68 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getMyCallNotes: { notes: [note(0), note(1), note(2)], autoCopyFormat: '', timezone: 'Asia/Kolkata' },
     getMyPinnedCallNotes: { notes: [note(9, { subformData: { pinned: true, pinnedAt: ts(daysAgo(2), '15:00:00'), flags: [], tags: ['complex-case'] }, dateLocal: daysAgo(2), timestamp: ts(daysAgo(2), '14:58:00'), flagType: '' })] },
     getMyTrainingQA: { items: [], notes: [] },
+    // The editor file-drop: a FUNCTION, because the response shape depends on
+    // the file it was handed (text -> article, other -> embed) and the client
+    // branches on `kind`.
+    kbIngestFile: function (p) {
+      var name = (p && p.name) || 'file';
+      var title = name.replace(/\.[a-z0-9]+$/i, '');
+      if (/\.(md|markdown|txt|text)$/i.test(name)) {
+        return { success: true, kind: 'article', title: title, warnings: [],
+          markdown: '# ' + title + '\n\nIngested from an uploaded file.' };
+      }
+      if (/\.csv$/i.test(name)) {
+        return { success: true, kind: 'article', title: title,
+          warnings: ['A CSV becomes a table for READING. If this is a lookup the app should QUERY (like the payor table), import it under Admin → Config → Reference data tables instead.'],
+          markdown: '| Payor | Status |\n| --- | --- |\n| Aetna | In-Network |' };
+      }
+      if (/\.docx$/i.test(name)) {
+        return { success: true, kind: 'article', title: title, converted: true,
+          warnings: ['2 image(s) marked for export'], markdown: '# ' + title + '\n\nConverted from a Word document.' };
+      }
+      return { success: true, kind: 'embed', title: title,
+        driveUrl: 'https://drive.google.com/file/d/mock-upload/view',
+        warnings: ['Attached as an embedded file — readable in the app, but only its TITLE is searchable. Convert it to a Google Doc or Sheet in Drive and re-drop it to get a full article.'] };
+    },
+    // Operator 2026-08-25 — Reference data tables (Admin → Config). Shapes
+    // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
+    getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',
+      label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
+      rows: 1035, cols: 25, present: true }] },
+    kbImportDataTable: function (key, b64, opts) {
+      var dry = !opts || opts.dryRun !== false;
+      var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
+        headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
+        sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
+        warnings: [], replacingRows: 1035 };
+      return dry ? Object.assign(base, { dryRun: true }) : Object.assign(base, { imported: true });
+    },
+    // Operator 2026-08-25 — the composer's editable Note Reference + the
+    // Preview loader. BOTH are FUNCTIONS of their arguments (the F14 rule):
+    // updateCallNote's response ECHOES the edited fields (the client re-points
+    // its held note at it), and previewCallNoteEmail's body is built FROM the
+    // note as edited, so a frozen object would render a preview the server
+    // could not produce.
+    updateCallNote: function (noteId, payload) {
+      return { success: true, note: Object.assign(note(0), { noteId: noteId }, payload || {}) };
+    },
+    previewCallNoteEmail: function (noteId, sel) {
+      var s = sel || {};
+      return {
+        from: 'Avery Blake · Universal Medical Supply <teamtools@umsupply.com>',
+        to: (s.departments || []).join(', ') || 'shipping@umsupply.com',
+        cc: 'csr@umsupply.com',
+        subject: (s.updateInfo || 'Update') + ' — TRX-100 · P. Sample',
+        bodyHash: 'a'.repeat(64),
+        htmlBody: '<div style="font-family:Arial,sans-serif;font-size:13px">' +
+          '<div style="background:#223b5d;color:#fff;padding:8px 12px;font-weight:600">Call Details</div>' +
+          '<table style="width:100%;border-collapse:collapse">' +
+          '<tr style="background:#e6f2ff"><td style="padding:6px 10px;width:130px"><b>Update</b></td><td style="padding:6px 10px">' + (s.updateInfo || '') + '</td></tr>' +
+          '<tr><td style="padding:6px 10px"><b>Patient &amp; TRX</b></td><td style="padding:6px 10px">TRX-100 · P. Sample</td></tr>' +
+          '<tr style="background:#e6f2ff"><td style="padding:6px 10px"><b>Issue</b></td><td style="padding:6px 10px">Asking about resupply timing.</td></tr>' +
+          '</table></div>',
+      };
+    },
     getCallNoteTagSuggestions: { tags: ['resupply', 'billing', 'mask-fit'] },
     getMyNoteHourBuckets: [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 1, 0, 2, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0],
     // V-14 (cycle 12): these three MUST agree with the server's own arithmetic —

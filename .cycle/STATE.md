@@ -224,6 +224,25 @@ Updated: 2026-08-21
 - F1's server helper mirrors the client REGEX LITERAL exactly and the pin
   asserts the literal in both files — the INV-72 parallel-source posture
 
+## Post-merge operator round (2026-08-25, after PR #185)
+- **Composer**: Preview gained an in-button loader (Role-D .lo-dots, restored
+  on both failure paths), and the Note Reference is now an EDITABLE mini note
+  template writing back through `updateCallNote` — Preview COMMITS pending
+  edits first, so the INV-41 bodyHash is always built from the note as sent.
+  Commits e91c3db + b2e3fe2 + a765c48. Pure 642→646, DOM 79→81.
+- **Reference ingest** (the "can I upload a doc" ask, answered as TWO
+  features): (a) Admin → Config → **Reference data tables** replaces an
+  ALLOWLISTED KB sheet tab from a CSV (`KB_DATA_TABLES` is the boundary, not
+  the gate; dryRun default TRUE; same server parse previews and writes);
+  (b) the KB editor takes a **local file drop/pick** (`kbIngestFile`) — text/CSV
+  become the body via the PRODUCTION sheet converter, .docx/.xlsx convert in
+  Drive and run through the EXISTING converters, everything else embeds with
+  the loss NAMED. Conversion uses the Drive REST endpoint with the token the
+  project already holds — NO advanced service, nothing declared in
+  appsscript.json, nothing for IT to approve (the operator flagged that risk).
+  Commits 1e70942 + eb4b9eb + the pin/doc commits. Pure 646→651, DOM 81.
+  INV-136 admin count 43→46 with all four gate cases.
+
 ## Where I left off
 MOST RECENT (2026-08-25): the operator's 8-ask round is implemented as six
 batches on `claude/team-tools-roadmap-6e2l97` (the in-place DR resolve

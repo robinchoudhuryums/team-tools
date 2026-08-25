@@ -1513,6 +1513,40 @@
   .cn-compose-note-ref dt::after { content: ': '; }
   .cn-compose-note-ref dd { display: inline; margin: 0; }
   .cn-compose-note-ref dd::after { content: '\A'; white-space: pre; }
+  /* Operator 2026-08-25: the Note Reference is EDITABLE — a mini version of
+     the main note template, using the same .ce contenteditable vocabulary
+     (scoped here; the main template's .ce rules live under .cnv-row). */
+  .cn-nr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .cn-nr-kicker {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .cn-nr-dirty { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--warning-deep); }
+  .cn-nr-save {
+    appearance: none; border: 1px solid var(--accent); background: var(--accent);
+    color: #fff; font-family: var(--ui); font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: var(--radius-pill); cursor: pointer;
+  }
+  .cn-nr-save:disabled { opacity: .6; cursor: default; }
+  .cn-nr-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; padding: 3px 0; }
+  .cn-nr-row .lbl { font-family: var(--ui); font-size: var(--text-sm); font-weight: 600; color: var(--muted); padding-top: 5px; }
+  .cn-nr-row .ce {
+    appearance: none; border: 1px solid var(--line); background: var(--paper);
+    font-family: var(--ui); font-size: 12px; color: var(--ink);
+    padding: 4px 7px; width: 100%; border-radius: var(--radius-sm);
+    outline: none; min-height: 20px; line-height: 1.4;
+    cursor: text; white-space: pre-wrap; word-break: break-word;
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-nr-row .ce:focus { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .cn-nr-row .ce.empty::before { content: attr(data-placeholder); color: var(--muted-2); pointer-events: none; }
+  .cn-nr-row .ce.is-changed { border-color: var(--warning-deep); }
+  /* A2: a fixed label track needs a real viewport breakpoint — the modal is
+     resizable and rides the 480px pop-out. */
+  @media (max-width: 560px) {
+    .cn-nr-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+    .cn-nr-row .lbl { padding-top: 0; }
+  }
   .cn-compose-dept-grid {
     display: grid;
     /* Operator feedback (2026-06-12 r2): adaptive columns — 3-up at the
@@ -1613,6 +1647,26 @@
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* Reference data tables (operator 2026-08-25) — CSV upload for an
+     allowlisted KB sheet tab. */
+  .cn-dt-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; background: var(--paper); }
+  .cn-dt-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .cn-dt-title { font-family: var(--ui); font-size: 13px; font-weight: 600; color: var(--ink); }
+  .cn-dt-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .cn-dt-state { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .cn-dt-drop {
+    margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+    padding: 14px 10px; font-size: 12px; color: var(--muted); cursor: pointer;
+    background: var(--paper-2); transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+    text-align: center;
+  }
+  .cn-dt-drop:hover, .cn-dt-drop:focus-visible, .cn-dt-drop.is-over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .cn-dt-prevbox { margin-top: 10px; border-left: 3px solid var(--accent); background: var(--paper-2); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .cn-dt-prevhead { font-size: 12px; color: var(--ink); }
+  .cn-dt-note { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; word-break: break-word; }
+  .cn-dt-warn { font-size: 11px; color: var(--warning-deep); margin-top: 6px; line-height: 1.5; }
+  @media (max-width: 560px) { .cn-dt-state { margin-left: 0; } }
   /* Auto-tag rules — compact editor (operator 2026-08-18): slim hairline rows,
      2-up at wide widths, and the LIST scrolls internally past ~8 visible rows
      so the card never extends indefinitely as rules accumulate (cap 50). */
@@ -5774,6 +5828,15 @@ function cnCloseComposerModal_() {
     showToast('Sending — one moment…', 'toast-info');
     return;
   }
+  // Operator 2026-08-25: uncommitted Note Reference edits are DISCARDED on
+  // close — say so rather than losing them silently. Read while the fields are
+  // still in the DOM, and stay quiet on the Save&Compose rollback path below
+  // (that note is being deleted; a "discarded" toast would be noise), and
+  // while a save is in flight (the fields still read dirty until it lands).
+  if (CN_STATE.composer && !CN_STATE.composer.savingNote && !CN_STATE.composeFlow) {
+    const unsaved = cnComposerNoteDirtyFields_();
+    if (unsaved.length) showToast('Note edits discarded (' + unsaved.length + ' field' + (unsaved.length === 1 ? '' : 's') + ')', 'toast-warn');
+  }
   CN_STATE.composer = null;
   const overlay = document.getElementById('cn-compose-overlay');
   if (overlay) overlay.remove();
@@ -5840,7 +5903,7 @@ function cnRenderComposerFormStep_() {
     <div class="modal" style="max-width:560px;resize:both;overflow:auto" id="cnC-modal">
       <div class="modal-title" style="cursor:move" onmousedown="cnStartDragModal_(event)">Compose email</div>
       ${cnRenderComposerTabStrip_('department', c.noteId)}
-      <div class="modal-sub">
+      <div class="modal-sub" id="cnC-sub">
         For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
       </div>
 
@@ -5869,22 +5932,11 @@ function cnRenderComposerFormStep_() {
 
       <div id="cnC-subforms" style="margin-top:14px"></div>
 
-      <div class="cn-compose-note-ref">
-        <div style="font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Note Reference</div>
-        <dl style="margin:0">
-          ${c.note.callback   ? '<dt>Callback</dt><dd>' + esc(c.note.callback) + '</dd>' : ''}
-          ${c.note.caller     ? '<dt>Caller</dt><dd>' + esc(c.note.caller) + '</dd>' : ''}
-          ${c.note.relationship ? '<dt>Relationship</dt><dd>' + esc(c.note.relationship) + '</dd>' : ''}
-          ${c.note.patientAndTrx ? '<dt>Patient / TRX</dt><dd>' + esc(c.note.patientAndTrx) + '</dd>' : ''}
-          ${c.note.issue      ? '<dt>Issue</dt><dd>' + cnFmtHtml_(esc(c.note.issue)) + '</dd>' : ''}
-          ${c.note.transferredTo ? '<dt>Transferred To</dt><dd>' + esc(c.note.transferredTo) + '</dd>' : ''}
-          ${c.note.resolution ? '<dt>Resolution</dt><dd>' + cnFmtHtml_(esc(c.note.resolution)) + '</dd>' : ''}
-        </dl>
-      </div>
+      ${cnComposerNoteRefHtml_()}
 
       <div class="modal-footer">
         <button class="btn-modal-cancel" onclick="cnCloseComposerModal_()">Cancel</button>
-        <button class="btn-modal-ok" onclick="cnComposerGoToPreview_()">Preview →</button>
+        <button class="btn-modal-ok" id="cnC-preview-btn" onclick="cnComposerGoToPreview_()">Preview →</button>
       </div>
     </div>
   `;
@@ -5892,6 +5944,166 @@ function cnRenderComposerFormStep_() {
 
 function cnWireComposerForm_() {
   cnRenderSubforms_();
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Composer Note Reference — an EDITABLE mini version of the main note
+// template (operator 2026-08-25). A typo spotted while composing (wrong TRX,
+// a missing Transferred To) is fixed ONCE: the edit writes back to the note
+// itself through the same caller-scoped, locked, audited `updateCallNote` the
+// card editor uses — no new endpoint, no new gate, no second write path — so
+// the email that goes out and the stored note can never disagree.
+//
+// INV-41 IS UNTOUCHED BY CONSTRUCTION: these fields exist on the FORM step
+// only, and Preview COMMITS pending edits before asking the server to render,
+// so the previewed body — and the bodyHash the send is checked against — is
+// always derived from the note as it will be sent. Editing between Preview and
+// Send remains impossible; that is the guard working, not a gap.
+//
+// Issue/Resolution show RAW marker text (`**b**` / `__u__` / `==hl==`), exactly
+// like the main template: the formatter is a RENDER step (cnFmtHtml_), and
+// letting the rep edit rendered HTML would destroy the markers on the way back.
+const CN_COMPOSER_NOTE_FIELDS = [
+  { key: 'callback',      label: 'Callback',       ph: '(555) 123-4567' },
+  { key: 'caller',        label: 'Caller',         ph: 'Caller name' },
+  { key: 'relationship',  label: 'Relationship',   ph: 'Self / spouse / provider' },
+  { key: 'patientAndTrx', label: 'Patient / TRX',  ph: 'Patient name + TRX' },
+  { key: 'issue',         label: 'Issue',          ph: 'What they called about' },
+  { key: 'transferredTo', label: 'Transferred To', ph: 'N/A' },
+  { key: 'resolution',    label: 'Resolution',     ph: 'What you did' },
+];
+
+function cnComposerNoteRefHtml_() {
+  const c = CN_STATE.composer;
+  if (!c || !c.note) return '';
+  // A note still being saved (Save & Compose, mid-flight) has no server row to
+  // update yet — show the reference read-only rather than offering an edit
+  // that cannot commit.
+  if (c.note._pending) {
+    return '<div class="cn-compose-note-ref">' +
+      '<div class="cn-nr-head"><span class="cn-nr-kicker">Note Reference</span>' +
+      '<span style="font-size:11px;color:var(--muted)">editable once the save confirms</span></div>' +
+      '<dl style="margin:0">' +
+      CN_COMPOSER_NOTE_FIELDS.map(function (f) {
+        const v = String(c.note[f.key] || '');
+        if (!v) return '';
+        const body = (f.key === 'issue' || f.key === 'resolution') ? cnFmtHtml_(esc(v)) : esc(v);
+        return '<dt>' + esc(f.label) + '</dt><dd>' + body + '</dd>';
+      }).join('') +
+      '</dl></div>';
+  }
+  const rows = CN_COMPOSER_NOTE_FIELDS.map(function (f) {
+    const v = String(c.note[f.key] || '');
+    return '<div class="cn-nr-row">' +
+      '<div class="lbl" id="cnC-nrl-' + f.key + '">' + esc(f.label) + '</div>' +
+      '<div class="ce' + (v.trim() ? '' : ' empty') + '" contenteditable="true" id="cnC-nr-' + f.key + '"' +
+        ' data-nr-field="' + f.key + '" data-placeholder="' + esc(f.ph) + '"' +
+        ' role="textbox" aria-labelledby="cnC-nrl-' + f.key + '" tabindex="0"' +
+        ' oninput="cnComposerNoteEdited_(this)" onblur="cnComposerNoteEdited_(this)">' + esc(v) + '</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="cn-compose-note-ref">' +
+    '<div class="cn-nr-head">' +
+      '<span class="cn-nr-kicker">Note Reference</span>' +
+      '<span style="font-size:11px;color:var(--muted)">edit here to correct the note itself</span>' +
+      '<span class="cn-nr-dirty" id="cnC-nr-dirty"></span>' +
+    '</div>' + rows + '</div>';
+}
+
+/** Which note fields the rep has changed in the mini template, compared with
+ *  the note the composer is holding. Returns [] when the fields aren't in the
+ *  DOM (preview step, pending note) — never a false dirty. */
+function cnComposerNoteDirtyFields_() {
+  const c = CN_STATE.composer;
+  if (!c || !c.note || c.note._pending) return [];
+  const out = [];
+  CN_COMPOSER_NOTE_FIELDS.forEach(function (f) {
+    const el = document.getElementById('cnC-nr-' + f.key);
+    if (!el) return;
+    if ((el.textContent || '').trim() !== String(c.note[f.key] || '').trim()) out.push(f.key);
+  });
+  return out;
+}
+
+/** Repaint the dirty affordances IN PLACE — never a modal re-render, which
+ *  would drop the caret mid-word (and re-run cnRenderSubforms_). */
+function cnComposerNoteEdited_(el) {
+  if (el) el.classList.toggle('empty', !(el.textContent || '').trim());
+  const dirty = cnComposerNoteDirtyFields_();
+  CN_COMPOSER_NOTE_FIELDS.forEach(function (f) {
+    const node = document.getElementById('cnC-nr-' + f.key);
+    if (node) node.classList.toggle('is-changed', dirty.indexOf(f.key) >= 0);
+  });
+  const bar = document.getElementById('cnC-nr-dirty');
+  if (!bar) return;
+  bar.innerHTML = dirty.length
+    ? esc(dirty.length + ' unsaved change' + (dirty.length === 1 ? '' : 's')) +
+      ' <button type="button" class="cn-nr-save" id="cnC-nr-save" onclick="cnComposerSaveNoteEdits_()">Save note</button>'
+    : '';
+}
+
+/** Commit the mini-template edits through updateCallNote. `then(ok)` lets the
+ *  Preview chain continue only on success. */
+function cnComposerSaveNoteEdits_(then) {
+  const c = CN_STATE.composer;
+  if (!c || !c.note || c.note._pending) { if (then) then(true); return; }
+  if (c.savingNote) return;                       // double-fire guard (INV-56 posture)
+  const dirty = cnComposerNoteDirtyFields_();
+  if (dirty.length === 0) { if (then) then(true); return; }
+  const payload = {};
+  CN_COMPOSER_NOTE_FIELDS.forEach(function (f) {
+    const node = document.getElementById('cnC-nr-' + f.key);
+    payload[f.key] = node ? (node.textContent || '').trim() : String(c.note[f.key] || '');
+  });
+  c.savingNote = true;
+  const btn = document.getElementById('cnC-nr-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      c.savingNote = false;
+      if (!res || !res.success) {
+        if (CN_STATE.composer === c && btn) { btn.disabled = false; btn.textContent = 'Save note'; }
+        showToast((res && res.error) || 'Note update failed', 'toast-error');
+        if (then && CN_STATE.composer === c) then(false);
+        return;
+      }
+      // The server row IS updated, so the cached note must be replaced even if
+      // this composer was closed meanwhile — an instance-guarded early return
+      // here would leave every card rendering the pre-edit text against a
+      // corrected note.
+      cnReplaceNoteInState_(res.note);
+      cnReRenderActiveView_();
+      cnRenderFilterBar_();
+      showToast('Note updated', 'toast-success');
+      if (CN_STATE.composer !== c) return;        // composer gone — don't resume its chain
+      // Re-point at the SERVER's confirmed note: cnReplaceNoteInState_ swaps
+      // the array slot, so a held reference goes stale (the r3 lastSaveUndo
+      // lesson) and every later dirty-compare would read the old text.
+      c.note = res.note;
+      cnComposerRefreshNoteRef_();
+      if (then) then(true);
+    })
+    .withFailureHandler(function (err) {
+      c.savingNote = false;
+      if (CN_STATE.composer !== c) return;
+      if (btn) { btn.disabled = false; btn.textContent = 'Save note'; }
+      showToast('Note update failed: ' + ((err && err.message) || 'Server error'), 'toast-error');
+      if (then) then(false);
+    })
+    .updateCallNote(c.noteId, payload);
+}
+
+/** After a successful save: refresh the header line the note feeds and clear
+ *  the dirty affordances. In place — see cnComposerNoteEdited_. */
+function cnComposerRefreshNoteRef_() {
+  const c = CN_STATE.composer;
+  if (!c || !c.note) return;
+  const sub = document.getElementById('cnC-sub');
+  if (sub) {
+    sub.innerHTML = 'For: <strong>' + esc(c.note.caller || c.note.patientAndTrx || 'this call') +
+      '</strong> · ' + esc(c.note.patientAndTrx || '');
+  }
+  cnComposerNoteEdited_();
 }
 
 function cnToggleComposerDept_(dept) {
@@ -6339,9 +6551,24 @@ function cnGatherComposerSelections_() {
   } else { s.oopDetails = null; }
 }
 
+/** Operator 2026-08-25: Preview is a ~1s server round trip that used to give
+ *  the rep NOTHING back until the preview appeared — the button sat inert and
+ *  invited a second click. Role-D in-button loader (the .lo-dots vocabulary
+ *  the punch buttons use), restored on every failure path. */
+function cnComposerSetPreviewBtnBusy_(btn, label) {
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> ' + esc(label);
+}
+function cnComposerSetPreviewBtnIdle_(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = 'Preview →';
+}
+
 function cnComposerGoToPreview_() {
   const c = CN_STATE.composer; if (!c) return;
-  if (c.previewing) return;   // cycle 10 — drop a double-click while the RPC is in flight
+  if (c.previewing || c.savingNote) return;   // cycle 10 — drop a double-click while an RPC is in flight
   cnGatherComposerSelections_();
   if (c.selections.departments.length === 0) {
     showToast('Pick at least one recipient first', 'toast-warn'); return;
@@ -6349,6 +6576,26 @@ function cnComposerGoToPreview_() {
   if (!c.selections.updateInfo) {
     showToast('Pick or type an Update type first', 'toast-warn'); return;
   }
+  const btn = document.getElementById('cnC-preview-btn');
+  // Commit any Note Reference edits BEFORE rendering: previewing first would
+  // build the body (and the INV-41 bodyHash) from the STALE stored note and
+  // silently email the un-corrected text.
+  if (cnComposerNoteDirtyFields_().length > 0) {
+    cnComposerSetPreviewBtnBusy_(btn, 'Saving note…');
+    cnComposerSaveNoteEdits_(function (ok) {
+      if (!ok) { cnComposerSetPreviewBtnIdle_(btn); return; }
+      cnComposerRunPreview_();
+    });
+    return;
+  }
+  cnComposerRunPreview_();
+}
+
+function cnComposerRunPreview_() {
+  const c = CN_STATE.composer; if (!c) return;
+  if (c.previewing) return;
+  const btn = document.getElementById('cnC-preview-btn');
+  cnComposerSetPreviewBtnBusy_(btn, 'Building preview…');
   c.previewing = true;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -6360,7 +6607,7 @@ function cnComposerGoToPreview_() {
       // opened would force-rerender the new composer's form step — wiping
       // typed-but-ungathered inputs (and re-creating the overlay if none).
       if (CN_STATE.composer !== c) return;
-      if (res.error) { showToast(res.error, 'toast-error'); return; }
+      if (res.error) { cnComposerSetPreviewBtnIdle_(btn); showToast(res.error, 'toast-error'); return; }
       c.preview = res;
       c.step = 'preview';
       cnRenderComposerModal_();
@@ -6368,6 +6615,7 @@ function cnComposerGoToPreview_() {
     .withFailureHandler(function (err) {
       c.previewing = false;
       if (CN_STATE.composer !== c) return;
+      cnComposerSetPreviewBtnIdle_(btn);
       showToast('Preview failed: ' + err.message, 'toast-error');
     })
     .previewCallNoteEmail(c.noteId, c.selections);
@@ -10009,6 +10257,196 @@ function cnRenderFlagRows_(registry, values) {
 
 /** Loads the enrollment roster into the Admin tab's enrollment panel and binds
  *  a one-time delegated click handler for the per-rep Provision buttons. */
+// ── Reference data tables (Admin → Config, operator 2026-08-25) ─────────────
+// Upload a CSV into an ALLOWLISTED KB sheet tab. The server owns the parse and
+// the allowlist; the client only reads the file and shows what came back — so
+// there is no client-side CSV parser to drift from the one that writes (the
+// two-stage email posture applied to a destructive import: the same server
+// parse drives the preview and the write, via a dryRun flag).
+const CN_DTABLE_MAX_BYTES = 4 * 1024 * 1024;
+
+function cnAdminLoadDataTables_() {
+  var slot = document.getElementById('cn-admin-dtables');
+  if (!slot) return;
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('cn-admin-dtables');
+      if (!el) return;
+      if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load the data tables'); return; }   // A12
+      el.innerHTML = (res.tables || []).map(cnDTableRowHtml_).join('') || '<div class="no-data">No data tables are configured.</div>';
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('cn-admin-dtables');
+      if (el) el.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load the data tables');
+    })
+    .getKbDataTables();
+}
+
+function cnDTableRowHtml_(t) {
+  // An UNREADABLE tab is not an empty one (INV-187) — say which it is.
+  var state = t.unreadable
+    ? '<span style="color:var(--warning-deep)">could not be read</span>'
+    : (t.present ? esc(String(t.rows)) + ' row(s) · ' + esc(String(t.cols)) + ' column(s)'
+                 : '<span style="color:var(--muted-2)">not imported yet</span>');
+  return '<div class="cn-dt-row" data-dt-key="' + esc(t.key) + '">' +
+    '<div class="cn-dt-head">' +
+      '<div><div class="cn-dt-title">' + esc(t.label) + '</div>' +
+        '<div class="cn-dt-sub">' + esc(t.describe) + ' · tab <code>' + esc(t.tab) + '</code></div></div>' +
+      '<div class="cn-dt-state">' + state + '</div>' +
+    '</div>' +
+    '<div class="cn-dt-drop" tabindex="0" role="button" aria-label="Choose or drop a CSV for ' + esc(t.label) + '"' +
+      ' data-dt-drop="' + esc(t.key) + '">' +
+      icon('outbox', 16) + ' <span>Drop a .csv here, or <u>choose a file</u></span>' +
+    '</div>' +
+    '<input type="file" accept=".csv,text/csv" class="cn-dt-file" id="cn-dt-file-' + esc(t.key) + '"' +
+      ' aria-label="CSV file for ' + esc(t.label) + '" style="display:none">' +
+    '<div class="cn-dt-preview" id="cn-dt-prev-' + esc(t.key) + '"></div>' +
+  '</div>';
+}
+
+/** One delegated set of handlers for every table row — bound once on the
+ *  Admin pane, so a panel reload never stacks listeners. */
+function cnAdminBindDataTables_(pane) {
+  if (!pane || pane._dtBound) return;
+  pane._dtBound = true;
+  pane.addEventListener('click', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (drop) { var f = document.getElementById('cn-dt-file-' + drop.getAttribute('data-dt-drop')); if (f) f.click(); return; }
+    var btn = e.target.closest ? e.target.closest('[data-dt-import]') : null;
+    if (btn) cnDTableImport_(btn.getAttribute('data-dt-import'), btn);
+  });
+  pane.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (!drop) return;
+    e.preventDefault();
+    var f = document.getElementById('cn-dt-file-' + drop.getAttribute('data-dt-drop'));
+    if (f) f.click();
+  });
+  pane.addEventListener('change', function (e) {
+    if (!e.target || !e.target.classList || !e.target.classList.contains('cn-dt-file')) return;
+    var row = e.target.closest('[data-dt-key]');
+    if (row && e.target.files && e.target.files[0]) cnDTableRead_(row.getAttribute('data-dt-key'), e.target.files[0]);
+  });
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    pane.addEventListener(evt, function (e) {
+      var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+      if (!drop) return;
+      e.preventDefault(); drop.classList.add('is-over');
+    });
+  });
+  pane.addEventListener('dragleave', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (drop) drop.classList.remove('is-over');
+  });
+  pane.addEventListener('drop', function (e) {
+    var drop = e.target.closest ? e.target.closest('[data-dt-drop]') : null;
+    if (!drop) return;
+    e.preventDefault(); drop.classList.remove('is-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) cnDTableRead_(drop.getAttribute('data-dt-drop'), file);
+  });
+}
+
+/** Read the picked/dropped file and ask the server what it holds (dryRun). */
+function cnDTableRead_(key, file) {
+  var prev = document.getElementById('cn-dt-prev-' + key);
+  if (!prev) return;
+  if (file.size > CN_DTABLE_MAX_BYTES) {
+    prev.innerHTML = errorStateHtml_('That file is ' + Math.round(file.size / 1048576) + 'MB — the limit is ' +
+      Math.round(CN_DTABLE_MAX_BYTES / 1048576) + 'MB. Trim unused columns or split it.');
+    return;
+  }
+  if (!/\.csv$/i.test(file.name || '')) {
+    prev.innerHTML = errorStateHtml_('This table takes a .csv — export the sheet as CSV first (File → Download → Comma-separated values).');
+    return;
+  }
+  prev.innerHTML = '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Reading ' + esc(file.name) + '…</div>';
+  var reader = new FileReader();
+  reader.onerror = function () { prev.innerHTML = errorStateHtml_('Could not read that file.'); };
+  reader.onload = function () {
+    var b64 = String(reader.result || '');
+    var comma = b64.indexOf(',');
+    b64 = comma >= 0 ? b64.slice(comma + 1) : b64;
+    CN_STATE.dtablePending = CN_STATE.dtablePending || {};
+    CN_STATE.dtablePending[key] = { b64: b64, name: file.name };
+    var requestedView = currentView;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (currentView !== requestedView) return;
+        var el = document.getElementById('cn-dt-prev-' + key);
+        if (!el) return;
+        if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Could not read that file'); return; }
+        el.innerHTML = cnDTablePreviewHtml_(key, file.name, res);
+      })
+      .withFailureHandler(function (err) {
+        if (currentView !== requestedView) return;
+        var el = document.getElementById('cn-dt-prev-' + key);
+        if (el) el.innerHTML = errorStateHtml_((err && err.message) || 'Could not read that file');
+      })
+      .kbImportDataTable(key, b64, { dryRun: true });
+  };
+  reader.readAsDataURL(file);
+}
+
+function cnDTablePreviewHtml_(key, fileName, r) {
+  var warn = (r.warnings || []).length
+    ? '<div class="cn-dt-warn" role="alert">' + (r.warnings || []).map(function (w) { return esc(w); }).join('<br>') + '</div>' : '';
+  // Duplicates + blank names are REPORTED, never silently merged — the
+  // operator already decided to keep the duplicate payor rows (2026-08-25).
+  var dupes = (r.duplicateNames || []).length
+    ? '<div class="cn-dt-note">' + esc(String(r.duplicateNames.length)) + ' duplicate name(s) — kept as-is: ' +
+        (r.duplicateNames || []).map(function (d) { return esc(d); }).join(' · ') + '</div>' : '';
+  var blanks = r.blankNameCount
+    ? '<div class="cn-dt-note">' + esc(String(r.blankNameCount)) + ' row(s) have no name in the first column' +
+        ((r.blankNameRows || []).length ? ' (rows ' + (r.blankNameRows || []).join(', ') + (r.blankNameCount > (r.blankNameRows || []).length ? ', …' : '') + ')' : '') +
+        ' — they will import but can never match a search.</div>' : '';
+  var heads = (r.headers || []).slice(0, 8).map(function (h) { return '<code>' + esc(h || '(blank)') + '</code>'; }).join(' ');
+  return '<div class="cn-dt-prevbox">' +
+    '<div class="cn-dt-prevhead">' + esc(fileName) + ' — <strong>' + esc(String(r.rows)) + '</strong> row(s) × ' +
+      esc(String(r.cols)) + ' column(s)</div>' +
+    '<div class="cn-dt-note">Columns: ' + heads + ((r.headers || []).length > 8 ? ' +' + ((r.headers || []).length - 8) + ' more' : '') + '</div>' +
+    warn + dupes + blanks +
+    '<div class="cn-dt-note">Replaces the <strong>' + esc(String(r.replacingRows)) + '</strong> row(s) in <code>' + esc(r.tab) + '</code> today.</div>' +
+    '<button type="button" class="btn-modal-ok" style="margin:10px 0 0" data-dt-import="' + esc(key) + '">Replace ' + esc(r.tab) + '</button>' +
+  '</div>';
+}
+
+function cnDTableImport_(key, btn) {
+  var pend = (CN_STATE.dtablePending || {})[key];
+  if (!pend) { showToast('Pick the file again', 'toast-warn'); return; }
+  uiConfirm({
+    title: 'Replace the table',
+    message: 'This overwrites every row in that tab with the contents of ' + pend.name +
+      '. The previous contents remain recoverable from the KB spreadsheet’s File → Version history. Continue?',
+    confirmLabel: 'Replace',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> Importing…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) {
+          btn.disabled = false; btn.textContent = 'Replace';
+          showToast((res && res.error) || 'Import failed', 'toast-error');
+          return;
+        }
+        showToast('Imported ' + res.rows + ' row(s) into ' + res.tab, 'toast-success');
+        if (CN_STATE.dtablePending) delete CN_STATE.dtablePending[key];
+        cnAdminLoadDataTables_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Replace';
+        showToast('Import failed: ' + ((err && err.message) || 'Server error'), 'toast-error');
+      })
+      .kbImportDataTable(key, pend.b64, { dryRun: false });
+  });
+}
+
 // ── Team-member onboarding (Admin → Config → Team Members) ──────────────────
 
 function cnAdminLoadOnboarding_() {
@@ -10516,6 +10954,16 @@ function cnRenderAdminBody_(cfg) {
       '<button class="btn-modal-ok" id="cn-admin-save-kbai" style="margin:10px 0 0">Save AI Settings</button>' +
     '</div>' : '') +
 
+    // Reference data tables (operator 2026-08-25) — replace an ALLOWLISTED KB
+    // sheet tab from a CSV. The insurance lookup queries a TAB, not an
+    // article, so refreshing it was a manual File → Import → rename; this is
+    // that step, with a preview of what is about to be overwritten.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('clipboardList', 14) + ' Reference data tables</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Upload a CSV to refresh a lookup table the app queries (these are <strong>datasets</strong>, not articles — the insurance lookup searches its columns and tones its answers). Drop a file or pick one, review what it holds, then Replace. The previous contents stay recoverable through the KB spreadsheet’s <strong>File → Version history</strong>.</div>' +
+      '<div id="cn-admin-dtables">' + loSweep() + '</div>' +
+    '</div>' +
+
     // Team-member onboarding (operator request 2026-08-07, pre-pilot): the
     // roster row was the one remaining manual onboarding step. Add form +
     // per-rep readiness + offboard, all served by getOnboardingPanel.
@@ -10542,6 +10990,8 @@ function cnRenderAdminBody_(cfg) {
 
   cnAdminLoadEnrollment_();
   cnAdminLoadOnboarding_();
+  cnAdminBindDataTables_(body);   // ONE delegated bind on the pane — a panel reload never stacks listeners
+  cnAdminLoadDataTables_();
 
   document.getElementById('cn-admin-reconcile').addEventListener('click', function () {
     var btn = this;

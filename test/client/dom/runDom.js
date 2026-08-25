@@ -903,6 +903,92 @@ test('M-9: composer refuses to close while a send is in flight, closes once sett
   assert.strictEqual(h.read('CN_STATE.composer'), null, 'composer state cleared on the real close');
 });
 
+test('composer: the editable Note Reference commits through updateCallNote and repaints IN PLACE', () => {
+  const h = boot();
+  const NOTE = {
+    noteId: 'n-edit', callback: '(555) 111-2222', caller: 'Maria Lopez', relationship: 'Patient',
+    patientAndTrx: 'TRX-100 · P. Sample', issue: 'Asking about **resupply** timing',
+    transferredTo: '', resolution: 'Confirmed ship date', flagType: '', resolved: false,
+    subformData: { departments: [], flags: [], tags: [] },
+  };
+  h.read('CN_STATE.rollingNotes = ' + JSON.stringify([NOTE]));
+  h.window.cnOpenEmailComposer_('n-edit');
+
+  const val = (k) => h.$('#cnC-nr-' + k).textContent;
+  assert.strictEqual(val('patientAndTrx'), 'TRX-100 · P. Sample', 'fields seed from the note');
+  // The marker survives editing because the editable row shows RAW text — the
+  // formatter is a render step, and a <strong> round-trip would save as markup.
+  assert.strictEqual(val('issue'), 'Asking about **resupply** timing', 'Issue shows raw marker text');
+  assert.ok(h.$('#cnC-nr-transferredTo').classList.contains('empty'),
+    'a BLANK field still renders (the old read-only list omitted it, so it could never be filled)');
+  assert.strictEqual(h.$('#cnC-nr-dirty').innerHTML, '', 'nothing dirty on open');
+
+  // Edit two fields — the dirty bar + per-field marks repaint without a
+  // re-render (a re-render would drop the caret mid-word).
+  const trx = h.$('#cnC-nr-patientAndTrx');
+  trx.textContent = 'TRX-999 · P. Corrected';
+  h.window.cnComposerNoteEdited_(trx);
+  const tt = h.$('#cnC-nr-transferredTo');
+  tt.textContent = 'Billing';
+  h.window.cnComposerNoteEdited_(tt);
+  assert.ok(/2 unsaved changes/.test(h.$('#cnC-nr-dirty').textContent), 'the dirty count is per FIELD');
+  assert.ok(h.$('#cnC-nr-save'), 'an explicit Save appears (edit without previewing)');
+  assert.strictEqual(h.document.querySelectorAll('.cn-nr-row .ce.is-changed').length, 2, 'only the changed fields are marked');
+  assert.ok(!tt.classList.contains('empty'), 'a filled field drops its placeholder state');
+  assert.strictEqual(trx.textContent, 'TRX-999 · P. Corrected', 'the repaint never rewrites the field being typed in');
+
+  h.window.cnComposerSaveNoteEdits_();
+  const call = h.run.pending('updateCallNote')[0];
+  assert.ok(call, 'commits through updateCallNote — the card editor’s own endpoint');
+  assert.strictEqual(call.args[0], 'n-edit', 'scoped to this note');
+  assert.strictEqual(call.args[1].patientAndTrx, 'TRX-999 · P. Corrected', 'the edit rides the payload');
+  assert.strictEqual(call.args[1].issue, 'Asking about **resupply** timing', 'and an UNTOUCHED field is sent verbatim, markers intact');
+
+  const saved = Object.assign({}, NOTE, { patientAndTrx: 'TRX-999 · P. Corrected', transferredTo: 'Billing' });
+  h.run.flushSuccess({ success: true, note: saved }, 'updateCallNote');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes[0].patientAndTrx'), 'TRX-999 · P. Corrected', 'the cached note is replaced');
+  assert.strictEqual(h.read('CN_STATE.composer.note.patientAndTrx'), 'TRX-999 · P. Corrected',
+    'and the composer is RE-POINTED at the server copy — cnReplaceNoteInState_ swaps the array slot, so a held reference would go stale');
+  assert.strictEqual(h.$('#cnC-nr-dirty').innerHTML, '', 'dirty cleared against the new baseline');
+  assert.strictEqual(h.document.querySelectorAll('.cn-nr-row .ce.is-changed').length, 0, 'and the per-field marks with it');
+  assert.ok(/TRX-999/.test(h.$('#cnC-sub').textContent), 'the header line the note feeds is refreshed too');
+});
+
+test('composer: Preview SAVES pending edits before rendering, and a failed save aborts the chain', () => {
+  const h = boot();
+  h.read('CN_STATE.rollingNotes = ' + JSON.stringify([{
+    noteId: 'n-p', callback: '', caller: 'Ana', relationship: '', patientAndTrx: 'TRX-1',
+    issue: 'x', transferredTo: '', resolution: 'y', flagType: '', resolved: false,
+    subformData: { departments: [], flags: [], tags: [] },
+  }]));
+  h.read('CN_STATE.deptConfig = { departments: ["Billing"], suggestionsByDept: {}, defaultSuggestions: ["Verified Shipping"] }');
+  h.window.cnOpenEmailComposer_('n-p');
+  h.window.cnToggleComposerDept_('Billing');
+  h.$('#cnC-update-info').value = 'Verified Shipping';
+  h.window.cnComposerUpdateInfoChanged_();   // the oninput handler is what commits it to state
+  const el = h.$('#cnC-nr-patientAndTrx');
+  el.textContent = 'TRX-2';
+  h.window.cnComposerNoteEdited_(el);
+
+  h.window.cnComposerGoToPreview_();
+  // The ORDER is the contract: previewing first would build the body — and the
+  // INV-41 bodyHash the send is checked against — from the STALE stored note.
+  assert.strictEqual(h.run.pending('previewCallNoteEmail').length, 0, 'no preview while the note edit is uncommitted');
+  assert.strictEqual(h.run.pending('updateCallNote').length, 1, 'the save goes first');
+  const btn = h.$('#cnC-preview-btn');
+  assert.ok(/Saving note/.test(btn.textContent) && btn.disabled, 'the button reports the save phase');
+
+  h.run.flushFailure(new Error('nope'), 'updateCallNote');
+  assert.strictEqual(h.run.pending('previewCallNoteEmail').length, 0, 'a FAILED save never previews unsaved text');
+  assert.ok(!h.$('#cnC-preview-btn').disabled, 'and the button is restored so the rep can retry');
+
+  // Retry: this time the save lands, and only then does the preview fire.
+  h.window.cnComposerGoToPreview_();
+  h.run.flushSuccess({ success: true, note: Object.assign({}, h.read('CN_STATE.composer.note'), { patientAndTrx: 'TRX-2' }) }, 'updateCallNote');
+  assert.strictEqual(h.run.pending('previewCallNoteEmail').length, 1, 'the preview runs once the note is committed');
+  assert.ok(/Building preview/.test(h.$('#cnC-preview-btn').textContent), 'and the button reports the second phase');
+});
+
 test('M-8: a late Team Notes queue response cannot clobber the sub-tab opened after it', () => {
   const h = boot();
   const host = h.document.createElement('div');
