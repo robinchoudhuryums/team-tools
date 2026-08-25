@@ -225,16 +225,30 @@ Updated: 2026-08-21
   asserts the literal in both files — the INV-72 parallel-source posture
 
 ## Where I left off
-MOST RECENT (2026-08-24, operator report): the Dept Requests page reloaded
-entirely on "Mark resolved". It now resolves IN PLACE — `.sp-task.is-busy`
-makes the one card the loader, the success handler patches `DR_LAST_DATA`
-BEFORE the DOM (that cache is what every filter re-render reads), the
-client-derived KPI strip is patched locally through a shared renderer, and
-only a MANAGER pays for a quiet reconcile of the server-derived `deptStats`
-(nav-guarded, stamp-nulled on failure). Committed as 6c553e4 with doc-sync;
-pure 622 / DOM 75. Measured in Chromium: 6 cards before and after, only the
-2 nodes for that request replaced, resolved 1→2, buttons 5→4, overflow 0.
-PR + merge is the next step.
+MOST RECENT (2026-08-25): the operator's 8-ask round is implemented as six
+batches on `claude/team-tools-roadmap-6e2l97` (the in-place DR resolve
+merged first as PR #184): batch 1 intake polish (unselect toggle, PPD
+Additional Notes, strongly-recommended warnings — `INTAKE_RECOMMENDED` +
+`intakeWarnRecommended_`), batch 2 A_Q_Spanish voicemails in the Spanish
+pending list (`spanishVmMatch_`/`spanishThreadInScope_`, manual-resolve-
+only, `SPANISH_VM_SENDER`/`SPANISH_VM_SUBJECT_FILTER`), batch 3 the
+insurance payor lookup (`InsurancePayors` tab in the KB spreadsheet —
+OPERATOR IMPORT REQUIRED — `searchInsurancePayors` + legend/tones,
+deterministic over RAG by design), batch 4 intake amend & re-send
+(owner-only, `AMENDED:` + changed-fields banner POST-hash, trailing
+`AmendsId` column, Sent-tab amended/superseded chips), batch 5 note marker
+formatting (`**`/`__`/`==` + Ctrl/⌘+B/U/Shift+H; cnFmtHtml_↔cnFmtEmailHtml_
+byte-equal mirror; copy strips), batch 6 intake-call analytics
+(`intakeNotes` on the three metrics endpoints null-on-unavailable, Team
+table Intake column, manager-only monthly volume block via the new
+manager-gated `getIntakeVolumeStats`). Pure 642 / DOM 79, every pin
+bite-checked; blocks `19pre-operator-batch1..6-*.md`; consolidated
+/sync-docs APPLIED (this session). Batch 7 (structured intake feedback)
+is BLOCKED on the operator — free-text feedback already exists. Next:
+push + PR + merge, then the operator combined deploy + runAllTests()
+(now incl. `insurance_search_requiresEmployee` + the `getIntakeVolumeStats`
+gate case) + the duplicate-payor-rows / stray-'Y' report + the
+InsurancePayors import.
 
 Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
 (86c64df), Round 2 (through 3188e79), Round-2 FOLLOW-ONS (d748f2f +
