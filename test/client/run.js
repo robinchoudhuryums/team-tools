@@ -11799,5 +11799,116 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Intake polish batch (operator 2026-08-25) — unselect toggle, PPD notes,
+// strongly-recommended soft check. The DOM behaviours (click-to-clear, mark +
+// self-clear, notes collection) live in the DOM harness; these pins cover the
+// pure core + the mapping drift guards + the wiring the DOM tests can't see.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nintake — polish batch (unselect / notes / recommended check)');
+
+const _rwCtx = vm.createContext({});
+vm.runInContext('var INTAKE_RECOMMENDED = ' + extractClientObject('intake/script_intake.html', 'INTAKE_RECOMMENDED') + ';', _rwCtx, { filename: 'INTAKE_RECOMMENDED' });
+vm.runInContext(extractRawFunction('intake/script_intake.html', 'intakeRecommendedBlanks_'), _rwCtx, { filename: 'intakeRecommendedBlanks_' });
+vm.runInContext('var INTAKE_PMD_Q = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PMD_Q') + ';', _rwCtx, { filename: 'INTAKE_PMD_Q' });
+vm.runInContext('var INTAKE_PAP_Q = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PAP_Q') + ';', _rwCtx, { filename: 'INTAKE_PAP_Q' });
+vm.runInContext('var INTAKE_PMD_CLIENT = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PMD_CLIENT') + ';', _rwCtx, { filename: 'INTAKE_PMD_CLIENT' });
+vm.runInContext('var INTAKE_PAP_CLIENT = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PAP_CLIENT') + ';', _rwCtx, { filename: 'INTAKE_PAP_CLIENT' });
+
+test('recommended lists: the operator field numbers resolve to the RIGHT bank labels (drift guard)', () => {
+  const g = (expr) => vm.runInContext(expr, _rwCtx);
+  // The lists store ARRAY indices (headers occupy indices), so a bank edit
+  // that inserts/reorders a question would silently repoint every warning at
+  // the wrong field — this pin makes that a CI failure instead (INV-185
+  // applied to a config↔bank coupling).
+  const pmdWant = {
+    1: 'Patient Full Name', 2: 'Primary Contact', 5: 'DOB', 6: 'Home Address',
+    8: 'Primary Insurance', 12: 'PCP Name', 13: 'MDO Ph#', 15: 'Height',
+    16: 'Weight', 17: 'mobility devices', 22: 'Power Mobility Evaluation',
+  };
+  const papWant = {
+    1: 'Patient Full Name', 2: 'Primary Contact', 5: 'DOB', 6: 'Home Address',
+    8: 'Primary Insurance', 12: 'PCP Name', 13: 'MDO Ph#',
+    19: 'Already have a CPAP', 23: 'PAP Supplies',
+  };
+  const pmdBank = g('INTAKE_PMD_Q').EN, papBank = g('INTAKE_PAP_Q').EN;
+  const rec = g('INTAKE_RECOMMENDED');
+  assert.strictEqual(rec.pmd.join('|'), Object.keys(pmdWant).join('|'), 'PMD index set is exactly the operator list');
+  assert.strictEqual(rec.pap.join('|'), Object.keys(papWant).join('|'), 'PAP index set is exactly the operator list');
+  Object.keys(pmdWant).forEach((i) =>
+    assert.ok(String(pmdBank[i]).indexOf(pmdWant[i]) >= 0, 'PMD idx ' + i + ' is still "' + pmdWant[i] + '" (got: ' + pmdBank[i] + ')'));
+  Object.keys(papWant).forEach((i) =>
+    assert.ok(String(papBank[i]).indexOf(papWant[i]) >= 0, 'PAP idx ' + i + ' is still "' + papWant[i] + '" (got: ' + papBank[i] + ')'));
+  // No listed index may be a section header (headers are not fields).
+  const pmdHdr = g('INTAKE_PMD_CLIENT').headers, papHdr = g('INTAKE_PAP_CLIENT').headers;
+  rec.pmd.forEach((i) => assert.ok(pmdHdr.indexOf(i) < 0, 'PMD idx ' + i + ' is not a header'));
+  rec.pap.forEach((i) => assert.ok(papHdr.indexOf(i) < 0, 'PAP idx ' + i + ' is not a header'));
+  // PPD: exactly Q1–Q23 + 37, 38, 39a, 44 (the Q40 conditional lives in the
+  // function, not the list — asserted behaviourally below).
+  const ppdWant = [];
+  for (let i = 1; i <= 23; i++) ppdWant.push(String(i));
+  assert.strictEqual(rec.ppd.join('|'), ppdWant.concat(['37', '38', '39a', '44']).join('|'), 'PPD qNum list exact');
+});
+
+test('intakeRecommendedBlanks_: blanks flagged, filled skipped, Q40 hours conditional', () => {
+  const run = (form, vals) => vm.runInContext(
+    'intakeRecommendedBlanks_(' + JSON.stringify(form) + ', function (k) { return (' + JSON.stringify(vals) + ')[k]; })', _rwCtx);
+  // PPD: everything answered except Q5 + Q38 → exactly those two.
+  const full = {}; for (let i = 1; i <= 23; i++) full[String(i)] = 'x';
+  Object.assign(full, { '37': '61', '38': '250', '39a': 'House', '44': 'No' });
+  const v1 = Object.assign({}, full); delete v1['5']; v1['38'] = '  ';
+  assert.strictEqual(run('ppd', v1).map((b) => b.key).join('|'), '5|38', 'blank + whitespace-only both flag');
+  // Q40 = bare 'Yes' (toggle set, hours blank) → flagged hoursOnly; a complete
+  // 'Yes: 12 hours' or a 'No' never flags.
+  const v2 = Object.assign({}, full, { '40': 'Yes' });
+  const b2 = run('ppd', v2);
+  assert.strictEqual(b2.length, 1);
+  assert.strictEqual(b2[0].key, '40');
+  assert.strictEqual(b2[0].hoursOnly, true, 'Yes-without-hours is the operator conditional');
+  assert.strictEqual(run('ppd', Object.assign({}, full, { '40': 'Yes: 12 hours' })).length, 0, 'complete Q40 passes');
+  assert.strictEqual(run('ppd', Object.assign({}, full, { '40': 'No' })).length, 0, 'No passes');
+  // Non-PPD forms have no Q40 conditional.
+  const pmdVals = {}; [1, 2, 5, 6, 8, 12, 13, 15, 16, 17, 22].forEach((i) => { pmdVals[i] = 'x'; });
+  assert.strictEqual(run('pmd', pmdVals).length, 0, 'fully-answered PMD is clean');
+  delete pmdVals[8];
+  assert.strictEqual(run('pmd', pmdVals).map((b) => b.key).join('|'), '8', 'only the listed blank flags');
+});
+
+test('wiring: both preview paths gate through the check; unselect branches exist; sent detail renders notes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const src = nc(extractScript('intake/script_intake.html'));
+  // BOTH preview entry points route through the soft check (never a hard
+  // block — the check resolves a boolean and the Go half fires only on true).
+  assert.ok(/intakeWarnRecommended_\('ppd'\)\.then/.test(src), 'PPD preview gated');
+  assert.ok(/intakeWarnRecommended_\(form\)\.then/.test(src), 'account preview gated');
+  assert.ok(/function intakePpdPreviewGo_/.test(src) && /function intakeAcctPreviewGo_/.test(src), 'the RPC halves exist');
+  // The third single-select handler family (ynreveal — Q45) carries the
+  // toggle-off too: an already-on branch that clears AND hides+empties the
+  // revealed sub-multi (intakePick_ + ynnum are DOM-tested behaviourally).
+  const grab = (name) => {
+    const i = src.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' found');
+    let d = 0, j = src.indexOf('{', i);
+    for (let k = j; k < src.length; k++) {
+      if (src[k] === '{') d++;
+      else if (src[k] === '}') { d--; if (d === 0) return src.slice(i, k + 1); }
+    }
+    throw new Error('unbalanced ' + name);
+  };
+  const yr = grab('intakeYrPickYn_');
+  assert.ok(/classList\.contains\('on'\)/.test(yr), 'ynreveal has the already-on branch');
+  const yrClear = yr.slice(yr.indexOf("contains('on')"));
+  assert.ok(/display = 'none'/.test(yrClear) && /\.intk-multi-btn\.on/.test(yrClear),
+    'the clear hides the sub-list and unselects its chips');
+  // Sent detail renders the stored notes (escaped) only when present.
+  const det = grab('intakeRenderSentDetail_');
+  assert.ok(/\.notes/.test(det) && /esc\(String\(notesStored\)\)/.test(det), 'stored notes render escaped');
+  // The notes textarea is addressable through the shared accessor fallback
+  // (data-intk-qnum) so drafts/restore ride with zero bespoke plumbing.
+  assert.ok(/data-intk-qnum="notes"/.test(src), 'notes rides the accessor fallback selector');
+});
+
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
+
 process.exit(fail ? 1 : 0);

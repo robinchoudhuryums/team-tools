@@ -1186,3 +1186,105 @@ test('re-escaping the source does not break matching on & < > values', () => {
   assert.strictEqual(panel.querySelector('.kb-ros-copy').getAttribute('data-name'), 'Smith & Jones',
     'and Copy name still yields the human form, not an entity');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Intake polish batch (operator 2026-08-25): response-button unselect,
+// PPD notes field, strongly-recommended soft check.
+// ═══════════════════════════════════════════════════════════════════════════
+section('DOM harness — intake polish (unselect toggle / notes / recommended check)');
+
+test('unselect: re-clicking the selected Yes clears the group (data-val + aria)', () => {
+  const h = boot();
+  const form = h.document.createElement('div');
+  form.id = 'intk-ppd-form';
+  form.innerHTML = h.window.intakeYnControlHtml_('data-qnum="8"', 'Q8');
+  h.document.body.appendChild(form);
+  const yes = form.querySelector('.intk-yn-btn.yes');
+  h.window.intakePick_(yes);
+  const grp = form.querySelector('.intk-yn');
+  assert.strictEqual(grp.getAttribute('data-val'), 'Yes', 'first click selects');
+  h.window.intakePick_(yes);   // the operator's accidental-click case
+  assert.strictEqual(grp.getAttribute('data-val'), '', 're-click clears the stored value');
+  assert.ok(!form.querySelector('.intk-yn-btn.on'), 'no button stays lit');
+  form.querySelectorAll('[data-set]').forEach((b) =>
+    assert.strictEqual(b.getAttribute('aria-checked'), 'false', 'aria-checked cleared'));
+  // and the cleared group reads back as unanswered through the one accessor
+  assert.strictEqual(h.window.intakePpdGetVal_(form, '8'), '', 'GetVal reads unanswered');
+});
+
+test('unselect: ynnum (Q40) re-click clears the Yes AND the typed hours', () => {
+  const h = boot();
+  const form = h.document.createElement('div');
+  form.id = 'intk-ppd-form';
+  form.innerHTML = h.window.intakeYnNumControlHtml_({ unit: 'hours' }, '40', 'Q40');
+  h.document.body.appendChild(form);
+  const yes = form.querySelector('.intk-yn-btn.yes');
+  h.window.intakeYnNumPickYn_(yes);
+  const inp = form.querySelector('.intk-ynnum-num input');
+  inp.value = '12';
+  assert.strictEqual(h.window.intakePpdGetVal_(form, '40'), 'Yes: 12 hours', 'serialized with hours');
+  h.window.intakeYnNumPickYn_(yes);   // re-click the lit Yes
+  assert.strictEqual(h.window.intakePpdGetVal_(form, '40'), '', 'value fully cleared');
+  assert.strictEqual(inp.value, '', 'orphaned hours cleared too — no stale count can ride');
+  assert.strictEqual(form.querySelector('.intk-ynnum-num').style.display, 'none', 'number field re-hidden');
+});
+
+test('recommended check: marks only listed blanks, confirm gates, filling clears the mark', async () => {
+  const h = boot();
+  const form = h.document.createElement('div');
+  form.id = 'intk-pmd-form';
+  // idx 1 (name, recommended) filled · idx 2 (phone, recommended) blank ·
+  // idx 3 (secondary ph, NOT recommended) blank — must never be flagged.
+  form.innerHTML =
+    '<div class="intk-row"><label>Name</label><input data-intk-idx="1" value="Jane Doe"></div>' +
+    '<div class="intk-row" id="row2"><label>Phone</label><input data-intk-idx="2" value=""></div>' +
+    '<div class="intk-row" id="row3"><label>Secondary</label><input data-intk-idx="3" value=""></div>' +
+    '<div class="intk-yn" data-idx="22" data-form="pmd" data-val=""></div>';
+  h.document.body.appendChild(form);
+  let confirmOpts = null;
+  h.window.uiConfirm = (o) => { confirmOpts = o; return Promise.resolve(false); };
+  const res = h.window.intakeWarnRecommended_('pmd');
+  const row2 = h.document.getElementById('row2');
+  assert.ok(row2.classList.contains('intk-recwarn'), 'the blank recommended row is marked');
+  assert.ok(row2.querySelector('.intk-recwarn-note'), 'with its strongly-recommended note');
+  assert.ok(!h.document.getElementById('row3').classList.contains('intk-recwarn'),
+    'a blank NON-listed field is never flagged (the operator rule)');
+  let proceeded = null; res.then((v) => { proceeded = v; });
+  await tick();
+  assert.ok(confirmOpts && /strongly-recommended/.test(confirmOpts.message), 'one confirm, naming the count');
+  assert.strictEqual(proceeded, false, 'Go back resolves false — the preview does not fire');
+  // fill the field → the mark clears itself on input
+  row2.querySelector('input').value = '555-0100';
+  row2.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!row2.classList.contains('intk-recwarn'), 'mark clears when the field gains a value');
+  assert.ok(!row2.querySelector('.intk-recwarn-note'), 'note removed with it');
+  // and with nothing blank the check resolves true with zero UI
+  confirmOpts = null;
+  const clean = await h.window.intakeWarnRecommended_('pmd');
+  assert.strictEqual(clean, true, 'no blanks → proceed');
+  assert.strictEqual(confirmOpts, null, 'and no dialog');
+});
+
+test('PPD notes: rendered inside the form, collected under a NON-numeric key, ring untouched', () => {
+  const h = boot();
+  const html = h.window.intakeRenderPpdSections_('EN');
+  assert.ok(/data-intk-qnum="notes"/.test(html), 'notes textarea rides data-intk-qnum');
+  assert.ok(/id="intk-ppd-sec-notes"/.test(html), 'in its own trailing panel');
+  // The 46-question ring: sections derive from the BANK, so 'notes' never
+  // enters mainQNums (the denominator the E14 seed literal pins).
+  const secs = h.window.intakePpdSections_('EN');
+  const allMain = [].concat(...secs.map((x) => x.mainQNums));
+  assert.strictEqual(allMain.indexOf('notes'), -1, 'notes is not a counted question');
+  assert.strictEqual(allMain.length, 46, 'denominator stays 46');
+  // Collect round-trip: the pseudo-key lands in answers + rows for the email.
+  const form = h.document.createElement('div');
+  form.id = 'intk-ppd-form';
+  form.innerHTML = html;
+  h.document.body.appendChild(form);
+  form.querySelector('[data-intk-qnum="notes"]').value = 'Lives with caregiver; call after 2pm';
+  const snap = h.window.intakeCollectPpd_();
+  assert.strictEqual(snap.answers.notes, 'Lives with caregiver; call after 2pm', 'collected into answers');
+  const noteRow = snap.rows.filter((r) => r.qNum === 'notes')[0];
+  assert.ok(noteRow && noteRow.value === 'Lives with caregiver; call after 2pm',
+    'and pushed as a row — the server email builder renders rows verbatim, no server change');
+});

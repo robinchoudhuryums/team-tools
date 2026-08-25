@@ -82,7 +82,7 @@
   .intk-row:first-child { border-top: none; }
   .intk-row .q { font-size: .88rem; color: var(--ink); font-weight: 600; }
   .intk-row.secondary .q { font-weight: 400; font-style: italic; color: var(--muted); padding-left: 18px; }
-  .intk-row input[type=text], .intk-row input[type=email], .intk-row input[type=date], .intk-row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .intk-row input[type=text], .intk-row input[type=email], .intk-row input[type=date], .intk-row select, .intk-row textarea { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
 
   /* Yes/No color-coded toggle (PPD + account Yes/No items) */
   .intk-yn { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
@@ -175,6 +175,12 @@
   .intk-ynreveal { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   .intk-yr-sub { display: flex; flex-wrap: wrap; gap: 6px; }
 
+  .intk-row textarea { resize: vertical; min-height: 58px; }
+  /* Strongly-recommended-blank mark (operator 2026-08-25) — set by the
+     pre-preview check, cleared when the field gains a value. Warn tokens
+     only — a recommendation, never an error tone. */
+  .intk-row.intk-recwarn { background: var(--warn-soft); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
+  .intk-recwarn-note { grid-column: 1 / -1; font-size: .74rem; color: var(--warning-deep); }
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -595,6 +601,55 @@ var INTAKE_PAP_CLIENT = {
   selects:    { 19: ['', 'Yes', 'No'], 21: ['', 'Less than 5 years', 'More than 5 years'] },
 };
 
+// ── Operator additions 2026-08-25 ───────────────────────────────────────────
+// PPD free-text notes (the PMD/PAP banks already end with "Other Notes"; PPD
+// had no notes field). Key 'notes' is NON-numeric on purpose: the engine reads
+// only numbered keys, intakePpdSections_'s numeric-prefix parse never sees it
+// (so the 46-question progress ring is untouched), and the get/set fallback
+// selector [data-intk-qnum] addresses it — which gives drafts, restore, and
+// collection the field for free.
+var INTAKE_PPD_NOTES = {
+  EN: { title: 'Additional Notes', label: 'Additional notes (optional)' },
+  ES: { title: 'Notas Adicionales', label: 'Notas adicionales (opcional)' },
+};
+
+// Strongly-recommended fields (operator lists, 2026-08-25). Blank ones get a
+// warn highlight + ONE confirm before preview — never a hard block, and never
+// any field outside these lists. PPD keys are qNums; PMD/PAP are question-bank
+// ARRAY indices (headers occupy indices too, so these are NOT the operator's
+// 1-based field numbers — the mapping is pinned against the live bank labels
+// in run.js so a bank edit fails CI instead of warning on the wrong field).
+var INTAKE_RECOMMENDED = {
+  ppd: (function () {
+    var a = []; for (var i = 1; i <= 23; i++) a.push(String(i));
+    return a.concat(['37', '38', '39a', '44']);   // + the Q40-hours conditional below
+  })(),
+  // #1 name, #2 primary phone, #5 DOB, #6 address, #7 primary insurance,
+  // #10 PCP, #11 MDO ph, #13 height, #14 weight, #15 devices, #19 prior PME
+  pmd: [1, 2, 5, 6, 8, 12, 13, 15, 16, 17, 22],
+  // #1 name, #2 primary phone, #5 DOB, #6 address, #7 primary insurance,
+  // #10 PCP, #11 MDO ph, #16 has CPAP, #20 machine/supplies/both
+  pap: [1, 2, 5, 6, 8, 12, 13, 19, 23],
+};
+
+/** Pure core of the pre-preview check: which strongly-recommended fields are
+ *  blank, given a value-lookup fn (Node-pinned with a stub getVal). The ONE
+ *  conditional: PPD Q40 (ynnum) answered exactly 'Yes' means the Yes toggle is
+ *  set but the hours number is blank — the operator's "if yes then hours". */
+function intakeRecommendedBlanks_(form, getVal) {
+  var keys = INTAKE_RECOMMENDED[form] || [];
+  var out = [];
+  for (var i = 0; i < keys.length; i++) {
+    var v = String(getVal(keys[i]) == null ? '' : getVal(keys[i])).trim();
+    if (!v) out.push({ key: keys[i] });
+  }
+  if (form === 'ppd') {
+    var q40 = String(getVal('40') || '').trim();
+    if (q40 === 'Yes') out.push({ key: '40', hoursOnly: true });
+  }
+  return out;
+}
+
 // ── App-bar header (shared shell vocabulary; replaces the bespoke navy bar) ──
 /** F(L-19), hoisted in cycle-18 batch 8 — the ONE http(s) scheme whitelist for
  *  the operator-owned Offerings URL columns (E pdfLink / F imageUrl). esc()
@@ -775,6 +830,14 @@ function intakeRenderPpdSections_(lang) {
       (sec.title ? '<div class="section-kicker sec-title">' + esc(sec.title) + '</div>' : '') +
       rows + '</div>';
   }
+  // Operator 2026-08-25: free-text notes panel AFTER the question sections —
+  // inside #intk-ppd-form (the collectors/draft listeners are scoped to it).
+  // Not a bank entry, so the stepper and the 46-question ring never count it.
+  var nl = INTAKE_PPD_NOTES[lang] || INTAKE_PPD_NOTES.EN;
+  out += '<div class="panel intk-section" id="intk-ppd-sec-notes">' +
+    '<div class="section-kicker sec-title">' + esc(nl.title) + '</div>' +
+    '<div class="intk-row"><label class="q" for="intk-ppd-qnotes">' + esc(nl.label) + '</label>' +
+    '<textarea id="intk-ppd-qnotes" name="intk-ppd-qnotes" rows="3" data-intk-qnum="notes"></textarea></div></div>';
   return out;
 }
 
@@ -873,6 +936,20 @@ function intakeSevControlHtml_(attrs, ariaLabel) {
 function intakePick_(btn) {
   var grp = btn.closest('.intk-yn,.intk-sev,.intk-choice');   // .intk-choice = Phase 1 single-select multi-button
   if (!grp) return;
+  // Operator 2026-08-25: clicking the ALREADY-SELECTED button clears the group
+  // (an accidental click on a question meant to stay blank was otherwise
+  // permanent — only a different answer could displace it). '' is the
+  // pre-answer state everywhere downstream: the engine reads it as
+  // unanswered, the email renders N/A, drafts round-trip it.
+  if (btn.classList.contains('on')) {
+    grp.setAttribute('data-val', '');
+    grp.querySelectorAll('[data-set]').forEach(function (b) {
+      b.classList.remove('on'); b.setAttribute('aria-checked', 'false');
+    });
+    if (grp.getAttribute('data-qnum') != null) intakePpdAfterChange_();
+    else { var f0 = grp.getAttribute('data-form'); if (f0) intakeSaveDraft_(f0); }
+    return;
+  }
   var val = btn.getAttribute('data-set');
   grp.setAttribute('data-val', val);
   grp.querySelectorAll('[data-set]').forEach(function (b) {
@@ -1120,6 +1197,21 @@ function intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel) {
 function intakeYrPickYn_(btn) {
   var grp = btn.closest('.intk-ynreveal'); if (!grp) return;
   var revealOn = grp.getAttribute('data-reveal-on') || 'Yes';
+  // Operator 2026-08-25: re-click unselects (see intakePick_) — and here the
+  // clear must ALSO hide + empty the revealed sub-multi, or a stale sub-type
+  // would ride into the serialized value with no visible Yes.
+  if (btn.classList.contains('on')) {
+    grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+      b.classList.remove('on'); b.setAttribute('aria-checked', 'false');
+    });
+    var sub0 = grp.querySelector('.intk-yr-sub');
+    if (sub0) {
+      sub0.style.display = 'none';
+      sub0.querySelectorAll('.intk-multi-btn.on').forEach(function (b) { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); });
+    }
+    intakePpdAfterChange_();
+    return;
+  }
   grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
     var on = (b === btn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
@@ -1180,6 +1272,20 @@ function intakeYnNumControlHtml_(ctrl, qNum, ariaLabel) {
 }
 function intakeYnNumPickYn_(btn) {
   var grp = btn.closest('.intk-ynnum'); if (!grp) return;
+  // Operator 2026-08-25: re-click unselects — hide + clear the number too so
+  // no orphaned hours can serialize without a Yes.
+  if (btn.classList.contains('on')) {
+    grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+      b.classList.remove('on'); b.setAttribute('aria-checked', 'false');
+    });
+    var num0 = grp.querySelector('.intk-ynnum-num');
+    if (num0) {
+      num0.style.display = 'none';
+      var inp0 = num0.querySelector('input'); if (inp0) inp0.value = '';
+    }
+    intakePpdAfterChange_();
+    return;
+  }
   grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
     var on = (b === btn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
     if (on) { b.classList.remove('popping'); void b.offsetWidth; b.classList.add('popping'); }
@@ -1496,13 +1602,113 @@ function intakeCollectPpd_() {
     answers[qNum] = val;
     rows.push({ qNum: qNum, label: text, value: val, isSecondary: isSecondary });
   }
+  // Operator 2026-08-25: the notes pseudo-question. Always a row (a blank one
+  // renders the same italic N/A as every other blank field); the server email
+  // builder renders payload.rows verbatim (esc_'d), so no server change; the
+  // engine ignores non-numeric keys; AnswersJson carries it to the Sent tab.
+  var notesVal = root ? intakePpdGetVal_(root, 'notes') : '';
+  var nlc = INTAKE_PPD_NOTES[lang] || INTAKE_PPD_NOTES.EN;
+  answers.notes = notesVal;
+  rows.push({ isHeader: true, label: nlc.title });
+  rows.push({ qNum: 'notes', label: nlc.label, value: notesVal, isSecondary: false });
   var patientEl = document.getElementById('intk-ppd-patient');
   return { patientInfo: patientEl ? patientEl.value.trim() : '', answers: answers, rows: rows, language: lang };
+}
+
+// ── Strongly-recommended-field soft check (operator 2026-08-25) ────────────
+// Row lookup for a recommended key (PPD qNum or account bank index).
+function intakeRecwarnLocate_(form, key) {
+  var root = intakeFormRoot_(form);
+  if (!root) return null;
+  var el = (form === 'ppd')
+    ? root.querySelector('[data-qnum="' + key + '"],[data-intk-qnum="' + key + '"]')
+    : root.querySelector('.intk-yn[data-idx="' + key + '"],[data-intk-idx="' + key + '"]');
+  return el ? el.closest('.intk-row') : null;
+}
+// Short label for the confirm list (bank lookup, truncated).
+function intakeRecwarnLabel_(form, key) {
+  var lang = INTAKE_STATE[form].lang;
+  var lbl = '';
+  if (form === 'ppd') {
+    var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
+    for (var i = 1; i < qs.length; i++) {
+      var t = String(qs[i] || '').trim();
+      var m = t.match(/^(\d+[a-z]?)\./);
+      if (m && m[1] === String(key)) { lbl = t; break; }
+    }
+    if (!lbl) lbl = 'Q' + key;
+  } else {
+    var bank = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
+    lbl = String(bank[key] || '').trim();
+  }
+  return lbl.length > 60 ? lbl.substring(0, 57) + '\u2026' : lbl;
+}
+/** Soft validation before Preview: highlight blank strongly-recommended
+ *  fields (INTAKE_RECOMMENDED — never any other blank field) and ask ONCE
+ *  whether to continue. Resolves true = proceed. Never a hard block; a form
+ *  with nothing flagged resolves true with zero UI. Marks clear themselves
+ *  when the field gains a value. */
+function intakeWarnRecommended_(form) {
+  var root = intakeFormRoot_(form);
+  if (root) root.querySelectorAll('.intk-row.intk-recwarn').forEach(function (r) {
+    r.classList.remove('intk-recwarn');
+    var n = r.querySelector('.intk-recwarn-note'); if (n) n.remove();
+  });
+  if (!root) return Promise.resolve(true);
+  var getVal = (form === 'ppd')
+    ? function (k) { return intakePpdGetVal_(root, k); }
+    : function (k) { return intakeAcctGetVal_(root, k); };
+  var blanks = intakeRecommendedBlanks_(form, getVal);
+  var marked = [];
+  blanks.forEach(function (b) {
+    var row = intakeRecwarnLocate_(form, b.key);
+    // Reveal-hidden rows are hidden via inline display:none on the ROW
+    // (intakePpdApplyReveals_) — check that, not offsetParent, which is
+    // layout-dependent (and always null in the jsdom harness).
+    if (!row || row.style.display === 'none') return;   // reveal-hidden → not warnable
+    row.classList.add('intk-recwarn');
+    if (!row.querySelector('.intk-recwarn-note')) {
+      var note = document.createElement('div');
+      note.className = 'intk-recwarn-note';
+      note.textContent = b.hoursOnly
+        ? 'Strongly recommended \u2014 enter the hours for the Yes above'
+        : 'Strongly recommended \u2014 fill if available';
+      row.appendChild(note);
+    }
+    if (!row._recwarnBound) {
+      row._recwarnBound = true;
+      var clearIfFilled = function () {
+        var v = String(getVal(b.key) == null ? '' : getVal(b.key)).trim();
+        var stillBad = !v || (b.hoursOnly && v === 'Yes');
+        if (!stillBad) {
+          row.classList.remove('intk-recwarn');
+          var n2 = row.querySelector('.intk-recwarn-note'); if (n2) n2.remove();
+        }
+      };
+      row.addEventListener('input', clearIfFilled);
+      // Toggle buttons fire no 'input'; defer past their own click handler.
+      row.addEventListener('click', function () { setTimeout(clearIfFilled, 0); });
+    }
+    marked.push(b);
+  });
+  if (!marked.length) return Promise.resolve(true);
+  var first = intakeRecwarnLocate_(form, marked[0].key);
+  if (first && first.scrollIntoView) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  var names = marked.slice(0, 5).map(function (m) {
+    return intakeRecwarnLabel_(form, m.key) + (m.hoursOnly ? ' (hours)' : '');
+  });
+  var msg = marked.length + ' strongly-recommended field(s) are blank:\n\u2022 ' + names.join('\n\u2022 ') +
+    (marked.length > 5 ? '\n\u2026and ' + (marked.length - 5) + ' more' : '') +
+    '\n\nThey are highlighted on the form. Continue to preview anyway?';
+  return uiConfirm({ title: 'Recommended fields are blank', message: msg, confirmLabel: 'Continue anyway', cancelLabel: 'Go back' });
 }
 
 function intakePpdPreview_() {
   var payload = intakeCollectPpd_();
   if (!payload.patientInfo) { showToast('Enter the Patient Name & Trx# first.', 'toast-warn'); return; }
+  intakeWarnRecommended_('ppd').then(function (ok) { if (ok) intakePpdPreviewGo_(payload); });
+}
+function intakePpdPreviewGo_(payload) {
   var requested = currentView;
   showToast('Building preview…', '');
   google.script.run
@@ -1877,6 +2083,9 @@ function intakeCollectAcct_(form) {
 function intakeAcctPreview_(form) {
   var payload = intakeCollectAcct_(form);
   if (!payload.patientInfo) { showToast('Enter the Patient Full Name first.', 'toast-warn'); return; }
+  intakeWarnRecommended_(form).then(function (ok) { if (ok) intakeAcctPreviewGo_(form, payload); });
+}
+function intakeAcctPreviewGo_(form, payload) {
   INTAKE_STATE[form].images = [];
   var requested = currentView;
   var fn = form === 'pap' ? 'intakePreviewPAP' : 'intakePreviewPMD';
@@ -2435,6 +2644,13 @@ function intakeRenderSentDetail_(d) {
       rowsHtml += '<div class="intk-row' + (/^\s+/.test(raw) ? ' secondary' : '') + '">' +
         '<div class="q">' + esc(text) + '</div>' +
         '<div>' + (val ? esc(String(val)) : na) + '</div></div>';
+    }
+    var notesStored = (d.answers || {}).notes;
+    if (notesStored) {
+      var nls = INTAKE_PPD_NOTES[lang] || INTAKE_PPD_NOTES.EN;
+      rowsHtml += '<div class="intk-head">' + esc(nls.title) + '</div>' +
+        '<div class="intk-row"><div class="q">' + esc(nls.label) + '</div>' +
+        '<div style="white-space:pre-wrap">' + esc(String(notesStored)) + '</div></div>';
     }
     var recs = [].concat(
       (d.recommendations && d.recommendations.complex) || [],
