@@ -5665,7 +5665,15 @@ function test_insurance_search_requiresEmployee() {
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return searchInsurancePayors('aetna');
   });
-  _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any sheet read');
+  // `searchInsurancePayors` is a READ, so it returns a bare {error} like every
+  // sibling read gate (getReferenceTree, searchReference, getTeamMetrics…) —
+  // `success:false` is the WRITER shape (kbRecordView, kbFlagItem). The first
+  // write of this test reached for _assertFailure, which requires
+  // success===false, so it failed against a CORRECT rejection: the harness was
+  // asserting the wrong contract, not the endpoint returning the wrong thing.
+  _assertContains(String(r && r.error), 'Not authorized',
+    'unregistered caller rejected before any sheet read');
+  _assertTrue(!r.matches, 'and no rows come back with the rejection');
 }
 
 function test_kb_recordView_requiresEmployee() {

@@ -135,6 +135,11 @@ const SCENARIOS = [
   // delete cluster, add form) + the feedback bar were unshootable while the
   // matrix only walked the Reference landing.
   ['reference-reader-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('kb-1')"],
+
+  // Admin lands on OVERVIEW, so the CONFIG pane — where the operator-facing
+  // editors live, incl. the 2026-08-25 Reference data-table upload — had no
+  // coverage at all. One post-hook closes it (the sched-modal precedent).
+  ['admin-config-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('config')"],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

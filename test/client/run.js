@@ -12556,6 +12556,54 @@ test('KBI-2: ingest reuses the production converters, needs no advanced service,
     'and the final embed return carries one of them — never an empty warnings list');
 });
 
+test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually returns', () => {
+  // A READ gate returns a bare {error} (getReferenceTree, searchReference,
+  // getTeamMetrics, searchInsurancePayors…); a WRITE gate returns
+  // {success:false, error}. `_assertFailure` requires success===false, so
+  // pointing it at a read fails against a CORRECT rejection — which is exactly
+  // what happened to `insurance_search_requiresEmployee` on its first live
+  // run: the endpoint was right and the harness was asserting the wrong
+  // contract. Derived, so it covers every future gate test rather than the
+  // four that exist today.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // Split Tests.js into function bodies, keep the ones that auth-gate-assert.
+  const bodies = [];
+  const re = /\nfunction (test_[A-Za-z0-9_]+)\s*\(\)\s*\{/g;
+  let m;
+  while ((m = re.exec(tests))) {
+    let i = tests.indexOf('{', m.index + m[0].length - 1), depth = 0, end = i;
+    for (; end < tests.length; end++) {
+      if (tests[end] === '{') depth++;
+      else if (tests[end] === '}') { depth--; if (!depth) break; }
+    }
+    bodies.push({ name: m[1], body: tests.slice(i, end + 1) });
+  }
+  const gateTests = bodies.filter((b) => /_assertFailure\([^)]*'Not authorized/.test(b.body));
+  assert.ok(gateTests.length >= 3, 'found the auth-gate tests to check (got ' + gateTests.length + ')');
+  let checked = 0;
+  gateTests.forEach((t) => {
+    // Link the ASSERTED VARIABLE to the call that produced it — a first,
+    // coarser version flagged every endpoint called anywhere in the body and
+    // false-alarmed on a sibling read the same test asserts CORRECTLY. A pin
+    // that nags on correct code is the INV-186 class; it must name the actual
+    // mismatch or say nothing.
+    const varFn = {};
+    let a; const are = /const\s+(\w+)\s*=\s*_asUser\([^;]*?return\s+([a-zA-Z][A-Za-z0-9_]*)\s*\(/g;
+    while ((a = are.exec(t.body))) varFn[a[1]] = a[2];
+    let f; const fre = /_assertFailure\(\s*(\w+)\s*,\s*'Not authorized/g;
+    while ((f = fre.exec(t.body))) {
+      const fn = varFn[f[1]];
+      if (!fn) continue;                                   // not a simple _asUser capture
+      if (!new RegExp('\\nfunction ' + fn + '\\s*\\(').test(code)) continue;   // local helper
+      checked++;
+      assert.ok(/success:\s*false/.test(extractRawFunction('Code.js', fn)),
+        t.name + ' uses _assertFailure on ' + fn + ', which returns a bare {error} — assert r.error instead (a READ gate has no success flag)');
+    }
+  });
+  assert.ok(checked >= 3, 'the variable→call link actually resolved (checked ' + checked + ')');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
