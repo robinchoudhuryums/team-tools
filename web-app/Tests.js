@@ -5189,6 +5189,9 @@ function test_managerGates_rejectNonManager() {
     kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
     // #8 — search-synonym config (authoring-adjacent).
     kbGetSearchConfig: 1, kbSaveSearchConfig: 1,
+    // Reference data tables + editor file ingest (operator 2026-08-25) — both
+    // write/read KB store content, so they sit in the authoring tier.
+    getKbDataTables: 1, kbImportDataTable: 1, kbIngestFile: 1,
   };
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

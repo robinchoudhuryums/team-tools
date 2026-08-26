@@ -12604,6 +12604,55 @@ test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually retu
   assert.ok(checked >= 3, 'the variable→call link actually resolved (checked ' + checked + ')');
 });
 
+test('GATE-TIER: the omnibus ADMIN_GATED bucket matches the tier each endpoint actually enforces', () => {
+  // Sibling of GATE-SHAPE, and the same class one level up: that pin catches a
+  // gate test asserting the wrong RESPONSE SHAPE; this one catches it asserting
+  // the wrong TIER. `test_managerGates_rejectNonManager` picks its expected
+  // message from a hand-maintained ADMIN_GATED map, so an endpoint added to the
+  // case list but not to the map is asserted against 'Manager access' and fails
+  // on a CORRECT admin rejection — which is exactly how getKbDataTables/
+  // kbImportDataTable/kbIngestFile reported red on their first live run.
+  // Derived from Code.js, so the map can never silently fall behind again.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const omni = extractRawFunction('Tests.js', 'test_managerGates_rejectNonManager');
+  assert.ok(omni.length > 4000, 'sanity: the omnibus gate test was located');
+  // SHAPES come off the raw source (the seams-18 F3 rule — a naive `//` strip
+  // eats the `https://…` inside two case arguments). Only FULL-LINE comments
+  // are dropped, which cannot sit mid-URL, so a commented-out case is ignored
+  // without damaging a live one.
+  const live = omni.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const cases = [];
+  let c; const cre = /\['([^']+)',\s*function \(\) \{ return ([A-Za-z0-9_]+)\s*\(/g;
+  while ((c = cre.exec(live))) cases.push({ label: c[1], fn: c[2] });
+  assert.ok(cases.length > 60, 'sanity: parsed the omnibus case list (got ' + cases.length + ')');
+
+  const mapStart = live.indexOf('const ADMIN_GATED = {');
+  assert.ok(mapStart >= 0, 'sanity: located the ADMIN_GATED map');
+  const mapEnd = live.indexOf('};', mapStart);
+  const mapSrc = live.slice(mapStart, mapEnd);
+  const adminMap = {};
+  let k; const kre = /(\w+)\s*:\s*1/g;
+  while ((k = kre.exec(mapSrc))) adminMap[k[1]] = 1;
+  assert.ok(Object.keys(adminMap).length > 20, 'sanity: parsed the ADMIN_GATED keys');
+
+  const gated = gatedEndpointsFromSource_();
+  const isAdmin = {}; gated.admin.forEach((n) => { isAdmin[n] = 1; });
+  const isMgr = {}; gated.manager.forEach((n) => { isMgr[n] = 1; });
+  let checked = 0;
+  cases.forEach((cs) => {
+    if (isAdmin[cs.fn]) {
+      checked++;
+      assert.ok(adminMap[cs.label],
+        cs.fn + " returns 'Admin access required.' but is missing from the omnibus ADMIN_GATED map — the test would assert 'Manager access' and fail on a correct rejection");
+    } else if (isMgr[cs.fn]) {
+      checked++;
+      assert.ok(!adminMap[cs.label],
+        cs.fn + " returns 'Manager access required.' but is listed in ADMIN_GATED — the test would assert 'Admin access' and fail on a correct rejection");
+    }
+  });
+  assert.ok(checked > 60, 'the case→tier link actually resolved (checked ' + checked + ')');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
