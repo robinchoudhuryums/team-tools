@@ -21,10 +21,10 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 585 + DOM 75;
-  visual matrix on demand)
+Test Command: manual (Node harnesses: `npm test` = pure 653 + DOM 81;
+  visual matrix on demand — 49 scenarios, last full shoot 2026-08-26 clean)
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-08-21
+Updated: 2026-08-26
 
 ## In progress (facts to carry forward — NOT judgments)
 - Seams F1–F5 implemented, tested (585 pure / 75 DOM, all green), and
@@ -52,11 +52,15 @@ Updated: 2026-08-21
   count (stale twice); the matrix summary is the single source
 
 ## Pending / not yet done
-- DEPLOY (operator): PR #176 + PR #177 + the pilot-feedback ROUND 1 branch
-  (below) ship together on the next `clasp push -f` + New version; then
-  `runAllTests()` in the editor; then the round-1 email spot-check (one dept
-  email + one intake email — From name reads "<Agent> · Universal Medical
-  Supply", Reply-To is the agent). Nothing reaches users until it runs.
+- DEPLOY (operator, the ONE outstanding action): PRs #176 + #177 (cycle 18)
+  and #184 + #185 + #186 + #187 + #188 (the 2026-08-25 operator round) all
+  ship on the SAME `clasp push -f` + New version; then `runAllTests()` in
+  the editor (expect 293/293); then the payor CSV import (now in-app via
+  Admin → Config → Reference data tables) and the email spot-check (one dept
+  + one intake email — From "<Agent> · Universal Medical Supply", Reply-To
+  the agent). Nothing reaches users until the deploy runs.
+- BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback) — free-text
+  recipient feedback already shipped 2026-08-13.
 
 ## Between-cycles operator feature work (2026-08-21, the 18pre convention)
 - **Pilot-feedback ROUND 1 implemented** (operator-approved roadmap items
@@ -242,45 +246,58 @@ Updated: 2026-08-21
   appsscript.json, nothing for IT to approve (the operator flagged that risk).
   Commits 1e70942 + eb4b9eb + the pin/doc commits. Pure 646→651, DOM 81.
   INV-136 admin count 43→46 with all four gate cases.
+- **Two POST-DEPLOY gate-test fixes**, both red on a CORRECT rejection, both
+  now closed by a DERIVED tripwire rather than a corrected hand list:
+  (a) `insurance_search_requiresEmployee` used `_assertFailure` (the WRITER
+  shape, `success===false`) on a READ endpoint → **GATE-SHAPE**, which links
+  each asserted variable back to the endpoint its own `_asUser` call produced;
+  (b) `managerGates_rejectNonManager` asserted the MANAGER message for the
+  three admin-gated Reference-ingest endpoints, because the omnibus's hand-kept
+  `ADMIN_GATED` map had not been updated → **GATE-TIER**, which links every
+  omnibus case to the tier `Code.js` actually enforces and fails in BOTH
+  directions. `_assertContains` throws, so (b)'s single reported failure was
+  masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-MOST RECENT (2026-08-25): the operator's 8-ask round is implemented as six
-batches on `claude/team-tools-roadmap-6e2l97` (the in-place DR resolve
-merged first as PR #184): batch 1 intake polish (unselect toggle, PPD
-Additional Notes, strongly-recommended warnings — `INTAKE_RECOMMENDED` +
-`intakeWarnRecommended_`), batch 2 A_Q_Spanish voicemails in the Spanish
-pending list (`spanishVmMatch_`/`spanishThreadInScope_`, manual-resolve-
-only, `SPANISH_VM_SENDER`/`SPANISH_VM_SUBJECT_FILTER`), batch 3 the
-insurance payor lookup (`InsurancePayors` tab in the KB spreadsheet —
-OPERATOR IMPORT REQUIRED — `searchInsurancePayors` + legend/tones,
-deterministic over RAG by design), batch 4 intake amend & re-send
-(owner-only, `AMENDED:` + changed-fields banner POST-hash, trailing
-`AmendsId` column, Sent-tab amended/superseded chips), batch 5 note marker
-formatting (`**`/`__`/`==` + Ctrl/⌘+B/U/Shift+H; cnFmtHtml_↔cnFmtEmailHtml_
-byte-equal mirror; copy strips), batch 6 intake-call analytics
-(`intakeNotes` on the three metrics endpoints null-on-unavailable, Team
-table Intake column, manager-only monthly volume block via the new
-manager-gated `getIntakeVolumeStats`). Pure 642 / DOM 79, every pin
-bite-checked; blocks `19pre-operator-batch1..6-*.md`; consolidated
-/sync-docs APPLIED (this session). Batch 7 (structured intake feedback)
-is BLOCKED on the operator — free-text feedback already exists. Next:
-push + PR + merge, then the operator combined deploy + runAllTests()
-(now incl. `insurance_search_requiresEmployee` + the `getIntakeVolumeStats`
-gate case) + the duplicate-payor-rows / stray-'Y' report + the
-InsurancePayors import.
+MOST RECENT (2026-08-26). Everything is MERGED to main and the branch is
+clean — nothing is half-done in the repo. The 2026-08-25 operator round
+shipped as four PRs: **#185** (batches 1–6: intake polish, A_Q_Spanish
+voicemails, insurance payor lookup, intake amend & re-send, note marker
+formatting, intake-call analytics), **#186** (composer Preview loader +
+editable Note Reference; Reference file ingest — editor file-drop AND the
+Admin data-table CSV import), **#187** and **#188** (the two post-deploy
+gate-test fixes + their derived GATE-SHAPE / GATE-TIER tripwires).
+/sync-docs was APPLIED in every round — no doc lists are owed. Tests:
+pure **653**, DOM **81**, visual matrix **49** (0 missing, 0 overflow,
+last full shoot 2026-08-26).
 
-Cycle 18 is CLOSED. Pilot-feedback Rounds 1 (c15eec7), follow-ons
-(86c64df), Round 2 (through 3188e79), Round-2 FOLLOW-ONS (d748f2f +
-39cb0c5), and ROUND 3 (ef489ad → ba10a49 — intake arrow nav,
-server-backed scratchpad, Reference comments Phase A, matrix → 47 with
-the sched-modal dark/compact variants, plus the two visual fixes the
-re-shoot caught) are ALL implemented + tested on
-`claude/team-tools-roadmap-6e2l97` and pushed, and the round-3
-FOLLOW-ONS (drawer comments parity, comment edit-in-place, count fold;
-the invisible-icon catch + derived icon-key tripwire) are done with
-/sync-docs APPLIED in the same session — no doc lists owed. The
-operator asked for PR + merge; once merged, the ONLY remaining step is
-the operator-side combined deploy (`clasp push -f` + New version, also
-shipping PR #176/#177) + post-deploy runAllTests() (now incl.
-scheduledCalls_flow, scratchpad_saveReadRoundTrip, kb_comments_flow
-with the edit steps) + the round-1 email spot-check.
+NOTE #187 was merged by the operator without CI having run (the run was
+queued behind a capacity shortage) and as a merge commit rather than a
+squash. It is test-harness-only (Tests.js, run.js, shoot.mjs, CLAUDE.md)
+and was verified locally at 653/81 on that exact commit.
+
+THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
+  1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
+     Edit → Version: **New version**. This one deploy also carries the
+     still-undeployed PR #176 + #177 from cycle 18.
+  2. `runAllTests()` in the editor — expect **293/293** now that both gate
+     tests are fixed. (Neither fix touched runtime code, so the harness
+     fixes do not themselves require a deploy.)
+  3. Import the payor CSV — now doable IN-APP via Manage → Admin → Config →
+     **Reference data tables** (previews first; dryRun defaults TRUE), so
+     the manual File → Import → rename-to-`InsurancePayors` is optional.
+  4. Email spot-check: one dept + one intake email — From reads
+     "<Agent> · Universal Medical Supply", Reply-To is the agent.
+
+BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback). Free-text
+recipient feedback already shipped 2026-08-13, so only build field-level
+structured corrections if they confirm they want them on top of it.
+
+FOR WHOEVER OPENS CYCLE 19: the `19pre-*` block backlog is now **13**
+blocks (pilot rounds 1–3 + follow-ons, operator batches 1–6, and
+`19pre-operator-composer-ingest-gates`) and NONE of it is reflected. The
+cycle-18 block above is closed and belongs in HISTORY.md the moment
+cycle 19 opens; reset STATE.md from the template at the same time. When
+reflecting, re-derive the nets strictly — the last THREE cycles all found
+batch self-reports over-counted (17−0 → 6−2 most recently), so treat the
+per-block numbers as real-defect counts, not fired-this-month counts.
