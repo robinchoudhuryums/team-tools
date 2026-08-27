@@ -3159,7 +3159,8 @@ test('KBL: the editor Save + both convert flows carry in-button loaders, restore
   assert.ok(/kbBtnBusy_\(srcBtn, 'Converting/.test(rdc), 'and goes busy when the confirm is accepted');
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   assert.ok(kb.indexOf('id="kb-ed-convert-btn"') >= 0, 'the editor convert button carries the id the handlers target');
-  assert.ok(/kbConvertItem_\([^)]*this\)/.test(kb),
+  const rdAt = kb.indexOf('kbConvertItem_(\\\'');
+  assert.ok(rdAt >= 0 && kb.indexOf(", this)\">", rdAt) - rdAt < 120,
     'the reader convert onclick passes its own button (kbConvertItem_(..., this))');
 });
 
