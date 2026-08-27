@@ -13073,6 +13073,199 @@ test('QA-6: client pure helpers — qaFmtClock_ + qaMarkerPct_ behavioral', () =
   assert.strictEqual(pct(30, 0), 0, 'a zero/unknown duration renders at 0, never NaN%');
 });
 
+// ---------------------------------------------------------------------------
+// Break-schedule editor (operator 2026-08-27 — "where does the break schedule
+// information go?"). Breaks move from CONFIG-only (a redeploy) to the Admin →
+// Config editor backed by Script Property SHIFT_BREAK_SCHEDULES. Contracts:
+// the property wins when it has an applicable entry (tz key, else DEFAULT) and
+// an EXPLICITLY EMPTY array is honored (no breaks ≠ inherit); the getter is
+// memoized per execution (getShiftSchedule_ runs per-rep-per-day in the
+// coverage walks); the save is strict-with-named-errors while the read is
+// lenient, and anything the save accepts round-trips through the sanitizer
+// unchanged so the two can never disagree (the L-12 rule, both directions).
+console.log('\nbreak-schedule editor (operator 2026-08-27)');
+
+test('BRK-1: breakSchedSanitize_ behavioral — lenient whitelist-rebuild, explicit-empty kept', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'breakSchedSanitize_'), ctx);
+  const S = ctx.breakSchedSanitize_;
+  // Non-object blobs → null (corrupt property degrades to CONFIG).
+  assert.strictEqual(S(null), null);
+  assert.strictEqual(S([1, 2]), null);
+  assert.strictEqual(S('x'), null);
+  // A canonical clean payload round-trips UNCHANGED — the save-accepts ⇒
+  // sanitize-keeps equivalence that keeps read and write agreeing.
+  const clean = { schedules: { DEFAULT: [{ label: 'Lunch', start: '12:30', len: 60 }],
+                               'Asia/Manila': [] }, reminderMin: 15 };
+  assert.strictEqual(JSON.stringify(S(clean)), JSON.stringify(clean),
+    'canonical payload round-trips byte-identically (incl. the EMPTY Manila array)');
+  // Bad keys dropped; bad breaks INSIDE a valid key dropped (survivors kept);
+  // label defaults + caps; reminder out of range = absent.
+  const messy = S({
+    schedules: {
+      'not a tz': [{ label: 'X', start: '10:00', len: 10 }],
+      DEFAULT: [
+        { label: '', start: '10:30', len: 15 },              // label defaults
+        { label: 'Bad start', start: '25:00', len: 15 },     // dropped
+        { label: 'Bad len', start: '11:00', len: 0 },        // dropped
+        { label: 'Too long', start: '11:30', len: 241 },     // dropped
+        { label: 'L'.repeat(60), start: '14:00', len: '30' } // label capped, len parsed
+      ],
+    },
+    reminderMin: 0,
+  });
+  assert.ok(!('not a tz' in messy.schedules), 'a non-IANA, non-DEFAULT key is dropped');
+  assert.strictEqual(messy.schedules.DEFAULT.length, 2, 'bad breaks dropped, survivors kept');
+  assert.strictEqual(messy.schedules.DEFAULT[0].label, 'Break', 'blank label defaults');
+  assert.strictEqual(messy.schedules.DEFAULT[1].label.length, 40, 'label capped at 40');
+  assert.strictEqual(messy.schedules.DEFAULT[1].len, 30, 'string len parses');
+  assert.ok(!('reminderMin' in messy), 'out-of-range reminder is ABSENT (CONFIG fallback), never clamped silently');
+  // Caps: 11 breaks → 10; the all-junk key stays as explicit-EMPTY (the
+  // quieter failure — a missed reminder over a wrong-time one).
+  const eleven = []; for (let i = 0; i < 11; i++) eleven.push({ label: 'B' + i, start: '10:00', len: 5 });
+  assert.strictEqual(S({ schedules: { DEFAULT: eleven } }).schedules.DEFAULT.length, 10, 'breaks capped at 10 per key');
+  const junkKey = S({ schedules: { 'America/Chicago': [{ start: 'nope', len: 'x' }] } });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(junkKey.schedules['America/Chicago'])), [],
+    'an all-junk key reads as explicitly EMPTY, not as absent');
+});
+
+test('BRK-2: getShiftSchedule_ merge behavioral — property wins (tz → DEFAULT), explicit-empty honored', () => {
+  const CONFIG = { SHIFT_SCHEDULE: {
+    DEFAULT: { start: '08:00', end: '17:00', breaks: [
+      { label: 'Morning break', start: '10:30', len: 15 }, { label: 'Lunch', start: '12:30', len: 60 }] },
+    BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+    BREAK_REMINDER_MINUTES: 10,
+  } };
+  const mk = (prop) => {
+    const ctx = { CONFIG: CONFIG, getBreakSchedules_: () => prop };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getShiftSchedule_'), ctx);
+    return ctx.getShiftSchedule_;
+  };
+  // Property unset → today's CONFIG behavior byte-for-byte, incl. the
+  // tz-inherits-DEFAULT.breaks rule and the reminder default.
+  const base = mk(null);
+  assert.strictEqual(base('America/Chicago').breaks.length, 2, 'CONFIG DEFAULT breaks');
+  assert.strictEqual(base('Asia/Manila').breaks.length, 2, 'a BY_TIMEZONE entry without breaks inherits DEFAULT (unchanged)');
+  assert.strictEqual(base('Asia/Manila').startMin, 8 * 60 + 30, 'shift start/end untouched by the breaks layer');
+  assert.strictEqual(base('America/Chicago').breakReminderMin, 10, 'CONFIG reminder');
+  // Property DEFAULT overrides every tz; a tz-specific key wins over it.
+  const p1 = mk({ schedules: {
+    DEFAULT: [{ label: 'One', start: '09:15', len: 10 }],
+    'Asia/Manila': [{ label: 'Merienda', start: '15:30', len: 20 }, { label: 'Lunch', start: '12:00', len: 45 }],
+  }, reminderMin: 5 });
+  assert.strictEqual(p1('America/Chicago').breaks.length, 1, 'property DEFAULT overrides CONFIG');
+  assert.strictEqual(p1('America/Chicago').breaks[0].startMin, 9 * 60 + 15, 'H:mm resolved to minutes');
+  assert.strictEqual(p1('Asia/Manila').breaks.length, 2, 'a tz-specific property key wins over the property DEFAULT');
+  assert.strictEqual(p1('Asia/Manila').breaks[0].label, 'Merienda');
+  assert.strictEqual(p1('America/Chicago').breakReminderMin, 5, 'property reminder wins');
+  // An EXPLICITLY EMPTY array means "no breaks for this key" — it must not
+  // fall through to the property DEFAULT or the CONFIG chain. ([] is truthy,
+  // so the hazardous mutation is a .length guard, not bare truthiness.)
+  const p2 = mk({ schedules: { DEFAULT: [{ label: 'One', start: '09:15', len: 10 }], 'Asia/Manila': [] } });
+  assert.strictEqual(p2('Asia/Manila').breaks.length, 0, 'explicit-empty is honored (no breaks, not inherit)');
+  assert.strictEqual(p2('America/Chicago').breaks.length, 1, 'other zones still get the property DEFAULT');
+  // A property with only an unrelated tz key leaves everyone else on CONFIG.
+  const p3 = mk({ schedules: { 'Asia/Manila': [] } });
+  assert.strictEqual(p3('America/Chicago').breaks.length, 2, 'no applicable property entry → the CONFIG chain');
+});
+
+test('BRK-3: saveBreakSchedules behavioral — gate, named errors, canonical write, delete-on-reset', () => {
+  const props = {};
+  let audited = 0, deleted = 0;
+  const mkCtx = (isAdmin) => {
+    const ctx = {
+      getEmployeeInfo_: () => ({ isAdmin: isAdmin, email: 'mgr@x.com' }),
+      PropertiesService: { getScriptProperties: () => ({
+        setProperty: (k, v) => { props[k] = v; },
+        deleteProperty: (k) => { delete props[k]; deleted++; },
+      }) },
+      writeAuditLog_: () => { audited++; },
+      breakSchedulesAdminView_: () => ({ fromView: true }),
+      CONFIG: { SHIFT_SCHEDULE: { BREAK_REMINDER_MINUTES: 10 } },
+    };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'breakSchedSanitize_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'saveBreakSchedules'), ctx);
+    return ctx;
+  };
+  const rep = mkCtx(false);
+  const rejected = rep.saveBreakSchedules({ reminderMin: 10, schedules: {} });
+  assert.ok(!rejected.success && /Admin access required/.test(rejected.error), 'admin-gated (INV-136)');
+  const ctx = mkCtx(true);
+  const S = ctx.saveBreakSchedules;
+  assert.ok(/break-schedule payload/.test(S(null).error), 'non-object payload named');
+  assert.ok(/schedules map/.test(S({ reminderMin: 10 }).error), 'missing schedules named');
+  assert.ok(/Not a valid timezone key: "nope"/.test(S({ reminderMin: 10, schedules: { nope: [] } }).error),
+    'a bad key is REJECTED by name (strict save vs the lenient read — an editor says what is wrong)');
+  assert.ok(/must be H:mm/.test(S({ reminderMin: 10, schedules: { DEFAULT: [{ start: '9', len: 10 }] } }).error),
+    'a bad start time is rejected by name');
+  assert.ok(/1–240 minutes/.test(S({ reminderMin: 10, schedules: { DEFAULT: [{ start: '09:00', len: 0 }] } }).error),
+    'a zero length is rejected');
+  assert.ok(/Reminder lead/.test(S({ reminderMin: 0, schedules: {} }).error), 'reminder bounds enforced');
+  assert.ok(!('SHIFT_BREAK_SCHEDULES' in props), 'nothing written on any reject');
+  // Valid save: canonical JSON that the READ-side sanitizer keeps unchanged.
+  const ok = S({ reminderMin: 15, schedules: { DEFAULT: [{ label: ' Lunch ', start: '12:30', len: '60' }], 'Asia/Manila': [] } });
+  assert.ok(ok.success && ok.breakSchedules && ok.breakSchedules.fromView,
+    'success returns the SERVER-resolved view (the shared breakSchedulesAdminView_ — no client paraphrase)');
+  assert.ok(audited >= 1, 'AdminConfigChange audited');
+  const stored = JSON.parse(props.SHIFT_BREAK_SCHEDULES);
+  assert.strictEqual(stored.schedules.DEFAULT[0].label, 'Lunch', 'label trimmed at write');
+  assert.strictEqual(stored.schedules.DEFAULT[0].len, 60, 'len canonical int');
+  assert.deepStrictEqual(stored.schedules['Asia/Manila'], [], 'explicit-empty persisted');
+  assert.strictEqual(JSON.stringify(ctx.breakSchedSanitize_(stored)), JSON.stringify(stored),
+    'everything the save accepts round-trips through breakSchedSanitize_ unchanged (read ≡ write)');
+  // Back to CONFIG entirely (zero keys at the CONFIG reminder) DELETES the
+  // property — an untouched deployment and a reset one look identical.
+  const reset = S({ reminderMin: 10, schedules: {} });
+  assert.ok(reset.success && deleted === 1 && !('SHIFT_BREAK_SCHEDULES' in props),
+    'reset deletes the property (the umsTheme posture)');
+});
+
+test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminView shared, editor collects custom-only', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const stripped = nc(codeSrc);
+  // ONE property-name literal per direction: the getter's read, the save's
+  // write + delete — no second reader to drift (the INV-167 boundary shape).
+  assert.strictEqual((stripped.match(/getProperty\('SHIFT_BREAK_SCHEDULES'\)/g) || []).length, 1,
+    'exactly one read site (inside getBreakSchedules_)');
+  const getter = nc(extractRawFunction('Code.js', 'getBreakSchedules_'));
+  assert.ok(/if \(_breakSchedulesCache !== undefined\) return _breakSchedulesCache;/.test(getter),
+    'memoized per execution — getShiftSchedule_ runs per-rep-per-day in the coverage walks');
+  const save = nc(extractRawFunction('Code.js', 'saveBreakSchedules'));
+  assert.ok(/_breakSchedulesCache = undefined/.test(save), 'save resets the memo (a same-execution read sees the new value)');
+  assert.ok(/deleteProperty\('SHIFT_BREAK_SCHEDULES'\)/.test(save) && /setProperty\('SHIFT_BREAK_SCHEDULES'/.test(save),
+    'save owns both write directions');
+  // The merge consults the property with `!== undefined` (explicit-empty
+  // contract) and tz before DEFAULT.
+  const sched = nc(extractRawFunction('Code.js', 'getShiftSchedule_'));
+  const tzIdx = sched.indexOf('prop.schedules[timezone] !== undefined');
+  const defIdx = sched.indexOf('prop.schedules.DEFAULT !== undefined');
+  assert.ok(tzIdx >= 0 && defIdx > tzIdx, 'tz key consulted before the DEFAULT key, both via !== undefined');
+  // getAdminConfig and the save both ship the SAME resolved view, and the view
+  // resolves through the INV-149 resolver (never a parallel breaks walk).
+  assert.ok(/breakSchedules: breakSchedulesAdminView_\(\)/.test(nc(extractRawFunction('Code.js', 'getAdminConfig'))),
+    'getAdminConfig ships the resolved view');
+  const view = nc(extractRawFunction('Code.js', 'breakSchedulesAdminView_'));
+  assert.ok(/empShiftSchedule_\(null,/.test(view), 'the editor view resolves through empShiftSchedule_ (INV-149)');
+  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(view), 'roster tz list honors the INV-183 inclusion predicate');
+  // Client: the card renders in the Config sub-tab, collects ONLY
+  // data-custom="1" sections (an untouched Save never freezes inheritance),
+  // and re-renders from the SERVER's returned view.
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/id="cn-admin-brk-editor"/.test(cn) && /cnRenderBreakSchedEditor_\(cfg\.breakSchedules \|\| \{\}\)/.test(cn),
+    'the Config sub-tab renders the editor from getAdminConfig.breakSchedules');
+  assert.ok(/getAttribute\('data-custom'\) !== '1'\) continue;/.test(cn),
+    'the save collects ONLY customized sections');
+  assert.ok(/\.saveBreakSchedules\(\{ reminderMin: rm, schedules: schedules \}\)/.test(cn),
+    'the editor calls the save endpoint');
+  assert.ok(/cnRenderBreakSchedEditor_\(res\.breakSchedules \|\| \{\}\)/.test(cn),
+    'the post-save re-render uses the SERVER-resolved view, never a client paraphrase (INV-185)');
+  assert.ok(/aria-label="Break start time"/.test(cn) && /aria-label="Remove break"/.test(cn),
+    'editor inputs and per-row controls carry accessible names (A14/INV-195)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
