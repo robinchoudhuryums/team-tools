@@ -76,6 +76,34 @@
     width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
     background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
   }
+
+  /* Phase 2 — agent attribution, waveform, scorecards, per-agent stats */
+  .qa-agent-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .qa-agent-row input {
+    font: inherit; font-size: var(--text-sm, 12px); padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--paper); color: var(--ink); min-width: 200px;
+  }
+  /* display:block would BEAT the UA's [hidden]{display:none} (the documented
+     [hidden] specificity gotcha) — the companion rule below is load-bearing. */
+  .qa-wave { display: block; width: 100%; height: 64px; margin-top: 10px; cursor: pointer; border-radius: 6px; background: var(--paper-2); }
+  .qa-wave[hidden] { display: none; }
+  .qa-score-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .qa-score-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .qa-rate-btns { display: flex; gap: 4px; }
+  .qa-rate-btn {
+    appearance: none; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--muted-2); font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .qa-rate-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 700; }
+  .qa-score-notes {
+    width: 100%; min-height: 46px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
+  }
+  .qa-sc-item { border-top: 1px solid var(--line); padding: 8px 0; font-size: var(--text-sm, 12px); }
+  .qa-sc-meta { color: var(--muted-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
+  .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm, 12px); }
+  .qa-stats-strip strong { color: var(--ink); font-size: 16px; }
   @media (max-width: 700px) {
     .qa-card { grid-template-columns: minmax(0, 1fr); }
     .qa-card-actions { justify-content: flex-start; }
@@ -100,6 +128,14 @@ var QA_STATE = {
   comments: [],
   canModerate: false,
   speed: 1,             // session-only playback speed
+  // Phase 2
+  peaks: null,          // normalized waveform buckets (null = no waveform — flat timeline only)
+  criteria: [],         // live scorecard criteria (from qaListScorecards)
+  scorecards: [],       // latest-per-reviewer cards for the open recording
+  selfEmpId: '',
+  ratings: {},          // the in-progress scorecard form
+  scoreNotes: '',
+  statsSeq: 0,          // qaStats-load seq guard
 };
 
 function enterQaQueueView() {
@@ -325,9 +361,13 @@ function qaOpenDetail_(fileId) {
   QA_STATE.det = rec;
   QA_STATE.comments = [];
   QA_STATE.durationSec = 0;
+  QA_STATE.scorecards = [];
+  QA_STATE.ratings = {};
+  QA_STATE.scoreNotes = '';
   qaRenderDetail_();
   qaLoadAudio_(rec);
   qaLoadComments_(rec.fileId);
+  qaLoadScorecards_(rec.fileId);
   qaEnsureKeysBound_();
 }
 
@@ -342,6 +382,7 @@ function qaBackToQueue_() {
 
 function qaReleaseAudio_() {
   QA_STATE.audioSeq++;   // orphan any in-flight chunk loads
+  QA_STATE.peaks = null;
   if (QA_STATE.objectUrl) { try { URL.revokeObjectURL(QA_STATE.objectUrl); } catch (e) {} QA_STATE.objectUrl = null; }
 }
 
@@ -349,10 +390,21 @@ function qaRenderDetail_() {
   const area = document.getElementById('view-area');
   area.innerHTML =
     '<div class="qa-det-head" id="qa-det-head"></div>' +
+    '<div class="qa-agent-row" id="qa-agent-row"></div>' +
     '<div class="qa-player-card">' +
       '<div id="qa-audio-slot"><div class="qa-note" id="qa-load-note">Loading audio…</div></div>' +
+      // The waveform is DECORATION over the flat timeline: it appears only if
+      // the low-rate decode succeeds (qaTryWaveform_), and every failure path
+      // leaves the Phase-1 UI exactly as it was. aria-hidden: the transport
+      // buttons + arrow keys are the accessible seek path.
+      '<canvas id="qa-wave" class="qa-wave" height="64" hidden aria-hidden="true" onclick="qaWaveSeek_(event)"></canvas>' +
       '<div class="qa-transport" id="qa-transport"></div>' +
       '<div class="qa-timeline" id="qa-timeline" aria-hidden="true"></div>' +
+    '</div>' +
+    '<div class="qa-score-card">' +
+      '<h2 class="card-label">Scorecard</h2>' +
+      '<div id="qa-score-form"><div class="qa-note">Loading…</div></div>' +
+      '<div id="qa-scorecards"></div>' +
     '</div>' +
     '<div class="qa-comments-card">' +
       '<h2 class="card-label">Comments</h2>' +
@@ -364,20 +416,61 @@ function qaRenderDetail_() {
       '<div class="qa-note">Comments anchor to the playback position — click a timestamp to jump there. Space plays/pauses, ←/→ seek 5s.</div>' +
     '</div>';
   qaRenderDetailHead_();
+  qaRenderAgentRow_();
+}
+
+/** Phase 2 — which AGENT the call belongs to (feeds the Stats tab). Roster
+ *  names ride a datalist; free text stays allowed (an ex-agent's recording is
+ *  still attributable). */
+function qaRenderAgentRow_() {
+  const host = document.getElementById('qa-agent-row');
+  const r = QA_STATE.det, d = QA_STATE.queue || {};
+  if (!host || !r) return;
+  const opts = (d.agentOptions || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('');
+  host.innerHTML =
+    '<label for="qa-agent-input" style="font-size:12px;color:var(--muted-2)">Agent on this call</label>' +
+    '<input type="text" id="qa-agent-input" list="qa-agent-opts" maxlength="80" value="' + esc(r.agent || '') + '" placeholder="unassigned">' +
+    '<datalist id="qa-agent-opts">' + opts + '</datalist>' +
+    '<button type="button" class="qa-btn" id="qa-agent-save" onclick="qaSaveAgent_()">Save</button>' +
+    '<span class="qa-note" style="margin:0">feeds the per-agent Stats tab</span>';
+}
+function qaSaveAgent_() {
+  const r = QA_STATE.det;
+  const inp = document.getElementById('qa-agent-input');
+  if (!r || !inp) return;
+  const name = String(inp.value || '').trim();
+  const btn = document.getElementById('qa-agent-save');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'toast-error'); return; }
+      r.agent = res.agent;
+      showToast(res.agent ? 'Agent set' : 'Agent cleared', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Save failed: ' + (err && err.message), 'toast-error');
+    })
+    .qaSetRecordingAgent(r.fileId, name);
 }
 
 function qaRenderDetailHead_() {
   const host = document.getElementById('qa-det-head');
   const r = QA_STATE.det, d = QA_STATE.queue || {};
   if (!host || !r) return;
+  // NB the handler is qaChangeStatus_ — qaStatus_ is a SERVER helper name;
+  // Phase 1 shipped these onclicks pointing at it (a dead reference jsdom's
+  // outside-only mode can't catch), fixed in Phase 2 + pinned by the QA-7
+  // onclick-resolves scan.
   let statusBtns = '';
   if (r.status === 'new' || r.status === 'skipped') {
-    statusBtns += '<button type="button" class="qa-btn" onclick="qaStatus_(\'in_review\')">Start review</button>';
+    statusBtns += '<button type="button" class="qa-btn" onclick="qaChangeStatus_(\'in_review\')">Start review</button>';
   }
   if (r.status !== 'done') {
-    statusBtns += '<button type="button" class="qa-btn prime" onclick="qaStatus_(\'done\')">Mark done</button>';
+    statusBtns += '<button type="button" class="qa-btn prime" onclick="qaChangeStatus_(\'done\')">Mark done</button>';
   } else {
-    statusBtns += '<button type="button" class="qa-btn" onclick="qaStatus_(\'in_review\')">Reopen</button>';
+    statusBtns += '<button type="button" class="qa-btn" onclick="qaChangeStatus_(\'in_review\')">Reopen</button>';
   }
   host.innerHTML =
     '<button type="button" class="qa-btn" onclick="qaBackToQueue_()">' +
@@ -461,6 +554,17 @@ function qaAssembleAudio_(parts, mime, mySeq) {
     });
     audio.addEventListener('timeupdate', function () { qaTickPlayback_(audio); });
     qaRenderTransport_();
+    // Phase 2 — waveform (decoration; every failure leaves the flat timeline).
+    try {
+      let total = 0;
+      bins.forEach(function (u) { total += u.length; });
+      if (total > 0 && total <= QA_WAVE_MAX_BYTES) {
+        const all = new Uint8Array(total);
+        let off = 0;
+        bins.forEach(function (u) { all.set(u, off); off += u.length; });
+        qaTryWaveform_(all, mySeq);
+      }
+    } catch (e) { /* decoration only */ }
   } catch (e) {
     const slot = document.getElementById('qa-audio-slot');
     if (slot && QA_STATE.audioSeq === mySeq) slot.innerHTML = errorStateHtml_('Could not decode the audio: ' + e.message);
@@ -503,6 +607,100 @@ function qaTickPlayback_(audio) {
   if (btn) btn.textContent = 'Comment at ' + qaFmtClock_(audio.currentTime);
   const cur = document.getElementById('qa-tl-cursor');
   if (cur && QA_STATE.durationSec > 0) cur.style.left = qaMarkerPct_(audio.currentTime, QA_STATE.durationSec) + '%';
+  if (QA_STATE.peaks && QA_STATE.durationSec > 0) {
+    qaDrawWave_(audio.currentTime / QA_STATE.durationSec);
+  }
+}
+
+// ── Phase 2: waveform ──────────────────────────────────────────────────────
+var QA_WAVE_MAX_BYTES = 26214400;   // 25 MB decode-cost gate (PCM is many × the file size)
+var QA_WAVE_BUCKETS = 240;
+
+/** PURE (Node-pinned): normalized 0..1 peak per bucket over an array-like of
+ *  PCM samples (Float32Array in the browser; plain arrays in tests). Empty
+ *  input / no buckets → []. Peaks normalize to the loudest bucket so a quiet
+ *  recording still shows its shape. */
+function qaPeaks_(samples, buckets) {
+  const n = samples ? samples.length : 0;
+  const want = Math.floor(Number(buckets) || 0);
+  if (!n || want < 1) return [];
+  const out = [];
+  const per = n / want;
+  let max = 0;
+  for (let b = 0; b < want; b++) {
+    const s = Math.floor(b * per);
+    const e = Math.min(n, Math.max(s + 1, Math.floor((b + 1) * per)));
+    let peak = 0;
+    for (let i = s; i < e; i++) {
+      const v = samples[i] < 0 ? -samples[i] : samples[i];
+      if (v > peak) peak = v;
+    }
+    out.push(peak);
+    if (peak > max) max = peak;
+  }
+  if (max > 0) for (let b = 0; b < out.length; b++) out[b] = Math.round((out[b] / max) * 1000) / 1000;
+  return out;
+}
+
+/** Decode a LOW-RATE mono copy for the waveform — decoration, never the
+ *  playback path: every failure (no OfflineAudioContext, decode error, the
+ *  size gate) silently leaves the flat timeline exactly as Phase 1 shipped
+ *  it. The decode runs at 8 kHz MONO via OfflineAudioContext — a 40-minute
+ *  call costs ~tens of MB transiently, where a naive 44.1 kHz stereo
+ *  AudioContext decode would be hundreds — and the decoded PCM is dropped
+ *  the moment the peaks are extracted. */
+function qaTryWaveform_(bytes, mySeq) {
+  try {
+    if (!bytes || !bytes.length || bytes.length > QA_WAVE_MAX_BYTES) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) return;
+    const ctx = new OAC(1, 8000, 8000);
+    // decodeAudioData DETACHES its input buffer — hand it a copy so the
+    // already-mounted Blob playback is untouched.
+    const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    ctx.decodeAudioData(copy, function (decoded) {
+      try {
+        if (QA_STATE.audioSeq !== mySeq) return;   // another recording opened (INV-156)
+        QA_STATE.peaks = qaPeaks_(decoded.getChannelData(0), QA_WAVE_BUCKETS);
+        decoded = null;   // free the PCM as soon as the peaks exist
+        const wave = document.getElementById('qa-wave');
+        if (wave && QA_STATE.peaks.length) { wave.hidden = false; qaDrawWave_(0); }
+      } catch (e) { /* decoration only */ }
+    }, function () { /* undecodable for the waveform — playback is unaffected */ });
+  } catch (e) { /* decoration only */ }
+}
+
+function qaDrawWave_(playedFrac) {
+  const wave = document.getElementById('qa-wave');
+  const peaks = QA_STATE.peaks;
+  if (!wave || !peaks || !peaks.length) return;
+  try {
+    if (wave.clientWidth > 0 && wave.width !== wave.clientWidth) wave.width = wave.clientWidth;
+    const g = wave.getContext('2d');
+    if (!g) return;
+    const W = wave.width, H = wave.height;
+    const cs = getComputedStyle(document.documentElement);
+    const accent = (cs.getPropertyValue('--accent') || '').trim() || '#0b6e40';
+    const muted = (cs.getPropertyValue('--muted-3') || '').trim() || '#9aa3b2';
+    g.clearRect(0, 0, W, H);
+    const frac = Math.max(0, Math.min(1, Number(playedFrac) || 0));
+    const barW = W / peaks.length;
+    for (let i = 0; i < peaks.length; i++) {
+      const h = Math.max(2, peaks[i] * H * 0.9);
+      g.fillStyle = ((i + 1) / peaks.length <= frac) ? accent : muted;
+      g.fillRect(i * barW, (H - h) / 2, Math.max(1, barW - 1), h);
+    }
+  } catch (e) { /* decoration only */ }
+}
+
+function qaWaveSeek_(ev) {
+  const wave = document.getElementById('qa-wave');
+  const audio = document.getElementById('qa-audio');
+  if (!wave || !audio || !isFinite(audio.duration) || !audio.duration) return;
+  const rect = wave.getBoundingClientRect();
+  if (!rect.width) return;
+  const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+  qaSeekTo_(frac * audio.duration);
 }
 
 function qaRenderTimeline_() {
@@ -598,6 +796,190 @@ function qaDeleteComment_(commentId) {
         .withFailureHandler(function (err) { showToast('Remove failed: ' + (err && err.message), 'toast-error'); })
         .qaDeleteComment(commentId);
     });
+}
+
+// ── Phase 2: scorecards ────────────────────────────────────────────────────
+
+function qaLoadScorecards_(fileId) {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!QA_STATE.det || QA_STATE.det.fileId !== fileId) return;
+      const host = document.getElementById('qa-score-form');
+      if (!host) return;
+      if (!r || r.error) { host.innerHTML = errorStateHtml_((r && r.error) || 'Could not load scorecards.'); return; }
+      QA_STATE.criteria = r.criteria || [];
+      QA_STATE.scorecards = r.scorecards || [];
+      QA_STATE.selfEmpId = r.selfEmpId || '';
+      // Seed the form from MY latest card, so a re-score ADJUSTS rather than
+      // restarts (latest-per-reviewer wins server-side).
+      QA_STATE.ratings = {};
+      QA_STATE.scoreNotes = '';
+      for (let i = 0; i < QA_STATE.scorecards.length; i++) {
+        const c = QA_STATE.scorecards[i];
+        if (String(c.empId) !== String(QA_STATE.selfEmpId)) continue;
+        Object.keys(c.ratings || {}).forEach(function (k) {
+          const v = Number(c.ratings[k]);
+          if (v >= 1 && v <= 5) QA_STATE.ratings[k] = v;
+        });
+        QA_STATE.scoreNotes = c.notes || '';
+        break;   // newest-first — the first of mine is my latest
+      }
+      qaRenderScoreForm_();
+      qaRenderScorecardList_();
+    })
+    .withFailureHandler(function (err) {
+      if (!QA_STATE.det || QA_STATE.det.fileId !== fileId) return;
+      const host = document.getElementById('qa-score-form');
+      if (host) host.innerHTML = errorStateHtml_('Could not load scorecards: ' + (err && err.message));
+    })
+    .qaListScorecards(fileId);
+}
+
+function qaRenderScoreForm_() {
+  const host = document.getElementById('qa-score-form');
+  if (!host) return;
+  const crit = QA_STATE.criteria || [];
+  if (!crit.length) { host.innerHTML = ''; return; }
+  host.innerHTML = crit.map(function (c) {
+    const cur = QA_STATE.ratings[c.key];
+    return '<div class="qa-score-row"><span>' + esc(c.label) + '</span>' +
+      '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + ' rating">' +
+      [1, 2, 3, 4, 5].map(function (v) {
+        return '<button type="button" class="qa-rate-btn" aria-pressed="' + (cur === v ? 'true' : 'false') +
+          '" aria-label="' + esc(c.label) + ': ' + v + ' of 5" onclick="qaSetRating_(\'' + esc(c.key) + '\', ' + v + ')">' + v + '</button>';
+      }).join('') + '</div></div>';
+  }).join('') +
+  '<textarea class="qa-score-notes" id="qa-score-notes" aria-label="Scorecard notes" placeholder="Notes (optional)">' + esc(QA_STATE.scoreNotes || '') + '</textarea>' +
+  '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
+    '<button type="button" class="qa-btn prime" id="qa-score-save" onclick="qaSubmitScorecard_()">Save scorecard</button>' +
+    '<span class="qa-note" style="margin:0">Re-saving replaces your previous score for this recording.</span>' +
+  '</div>';
+}
+
+function qaSetRating_(key, v) {
+  // Clicking the SELECTED rating unselects it (the intake accidental-click
+  // recovery pattern).
+  if (QA_STATE.ratings[key] === v) delete QA_STATE.ratings[key];
+  else QA_STATE.ratings[key] = v;
+  const ta = document.getElementById('qa-score-notes');
+  if (ta) QA_STATE.scoreNotes = ta.value;   // typed notes survive the re-render
+  qaRenderScoreForm_();
+}
+
+function qaSubmitScorecard_() {
+  const r = QA_STATE.det;
+  if (!r) return;
+  if (!Object.keys(QA_STATE.ratings).length) { showToast('Rate at least one criterion.', 'toast-warn'); return; }
+  const ta = document.getElementById('qa-score-notes');
+  const notes = ta ? String(ta.value || '').trim() : '';
+  const btn = document.getElementById('qa-score-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save scorecard'; }
+      if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'toast-error'); return; }
+      showToast('Scorecard saved', 'toast-success');
+      if (QA_STATE.det && QA_STATE.det.fileId === r.fileId) qaLoadScorecards_(r.fileId);
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save scorecard'; }
+      showToast('Save failed: ' + (err && err.message), 'toast-error');
+    })
+    .qaSaveScorecard(r.fileId, QA_STATE.ratings, notes);
+}
+
+function qaCardAvg_(ratings) {
+  let sum = 0, n = 0;
+  Object.keys(ratings || {}).forEach(function (k) {
+    const v = Number(ratings[k]);
+    if (v >= 1 && v <= 5) { sum += v; n++; }
+  });
+  return n ? Math.round((sum / n) * 10) / 10 : null;
+}
+
+function qaRenderScorecardList_() {
+  const host = document.getElementById('qa-scorecards');
+  if (!host) return;
+  const cards = QA_STATE.scorecards || [];
+  if (!cards.length) { host.innerHTML = ''; return; }
+  const critLabel = {};
+  (QA_STATE.criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
+  host.innerHTML = cards.map(function (c) {
+    const avg = qaCardAvg_(c.ratings);
+    return '<div class="qa-sc-item">' +
+      '<div class="qa-sc-meta"><strong>' + esc(c.name || '') + '</strong>' +
+        (avg != null ? '<span>avg ' + esc(String(avg)) + '/5</span>' : '') +
+        '<span>' + esc(qaFmtDate_(c.createdMs)) + '</span></div>' +
+      '<div class="qa-sc-meta" style="margin-top:4px">' +
+        Object.keys(c.ratings || {}).map(function (k) {
+          return '<span class="qa-sc-chip">' + esc(critLabel[k] || k) + ' ' + esc(String(c.ratings[k])) + '</span>';
+        }).join('') + '</div>' +
+      (c.notes ? '<div style="margin-top:4px">' + esc(c.notes) + '</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+// ── Phase 2: per-agent stats tab ───────────────────────────────────────────
+
+function enterQaStatsView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  QA_STATE.det = null;
+  qaReleaseAudio_();
+  const area = document.getElementById('view-area');
+  renderLoading(area, 'Loading QA stats…', 'chart');
+  const requestedView = currentView;
+  const mySeq = ++QA_STATE.statsSeq;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView || QA_STATE.statsSeq !== mySeq) return;
+      if (!data || data.error) {
+        area.innerHTML = errorStateHtml_((data && data.error) || 'Could not load QA stats.');
+        return;
+      }
+      qaRenderStats_(data);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView || QA_STATE.statsSeq !== mySeq) return;
+      area.innerHTML = errorStateHtml_('Could not load QA stats: ' + (err && err.message));
+    })
+    .getQaStats();
+}
+
+function qaRenderStats_(d) {
+  const area = document.getElementById('view-area');
+  let html = '';
+  if (!COMPACT_MODE) html += '<div class="view-title-row"><h1>QA · Stats</h1></div>';
+  if (d.notConfigured) {
+    area.innerHTML = html + '<div class="qa-empty">QA is not set up yet — see the Recordings tab.</div>';
+    return;
+  }
+  const agents = d.agents || [];
+  html += '<div class="qa-stats-strip">' +
+    '<span><strong>' + (Number(d.totalRecordings) || 0) + '</strong> recording(s)</span>' +
+    '<span><strong>' + (Number(d.totalScorecards) || 0) + '</strong> scorecard(s)</span>' +
+    '<span><strong>' + agents.filter(function (a) { return a.agent !== '(unassigned)'; }).length + '</strong> agent(s)</span>' +
+    '</div>';
+  // Columns: the fixed set + one per LIVE criterion. A missing average is an
+  // em dash, never a confident 0 (INV-187).
+  const cols = [
+    { key: 'agent',      label: 'Agent',      name: true,    cell: function (r) { return esc(r.agent); } },
+    { key: 'recordings', label: 'Recordings', numeric: true, cell: function (r) { return String(Number(r.recordings) || 0); } },
+    { key: 'reviewed',   label: 'Reviewed',   numeric: true, cell: function (r) { return String(Number(r.reviewed) || 0); } },
+    { key: 'scorecards', label: 'Scorecards', numeric: true, cell: function (r) { return String(Number(r.scorecards) || 0); } },
+    { key: 'avgScore',   label: 'Avg /5',     numeric: true, cell: function (r) { return r.avgScore == null ? '—' : esc(String(r.avgScore)); } },
+  ].concat((d.criteria || []).map(function (c) {
+    return { key: 'pc-' + c.key, label: c.label, numeric: true, cell: function (r) {
+      const v = (r.perCriterion || {})[c.key];
+      return v == null ? '—' : esc(String(v));
+    } };
+  }));
+  html += agents.length
+    ? '<div class="m-table-wrap">' + mtRenderTable_({ columns: cols, rows: agents }) + '</div>'
+    : '<div class="qa-empty">No recordings indexed yet — stats appear once recordings are synced and attributed to agents.</div>';
+  if (d.truncated) html += '<div class="qa-note">Scan capped — the oldest rows beyond the bounded tail are not counted.</div>';
+  html += '<div class="qa-note">Attribute a recording to its agent in the recording detail (the Agent field). Scores use the latest scorecard per reviewer per recording.</div>';
+  area.innerHTML = html;
 }
 
 // Keyboard shortcuts — active only in the open detail, never while typing
