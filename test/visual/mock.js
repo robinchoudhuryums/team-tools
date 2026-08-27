@@ -182,7 +182,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     previewCallNoteEmail: function (noteId, sel) {
       var s = sel || {};
       return {
-        from: 'Avery Blake · Universal Medical Supply <teamtools@umsupply.com>',
+        from: 'Avery Blake <teamtools@umsupply.com>',
         to: (s.departments || []).join(', ') || 'shipping@umsupply.com',
         cc: 'csr@umsupply.com',
         subject: (s.updateInfo || 'Update') + ' — TRX-100 · P. Sample',

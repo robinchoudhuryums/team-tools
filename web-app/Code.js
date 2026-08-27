@@ -1068,7 +1068,7 @@ function doGet(e) {
       'border-radius:12px;padding:32px 34px;text-align:center}h1{font-size:20px;margin:0 0 10px}' +
       'p{color:#3e4756;font-size:14px;line-height:1.6;margin:0}</style></head><body>' +
       '<div class="card"><h1>Access Restricted</h1>' +
-      '<p>This tool is available only to Universal Medical Supply team members. ' +
+      '<p>This tool is available only to UniversalMed Supply team members. ' +
       'If you believe you should have access, contact your manager.</p></div></body></html>')
       .setTitle('UMS Team Tools — Access Restricted')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -9219,12 +9219,12 @@ function buildCustomerEmailHtml_(recipientName, message, formNames, formLinks) {
       '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
         logoBar +
         '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
-        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Thank you for reaching out to UniversalMed Supply. We appreciate the opportunity to assist you.</p>' +
         messageBlock +
         interactiveBlock +
         formsBlock +
         '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.</p>' +
-        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Warm regards,<br><strong>Universal Medical Supply</strong></p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Warm regards,<br><strong>UniversalMed Supply</strong></p>' +
       '</div>' +
       '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
     '</div>'
@@ -9265,12 +9265,12 @@ function buildProviderEmailHtml_(recipientName, message, formNames, formLinks) {
       '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
         logoBar +
         '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
-        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with UniversalMed Supply.</p>' +
         messageBlock +
         interactiveBlock +
         formsBlock +
         '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.</p>' +
-        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Respectfully,<br><strong>Universal Medical Supply</strong></p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Respectfully,<br><strong>UniversalMed Supply</strong></p>' +
       '</div>' +
       '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
     '</div>'
@@ -9282,7 +9282,7 @@ function buildCustomerEmailText_(recipientName, message, formNames, formLinks) {
   const lines = [];
   lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'Hello,');
   lines.push('');
-  lines.push('Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.');
+  lines.push('Thank you for reaching out to UniversalMed Supply. We appreciate the opportunity to assist you.');
   if (message) { lines.push(''); lines.push(message); }
   if (formLinks && formLinks.length > 0) {
     lines.push('');
@@ -9299,7 +9299,7 @@ function buildCustomerEmailText_(recipientName, message, formNames, formLinks) {
   lines.push('If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.');
   lines.push('');
   lines.push('Warm regards,');
-  lines.push('Universal Medical Supply');
+  lines.push('UniversalMed Supply');
   return lines.join('\n');
 }
 
@@ -9308,7 +9308,7 @@ function buildProviderEmailText_(recipientName, message, formNames, formLinks) {
   const lines = [];
   lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'To Whom It May Concern,');
   lines.push('');
-  lines.push('Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.');
+  lines.push('Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with UniversalMed Supply.');
   if (message) { lines.push(''); lines.push(message); }
   if (formLinks && formLinks.length > 0) {
     lines.push('');
@@ -9325,7 +9325,7 @@ function buildProviderEmailText_(recipientName, message, formNames, formLinks) {
   lines.push('Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.');
   lines.push('');
   lines.push('Respectfully,');
-  lines.push('Universal Medical Supply');
+  lines.push('UniversalMed Supply');
   return lines.join('\n');
 }
 
