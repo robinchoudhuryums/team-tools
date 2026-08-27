@@ -116,7 +116,9 @@ const CONFIG = {
   SHIFT_SCHEDULE: {
     DEFAULT:     { start: '08:00', end: '17:00',
       // Scheduled breaks (item 1) — drive the Clock-view "next break" chip +
-      // the X-min reminder toast. Operator-tunable here (redeploy). A tz entry
+      // the X-min reminder toast. These are the SEED: the Admin → Config
+      // "Break schedules" editor (Script Property SHIFT_BREAK_SCHEDULES, no
+      // redeploy) overrides them when set — see getBreakSchedules_. A tz entry
       // without its own `breaks` inherits DEFAULT.breaks.
       breaks: [
         { label: 'Morning break',   start: '10:30', len: 15 },
@@ -5331,6 +5333,7 @@ function getAdminConfig() {
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
       spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
+      breakSchedules: breakSchedulesAdminView_(),
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -13213,18 +13216,90 @@ function getShiftSchedule_(timezone) {
   const startMin = toMin(sched.start);
   let endMin = toMin(sched.end);
   if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
-  // Breaks (item 1): the shift entry's own, else inherit DEFAULT's. Resolved to
-  // minutes-from-midnight + length so the client can compute the next break.
-  const rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
-                  : (Array.isArray(def.breaks) ? def.breaks : []);
+  // Breaks (item 1): the Admin-edited SHIFT_BREAK_SCHEDULES property wins when
+  // it has an applicable entry — the tz's own key, else its DEFAULT key. An
+  // EXPLICITLY EMPTY array is honored ("no breaks for this key"), which is why
+  // the applicability check is `!== undefined`, never truthiness. Only when the
+  // property has NO applicable entry does the CONFIG chain apply: the shift
+  // entry's own breaks, else inherit DEFAULT's. Resolved to minutes-from-
+  // midnight + length so the client can compute the next break.
+  const prop = getBreakSchedules_();
+  let rawBreaks;
+  if (prop) {
+    if (prop.schedules[timezone] !== undefined) rawBreaks = prop.schedules[timezone];
+    else if (prop.schedules.DEFAULT !== undefined) rawBreaks = prop.schedules.DEFAULT;
+  }
+  if (rawBreaks === undefined) {
+    rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
+              : (Array.isArray(def.breaks) ? def.breaks : []);
+  }
   const breaks = rawBreaks.map(function (b) {
     return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
   }).filter(function (b) { return b.lenMin > 0; });
   return {
     startMin: startMin, lengthMin: endMin - startMin,
     breaks: breaks,
-    breakReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    breakReminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
   };
+}
+
+/** Pure (Node-pinned) — lenient sanitize of the SHIFT_BREAK_SCHEDULES Script
+ *  Property blob (the L-12 sanitize-on-read rule: a hand-edited property
+ *  degrades, never throws). Shape: { schedules: { DEFAULT|<IANA tz>: [
+ *  { label, start 'H:mm', len 1-240 } ] }, reminderMin 1-120 }. Whitelist-
+ *  rebuilt: a bad key / non-array value is dropped, a bad BREAK inside a valid
+ *  key is dropped (the key keeps its surviving breaks — an all-junk key reads
+ *  as explicitly EMPTY, the quieter failure: a missed reminder over a
+ *  wrong-time one), labels trim + cap 40 + default. Caps: 20 keys, 10 breaks
+ *  per key. reminderMin out of range = absent (CONFIG fallback). Returns null
+ *  for a non-object blob. Anything saveBreakSchedules ACCEPTS round-trips
+ *  through this unchanged (pinned), so a rejected save and a sanitized read
+ *  can never disagree. */
+function breakSchedSanitize_(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const src = (obj.schedules && typeof obj.schedules === 'object' && !Array.isArray(obj.schedules)) ? obj.schedules : {};
+  const schedules = {};
+  let keyCount = 0;
+  const keys = Object.keys(src);
+  for (let i = 0; i < keys.length; i++) {
+    const key = String(keys[i]).trim();
+    if (key !== 'DEFAULT' && !/^[A-Za-z]+(\/[A-Za-z0-9_\-+]+)+$/.test(key)) continue;
+    if (keyCount >= 20) break;
+    const arr = src[keys[i]];
+    if (!Array.isArray(arr)) continue;
+    const clean = [];
+    for (let j = 0; j < arr.length && clean.length < 10; j++) {
+      const b = arr[j] || {};
+      const start = String(b.start || '').trim();
+      if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) continue;
+      const len = parseInt(b.len, 10);
+      if (!(len >= 1 && len <= 240)) continue;
+      const label = String(b.label || '').trim().substring(0, 40) || 'Break';
+      clean.push({ label: label, start: start, len: len });
+    }
+    schedules[key] = clean;   // EMPTY is meaningful — "no breaks for this key"
+    keyCount++;
+  }
+  const out = { schedules: schedules };
+  const rm = parseInt(obj.reminderMin, 10);
+  if (rm >= 1 && rm <= 120) out.reminderMin = rm;
+  return out;
+}
+
+/** Memoized per execution — getShiftSchedule_ runs per-rep-per-day inside the
+ *  coverage/punctuality walks, so the property read must not repeat (the
+ *  adpSheetTz_/L-3 pattern). undefined = not read this execution; null =
+ *  property unset or corrupt (CONFIG.SHIFT_SCHEDULE stays the source). */
+let _breakSchedulesCache;
+function getBreakSchedules_() {
+  if (_breakSchedulesCache !== undefined) return _breakSchedulesCache;
+  let out = null;
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('SHIFT_BREAK_SCHEDULES');
+    if (raw && raw.trim()) out = breakSchedSanitize_(JSON.parse(raw));
+  } catch (e) { out = null; }
+  _breakSchedulesCache = out;
+  return out;
 }
 /** Pure (Node-pinned) — parse a per-rep shift override cell (roster column O,
  *  Turn D): 'H:mm-H:mm' (or 'H-H', spaces tolerated), times in the REP's own
@@ -14923,6 +14998,119 @@ function saveSpanishInboxMembers(emails) {
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Spanish inbox members (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** The Admin "Break schedules" editor's view of the LIVE schedules — every
+ *  key's breaks are resolved through the SAME path the Clock chip and the
+ *  reminders ticker use (getShiftSchedule_), so the editor can never show a
+ *  paraphrase of what actually ships (the INV-185 posture, server-side). Keys
+ *  shown: DEFAULT + every CONFIG BY_TIMEZONE tz + every property tz;
+ *  rosterTimezones feeds the add-a-timezone picker (best-effort — a failed
+ *  roster read still renders the config/property keys). */
+function breakSchedulesAdminView_() {
+  const cfg = CONFIG.SHIFT_SCHEDULE || {};
+  const prop = getBreakSchedules_();
+  const keySet = { DEFAULT: true };
+  Object.keys(cfg.BY_TIMEZONE || {}).forEach(function (k) { keySet[k] = true; });
+  if (prop) Object.keys(prop.schedules).forEach(function (k) { keySet[k] = true; });
+  const rosterTz = [];
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;   // INV-183: one inclusion predicate
+      const tz = String(rows[i][EMP.TIMEZONE] || '').trim();
+      if (tz && rosterTz.indexOf(tz) < 0) rosterTz.push(tz);
+    }
+  } catch (e) { /* best-effort */ }
+  const hm = function (m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2); };
+  const schedules = Object.keys(keySet).sort(function (a, b) {
+    return a === 'DEFAULT' ? -1 : (b === 'DEFAULT' ? 1 : a.localeCompare(b));
+  }).map(function (key) {
+    // 'DEFAULT' is not a timezone — resolve it via a tz no BY_TIMEZONE/property
+    // key can match (sanitized property keys are trimmed; a leading space can
+    // never survive), which lands on the DEFAULT entries at every layer.
+    // Routed through the INV-149 resolver — a null empLike has no column-O
+    // override, so this IS the tz-level schedule.
+    const eff = empShiftSchedule_(null, key === 'DEFAULT' ? ' none' : key);
+    return {
+      key: key,
+      custom: !!(prop && prop.schedules[key] !== undefined),
+      breaks: eff.breaks.map(function (b) { return { label: b.label, start: hm(b.startMin), len: b.lenMin }; }),
+    };
+  });
+  return {
+    schedules: schedules,
+    reminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    configReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    rosterTimezones: rosterTz.sort(),
+  };
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the break-schedule overrides
+ *  to Script Property SHIFT_BREAK_SCHEDULES (operator 2026-08-27 — "where does
+ *  the break schedule information go?": previously ONLY editable in
+ *  CONFIG.SHIFT_SCHEDULE, i.e. a redeploy). Payload:
+ *  { reminderMin, schedules: { DEFAULT|<IANA tz>: [{label,start,len}] } }.
+ *  STRICT validation with named errors (an editor should say what is wrong,
+ *  not silently drop — the saveSpanishInboxMembers posture); everything
+ *  accepted here round-trips through breakSchedSanitize_ unchanged (pinned),
+ *  so the read side can never disagree with a save. An EMPTY breaks array is
+ *  valid ("no breaks for this key" — e.g. turning reminders off for one tz);
+ *  a key ABSENT from the map inherits (tz → DEFAULT → CONFIG). Saving zero
+ *  keys at the CONFIG reminder DELETES the property (the umsTheme posture: an
+ *  untouched deployment and a deliberately-reset one look identical). Writes
+ *  an AdminConfigChange audit row; resets the per-execution memo. */
+function saveBreakSchedules(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return { success: false, error: 'Expected a break-schedule payload.' };
+    }
+    const src = payload.schedules;
+    if (!src || typeof src !== 'object' || Array.isArray(src)) {
+      return { success: false, error: 'Expected a schedules map.' };
+    }
+    const keys = Object.keys(src);
+    if (keys.length > 20) return { success: false, error: 'Too many timezone schedules (max 20).' };
+    const schedules = {};
+    for (let i = 0; i < keys.length; i++) {
+      const key = String(keys[i]).trim();
+      if (key !== 'DEFAULT' && !/^[A-Za-z]+(\/[A-Za-z0-9_\-+]+)+$/.test(key)) {
+        return { success: false, error: 'Not a valid timezone key: "' + key + '" — use DEFAULT or an IANA id like America/Chicago.' };
+      }
+      const arr = src[keys[i]];
+      if (!Array.isArray(arr)) return { success: false, error: 'Breaks for "' + key + '" must be a list.' };
+      if (arr.length > 10) return { success: false, error: 'Too many breaks for "' + key + '" (max 10).' };
+      const clean = [];
+      for (let j = 0; j < arr.length; j++) {
+        const b = arr[j] || {};
+        const start = String(b.start || '').trim();
+        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) {
+          return { success: false, error: 'Break start time for "' + key + '" must be H:mm (got "' + start + '").' };
+        }
+        const len = parseInt(b.len, 10);
+        if (!(len >= 1 && len <= 240)) {
+          return { success: false, error: 'Break length for "' + key + '" must be 1–240 minutes.' };
+        }
+        clean.push({ label: String(b.label || '').trim().substring(0, 40) || 'Break', start: start, len: len });
+      }
+      schedules[key] = clean;   // EMPTY is valid — "no breaks for this key"
+    }
+    const rm = parseInt(payload.reminderMin, 10);
+    if (!(rm >= 1 && rm <= 120)) return { success: false, error: 'Reminder lead must be 1–120 minutes.' };
+    const props = PropertiesService.getScriptProperties();
+    const configReminder = parseInt((CONFIG.SHIFT_SCHEDULE || {}).BREAK_REMINDER_MINUTES, 10) || 10;
+    if (Object.keys(schedules).length === 0 && rm === configReminder) {
+      props.deleteProperty('SHIFT_BREAK_SCHEDULES');
+    } else {
+      props.setProperty('SHIFT_BREAK_SCHEDULES', JSON.stringify({ schedules: schedules, reminderMin: rm }));
+    }
+    _breakSchedulesCache = undefined;   // re-read within this execution
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated break schedules (' + Object.keys(schedules).length + ' schedule(s), reminder ' + rm + 'm)', emp.email);
+    return { success: true, breakSchedules: breakSchedulesAdminView_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 

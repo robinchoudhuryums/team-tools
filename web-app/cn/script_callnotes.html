@@ -1679,6 +1679,22 @@
   .cn-spm-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px 4px 10px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); color: var(--ink); }
   .cn-spm-chip button { appearance: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; padding: 2px; border-radius: var(--radius-pill); }
   .cn-spm-chip button:hover { color: var(--danger-deep); background: var(--paper); }
+  /* Break-schedule editor (operator 2026-08-27). One section per timezone
+     key; inherited sections render read-only until Customize. Fixed tracks,
+     so the A2 rule applies: the 700px breakpoint below narrows them. */
+  .cn-brk-sched { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; background: var(--paper); }
+  .cn-brk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .cn-brk-head .spacer { flex: 1; }
+  .cn-brk-key { font-weight: 600; font-size: 12.5px; color: var(--ink); }
+  .cn-brk-pill { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted-2); }
+  .cn-brk-pill.custom { color: var(--info-deep); border-color: transparent; background: var(--info-soft); }
+  .cn-brk-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px 30px; gap: 8px; align-items: center; padding: 3px 0; }
+  .cn-brk-row input { width: 100%; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+  .cn-brk-cols { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-3); padding-bottom: 0; }
+  .cn-brk-ro { font-size: 12px; color: var(--muted-2); padding: 2px 0; }
+  .cn-brk-x { appearance: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--radius-pill); justify-self: center; }
+  .cn-brk-x:hover { color: var(--danger-deep); background: var(--paper-2); }
+  @media (max-width: 700px) { .cn-brk-row { grid-template-columns: minmax(0, 1fr) 88px 70px 26px; } }
   /* Pre-pilot observability — Feature-usage rows (Admin Overview). Fixed
      tracks, so the A2 rule applies: a real viewport breakpoint below drops
      the bar + reps columns rather than squeezing five tracks into a phone. */
@@ -10961,6 +10977,17 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // Break schedules (operator 2026-08-27) — the in-app editor for Script
+    // Property SHIFT_BREAK_SCHEDULES. CONFIG.SHIFT_SCHEDULE stays the seed;
+    // customized sections override it live (no redeploy). Edits BREAKS + the
+    // reminder lead ONLY — shift start/end stay CONFIG + roster column O.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('clock', 14) + ' Break schedules</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Scheduled breaks drive the Clock tab’s “Next break” chip and the break reminder (chime + toast) in every open window, including the pinned pop-out. <strong>Default</strong> applies to every timezone without its own schedule; Customize a timezone to give it different breaks. Times are in each rep’s <strong>own</strong> timezone. Shift start/end times are separate (per-timezone in the app configuration; per-rep via roster column O) — this edits breaks only. Reps pick changes up on their next state refresh (page load or within ~10 minutes).</div>' +
+      '<div id="cn-admin-brk-editor">' + cnRenderBreakSchedEditor_(cfg.breakSchedules || {}) + '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-brk-save" style="margin:10px 0 0">Save break schedules</button>' +
+    '</div>' +
+
     // Phase A — KB AI guidance settings (cap + model; the on/off switch is
     // the kbAiGuidance feature toggle above; the API key stays editor-only).
     (kbAi ?
@@ -11352,6 +11379,85 @@ function cnRenderAdminBody_(cfg) {
     } else { doSave(); }
   });
 
+  // Break schedules (operator 2026-08-27): sections + rows are created
+  // dynamically, so the section-level controls are DELEGATED on the editor
+  // container (which the save re-render replaces the CONTENTS of, never the
+  // container itself — the listener survives). Only data-custom="1" sections
+  // enter the payload; a Revert renders a labeled pending state and the whole
+  // editor re-renders from the SERVER's resolved view after Save.
+  var brkEd = document.getElementById('cn-admin-brk-editor');
+  if (brkEd) brkEd.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+    if (!t || !brkEd.contains(t)) return;
+    var sec = t.closest('.cn-brk-sched');
+    if (t.classList.contains('cn-brk-add') && sec) {
+      var rows = sec.querySelector('.cn-brk-rows');
+      if (rows) {
+        var w = document.createElement('div');
+        w.innerHTML = cnBreakRowHtml_({});
+        rows.appendChild(w.firstElementChild);
+      }
+    } else if (t.classList.contains('cn-brk-override') && sec) {
+      sec.outerHTML = cnBreakSchedSectionHtml_({ key: sec.getAttribute('data-key'), breaks: cnBreakSectionValues_(sec) }, true);
+    } else if (t.classList.contains('cn-brk-revert') && sec) {
+      sec.outerHTML = cnBreakSchedSectionHtml_({ key: sec.getAttribute('data-key'), pending: true }, false);
+    } else if (t.id === 'cn-admin-brk-addtzbtn') {
+      var inp = document.getElementById('cn-admin-brk-addtz');
+      var tz = ((inp && inp.value) || '').trim();
+      if (!tz || tz.indexOf('/') < 0) { showToast('Enter an IANA timezone id like America/Chicago', 'toast-warn'); return; }
+      var list = document.getElementById('cn-admin-brk-list');
+      if (!list) return;
+      var secs = list.querySelectorAll('.cn-brk-sched');
+      for (var i = 0; i < secs.length; i++) {
+        if (secs[i].getAttribute('data-key') === tz) { showToast('That timezone already has a section', 'toast-info'); return; }
+      }
+      var defSec = list.querySelector('.cn-brk-sched[data-key="DEFAULT"]');
+      var wrap = document.createElement('div');
+      wrap.innerHTML = cnBreakSchedSectionHtml_({ key: tz, breaks: defSec ? cnBreakSectionValues_(defSec) : [] }, true);
+      list.appendChild(wrap.firstElementChild);
+      if (inp) inp.value = '';
+    }
+  });
+  var brkSaveBtn = document.getElementById('cn-admin-brk-save');
+  if (brkSaveBtn) brkSaveBtn.addEventListener('click', function () {
+    var btn = this;
+    var secs = document.querySelectorAll('#cn-admin-brk-list .cn-brk-sched');
+    var schedules = {};
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].getAttribute('data-custom') !== '1') continue;
+      var key = secs[i].getAttribute('data-key');
+      var rows = secs[i].querySelectorAll('.cn-brk-rows .cn-brk-row');
+      var breaks = [];
+      for (var j = 0; j < rows.length; j++) {
+        var label = (rows[j].querySelector('.cn-brk-label').value || '').trim();
+        var start = (rows[j].querySelector('.cn-brk-start').value || '').trim();
+        var len = parseInt(rows[j].querySelector('.cn-brk-len').value, 10);
+        if (!label && !start && !(len > 0)) continue;      // fully blank row — ignore
+        if (!start) { showToast('Set a start time for every break in "' + key + '"', 'toast-warn'); return; }
+        if (!(len >= 1 && len <= 240)) { showToast('Break length must be 1–240 minutes ("' + key + '")', 'toast-warn'); return; }
+        breaks.push({ label: label, start: start, len: len });
+      }
+      schedules[key] = breaks;   // empty = deliberately no breaks for this key
+    }
+    var rmEl = document.getElementById('cn-admin-brk-remind');
+    var rm = parseInt((rmEl && rmEl.value) || '', 10);
+    if (!(rm >= 1 && rm <= 120)) { showToast('Reminder lead must be 1–120 minutes', 'toast-warn'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save break schedules';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('Break schedules saved — reps pick them up on their next state refresh', 'toast-success');
+        var ed = document.getElementById('cn-admin-brk-editor');
+        if (ed) ed.innerHTML = cnRenderBreakSchedEditor_(res.breakSchedules || {});
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save break schedules';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveBreakSchedules({ reminderMin: rm, schedules: schedules });
+  });
+
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
   if (slaSaveBtn) slaSaveBtn.addEventListener('click', function () {
     var btn = this;
@@ -11427,6 +11533,90 @@ function cnRenderSpanishMemberChips_(members) {
     return '<span class="cn-spm-chip" data-email="' + esc(m) + '">' + esc(m) +
       '<button type="button" aria-label="Remove ' + esc(m) + '" onclick="this.closest(\'.cn-spm-chip\').remove()">' + icon('x', 11) + '</button></span>';
   }).join('');
+}
+
+/** Break-schedule editor (operator 2026-08-27) — rendered from the
+ *  SERVER-resolved view (getAdminConfig.breakSchedules / saveBreakSchedules'
+ *  return), never a client paraphrase (the INV-185 posture). An inherited
+ *  (non-custom) section is READ-ONLY until Customize, and only
+ *  data-custom="1" sections enter the save payload — so an untouched Save
+ *  never freezes inheritance into the property. A read-only section stashes
+ *  its breaks as JSON in data-breaks so Customize can seed the inputs; the
+ *  attribute round-trip is safe because every re-render goes back through
+ *  esc() (INV-193 — the value never re-enters innerHTML raw). */
+function cnRenderBreakSchedEditor_(bs) {
+  bs = bs || {};
+  var list = (bs.schedules || []).map(function (s) { return cnBreakSchedSectionHtml_(s, !!s.custom); }).join('');
+  var have = {};
+  (bs.schedules || []).forEach(function (s) { have[s.key] = true; });
+  var opts = (bs.rosterTimezones || []).filter(function (t) { return !have[t]; })
+    .map(function (t) { return '<option value="' + esc(t) + '"></option>'; }).join('');
+  return '<div id="cn-admin-brk-list">' + list + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+      '<input type="text" id="cn-admin-brk-addtz" list="cn-admin-brk-tzs" placeholder="America/Chicago" aria-label="Timezone to add a break schedule for" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:200px">' +
+      '<datalist id="cn-admin-brk-tzs">' + opts + '</datalist>' +
+      '<button type="button" class="refresh-btn" id="cn-admin-brk-addtzbtn">' + icon('plus', 12) + ' Add timezone schedule</button>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+      '<label for="cn-admin-brk-remind" style="font-size:12px;color:var(--muted)">Reminder lead (minutes before each break)</label>' +
+      '<input type="number" id="cn-admin-brk-remind" min="1" max="120" step="1" value="' + esc(String(bs.reminderMin || 10)) + '" style="width:80px;font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink)">' +
+    '</div>';
+}
+function cnBreakSchedSectionHtml_(s, editable) {
+  s = s || {};
+  var key = s.key || 'DEFAULT';
+  var isDef = key === 'DEFAULT';
+  var title = isDef ? 'Default (all timezones)' : key;
+  var pill = editable ? '<span class="cn-brk-pill custom">custom</span>' :
+    (s.pending ? '<span class="cn-brk-pill">reverts on save</span>'
+               : '<span class="cn-brk-pill">' + (isDef ? 'app default' : 'inherited') + '</span>');
+  var headBtn = '';
+  if (editable) headBtn = '<button type="button" class="refresh-btn cn-brk-revert">Revert to ' + (isDef ? 'app default' : 'inherited') + '</button>';
+  else if (!s.pending) headBtn = '<button type="button" class="refresh-btn cn-brk-override">Customize</button>';
+  var body;
+  if (s.pending) {
+    body = '<div class="cn-brk-ro">Reverts to ' + (isDef ? 'the app default' : 'the inherited schedule') + ' — Save to apply.</div>';
+  } else if (!editable) {
+    body = (s.breaks || []).length
+      ? (s.breaks || []).map(function (b) {
+          return '<div class="cn-brk-ro">' + esc(b.label) + ' · ' + esc(b.start) + ' · ' + esc(String(b.len)) + ' min</div>';
+        }).join('')
+      : '<div class="cn-brk-ro">No breaks.</div>';
+  } else {
+    body = '<div class="cn-brk-row cn-brk-cols" aria-hidden="true"><span>Name</span><span>Start</span><span>Minutes</span><span></span></div>' +
+      '<div class="cn-brk-rows">' + (s.breaks || []).map(cnBreakRowHtml_).join('') + '</div>' +
+      '<button type="button" class="refresh-btn cn-brk-add" style="margin-top:4px">' + icon('plus', 12) + ' Add break</button>';
+  }
+  return '<div class="cn-brk-sched" data-key="' + esc(key) + '" data-custom="' + (editable ? '1' : '0') + '"' +
+    (!editable && !s.pending ? ' data-breaks="' + esc(JSON.stringify(s.breaks || [])) + '"' : '') + '>' +
+    '<div class="cn-brk-head"><span class="cn-brk-key">' + esc(title) + '</span>' + pill +
+    '<span class="spacer"></span>' + headBtn + '</div>' + body + '</div>';
+}
+function cnBreakRowHtml_(b) {
+  b = b || {};
+  return '<div class="cn-brk-row">' +
+    '<input type="text" class="cn-brk-label" value="' + esc(b.label || '') + '" placeholder="Break name" aria-label="Break name" maxlength="40">' +
+    '<input type="time" class="cn-brk-start" value="' + esc(b.start || '') + '" aria-label="Break start time">' +
+    '<input type="number" class="cn-brk-len" value="' + esc(String(b.len || '')) + '" min="1" max="240" step="1" aria-label="Break length in minutes">' +
+    '<button type="button" class="cn-brk-x" aria-label="Remove break" onclick="this.closest(\'.cn-brk-row\').remove()">' + icon('x', 12) + '</button>' +
+  '</div>';
+}
+/** Current break values of a section — inputs when editable, the data-breaks
+ *  stash when read-only (decoded by getAttribute; re-escaped on any re-render). */
+function cnBreakSectionValues_(sec) {
+  if (sec.getAttribute('data-custom') === '1') {
+    var out = [];
+    var rows = sec.querySelectorAll('.cn-brk-rows .cn-brk-row');
+    for (var j = 0; j < rows.length; j++) {
+      out.push({
+        label: (rows[j].querySelector('.cn-brk-label').value || '').trim(),
+        start: (rows[j].querySelector('.cn-brk-start').value || '').trim(),
+        len: parseInt(rows[j].querySelector('.cn-brk-len').value, 10) || 0,
+      });
+    }
+    return out;
+  }
+  try { return JSON.parse(sec.getAttribute('data-breaks') || '[]'); } catch (e) { return []; }
 }
 
 /** Auto-tag rule editor rows (operator 2026-08-13). */
