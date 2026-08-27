@@ -25109,11 +25109,35 @@ function importQuizFromForm(formRef) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const QA_RECORDINGS_TAB = 'QaRecordings';
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9 };
+// Phase 2 added the trailing Agent column (which agent the call belongs to —
+// feeds the per-agent stats). Extended IN PLACE rather than self-healed:
+// Phase 1 is merged but NOT deployed and QA_SS_ID is unset everywhere, so no
+// QaRecordings tab exists anywhere to migrate.
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10 };
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
 const QAC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, AT_SEC: 4, TEXT: 5, CREATED_MS: 6, STATUS: 7 };
+// Phase 2 — structured scorecards (append-only; a re-score by the same
+// reviewer appends a NEW row and the latest per (recording, reviewer) wins,
+// so a mis-entry is corrected by re-scoring, never by editing a review row).
+const QA_SCORECARDS_TAB = 'QaScorecards';
+const QA_SCORECARDS_HEADERS = ['ScorecardId', 'FileId', 'ReviewerEmpId', 'ReviewerName', 'RatingsJson', 'Notes', 'CreatedMs'];
+const QSC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, RATINGS: 4, NOTES: 5, CREATED_MS: 6 };
+const QA_SCORECARDS_SCAN = 4000;      // bounded tail over QaScorecards
+const QA_SCORECARD_NOTES_MAX = 2000;
+// The scorecard criteria SEED — Script Property QA_SCORECARD_CRITERIA
+// (JSON [{key,label}], sanitize-on-read via qaCriteriaSanitize_) overrides
+// without a redeploy. Keys ride stored RatingsJson, so renaming a key orphans
+// old ratings from that column (they still count toward each card's own
+// average) — prefer adding/removing criteria over renaming.
+const QA_SCORECARD_CRITERIA = [
+  { key: 'greeting',      label: 'Greeting & opening' },
+  { key: 'communication', label: 'Communication & tone' },
+  { key: 'accuracy',      label: 'Accuracy & process' },
+  { key: 'resolution',    label: 'Resolution & next steps' },
+  { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+];
 const QA_STATUSES = ['new', 'in_review', 'done', 'skipped'];
 const QA_LIST_SCAN = 2000;            // bounded tail over QaRecordings
 const QA_LIST_CAP = 200;              // payload cap; pre-slice total reported (INV-169)
@@ -25173,8 +25197,9 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K']); }
 function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
+function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
 
 /** PURE: byte range of chunk `idx` of a `size`-byte file cut into
  *  `chunkBytes` slices. null when the file is empty or idx is out of range —
@@ -25200,9 +25225,23 @@ function getQaQueue() {
     try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
     if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
     const members = Object.keys(getQaMembers_()).sort();
+    // Phase 2: roster NAMES feed the detail's agent datalist (names only —
+    // the same disclosure getTeammateStatus already makes; free text stays
+    // allowed so an ex-agent's recording is still attributable).
+    const agentOptions = [];
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183: one inclusion predicate
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (nm && agentOptions.indexOf(nm) < 0) agentOptions.push(nm);
+      }
+      agentOptions.sort();
+    } catch (e) { /* best-effort — the queue still renders */ }
     const base = {
       members: members, self: String(emp.email || '').trim().toLowerCase(),
       isManager: !!emp.isManager, folderConfigured: !!qaFolderId_(),
+      agentOptions: agentOptions, criteria: getQaScorecardCriteria_(),
     };
     if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; return base; }
     const sheet = getOrCreateQaRecordingsSheet_();
@@ -25223,6 +25262,7 @@ function getQaQueue() {
           status: qaStatus_(rows[i][QAR.STATUS]),
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
+          agent: String(rows[i][QAR.AGENT] || '').trim(),
           comments: 0,
         });
       }
@@ -25290,7 +25330,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''),
+        'new', '', 0, String(f.getUrl() || ''), '',   // Agent set later in the detail
       ]);
       added++;
     }
@@ -25526,4 +25566,255 @@ function qaDeleteComment(commentId) {
     return { success: false, error: 'Comment not found.' };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── QA Phase 2 — agent attribution, scorecards, per-agent stats ─────────────
+
+/** PURE (Node-pinned) — lenient sanitize of the QA_SCORECARD_CRITERIA Script
+ *  Property blob (the L-12 rule). [{key,label}]: key kebab 2-24 chars, label
+ *  trimmed ≤60, deduped, cap 12; null (→ CONFIG seed) when nothing survives. */
+function qaCriteriaSanitize_(arr) {
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < arr.length && out.length < 12; i++) {
+    const c = arr[i] || {};
+    const key = String(c.key || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]{1,23}$/.test(key) || seen[key]) continue;
+    const label = String(c.label || '').trim().substring(0, 60);
+    if (!label) continue;
+    seen[key] = true;
+    out.push({ key: key, label: label });
+  }
+  return out.length ? out : null;
+}
+function getQaScorecardCriteria_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('QA_SCORECARD_CRITERIA');
+    if (raw) {
+      const clean = qaCriteriaSanitize_(JSON.parse(raw));
+      if (clean) return clean;
+    }
+  } catch (e) { /* corrupt property degrades to the seed */ }
+  return QA_SCORECARD_CRITERIA;
+}
+
+/** Set which AGENT a recording belongs to (feeds the per-agent stats). Free
+ *  text bounded ≤80 chars — roster names ride the queue payload as a datalist,
+ *  but an EX-agent's recording must stay attributable, so this is not
+ *  roster-validated. An empty name CLEARS the attribution. QA-gated, locked.
+ *  The audit row is id-only: the agent NAME stays in the QA store, the same
+ *  INV-32/196 rule as recording file names. */
+function qaSetRecordingAgent(fileId, agentName) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const name = String(agentName || '').trim().substring(0, 80);
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    sheet.getRange(found.rowIdx, QAR.AGENT + 1).setValue(name);
+    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
+    return { success: true, agent: name };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Save a structured scorecard for a recording. QA-gated, locked,
+ *  target-must-exist (the qaAddComment posture). Ratings are validated
+ *  against the CURRENT criteria and an UNKNOWN key is REJECTED by name, not
+ *  whitelist-dropped — a review record with silently missing ratings would
+ *  misrepresent the review (the INV-96 refuse-not-drop posture); the client
+ *  reloads and re-scores. Append-only: latest per (recording, reviewer) wins
+ *  everywhere it is read (qaLatestScorecards_). Audit row is id-only. */
+function qaSaveScorecard(fileId, ratings, notes) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!fid) return { success: false, error: 'Missing recording id.' };
+    if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
+      return { success: false, error: 'Expected a ratings map.' };
+    }
+    const criteria = getQaScorecardCriteria_();
+    const known = {};
+    criteria.forEach(function (c) { known[c.key] = true; });
+    const clean = {};
+    let count = 0;
+    const keys = Object.keys(ratings);
+    for (let i = 0; i < keys.length; i++) {
+      const k = String(keys[i]).trim().toLowerCase();
+      if (!known[k]) return { success: false, error: 'Scorecard criteria changed since this page loaded — reload and score again.' };
+      const v = parseInt(ratings[keys[i]], 10);
+      if (!(v >= 1 && v <= 5)) return { success: false, error: 'Ratings must be 1–5.' };
+      clean[k] = v; count++;
+    }
+    if (!count) return { success: false, error: 'Rate at least one criterion.' };
+    const t = String(notes || '').trim();
+    if (t.length > QA_SCORECARD_NOTES_MAX) {
+      return { success: false, error: 'Notes are capped at ' + QA_SCORECARD_NOTES_MAX + ' characters (' + t.length + ') — trim them and save again.' };
+    }
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const scorecardId = Utilities.getUuid();
+    getOrCreateQaScorecardsSheet_().appendRow([
+      scorecardId, fid, emp.id, emp.name, JSON.stringify(clean), t, Date.now(),
+    ]);
+    writeAuditLog_(emp, 'QaScorecardSave', '', '', false, 0, 'fileId=' + fid + '; scorecardId=' + scorecardId, emp.email);
+    return { success: true, scorecardId: scorecardId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Bounded tail read of QaScorecards (all, or one recording's), parsed
+ *  defensively — a corrupt RatingsJson row is skipped, never a broken read. */
+function qaReadScorecards_(fid) {
+  const sheet = getQaSS_().getSheetByName(QA_SCORECARDS_TAB);
+  if (!sheet || sheet.getLastRow() < 2) return { cards: [], truncated: false };
+  const last = sheet.getLastRow();
+  const start = Math.max(2, last - QA_SCORECARDS_SCAN + 1);
+  const rows = sheet.getRange(start, 1, last - start + 1, QA_SCORECARDS_HEADERS.length).getValues();
+  const cards = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (fid && String(rows[i][QSC.FILE_ID] || '') !== fid) continue;
+    let ratings = null;
+    try { ratings = JSON.parse(String(rows[i][QSC.RATINGS] || '')); } catch (e) { ratings = null; }
+    if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) continue;
+    cards.push({
+      scorecardId: String(rows[i][QSC.ID] || ''),
+      fileId: String(rows[i][QSC.FILE_ID] || ''),
+      empId: String(rows[i][QSC.EMP_ID] || ''),
+      name: String(rows[i][QSC.EMP_NAME] || ''),
+      ratings: ratings,
+      notes: String(rows[i][QSC.NOTES] || ''),
+      createdMs: Number(rows[i][QSC.CREATED_MS]) || 0,
+    });
+  }
+  return { cards: cards, truncated: start > 2 };
+}
+
+/** PURE (Node-pinned) — latest scorecard per (recording, reviewer). Iterate
+ *  in sheet (append) order: a createdMs tie keeps the LATER row. */
+function qaLatestScorecards_(cards) {
+  const latest = {};
+  for (let i = 0; i < (cards || []).length; i++) {
+    const c = cards[i] || {};
+    const k = String(c.fileId || '') + '|' + String(c.empId || '');
+    if (!latest[k] || Number(c.createdMs || 0) >= Number(latest[k].createdMs || 0)) latest[k] = c;
+  }
+  return Object.keys(latest).map(function (k) { return latest[k]; });
+}
+
+/** A recording's scorecards (latest per reviewer, newest first) + the live
+ *  criteria, for the detail's scorecard card. QA-gated, read-only. */
+function qaListScorecards(fileId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!fid) return { error: 'Missing recording id.' };
+    const read = qaReadScorecards_(fid);
+    const cards = qaLatestScorecards_(read.cards);
+    cards.sort(function (a, b) { return b.createdMs - a.createdMs; });
+    return { scorecards: cards, criteria: getQaScorecardCriteria_(), selfEmpId: String(emp.id) };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** PURE (Node-pinned) — the per-agent stats fold. recs: [{fileId, agent,
+ *  status}]; cards: LATEST-folded [{fileId, ratings}]; criteria: the live
+ *  set. A blank agent buckets under '(unassigned)' — visible, never dropped
+ *  (INV-169 spirit); a card whose recording is not in the indexed set is
+ *  SKIPPED (an agent is never invented); a criterion with no ratings reads
+ *  null, never a confident 0 (INV-187). avgScore = mean of each card's own
+ *  mean, so a card scored on 3 criteria weighs the same as one scored on 5.
+ *  Ratings under keys the criteria no longer carry still count toward the
+ *  card's own mean (the review happened) but land in no column. */
+function qaStatsAggregate_(recs, cards, criteria) {
+  const byAgent = {};
+  const agentOf = {};
+  const mk = function (a) {
+    if (!byAgent[a]) {
+      const pc = {};
+      (criteria || []).forEach(function (c) { pc[c.key] = { sum: 0, n: 0 }; });
+      byAgent[a] = { agent: a, recordings: 0, reviewed: 0, scorecards: 0, _scoreSum: 0, _pc: pc };
+    }
+    return byAgent[a];
+  };
+  (recs || []).forEach(function (r) {
+    const a = String((r && r.agent) || '').trim() || '(unassigned)';
+    agentOf[String((r && r.fileId) || '')] = a;
+    const b = mk(a);
+    b.recordings++;
+    if (String((r && r.status) || '') === 'done') b.reviewed++;
+  });
+  (cards || []).forEach(function (c) {
+    const a = agentOf[String((c && c.fileId) || '')];
+    if (!a) return;
+    const b = mk(a);
+    let sum = 0, n = 0;
+    Object.keys((c && c.ratings) || {}).forEach(function (k) {
+      const v = Number(c.ratings[k]);
+      if (!(v >= 1 && v <= 5)) return;
+      if (b._pc[k]) { b._pc[k].sum += v; b._pc[k].n++; }
+      sum += v; n++;
+    });
+    if (!n) return;
+    b.scorecards++;
+    b._scoreSum += sum / n;
+  });
+  return Object.keys(byAgent).map(function (a) {
+    const b = byAgent[a];
+    const perCriterion = {};
+    Object.keys(b._pc).forEach(function (k) {
+      perCriterion[k] = b._pc[k].n ? Math.round((b._pc[k].sum / b._pc[k].n) * 10) / 10 : null;
+    });
+    return {
+      agent: b.agent, recordings: b.recordings, reviewed: b.reviewed,
+      scorecards: b.scorecards,
+      avgScore: b.scorecards ? Math.round((b._scoreSum / b.scorecards) * 10) / 10 : null,
+      perCriterion: perCriterion,
+    };
+  }).sort(function (x, y) { return y.recordings - x.recordings || (x.agent > y.agent ? 1 : -1); });
+}
+
+/** Per-agent QA stats (the qaStats tab). QA-gated, read-only, bounded both
+ *  reads with truncation REPORTED (INV-169). */
+function getQaStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    let storeSet = true;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const criteria = getQaScorecardCriteria_();
+    if (!storeSet) return { notConfigured: true, agents: [], criteria: criteria };
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    const recs = [];
+    let recTruncated = false;
+    const last = recSheet.getLastRow();
+    if (last >= 2) {
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      recTruncated = start > 2;
+      const rows = recSheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        recs.push({ fileId: fid, agent: String(rows[i][QAR.AGENT] || '').trim(), status: qaStatus_(rows[i][QAR.STATUS]) });
+      }
+    }
+    const read = qaReadScorecards_(null);
+    const latest = qaLatestScorecards_(read.cards);
+    return {
+      agents: qaStatsAggregate_(recs, latest, criteria),
+      criteria: criteria,
+      totalRecordings: recs.length,
+      totalScorecards: latest.length,
+      truncated: recTruncated || read.truncated,
+    };
+  } catch (err) { return { error: err.message }; }
 }

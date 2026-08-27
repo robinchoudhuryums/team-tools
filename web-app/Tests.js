@@ -5250,7 +5250,12 @@ function test_qa_gates_rejectNonMember() {
    ['qaGetAudioChunk', function () { return qaGetAudioChunk('x', 0); }],
    ['qaListComments', function () { return qaListComments('x'); }],
    ['qaAddComment', function () { return qaAddComment('x', 1, 'note'); }],
-   ['qaDeleteComment', function () { return qaDeleteComment('x'); }]]
+   ['qaDeleteComment', function () { return qaDeleteComment('x'); }],
+   // Phase 2 — agent attribution, scorecards, per-agent stats.
+   ['qaSetRecordingAgent', function () { return qaSetRecordingAgent('x', 'A Name'); }],
+   ['qaSaveScorecard', function () { return qaSaveScorecard('x', { greeting: 5 }, ''); }],
+   ['qaListScorecards', function () { return qaListScorecards('x'); }],
+   ['getQaStats', function () { return getQaStats(); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');
