@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 657 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 660 + DOM 82;
   visual matrix on demand — 49 scenarios, last full shoot 2026-08-26 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -306,13 +306,33 @@ a sticky reload PROMPT within ~20 min of a New-version deploy
 the shell ticker + `showToast` action-button option). Ships in the same
 pending deploy; post-deploy `runAllTests()` expects 294.
 
+NEWEST OF ALL (2026-08-27, Part A — the LIVE timezone reports): a PH rep's
+just-logged note was missing from today's rolling stack (present only under
+yesterday in History), and the operator's own 2:16 PM CST note displayed
+1:46 AM. First diagnosis (blank roster Timezone cell) was FALSIFIED by the
+operator checking column H — the cells were correct. Real fault: the
+coercion-recovery helpers formatted in the ADP tz (Asia/Kolkata) while a
+coercing per-rep sheet interprets its stored digits in ITS OWN tz — the
+operator's sheet tz is America/Chicago (14:16 Chicago recovered in IST =
+00:46 next day) and the PH rep's is Asia/Manila (midnight Manila recovered
+in IST = 21:30 the PREVIOUS day → the vanished note). Fix (block
+`.cycle/blocks/19pre-parta-hosttz-broad-implement.md`): `getCallNotesSheet_`
+memos the HOST sheet's tz (`cnHostTz_`, ADP-tz fallback on a failed read);
+`cnTimestampString_` recovers in it; new `cnDateLocalString_` (the CN twin
+of `normalizeDate_`) at all 26 CN-region CN.DATE_LOCAL sites. Round-trip
+holds BY CONSTRUCTION for any sheet tz; no-op on pinned sheets;
+retroactively corrects historical notes' DISPLAY (stored rows were never
+wrong — nothing to re-enter). Pure 657→660 (PTA-1/2 behavioral against a
+real Intl oracle + PTA-3 wiring + a derived normalizeDate_-over-DATE_LOCAL
+ban; B6 rewritten in place; 4 mutations / 4 bites). Ships in the same
+pending deploy.
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
      still-undeployed PR #176 + #177 from cycle 18.
-  2. `runAllTests()` in the editor — expect **293/293** now that both gate
-     tests are fixed. (Neither fix touched runtime code, so the harness
-     fixes do not themselves require a deploy.)
+  2. `runAllTests()` in the editor — expect **294/294** (the beacon case
+     joined after the gate fixes landed).
   3. Import the payor CSV — now doable IN-APP via Manage → Admin → Config →
      **Reference data tables** (previews first; dryRun defaults TRUE), so
      the manual File → Import → rename-to-`InsurancePayors` is optional.
@@ -323,6 +343,10 @@ THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   5. DONE (2026-08-27): `REP_SENDER_FROM=customersuccess@universalmedsupply.com`
      is SET — rep-initiated sends go out from the alias via GmailApp, which
      also records each send in the deployer's own Gmail Sent folder.
+  6. Timezone spot-check (Part A): log a note and confirm the card shows
+     your wall-clock time; have a PH agent confirm a fresh note appears in
+     today's Log immediately. Historical notes' displayed times
+     self-correct on the same deploy — nothing to re-enter.
 
 BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback). Free-text
 recipient feedback already shipped 2026-08-13, so only build field-level

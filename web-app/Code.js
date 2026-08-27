@@ -3242,7 +3242,7 @@ function updateCallNote(noteId, payload) {
       if (before !== after) diffs.push(name);
     });
 
-    const dateLocal = normalizeDate_(oldRow[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(oldRow[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteEdit', dateLocal, '', false, 0,
       `noteId=${noteId}; changed: ${diffs.join(', ') || '(no changes)'}`);
 
@@ -3287,7 +3287,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       else cur.push('urgent');
       subformData.flags = cur;
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
-      const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+      const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
       writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
         `noteId=${noteId}; urgent=${idx >= 0 ? 'off' : 'on'}`);
       const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
@@ -3329,7 +3329,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
 
@@ -3357,7 +3357,7 @@ function setCallNoteResolved(noteId, resolved) {
     const val = resolved ? 'TRUE' : 'FALSE';
     sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(val);
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
       `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
     // (Ambient cache is purely TTL-driven now — see INV-43.)
@@ -3396,7 +3396,7 @@ function deleteCallNote(noteId) {
       }
     }
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     sheet.deleteRow(located.rowIndex);
     writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
       `noteId=${noteId}`);
@@ -3422,7 +3422,7 @@ function managerDeleteCallNote(repEmpId, noteId) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     sheet.deleteRow(located.rowIndex);
     writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
       'noteId=' + noteId + '; deletedBy=manager', callerEmp.email);
@@ -3502,7 +3502,7 @@ function setCallNotePinned(noteId, pinned) {
     }
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNotePin', dateLocal, '', false, 0,
       `noteId=${noteId}; ${willPin ? 'pinned' : 'unpinned'}`);
 
@@ -3614,7 +3614,7 @@ function getMyCallNotes(options) {
     const located = readCallNoteRowsInRange_(sheet, date, date);
     const notes = [];
     for (let i = 0; i < located.length; i++) {
-      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
+      const rowDate = cnDateLocalString_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate !== date) continue;
       const note = callNoteRowToObject_(located[i]);
       if (!callNoteMatchesFilter_(note, filter)) continue;
@@ -3651,7 +3651,7 @@ function getMyNoteHourBuckets(date) {
     const located = readCallNoteRowsInRange_(sheet, d, d);
     for (let i = 0; i < located.length; i++) {
       const row = located[i].row;
-      if (normalizeDate_(row[CN.DATE_LOCAL]) !== d) continue;
+      if (cnDateLocalString_(row[CN.DATE_LOCAL]) !== d) continue;
       // F(cycle-8): route the coerced-Date recovery through cnTimestampString_
       // (INV-142) — the old inline branch formatted in the REP's tz, but a
       // coercing-locale sheet coerces in the SHEET's tz (pinned to the ADP
@@ -3691,7 +3691,7 @@ function getMyCallNotesRange(startDate, endDate) {
     const located = readCallNoteRowsInRange_(sheet, startDate, endDate);
     const notes = [];
     for (let i = 0; i < located.length; i++) {
-      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
+      const rowDate = cnDateLocalString_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate < startDate || rowDate > endDate) continue;
       const note = callNoteRowToObject_(located[i]);
       notes.push(note);
@@ -3772,7 +3772,7 @@ function getCallNotesAmbient() {
       const flagRes = sheet.getRange(2, CN.FLAG_TYPE + 1, n, 2).getValues();  // FlagType, Resolved
       const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
       for (let i = 0; i < n; i++) {
-        const dateLocal = normalizeDate_(tsDate[i][1]);
+        const dateLocal = cnDateLocalString_(tsDate[i][1]);
         if (dateLocal === today) todayTotal++;
         if (dateLocal && dateLocal >= weekStart && dateLocal <= today) weekTotal++;
         flagCounts.all++;
@@ -4570,7 +4570,7 @@ function getCallNotesTagTaxonomy() {
             let sub = null;
             try { sub = JSON.parse(subRaw); } catch (e) { continue; }
             if (!sub || !Array.isArray(sub.tags)) continue;
-            const dateLocal = normalizeDate_(dateCol[j][0]);
+            const dateLocal = cnDateLocalString_(dateCol[j][0]);
             sub.tags.forEach(function (t) {
             const tag = String(t || '').trim().toLowerCase();
             if (!tag) return;
@@ -4728,7 +4728,7 @@ function getCallNotesTagTrends() {
             let sub = null;
             try { sub = JSON.parse(subRaw); } catch (e) { continue; }
             if (!sub || !Array.isArray(sub.tags) || !sub.tags.length) continue;
-            const dateLocal = normalizeDate_(dateCol[j][0]);
+            const dateLocal = cnDateLocalString_(dateCol[j][0]);
             // Window pre-filter (yyyy-MM-dd lexicographic = chronological) keeps
             // the events array bounded to the trailing window.
             if (!dateLocal || dateLocal < windowStartIso) continue;
@@ -5012,7 +5012,7 @@ function managerGetCallNotes(repEmpId, date, filter) {
     const located = readCallNoteRowsInRange_(sheet, dateStr, dateStr);
     const notes = [];
     for (let i = 0; i < located.length; i++) {
-      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
+      const rowDate = cnDateLocalString_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate !== dateStr) continue;
       const note = callNoteRowToObject_(located[i]);
       if (!callNoteMatchesFilter_(note, flt)) continue;
@@ -5046,7 +5046,7 @@ function readCallNoteRowsInRange_(sheet, start, end) {
   const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, n, 1).getValues();
   let firstMatch = -1, lastMatch = -1;
   for (let d = 0; d < dateCol.length; d++) {
-    const dl = normalizeDate_(dateCol[d][0]);
+    const dl = cnDateLocalString_(dateCol[d][0]);
     if (dl >= start && dl <= end) {
       if (firstMatch < 0) firstMatch = d;
       lastMatch = d;
@@ -5185,7 +5185,7 @@ function managerGetShiftStats(date) {
           const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
           let firstMatch = -1, lastMatch = -1;
           for (let d = 0; d < dateCol.length; d++) {
-            if (normalizeDate_(dateCol[d][0]) === date) {
+            if (cnDateLocalString_(dateCol[d][0]) === date) {
               if (firstMatch < 0) firstMatch = d;
               lastMatch = d;
             }
@@ -7367,7 +7367,7 @@ function exportCallNotesRange(startDate, endDate) {
         const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
         let firstMatch = -1, lastMatch = -1;
         for (let d = 0; d < dateCol.length; d++) {
-          const dl = normalizeDate_(dateCol[d][0]);
+          const dl = cnDateLocalString_(dateCol[d][0]);
           if (dl >= startDate && dl <= endDate) {
             if (firstMatch < 0) firstMatch = d;
             lastMatch = d;
@@ -7520,7 +7520,7 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     }
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
       `noteId=${noteId}; ${trimmed ? 'reply set' : 'reply cleared'}`,
       callerEmp.email);
@@ -7575,7 +7575,7 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
     if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(target, 'CallNoteManagerComment', dateLocal, '', false, 0,
       `noteId=${noteId}`, callerEmp.email);
 
@@ -7630,7 +7630,7 @@ function appendCallNoteFeedback(noteId, message, kind) {
     if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
-    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFeedback', dateLocal, '', false, 0,
       `noteId=${noteId}; kind=${kindV}`);
 
@@ -7873,12 +7873,16 @@ function createPinnedSpreadsheet_(name) {
  *  /T(\d{2}:\d{2})/ shift-span + EOD time displays, the ambient stale-flag
  *  counter, and FAIL-OPENS the 5-minute delete window (parseTimestampMs_ →
  *  null). Recover a coerced Date back to the as-written T-form digits in the
- *  tz that coerced it (per-rep sheets are pinned to the ADP sheet's tz at
- *  provisioning — INV-110); strings pass through untouched. Same family as
- *  normalizeAuditTs_ / getMyNoteHourBuckets' inline guard. */
+ *  tz that coerced it — the HOST sheet's own tz (cnHostTz_, Part A operator
+ *  2026-08-27): provisioned sheets are pinned to the ADP tz (INV-110) so the
+ *  host tz equals the old adpSheetTz_() there, but a hand-created/drifted
+ *  sheet coerces in ITS OWN tz, and recovering in the ADP tz shifted every
+ *  displayed time by the tz delta (a 2:16 PM Chicago note read 1:46 AM).
+ *  Strings pass through untouched. Same family as normalizeAuditTs_ /
+ *  getMyNoteHourBuckets' inline guard. */
 function cnTimestampString_(val) {
   if (val instanceof Date) {
-    try { return Utilities.formatDate(val, adpSheetTz_(), "yyyy-MM-dd'T'HH:mm:ss"); }
+    try { return Utilities.formatDate(val, cnHostTz_(), "yyyy-MM-dd'T'HH:mm:ss"); }
     catch (e) { return String(val); }
   }
   return String(val || '');
@@ -7898,7 +7902,7 @@ function callNoteRowToObject_(located) {
   return {
     noteId:           String(row[CN.NOTE_ID] || ''),
     timestamp:        cnTimestampString_(row[CN.TIMESTAMP]),   // F(M-14)
-    dateLocal:        normalizeDate_(row[CN.DATE_LOCAL]),
+    dateLocal:        cnDateLocalString_(row[CN.DATE_LOCAL]),
     callback:         String(row[CN.CALLBACK] || ''),
     caller:           String(row[CN.CALLER] || ''),
     relationship:     String(row[CN.RELATIONSHIP] || ''),
@@ -10968,7 +10972,7 @@ function reconcileCallNotes() {
           if (!hasContent) continue;                             // blank row → skip
           const rowIndex = i + 2;
           const tsHadValue = !!cnTimestampString_(row[CN.TIMESTAMP]).trim();
-          let dateLocal = normalizeDate_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
+          let dateLocal = cnDateLocalString_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
           // C1 (cycle 10): recover a coerced Timestamp via cnTimestampString_
           // (INV-142) — the old inline branch formatted in the REP's tz, but
           // the cell was coerced in the SHEET's tz (pinned to the ADP tz,
@@ -10981,7 +10985,7 @@ function reconcileCallNotes() {
           if (!timestamp) timestamp = dateLocal + 'T12:00:00';
           sheet.getRange(rowIndex, CN.NOTE_ID + 1).setValue(Utilities.getUuid());
           if (!tsHadValue) sheet.getRange(rowIndex, CN.TIMESTAMP + 1).setValue(timestamp);
-          if (!normalizeDate_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(dateLocal);
+          if (!cnDateLocalString_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(dateLocal);
           repBackfilled++;
         }
         if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
@@ -11632,7 +11636,7 @@ function sendCallNotesEodDigest() {
         unresolved = [];
         for (let i = 0; i < located.length; i++) {
           const row = located[i].row;
-          if (normalizeDate_(row[CN.DATE_LOCAL]) !== today) continue;
+          if (cnDateLocalString_(row[CN.DATE_LOCAL]) !== today) continue;
           if (String(row[CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
           const resStr = String(row[CN.RESOLVED] || '').toLowerCase();
           if (resStr === 'true' || resStr === 'yes' || resStr === '1') continue;
@@ -15923,6 +15927,15 @@ function getCallNotesSheet_(emp) {
     throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');
   }
   const ss = SpreadsheetApp.openById(emp.callNotesSheetId);
+  // Host-tz memo for coercion recovery (cnHostTz_ / Part A, operator
+  // 2026-08-27). One tz read per sheet per execution (the L-3 memo rule);
+  // a failed read leaves the memo null so cnHostTz_ degrades to the ADP tz
+  // (the pre-Part-A behavior, never worse).
+  try {
+    const hid = emp.callNotesSheetId;
+    if (!(hid in _cnHostTzById)) _cnHostTzById[hid] = ss.getSpreadsheetTimeZone() || null;
+    _cnHostTz = _cnHostTzById[hid];
+  } catch (e) { _cnHostTz = null; }
   let sheet = ss.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.CALL_NOTES.NOTES_TAB);
@@ -15933,6 +15946,43 @@ function getCallNotesSheet_(emp) {
   }
   return sheet;
 }
+// ── Host-sheet timezone for CN coercion recovery (Part A, operator 2026-08-27) ──
+// A per-rep sheet whose LOCALE coerces a stored string interprets the digits in
+// ITS OWN timezone, so recovery must format in that SAME tz or the digits shift
+// by the tz delta. The live failure this closed: the operator's sheet (tz
+// America/Chicago) coerced "…T14:16:xx" to 14:16 Chicago wall time, and
+// recovery in the ADP tz (Asia/Kolkata) rendered it as 00:46 the NEXT day; a
+// PH rep's DateLocal cell (midnight Asia/Manila) recovered in IST as 21:30 the
+// PREVIOUS day, so their just-logged note vanished from the rolling stack and
+// surfaced under yesterday in History. Recovering in the HOST sheet's own tz
+// returns the as-written digits BY CONSTRUCTION for any sheet tz — a no-op on
+// sheets pinned to the ADP tz (INV-110), and retroactively correct for every
+// historical row on a drifted sheet (the stored strings were never wrong).
+// "Last-opened wins" is safe because getCallNotesSheet_ is the single per-rep
+// opener (the INV-167 boundary) and every cross-rep walk converts rows INLINE
+// within its own rep's iteration — no deferred cross-rep conversion exists
+// (verified across all callNoteRowToObject_ call sites). The NotesArchive
+// readers reach the cold tab via sheet.getParent() off the same handle, so the
+// memo covers them too.
+let _cnHostTz = null;
+const _cnHostTzById = {};
+function cnHostTz_() { return _cnHostTz || adpSheetTz_(); }
+
+/** CN.DATE_LOCAL recovery — the CN-sheet twin of normalizeDate_ (Part A).
+ *  Written "yyyy-MM-dd"; a coercing per-rep sheet returns a Date representing
+ *  MIDNIGHT in the sheet's own tz, so formatting in any tz east of it shifts
+ *  the date a whole day BACK (Manila midnight formatted in IST is 21:30 the
+ *  previous day — the "my note is missing from today" symptom). Format in the
+ *  host sheet's tz; strings pass through. ADP/TO/PAR/AUDIT reads keep
+ *  normalizeDate_ — the ADP sheet is its own host. */
+function cnDateLocalString_(val) {
+  if (val instanceof Date) {
+    try { return Utilities.formatDate(val, cnHostTz_(), 'yyyy-MM-dd'); }
+    catch (e) { return normalizeDate_(val); }
+  }
+  return String(val).trim().substring(0, 10);
+}
+
 function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }
 function normalizeDate_(val) {
@@ -16928,7 +16978,7 @@ function cnCountNotesResult_(emp, from, to) {
     const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
     let n = 0;
     for (let i = 0; i < dateCol.length; i++) {
-      const d = normalizeDate_(dateCol[i][0]);
+      const d = cnDateLocalString_(dateCol[i][0]);
       if (d >= from && d <= to) n++;
     }
     return { count: n, unavailable: false, unenrolled: false };
@@ -16960,7 +17010,7 @@ function cnCountIntakeNotesResult_(emp, from, to) {
     const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
     let n = 0;
     for (let i = 0; i < dateCol.length; i++) {
-      const d = normalizeDate_(dateCol[i][0]);
+      const d = cnDateLocalString_(dateCol[i][0]);
       if (d < from || d > to) continue;
       const raw = String(subCol[i][0] || '');
       if (raw.indexOf('"intakeType"') < 0) continue;
