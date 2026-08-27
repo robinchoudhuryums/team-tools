@@ -44,8 +44,9 @@ Script project synced via [clasp](https://github.com/google/clasp).
     the CDR Report spreadsheet. Four tabs: "My Stats" (self-view —
     the previous workday's KPIs, 30-day % Answered trend,
     note-to-call coverage; CDR data is never same-day), "Team
-    Metrics" (manager-only — per-rep table with date-range and
-    preset chips), "Spanish Inbox" (bilingual-assistance request
+    Metrics" (the team aggregate for everyone; the per-rep table
+    and diagnostics stay manager-only — date-range and preset
+    chips), "Spanish Inbox" (bilingual-assistance request
     tracking with a per-member resolution-share chart), and "Dept
     Requests" (inter-department request tracking with SLA status).
     CDR metrics also enrich the Call Notes Stats tab via a
