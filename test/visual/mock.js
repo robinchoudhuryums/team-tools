@@ -674,6 +674,22 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
       externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
       deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      // Break-schedule editor (operator 2026-08-27) — shape mirrors
+      // breakSchedulesAdminView_'s return (INV-185): DEFAULT first, one
+      // CUSTOM per-tz section (editable rows on camera) + one inherited.
+      breakSchedules: {
+        schedules: [
+          { key: 'DEFAULT', custom: false, breaks: [
+            { label: 'Morning break', start: '10:30', len: 15 },
+            { label: 'Lunch', start: '12:30', len: 60 },
+            { label: 'Afternoon break', start: '15:00', len: 15 }] },
+          { key: 'Asia/Manila', custom: true, breaks: [
+            { label: 'Merienda', start: '15:30', len: 20 },
+            { label: 'Lunch', start: '12:00', len: 45 }] },
+        ],
+        reminderMin: 10, configReminderMin: 10,
+        rosterTimezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
+      },
       featureFlags: {
         registry: [
           { key: 'showTeammateStatus', label: 'Teammate status card', description: 'Show the teammate status card on the Clock page.', default: true, scope: 'both' },
