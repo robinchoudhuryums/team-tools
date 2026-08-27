@@ -868,12 +868,22 @@ this section before touching the relevant area.
   **Rep-initiated sends go through `sendRepEmail_(emp, opts)` (pilot
   round 1 + follow-ons):** all SIX routes — `emailFromCallNote` ×3,
   `sendExternalEmail`, `intakeSendPPD`, `intakeSendAcct_` — merge
-  `repSenderOpts_(emp)` (From display name "<Agent> · Universal Medical
-  Supply" + Reply-To the agent; `{}` for a missing emp so the send
-  proceeds with system identity), then send via MailApp — or via
+  `repSenderOpts_(emp)` (From display name = **the agent's name ALONE** +
+  Reply-To the agent; `{}` for a missing emp so the send proceeds with
+  system identity — operator correction 2026-08-27: the former
+  "· Universal Medical Supply" suffix was the WRONG company name and
+  fired live on a pilot send; do not re-add an org suffix without the
+  operator supplying the exact string), then send via MailApp — or via
   GmailApp with `from` when the optional `REP_SENDER_FROM` alias is
   configured and validates against `GmailApp.getAliases()` (fail-safe:
-  any problem falls back to MailApp). Automated digests/alerts/exports
+  any problem falls back to MailApp). **The wrapper also self-BCCs the
+  sending AGENT (operator 2026-08-27)** so they get their own copy in
+  their inbox — a true Sent-folder entry in the agent's mailbox is
+  impossible (the app sends as USER_DEPLOYING; only the DEPLOYER's Sent
+  folder records the send, which the GmailApp path does when the alias
+  is active). The self-BCC APPENDS to any caller bcc (the intake
+  `INTAKE_BCC_EMAIL` shape), never clobbers it, and dedupes
+  case-insensitively. Automated digests/alerts/exports
   deliberately keep the plain system identity. A NEW rep-initiated
   send should use the wrapper, never a bare MailApp call (pinned).
   **The SPLIT-SEND partial contract (cycle-17 C17-11):** a mixed
@@ -5725,10 +5735,12 @@ manually for a fresh deploy or environment:
   store — the standing `FORMS_SS_ID` recommendation now covers it).
   Behaviour changes to expect post-deploy: (a) **rep-initiated emails (dept /
   external / intake) arrive with the agent's identity** — From display name
-  "<Agent> · Universal Medical Supply", Reply-To the agent — so replies land
-  in the sending agent's inbox instead of the deployer's (the org CC/BCC
-  copies are unchanged; automated digests/alerts/exports keep the system
-  identity); (b) flagging a note REVIEW offers an optional comment (the
+  is the agent's name (the org suffix was dropped by operator correction
+  2026-08-27 — wrong company name), Reply-To the agent — so replies land
+  in the sending agent's inbox instead of the deployer's, and since the same
+  correction round the sending agent is self-BCC'd their own copy (the org
+  CC/BCC copies are unchanged; automated digests/alerts/exports keep the
+  system identity); (b) flagging a note REVIEW offers an optional comment (the
   training-question pattern) which renders on cards/queue and as a `Comment:`
   line in the weekly Review digest; (c) the Call Notes form gains an
   **Outbound call** toggle — an info-toned pill on cards, an Outbound filter
@@ -7143,12 +7155,15 @@ manually for a fresh deploy or environment:
   for rep-initiated emails; pilot round-1 follow-ons, 2026-08-24; DORMANT
   until configured — the `WHATSNEW_KB_ID` posture). Rep-initiated sends
   (dept / external / intake — all six routes go through `sendRepEmail_`)
-  always carry the agent's display name + Reply-To; the true From ADDRESS is
+  always carry the agent's display name (the agent's name alone since the
+  2026-08-27 operator correction) + Reply-To + an agent self-BCC; the true
+  From ADDRESS is
   the deployer's, because the app runs `executeAs: USER_DEPLOYING` and no
   code change can alter that. To send from a neutral shared address instead:
   (1) in the DEPLOYING account's Gmail → Settings → Accounts → "Send mail
-  as", add the shared alias (e.g. `teamtools@umsupply.com` — a Workspace
-  admin may need to create the group/alias first); (2) set this property to
+  as", add the shared alias — **on this deployment the operator's choice is
+  `customersuccess@universalmedsupply.com`, already registered as a send-as
+  option on the deploying account** — (2) set this property to
   that address. No redeploy — the next send picks it up. The value is
   validated against `GmailApp.getAliases()` per execution: set-but-
   unregistered, or any Gmail failure, falls back to the normal MailApp path

@@ -12423,15 +12423,33 @@ test('CMP-3: edits commit through updateCallNote — no new endpoint, state repl
 
 test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built from the note as sent (INV-41)', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const go = nc(extractFunction('cn/script_callnotes.html', 'cnComposerGoToPreview_'));
-  const dirtyAt = go.indexOf('cnComposerNoteDirtyFields_().length > 0');
-  const saveAt = go.indexOf('cnComposerSaveNoteEdits_(');
-  const runAt = go.lastIndexOf('cnComposerRunPreview_()');
+  // The chain tail was split into cnComposerPreviewChain_ when the empty-TRX
+  // warning arrived (operator 2026-08-27) — the ORDER property lives there now.
+  const chain = nc(extractFunction('cn/script_callnotes.html', 'cnComposerPreviewChain_'));
+  const dirtyAt = chain.indexOf('cnComposerNoteDirtyFields_().length > 0');
+  const saveAt = chain.indexOf('cnComposerSaveNoteEdits_(');
+  const runAt = chain.lastIndexOf('cnComposerRunPreview_()');
   assert.ok(dirtyAt > -1 && saveAt > -1 && runAt > -1, 'the dirty branch, the save and the preview are all present');
   assert.ok(saveAt < runAt, 'the save is chained BEFORE the preview — previewing first would render (and email) the STALE note');
-  assert.ok(/if \(!ok\) \{ cnComposerSetPreviewBtnIdle_\(btn\); return; \}/.test(go),
+  assert.ok(/if \(!ok\) \{ cnComposerSetPreviewBtnIdle_\(btn\); return; \}/.test(chain),
     'a failed save aborts the chain and restores the button — never a preview of unsaved text');
+  const go = nc(extractFunction('cn/script_callnotes.html', 'cnComposerGoToPreview_'));
   assert.ok(/if \(c\.previewing \|\| c\.savingNote\) return;/.test(go), 'either in-flight RPC blocks a second click');
+  // Operator 2026-08-27: an empty Patient Name & TRX warns — dismissibly,
+  // never a hard block (the intakeWarnRecommended_ posture). The check reads
+  // the LIVE editable field first (an un-saved fill-in already counts, and
+  // "Go back" lands the rep on that very field), falls back to the stored
+  // note, resumes the SAME chain on Continue, and instance-guards across the
+  // dialog gap.
+  assert.ok(go.indexOf("getElementById('cnC-nr-patientAndTrx')") > -1, 'reads the live editable field first');
+  assert.ok(/c\.note && c\.note\.patientAndTrx/.test(go), 'with the stored note as the fallback (preview step / pending note)');
+  assert.ok(/uiConfirm\(/.test(go) && /Continue anyway/.test(go) && /Go back/.test(go),
+    'warns via uiConfirm with Continue anyway / Go back — a reminder, never a block');
+  assert.ok(/if \(!go\) return;/.test(go), 'Go back stops the chain');
+  assert.ok(/if \(CN_STATE\.composer !== c\) return;/.test(go), 'instance-guarded across the async dialog gap (the M-4/M-9 discipline)');
+  const warnAt = go.indexOf("getElementById('cnC-nr-patientAndTrx')");
+  const chainAt = go.indexOf('cnComposerPreviewChain_()');
+  assert.ok(warnAt > -1 && chainAt > -1 && warnAt < chainAt, 'the warning gate sits BEFORE the save/preview chain');
   // Uncommitted edits are DISCARDED on close — say so rather than lose them.
   const close = nc(extractFunction('cn/script_callnotes.html', 'cnCloseComposerModal_'));
   assert.ok(/Note edits discarded/.test(close), 'closing with unsaved edits toasts instead of silently dropping them');
