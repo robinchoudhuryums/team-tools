@@ -12962,7 +12962,10 @@ test('QA-3: qaSyncRecordings — gated, idempotent before any write, bounded + t
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const f = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
   assert.ok(/canSeeQa_\(emp\)/.test(f), 'QA-gated');
-  const knownIdx = f.indexOf('known[id]');
+  // Match the CONSULT (`if (known[id]) continue;`), not the map BUILD —
+  // a bare indexOf('known[id]') also matches the `known[id] = true` builder,
+  // so deleting the skip passed the first form of this pin (bite-caught).
+  const knownIdx = f.indexOf('if (known[id]) continue;');
   const writeIdx = f.indexOf('setValues');
   assert.ok(knownIdx > -1 && writeIdx > knownIdx, 'existing FileIds are skipped BEFORE any write — a re-run is a no-op (idempotent)');
   assert.ok(/QA_SYNC_MAX_FILES/.test(f) && /truncated = true/.test(f) && /truncated: truncated/.test(f),
@@ -13017,8 +13020,16 @@ test('QA-5: wiring — every endpoint gates before its store, the tab rides also
   assert.ok(/qaQueue: \{ label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
     "the QA tab is gated managers + QA_MEMBERS via also:'canSeeQa' — agents never see it (operator decision, v1)");
   const qa = nc(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
-  assert.ok((qa.match(/QA_STATE\.audioSeq !== mySeq/g) || []).length >= 2,
-    'chunk handlers drop stale appends when another recording opens (INV-156)');
+  // The guard that MATTERS is the one before the chunk APPEND — the fail()
+  // and assemble guards alone can't stop a stale append (a bare occurrence
+  // count passed with the append guard deleted; bite-caught).
+  const fetchIdx = qa.indexOf('function fetchChunk');
+  const appendIdx = qa.indexOf('parts[r.chunkIndex] = r.b64;');
+  const guardIdx = qa.indexOf('QA_STATE.audioSeq !== mySeq', fetchIdx);
+  assert.ok(fetchIdx > -1 && appendIdx > fetchIdx && guardIdx > fetchIdx && guardIdx < appendIdx,
+    'the chunk success handler drops a stale response BEFORE appending it (INV-156)');
+  assert.ok(qa.indexOf('QA_STATE.audioSeq !== mySeq', appendIdx) > -1,
+    'the assemble step re-checks the seq too');
   assert.ok(/esc\(r\.name \|\| '\(unnamed\)'\)/.test(qa) && /esc\(c\.text\)/.test(qa),
     'file names + comment text escape before innerHTML');
   assert.ok(/errorStateHtml_\(/.test(qa) && !/errorStateHtml_\(esc\(/.test(qa),
