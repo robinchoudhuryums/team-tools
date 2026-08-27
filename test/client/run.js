@@ -12441,7 +12441,11 @@ test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built 
   // "Go back" lands the rep on that very field), falls back to the stored
   // note, resumes the SAME chain on Continue, and instance-guards across the
   // dialog gap.
-  assert.ok(go.indexOf("getElementById('cnC-nr-patientAndTrx')") > -1, 'reads the live editable field first');
+  // Assert the live field's VALUE is what is checked, not merely that the
+  // element is looked up — the first write of this pin passed a mutation that
+  // kept the getElementById line but read only the stored note (bite C).
+  assert.ok(/trxEl \? \(trxEl\.textContent/.test(go),
+    'the LIVE editable field is consulted first when it is in the DOM (an un-saved fill-in counts)');
   assert.ok(/c\.note && c\.note\.patientAndTrx/.test(go), 'with the stored note as the fallback (preview step / pending note)');
   assert.ok(/uiConfirm\(/.test(go) && /Continue anyway/.test(go) && /Go back/.test(go),
     'warns via uiConfirm with Continue anyway / Go back — a reminder, never a block');
