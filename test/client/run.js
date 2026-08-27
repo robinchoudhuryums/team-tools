@@ -12640,6 +12640,28 @@ test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually retu
   assert.ok(checked >= 3, 'the variable→call link actually resolved (checked ' + checked + ')');
 });
 
+test('BRAND: the literal "Universal Medical Supply" never ships — it is the WRONG company name', () => {
+  // Operator correction 2026-08-27: the company is "UniversalMed Supply".
+  // The wrong form shipped in 14 user-facing strings (external email bodies,
+  // the public form page, the rep-sender display name) and fired live on a
+  // pilot send before anyone caught it — a string nobody ever verified.
+  // DERIVED over every shipped web-app file plus the visual fixture (which
+  // had already drifted, carrying the retired From line), so a NEW file is
+  // covered the day it lands. Test files are exempt only where they QUOTE the
+  // banned string to ban it (this file).
+  const bad = 'Universal' + ' Medical' + ' Supply';   // split so this pin never trips on itself
+  const dir = path.join(__dirname, '../../web-app');
+  const files = fs.readdirSync(dir, { recursive: true })
+    .filter((f) => /\.(js|html|json)$/.test(f));
+  assert.ok(files.length >= 20, 'sanity: the web-app tree was enumerated (got ' + files.length + ')');
+  files.forEach((f) => {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    assert.ok(src.indexOf(bad) < 0, f + ' contains the wrong company name "' + bad + '" — the correct name is "UniversalMed Supply"');
+  });
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(mock.indexOf(bad) < 0, 'the visual fixture must not re-encode the retired From display string (INV-185)');
+});
+
 test('GATE-TIER: the omnibus ADMIN_GATED bucket matches the tier each endpoint actually enforces', () => {
   // Sibling of GATE-SHAPE, and the same class one level up: that pin catches a
   // gate test asserting the wrong RESPONSE SHAPE; this one catches it asserting
