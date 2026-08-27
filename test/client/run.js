@@ -13266,6 +13266,176 @@ test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminVi
     'editor inputs and per-row controls carry accessible names (A14/INV-195)');
 });
 
+// ---------------------------------------------------------------------------
+// QA Phase 2 — waveform, scorecards, per-agent stats (operator scope).
+console.log('\nQA Phase 2 — waveform, scorecards, per-agent stats');
+
+test('QA-7: qaPeaks_ behavioral + every qa onclick resolves to a defined function', () => {
+  const qaSrc = extractScript('qa/script_qa.html');
+  const peaksCtx = {};
+  vm.createContext(peaksCtx);
+  vm.runInContext(extractFunction('qa/script_qa.html', 'qaPeaks_'), peaksCtx);
+  const P = peaksCtx.qaPeaks_;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P([], 10))), [], 'empty samples → []');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P([0.5], 0))), [], 'no buckets → []');
+  // 4 samples, 2 buckets: peaks |−0.2|,0.4 → 0.4 and 0.1,0.8 → 0.8; normalized
+  // to the loudest bucket so a quiet recording still shows shape.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P([-0.2, 0.4, 0.1, 0.8], 2))), [0.5, 1],
+    'per-bucket abs peaks, normalized to the max');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P([0, 0, 0, 0], 2))), [0, 0],
+    'all-silence stays zeros (no divide-by-zero)');
+  assert.strictEqual(P([0.1, 0.9], 5).length, 5, 'more buckets than samples still yields the asked-for count');
+  // The onclick-resolves scan — the exact Phase-1 defect this batch fixed:
+  // the detail's status buttons called qaStatus_ (a SERVER helper name) while
+  // the client function is qaChangeStatus_, so Start review / Mark done threw
+  // ReferenceError. jsdom's outside-only mode never compiles inline onclick,
+  // so only a source scan can hold this. Derived: every onclick handler name
+  // in the partial must be DEFINED in the partial (qa handlers are all local).
+  const names = {};
+  let m;
+  const defRe = /function ([A-Za-z_$][\w$]*)\s*\(/g;
+  while ((m = defRe.exec(qaSrc)) !== null) names[m[1]] = true;
+  const missing = [];
+  const onRe = /onclick="([A-Za-z_$][\w$]*)\(/g;
+  while ((m = onRe.exec(qaSrc)) !== null) {
+    if (!names[m[1]] && missing.indexOf(m[1]) < 0) missing.push(m[1]);
+  }
+  assert.deepStrictEqual(missing, [],
+    'onclick handler(s) with no definition in the qa partial (the qaStatus_ class): ' + missing.join(', '));
+  // NB the source escapes the inner quotes (onclick="qaChangeStatus_(\'done\')").
+  assert.ok(qaSrc.indexOf("qaChangeStatus_(\\'done\\')") >= 0, 'the status buttons call the CLIENT fn');
+});
+
+test('QA-8: qaLatestScorecards_ + qaStatsAggregate_ behavioral — latest wins, honest gaps', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'qaLatestScorecards_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'qaStatsAggregate_'), ctx);
+  // Latest per (recording, reviewer): a re-score supersedes; a createdMs TIE
+  // keeps the LATER (sheet-append-order) row; other reviewers unaffected.
+  const folded = ctx.qaLatestScorecards_([
+    { fileId: 'f1', empId: 'r1', createdMs: 100, ratings: { a: 2 } },
+    { fileId: 'f1', empId: 'r1', createdMs: 200, ratings: { a: 4 } },
+    { fileId: 'f1', empId: 'r2', createdMs: 150, ratings: { a: 5 } },
+    { fileId: 'f2', empId: 'r1', createdMs: 200, ratings: { a: 1 } },
+    { fileId: 'f2', empId: 'r1', createdMs: 200, ratings: { a: 3 } },   // tie → later row
+  ]);
+  const byKey = {};
+  folded.forEach((c) => { byKey[c.fileId + '|' + c.empId] = c.ratings.a; });
+  assert.strictEqual(folded.length, 3);
+  assert.strictEqual(byKey['f1|r1'], 4, 'the re-score wins');
+  assert.strictEqual(byKey['f2|r1'], 3, 'a createdMs tie keeps the LATER appended row');
+  // The stats fold: (unassigned) bucket VISIBLE; a card for an un-indexed
+  // recording never invents an agent; per-criterion with no ratings is null
+  // (never a confident 0 — INV-187); avgScore = mean of card means.
+  const criteria = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }];
+  const agents = ctx.qaStatsAggregate_(
+    [
+      { fileId: 'f1', agent: 'Maria', status: 'done' },
+      { fileId: 'f2', agent: 'Maria', status: 'new' },
+      { fileId: 'f3', agent: '', status: 'in_review' },
+    ],
+    [
+      { fileId: 'f1', ratings: { a: 5, b: 3 } },          // mean 4
+      { fileId: 'f2', ratings: { a: 2, zz: 4 } },          // mean 3 — zz counts toward the card, lands in no column
+      { fileId: 'zzz', ratings: { a: 1 } },                // un-indexed recording — skipped
+    ],
+    criteria);
+  const maria = agents.filter((a) => a.agent === 'Maria')[0];
+  const un = agents.filter((a) => a.agent === '(unassigned)')[0];
+  assert.ok(maria && un, 'both buckets present — a blank agent is visible, never dropped');
+  assert.strictEqual(maria.recordings, 2);
+  assert.strictEqual(maria.reviewed, 1, 'only status done counts reviewed');
+  assert.strictEqual(maria.scorecards, 2);
+  assert.strictEqual(maria.avgScore, 3.5, 'mean of card means (4 and 3)');
+  assert.strictEqual(maria.perCriterion.a, 3.5, '(5+2)/2');
+  assert.strictEqual(maria.perCriterion.b, 3, 'single rating');
+  assert.strictEqual(un.scorecards, 0);
+  assert.strictEqual(un.avgScore, null, 'no scorecards → null, never 0');
+  assert.strictEqual(un.perCriterion.a, null, 'no ratings → null per criterion');
+  assert.strictEqual(agents[0].agent, 'Maria', 'sorted by recordings desc');
+});
+
+test('QA-9: scorecard save contract — criteria sanitize, reject-unknown-key, target-first, id-only audit', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
+  const S = ctx.qaCriteriaSanitize_;
+  assert.strictEqual(S('x'), null, 'non-array → null (the CONFIG seed applies)');
+  assert.strictEqual(S([{ key: 'BAD KEY', label: 'x' }]), null, 'nothing survives → null, never an EMPTY criteria set');
+  const clean = S([{ key: ' Greeting ', label: 'Greeting' }, { key: 'greeting', label: 'dupe' }, { key: 'x2', label: '' }]);
+  assert.strictEqual(clean.length, 1, 'lowercased key, deduped, label-required');
+  assert.strictEqual(clean[0].key, 'greeting');
+  const getter = nc(extractRawFunction('Code.js', 'getQaScorecardCriteria_'));
+  assert.ok(/return QA_SCORECARD_CRITERIA;/.test(getter), 'the getter falls back to the CONFIG seed');
+  const save = nc(extractRawFunction('Code.js', 'qaSaveScorecard'));
+  assert.ok(/'QA access required\.'/.test(save), 'QA-gated (INV-196 tier)');
+  // Reject-not-drop: a review record with silently missing ratings would
+  // misrepresent the review (INV-96 posture) — an unknown key REFUSES by name.
+  const rejIdx = save.indexOf('criteria changed since this page loaded');
+  assert.ok(rejIdx >= 0, 'an unknown ratings key is REJECTED by name, never whitelist-dropped');
+  assert.ok(/Ratings must be 1–5\./.test(save), 'rating bounds enforced');
+  assert.ok(save.indexOf('Notes are capped at') >= 0, 'over-cap notes REFUSE with the count (INV-96)');
+  const existsIdx = save.indexOf('qaFindRecordingRow_(recSheet, fid)');
+  const appendIdx = save.indexOf('.appendRow([');
+  assert.ok(existsIdx >= 0 && appendIdx > existsIdx,
+    'target-must-exist BEFORE the append — a junk fileId cannot seed rows (the qaAddComment posture)');
+  // Id-only audit, matched to the CALL TAIL (the notes string carries no
+  // free text; the INV-188 quoted-semicolon lesson says anchor the whole call).
+  assert.ok(/writeAuditLog_\(emp, 'QaScorecardSave', '', '', false, 0, 'fileId=' \+ fid \+ '; scorecardId=' \+ scorecardId, emp\.email\);/.test(save),
+    'the audit row carries ids only — reviewer notes/ratings stay in the QA store (INV-32/196)');
+  assert.ok(!/setValue\(/.test(save), 'append-only — no in-place edit of a review row');
+});
+
+test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fallback, client discipline', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const stripped = nc(codeSrc);
+  // Headers extended in place (Phase 1 merged but UNDEPLOYED + QA_SS_ID unset
+  // everywhere = no tab exists to migrate) — Agent is the trailing column and
+  // the enum agrees.
+  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'\]/.test(stripped),
+    'Agent is the trailing recordings column');
+  assert.ok(/AGENT: 10/.test(stripped), 'QAR.AGENT matches its position');
+  const sync = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
+  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '',/.test(sync), 'sync rows carry the trailing empty Agent cell');
+  const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
+  assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
+    'agent set is QA-gated and bounded');
+  assert.ok(/writeAuditLog_\(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' \+ fid \+ \(name \? '' : '; cleared'\), emp\.email\);/.test(setAgent),
+    'the audit row NEVER carries the agent name — names stay in the QA store (INV-32/196)');
+  // Stats: gate before any store access; truncation reported (INV-169).
+  const stats = nc(extractRawFunction('Code.js', 'getQaStats'));
+  const gateIdx = stats.indexOf("'QA access required.'");
+  const storeIdx = stats.indexOf('getOrCreateQaRecordingsSheet_');
+  assert.ok(gateIdx >= 0 && storeIdx > gateIdx, 'gate precedes the store read');
+  assert.ok(/truncated: recTruncated \|\| read\.truncated/.test(stats), 'bounded-tail truncation rides the response');
+  // Queue ships the roster agent options through the INV-183 predicate.
+  const queue = nc(extractRawFunction('Code.js', 'getQaQueue'));
+  assert.ok(/empRosterEmail_\(rrows\[i\]\)/.test(queue), 'agentOptions honors the roster inclusion predicate');
+  // Client: the waveform is DECORATION — seq-guarded before peaks are set,
+  // size-gated, and undecodable audio leaves the flat timeline (empty error
+  // callback, everything try/caught).
+  const qaSrc = extractScript('qa/script_qa.html');
+  const tryWave = qaSrc.match(/function qaTryWaveform_\([\s\S]*?\n\}/)[0];
+  const seqIdx = tryWave.indexOf('QA_STATE.audioSeq !== mySeq');
+  const peaksIdx = tryWave.indexOf('QA_STATE.peaks = qaPeaks_');
+  assert.ok(seqIdx >= 0 && peaksIdx > seqIdx, 'the INV-156 seq guard sits BEFORE the peaks write');
+  assert.ok(/bytes\.length > QA_WAVE_MAX_BYTES\) return;/.test(tryWave), 'decode-cost size gate');
+  assert.ok(/OfflineAudioContext/.test(tryWave) && /8000/.test(tryWave), 'low-rate decode (never a full-rate AudioContext)');
+  assert.ok(/\.qa-wave\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8')),
+    'the [hidden] companion rule — display:block would beat the UA hidden rule (the documented gotcha)');
+  // Rating buttons expose state; a rating click on the selected value
+  // UNSELECTS (the intake pattern); stats nulls render em dashes.
+  assert.ok(/qa-rate-btn" aria-pressed="/.test(qaSrc), 'rating buttons carry aria-pressed (A11/INV-174)');
+  assert.ok(/if \(QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qaSrc), 'selected-rating click unselects');
+  assert.ok(/r\.avgScore == null \? '—'/.test(qaSrc), 'a missing average is an em dash, never 0 (INV-187)');
+  // The stats tab rides the same third-tier gate flag as the queue.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  assert.ok(/qaStats: \{ label: 'Stats', icon: 'chart', enter: 'enterQaStatsView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
+    'qaStats registered under also:canSeeQa (agents never see it)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
