@@ -150,6 +150,11 @@ const TOOLS = {
     tabs: {
       qaQueue: { label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' },
       qaStats: { label: 'Stats', icon: 'chart', enter: 'enterQaStatsView', managerOnly: true, also: 'canSeeQa' },
+      // Phase 3 (operator-ordered gate revision): the agent-facing read-only
+      // tab is UNGATED, so the QA tool now appears for EVERY rep with just
+      // this tab (enterTool bumps the gated defaultTab to it). An agent sees
+      // ONLY reviews explicitly shared with them (server-scoped).
+      qaMyReviews: { label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView' },
     },
   },
   // Manage — the consolidated manager/admin home. Tabs are MOVED here from their
