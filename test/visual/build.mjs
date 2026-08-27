@@ -21,6 +21,10 @@ html = html.replace(/<\?!=\s*JSON\.stringify\(serverQueryParams[\s\S]*?\?>/,
   'Object.fromEntries(new URLSearchParams(location.search))');
 html = html.replace(/<\?!=\s*JSON\.stringify\(webAppUrl[\s\S]*?\?>/,
   "'https://example.test/exec'");
+// Empty stamp disables the deploy-version beacon in the harness (no polling,
+// no reload prompt in screenshots). Must precede the straggler strip, which
+// would otherwise leave `window.SERVER_BUILD_STAMP = ;` — a head SyntaxError.
+html = html.replace(/<\?!=\s*JSON\.stringify\(buildStamp[\s\S]*?\?>/, "''");
 // Any straggler scriptlets
 html = html.replace(/<\?[\s\S]*?\?>/g, '');
 

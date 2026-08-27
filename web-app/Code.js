@@ -1085,6 +1085,9 @@ function doGet(e) {
   const tpl = HtmlService.createTemplateFromFile('index');
   tpl.serverQueryParams = (e && e.parameter) || {};
   try { tpl.webAppUrl = getWebAppExecUrl_(); } catch (_) { tpl.webAppUrl = ''; }
+  // Deploy-version beacon — '' on any failure: the client skips the check
+  // entirely on an empty stamp, so a hash problem can never break boot.
+  try { tpl.buildStamp = clientBuildHash_(); } catch (_) { tpl.buildStamp = ''; }
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
@@ -1093,6 +1096,58 @@ function doGet(e) {
 
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ── Deploy-version beacon (operator 2026-08-27) ─────────────────────────────
+// A New-version deploy updates the SERVER half instantly, but an open tab
+// keeps the client it booted with until reload — which for most agents means
+// the next morning. The beacon lets open clients notice: doGet stamps the
+// page with a fingerprint of the client files being served, and the shell
+// re-asks every ~15 min (getDeployStamp); a mismatch means a newer client
+// exists and the shell shows a sticky reload PROMPT (never a forced reload —
+// yanking the page mid-call is worse than a stale UI; the sticky drafts make
+// a chosen reload safe).
+// The fingerprint is DERIVED (INV-179): MD5 over index.html's raw template
+// content plus every include('...') target it names, so a new partial is
+// covered the day it ships and there is no version constant for a deploy to
+// forget to bump. Reads go through the same channels production serves —
+// getRawContent() for index (createHtmlOutputFromFile would choke nothing,
+// but raw keeps the scriptlets in the hash) and include()'s own read for
+// partials. Cached 5 min in CacheService (the cache SURVIVES a deploy, so a
+// fresh version can serve the stale hash for up to TTL — that only delays
+// detection, never falsifies it; total prompt lag ≤ poll 15 min + TTL 5 min).
+const BUILD_HASH_CACHE_KEY = 'client_build_hash_v1';
+const BUILD_HASH_CACHE_TTL_SEC = 300;
+let _clientBuildHashMemo = null;
+function clientBuildHash_() {
+  if (_clientBuildHashMemo) return _clientBuildHashMemo;
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(BUILD_HASH_CACHE_KEY);
+  if (cached) { _clientBuildHashMemo = cached; return cached; }
+  const idx = HtmlService.createTemplateFromFile('index').getRawContent();
+  let all = idx;
+  const re = /include\('([^']+)'\)/g;
+  let m;
+  while ((m = re.exec(idx)) !== null) {
+    try { all += include(m[1]); } catch (e) { all += '[missing:' + m[1] + ']'; }
+  }
+  const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, all, Utilities.Charset.UTF_8);
+  let hex = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  try { cache.put(BUILD_HASH_CACHE_KEY, hex, BUILD_HASH_CACHE_TTL_SEC); } catch (e) {}
+  _clientBuildHashMemo = hex;
+  return hex;
+}
+
+/** The beacon read the shell polls (~15 min). Rep-callable, read-only — a
+ *  READ gate returns the bare {error} shape (the GATE-SHAPE contract). */
+function getDeployStamp() {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
+  return { stamp: clientBuildHash_() };
 }
 
 // ── Dev / prod instance environment (blue-green deploy support) ──────────────

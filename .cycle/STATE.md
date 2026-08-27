@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 655 + DOM 81;
+Test Command: manual (Node harnesses: `npm test` = pure 657 + DOM 82;
   visual matrix on demand — 49 scenarios, last full shoot 2026-08-26 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -298,7 +298,13 @@ Doc/Sheet conversions, extending the L13 double-fire guard to the
 converts, and converted-Doc images preview as a "appears after Save"
 pending chip instead of bare alt text). The sender/TRX round is PR #189.
 All three rounds need ONE MORE `clasp push -f` + New version beyond the
-deploys the operator ran on 2026-08-27 (both predate these PRs).
+deploys the operator ran on 2026-08-27 (both predate these PRs). A FOURTH
+same-day round built the DEPLOY-VERSION BEACON (the operator's
+mid-shift-deploy question, answered then green-lit): open windows now get
+a sticky reload PROMPT within ~20 min of a New-version deploy
+(`clientBuildHash_` derived fingerprint + `getDeployStamp` polled from
+the shell ticker + `showToast` action-button option). Ships in the same
+pending deploy; post-deploy `runAllTests()` expects 294.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →

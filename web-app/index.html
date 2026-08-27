@@ -31,6 +31,11 @@
     // that loads blank as a top-level window). Server-controlled value;
     // same escape guard for consistency.
     window.SERVER_WEB_APP_URL = <?!= JSON.stringify(webAppUrl || '').replace(/</g, '\\u003c') ?>;
+    // Deploy-version beacon (operator 2026-08-27): the fingerprint of the
+    // client files THIS page booted with. The shell's ticker re-asks the
+    // server every ~15 min and prompts a reload on mismatch. Empty = the
+    // hash failed server-side and the check is disabled for this session.
+    window.SERVER_BUILD_STAMP = <?!= JSON.stringify(buildStamp || '').replace(/</g, '\\u003c') ?>;
     (function () {
       try {
         if (window.SERVER_QUERY_PARAMS && window.SERVER_QUERY_PARAMS.compact === '1') {
