@@ -1727,6 +1727,17 @@ function showToast(msg, cls, opts) {
     t.classList.add('toast-leave');
     t.addEventListener('animationend', () => t.remove(), { once: true });
   };
+  // Additive (deploy beacon, 2026-08-27): an optional action button rendered
+  // before the × — a real <button> named by its label (INV-173). Existing
+  // callers pass neither key and render byte-identically.
+  if (opts.actionLabel && typeof opts.onAction === 'function') {
+    const act = document.createElement('button');
+    act.type = 'button';
+    act.className = 'toast-act';
+    act.textContent = String(opts.actionLabel);
+    act.addEventListener('click', () => { try { opts.onAction(); } catch (e) {} dismiss(); });
+    t.appendChild(act);
+  }
   if (opts.sticky) {
     t.classList.add('toast-sticky');
     // A real <button> with an accessible name (INV-173) — the only way out of a
@@ -2003,7 +2014,48 @@ function remindOnce_(key, msg, tone) {
   return true;
 }
 
+// ── Deploy-version beacon (operator 2026-08-27) ────────────────────────────
+// The page boots with window.SERVER_BUILD_STAMP (a fingerprint of the client
+// files it was served). Every ~15 min the shell asks the server what it would
+// serve NOW; a mismatch means a New-version deploy landed and this tab is
+// running the old client — show ONE sticky toast with a real Reload button.
+// A PROMPT, never a forced reload: yanking the page mid-call (the pinned
+// pop-out especially) is worse than a stale UI, and the sticky drafts make a
+// chosen reload safe. Rides the shell reminders ticker (INV-190's cost rule —
+// no new interval) but sits ABOVE its empState/schedule early-returns and
+// OUTSIDE the day-off gate: the per-branch rule — a stale client on a
+// Saturday is still stale. Best-effort end to end: an empty boot stamp
+// (server hash failed, or a harness page) disables the check entirely, and a
+// failed poll is silent.
+var BUILD_STAMP_CHECK_MS = 15 * 60 * 1000;
+var _buildLastCheckMs = 0;
+var _buildPrompted = false;
+function buildStampTick_() {
+  try {
+    var boot = String(window.SERVER_BUILD_STAMP || '');
+    if (!boot || _buildPrompted) return;
+    var now = Date.now();
+    if (!_buildLastCheckMs) { _buildLastCheckMs = now; return; }   // first window starts at boot — the booted stamp IS current
+    if (now - _buildLastCheckMs < BUILD_STAMP_CHECK_MS) return;
+    _buildLastCheckMs = now;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (_buildPrompted || !res || !res.stamp) return;
+        if (String(res.stamp) === boot) return;
+        _buildPrompted = true;   // once per session — dismissing without reloading is a choice, not a nag loop
+        showToast('Team Tools was updated \u2014 reload to get the latest version', 'toast-info', {
+          sticky: true,
+          actionLabel: 'Reload',
+          onAction: function () { location.reload(); },
+        });
+      })
+      .withFailureHandler(function () {})
+      .getDeployStamp();
+  } catch (e) {}
+}
+
 function remindersTick_() {
+  buildStampTick_();
   try {
     if (!empState) return;
     var tz = (typeof empTz === 'function' && empTz()) || (empState && empState.timezone);

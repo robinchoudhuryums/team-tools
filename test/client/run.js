@@ -12750,6 +12750,67 @@ test('GATE-TIER: the omnibus ADMIN_GATED bucket matches the tier each endpoint a
   assert.ok(checked > 60, 'the case→tier link actually resolved (checked ' + checked + ')');
 });
 
+test('BCN-1: the deploy-version beacon server half — derived hash, cached, boot-safe, read-gated', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const hash = nc(extractRawFunction('Code.js', 'clientBuildHash_'));
+  // DERIVED (INV-179): the file set comes from index.html's own include()
+  // calls — a version constant nobody bumps is the failure mode this exists
+  // to avoid, so a hand list here would be the same mistake one level down.
+  assert.ok(/createTemplateFromFile\('index'\)\.getRawContent\(\)/.test(hash),
+    'index is read RAW (its scriptlets are part of the fingerprint)');
+  assert.ok(hash.indexOf("include\\('([^']+)'\\)") >= 0, "the partial set is derived from index's include() calls");
+  assert.ok(/include\(m\[1\]\)/.test(hash), "and each partial is read through include()'s own channel — the bytes production serves");
+  assert.ok(/cache\.put\(BUILD_HASH_CACHE_KEY, hex, BUILD_HASH_CACHE_TTL_SEC\)/.test(hash),
+    'cached with a FINITE TTL (CacheService survives a deploy — an eternal entry would never notice one)');
+  const ttl = codeSrc.match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
+  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+  const stamp = nc(extractRawFunction('Code.js', 'getDeployStamp'));
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(stamp),
+    'getDeployStamp is rep-gated with the bare-{error} READ shape (GATE-SHAPE)');
+  const doGet = nc(extractRawFunction('Code.js', 'doGet'));
+  assert.ok(/try \{ tpl\.buildStamp = clientBuildHash_\(\); \} catch \(_\) \{ tpl\.buildStamp = ''; \}/.test(doGet),
+    'doGet stamps the page with catch → empty — a hash failure can never break boot');
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(/window\.SERVER_BUILD_STAMP = <\?!= JSON\.stringify\(buildStamp \|\| ''\)\.replace\(\/<\/g, '\\\\u003c'\) \?>/.test(idx),
+    'the injection uses the unescaped <?!= form with the < guard (INV-78 — the escaping <?= mangles JSON quotes)');
+  const bld = fs.readFileSync(path.join(__dirname, '../visual/build.mjs'), 'utf8');
+  const stampAt = bld.indexOf('buildStamp');
+  const stragglerAt = bld.indexOf('Any straggler scriptlets');
+  assert.ok(stampAt > -1 && stragglerAt > -1 && stampAt < stragglerAt,
+    "build.mjs replaces the stamp scriptlet BEFORE the straggler strip — the strip alone leaves `window.SERVER_BUILD_STAMP = ;`, a head SyntaxError in the harness page");
+});
+
+test('BCN-2: the beacon client half — piggybacked, throttled, empty-stamp-disabled, one sticky prompt', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const tick = nc(extractFunction('script_core.html', 'buildStampTick_'));
+  assert.ok(/if \(!boot \|\| _buildPrompted\) return;/.test(tick),
+    'an empty boot stamp (server hash failure, harness page) disables the check; one prompt per session');
+  assert.ok(/if \(!_buildLastCheckMs\) \{ _buildLastCheckMs = now; return; \}/.test(tick),
+    'the first window starts at BOOT — the freshly served stamp needs no immediate RPC');
+  assert.ok(/BUILD_STAMP_CHECK_MS = 15 \* 60 \* 1000/.test(nc(core)), 'the poll is ~15 min, not the 60s tick rate');
+  assert.ok(/withFailureHandler\(function \(\) \{\}\)/.test(tick), 'a failed poll is silent — best-effort end to end');
+  assert.ok(/sticky: true/.test(tick) && /actionLabel: 'Reload'/.test(tick) && /location\.reload\(\)/.test(tick),
+    'the mismatch prompt is a STICKY toast with a real Reload action — never a forced reload');
+  // Hosted by the shell reminders ticker (INV-190 cost rule — no new interval),
+  // ABOVE its empState/schedule early-returns and OUTSIDE the dayOff gate (the
+  // per-branch rule: a stale client on a Saturday is still stale).
+  const rt = nc(extractFunction('script_core.html', 'remindersTick_'));
+  const callAt = rt.indexOf('buildStampTick_()');
+  const empGuardAt = rt.indexOf('if (!empState) return;');
+  assert.ok(callAt > -1 && empGuardAt > -1 && callAt < empGuardAt,
+    'the beacon check runs BEFORE the ticker\'s early-returns — a rep with no schedule still gets the prompt');
+  assert.strictEqual((core.match(/setInterval\([^)]*buildStampTick_/g) || []).length, 0, 'no dedicated interval');
+  // showToast's action option is ADDITIVE and renders a real named <button>.
+  const st = nc(extractFunction('script_core.html', 'showToast'));
+  assert.ok(/opts\.actionLabel && typeof opts\.onAction === 'function'/.test(st),
+    'toasts without the option render byte-identically (both keys required)');
+  assert.ok(/act\.type = 'button'/.test(st) && /act\.textContent = String\(opts\.actionLabel\)/.test(st),
+    'a real <button> named by its label (INV-173) — textContent, never innerHTML');
+  assert.ok(/opts\.onAction\(\); \} catch \(e\) \{\}/.test(st) && st.indexOf('dismiss()', st.indexOf('opts.onAction')) > -1,
+    'the action fires guarded and the toast dismisses after');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

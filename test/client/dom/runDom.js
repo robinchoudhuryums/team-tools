@@ -1142,6 +1142,26 @@ test('the × dismisses it, and the stack cap evicts routine toasts first', () =>
     'clicking it starts the same leave animation a timed-out toast uses');
 });
 
+test('a toast action button fires its handler once and dismisses (deploy-beacon Reload)', () => {
+  const h = boot();
+  h.bootShell();
+  let fired = 0;
+  h.window.showToast('Team Tools was updated', 'toast-info', {
+    sticky: true, actionLabel: 'Reload', onAction: () => { fired++; },
+  });
+  const t = h.$('#toast-stack .toast-sticky');
+  const act = t && t.querySelector('.toast-act');
+  assert.ok(act && act.tagName === 'BUTTON' && act.textContent === 'Reload',
+    'a real button named by its label renders inside the toast (INV-173)');
+  act.dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.strictEqual(fired, 1, 'the action fired exactly once');
+  assert.ok(/toast-leave/.test(t.className), 'and the toast dismisses after the action');
+  // Additive: a toast without the option renders no action button.
+  h.window.showToast('Plain', 'toast-success');
+  const plain = h.$$('#toast-stack .toast:not(.toast-sticky)').pop();
+  assert.ok(plain && !plain.querySelector('.toast-act'), 'existing callers are unchanged');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // KB interactive blocks — the fence-source round-trip (F1 / INV-193).
 //

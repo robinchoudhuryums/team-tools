@@ -1189,6 +1189,7 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('insurance_search_requiresEmployee',         test_insurance_search_requiresEmployee);
+  _integrationTest('deployStamp_requiresEmployeeAndHashes',      test_deployStamp_requiresEmployeeAndHashes);
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
@@ -5677,6 +5678,23 @@ function test_insurance_search_requiresEmployee() {
   _assertContains(String(r && r.error), 'Not authorized',
     'unregistered caller rejected before any sheet read');
   _assertTrue(!r.matches, 'and no rows come back with the rejection');
+}
+
+function test_deployStamp_requiresEmployeeAndHashes() {
+  const r = _asUser('not-a-registered-user@example.invalid', function () {
+    return getDeployStamp();
+  });
+  // A READ gate: bare {error}, never success:false (the GATE-SHAPE contract).
+  _assertContains(String(r && r.error), 'Not authorized',
+    'unregistered caller rejected before the hash is computed');
+  _assertTrue(!r.stamp, 'and no stamp comes back with the rejection');
+  const ok = _asUser(_TEST_INDIA_EMAIL, function () { return getDeployStamp(); });
+  _assertTrue(!!(ok && /^[0-9a-f]{32}$/.test(String(ok.stamp || ''))),
+    'a registered rep gets the 32-hex client-build fingerprint');
+  // Stable within an execution/TTL — the client compares strings, so two
+  // reads moments apart must agree or every open tab would false-prompt.
+  const again = _asUser(_TEST_INDIA_EMAIL, function () { return getDeployStamp(); });
+  _assertEq(ok.stamp, again.stamp, 'the stamp is stable across back-to-back reads');
 }
 
 function test_kb_recordView_requiresEmployee() {
