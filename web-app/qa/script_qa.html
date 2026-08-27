@@ -104,6 +104,11 @@
   .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
   .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm, 12px); }
   .qa-stats-strip strong { color: var(--ink); font-size: 16px; }
+  /* Phase 3 — share pill + agent-facing My Reviews */
+  .qa-shared-pill { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--success-deep); white-space: nowrap; }
+  .qa-myrev-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .qa-myrev-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .qa-myrev-name { font-weight: 600; overflow-wrap: anywhere; }
   @media (max-width: 700px) {
     .qa-card { grid-template-columns: minmax(0, 1fr); }
     .qa-card-actions { justify-content: flex-start; }
@@ -136,6 +141,7 @@ var QA_STATE = {
   ratings: {},          // the in-progress scorecard form
   scoreNotes: '',
   statsSeq: 0,          // qaStats-load seq guard
+  myRevSeq: 0,          // Phase 3 — My Reviews load seq guard
 };
 
 function enterQaQueueView() {
@@ -242,6 +248,11 @@ function qaRenderQueue_() {
         (QA_STATE.filter === c[0] ? 'true' : 'false') + '" onclick="qaSetFilter_(\'' + c[0] + '\')">' + c[1] + '</button>';
     }).join('') +
     '</div><div class="spacer"></div>' +
+    // Phase 3 — coverage-fair sampling: assigns up to 3 un-reviewed,
+    // un-assigned recordings to ME (agents with the fewest done reviews
+    // first). Routing work to someone ELSE stays the manager Assign… flow.
+    '<button type="button" class="qa-btn" id="qa-sample-btn" onclick="qaSample_()">' +
+    (typeof icon === 'function' ? icon('check', 14) : '') + ' Sample 3 for me</button>' +
     '<button type="button" class="qa-btn" id="qa-sync-btn" onclick="qaSync_()">' +
     (typeof icon === 'function' ? icon('refresh', 14) : '') + ' Sync from Drive</button>' +
     '</div>';
@@ -319,6 +330,26 @@ function qaSync_() {
       if (btn) { btn.disabled = false; btn.textContent = 'Sync from Drive'; }
     })
     .qaSyncRecordings();
+}
+
+function qaSample_() {
+  const btn = document.getElementById('qa-sample-btn');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (btn) btn.disabled = false;
+      if (!r || !r.success) { showToast((r && r.error) || 'Sampling failed.', 'toast-warn'); return; }
+      showToast(r.assigned + ' recording(s) assigned to you — least-reviewed agents first', 'toast-success');
+      if (currentView === 'qaQueue' && !QA_STATE.det) {
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        qaLoadQueue_();
+      }
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Sampling failed: ' + (err && err.message), 'toast-error');
+    })
+    .qaSampleRecordings(3);
 }
 
 function qaAssign_(fileId, who) {
@@ -427,12 +458,38 @@ function qaRenderAgentRow_() {
   const r = QA_STATE.det, d = QA_STATE.queue || {};
   if (!host || !r) return;
   const opts = (d.agentOptions || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('');
+  const shared = Number(r.sharedMs) > 0;
   host.innerHTML =
     '<label for="qa-agent-input" style="font-size:12px;color:var(--muted-2)">Agent on this call</label>' +
     '<input type="text" id="qa-agent-input" list="qa-agent-opts" maxlength="80" value="' + esc(r.agent || '') + '" placeholder="unassigned">' +
     '<datalist id="qa-agent-opts">' + opts + '</datalist>' +
     '<button type="button" class="qa-btn" id="qa-agent-save" onclick="qaSaveAgent_()">Save</button>' +
-    '<span class="qa-note" style="margin:0">feeds the per-agent Stats tab</span>';
+    '<span class="qa-note" style="margin:0">feeds the per-agent Stats tab</span>' +
+    // Phase 3 — the RELEASE action: sharing is deliberate, never a side
+    // effect of a status flip (the EmpDocs draft→release posture).
+    (shared ? '<span class="qa-shared-pill">shared with agent</span>' : '') +
+    '<button type="button" class="qa-btn" id="qa-share-btn" onclick="qaToggleShared_()">' +
+      (shared ? 'Unshare' : 'Share with agent') + '</button>';
+}
+function qaToggleShared_() {
+  const r = QA_STATE.det;
+  if (!r) return;
+  const next = !(Number(r.sharedMs) > 0);
+  const btn = document.getElementById('qa-share-btn');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Share failed.', 'toast-warn'); return; }
+      r.sharedMs = res.sharedMs;
+      showToast(next ? 'Review shared — it now shows on the agent’s My Reviews tab' : 'Review unshared', 'toast-success');
+      qaRenderAgentRow_();
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Share failed: ' + (err && err.message), 'toast-error');
+    })
+    .qaSetRecordingShared(r.fileId, next);
 }
 function qaSaveAgent_() {
   const r = QA_STATE.det;
@@ -897,14 +954,13 @@ function qaCardAvg_(ratings) {
   return n ? Math.round((sum / n) * 10) / 10 : null;
 }
 
-function qaRenderScorecardList_() {
-  const host = document.getElementById('qa-scorecards');
-  if (!host) return;
-  const cards = QA_STATE.scorecards || [];
-  if (!cards.length) { host.innerHTML = ''; return; }
+/** Shared scorecard-list markup — the detail's list AND the agent-facing My
+ *  Reviews render through this ONE builder, so the two surfaces cannot drift
+ *  (every string esc()'d). */
+function qaScorecardListHtml_(cards, criteria) {
   const critLabel = {};
-  (QA_STATE.criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
-  host.innerHTML = cards.map(function (c) {
+  (criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
+  return (cards || []).map(function (c) {
     const avg = qaCardAvg_(c.ratings);
     return '<div class="qa-sc-item">' +
       '<div class="qa-sc-meta"><strong>' + esc(c.name || '') + '</strong>' +
@@ -917,6 +973,12 @@ function qaRenderScorecardList_() {
       (c.notes ? '<div style="margin-top:4px">' + esc(c.notes) + '</div>' : '') +
       '</div>';
   }).join('');
+}
+function qaRenderScorecardList_() {
+  const host = document.getElementById('qa-scorecards');
+  if (!host) return;
+  host.innerHTML = (QA_STATE.scorecards || []).length
+    ? qaScorecardListHtml_(QA_STATE.scorecards, QA_STATE.criteria) : '';
 }
 
 // ── Phase 2: per-agent stats tab ───────────────────────────────────────────
@@ -977,8 +1039,101 @@ function qaRenderStats_(d) {
   html += agents.length
     ? '<div class="m-table-wrap">' + mtRenderTable_({ columns: cols, rows: agents }) + '</div>'
     : '<div class="qa-empty">No recordings indexed yet — stats appear once recordings are synced and attributed to agents.</div>';
+  // Phase 3 — calibration: recordings scored by 2+ reviewers, widest spread
+  // first. FACTS ONLY (the Coverage rule): the table reports the disagreement,
+  // never a verdict on which reviewer is right.
+  const cal = d.calibration || [];
+  if (cal.length) {
+    const critLabel = {};
+    (d.criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
+    html += '<h2 class="card-label" style="margin-top:18px">Calibration · scored by 2+ reviewers</h2>' +
+      '<div class="m-table-wrap">' + mtRenderTable_({
+        columns: [
+          { key: 'name',    label: 'Recording', name: true, cell: function (r) { return esc(r.name || r.fileId); } },
+          { key: 'revs',    label: 'Reviewer averages', cell: function (r) {
+              return (r.reviewers || []).map(function (rv) {
+                return esc(rv.name) + ' <strong>' + esc(String(rv.avg)) + '</strong>';
+              }).join(' · ');
+            } },
+          { key: 'spread',  label: 'Spread', numeric: true, cell: function (r) { return esc(String(r.spread)); } },
+          { key: 'maxCrit', label: 'Widest gap', cell: function (r) {
+              return r.maxCritKey
+                ? esc(critLabel[r.maxCritKey] || r.maxCritKey) + ' (' + esc(String(r.maxCritSpread)) + ')'
+                : '—';
+            } },
+        ],
+        rows: cal,
+      }) + '</div>' +
+      '<div class="qa-note">Spread = the gap between the highest and lowest reviewer average on the same recording. A wide spread means reviewers read the call differently — worth a calibration conversation, not a verdict on who is right.</div>';
+  }
   if (d.truncated) html += '<div class="qa-note">Scan capped — the oldest rows beyond the bounded tail are not counted.</div>';
   html += '<div class="qa-note">Attribute a recording to its agent in the recording detail (the Agent field). Scores use the latest scorecard per reviewer per recording.</div>';
+  area.innerHTML = html;
+}
+
+// ===== My Reviews (Phase 3 — the agent-facing, read-only tab) =====
+// Employee-gated server-side (getMyQaReviews); scoped to recordings
+// attributed to the caller's name AND explicitly shared. No audio here —
+// playback stays behind the canSeeQa_ Drive boundary (a follow-on).
+
+function enterQaMyReviewsView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  QA_STATE.det = null;
+  qaReleaseAudio_();
+  const area = document.getElementById('view-area');
+  renderLoading(area, 'Loading your reviews…', 'thumbsUp');
+  const requestedView = currentView;
+  const mySeq = ++QA_STATE.myRevSeq;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView || QA_STATE.myRevSeq !== mySeq) return;
+      if (!data || data.error) {
+        area.innerHTML = errorStateHtml_((data && data.error) || 'Could not load your reviews.');
+        return;
+      }
+      qaRenderMyReviews_(data);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView || QA_STATE.myRevSeq !== mySeq) return;
+      area.innerHTML = errorStateHtml_('Could not load your reviews: ' + (err && err.message));
+    })
+    .getMyQaReviews();
+}
+
+function qaRenderMyReviews_(d) {
+  const area = document.getElementById('view-area');
+  let html = '';
+  if (!COMPACT_MODE) html += '<div class="view-title-row"><h1>My Reviews</h1></div>';
+  const recs = d.recordings || [];
+  if (!recs.length) {
+    area.innerHTML = html + '<div class="qa-empty">No reviews have been shared with you yet. When a reviewer shares a call review, it appears here.</div>';
+    return;
+  }
+  recs.forEach(function (r) {
+    const when = r.createdMs ? new Date(r.createdMs).toLocaleDateString() : '';
+    const shared = r.sharedMs ? new Date(r.sharedMs).toLocaleDateString() : '';
+    html += '<div class="qa-myrev-card">' +
+      '<div class="qa-myrev-head">' +
+        '<span class="qa-myrev-name">' + esc(r.name || r.fileId) + '</span>' +
+        '<span class="qa-note" style="margin:0">' + (when ? 'call ' + esc(when) + ' · ' : '') + 'shared ' + esc(shared) + '</span>' +
+      '</div>' +
+      ((r.scorecards || []).length
+        ? qaScorecardListHtml_(r.scorecards, d.criteria)
+        : '<div class="qa-note">No scorecard yet.</div>');
+    const comments = r.comments || [];
+    if (comments.length) {
+      html += '<h2 class="card-label" style="margin:10px 0 4px">Reviewer comments</h2>';
+      comments.forEach(function (c) {
+        html += '<div class="qa-sc-item">' +
+          '<span class="qa-sc-chip">' + esc(qaFmtClock_(c.atSec)) + '</span> ' +
+          esc(c.text) + (c.name ? ' <span class="qa-note" style="margin:0">— ' + esc(c.name) + '</span>' : '') +
+          '</div>';
+      });
+    }
+    html += '</div>';
+  });
+  html += '<div class="qa-note">Read-only — talk to your manager about anything here. Timestamps refer to positions in the call recording.</div>';
   area.innerHTML = html;
 }
 

@@ -25110,11 +25110,13 @@ function importQuizFromForm(formRef) {
 
 const QA_RECORDINGS_TAB = 'QaRecordings';
 // Phase 2 added the trailing Agent column (which agent the call belongs to —
-// feeds the per-agent stats). Extended IN PLACE rather than self-healed:
-// Phase 1 is merged but NOT deployed and QA_SS_ID is unset everywhere, so no
-// QaRecordings tab exists anywhere to migrate.
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10 };
+// feeds the per-agent stats); Phase 3 added SharedMs (the explicit
+// release-to-agent stamp — 0/blank = not shared). Both extended IN PLACE
+// rather than self-healed: the QA module is merged but NOT deployed and
+// QA_SS_ID is unset everywhere, so no QaRecordings tab exists to migrate.
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11 };
+const QA_MY_REVIEWS_CAP = 50;         // agent-facing list cap (newest shared first)
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
 const QAC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, AT_SEC: 4, TEXT: 5, CREATED_MS: 6, STATUS: 7 };
@@ -25263,6 +25265,7 @@ function getQaQueue() {
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
           agent: String(rows[i][QAR.AGENT] || '').trim(),
+          sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
           comments: 0,
         });
       }
@@ -25330,7 +25333,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''), '',   // Agent set later in the detail
+        'new', '', 0, String(f.getUrl() || ''), '', 0,   // Agent + SharedMs set later in the detail
       ]);
       added++;
     }
@@ -25804,17 +25807,256 @@ function getQaStats() {
       for (let i = 0; i < rows.length; i++) {
         const fid = String(rows[i][QAR.FILE_ID] || '').trim();
         if (!fid) continue;
-        recs.push({ fileId: fid, agent: String(rows[i][QAR.AGENT] || '').trim(), status: qaStatus_(rows[i][QAR.STATUS]) });
+        recs.push({ fileId: fid, name: String(rows[i][QAR.NAME] || ''),
+                    agent: String(rows[i][QAR.AGENT] || '').trim(), status: qaStatus_(rows[i][QAR.STATUS]) });
       }
     }
     const read = qaReadScorecards_(null);
     const latest = qaLatestScorecards_(read.cards);
+    // Phase 3 — calibration: recordings scored by 2+ reviewers, widest
+    // overall spread first (facts only; the reader judges). Names joined
+    // here so the pure fold stays name-free.
+    const nameOf = {};
+    recs.forEach(function (r) { nameOf[r.fileId] = r.name; });
+    const calibration = qaCalibration_(latest, criteria).map(function (row) {
+      row.name = nameOf[row.fileId] || '';
+      return row;
+    });
     return {
       agents: qaStatsAggregate_(recs, latest, criteria),
       criteria: criteria,
+      calibration: calibration,
       totalRecordings: recs.length,
       totalScorecards: latest.length,
       truncated: recTruncated || read.truncated,
     };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── QA Phase 3 — sampling, calibration, agent-facing reviews ────────────────
+// The v1 "agents do not see their reviews" gate is REVISED here by operator
+// order (the Phase-3 scope): agents get a READ-ONLY "My Reviews" tab showing
+// ONLY recordings that are (a) attributed to THEIR name AND (b) EXPLICITLY
+// shared by a reviewer — sharing is a deliberate per-recording release action
+// (the EmpDocs draft→release posture: a status flip never silently publishes
+// coaching content). Reviewers/managers keep the full canSeeQa_ tier; the
+// agent-facing read is employee-gated + name-scoped + shared-gated.
+
+/** Share (or unshare) a recording's review with its attributed agent — THE
+ *  release action. QA-gated, locked. Sharing requires a non-blank Agent
+ *  attribution first (the agent-facing read matches by name; sharing an
+ *  unattributed recording would release it to nobody while READING as
+ *  shared). Audit row is id-only (INV-32/196). */
+function qaSetRecordingShared(fileId, shared) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    const on = !!shared;
+    if (on && !String(found.row[QAR.AGENT] || '').trim()) {
+      return { success: false, error: 'Attribute this recording to its agent first — sharing releases the review to that agent\'s My Reviews tab.' };
+    }
+    const ms = on ? Date.now() : 0;
+    sheet.getRange(found.rowIdx, QAR.SHARED_MS + 1).setValue(ms);
+    writeAuditLog_(emp, 'QaShare', '', '', false, 0, 'fileId=' + fid + '; shared=' + on, emp.email);
+    return { success: true, sharedMs: ms };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The agent-facing read — EMPLOYEE-gated (deliberately NOT canSeeQa_: this
+ *  is the Phase-3 gate change), READ-ONLY, and doubly scoped: a row is
+ *  returned ONLY when SharedMs is set AND the Agent attribution matches the
+ *  CALLER's roster name (trimmed, case-insensitive) — an agent can never see
+ *  another agent's reviews, and an unshared review is invisible even to its
+ *  own agent. Attaches the latest scorecard per reviewer + ACTIVE comments
+ *  (reviewer names shown deliberately — the coaching-module posture). An
+ *  unset QA_SS_ID reads as an EMPTY list (agents get no setup instructions).
+ *  No audio path — playback stays behind the canSeeQa_ Drive boundary. */
+function getMyQaReviews() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    let storeSet = false;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const myName = String(emp.name || '').trim().toLowerCase();
+    if (!storeSet || !myName) return { recordings: [], criteria: getQaScorecardCriteria_() };
+    const sheet = getQaSS_().getSheetByName(QA_RECORDINGS_TAB);   // read-only — never provisions
+    const mine = [];
+    if (sheet && sheet.getLastRow() >= 2) {
+      const last = sheet.getLastRow();
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        if (!(Number(rows[i][QAR.SHARED_MS]) > 0)) continue;                                   // shared-gated
+        if (String(rows[i][QAR.AGENT] || '').trim().toLowerCase() !== myName) continue;        // name-scoped
+        mine.push({
+          fileId: fid,
+          name: String(rows[i][QAR.NAME] || ''),
+          createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
+          sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
+          scorecards: [], comments: [],
+        });
+      }
+    }
+    mine.sort(function (a, b) { return b.sharedMs - a.sharedMs; });
+    if (mine.length > QA_MY_REVIEWS_CAP) mine.length = QA_MY_REVIEWS_CAP;
+    if (mine.length) {
+      const wanted = {};
+      mine.forEach(function (r) { wanted[r.fileId] = r; });
+      // ONE bounded pass each over scorecards + comments for all my rows.
+      const latest = qaLatestScorecards_(qaReadScorecards_(null).cards);
+      latest.sort(function (a, b) { return b.createdMs - a.createdMs; });
+      latest.forEach(function (c) {
+        const r = wanted[c.fileId];
+        if (r) r.scorecards.push({ name: c.name, ratings: c.ratings, notes: c.notes, createdMs: c.createdMs });
+      });
+      try {
+        const cs = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
+        if (cs && cs.getLastRow() >= 2) {
+          const cLast = cs.getLastRow();
+          const cStart = Math.max(2, cLast - QA_COMMENTS_SCAN + 1);
+          const cRows = cs.getRange(cStart, 1, cLast - cStart + 1, QA_COMMENTS_HEADERS.length).getValues();
+          for (let i = 0; i < cRows.length; i++) {
+            if (String(cRows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+            const r = wanted[String(cRows[i][QAC.FILE_ID] || '')];
+            if (!r) continue;
+            r.comments.push({
+              atSec: Number(cRows[i][QAC.AT_SEC]) || 0,
+              text: String(cRows[i][QAC.TEXT] || ''),
+              name: String(cRows[i][QAC.EMP_NAME] || ''),
+            });
+          }
+          mine.forEach(function (r) { r.comments.sort(function (a, b) { return a.atSec - b.atSec; }); });
+        }
+      } catch (e) { /* comments are best-effort — the scorecards still render */ }
+    }
+    return { recordings: mine, criteria: getQaScorecardCriteria_() };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** PURE (Node-pinned) — coverage-fair sample pick: repeatedly take a
+ *  candidate whose AGENT has the lowest (already-reviewed + picked-this-
+ *  round) load, random tie-break. `rand` is injectable for deterministic
+ *  tests; blank agents bucket under '(unassigned)' so unattributed
+ *  recordings still get sampled. */
+function qaSamplePick_(candidates, count, reviewedByAgent, rand) {
+  const pool = (candidates || []).slice();
+  const r = typeof rand === 'function' ? rand : Math.random;
+  const key = function (c) { return String((c && c.agent) || '').trim() || '(unassigned)'; };
+  const n = Math.max(0, Math.min(Math.floor(Number(count) || 0), pool.length));
+  const picked = [];
+  const load = {};
+  while (picked.length < n) {
+    let bestLoad = Infinity, ties = [];
+    for (let i = 0; i < pool.length; i++) {
+      const l = (Number((reviewedByAgent || {})[key(pool[i])]) || 0) + (load[key(pool[i])] || 0);
+      if (l < bestLoad) { bestLoad = l; ties = [i]; }
+      else if (l === bestLoad) ties.push(i);
+    }
+    const idx = ties[Math.floor(r() * ties.length) % ties.length];
+    const c = pool.splice(idx, 1)[0];
+    load[key(c)] = (load[key(c)] || 0) + 1;
+    picked.push(c);
+  }
+  return picked;
+}
+
+/** Sample up to `count` un-reviewed, un-assigned recordings and assign them
+ *  to the CALLER (never a third party — a manager who wants to route work
+ *  uses Assign on the queue). QA-gated, locked; coverage-fair via
+ *  qaSamplePick_ (agents with the fewest DONE reviews first). Counts-only
+ *  audit (INV-32/196). */
+function qaSampleRecordings(count) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const n = Math.floor(Number(count) || 0);
+    if (!(n >= 1 && n <= 10)) return { success: false, error: 'Sample 1–10 recordings.' };
+    const self = String(emp.email || '').trim().toLowerCase();
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { success: false, error: 'No recordings indexed yet — Sync first.' };
+    const start = Math.max(2, last - QA_LIST_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+    const candidates = [];
+    const reviewedByAgent = {};
+    for (let i = 0; i < rows.length; i++) {
+      const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+      if (!fid) continue;
+      const agent = String(rows[i][QAR.AGENT] || '').trim() || '(unassigned)';
+      if (qaStatus_(rows[i][QAR.STATUS]) === 'done') {
+        reviewedByAgent[agent] = (reviewedByAgent[agent] || 0) + 1;
+      }
+      if (qaStatus_(rows[i][QAR.STATUS]) !== 'new') continue;
+      if (String(rows[i][QAR.ASSIGNEE] || '').trim()) continue;
+      candidates.push({ fileId: fid, agent: agent, rowIdx: start + i });
+    }
+    if (!candidates.length) return { success: false, error: 'Nothing to sample — every new recording is already assigned.' };
+    const picked = qaSamplePick_(candidates, n, reviewedByAgent);
+    picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(self); });
+    writeAuditLog_(emp, 'QaSample', '', '', false, 0,
+      'requested=' + n + '; assigned=' + picked.length, emp.email);
+    return { success: true, assigned: picked.length,
+             fileIds: picked.map(function (c) { return c.fileId; }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** PURE (Node-pinned) — calibration rows: recordings whose LATEST-folded
+ *  scorecards span 2+ reviewers, each reviewer's own card mean, the overall
+ *  spread (max−min of those means) and the widest per-criterion spread where
+ *  2+ reviewers rated the SAME criterion. FACTS ONLY — no verdict tone
+ *  (the Coverage rule): the reader judges what a 2-point spread means.
+ *  Single-reviewer recordings are EXCLUDED — calibration compares reviewers,
+ *  and a lone card has nothing to compare against. */
+function qaCalibration_(latestCards, criteria) {
+  const byFile = {};
+  (latestCards || []).forEach(function (c) {
+    const f = String((c && c.fileId) || '');
+    if (!f) return;
+    (byFile[f] = byFile[f] || []).push(c);
+  });
+  const rows = [];
+  Object.keys(byFile).forEach(function (f) {
+    const cards = byFile[f];
+    if (cards.length < 2) return;
+    const reviewers = [];
+    cards.forEach(function (c) {
+      let sum = 0, n = 0;
+      Object.keys(c.ratings || {}).forEach(function (k) {
+        const v = Number(c.ratings[k]);
+        if (v >= 1 && v <= 5) { sum += v; n++; }
+      });
+      if (n) reviewers.push({ name: String(c.name || ''), avg: Math.round((sum / n) * 10) / 10 });
+    });
+    if (reviewers.length < 2) return;
+    const avgs = reviewers.map(function (rv) { return rv.avg; });
+    const spread = Math.round((Math.max.apply(null, avgs) - Math.min.apply(null, avgs)) * 10) / 10;
+    let maxCritSpread = 0, maxCritKey = '';
+    (criteria || []).forEach(function (cr) {
+      const vals = [];
+      cards.forEach(function (c) {
+        const v = Number((c.ratings || {})[cr.key]);
+        if (v >= 1 && v <= 5) vals.push(v);
+      });
+      if (vals.length < 2) return;
+      const s = Math.max.apply(null, vals) - Math.min.apply(null, vals);
+      if (s > maxCritSpread) { maxCritSpread = s; maxCritKey = cr.key; }
+    });
+    rows.push({ fileId: f, reviewers: reviewers, spread: spread,
+                maxCritSpread: maxCritSpread, maxCritKey: maxCritKey });
+  });
+  rows.sort(function (a, b) { return b.spread - a.spread; });
+  return rows;
 }

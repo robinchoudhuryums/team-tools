@@ -408,10 +408,11 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
       ],
+      // Phase 3 additive per-item field: `sharedMs` (0 = not shared).
       recordings: [
-        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', agent: '', comments: 0 },
-        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', agent: 'Ana Reyes', comments: 3 },
-        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', agent: 'Maria Garcia', comments: 5 },
+        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', agent: '', comments: 0, sharedMs: 0 },
+        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', agent: 'Ana Reyes', comments: 3, sharedMs: 0 },
+        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', agent: 'Maria Garcia', comments: 5, sharedMs: Date.now() - 86400000 },
       ],
       total: 3, cap: 200,
     },
@@ -435,6 +436,43 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
       ],
       totalRecordings: 9, totalScorecards: 4, truncated: false,
+      // Phase 3 — calibration rows (qaCalibration_ shape: recordings scored by
+      // 2+ reviewers, spread desc, per-reviewer means + widest criterion gap).
+      calibration: [
+        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav',
+          reviewers: [{ name: 'QA Reviewer', avg: 4.6 }, { name: 'Team Tools', avg: 3.4 }],
+          spread: 1.2, maxCritSpread: 2, maxCritKey: 'compliance' },
+        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3',
+          reviewers: [{ name: 'QA Reviewer', avg: 4 }, { name: 'Team Tools', avg: 3.8 }],
+          spread: 0.2, maxCritSpread: 1, maxCritKey: 'communication' },
+      ],
+    },
+    // QA Phase 3 — the agent-facing My Reviews tab (shape mirrors
+    // getMyQaReviews' return block: shared+name-scoped recordings with folded
+    // latest scorecards + active comments, plus the live criteria).
+    getMyQaReviews: {
+      recordings: [
+        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav',
+          createdMs: Date.now() - 432000000, sharedMs: Date.now() - 86400000,
+          scorecards: [
+            { name: 'QA Reviewer', createdMs: Date.now() - 172800000, notes: 'Great verification discipline — slow down on the shipping recap so the patient can write the tracking number down.',
+              ratings: { greeting: 5, communication: 4, accuracy: 5, resolution: 4, compliance: 5 } },
+          ],
+          comments: [
+            { atSec: 42, text: 'Strong opening — verified both identifiers unprompted.', name: 'QA Reviewer' },
+            { atSec: 305, text: 'Recap went by fast here; the patient asked for the tracking number twice.', name: 'QA Reviewer' },
+          ] },
+        { fileId: 'qaFileDddddddd4', name: '2026-08-18 intake call.mp3',
+          createdMs: Date.now() - 777600000, sharedMs: Date.now() - 604800000,
+          scorecards: [], comments: [] },
+      ],
+      criteria: [
+        { key: 'greeting',      label: 'Greeting & opening' },
+        { key: 'communication', label: 'Communication & tone' },
+        { key: 'accuracy',      label: 'Accuracy & process' },
+        { key: 'resolution',    label: 'Resolution & next steps' },
+        { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+      ],
     },
     getSpanishInboxPending: { pending: [
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the

@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 676 + DOM 82;
-  visual matrix on demand — 52 scenarios, last full shoot 2026-08-27 clean)
+Test Command: manual (Node harnesses: `npm test` = pure 680 + DOM 82;
+  visual matrix on demand — 53 scenarios, last full shoot 2026-08-27 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -389,6 +389,36 @@ replaced with a space sentinel via a python bytes-edit; the kbMd_ note's
 (BRK-1..4 + QA-7..10; 10 mutations / 10 bites), DOM 82, matrix 51→52
 (qa-stats-light-wide). Editor ≈ 311 unchanged (omnibus + QA gate cases grew
 IN PLACE) — post-deploy runAllTests still expects 295.
+
+NEWEST OF ALL #5 (2026-08-27, operator /broad-implement "QA Phase 3" — block
+`.cycle/blocks/19pre-qa-phase3-broad-implement.md`): sampling, calibration,
+and the agent-facing reviews the v1 gate deferred — this command WAS the
+recorded revisit of "agents do not see their reviews in v1". Conservative
+postures: (a) SHARING IS AN EXPLICIT RELEASE (qaSetRecordingShared — the
+EmpDocs draft→release precedent): a trailing SharedMs column (0 = unshared;
+safe in place, QA merged but undeployed + QA_SS_ID unset everywhere),
+refused until the recording is attributed to its agent, never auto-set by a
+status flip, id+flag-only audit; (b) getMyQaReviews is EMPLOYEE-gated (bare
+read {error} — the GATE-SHAPE rule, deliberately NOT canSeeQa_) and DOUBLY
+scoped (SharedMs set AND Agent = caller's roster name), read-only /
+never-provisions, active-comments-only, capped 50, NO audio path (playback
+stays behind the canSeeQa_ Drive boundary — follow-on); the UNGATED
+qaMyReviews tab is what makes the QA tool visible to every rep;
+(c) qaSampleRecordings ("Sample 3 for me") assigns new+unassigned
+recordings to the CALLER only via the pure coverage-fair qaSamplePick_
+(lowest done+picked load per agent, injectable rand tie-break; counts-only
+audit); (d) qaCalibration_ rows on the Stats tab — 2+ computable reviewers
+only, per-reviewer means + spread + widest per-criterion gap, FACTS ONLY.
+Client: My Reviews renders read-only through the SHARED qaScorecardListHtml_
+builder (one markup source with the reviewer detail), share pill/button on
+the agent row, calibration table, seq guards + errorStateHtml_ throughout.
+Pure 676→680 (QA-11..14; 6 mutations / 6 bites — one bite exposed an
+EQUIVALENT MUTANT: cards.length<2 in qaCalibration_ is an optimization
+shadowed by the load-bearing reviewers.length<2 guard, so the bite was
+re-aimed and the pin documents it), DOM 82, matrix 52→53
+(qa-myreviews-light-wide). Editor ≈ 311 unchanged (QA gate case grew to 14
+endpoints + the getMyQaReviews read-shape rejection IN PLACE) — post-deploy
+runAllTests still expects 295.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →

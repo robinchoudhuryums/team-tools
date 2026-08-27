@@ -13394,11 +13394,13 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   // Headers extended in place (Phase 1 merged but UNDEPLOYED + QA_SS_ID unset
   // everywhere = no tab exists to migrate) — Agent is the trailing column and
   // the enum agrees.
-  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'\]/.test(stripped),
-    'Agent is the trailing recordings column');
-  assert.ok(/AGENT: 10/.test(stripped), 'QAR.AGENT matches its position');
+  // (Rewritten in place for Phase 3 — SharedMs joined as the new trailing
+  // column; the honest bookkeeping when a contract changes under a pin.)
+  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'\]/.test(stripped),
+    'Agent + SharedMs are the trailing recordings columns');
+  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped), 'QAR positions match');
   const sync = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
-  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '',/.test(sync), 'sync rows carry the trailing empty Agent cell');
+  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0,/.test(sync), 'sync rows carry the trailing empty Agent + unshared SharedMs cells');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
@@ -13434,6 +13436,196 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
   assert.ok(/qaStats: \{ label: 'Stats', icon: 'chart', enter: 'enterQaStatsView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
     'qaStats registered under also:canSeeQa (agents never see it)');
+});
+
+// ---------------------------------------------------------------------------
+// QA Phase 3 — sampling, calibration, agent-facing shared reviews.
+console.log('\nQA Phase 3 — sampling, calibration, agent-facing reviews');
+
+test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to the CALLER only', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'qaSamplePick_'), ctx);
+  const P = ctx.qaSamplePick_;
+  const pool = () => [
+    { fileId: 'a1', agent: 'A' },   // A already has 3 done reviews
+    { fileId: 'b1', agent: 'B' },
+    { fileId: 'b2', agent: 'B' },
+    { fileId: 'u1', agent: '' },    // blank agent buckets under (unassigned)
+  ];
+  // Injected rand (always 0 → first tie index) makes the walk deterministic:
+  // round 1 ties {b1,b2,u1} at load 0 → b1; round 2 B now carries a PICKED
+  // load of 1, so u1 (0) wins BEFORE b2 — the within-round fairness the
+  // picked-load term exists for; round 3 b2 (1) beats a1 (3). A's recording
+  // is the one left out at count 3 — coverage fairness against DONE history.
+  const ids = (arr) => arr.map((c) => c.fileId).join('|');
+  assert.strictEqual(ids(P(pool(), 3, { A: 3 }, () => 0)), 'b1|u1|b2',
+    'lowest reviewed+picked load first; the heavily-reviewed agent is sampled last');
+  // The tie-break actually CONSULTS rand — a different rand yields a
+  // different first pick among the tied trio.
+  assert.strictEqual(P(pool(), 1, { A: 3 }, () => 0.99)[0].fileId, 'u1', 'rand drives the tie-break');
+  assert.strictEqual(P(pool(), 10, {}, () => 0).length, 4, 'count clamps to the pool');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P(pool(), 0, {}, () => 0))), [], 'count 0 → []');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(P(null, 3, {}, () => 0))), [], 'null candidates → []');
+  // Endpoint contract: gate before the store; count bounds; candidates are
+  // NEW + UNASSIGNED only; the assignment target is the CALLER (`self`) —
+  // never a caller-supplied assignee (routing work to others is the queue's
+  // manager-only Assign); counts-only audit (INV-32/196); locked.
+  const src = nc(extractRawFunction('Code.js', 'qaSampleRecordings'));
+  const gateIdx = src.indexOf("'QA access required.'");
+  const storeIdx = src.indexOf('getOrCreateQaRecordingsSheet_');
+  assert.ok(gateIdx >= 0 && storeIdx > gateIdx, 'gate precedes the store read');
+  assert.ok(/n >= 1 && n <= 10/.test(src), 'count bounded 1–10');
+  assert.ok(/qaStatus_\(rows\[i\]\[QAR\.STATUS\]\) !== 'new'\) continue;/.test(src) &&
+            /String\(rows\[i\]\[QAR\.ASSIGNEE\] \|\| ''\)\.trim\(\)\) continue;/.test(src),
+    'candidates are status-new AND unassigned only');
+  assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(self\); \}\);/.test(src),
+    'assignment writes SELF (the caller email) — no third-party target exists on this endpoint');
+  assert.ok(/function qaSampleRecordings\(count\)/.test(src), 'the signature takes ONLY a count — no assignee param');
+  assert.ok(/writeAuditLog_\(emp, 'QaSample', '', '', false, 0,\s*'requested=' \+ n \+ '; assigned=' \+ picked\.length, emp\.email\);/.test(src),
+    'counts-only audit — file names never reach the shared AuditLog (INV-32/196)');
+  assert.ok(/waitLock\(15000\)/.test(src) && /finally \{ lock\.releaseLock\(\); \}/.test(src), 'locked (INV-01)');
+});
+
+test('QA-12: share requires attribution; getMyQaReviews is employee-gated, doubly scoped, read-only', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const share = nc(extractRawFunction('Code.js', 'qaSetRecordingShared'));
+  assert.ok(/'QA access required\.'/.test(share), 'share is QA-gated (INV-196 tier)');
+  // Share-requires-agent, checked BEFORE the SharedMs write: releasing a
+  // review with no attribution would share it to NOBODY while the queue pill
+  // claims it is shared — refuse with the reason instead.
+  const agentGuardIdx = share.indexOf("if (on && !String(found.row[QAR.AGENT] || '').trim())");
+  const writeIdx = share.indexOf('QAR.SHARED_MS + 1).setValue(ms)');
+  assert.ok(agentGuardIdx >= 0 && writeIdx > agentGuardIdx,
+    'sharing REFUSES until the recording is attributed to its agent, before any write');
+  assert.ok(/writeAuditLog_\(emp, 'QaShare', '', '', false, 0, 'fileId=' \+ fid \+ '; shared=' \+ on, emp\.email\);/.test(share),
+    'the share audit row carries the id + flag only — never the agent name (INV-32/196)');
+  // The agent-facing read: EMPLOYEE gate returning the bare {error} READ
+  // shape (the GATE-SHAPE rule — never success:false on a read), and the two
+  // scope filters that ARE the Phase-3 privacy boundary.
+  const mine = nc(extractRawFunction('Code.js', 'getMyQaReviews'));
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(mine),
+    'employee-gated with the bare read {error} shape');
+  assert.ok(!/success: false/.test(mine), 'a READ never returns the writer success:false shape');
+  assert.ok(!/canSeeQa_/.test(mine), 'deliberately NOT the QA-member gate — this is the agent-facing read');
+  assert.ok(/if \(!\(Number\(rows\[i\]\[QAR\.SHARED_MS\]\) > 0\)\) continue;/.test(mine),
+    'SHARED filter — an unshared review is invisible even to its own agent');
+  assert.ok(/String\(rows\[i\]\[QAR\.AGENT\] \|\| ''\)\.trim\(\)\.toLowerCase\(\) !== myName\) continue;/.test(mine),
+    'NAME scope — an agent can never read another agent\'s reviews');
+  // Read-only: never provisions the store, never writes; soft-deleted
+  // comments stay invisible; the list is capped.
+  assert.ok(/getSheetByName\(QA_RECORDINGS_TAB\)/.test(mine) && !/getOrCreateQa/.test(mine),
+    'reads via getSheetByName — an unset store never provisions from the agent path');
+  assert.ok(!/appendRow|setValue\(/.test(mine), 'strictly read-only');
+  assert.ok(/!== 'active'\) continue;/.test(mine), 'only ACTIVE comments reach the agent (soft-deletes stay hidden)');
+  assert.ok(/QA_MY_REVIEWS_CAP/.test(mine), 'list capped');
+  // Tests.js asserts the gate at runtime with the READ shape (_assertContains
+  // on .error, never _assertFailure — the GATE-SHAPE lesson).
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/getMyQaReviews\(\)/.test(testsSrc) && testsSrc.indexOf("String(mine && mine.error), 'Not authorized'") >= 0,
+    'the editor gate case asserts the read shape');
+});
+
+test('QA-13: qaCalibration_ behavioral — 2+ reviewers only, spread arithmetic, per-criterion gap', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'qaCalibration_'), ctx);
+  const C = ctx.qaCalibration_;
+  const crit = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }];
+  // A lone card has nothing to compare against — excluded, never a
+  // single-reviewer "calibration" row. (Bite note: the `cards.length < 2`
+  // early return is an equivalent-mutant OPTIMIZATION — the load-bearing
+  // guard is `reviewers.length < 2` below it, which is what the bite-check
+  // mutates; weakening cards.length alone changes nothing observable.)
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(C([{ fileId: 'f1', name: 'X', ratings: { a: 5 } }], crit))), [],
+    'single-reviewer recordings are excluded');
+  // Two cards whose second has NO computable mean (empty/out-of-range
+  // ratings) still count as ONE reviewer → excluded.
+  assert.strictEqual(C([
+    { fileId: 'f1', name: 'X', ratings: { a: 5 } },
+    { fileId: 'f1', name: 'Y', ratings: { a: 9 } },
+  ], crit).length, 0, 'a card with no in-range ratings is not a second reviewer');
+  // The real case: r1 mean 4 ({a:5,b:3}), r2 mean 3 ({a:2,b:4}) → spread 1;
+  // criterion a spans 5..2 (gap 3), b spans 3..4 (gap 1) → widest gap is a/3.
+  const rows = C([
+    { fileId: 'f1', name: 'X', ratings: { a: 5, b: 3 } },
+    { fileId: 'f1', name: 'Y', ratings: { a: 2, b: 4 } },
+    { fileId: 'f2', name: 'X', ratings: { a: 4 } },
+    { fileId: 'f2', name: 'Y', ratings: { a: 4, b: 2 } },
+  ], crit);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].fileId, 'f1', 'sorted spread desc — the widest disagreement first');
+  assert.strictEqual(rows[0].spread, 1);
+  assert.strictEqual(rows[0].reviewers.map((r) => r.name + ':' + r.avg).join('|'), 'X:4|Y:3');
+  assert.strictEqual(rows[0].maxCritKey, 'a');
+  assert.strictEqual(rows[0].maxCritSpread, 3);
+  // f2: both rated a (4,4 → gap 0); b was rated by ONE reviewer, so it can
+  // never become the "widest gap" — a single rating is not a disagreement.
+  assert.strictEqual(rows[1].spread, 1, 'means 4 and 3 (4+2)/2');
+  assert.strictEqual(rows[1].maxCritKey, '', 'a criterion rated once never sets the gap (client renders —)');
+  // 1-dp rounding on means and spread.
+  const r3 = C([
+    { fileId: 'f3', name: 'X', ratings: { a: 5, b: 5, } },
+    { fileId: 'f3', name: 'Y', ratings: { a: 1, b: 2, } },
+  ], crit)[0];
+  assert.strictEqual(r3.reviewers[1].avg, 1.5);
+  assert.strictEqual(r3.spread, 3.5);
+});
+
+test('QA-14: Phase 3 client wiring — ungated My Reviews tab, read-only render, one scorecard builder', () => {
+  const qaSrc = extractScript('qa/script_qa.html');
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  // The Phase-3 gate change: qaMyReviews is registered UNGATED (no
+  // managerOnly, no also flag), which is what makes the QA tool visible to
+  // every rep via toolVisibleForUser_ — with only this tab.
+  assert.ok(/qaMyReviews: \{ label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView' \}/.test(core),
+    'qaMyReviews registered ungated — the deliberate Phase-3 decision');
+  // The reviewer tabs stay behind the third-tier gate.
+  assert.ok(/qaQueue: \{[^}]*also: 'canSeeQa' \}/.test(core) && /qaStats: \{[^}]*also: 'canSeeQa' \}/.test(core),
+    'queue + stats stay canSeeQa-gated');
+  // My Reviews renders READ-ONLY: no audio element, no scorecard form, no
+  // click handlers at all — the agent reads, they do not act here.
+  const myRev = qaSrc.match(/function qaRenderMyReviews_\([\s\S]*?\n\}/)[0];
+  assert.ok(!/onclick=/.test(myRev) && !/<audio/.test(myRev) && !/qaRenderScoreForm_|getQaAudioChunk/.test(myRev),
+    'the agent view carries no controls, no audio, no scorecard form');
+  assert.ok(/qaScorecardListHtml_\(r\.scorecards, d\.criteria\)/.test(myRev),
+    'My Reviews renders through the SHARED scorecard builder');
+  const detailList = qaSrc.match(/function qaRenderScorecardList_\([\s\S]*?\n\}/)[0];
+  assert.ok(/qaScorecardListHtml_\(QA_STATE\.scorecards, QA_STATE\.criteria\)/.test(detailList),
+    'the reviewer detail renders through the SAME builder — one markup source, no drift');
+  // Loader discipline: seq-guarded in BOTH handlers, errorStateHtml_ on both
+  // failure shapes (A12/INV-175).
+  const enterRev = qaSrc.match(/function enterQaMyReviewsView\([\s\S]*?\n\}/)[0];
+  assert.strictEqual((enterRev.match(/QA_STATE\.myRevSeq !== mySeq/g) || []).length, 2,
+    'seq guard in success AND failure handlers (INV-156)');
+  assert.strictEqual((enterRev.match(/errorStateHtml_\(/g) || []).length, 2, 'both failure shapes render the error card');
+  // Share + sample controls on the reviewer surfaces.
+  assert.ok(/const shared = Number\(r\.sharedMs\) > 0;/.test(qaSrc) && /qa-shared-pill/.test(qaSrc),
+    'the detail derives shared state from sharedMs and renders the pill');
+  assert.ok(/qaSetRecordingShared\(/.test(qaSrc) && /qaSampleRecordings\(3\)/.test(qaSrc),
+    'share toggle + sample-3 wired to the Phase-3 endpoints');
+  // Calibration renders only when rows exist, and an unset widest-gap key is
+  // an em dash (INV-187).
+  assert.ok(/const cal = d\.calibration \|\| \[\];\s*if \(cal\.length\) \{/.test(qaSrc),
+    'no empty calibration section');
+  assert.ok(/r\.maxCritKey\s*\?[\s\S]{0,200}: '—';/.test(qaSrc), 'missing gap key renders an em dash');
+  // Fixture keys mirror the server push literal (INV-185) — derived from the
+  // RAW server source (shapes from raw, bans from stripped — INV-188).
+  const mineRaw = extractRawFunction('Code.js', 'getMyQaReviews');
+  const pushBlock = mineRaw.slice(mineRaw.indexOf('mine.push({'), mineRaw.indexOf('});', mineRaw.indexOf('mine.push({')));
+  const serverKeys = [];
+  let km;
+  const keyRe = /(\w+):\s/g;
+  while ((km = keyRe.exec(pushBlock)) !== null) if (serverKeys.indexOf(km[1]) < 0) serverKeys.push(km[1]);
+  assert.ok(serverKeys.length >= 5, 'sanity: the push literal yields keys (extraction not broken)');
+  const mockSrc = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fixStart = mockSrc.indexOf('getMyQaReviews: {');
+  assert.ok(fixStart >= 0, 'the My Reviews visual fixture exists');
+  const fixBlock = mockSrc.slice(fixStart, mockSrc.indexOf('criteria', fixStart));
+  serverKeys.forEach((k) => {
+    assert.ok(fixBlock.indexOf(k + ':') >= 0, 'fixture carries server key "' + k + '" (INV-185)');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

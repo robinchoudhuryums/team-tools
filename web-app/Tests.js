@@ -5255,12 +5255,22 @@ function test_qa_gates_rejectNonMember() {
    ['qaSetRecordingAgent', function () { return qaSetRecordingAgent('x', 'A Name'); }],
    ['qaSaveScorecard', function () { return qaSaveScorecard('x', { greeting: 5 }, ''); }],
    ['qaListScorecards', function () { return qaListScorecards('x'); }],
-   ['getQaStats', function () { return getQaStats(); }]]
+   ['getQaStats', function () { return getQaStats(); }],
+   // Phase 3 — share-to-agent + sampling stay in the canSeeQa_ tier.
+   ['qaSetRecordingShared', function () { return qaSetRecordingShared('x', true); }],
+   ['qaSampleRecordings', function () { return qaSampleRecordings(3); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');
       _assertContains(r.error, 'QA access', c[0] + ' must be QA-gated (managers + QA_MEMBERS)');
     });
+  // Phase 3 — getMyQaReviews is deliberately EMPLOYEE-gated (the agent-facing
+  // read; NOT canSeeQa_), a READ returning a bare {error} for a non-employee
+  // (the GATE-SHAPE rule — never _assertFailure on a read).
+  const mine = _asUser('not-a-registered-user@example.invalid', function () { return getMyQaReviews(); });
+  _assertContains(String(mine && mine.error), 'Not authorized',
+    'getMyQaReviews rejects a non-employee (bare read error)');
+  _assertTrue(!mine.recordings, 'and no rows come back with the rejection');
 }
 
 // A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
