@@ -12356,7 +12356,10 @@ test('B6: cnCountIntakeNotesResult_ — bounded 2-col read, pre-filter before pa
   const f = nc(extractRawFunction('Code.js', 'cnCountIntakeNotesResult_'));
   assert.ok(!/getDataRange\(\)/.test(f), 'never a full-width read of the notes Sheet');
   assert.ok(/CN\.DATE_LOCAL \+ 1/.test(f) && /CN\.SUBFORM_DATA \+ 1/.test(f), 'exactly the two columns the count needs (the taxonomy pattern)');
-  assert.ok(/normalizeDate_\(/.test(f), 'DateLocal routes through the coercion guard (the CN.DATE_LOCAL gotcha)');
+  // Part A (2026-08-27): the CN-region date guard is cnDateLocalString_ — it
+  // recovers in the HOST sheet's tz, where normalizeDate_ (the ADP-sheet twin)
+  // shifted a Manila-coerced midnight a day back. Rewritten in place.
+  assert.ok(/cnDateLocalString_\(/.test(f), 'DateLocal routes through the HOST-tz coercion guard (the CN.DATE_LOCAL gotcha, Part A)');
   const pre = f.indexOf('"intakeType"'), parse = f.indexOf('JSON.parse');
   assert.ok(pre > -1 && parse > -1 && pre < parse, 'the substring pre-filter runs BEFORE any JSON.parse');
   assert.ok(/unenrolled: true/.test(f), 'no-sheet is a DISTINCT state from a failed read (INV-35)');
@@ -12809,6 +12812,111 @@ test('BCN-2: the beacon client half — piggybacked, throttled, empty-stamp-disa
     'a real <button> named by its label (INV-173) — textContent, never innerHTML');
   assert.ok(/opts\.onAction\(\); \} catch \(e\) \{\}/.test(st) && st.indexOf('dismiss()', st.indexOf('opts.onAction')) > -1,
     'the action fires guarded and the toast dismisses after');
+});
+
+// ── Part A (operator 2026-08-27): CN coercion recovery uses the HOST sheet's tz ──
+// The live failure: a coercing per-rep sheet interprets stored digits in ITS
+// OWN tz, but recovery formatted in the ADP tz — so a 2:16 PM Chicago note
+// displayed 1:46 AM, and a PH rep's midnight-Manila DateLocal recovered in IST
+// as the PREVIOUS day, dropping their just-logged note off the rolling stack.
+console.log('\nPart A — host-tz coercion recovery (CN timestamps + DateLocal)');
+
+// A real tz-aware Utilities.formatDate for the behavioral cases — the oracle
+// is Intl, computed independently of the code under test.
+function tzFormatDate(d, tz, fmt) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const m = {}; parts.forEach((p) => { m[p.type] = p.value; });
+  const date = m.year + '-' + m.month + '-' + m.day;
+  if (fmt === 'yyyy-MM-dd') return date;
+  return date + 'T' + (m.hour === '24' ? '00' : m.hour) + ':' + m.minute + ':' + m.second;
+}
+
+function partACtx(hostTz) {
+  const vm2 = require('vm');
+  const src =
+    'var _cnHostTz = ' + JSON.stringify(hostTz) + ';\n' +
+    'var _cnHostTzById = {};\n' +
+    // The ADP-tz fallback the memo degrades to — the pre-Part-A behavior.
+    'function adpSheetTz_() { return "Asia/Kolkata"; }\n' +
+    extractRawFunction('Code.js', 'cnHostTz_') + '\n' +
+    extractRawFunction('Code.js', 'normalizeDate_') + '\n' +
+    extractRawFunction('Code.js', 'cnDateLocalString_') + '\n' +
+    extractRawFunction('Code.js', 'cnTimestampString_') + '\n';
+  // The vm realm's own Date constructor breaks `instanceof Date` for a Date
+  // built in THIS realm (the deepStrictEqual-prototype trap's sibling) — shadow
+  // the vm global with the outer constructor so the fixtures' Dates are Dates.
+  const ctx = { Utilities: { formatDate: tzFormatDate }, Date: Date };
+  vm2.createContext(ctx);
+  vm2.runInContext(src, ctx);
+  return ctx;
+}
+
+test('PTA-1: the operator symptom — a Chicago-coerced 14:16 recovers as-written, not 00:46 next day', () => {
+  // The stored string "2026-08-27T14:16:00" coerced by a sheet whose tz is
+  // America/Chicago is the instant 19:16Z (CDT = UTC-5).
+  const coerced = new Date(Date.UTC(2026, 7, 27, 19, 16, 0));
+  const host = partACtx('America/Chicago');
+  assert.strictEqual(host.cnTimestampString_(coerced), '2026-08-27T14:16:00',
+    'host-tz recovery returns the as-written digits');
+  // The degraded path (memo null → ADP tz) is EXACTLY the pre-fix defect the
+  // operator reported — pinned so the delta this fix exists for stays visible.
+  const degraded = partACtx(null);
+  assert.strictEqual(degraded.cnTimestampString_(coerced), '2026-08-28T00:46:00',
+    'the ADP-tz fallback reproduces the reported 00:46-next-day shift (the memo is what prevents it)');
+  // Strings pass through untouched on both paths.
+  assert.strictEqual(host.cnTimestampString_('2026-08-27T14:16:00'), '2026-08-27T14:16:00');
+  assert.strictEqual(host.cnTimestampString_(''), '');
+});
+
+test('PTA-2: the PH symptom — a Manila-midnight DateLocal recovers SAME-day, and the rolling stack keeps the note', () => {
+  // "2026-08-27" coerced at midnight Asia/Manila (UTC+8) = 16:00Z Aug 26.
+  const coerced = new Date(Date.UTC(2026, 7, 26, 16, 0, 0));
+  const host = partACtx('Asia/Manila');
+  assert.strictEqual(host.cnDateLocalString_(coerced), '2026-08-27',
+    'host-tz recovery keeps the as-written day');
+  const degraded = partACtx(null);
+  assert.strictEqual(degraded.cnDateLocalString_(coerced), '2026-08-26',
+    'the ADP-tz (IST, west of Manila) fallback shifts the day BACK — the "missing from today" defect');
+  // String passthrough trims + substrings exactly like normalizeDate_.
+  assert.strictEqual(host.cnDateLocalString_(' 2026-08-27 10:00:00 '), '2026-08-27');
+  // A pinned/healthy sheet (host tz == ADP tz) is a byte-identical no-op vs
+  // normalizeDate_ — the fix cannot change behavior where nothing was wrong.
+  const pinned = partACtx('Asia/Kolkata');
+  const istMidnight = new Date(Date.UTC(2026, 7, 26, 18, 30, 0));
+  assert.strictEqual(pinned.cnDateLocalString_(istMidnight), pinned.normalizeDate_(istMidnight),
+    'host tz equal to the ADP tz recovers identically to the ADP-sheet twin');
+});
+
+test('PTA-3: wiring — the memo is set in the single opener, recovery never reaches adpSheetTz_, and CN.DATE_LOCAL never reaches normalizeDate_', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // cnTimestampString_ recovers via cnHostTz_, never adpSheetTz_ directly
+  // (comment-stripped — the fn's own comment names the old helper).
+  const ts = nc(extractRawFunction('Code.js', 'cnTimestampString_'));
+  assert.ok(/cnHostTz_\(\)/.test(ts) && !/adpSheetTz_\(/.test(ts),
+    'cnTimestampString_ formats in the HOST tz');
+  const dl = nc(extractRawFunction('Code.js', 'cnDateLocalString_'));
+  assert.ok(/cnHostTz_\(\)/.test(dl) && /catch \(e\) \{ return normalizeDate_\(val\); \}/.test(dl),
+    'cnDateLocalString_ formats in the HOST tz and degrades to the ADP twin on a formatting throw');
+  // getCallNotesSheet_ sets the memo AFTER openById, per-id cached, null on failure.
+  const opener = nc(extractRawFunction('Code.js', 'getCallNotesSheet_'));
+  const openIdx = opener.indexOf('SpreadsheetApp.openById');
+  const memoIdx = opener.indexOf('_cnHostTzById[hid]');
+  assert.ok(openIdx > -1 && memoIdx > openIdx, 'the memo is read off the freshly opened handle');
+  assert.ok(/catch \(e\) \{ _cnHostTz = null; \}/.test(opener),
+    'a failed tz read degrades to the ADP tz (pre-Part-A behavior), never throws the open');
+  // Derived ban: NO CN.DATE_LOCAL cell read reaches normalizeDate_ anywhere —
+  // a NEW site reaching for the ADP-sheet twin fails CI (the F14/INV-142
+  // boundary pattern).
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const banned = code.match(/normalizeDate_\(\s*[^()]*\[CN\.DATE_LOCAL\]/g) || [];
+  assert.strictEqual(banned.length, 0,
+    'raw normalizeDate_([…CN.DATE_LOCAL]) read(s) — CN-region dates go through cnDateLocalString_: ' + banned.join(' | '));
+  // The one typed reader routes through the new guard.
+  assert.ok(/dateLocal:\s*cnDateLocalString_\(row\[CN\.DATE_LOCAL\]\)/.test(code),
+    'callNoteRowToObject_ recovers DateLocal via cnDateLocalString_');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
