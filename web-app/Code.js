@@ -8143,15 +8143,20 @@ function computeCnEmailHash_(htmlBody, subject, to) {
  *  always sends as the deployer; a neutral shared sender needs a Workspace
  *  "Send mail as" alias on the deployer account — an operator action, not
  *  code). What code controls is the display NAME recipients see and where a
- *  reply lands: name = the agent + org, replyTo = the agent's own inbox.
- *  Returns {} for a missing/partial emp so Object.assign is a no-op and the
- *  send proceeds with the system identity rather than failing.
+ *  reply lands: name = the agent's name ALONE, replyTo = the agent's own
+ *  inbox. (Operator correction 2026-08-27: the former "· Universal Medical
+ *  Supply" org suffix was the WRONG company name — it fired live on a pilot
+ *  agent's send — and is unnecessary anyway: dept emails never leave the org,
+ *  and the external/intake emails carry the brand in their body chrome. Do
+ *  not re-add an org suffix here without the operator supplying the exact
+ *  string.) Returns {} for a missing/partial emp so Object.assign is a no-op
+ *  and the send proceeds with the system identity rather than failing.
  *  SCOPE: rep-initiated sends ONLY (dept email, external email, the three
  *  intake sends) — automated digests/alerts/exports deliberately keep the
  *  system identity, and the notifyAfter/best-effort senders are untouched. */
 function repSenderOpts_(emp) {
   const opts = {};
-  if (emp && emp.name) opts.name = String(emp.name) + ' · Universal Medical Supply';
+  if (emp && emp.name) opts.name = String(emp.name);
   if (emp && emp.email) opts.replyTo = String(emp.email);
   return opts;
 }
@@ -8192,6 +8197,21 @@ function repSenderFrom_() {
  *  feature already uses it) and shares the MailApp send quota. */
 function sendRepEmail_(emp, opts) {
   const merged = Object.assign({}, opts, repSenderOpts_(emp));
+  // Operator ask 2026-08-27: the sending agent gets their own copy of every
+  // email they send from the app. A true Sent-folder entry in the AGENT's
+  // mailbox is impossible — the app sends as USER_DEPLOYING, so only the
+  // deployer's Sent folder records the send (which GmailApp does when the
+  // REP_SENDER_FROM alias is active) — so the copy is a self-BCC into the
+  // agent's inbox. APPENDED, never clobbering a caller's own bcc (the intake
+  // routes set INTAKE_BCC_EMAIL), and skipped when the agent is already a
+  // bcc recipient.
+  if (emp && emp.email) {
+    const self = String(emp.email);
+    const bcc = String(merged.bcc || '');
+    if (bcc.toLowerCase().indexOf(self.toLowerCase()) < 0) {
+      merged.bcc = bcc ? bcc + ',' + self : self;
+    }
+  }
   const from = repSenderFrom_();
   if (from) {
     // GmailApp's signature is positional (to, subject, body, options) — the

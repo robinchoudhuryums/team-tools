@@ -11072,7 +11072,11 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
   test('R1 #8: repSenderOpts_ yields {name, replyTo} for a rep and {} for a missing one', () => {
     const o = r1Ctx.repSenderOpts_({ name: 'Jane Doe', email: 'jane@umsupply.com' });
     assert.strictEqual(o.replyTo, 'jane@umsupply.com', 'replies land in the AGENT\'s inbox, not the deployer\'s');
-    assert.ok(/^Jane Doe/.test(o.name), 'display name leads with the agent');
+    // Operator correction 2026-08-27: the display name is the agent's name
+    // ALONE — the former org suffix was the WRONG company name and fired live
+    // on a pilot send. strictEqual so ANY re-added suffix fails, not just the
+    // old one.
+    assert.strictEqual(o.name, 'Jane Doe', 'display name is the agent alone — no org suffix');
     // vm-realm trap (documented in CLAUDE.md): deepStrictEqual compares
     // PROTOTYPES, so a vm-created object never equals a host {} — compare keys.
     assert.strictEqual(Object.keys(r1Ctx.repSenderOpts_(null)).length, 0,
@@ -11132,29 +11136,39 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
     assert.strictEqual(mkSenderCtx('team@x.test', 'THROW').repSenderFrom_(), '',
       'a GmailApp failure resolves to "" (fail-safe — a bad property can never break email)');
   });
-  test('R1 follow-on: sendRepEmail_ picks GmailApp-with-from ONLY when the alias resolves', () => {
+  test('R1 follow-on: sendRepEmail_ picks GmailApp-with-from ONLY when the alias resolves, and self-BCCs the agent', () => {
     // No alias → MailApp single-object form, identity merged in.
     const c1 = mkSenderCtx(null, []);
     c1.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: '<b>h</b>' });
     assert.ok(c1.MailApp.sent && !c1.GmailApp.sent, 'dormant → MailApp path');
     assert.strictEqual(c1.MailApp.sent.replyTo, 'jane@x.test');
-    assert.ok(/^Jane/.test(c1.MailApp.sent.name));
+    assert.strictEqual(c1.MailApp.sent.name, 'Jane', 'agent name alone (operator 2026-08-27 — no org suffix)');
+    // Operator ask 2026-08-27: the agent gets their own copy. A Sent-folder
+    // entry in the AGENT's mailbox is impossible (the app sends as the
+    // deployer), so it is a self-BCC — on BOTH send paths.
+    assert.strictEqual(c1.MailApp.sent.bcc, 'jane@x.test', 'no caller bcc → the agent IS the bcc');
     // Alias configured → GmailApp positional form with from + identity, and
     // the options object must NOT repeat to/subject/body (GmailApp rejects it).
     const c2 = mkSenderCtx('team@x.test', ['team@x.test']);
-    c2.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', body: 'txt', htmlBody: '<b>h</b>', cc: 'c@d.e' });
+    c2.sendRepEmail_({ name: 'Jane', email: 'jane@x.test' }, { to: 'a@b.c', subject: 's', body: 'txt', htmlBody: '<b>h</b>', cc: 'c@d.e', bcc: 'org@x.test' });
     assert.ok(c2.GmailApp.sent && !c2.MailApp.sent, 'configured → GmailApp path');
     assert.strictEqual(c2.GmailApp.sent.to, 'a@b.c');
     assert.strictEqual(c2.GmailApp.sent.body, 'txt');
     assert.strictEqual(c2.GmailApp.sent.opts.from, 'team@x.test');
     assert.strictEqual(c2.GmailApp.sent.opts.replyTo, 'jane@x.test');
     assert.strictEqual(c2.GmailApp.sent.opts.cc, 'c@d.e');
+    assert.strictEqual(c2.GmailApp.sent.opts.bcc, 'org@x.test,jane@x.test',
+      'a caller bcc (the intake INTAKE_BCC_EMAIL shape) is APPENDED to, never clobbered');
     ['to', 'subject', 'body'].forEach((k) =>
       assert.ok(!(k in c2.GmailApp.sent.opts), 'options must not repeat positional "' + k + '"'));
     // No plain body (the intake shape) → empty-string body, never undefined.
     const c3 = mkSenderCtx('team@x.test', ['team@x.test']);
     c3.sendRepEmail_({ name: 'J', email: 'j@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: 'h' });
     assert.strictEqual(c3.GmailApp.sent.body, '', 'missing body → "" for the positional arg');
+    // Already-present agent in bcc → no duplicate append (case-insensitive).
+    const c4 = mkSenderCtx(null, []);
+    c4.sendRepEmail_({ name: 'J', email: 'j@x.test' }, { to: 'a@b.c', subject: 's', htmlBody: 'h', bcc: 'J@X.TEST' });
+    assert.strictEqual(c4.MailApp.sent.bcc, 'J@X.TEST', 'agent already bcc\'d → unchanged, no duplicate');
   });
 
   // Follow-on: {callDirection} is an OPERATOR-AVAILABLE copy token; the
@@ -12409,15 +12423,37 @@ test('CMP-3: edits commit through updateCallNote — no new endpoint, state repl
 
 test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built from the note as sent (INV-41)', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const go = nc(extractFunction('cn/script_callnotes.html', 'cnComposerGoToPreview_'));
-  const dirtyAt = go.indexOf('cnComposerNoteDirtyFields_().length > 0');
-  const saveAt = go.indexOf('cnComposerSaveNoteEdits_(');
-  const runAt = go.lastIndexOf('cnComposerRunPreview_()');
+  // The chain tail was split into cnComposerPreviewChain_ when the empty-TRX
+  // warning arrived (operator 2026-08-27) — the ORDER property lives there now.
+  const chain = nc(extractFunction('cn/script_callnotes.html', 'cnComposerPreviewChain_'));
+  const dirtyAt = chain.indexOf('cnComposerNoteDirtyFields_().length > 0');
+  const saveAt = chain.indexOf('cnComposerSaveNoteEdits_(');
+  const runAt = chain.lastIndexOf('cnComposerRunPreview_()');
   assert.ok(dirtyAt > -1 && saveAt > -1 && runAt > -1, 'the dirty branch, the save and the preview are all present');
   assert.ok(saveAt < runAt, 'the save is chained BEFORE the preview — previewing first would render (and email) the STALE note');
-  assert.ok(/if \(!ok\) \{ cnComposerSetPreviewBtnIdle_\(btn\); return; \}/.test(go),
+  assert.ok(/if \(!ok\) \{ cnComposerSetPreviewBtnIdle_\(btn\); return; \}/.test(chain),
     'a failed save aborts the chain and restores the button — never a preview of unsaved text');
+  const go = nc(extractFunction('cn/script_callnotes.html', 'cnComposerGoToPreview_'));
   assert.ok(/if \(c\.previewing \|\| c\.savingNote\) return;/.test(go), 'either in-flight RPC blocks a second click');
+  // Operator 2026-08-27: an empty Patient Name & TRX warns — dismissibly,
+  // never a hard block (the intakeWarnRecommended_ posture). The check reads
+  // the LIVE editable field first (an un-saved fill-in already counts, and
+  // "Go back" lands the rep on that very field), falls back to the stored
+  // note, resumes the SAME chain on Continue, and instance-guards across the
+  // dialog gap.
+  // Assert the live field's VALUE is what is checked, not merely that the
+  // element is looked up — the first write of this pin passed a mutation that
+  // kept the getElementById line but read only the stored note (bite C).
+  assert.ok(/trxEl \? \(trxEl\.textContent/.test(go),
+    'the LIVE editable field is consulted first when it is in the DOM (an un-saved fill-in counts)');
+  assert.ok(/c\.note && c\.note\.patientAndTrx/.test(go), 'with the stored note as the fallback (preview step / pending note)');
+  assert.ok(/uiConfirm\(/.test(go) && /Continue anyway/.test(go) && /Go back/.test(go),
+    'warns via uiConfirm with Continue anyway / Go back — a reminder, never a block');
+  assert.ok(/if \(!go\) return;/.test(go), 'Go back stops the chain');
+  assert.ok(/if \(CN_STATE\.composer !== c\) return;/.test(go), 'instance-guarded across the async dialog gap (the M-4/M-9 discipline)');
+  const warnAt = go.indexOf("getElementById('cnC-nr-patientAndTrx')");
+  const chainAt = go.indexOf('cnComposerPreviewChain_()');
+  assert.ok(warnAt > -1 && chainAt > -1 && warnAt < chainAt, 'the warning gate sits BEFORE the save/preview chain');
   // Uncommitted edits are DISCARDED on close — say so rather than lose them.
   const close = nc(extractFunction('cn/script_callnotes.html', 'cnCloseComposerModal_'));
   assert.ok(/Note edits discarded/.test(close), 'closing with unsaved edits toasts instead of silently dropping them');

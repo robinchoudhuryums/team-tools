@@ -57,8 +57,9 @@ Updated: 2026-08-26
   ship on the SAME `clasp push -f` + New version; then `runAllTests()` in
   the editor (expect 293/293); then the payor CSV import (now in-app via
   Admin → Config → Reference data tables) and the email spot-check (one dept
-  + one intake email — From "<Agent> · Universal Medical Supply", Reply-To
-  the agent). Nothing reaches users until the deploy runs.
+  + one intake email — From shows the AGENT'S NAME ALONE since the
+  2026-08-27 correction, Reply-To the agent, and the agent self-BCC'd).
+  Nothing reaches users until the deploy runs.
 - BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback) — free-text
   recipient feedback already shipped 2026-08-13.
 
@@ -196,7 +197,7 @@ Updated: 2026-08-26
   bare getLastRow that a cleared-but-formatted grid could misreport). Pin
   extended: the helper may not return to `deleteRows` (bite-checked).
 - Still owed from the deploy: the round-1 email spot-check (one dept + one
-  intake email — From reads "<Agent> · Universal Medical Supply", Reply-To
+  intake email — From reads the agent's name (suffix dropped 2026-08-27), Reply-To
   the agent).
 
 ## Open follow-on items
@@ -276,6 +277,19 @@ queued behind a capacity shortage) and as a merge commit rather than a
 squash. It is test-harness-only (Tests.js, run.js, shoot.mjs, CLAUDE.md)
 and was verified locally at 653/81 on that exact commit.
 
+NEWEST (2026-08-27, post-redeploy operator corrections): the operator
+redeployed and pilot testing immediately produced three corrections, all
+implemented + merged the same day: (a) the rep-sender display name is the
+AGENT'S NAME ALONE — the "· Universal Medical Supply" suffix was the WRONG
+company name and fired live; (b) every rep-initiated send now self-BCCs
+the sending agent (a true agent Sent-folder entry is impossible — the app
+sends as the deployer — so the copy lands in their inbox; append-not-
+clobber over caller bccs, deduped); (c) the composer warns dismissibly at
+Preview when Patient Name & TRX is empty (a pilot email went out without
+one). The customersuccess@ sender ask needs NO code — it is the dormant
+REP_SENDER_FROM property (operator queue item 5). These changes need ONE
+MORE `clasp push -f` + New version beyond the deploy the operator just ran.
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
@@ -286,8 +300,15 @@ THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   3. Import the payor CSV — now doable IN-APP via Manage → Admin → Config →
      **Reference data tables** (previews first; dryRun defaults TRUE), so
      the manual File → Import → rename-to-`InsurancePayors` is optional.
-  4. Email spot-check: one dept + one intake email — From reads
-     "<Agent> · Universal Medical Supply", Reply-To is the agent.
+  4. Email spot-check: one dept + one intake email — From reads the
+     agent's name ALONE (the org suffix was the wrong company name and was
+     dropped 2026-08-27), Reply-To is the agent, and the sending agent
+     receives a self-BCC copy in their inbox.
+  5. Set Script Property `REP_SENDER_FROM=customersuccess@universalmedsupply.com`
+     (the operator's chosen send-as alias, already registered on the
+     deploying account) — no redeploy needed for the property; it flips
+     rep-initiated sends to GmailApp, which also records every send in the
+     deployer's own Gmail Sent folder.
 
 BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback). Free-text
 recipient feedback already shipped 2026-08-13, so only build field-level

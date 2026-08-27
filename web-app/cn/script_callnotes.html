@@ -6576,6 +6576,34 @@ function cnComposerGoToPreview_() {
   if (!c.selections.updateInfo) {
     showToast('Pick or type an Update type first', 'toast-warn'); return;
   }
+  // Operator 2026-08-27 (pilot): a dept email went out with a BLANK Patient
+  // Name & TRX — user error a reminder would have caught. Warn, never block
+  // (the intakeWarnRecommended_ posture: Continue anyway / Go back), reading
+  // the LIVE editable Note Reference field when it is in the DOM so an
+  // un-saved fill-in already counts; "Go back" lands the rep on that very
+  // field to fill.
+  const trxEl = document.getElementById('cnC-nr-patientAndTrx');
+  const trxVal = trxEl ? (trxEl.textContent || '') : String((c.note && c.note.patientAndTrx) || '');
+  if (!trxVal.trim()) {
+    uiConfirm({
+      title: 'No Patient Name & TRX',
+      message: 'This email is about to go out without a patient name or TRX #. ' +
+        'You can fill it in the Note Reference at the bottom of this form, or continue without one.',
+      confirmLabel: 'Continue anyway', cancelLabel: 'Go back',
+    }).then(function (go) {
+      if (!go) return;
+      if (CN_STATE.composer !== c) return;   // instance guard across the dialog gap
+      cnComposerPreviewChain_();
+    });
+    return;
+  }
+  cnComposerPreviewChain_();
+}
+
+/** The tail of the Preview flow, past the guards + the empty-TRX warning:
+ *  commit any Note Reference edits, then render. Split out so the async
+ *  uiConfirm above can resume it. */
+function cnComposerPreviewChain_() {
   const btn = document.getElementById('cnC-preview-btn');
   // Commit any Note Reference edits BEFORE rendering: previewing first would
   // build the body (and the INV-41 bodyHash) from the STALE stored note and
