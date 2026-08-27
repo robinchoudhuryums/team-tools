@@ -111,6 +111,9 @@ const SCENARIOS = [
   // uncovered scenario (noted in the Visual Audit Stage).
   ['qa-queue-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', ''],
   ['qa-queue-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', ''],
+  // QA Phase 2 — the per-agent stats table (mtRenderTable_ with dynamic
+  // criterion columns; em dashes for null averages, the '(unassigned)' row).
+  ['qa-stats-light-wide', { tool: 'qa', tab: 'qaStats' }, WIDE, 'light', ''],
   // F8 (cycle 18): Time / PTO is the most recently RESTRUCTURED rep-facing page
   // (consolidated to one page 2026-08-18 — quick-actions card + stacked rail)
   // and was shot only at 1440px, so the stacking of that new rail was never on

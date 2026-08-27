@@ -116,7 +116,9 @@ const CONFIG = {
   SHIFT_SCHEDULE: {
     DEFAULT:     { start: '08:00', end: '17:00',
       // Scheduled breaks (item 1) — drive the Clock-view "next break" chip +
-      // the X-min reminder toast. Operator-tunable here (redeploy). A tz entry
+      // the X-min reminder toast. These are the SEED: the Admin → Config
+      // "Break schedules" editor (Script Property SHIFT_BREAK_SCHEDULES, no
+      // redeploy) overrides them when set — see getBreakSchedules_. A tz entry
       // without its own `breaks` inherits DEFAULT.breaks.
       breaks: [
         { label: 'Morning break',   start: '10:30', len: 15 },
@@ -5331,6 +5333,7 @@ function getAdminConfig() {
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
       spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
+      breakSchedules: breakSchedulesAdminView_(),
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -13213,18 +13216,90 @@ function getShiftSchedule_(timezone) {
   const startMin = toMin(sched.start);
   let endMin = toMin(sched.end);
   if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
-  // Breaks (item 1): the shift entry's own, else inherit DEFAULT's. Resolved to
-  // minutes-from-midnight + length so the client can compute the next break.
-  const rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
-                  : (Array.isArray(def.breaks) ? def.breaks : []);
+  // Breaks (item 1): the Admin-edited SHIFT_BREAK_SCHEDULES property wins when
+  // it has an applicable entry — the tz's own key, else its DEFAULT key. An
+  // EXPLICITLY EMPTY array is honored ("no breaks for this key"), which is why
+  // the applicability check is `!== undefined`, never truthiness. Only when the
+  // property has NO applicable entry does the CONFIG chain apply: the shift
+  // entry's own breaks, else inherit DEFAULT's. Resolved to minutes-from-
+  // midnight + length so the client can compute the next break.
+  const prop = getBreakSchedules_();
+  let rawBreaks;
+  if (prop) {
+    if (prop.schedules[timezone] !== undefined) rawBreaks = prop.schedules[timezone];
+    else if (prop.schedules.DEFAULT !== undefined) rawBreaks = prop.schedules.DEFAULT;
+  }
+  if (rawBreaks === undefined) {
+    rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
+              : (Array.isArray(def.breaks) ? def.breaks : []);
+  }
   const breaks = rawBreaks.map(function (b) {
     return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
   }).filter(function (b) { return b.lenMin > 0; });
   return {
     startMin: startMin, lengthMin: endMin - startMin,
     breaks: breaks,
-    breakReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    breakReminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
   };
+}
+
+/** Pure (Node-pinned) — lenient sanitize of the SHIFT_BREAK_SCHEDULES Script
+ *  Property blob (the L-12 sanitize-on-read rule: a hand-edited property
+ *  degrades, never throws). Shape: { schedules: { DEFAULT|<IANA tz>: [
+ *  { label, start 'H:mm', len 1-240 } ] }, reminderMin 1-120 }. Whitelist-
+ *  rebuilt: a bad key / non-array value is dropped, a bad BREAK inside a valid
+ *  key is dropped (the key keeps its surviving breaks — an all-junk key reads
+ *  as explicitly EMPTY, the quieter failure: a missed reminder over a
+ *  wrong-time one), labels trim + cap 40 + default. Caps: 20 keys, 10 breaks
+ *  per key. reminderMin out of range = absent (CONFIG fallback). Returns null
+ *  for a non-object blob. Anything saveBreakSchedules ACCEPTS round-trips
+ *  through this unchanged (pinned), so a rejected save and a sanitized read
+ *  can never disagree. */
+function breakSchedSanitize_(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const src = (obj.schedules && typeof obj.schedules === 'object' && !Array.isArray(obj.schedules)) ? obj.schedules : {};
+  const schedules = {};
+  let keyCount = 0;
+  const keys = Object.keys(src);
+  for (let i = 0; i < keys.length; i++) {
+    const key = String(keys[i]).trim();
+    if (key !== 'DEFAULT' && !/^[A-Za-z]+(\/[A-Za-z0-9_\-+]+)+$/.test(key)) continue;
+    if (keyCount >= 20) break;
+    const arr = src[keys[i]];
+    if (!Array.isArray(arr)) continue;
+    const clean = [];
+    for (let j = 0; j < arr.length && clean.length < 10; j++) {
+      const b = arr[j] || {};
+      const start = String(b.start || '').trim();
+      if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) continue;
+      const len = parseInt(b.len, 10);
+      if (!(len >= 1 && len <= 240)) continue;
+      const label = String(b.label || '').trim().substring(0, 40) || 'Break';
+      clean.push({ label: label, start: start, len: len });
+    }
+    schedules[key] = clean;   // EMPTY is meaningful — "no breaks for this key"
+    keyCount++;
+  }
+  const out = { schedules: schedules };
+  const rm = parseInt(obj.reminderMin, 10);
+  if (rm >= 1 && rm <= 120) out.reminderMin = rm;
+  return out;
+}
+
+/** Memoized per execution — getShiftSchedule_ runs per-rep-per-day inside the
+ *  coverage/punctuality walks, so the property read must not repeat (the
+ *  adpSheetTz_/L-3 pattern). undefined = not read this execution; null =
+ *  property unset or corrupt (CONFIG.SHIFT_SCHEDULE stays the source). */
+let _breakSchedulesCache;
+function getBreakSchedules_() {
+  if (_breakSchedulesCache !== undefined) return _breakSchedulesCache;
+  let out = null;
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('SHIFT_BREAK_SCHEDULES');
+    if (raw && raw.trim()) out = breakSchedSanitize_(JSON.parse(raw));
+  } catch (e) { out = null; }
+  _breakSchedulesCache = out;
+  return out;
 }
 /** Pure (Node-pinned) — parse a per-rep shift override cell (roster column O,
  *  Turn D): 'H:mm-H:mm' (or 'H-H', spaces tolerated), times in the REP's own
@@ -14923,6 +14998,119 @@ function saveSpanishInboxMembers(emails) {
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Spanish inbox members (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** The Admin "Break schedules" editor's view of the LIVE schedules — every
+ *  key's breaks are resolved through the SAME path the Clock chip and the
+ *  reminders ticker use (getShiftSchedule_), so the editor can never show a
+ *  paraphrase of what actually ships (the INV-185 posture, server-side). Keys
+ *  shown: DEFAULT + every CONFIG BY_TIMEZONE tz + every property tz;
+ *  rosterTimezones feeds the add-a-timezone picker (best-effort — a failed
+ *  roster read still renders the config/property keys). */
+function breakSchedulesAdminView_() {
+  const cfg = CONFIG.SHIFT_SCHEDULE || {};
+  const prop = getBreakSchedules_();
+  const keySet = { DEFAULT: true };
+  Object.keys(cfg.BY_TIMEZONE || {}).forEach(function (k) { keySet[k] = true; });
+  if (prop) Object.keys(prop.schedules).forEach(function (k) { keySet[k] = true; });
+  const rosterTz = [];
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;   // INV-183: one inclusion predicate
+      const tz = String(rows[i][EMP.TIMEZONE] || '').trim();
+      if (tz && rosterTz.indexOf(tz) < 0) rosterTz.push(tz);
+    }
+  } catch (e) { /* best-effort */ }
+  const hm = function (m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2); };
+  const schedules = Object.keys(keySet).sort(function (a, b) {
+    return a === 'DEFAULT' ? -1 : (b === 'DEFAULT' ? 1 : a.localeCompare(b));
+  }).map(function (key) {
+    // 'DEFAULT' is not a timezone — resolve it via a tz no BY_TIMEZONE/property
+    // key can match (sanitized property keys are trimmed; a leading space can
+    // never survive), which lands on the DEFAULT entries at every layer.
+    // Routed through the INV-149 resolver — a null empLike has no column-O
+    // override, so this IS the tz-level schedule.
+    const eff = empShiftSchedule_(null, key === 'DEFAULT' ? ' none' : key);
+    return {
+      key: key,
+      custom: !!(prop && prop.schedules[key] !== undefined),
+      breaks: eff.breaks.map(function (b) { return { label: b.label, start: hm(b.startMin), len: b.lenMin }; }),
+    };
+  });
+  return {
+    schedules: schedules,
+    reminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    configReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+    rosterTimezones: rosterTz.sort(),
+  };
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the break-schedule overrides
+ *  to Script Property SHIFT_BREAK_SCHEDULES (operator 2026-08-27 — "where does
+ *  the break schedule information go?": previously ONLY editable in
+ *  CONFIG.SHIFT_SCHEDULE, i.e. a redeploy). Payload:
+ *  { reminderMin, schedules: { DEFAULT|<IANA tz>: [{label,start,len}] } }.
+ *  STRICT validation with named errors (an editor should say what is wrong,
+ *  not silently drop — the saveSpanishInboxMembers posture); everything
+ *  accepted here round-trips through breakSchedSanitize_ unchanged (pinned),
+ *  so the read side can never disagree with a save. An EMPTY breaks array is
+ *  valid ("no breaks for this key" — e.g. turning reminders off for one tz);
+ *  a key ABSENT from the map inherits (tz → DEFAULT → CONFIG). Saving zero
+ *  keys at the CONFIG reminder DELETES the property (the umsTheme posture: an
+ *  untouched deployment and a deliberately-reset one look identical). Writes
+ *  an AdminConfigChange audit row; resets the per-execution memo. */
+function saveBreakSchedules(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return { success: false, error: 'Expected a break-schedule payload.' };
+    }
+    const src = payload.schedules;
+    if (!src || typeof src !== 'object' || Array.isArray(src)) {
+      return { success: false, error: 'Expected a schedules map.' };
+    }
+    const keys = Object.keys(src);
+    if (keys.length > 20) return { success: false, error: 'Too many timezone schedules (max 20).' };
+    const schedules = {};
+    for (let i = 0; i < keys.length; i++) {
+      const key = String(keys[i]).trim();
+      if (key !== 'DEFAULT' && !/^[A-Za-z]+(\/[A-Za-z0-9_\-+]+)+$/.test(key)) {
+        return { success: false, error: 'Not a valid timezone key: "' + key + '" — use DEFAULT or an IANA id like America/Chicago.' };
+      }
+      const arr = src[keys[i]];
+      if (!Array.isArray(arr)) return { success: false, error: 'Breaks for "' + key + '" must be a list.' };
+      if (arr.length > 10) return { success: false, error: 'Too many breaks for "' + key + '" (max 10).' };
+      const clean = [];
+      for (let j = 0; j < arr.length; j++) {
+        const b = arr[j] || {};
+        const start = String(b.start || '').trim();
+        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) {
+          return { success: false, error: 'Break start time for "' + key + '" must be H:mm (got "' + start + '").' };
+        }
+        const len = parseInt(b.len, 10);
+        if (!(len >= 1 && len <= 240)) {
+          return { success: false, error: 'Break length for "' + key + '" must be 1–240 minutes.' };
+        }
+        clean.push({ label: String(b.label || '').trim().substring(0, 40) || 'Break', start: start, len: len });
+      }
+      schedules[key] = clean;   // EMPTY is valid — "no breaks for this key"
+    }
+    const rm = parseInt(payload.reminderMin, 10);
+    if (!(rm >= 1 && rm <= 120)) return { success: false, error: 'Reminder lead must be 1–120 minutes.' };
+    const props = PropertiesService.getScriptProperties();
+    const configReminder = parseInt((CONFIG.SHIFT_SCHEDULE || {}).BREAK_REMINDER_MINUTES, 10) || 10;
+    if (Object.keys(schedules).length === 0 && rm === configReminder) {
+      props.deleteProperty('SHIFT_BREAK_SCHEDULES');
+    } else {
+      props.setProperty('SHIFT_BREAK_SCHEDULES', JSON.stringify({ schedules: schedules, reminderMin: rm }));
+    }
+    _breakSchedulesCache = undefined;   // re-read within this execution
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated break schedules (' + Object.keys(schedules).length + ' schedule(s), reminder ' + rm + 'm)', emp.email);
+    return { success: true, breakSchedules: breakSchedulesAdminView_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -24921,11 +25109,35 @@ function importQuizFromForm(formRef) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const QA_RECORDINGS_TAB = 'QaRecordings';
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9 };
+// Phase 2 added the trailing Agent column (which agent the call belongs to —
+// feeds the per-agent stats). Extended IN PLACE rather than self-healed:
+// Phase 1 is merged but NOT deployed and QA_SS_ID is unset everywhere, so no
+// QaRecordings tab exists anywhere to migrate.
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10 };
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
 const QAC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, AT_SEC: 4, TEXT: 5, CREATED_MS: 6, STATUS: 7 };
+// Phase 2 — structured scorecards (append-only; a re-score by the same
+// reviewer appends a NEW row and the latest per (recording, reviewer) wins,
+// so a mis-entry is corrected by re-scoring, never by editing a review row).
+const QA_SCORECARDS_TAB = 'QaScorecards';
+const QA_SCORECARDS_HEADERS = ['ScorecardId', 'FileId', 'ReviewerEmpId', 'ReviewerName', 'RatingsJson', 'Notes', 'CreatedMs'];
+const QSC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, RATINGS: 4, NOTES: 5, CREATED_MS: 6 };
+const QA_SCORECARDS_SCAN = 4000;      // bounded tail over QaScorecards
+const QA_SCORECARD_NOTES_MAX = 2000;
+// The scorecard criteria SEED — Script Property QA_SCORECARD_CRITERIA
+// (JSON [{key,label}], sanitize-on-read via qaCriteriaSanitize_) overrides
+// without a redeploy. Keys ride stored RatingsJson, so renaming a key orphans
+// old ratings from that column (they still count toward each card's own
+// average) — prefer adding/removing criteria over renaming.
+const QA_SCORECARD_CRITERIA = [
+  { key: 'greeting',      label: 'Greeting & opening' },
+  { key: 'communication', label: 'Communication & tone' },
+  { key: 'accuracy',      label: 'Accuracy & process' },
+  { key: 'resolution',    label: 'Resolution & next steps' },
+  { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+];
 const QA_STATUSES = ['new', 'in_review', 'done', 'skipped'];
 const QA_LIST_SCAN = 2000;            // bounded tail over QaRecordings
 const QA_LIST_CAP = 200;              // payload cap; pre-slice total reported (INV-169)
@@ -24985,8 +25197,9 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K']); }
 function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
+function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
 
 /** PURE: byte range of chunk `idx` of a `size`-byte file cut into
  *  `chunkBytes` slices. null when the file is empty or idx is out of range —
@@ -25012,9 +25225,23 @@ function getQaQueue() {
     try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
     if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
     const members = Object.keys(getQaMembers_()).sort();
+    // Phase 2: roster NAMES feed the detail's agent datalist (names only —
+    // the same disclosure getTeammateStatus already makes; free text stays
+    // allowed so an ex-agent's recording is still attributable).
+    const agentOptions = [];
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183: one inclusion predicate
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (nm && agentOptions.indexOf(nm) < 0) agentOptions.push(nm);
+      }
+      agentOptions.sort();
+    } catch (e) { /* best-effort — the queue still renders */ }
     const base = {
       members: members, self: String(emp.email || '').trim().toLowerCase(),
       isManager: !!emp.isManager, folderConfigured: !!qaFolderId_(),
+      agentOptions: agentOptions, criteria: getQaScorecardCriteria_(),
     };
     if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; return base; }
     const sheet = getOrCreateQaRecordingsSheet_();
@@ -25035,6 +25262,7 @@ function getQaQueue() {
           status: qaStatus_(rows[i][QAR.STATUS]),
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
+          agent: String(rows[i][QAR.AGENT] || '').trim(),
           comments: 0,
         });
       }
@@ -25102,7 +25330,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''),
+        'new', '', 0, String(f.getUrl() || ''), '',   // Agent set later in the detail
       ]);
       added++;
     }
@@ -25338,4 +25566,255 @@ function qaDeleteComment(commentId) {
     return { success: false, error: 'Comment not found.' };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── QA Phase 2 — agent attribution, scorecards, per-agent stats ─────────────
+
+/** PURE (Node-pinned) — lenient sanitize of the QA_SCORECARD_CRITERIA Script
+ *  Property blob (the L-12 rule). [{key,label}]: key kebab 2-24 chars, label
+ *  trimmed ≤60, deduped, cap 12; null (→ CONFIG seed) when nothing survives. */
+function qaCriteriaSanitize_(arr) {
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < arr.length && out.length < 12; i++) {
+    const c = arr[i] || {};
+    const key = String(c.key || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]{1,23}$/.test(key) || seen[key]) continue;
+    const label = String(c.label || '').trim().substring(0, 60);
+    if (!label) continue;
+    seen[key] = true;
+    out.push({ key: key, label: label });
+  }
+  return out.length ? out : null;
+}
+function getQaScorecardCriteria_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('QA_SCORECARD_CRITERIA');
+    if (raw) {
+      const clean = qaCriteriaSanitize_(JSON.parse(raw));
+      if (clean) return clean;
+    }
+  } catch (e) { /* corrupt property degrades to the seed */ }
+  return QA_SCORECARD_CRITERIA;
+}
+
+/** Set which AGENT a recording belongs to (feeds the per-agent stats). Free
+ *  text bounded ≤80 chars — roster names ride the queue payload as a datalist,
+ *  but an EX-agent's recording must stay attributable, so this is not
+ *  roster-validated. An empty name CLEARS the attribution. QA-gated, locked.
+ *  The audit row is id-only: the agent NAME stays in the QA store, the same
+ *  INV-32/196 rule as recording file names. */
+function qaSetRecordingAgent(fileId, agentName) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const name = String(agentName || '').trim().substring(0, 80);
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    sheet.getRange(found.rowIdx, QAR.AGENT + 1).setValue(name);
+    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
+    return { success: true, agent: name };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Save a structured scorecard for a recording. QA-gated, locked,
+ *  target-must-exist (the qaAddComment posture). Ratings are validated
+ *  against the CURRENT criteria and an UNKNOWN key is REJECTED by name, not
+ *  whitelist-dropped — a review record with silently missing ratings would
+ *  misrepresent the review (the INV-96 refuse-not-drop posture); the client
+ *  reloads and re-scores. Append-only: latest per (recording, reviewer) wins
+ *  everywhere it is read (qaLatestScorecards_). Audit row is id-only. */
+function qaSaveScorecard(fileId, ratings, notes) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!fid) return { success: false, error: 'Missing recording id.' };
+    if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
+      return { success: false, error: 'Expected a ratings map.' };
+    }
+    const criteria = getQaScorecardCriteria_();
+    const known = {};
+    criteria.forEach(function (c) { known[c.key] = true; });
+    const clean = {};
+    let count = 0;
+    const keys = Object.keys(ratings);
+    for (let i = 0; i < keys.length; i++) {
+      const k = String(keys[i]).trim().toLowerCase();
+      if (!known[k]) return { success: false, error: 'Scorecard criteria changed since this page loaded — reload and score again.' };
+      const v = parseInt(ratings[keys[i]], 10);
+      if (!(v >= 1 && v <= 5)) return { success: false, error: 'Ratings must be 1–5.' };
+      clean[k] = v; count++;
+    }
+    if (!count) return { success: false, error: 'Rate at least one criterion.' };
+    const t = String(notes || '').trim();
+    if (t.length > QA_SCORECARD_NOTES_MAX) {
+      return { success: false, error: 'Notes are capped at ' + QA_SCORECARD_NOTES_MAX + ' characters (' + t.length + ') — trim them and save again.' };
+    }
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const scorecardId = Utilities.getUuid();
+    getOrCreateQaScorecardsSheet_().appendRow([
+      scorecardId, fid, emp.id, emp.name, JSON.stringify(clean), t, Date.now(),
+    ]);
+    writeAuditLog_(emp, 'QaScorecardSave', '', '', false, 0, 'fileId=' + fid + '; scorecardId=' + scorecardId, emp.email);
+    return { success: true, scorecardId: scorecardId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Bounded tail read of QaScorecards (all, or one recording's), parsed
+ *  defensively — a corrupt RatingsJson row is skipped, never a broken read. */
+function qaReadScorecards_(fid) {
+  const sheet = getQaSS_().getSheetByName(QA_SCORECARDS_TAB);
+  if (!sheet || sheet.getLastRow() < 2) return { cards: [], truncated: false };
+  const last = sheet.getLastRow();
+  const start = Math.max(2, last - QA_SCORECARDS_SCAN + 1);
+  const rows = sheet.getRange(start, 1, last - start + 1, QA_SCORECARDS_HEADERS.length).getValues();
+  const cards = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (fid && String(rows[i][QSC.FILE_ID] || '') !== fid) continue;
+    let ratings = null;
+    try { ratings = JSON.parse(String(rows[i][QSC.RATINGS] || '')); } catch (e) { ratings = null; }
+    if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) continue;
+    cards.push({
+      scorecardId: String(rows[i][QSC.ID] || ''),
+      fileId: String(rows[i][QSC.FILE_ID] || ''),
+      empId: String(rows[i][QSC.EMP_ID] || ''),
+      name: String(rows[i][QSC.EMP_NAME] || ''),
+      ratings: ratings,
+      notes: String(rows[i][QSC.NOTES] || ''),
+      createdMs: Number(rows[i][QSC.CREATED_MS]) || 0,
+    });
+  }
+  return { cards: cards, truncated: start > 2 };
+}
+
+/** PURE (Node-pinned) — latest scorecard per (recording, reviewer). Iterate
+ *  in sheet (append) order: a createdMs tie keeps the LATER row. */
+function qaLatestScorecards_(cards) {
+  const latest = {};
+  for (let i = 0; i < (cards || []).length; i++) {
+    const c = cards[i] || {};
+    const k = String(c.fileId || '') + '|' + String(c.empId || '');
+    if (!latest[k] || Number(c.createdMs || 0) >= Number(latest[k].createdMs || 0)) latest[k] = c;
+  }
+  return Object.keys(latest).map(function (k) { return latest[k]; });
+}
+
+/** A recording's scorecards (latest per reviewer, newest first) + the live
+ *  criteria, for the detail's scorecard card. QA-gated, read-only. */
+function qaListScorecards(fileId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!fid) return { error: 'Missing recording id.' };
+    const read = qaReadScorecards_(fid);
+    const cards = qaLatestScorecards_(read.cards);
+    cards.sort(function (a, b) { return b.createdMs - a.createdMs; });
+    return { scorecards: cards, criteria: getQaScorecardCriteria_(), selfEmpId: String(emp.id) };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** PURE (Node-pinned) — the per-agent stats fold. recs: [{fileId, agent,
+ *  status}]; cards: LATEST-folded [{fileId, ratings}]; criteria: the live
+ *  set. A blank agent buckets under '(unassigned)' — visible, never dropped
+ *  (INV-169 spirit); a card whose recording is not in the indexed set is
+ *  SKIPPED (an agent is never invented); a criterion with no ratings reads
+ *  null, never a confident 0 (INV-187). avgScore = mean of each card's own
+ *  mean, so a card scored on 3 criteria weighs the same as one scored on 5.
+ *  Ratings under keys the criteria no longer carry still count toward the
+ *  card's own mean (the review happened) but land in no column. */
+function qaStatsAggregate_(recs, cards, criteria) {
+  const byAgent = {};
+  const agentOf = {};
+  const mk = function (a) {
+    if (!byAgent[a]) {
+      const pc = {};
+      (criteria || []).forEach(function (c) { pc[c.key] = { sum: 0, n: 0 }; });
+      byAgent[a] = { agent: a, recordings: 0, reviewed: 0, scorecards: 0, _scoreSum: 0, _pc: pc };
+    }
+    return byAgent[a];
+  };
+  (recs || []).forEach(function (r) {
+    const a = String((r && r.agent) || '').trim() || '(unassigned)';
+    agentOf[String((r && r.fileId) || '')] = a;
+    const b = mk(a);
+    b.recordings++;
+    if (String((r && r.status) || '') === 'done') b.reviewed++;
+  });
+  (cards || []).forEach(function (c) {
+    const a = agentOf[String((c && c.fileId) || '')];
+    if (!a) return;
+    const b = mk(a);
+    let sum = 0, n = 0;
+    Object.keys((c && c.ratings) || {}).forEach(function (k) {
+      const v = Number(c.ratings[k]);
+      if (!(v >= 1 && v <= 5)) return;
+      if (b._pc[k]) { b._pc[k].sum += v; b._pc[k].n++; }
+      sum += v; n++;
+    });
+    if (!n) return;
+    b.scorecards++;
+    b._scoreSum += sum / n;
+  });
+  return Object.keys(byAgent).map(function (a) {
+    const b = byAgent[a];
+    const perCriterion = {};
+    Object.keys(b._pc).forEach(function (k) {
+      perCriterion[k] = b._pc[k].n ? Math.round((b._pc[k].sum / b._pc[k].n) * 10) / 10 : null;
+    });
+    return {
+      agent: b.agent, recordings: b.recordings, reviewed: b.reviewed,
+      scorecards: b.scorecards,
+      avgScore: b.scorecards ? Math.round((b._scoreSum / b.scorecards) * 10) / 10 : null,
+      perCriterion: perCriterion,
+    };
+  }).sort(function (x, y) { return y.recordings - x.recordings || (x.agent > y.agent ? 1 : -1); });
+}
+
+/** Per-agent QA stats (the qaStats tab). QA-gated, read-only, bounded both
+ *  reads with truncation REPORTED (INV-169). */
+function getQaStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    let storeSet = true;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const criteria = getQaScorecardCriteria_();
+    if (!storeSet) return { notConfigured: true, agents: [], criteria: criteria };
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    const recs = [];
+    let recTruncated = false;
+    const last = recSheet.getLastRow();
+    if (last >= 2) {
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      recTruncated = start > 2;
+      const rows = recSheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        recs.push({ fileId: fid, agent: String(rows[i][QAR.AGENT] || '').trim(), status: qaStatus_(rows[i][QAR.STATUS]) });
+      }
+    }
+    const read = qaReadScorecards_(null);
+    const latest = qaLatestScorecards_(read.cards);
+    return {
+      agents: qaStatsAggregate_(recs, latest, criteria),
+      criteria: criteria,
+      totalRecordings: recs.length,
+      totalScorecards: latest.length,
+      truncated: recTruncated || read.truncated,
+    };
+  } catch (err) { return { error: err.message }; }
 }

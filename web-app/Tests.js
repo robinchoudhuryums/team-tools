@@ -5083,6 +5083,9 @@ function test_managerGates_rejectNonManager() {
     ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
     ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
     ['saveSpanishInboxMembers',        function () { return saveSpanishInboxMembers([]); }],
+    // Break-schedule editor (operator 2026-08-27) — gate precedes any
+    // property write; an empty payload could never write regardless.
+    ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
@@ -5176,6 +5179,7 @@ function test_managerGates_rejectNonManager() {
     getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
     getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
+    saveBreakSchedules: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -5246,7 +5250,12 @@ function test_qa_gates_rejectNonMember() {
    ['qaGetAudioChunk', function () { return qaGetAudioChunk('x', 0); }],
    ['qaListComments', function () { return qaListComments('x'); }],
    ['qaAddComment', function () { return qaAddComment('x', 1, 'note'); }],
-   ['qaDeleteComment', function () { return qaDeleteComment('x'); }]]
+   ['qaDeleteComment', function () { return qaDeleteComment('x'); }],
+   // Phase 2 — agent attribution, scorecards, per-agent stats.
+   ['qaSetRecordingAgent', function () { return qaSetRecordingAgent('x', 'A Name'); }],
+   ['qaSaveScorecard', function () { return qaSaveScorecard('x', { greeting: 5 }, ''); }],
+   ['qaListScorecards', function () { return qaListScorecards('x'); }],
+   ['getQaStats', function () { return getQaStats(); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');

@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 668 + DOM 82;
-  visual matrix on demand — 51 scenarios, last full shoot 2026-08-27 clean)
+Test Command: manual (Node harnesses: `npm test` = pure 676 + DOM 82;
+  visual matrix on demand — 52 scenarios, last full shoot 2026-08-27 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -357,6 +357,38 @@ audit row records imageWarnings=<n> + the first reason (Admin → Sheets →
 AuditLog). Re-saving is the idempotent retry — the operator reads the
 exact reason on the next Save. Pure 667→668 (KBI-3, 3 bites). ROOT CAUSE
 STILL UNKNOWN pending that re-save readout.
+
+NEWEST OF ALL #4 (2026-08-27, operator /broad-implement "UI Break schedule
+editor, QA Module Phase 2" — block
+`.cycle/blocks/19pre-breaks-qa2-broad-implement.md`): (a) the BREAK-SCHEDULE
+EDITOR — the answer to "where does the break schedule information go?":
+Manage → Admin → Config → "Break schedules" edits breaks + the reminder lead
+per timezone with NO redeploy (Script Property SHIFT_BREAK_SCHEDULES;
+breakSchedSanitize_ lenient read / saveBreakSchedules strict named-error
+save, memoized getter merged into getShiftSchedule_ ahead of the CONFIG
+chain, explicit-empty ≠ absent, delete-on-reset; INV-136 count 46→47 with
+the F7/F9/GATE-TIER machine checks satisfied; inherited sections read-only
+until Customize so an untouched Save never freezes inheritance). (b) QA
+PHASE 2 — trailing Agent column (safe in place: Phase 1 merged, undeployed,
+QA_SS_ID unset) + qaSetRecordingAgent (name never in the audit row);
+QaScorecards tab (append-only, latest per (recording, reviewer) wins;
+criteria seed + QA_SCORECARD_CRITERIA property override; unknown ratings
+key REJECTS by name); getQaStats + pure qaStatsAggregate_ ((unassigned)
+visible, null-not-0) on a new qaStats tab via mtRenderTable_; client
+waveform (8 kHz mono OfflineAudioContext → qaPeaks_ → canvas, click-to-seek,
+strictly decoration with the flat timeline as every failure path) +
+scorecard UI (aria-pressed 1–5, selected-click unselects, form seeds from
+my latest card). ALSO FIXED a Phase-1 defect found in review: the detail's
+Start review / Mark done / Reopen onclicks called the SERVER helper name
+qaStatus_ (dead ReferenceError; jsdom outside-only can't compile inline
+onclick and no detail scenario exists) — now qaChangeStatus_ + the QA-7
+derived onclick-resolves scan holds the class. AND a build hazard: an Edit
+landed a LITERAL NUL byte in Code.js (grep began reporting it binary) —
+replaced with a space sentinel via a python bytes-edit; the kbMd_ note's
+"escape, never a literal NUL" rule now has a second citation. Pure 668→676
+(BRK-1..4 + QA-7..10; 10 mutations / 10 bites), DOM 82, matrix 51→52
+(qa-stats-light-wide). Editor ≈ 311 unchanged (omnibus + QA gate cases grew
+IN PLACE) — post-deploy runAllTests still expects 295.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →

@@ -397,12 +397,44 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getQaQueue: {
       members: ['qa.reviewer@umsupply.com', 'teamtools@umsupply.com'],
       self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
+      // Phase 2 additive fields: per-item `agent`, plus `agentOptions` (roster
+      // names for the detail's datalist) + `criteria` (the scorecard seed) on
+      // the base — shapes mirror the server's return block (INV-185).
+      agentOptions: ['Ana Reyes', 'David Dhruv Mishra', 'Maria Garcia'],
+      criteria: [
+        { key: 'greeting',      label: 'Greeting & opening' },
+        { key: 'communication', label: 'Communication & tone' },
+        { key: 'accuracy',      label: 'Accuracy & process' },
+        { key: 'resolution',    label: 'Resolution & next steps' },
+        { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+      ],
       recordings: [
-        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', comments: 0 },
-        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', comments: 3 },
-        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', comments: 5 },
+        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', agent: '', comments: 0 },
+        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', agent: 'Ana Reyes', comments: 3 },
+        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', agent: 'Maria Garcia', comments: 5 },
       ],
       total: 3, cap: 200,
+    },
+    // QA Phase 2 — per-agent stats (shape mirrors getQaStats' return block:
+    // agents rows from qaStatsAggregate_ incl. the visible '(unassigned)'
+    // bucket and a null per-criterion average rendering as an em dash).
+    getQaStats: {
+      agents: [
+        { agent: 'Maria Garcia', recordings: 4, reviewed: 3, scorecards: 3, avgScore: 4.3,
+          perCriterion: { greeting: 4.7, communication: 4.3, accuracy: 4, resolution: 4.3, compliance: 4.5 } },
+        { agent: 'Ana Reyes', recordings: 3, reviewed: 1, scorecards: 1, avgScore: 3.8,
+          perCriterion: { greeting: 4, communication: 3.5, accuracy: 4, resolution: null, compliance: 3.5 } },
+        { agent: '(unassigned)', recordings: 2, reviewed: 0, scorecards: 0, avgScore: null,
+          perCriterion: { greeting: null, communication: null, accuracy: null, resolution: null, compliance: null } },
+      ],
+      criteria: [
+        { key: 'greeting',      label: 'Greeting & opening' },
+        { key: 'communication', label: 'Communication & tone' },
+        { key: 'accuracy',      label: 'Accuracy & process' },
+        { key: 'resolution',    label: 'Resolution & next steps' },
+        { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+      ],
+      totalRecordings: 9, totalScorecards: 4, truncated: false,
     },
     getSpanishInboxPending: { pending: [
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
@@ -642,6 +674,22 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
       externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
       deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      // Break-schedule editor (operator 2026-08-27) — shape mirrors
+      // breakSchedulesAdminView_'s return (INV-185): DEFAULT first, one
+      // CUSTOM per-tz section (editable rows on camera) + one inherited.
+      breakSchedules: {
+        schedules: [
+          { key: 'DEFAULT', custom: false, breaks: [
+            { label: 'Morning break', start: '10:30', len: 15 },
+            { label: 'Lunch', start: '12:30', len: 60 },
+            { label: 'Afternoon break', start: '15:00', len: 15 }] },
+          { key: 'Asia/Manila', custom: true, breaks: [
+            { label: 'Merienda', start: '15:30', len: 20 },
+            { label: 'Lunch', start: '12:00', len: 45 }] },
+        ],
+        reminderMin: 10, configReminderMin: 10,
+        rosterTimezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
+      },
       featureFlags: {
         registry: [
           { key: 'showTeammateStatus', label: 'Teammate status card', description: 'Show the teammate status card on the Clock page.', default: true, scope: 'both' },
