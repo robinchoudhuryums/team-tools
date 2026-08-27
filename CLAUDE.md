@@ -5727,6 +5727,33 @@ manually for a fresh deploy or environment:
   Metrics a manager-only monthly intake-volume block. **Post-deploy: run
   `runAllTests()`** — incl. the new `insurance_search_requiresEmployee`
   test and the `getIntakeVolumeStats` omnibus gate case.
+- **The 2026-08-27 correction rounds (sender identity, brand sweep, KB editor
+  loaders — PRs #189/#190/#191) add NO new operator state to SET UP** — no
+  triggers, migrations, CONFIG constants, or new endpoints; the one Script
+  Property involved (`REP_SENDER_FROM`) already existed and **the operator SET
+  it to `customersuccess@universalmedsupply.com` mid-round**, so rep-initiated
+  sends now go out from that alias via GmailApp (which also records each send
+  in the deployer's Gmail Sent folder — its own entry has the details).
+  Behaviour changes to expect post-deploy: (a) **rep-initiated emails carry the
+  agent's name ALONE as the From display name** — the former org suffix was
+  the WRONG company name and fired live on a pilot send; (b) **the sending
+  agent is self-BCC'd** their own copy of every dept/external/intake email
+  (their inbox — a true agent Sent-folder entry is impossible, the app sends
+  as the deployer); (c) **the composer warns dismissibly at Preview when
+  Patient Name & TRX is empty** (Continue anyway / Go back — a pilot email
+  went out without one); (d) **every user-facing string now reads
+  "UniversalMed Supply"** — the wrong name shipped in 14 more places
+  (external email greetings/sign-offs, the public form page, the
+  Access-Restricted page), all corrected, with a derived BRAND tripwire
+  banning the wrong literal from every shipped file; (e) **the KB editor's
+  Save and both Doc/Sheet conversions show in-button loaders** (Save names
+  the image-export count when that is the slow part), and a converted Doc's
+  images preview as a dashed pending chip saying they appear after Save
+  instead of bare alt text. **Post-deploy: re-do the email spot-check** (one
+  dept + one intake email — From = the agent's name alone, sender address =
+  the customersuccess@ alias, Reply-To = the agent, and the agent's own copy
+  in their inbox) and press Save on the converted Doc from testing to see
+  its images export.
 - **The Dept-Requests in-place resolve (operator 2026-08-24) adds NO operator
   state** — no Script Properties, triggers, migrations, CONFIG constants, or
   endpoints (client-only; `resolveDeptRequest` is unchanged). ONE behaviour
@@ -8534,10 +8561,13 @@ S19 | Call Notes — email composer with preview gate | Subsystem: Client (Call 
   Steps:
     - As an enrolled rep with at least one note today, click the envelope on a card
     - Select one or more departments, type "Verified Shipping" into Update Type, fill the shipping subform, click Preview →
+    - Confirm the Preview button shows the in-button loader ("Saving note…" when Note Reference edits are pending, then "Building preview…") instead of sitting inert
+    - Edit a Note Reference field in the modal (e.g. fill a blank Transferred To) before previewing — confirm the edit lands on the note card too after Preview (the composer saves through `updateCallNote` first)
+    - Blank the Patient Name & TRX field and click Preview → a dismissible "No Patient Name & TRX" confirm appears (Continue anyway / Go back) — Go back returns to the form with the field there to fill; Continue proceeds (operator 2026-08-27 — never a hard block)
     - Confirm the preview reflects departments + subject + rendered HTML body
     - Click Send Email
     - Inspect Mail (or test mailbox), the note row's EmailedAt + EmailDepartments columns, and AuditLog
-  Expected: Preview returns rendered HTML matching the warm-paper aesthetic (no CSS variables — inline hex), correct To/CC/Subject. After Send, the card shows the envelope as filled (is-sent); EmailedAt is populated; AuditLog has a `CallNoteEmail` row. Closing the modal mid-flow at the form step or the preview step does NOT send.
+  Expected: Preview returns rendered HTML matching the warm-paper aesthetic (no CSS variables — inline hex), correct To/CC/Subject; the From display name is the AGENT'S NAME ALONE (no org suffix — the 2026-08-27 correction) with Reply-To the agent, and the sending agent receives a self-BCC copy. After Send, the card shows the envelope as filled (is-sent); EmailedAt is populated; AuditLog has a `CallNoteEmail` row. Closing the modal mid-flow at the form step or the preview step does NOT send (uncommitted Note Reference edits toast "Note edits discarded").
 
 S20 | Call Notes — flag trio + resolved state | Subsystem: Server, Client (Call Notes)
   Steps:
@@ -8962,7 +8992,7 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
     - As a manager, embed a Google Doc (with a heading, bold text, a bullet list, a link, a table, and an image) the deployer account can read
     - Open the embed in the reader → click **Convert to article** → confirm the uiConfirm explains review-before-save → Convert
     - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the conversions (N image(s) marked for export; nested/multi-line table cells if present)
-    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image shows as its alt text ("Doc image 1") until save
+    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); each image renders as a dashed PENDING chip ("Doc image 1 — appears after Save (exports to Drive)") — bare alt text read as "the images are missing" (operator 2026-08-27); the Convert button itself shows the in-button dots loader while the multi-second conversion runs, as does Save ("Saving · exporting N image(s)…" when the body carries image tokens)
     - Press Save → toast reads "Saved · N image(s) exported to Drive"; the article re-opens with the image RENDERED (Drive thumbnail URL); a "KB Images" folder exists in the deployer's Drive with a `kbdoc-<fileId>-1` file; re-saving the article re-uses the file (no duplicate); open the original Doc in Drive → confirm it is UNCHANGED
     - Add item → Embed mode → paste a Doc URL → click **Convert this Doc to an article instead** → confirm the editor flips to article mode with the body filled and the Doc's name as title (when title was blank)
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")

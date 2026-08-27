@@ -21,10 +21,10 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 653 + DOM 81;
+Test Command: manual (Node harnesses: `npm test` = pure 655 + DOM 81;
   visual matrix on demand — 49 scenarios, last full shoot 2026-08-26 clean)
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-08-26
+Updated: 2026-08-27
 
 ## In progress (facts to carry forward — NOT judgments)
 - Seams F1–F5 implemented, tested (585 pure / 75 DOM, all green), and
@@ -286,9 +286,19 @@ the sending agent (a true agent Sent-folder entry is impossible — the app
 sends as the deployer — so the copy lands in their inbox; append-not-
 clobber over caller bccs, deduped); (c) the composer warns dismissibly at
 Preview when Patient Name & TRX is empty (a pilot email went out without
-one). The customersuccess@ sender ask needs NO code — it is the dormant
-REP_SENDER_FROM property (operator queue item 5). These changes need ONE
-MORE `clasp push -f` + New version beyond the deploy the operator just ran.
+one). The customersuccess@ sender ask needed NO code — the operator SET
+`REP_SENDER_FROM=customersuccess@universalmedsupply.com` the same day, so
+it is live (property changes need no deploy). TWO MORE rounds followed and
+are MERGED: the BRAND sweep (PR #190 — the operator supplied the correct
+name "UniversalMed Supply"; the wrong form shipped in 14 more user-facing
+strings + the visual fixture's retired From line, all corrected, and a
+derived BRAND tripwire bans the wrong literal from every shipped file) and
+the KB-editor loader round (PR #191 — in-button loaders on Save + both
+Doc/Sheet conversions, extending the L13 double-fire guard to the
+converts, and converted-Doc images preview as a "appears after Save"
+pending chip instead of bare alt text). The sender/TRX round is PR #189.
+All three rounds need ONE MORE `clasp push -f` + New version beyond the
+deploys the operator ran on 2026-08-27 (both predate these PRs).
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
@@ -304,11 +314,9 @@ THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
      agent's name ALONE (the org suffix was the wrong company name and was
      dropped 2026-08-27), Reply-To is the agent, and the sending agent
      receives a self-BCC copy in their inbox.
-  5. Set Script Property `REP_SENDER_FROM=customersuccess@universalmedsupply.com`
-     (the operator's chosen send-as alias, already registered on the
-     deploying account) — no redeploy needed for the property; it flips
-     rep-initiated sends to GmailApp, which also records every send in the
-     deployer's own Gmail Sent folder.
+  5. DONE (2026-08-27): `REP_SENDER_FROM=customersuccess@universalmedsupply.com`
+     is SET — rep-initiated sends go out from the alias via GmailApp, which
+     also records each send in the deployer's own Gmail Sent folder.
 
 BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback). Free-text
 recipient feedback already shipped 2026-08-13, so only build field-level
