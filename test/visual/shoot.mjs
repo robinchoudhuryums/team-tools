@@ -106,6 +106,11 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
+  // QA module Phase 1 (2026-08-27): the queue list — status tones, assignee
+  // pills, filter chips. The detail/player needs chunked audio and stays an
+  // uncovered scenario (noted in the Visual Audit Stage).
+  ['qa-queue-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', ''],
+  ['qa-queue-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', ''],
   // F8 (cycle 18): Time / PTO is the most recently RESTRUCTURED rep-facing page
   // (consolidated to one page 2026-08-18 — quick-actions card + stacked rail)
   // and was shot only at 1440px, so the stacking of that new rail was never on

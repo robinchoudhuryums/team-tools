@@ -40,6 +40,7 @@ const PARSE_GUARD_PARTIALS = [
   'train/script_training.html',
   'train/script_empdocs.html',
   'train/script_coaching.html',
+  'qa/script_qa.html',
   'script_tour.html',
 ];
 PARSE_GUARD_PARTIALS.forEach((f) => {
@@ -9296,13 +9297,14 @@ test('settings flyout: attribute-keyed gears, capture-phase Esc, aria in step', 
 
 test('view-as: admin-gated preview, session-only, flags per role, survives refreshes', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const ctx = vm.createContext({ VIEW_AS: { real: { isAdmin: true, isManager: true, canSeeSpanish: true } } });
+  const ctx = vm.createContext({ VIEW_AS: { real: { isAdmin: true, isManager: true, canSeeSpanish: true, canSeeQa: true } } });
   vm.runInContext(extractFunction('script_core.html', 'viewAsFlags_'), ctx);
   const f = (r) => ctx.viewAsFlags_(r);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('csr'))), { isAdmin: false, isManager: false, canSeeSpanish: false });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('spanish'))), { isAdmin: false, isManager: false, canSeeSpanish: true });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('csr'))), { isAdmin: false, isManager: false, canSeeSpanish: false, canSeeQa: false });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f('spanish'))), { isAdmin: false, isManager: false, canSeeSpanish: true, canSeeQa: false });
   const m = f('manager');
   assert.ok(!m.isAdmin && m.isManager && m.canSeeSpanish, 'manager preview: non-admin manager, real Spanish access kept');
+  assert.ok(m.canSeeQa === true, 'manager preview sees QA (a manager IS canSeeQa_)');
   const me = f('me');
   assert.ok(me.isAdmin && me.isManager, "'me' restores the real flags");
   const set = nc(extractFunction('script_core.html', 'viewAsSet_'));
@@ -12917,6 +12919,126 @@ test('PTA-3: wiring — the memo is set in the single opener, recovery never rea
   // The one typed reader routes through the new guard.
   assert.ok(/dateLocal:\s*cnDateLocalString_\(row\[CN\.DATE_LOCAL\]\)/.test(code),
     'callNoteRowToObject_ recovers DateLocal via cnDateLocalString_');
+});
+
+// ── QA module Phase 1 (operator 2026-08-27) — recording queue + player ─────
+// Drive-drop ingestion, QA_MEMBERS+manager gate (agents outside in v1 —
+// operator decision), chunked audio through the kbGetImageData Drive
+// boundary, timestamped comments in a dedicated QA store.
+console.log('\nQA module Phase 1 — queue, Drive boundary, timestamped comments');
+
+test('QA-1: qaChunkRange_ — exact slice arithmetic; out-of-range/empty is null, never a zero-byte serve', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'qaChunkRange_'), ctx);
+  const f = ctx.qaChunkRange_;
+  assert.strictEqual(f(0, 0, 100), null, 'an empty file has no chunks');
+  assert.strictEqual(f(-5, 0, 100), null);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f(100, 0, 100))), { start: 0, end: 100, chunks: 1 }, 'exact multiple: one chunk');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f(250, 2, 100))), { start: 200, end: 250, chunks: 3 }, 'the last chunk is the remainder');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f(250, 1, 100))), { start: 100, end: 200, chunks: 3 });
+  assert.strictEqual(f(250, 3, 100), null, 'a past-the-end index is refused');
+  assert.strictEqual(f(250, 1.5, 100), null, 'a fractional index is refused');
+  assert.strictEqual(f(250, -1, 100), null);
+});
+
+test('QA-2: qaGetAudioChunk — gate first, folder parentage BEFORE bytes, size cap from metadata, audio-only', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'qaGetAudioChunk'));
+  const gateIdx = f.indexOf('canSeeQa_');
+  assert.ok(gateIdx > -1 && gateIdx < f.indexOf('DriveApp'), 'the QA gate runs before any Drive access');
+  const parentsIdx = f.indexOf('getParents()');
+  const blobIdx = f.indexOf('getBlob()');
+  assert.ok(parentsIdx > -1 && blobIdx > parentsIdx,
+    'the folder-parentage check runs BEFORE the blob read — the app runs as the deployer, so without it any ' +
+    'QA member could read ANY Drive file the deployer can open, by id (the kbGetImageData boundary)');
+  const sizeIdx = f.indexOf('getSize()');
+  assert.ok(sizeIdx > -1 && sizeIdx < blobIdx, 'the size cap reads METADATA before the blob');
+  assert.ok(/QA_AUDIO_MAX_BYTES/.test(f) && /oversize: true/.test(f), 'over-cap is a named refusal carrying the Drive-fallback flag');
+  assert.ok(/indexOf\('audio\/'\) !== 0/.test(f), 'non-audio is refused');
+  assert.ok(/qaChunkRange_\(/.test(f), 'slicing goes through the pure helper');
+});
+
+test('QA-3: qaSyncRecordings — gated, idempotent before any write, bounded + truncated reported, counts-only audit', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
+  assert.ok(/canSeeQa_\(emp\)/.test(f), 'QA-gated');
+  const knownIdx = f.indexOf('known[id]');
+  const writeIdx = f.indexOf('setValues');
+  assert.ok(knownIdx > -1 && writeIdx > knownIdx, 'existing FileIds are skipped BEFORE any write — a re-run is a no-op (idempotent)');
+  assert.ok(/QA_SYNC_MAX_FILES/.test(f) && /truncated = true/.test(f) && /truncated: truncated/.test(f),
+    'bounded per run with the truncation REPORTED (INV-169)');
+  assert.ok(/indexOf\('audio\/'\) !== 0/.test(f) && /nonAudio\+\+/.test(f), 'non-audio files are counted, never indexed');
+  // NOTE the match runs to the call's TAIL, not the first `;` — the notes
+  // string itself contains `'; '` separators (the INV-188 quoted-semicolon
+  // trap, which bit this exact pin shape once before).
+  const audit = (f.match(/writeAuditLog_\(emp, 'QaSync'[\s\S]*?emp\.email\);/) || [''])[0];
+  assert.ok(/scanned=/.test(audit) && /added=/.test(audit) && !/getName|\bname\b/.test(audit),
+    'the audit row carries COUNTS only — a recording file name can carry a patient/agent name (the INV-32 rule)');
+});
+
+test('QA-4: QA comments — QA-gated, target-must-exist, bounded anchor, refuse-over-cap, soft-delete, id-only audits', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const add = nc(extractRawFunction('Code.js', 'qaAddComment'));
+  assert.ok(/canSeeQa_\(emp\)/.test(add), 'gated on QA access, not merely employee — review notes are QA/HR-adjacent');
+  const targetIdx = add.indexOf('qaFindRecordingRow_');
+  assert.ok(targetIdx > -1 && targetIdx < add.indexOf('appendRow'),
+    'the target recording must EXIST before any row is written (the IntakeFeedback posture — a junk id cannot seed rows)');
+  assert.ok(/QA_COMMENT_MAX_AT_SEC/.test(add) && /isFinite\(at\)/.test(add), 'the timestamp anchor is finite + bounded');
+  assert.ok(/QA_COMMENT_MAX_CHARS/.test(add) && /trim it and post again/.test(add),
+    "over-cap REFUSES — a review note is the reviewer's words, never silently cut");
+  assert.ok(/fileId=' \+ fid \+ '; commentId=' \+ commentId/.test(add),
+    'the audit row is id-only — comment text may name a patient, so it stays in the QA store');
+  const del = nc(extractRawFunction('Code.js', 'qaDeleteComment'));
+  assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
+  assert.ok(/!== String\(emp\.id\) && !emp\.isManager/.test(del), 'author-or-manager moderation');
+  const list = nc(extractRawFunction('Code.js', 'qaListComments'));
+  assert.ok(/QA_COMMENTS_SCAN/.test(list), 'bounded tail read');
+});
+
+test('QA-5: wiring — every endpoint gates before its store, the tab rides also:canSeeQa, the client seq-guards + escapes', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  ['getQaQueue', 'qaSyncRecordings', 'qaSetRecordingStatus', 'qaAssignRecording',
+   'qaGetAudioChunk', 'qaListComments', 'qaAddComment', 'qaDeleteComment'].forEach((fn) => {
+    const body = nc(extractRawFunction('Code.js', fn));
+    assert.ok(/QA access required\./.test(body), fn + ' returns the QA gate error');
+    const gateIdx = body.indexOf('canSeeQa_');
+    assert.ok(gateIdx > -1, fn + ' gates on canSeeQa_');
+    ['getQaSS_', 'getOrCreateQa', 'DriveApp'].forEach((t) => {
+      const i = body.indexOf(t);
+      if (i > -1) assert.ok(gateIdx < i, fn + ': the gate runs before ' + t);
+    });
+  });
+  assert.ok(/canSeeQa: canSeeQa_\(emp\)/.test(code), 'getEmployeeState ships canSeeQa');
+  const store = nc(extractRawFunction('Code.js', 'getQaSS_'));
+  assert.ok(/throw new Error/.test(store) && !/getAdpSS_|getKbSS_|getHrDocsSS_/.test(store),
+    'the QA store has NO fallback — an unset QA_SS_ID errors, never writes into another store (the HR_DOCS_SS_ID posture)');
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/qaQueue: \{ label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
+    "the QA tab is gated managers + QA_MEMBERS via also:'canSeeQa' — agents never see it (operator decision, v1)");
+  const qa = nc(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
+  assert.ok((qa.match(/QA_STATE\.audioSeq !== mySeq/g) || []).length >= 2,
+    'chunk handlers drop stale appends when another recording opens (INV-156)');
+  assert.ok(/esc\(r\.name \|\| '\(unnamed\)'\)/.test(qa) && /esc\(c\.text\)/.test(qa),
+    'file names + comment text escape before innerHTML');
+  assert.ok(/errorStateHtml_\(/.test(qa) && !/errorStateHtml_\(esc\(/.test(qa),
+    'failures render errorStateHtml_, and never double-escaped (INV-175)');
+  assert.ok(/URL\.revokeObjectURL/.test(qa), 'a replaced Blob URL is revoked (no leak across recordings)');
+});
+
+test('QA-6: client pure helpers — qaFmtClock_ + qaMarkerPct_ behavioral', () => {
+  const fmt = loadFunction(sb, 'qa/script_qa.html', 'qaFmtClock_');
+  assert.strictEqual(fmt(0), '0:00');
+  assert.strictEqual(fmt(65), '1:05');
+  assert.strictEqual(fmt(3599), '59:59');
+  assert.strictEqual(fmt(3665), '1:01:05', 'past an hour: h:mm:ss');
+  assert.strictEqual(fmt(-3), '0:00', 'a negative time clamps to zero');
+  assert.strictEqual(fmt('junk'), '0:00', 'junk reads as zero, never NaN in the UI');
+  const pct = loadFunction(sb, 'qa/script_qa.html', 'qaMarkerPct_');
+  assert.strictEqual(pct(30, 60), 50);
+  assert.strictEqual(pct(0, 60), 0);
+  assert.strictEqual(pct(90, 60), 100, 'past-the-end clamps to 100');
+  assert.strictEqual(pct(30, 0), 0, 'a zero/unknown duration renders at 0, never NaN%');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

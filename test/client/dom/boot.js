@@ -47,6 +47,7 @@ const PARTIALS = [
   'train/script_training.html',
   'train/script_empdocs.html',
   'train/script_coaching.html',         // cycle-9 M-10 — was outside every harness net
+  'qa/script_qa.html',                  // QA module Phase 1 (2026-08-27)
   'script_tour.html',
 ];
 

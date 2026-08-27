@@ -139,6 +139,18 @@ const TOOLS = {
       docsManage:     { label: 'Issue Docs',    icon: 'send',   enter: 'enterDocsManageView', managerOnly: true },
     },
   },
+  // QA — call-recording review (Phase 1, operator 2026-08-27). Gated to
+  // managers + QA_MEMBERS reps via the also-flag (the metricsSpanish pattern);
+  // toolVisibleForUser_ hides the whole tool from agents — they do not see
+  // their reviews in v1 (operator decision).
+  qa: {
+    label: 'QA',
+    sidebarIcon: 'headset',
+    defaultTab: 'qaQueue',
+    tabs: {
+      qaQueue: { label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' },
+    },
+  },
   // Manage — the consolidated manager/admin home. Tabs are MOVED here from their
   // original tools (keys unchanged, so ?tool=<key> deep-links + `currentView ===`
   // guards + the enter handlers in tc/cn partials all keep working). The whole
@@ -719,24 +731,26 @@ function viewAsReapply_() {
   var f = viewAsFlags_(VIEW_AS.active);
   if (!f) return;
   empState.isAdmin = f.isAdmin; empState.isManager = f.isManager; empState.canSeeSpanish = f.canSeeSpanish;
+  empState.canSeeQa = f.canSeeQa;
 }
 function viewAsFlags_(role) {
   var real = VIEW_AS.real;
   if (!real) return null;
-  if (role === 'csr') return { isAdmin: false, isManager: false, canSeeSpanish: false };
-  if (role === 'spanish') return { isAdmin: false, isManager: false, canSeeSpanish: true };
-  if (role === 'manager') return { isAdmin: false, isManager: true, canSeeSpanish: real.canSeeSpanish };
-  return { isAdmin: real.isAdmin, isManager: real.isManager, canSeeSpanish: real.canSeeSpanish };
+  if (role === 'csr') return { isAdmin: false, isManager: false, canSeeSpanish: false, canSeeQa: false };
+  if (role === 'spanish') return { isAdmin: false, isManager: false, canSeeSpanish: true, canSeeQa: false };
+  if (role === 'manager') return { isAdmin: false, isManager: true, canSeeSpanish: real.canSeeSpanish, canSeeQa: true };
+  return { isAdmin: real.isAdmin, isManager: real.isManager, canSeeSpanish: real.canSeeSpanish, canSeeQa: real.canSeeQa };
 }
 function viewAsSet_(role) {
   if (!empState) return;
   if (!VIEW_AS.real) {
-    VIEW_AS.real = { isAdmin: !!empState.isAdmin, isManager: !!empState.isManager, canSeeSpanish: !!empState.canSeeSpanish };
+    VIEW_AS.real = { isAdmin: !!empState.isAdmin, isManager: !!empState.isManager, canSeeSpanish: !!empState.canSeeSpanish, canSeeQa: !!empState.canSeeQa };
   }
   if (!VIEW_AS.real.isAdmin) return;   // admins only — and worthless to bypass (see above)
   VIEW_AS.active = (role === 'csr' || role === 'spanish' || role === 'manager') ? role : null;
   var f = viewAsFlags_(VIEW_AS.active || 'me');
   empState.isAdmin = f.isAdmin; empState.isManager = f.isManager; empState.canSeeSpanish = f.canSeeSpanish;
+  empState.canSeeQa = f.canSeeQa;
   settingsClose_();
   renderShell(empState);
   // Land on a tab every role can see; enterTool bumps gated tabs anyway.
