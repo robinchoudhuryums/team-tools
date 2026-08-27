@@ -13037,6 +13037,27 @@ test('QA-5: wiring — every endpoint gates before its store, the tab rides also
   assert.ok(/URL\.revokeObjectURL/.test(qa), 'a replaced Blob URL is revoked (no leak across recordings)');
 });
 
+// Operator 2026-08-27 (live): a converted Doc's images failed to export at
+// Save, and the ONLY visible evidence was a generic warn toast that
+// auto-dismissed before it could be read. Three links, each pinned: the
+// per-image catch NAMES the Drive error (the token replacer reduces any throw
+// to a bare null, so without it the specific reason never surfaces), the
+// KbItemSave audit row records the outcome durably, and the client renders
+// image warnings STICKY (the INV-190 rule: an actionable error waits for its
+// reader).
+test('KBI-3: a failed image export is NAMED, sticky, and audit-recorded', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'kbResolveDocImages_'));
+  assert.ok(/could not be exported to Drive: ' \+ e\.message/.test(f),
+    'the per-image catch pushes the NAMED Drive error into warnings');
+  const save = nc(extractRawFunction('Code.js', 'kbSaveItem'));
+  assert.ok(/imageWarnings=' \+ imageWarnings\.length/.test(save),
+    'the KbItemSave audit row records the warning count + first reason (readable after the toast is gone)');
+  const kb = nc(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
+  assert.ok(/showToast\(w, 'toast-warn', \{ sticky: true \}\)/.test(kb),
+    'image warnings render STICKY — an auto-dismissing actionable error is unreadable (INV-190)');
+});
+
 test('QA-6: client pure helpers — qaFmtClock_ + qaMarkerPct_ behavioral', () => {
   const fmt = loadFunction(sb, 'qa/script_qa.html', 'qaFmtClock_');
   assert.strictEqual(fmt(0), '0:00');

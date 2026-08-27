@@ -21206,7 +21206,9 @@ function kbSaveItem(payload) {
       invalidateKbCache_();
       writeAuditLog_(emp, 'KbItemSave', '', '', false, 0,
         'id=' + id + '; dept=' + department + '; type=' + type + '; status=' + status +
-        (imagesExported ? '; imagesExported=' + imagesExported : ''), emp.email);
+        (imagesExported ? '; imagesExported=' + imagesExported : '') +
+        (imageWarnings.length ? '; imageWarnings=' + imageWarnings.length + ': ' +
+          String(imageWarnings[0]).substring(0, 160) : ''), emp.email);
       return { success: true, id: id, status: status, imagesExported: imagesExported, imageWarnings: imageWarnings };
     } finally { lock.releaseLock(); }
   } catch (err) { return { success: false, error: err.message }; }
@@ -21536,18 +21538,28 @@ function kbResolveDocImages_(bodyMd) {
     }
     const blobs = blobsByDoc[fileId];
     if (!blobs || ord < 1 || ord > blobs.length) return null;
-    const name = 'kbdoc-' + fileId + '-' + ord;
-    let file = null;
-    const existing = folder.getFilesByName(name);
-    if (existing.hasNext()) {
-      file = existing.next();   // reuse — idempotent re-saves, stable URLs
-    } else {
-      file = folder.createFile(blobs[ord - 1].copyBlob().setName(name));
-      exported++;
+    // NAME a per-image Drive failure. The token replacer's own catch reduces
+    // any throw to a bare null, so before this the ONLY message a failed
+    // createFile ever produced was the generic "N token(s) could not be
+    // resolved" — the operator hit exactly that live (2026-08-27) and had no
+    // way to learn WHY (a domain Drive policy, a quota, anything).
+    try {
+      const name = 'kbdoc-' + fileId + '-' + ord;
+      let file = null;
+      const existing = folder.getFilesByName(name);
+      if (existing.hasNext()) {
+        file = existing.next();   // reuse — idempotent re-saves, stable URLs
+      } else {
+        file = folder.createFile(blobs[ord - 1].copyBlob().setName(name));
+        exported++;
+      }
+      const url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200';
+      urlCache[key] = url;
+      return url;
+    } catch (e) {
+      warnings.push('Image ' + ord + ' could not be exported to Drive: ' + e.message);
+      return null;
     }
-    const url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200';
-    urlCache[key] = url;
-    return url;
   };
   const r = kbReplaceDocImageTokens_(bodyMd, resolve);
   if (r.failed > 0) warnings.push(r.failed + ' image token(s) could not be resolved — left as placeholders.');

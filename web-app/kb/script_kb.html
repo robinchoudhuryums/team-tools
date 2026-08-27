@@ -3814,7 +3814,10 @@ function kbSaveFromEditor_(btn) {
       // Phase 2b — converter image tokens export to Drive during save;
       // surface the count + any per-image degradations.
       showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : (res.status === 'draft' ? 'Saved as draft (hidden from reps)' : 'Saved'), 'toast-success');
-      (res.imageWarnings || []).forEach(function (w) { showToast(w, 'toast-warn'); });
+      // An image-export failure is an ACTIONABLE error — sticky, so the
+      // reason survives long enough to read (the INV-190 reminder rule; the
+      // operator's live report was "disappeared too quick to see").
+      (res.imageWarnings || []).forEach(function (w) { showToast(w, 'toast-warn', { sticky: true }); });
       var savedId = res.id;
       kbCloseModal_();
       kbReloadTree_();

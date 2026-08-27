@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 667 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 668 + DOM 82;
   visual matrix on demand — 51 scenarios, last full shoot 2026-08-27 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -346,6 +346,17 @@ INV-196 + S90 + the QA operator-state entry (QA_SS_ID /
 QA_RECORDINGS_FOLDER_ID / QA_MEMBERS) written. Phase 2 (waveform,
 scorecards, per-agent stats) and Phase 3 (sampling, calibration,
 agent-facing reviews) scoped, unbuilt.
+
+NEWEST OF ALL #3 (2026-08-27, KB image-export diagnosability — operator
+live report: a converted Doc's images failed to export at Save and the
+warn toast vanished unread): kbReplaceDocImageTokens_'s catch reduced any
+export throw to a bare null, so the specific Drive reason (policy? quota?)
+never surfaced — only the generic count, for 3.5s. Now: the per-image
+catch NAMES e.message, image warnings render STICKY, and the KbItemSave
+audit row records imageWarnings=<n> + the first reason (Admin → Sheets →
+AuditLog). Re-saving is the idempotent retry — the operator reads the
+exact reason on the next Save. Pure 667→668 (KBI-3, 3 bites). ROOT CAUSE
+STILL UNKNOWN pending that re-save readout.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
