@@ -13534,7 +13534,10 @@ test('QA-13: qaCalibration_ behavioral — 2+ reviewers only, spread arithmetic,
   const C = ctx.qaCalibration_;
   const crit = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }];
   // A lone card has nothing to compare against — excluded, never a
-  // single-reviewer "calibration" row.
+  // single-reviewer "calibration" row. (Bite note: the `cards.length < 2`
+  // early return is an equivalent-mutant OPTIMIZATION — the load-bearing
+  // guard is `reviewers.length < 2` below it, which is what the bite-check
+  // mutates; weakening cards.length alone changes nothing observable.)
   assert.deepStrictEqual(JSON.parse(JSON.stringify(C([{ fileId: 'f1', name: 'X', ratings: { a: 5 } }], crit))), [],
     'single-reviewer recordings are excluded');
   // Two cards whose second has NO computable mean (empty/out-of-range
