@@ -3117,12 +3117,51 @@ test('kbParseImageDataUrl_: shape-parses image data URLs, rejects everything els
   assert.strictEqual(parse('data:image/png;base64,!!!'), null, 'non-base64 payload rejected');
   assert.strictEqual(parse(''), null);
 });
-test('kbMd_: kbdoc tokens demote to alt text in preview; the Drive thumbnail URL renders an <img>', () => {
+test('kbMd_: kbdoc tokens render a PENDING chip in preview; the Drive thumbnail URL renders an <img>', () => {
+  // REWRITTEN in place 2026-08-27 (was "demote to alt text"): a Doc-with-
+  // images conversion previewed as bare alt text, which the operator read as
+  // "the images are missing". The token now renders a visible pending chip
+  // naming what happens (appears after Save). The security boundary is
+  // unchanged: no <img>, no URL emitted — the chip is element content only.
   const prev = kbMd_('![Doc image 1](kbdoc:F1:1)');
   assert.strictEqual(prev.indexOf('<img'), -1, 'unresolved token never renders an img (non-http scheme)');
-  assert.ok(prev.indexOf('Doc image 1') >= 0, 'alt text shows in the editor preview');
+  assert.ok(prev.indexOf('kb-img-pending') >= 0, 'the pending chip renders — not bare alt text');
+  assert.ok(prev.indexOf('Doc image 1') >= 0, 'the alt names which image');
+  assert.ok(/appears after Save/.test(prev), 'and the chip SAYS when it will appear');
+  assert.strictEqual(prev.indexOf('kbdoc:'), -1, 'the token itself is never emitted (no URL of any scheme)');
+  const esc = kbMd_('![<b>x</b>](kbdoc:F1:1)');
+  assert.ok(esc.indexOf('<b>') < 0 && esc.indexOf('&lt;b&gt;') >= 0, 'alt markup stays escaped inside the chip');
   const final = kbMd_('![Doc image 1](https://drive.google.com/thumbnail?id=ABC&sz=w1200)');
   assert.ok(/<img[^>]+src="https:\/\/drive\.google\.com\/thumbnail\?id=ABC&(amp;)?sz=w1200"/.test(final), 'resolved URL renders');
+});
+
+test('KBL: the editor Save + both convert flows carry in-button loaders, restored on every path', () => {
+  // Operator 2026-08-27: Save and Doc/Sheet conversion showed nothing while
+  // their multi-second RPCs ran (Save exports kbdoc images to Drive). The
+  // shared kbBtnBusy_/kbBtnIdle_ pair (the composer Preview pattern) also
+  // DISABLES, so it doubles as the L13 double-fire guard.
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const busy = nc(extractFunction('kb/script_kb.html', 'kbBtnBusy_'));
+  assert.ok(/btn\.disabled = true/.test(busy) && /lo-dots/.test(busy), 'busy disables AND shows the Role-D dots');
+  const save = nc(extractFunction('kb/script_kb.html', 'kbSaveFromEditor_'));
+  assert.ok(/if \(btn && btn\.disabled\) return;/.test(save), 'the L13 double-click guard survives');
+  assert.ok(/kbBtnBusy_\(btn,/.test(save) && /exporting/.test(save) && /kbdoc:/.test(save),
+    'Save goes busy, and a body carrying kbdoc image tokens SAYS it is exporting them');
+  assert.ok(/kbBtnIdle_\(btn\)/.test(save), 'and restores through the shared idle helper on both handlers');
+  const edc = nc(extractFunction('kb/script_kb.html', 'kbConvertFromEditor_'));
+  assert.strictEqual((edc.match(/kbBtnIdle_\(document\.getElementById\('kb-ed-convert-btn'\)\)/g) || []).length, 2,
+    'the editor convert restores its button on BOTH the success and failure handlers');
+  assert.ok(/kbBtnBusy_\(cbtn, 'Converting/.test(edc) && /cbtn && cbtn\.disabled\) return;/.test(edc),
+    'busy + in-flight double-fire guard');
+  const rdc = nc(extractFunction('kb/script_kb.html', 'kbConvertItem_'));
+  assert.strictEqual((rdc.match(/kbBtnIdle_\(srcBtn\)/g) || []).length, 2,
+    'the reader convert restores its button on BOTH handlers');
+  assert.ok(/kbBtnBusy_\(srcBtn, 'Converting/.test(rdc), 'and goes busy when the confirm is accepted');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(kb.indexOf('id="kb-ed-convert-btn"') >= 0, 'the editor convert button carries the id the handlers target');
+  const rdAt = kb.indexOf('kbConvertItem_(\\\'');
+  assert.ok(rdAt >= 0 && kb.indexOf(", this)\">", rdAt) - rdAt < 120,
+    'the reader convert onclick passes its own button (kbConvertItem_(..., this))');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

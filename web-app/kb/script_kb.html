@@ -73,6 +73,9 @@
   .kb-article tbody tr:last-child td { border-bottom: none; }
   .kb-article img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: block; margin: .9em 0; }
   .kb-article a.kb-img-lnk { display: inline-block; max-width: 100%; }
+  .kb-article .kb-img-pending { display: inline-block; padding: 6px 10px; margin: 4px 0;
+    border: 1px dashed var(--muted-3); border-radius: 6px; color: var(--muted-2);
+    font-size: var(--text-sm, 12px); background: var(--paper-2); }
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -2088,6 +2091,16 @@ function kbMd_(src) {
     // attribute could otherwise be broken out of (same guard as link href).
     // alt is an attribute → NO emphasis; the whole element is stashed.
     t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (m, alt, url) {
+      // A converter image token (Phase 2b) has no fetchable URL until Save
+      // exports the blob to Drive — the editor preview used to render its
+      // bare alt text, which read as "the images are missing" (operator
+      // 2026-08-27). Render a visible pending chip instead. Inert by
+      // construction: alt is already top-level-escaped and lands in element
+      // CONTENT (no attribute), and no URL is emitted at all.
+      if (/^kbdoc:/i.test(url)) {
+        return keep('<span class="kb-img-pending">' + (alt || 'Doc image') +
+          ' \u2014 appears after Save (exports to Drive)</span>');
+      }
       if (!/^https?:/i.test(url)) return alt;
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
       alt = alt.replace(/"/g, '&quot;');
@@ -3009,7 +3022,7 @@ function kbRenderItem_(item) {
   var convertKind = (mgr && item.type === 'embed' && (item.driveKind === 'doc' || item.driveKind === 'sheet'))
     ? item.driveKind : '';
   var convertBtn = convertKind
-    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\', \'' + convertKind + '\')">' +
+    ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\', \'' + convertKind + '\', this)">' +
         icon('refresh', 13) + ' Convert to article</button>'
     : '';
   // #4 — draft→publish + revision history (admin authoring affordances).
@@ -3369,7 +3382,7 @@ function kbDeleteItem_(id) {
 // type embed → article); the Drive file itself is never modified.
 
 /** Reader-view entry: convert an existing doc- or sheet-embed KB item. */
-function kbConvertItem_(id, kind) {
+function kbConvertItem_(id, kind, srcBtn) {
   var isSheet = (kind === 'sheet');
   uiConfirm({
     title: isSheet ? 'Convert Sheet to article' : 'Convert Doc to article',
@@ -3379,10 +3392,12 @@ function kbConvertItem_(id, kind) {
     confirmLabel: 'Convert',
   }).then(function (ok) {
     if (!ok) return;
-    showToast('Converting…', '');
+    if (srcBtn && srcBtn.disabled) return;   // a convert is already in flight
+    kbBtnBusy_(srcBtn, 'Converting\u2026');
     var requestedView = currentView;   // M-7 (cycle 10) — see below
     google.script.run
       .withSuccessHandler(function (res) {
+        kbBtnIdle_(srcBtn);
         if (!res || res.error || !res.success) {
           showToast((res && res.error) || 'Convert failed', 'toast-error');
           return;
@@ -3413,6 +3428,7 @@ function kbConvertItem_(id, kind) {
         kbShowConvertWarnings_(res.warnings);
       })
       .withFailureHandler(function (err) {
+        kbBtnIdle_(srcBtn);
         showToast((err && err.message) || 'Convert failed', 'toast-error');
       })
       [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ itemId: id });
@@ -3428,7 +3444,9 @@ function kbConvertFromEditor_() {
   var url = String(KB_EDIT.driveUrl || '').trim();
   if (!url) { showToast('Paste a Google Doc or Sheet share URL first.', 'toast-warn'); return; }
   var isSheet = /\/spreadsheets\//.test(url);
-  showToast('Converting…', '');
+  var cbtn = document.getElementById('kb-ed-convert-btn');
+  if (cbtn && cbtn.disabled) return;   // double-click = two conversions in flight
+  kbBtnBusy_(cbtn, 'Converting\u2026');
   // M-7 (cycle 10): identity guard. Every editor open assigns a FRESH KB_EDIT
   // object, so capturing the reference pins this convert to the editor it was
   // fired from — the old "any editor exists" check let a stale response
@@ -3438,6 +3456,7 @@ function kbConvertFromEditor_() {
   var ed = KB_EDIT;
   google.script.run
     .withSuccessHandler(function (res) {
+      kbBtnIdle_(document.getElementById('kb-ed-convert-btn'));
       if (!res || res.error || !res.success) {
         showToast((res && res.error) || 'Convert failed', 'toast-error');
         return;
@@ -3459,6 +3478,7 @@ function kbConvertFromEditor_() {
       kbShowConvertWarnings_(res.warnings);
     })
     .withFailureHandler(function (err) {
+      kbBtnIdle_(document.getElementById('kb-ed-convert-btn'));
       showToast((err && err.message) || 'Convert failed', 'toast-error');
     })
     [isSheet ? 'kbConvertDriveSheet' : 'kbConvertDriveDoc']({ driveUrl: url });
@@ -3677,7 +3697,7 @@ function kbRenderEditorBody_() {
     host.innerHTML = '<div class="field"><label for="kb-ed-driveurl">Drive share URL (Google Doc, Sheet, or file)</label>' +
       '<input type="text" id="kb-ed-driveurl" value="' + esc(KB_EDIT.driveUrl) + '" placeholder="https://docs.google.com/document/d/…"></div>' +
       '<div style="font-size:.76rem;color:var(--muted);">The doc embeds as a read-only preview in the app, with an "Open in new tab" link. Reps need access to the file (share it with the team).</div>' +
-      '<button type="button" class="kb-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
+      '<button type="button" class="kb-btn" id="kb-ed-convert-btn" style="margin-top:10px" onclick="kbConvertFromEditor_()">' + icon('refresh', 13) + ' Convert this Doc or Sheet to an article instead</button>' +
       '<div style="font-size:.72rem;color:var(--muted);margin-top:4px;">Google Docs only — pulls the Doc\'s text in as editable markdown (you review before saving; the Doc isn\'t changed).</div>';
   } else {
     host.innerHTML = '<div class="field"><label for="kb-ed-bodymd">Body (markdown)</label>' +
@@ -3755,6 +3775,23 @@ function kbPasteUploadImage_(ta, file, refreshPreview) {
   reader.readAsDataURL(file);
 }
 
+/** In-button loaders for the editor's slow RPCs (operator 2026-08-27 — Save
+ *  and both Doc/Sheet conversions gave no visual signal; Save is multi-second
+ *  when converter image tokens export to Drive). The shared Role-D .lo-dots
+ *  vocabulary — the composer Preview button's pattern. Busy also DISABLES,
+ *  so it doubles as the double-fire guard; idle restores the captured label. */
+function kbBtnBusy_(btn, label) {
+  if (!btn) return;
+  if (!btn.dataset.idleLabel) btn.dataset.idleLabel = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> ' + esc(label);
+}
+function kbBtnIdle_(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+}
+
 function kbSaveFromEditor_(btn) {
   kbSnapshotEditor_();
   var e = KB_EDIT;
@@ -3765,8 +3802,11 @@ function kbSaveFromEditor_(btn) {
   // calls and created duplicate rows (the server lock serializes inserts but
   // can't dedupe them). Disable for the round trip; re-enable on failure.
   if (btn && btn.disabled) return;
-  if (btn) btn.disabled = true;
-  var reenable = function () { if (btn) btn.disabled = false; };
+  // Phase 2b exports every kbdoc: image token to Drive DURING this save —
+  // multi-second work the button should own up to (operator 2026-08-27).
+  var imgTokens = (String(e.body || '').match(/\(kbdoc:/g) || []).length;
+  kbBtnBusy_(btn, imgTokens ? ('Saving \u00b7 exporting ' + imgTokens + ' image(s)\u2026') : 'Saving\u2026');
+  var reenable = function () { kbBtnIdle_(btn); };
   google.script.run
     .withSuccessHandler(function (res) {
       reenable();
