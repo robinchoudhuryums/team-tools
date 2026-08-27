@@ -13394,11 +13394,13 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   // Headers extended in place (Phase 1 merged but UNDEPLOYED + QA_SS_ID unset
   // everywhere = no tab exists to migrate) — Agent is the trailing column and
   // the enum agrees.
-  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent'\]/.test(stripped),
-    'Agent is the trailing recordings column');
-  assert.ok(/AGENT: 10/.test(stripped), 'QAR.AGENT matches its position');
+  // (Rewritten in place for Phase 3 — SharedMs joined as the new trailing
+  // column; the honest bookkeeping when a contract changes under a pin.)
+  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'\]/.test(stripped),
+    'Agent + SharedMs are the trailing recordings columns');
+  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped), 'QAR positions match');
   const sync = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
-  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '',/.test(sync), 'sync rows carry the trailing empty Agent cell');
+  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0,/.test(sync), 'sync rows carry the trailing empty Agent + unshared SharedMs cells');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
