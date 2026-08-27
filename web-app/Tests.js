@@ -1164,6 +1164,8 @@ function _runAllTests() {
 
   // ── F8: manager-gate coverage across INV-31 / time-clock manager endpoints ─
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
+  // ── QA module Phase 1: access gate ──
+  _integrationTest('qa_gates_rejectNonMember',                test_qa_gates_rejectNonMember);
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
@@ -5227,6 +5229,28 @@ function test_managerGates_rejectNonManager() {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-member rep');
       _assertContains(r.error, 'Spanish Inbox access', c[0] + ' must be Spanish-gated (INV-31 amendment)');
+    });
+}
+
+// QA module Phase 1 (operator 2026-08-27) — access gate. QA is managers +
+// QA_MEMBERS reps ONLY; agents are deliberately OUTSIDE in v1 (operator
+// decision: they do not see their reviews yet). The test rep is neither, so
+// every endpoint must reject with the QA-access error BEFORE any store/Drive
+// access — QA_SS_ID need not even be configured for this test to pass, which
+// is itself the property under test (the gate runs first).
+function test_qa_gates_rejectNonMember() {
+  [['getQaQueue', function () { return getQaQueue(); }],
+   ['qaSyncRecordings', function () { return qaSyncRecordings(); }],
+   ['qaSetRecordingStatus', function () { return qaSetRecordingStatus('x', 'done'); }],
+   ['qaAssignRecording', function () { return qaAssignRecording('x', null); }],
+   ['qaGetAudioChunk', function () { return qaGetAudioChunk('x', 0); }],
+   ['qaListComments', function () { return qaListComments('x'); }],
+   ['qaAddComment', function () { return qaAddComment('x', 1, 'note'); }],
+   ['qaDeleteComment', function () { return qaDeleteComment('x'); }]]
+    .forEach(function (c) {
+      const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
+      _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');
+      _assertContains(r.error, 'QA access', c[0] + ' must be QA-gated (managers + QA_MEMBERS)');
     });
 }
 

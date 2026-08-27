@@ -110,7 +110,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       nextActions: ['ClockOut', 'LunchOut'],
       adjustWindowDays: 30, adjustReasonThresholdDays: 7, selfUndoWindowSeconds: 300,
       payCycle: 'biweekly', payAnchor: daysAgo(12),
-      isManager: true, isAdmin: true, canSeeSpanish: true, departments: ['Billing'],
+      isManager: true, isAdmin: true, canSeeSpanish: true, canSeeQa: true, departments: ['Billing'],
       timezone: 'Asia/Kolkata', timezoneAbbr: 'IST',
       schedule: { startMin: 480, lengthMin: 540, breaks: [{ label: 'B1', startMin: 630, lenMin: 15 }, { label: 'Lunch', startMin: 750, lenMin: 30 }, { label: 'B2', startMin: 900, lenMin: 15 }], breakReminderMin: 5 },
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
@@ -389,6 +389,21 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // claimed-by-other (name pill + manager Release/Assign), claimed-by-you
     // ("you" pill). The fixture predating these fields was the round-2 block's
     // named INV-185 gap.
+    // QA module Phase 1 (2026-08-27). Shape mirrors getQaQueue's return block
+    // (INV-185): base {members, self, isManager, folderConfigured} +
+    // {recordings, total, cap}. All three status tones + an assigned-to-you
+    // and an assigned-to-other pill are on camera; one card carries a
+    // comment count.
+    getQaQueue: {
+      members: ['qa.reviewer@umsupply.com', 'teamtools@umsupply.com'],
+      self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
+      recordings: [
+        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', comments: 0 },
+        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', comments: 3 },
+        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', comments: 5 },
+      ],
+      total: 3, cap: 200,
+    },
     getSpanishInboxPending: { pending: [
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.

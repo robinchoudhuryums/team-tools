@@ -1,0 +1,622 @@
+<style>
+  /* ── QA module (Phase 1) — call-recording review queue + player ──────────
+     Tokens only; breakpoints per the A2 rule (a fixed grid owes a viewport
+     breakpoint). Empty states use .qa-empty (the derived A12 convention);
+     failures render errorStateHtml_. */
+  .qa-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .qa-toolbar .spacer { flex: 1; }
+  .qa-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .qa-chip {
+    appearance: none; background: var(--paper-card); border: 1px solid var(--line);
+    border-radius: var(--radius-pill, 999px); padding: 4px 12px; font: inherit;
+    font-size: var(--text-sm, 12px); color: var(--muted-2); cursor: pointer;
+  }
+  .qa-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .qa-btn {
+    appearance: none; background: var(--paper-card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: var(--text-sm, 12px);
+    color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .qa-btn:hover { border-color: var(--border-strong); }
+  .qa-btn:disabled { opacity: .55; cursor: default; }
+  .qa-btn.prime { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .qa-list { display: grid; gap: 10px; }
+  .qa-card {
+    background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px;
+    align-items: center;
+  }
+  .qa-card-name { font-weight: 600; overflow-wrap: anywhere; }
+  .qa-card-meta { color: var(--muted-2); font-size: var(--text-sm, 12px); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .qa-card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .qa-status { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
+  .qa-status.st-new       { background: var(--info-soft);    border-color: var(--info);    color: var(--info-deep); }
+  .qa-status.st-in_review { background: var(--warn-soft);    border-color: var(--warn);    color: var(--warning-deep); }
+  .qa-status.st-done      { background: var(--accent-soft);  border-color: var(--accent);  color: var(--success-deep); }
+  .qa-status.st-skipped   { background: var(--paper-2); }
+  .qa-assignee { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
+  .qa-assignee.mine { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .qa-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 24px; text-align: center; color: var(--muted-2); }
+  .qa-note { color: var(--muted-2); font-size: var(--text-sm, 12px); margin: 8px 0 0; }
+
+  /* Detail */
+  .qa-det-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .qa-det-title { font-weight: 700; font-size: var(--text-lg, 16px); overflow-wrap: anywhere; min-width: 0; }
+  .qa-player-card, .qa-comments-card {
+    background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .qa-player-card audio { width: 100%; }
+  .qa-transport { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .qa-speed[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .qa-kbd-hint { color: var(--muted-3); font-size: 11px; margin-left: auto; }
+  .qa-timeline {
+    position: relative; height: 26px; background: var(--paper-2);
+    border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); margin-top: 12px;
+  }
+  .qa-tl-mark {
+    appearance: none; position: absolute; top: 2px; bottom: 2px; width: 8px; padding: 0;
+    transform: translateX(-50%); background: var(--info); border: 1px solid var(--info-deep);
+    border-radius: 4px; cursor: pointer;
+  }
+  .qa-tl-cursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); border-radius: 1px; pointer-events: none; }
+  .qa-comment-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .qa-comment-row:last-child { border-bottom: none; }
+  .qa-time-chip {
+    appearance: none; background: var(--info-soft); border: 1px solid var(--info);
+    color: var(--info-deep); border-radius: var(--radius-pill, 999px); padding: 2px 10px;
+    font: inherit; font-family: var(--mono); font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .qa-comment-text { overflow-wrap: anywhere; }
+  .qa-comment-by { color: var(--muted-2); font-size: 11px; }
+  .qa-del-btn { appearance: none; background: none; border: none; color: var(--muted-2); cursor: pointer; font: inherit; padding: 2px 6px; }
+  .qa-del-btn:hover { color: var(--danger-deep); }
+  .qa-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 10px; align-items: end; }
+  .qa-add-row textarea {
+    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  @media (max-width: 700px) {
+    .qa-card { grid-template-columns: minmax(0, 1fr); }
+    .qa-card-actions { justify-content: flex-start; }
+    .qa-add-row { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<script>
+// ── QA module client (Phase 1) ──────────────────────────────────────────────
+// One tab (qaQueue) with two in-tab modes: the queue list and a recording
+// detail (player + timestamped comments). Audio arrives as base64 chunks
+// (qaGetAudioChunk) assembled into a Blob URL — seq-guarded (INV-156) so
+// opening another recording drops stale chunk appends.
+var QA_STATE = {
+  queue: null,          // last getQaQueue payload
+  filter: 'all',        // all | new | in_review | done | mine
+  seq: 0,               // queue-load seq guard
+  det: null,            // the open recording (queue item) or null
+  audioSeq: 0,          // chunk-assembly seq guard
+  objectUrl: null,      // current Blob URL (revoked on replace)
+  durationSec: 0,
+  comments: [],
+  canModerate: false,
+  speed: 1,             // session-only playback speed
+};
+
+function enterQaQueueView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  QA_STATE.det = null;
+  qaReleaseAudio_();
+  const area = document.getElementById('view-area');
+  renderLoading(area, 'Loading QA queue…', 'headset');
+  qaLoadQueue_();
+}
+
+function qaLoadQueue_() {
+  const requestedView = currentView;
+  const mySeq = ++QA_STATE.seq;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView || QA_STATE.seq !== mySeq) return;
+      if (!data || data.error) {
+        document.getElementById('view-area').innerHTML = errorStateHtml_((data && data.error) || 'Could not load the QA queue.');
+        return;
+      }
+      QA_STATE.queue = data;
+      if (QA_STATE.det) return;   // a detail opened while the refresh ran — leave it
+      qaRenderQueue_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView || QA_STATE.seq !== mySeq) return;
+      document.getElementById('view-area').innerHTML = errorStateHtml_('Could not load the QA queue: ' + (err && err.message));
+    })
+    .getQaQueue();
+}
+
+function qaFmtSize_(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return Math.round(n / 1024) + ' KB';
+  return n + ' B';
+}
+function qaFmtDate_(ms) {
+  const n = Number(ms) || 0;
+  if (!n) return '';
+  try { return new Date(n).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch (e) { return ''; }
+}
+/** m:ss (or h:mm:ss past an hour) for player timestamps. PURE — Node-pinned. */
+function qaFmtClock_(sec) {
+  let s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const mm = h ? String(m).padStart(2, '0') : String(m);
+  return (h ? h + ':' : '') + mm + ':' + String(s).padStart(2, '0');
+}
+/** Timeline marker position as a 0..100 percent, clamped. PURE — Node-pinned. */
+function qaMarkerPct_(atSec, durSec) {
+  const at = Number(atSec), dur = Number(durSec);
+  if (!isFinite(at) || !isFinite(dur) || dur <= 0) return 0;
+  return Math.max(0, Math.min(100, (at / dur) * 100));
+}
+var QA_STATUS_LABELS = { new: 'New', in_review: 'In review', done: 'Done', skipped: 'Skipped' };
+function qaStatusPillHtml_(status) {
+  const st = QA_STATUS_LABELS[status] ? status : 'new';
+  return '<span class="qa-status st-' + st + '">' + esc(QA_STATUS_LABELS[st]) + '</span>';
+}
+function qaAssigneePillHtml_(item, self) {
+  if (!item.assignee) return '';
+  const mine = item.assignee === self;
+  return '<span class="qa-assignee' + (mine ? ' mine' : '') + '" title="' + esc(item.assignee) + '">' +
+    (mine ? 'you' : esc(item.assignee.split('@')[0])) + '</span>';
+}
+
+function qaVisibleItems_() {
+  const d = QA_STATE.queue;
+  if (!d || !d.recordings) return [];
+  return d.recordings.filter(function (r) {
+    if (QA_STATE.filter === 'mine') return r.assignee === d.self;
+    if (QA_STATE.filter === 'all') return true;
+    return r.status === QA_STATE.filter;
+  });
+}
+
+function qaRenderQueue_() {
+  const area = document.getElementById('view-area');
+  const d = QA_STATE.queue;
+  if (!d) return;
+  let html = '';
+  if (!COMPACT_MODE) {
+    html += '<div class="view-title-row"><h1>QA · Recordings</h1></div>';
+  }
+  if (d.notConfigured) {
+    area.innerHTML = html +
+      '<div class="qa-empty">QA is not set up yet. An admin sets Script Property <strong>QA_SS_ID</strong> to a fresh dedicated spreadsheet' +
+      (d.folderConfigured ? '' : ' and <strong>QA_RECORDINGS_FOLDER_ID</strong> to the Drive folder recordings are dropped into') +
+      ', then presses Sync here.</div>';
+    return;
+  }
+  const chips = [
+    ['all', 'All'], ['new', 'New'], ['in_review', 'In review'], ['done', 'Done'], ['mine', 'Mine'],
+  ];
+  html += '<div class="qa-toolbar">' +
+    '<div class="qa-chips" role="group" aria-label="Filter recordings">' +
+    chips.map(function (c) {
+      return '<button type="button" class="qa-chip" aria-pressed="' +
+        (QA_STATE.filter === c[0] ? 'true' : 'false') + '" onclick="qaSetFilter_(\'' + c[0] + '\')">' + c[1] + '</button>';
+    }).join('') +
+    '</div><div class="spacer"></div>' +
+    '<button type="button" class="qa-btn" id="qa-sync-btn" onclick="qaSync_()">' +
+    (typeof icon === 'function' ? icon('refresh', 14) : '') + ' Sync from Drive</button>' +
+    '</div>';
+  if (!d.folderConfigured) {
+    html += '<div class="qa-note">The recordings Drive folder is not configured (Script Property <strong>QA_RECORDINGS_FOLDER_ID</strong>) — Sync and playback need it.</div>';
+  }
+  const items = qaVisibleItems_();
+  if (!items.length) {
+    html += '<div class="qa-empty">' + (d.recordings.length
+      ? 'No recordings match this filter.'
+      : 'No recordings indexed yet — drop audio files into the QA Drive folder, then press Sync.') + '</div>';
+  } else {
+    html += '<div class="qa-list">' + items.map(function (r) { return qaCardHtml_(r, d); }).join('') + '</div>';
+  }
+  if (d.total > (d.recordings || []).length) {
+    html += '<div class="qa-note">Showing ' + d.recordings.length + ' of ' + d.total + ' (list capped).</div>';
+  }
+  area.innerHTML = html;
+}
+
+function qaCardHtml_(r, d) {
+  const canRelease = r.assignee && (r.assignee === d.self || d.isManager);
+  let actions = '<button type="button" class="qa-btn prime" onclick="qaOpenDetail_(\'' + esc(r.fileId) + '\')">Open</button>';
+  if (!r.assignee) {
+    actions += '<button type="button" class="qa-btn" onclick="qaAssign_(\'' + esc(r.fileId) + '\', \'self\')">Claim</button>';
+  } else if (canRelease) {
+    actions += '<button type="button" class="qa-btn" onclick="qaAssign_(\'' + esc(r.fileId) + '\', \'\')">Release</button>';
+  }
+  if (d.isManager) {
+    actions += '<button type="button" class="qa-btn" onclick="qaAssign_(\'' + esc(r.fileId) + '\', \'other\')">Assign…</button>';
+  }
+  return '<div class="qa-card">' +
+    '<div style="min-width:0">' +
+      '<div class="qa-card-name">' + esc(r.name || '(unnamed)') + '</div>' +
+      '<div class="qa-card-meta">' +
+        qaStatusPillHtml_(r.status) +
+        qaAssigneePillHtml_(r, d.self) +
+        '<span>' + esc(qaFmtDate_(r.createdMs)) + '</span>' +
+        '<span>' + esc(qaFmtSize_(r.sizeBytes)) + '</span>' +
+        (r.comments ? '<span>' + r.comments + ' comment' + (r.comments === 1 ? '' : 's') + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="qa-card-actions">' + actions + '</div>' +
+    '</div>';
+}
+
+function qaSetFilter_(f) {
+  QA_STATE.filter = f;
+  qaRenderQueue_();
+  const list = document.querySelector('.qa-list');
+  if (list && typeof animateListSwap_ === 'function') { try { animateListSwap_(list, '.qa-card'); } catch (e) {} }
+}
+
+function qaSync_() {
+  const btn = document.getElementById('qa-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!r || !r.success) {
+        showToast((r && r.error) || 'Sync failed.', 'toast-error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sync from Drive'; }
+        return;
+      }
+      let msg = r.added + ' new recording' + (r.added === 1 ? '' : 's') + ' indexed';
+      if (r.nonAudio) msg += ' · ' + r.nonAudio + ' non-audio file' + (r.nonAudio === 1 ? '' : 's') + ' skipped';
+      if (r.truncated) msg += ' · scan capped at ' + r.scanned + ' files — sync again for the rest';
+      showToast(msg, r.truncated ? 'toast-warn' : 'toast-success');
+      if (currentView === 'qaQueue' && !QA_STATE.det) {
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        qaLoadQueue_();
+      }
+    })
+    .withFailureHandler(function (err) {
+      showToast('Sync failed: ' + (err && err.message), 'toast-error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync from Drive'; }
+    })
+    .qaSyncRecordings();
+}
+
+function qaAssign_(fileId, who) {
+  const d = QA_STATE.queue || {};
+  function send(target) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r || !r.success) { showToast((r && r.error) || 'Assign failed.', 'toast-error'); return; }
+        // Patch the cached item, then repaint whichever mode is open.
+        (d.recordings || []).forEach(function (it) { if (it.fileId === fileId) it.assignee = r.assignee; });
+        if (QA_STATE.det && QA_STATE.det.fileId === fileId) { QA_STATE.det.assignee = r.assignee; qaRenderDetailHead_(); }
+        else if (currentView === 'qaQueue') qaRenderQueue_();
+      })
+      .withFailureHandler(function (err) { showToast('Assign failed: ' + (err && err.message), 'toast-error'); })
+      .qaAssignRecording(fileId, target);
+  }
+  if (who === 'self') return send(d.self || '');
+  if (who === '') return send('');
+  // Manager assign-other: prompt, validated against the QA_MEMBERS list.
+  const members = d.members || [];
+  uiPrompt({
+    title: 'Assign recording',
+    message: members.length ? 'QA members: ' + members.join(', ') : 'No QA_MEMBERS configured yet — add reviewer emails to that Script Property first.',
+    placeholder: 'reviewer@umsupply.com',
+    validator: function (v) {
+      const e = String(v || '').trim().toLowerCase();
+      if (!e) return 'Enter an email (or Cancel).';
+      if (members.indexOf(e) < 0 && e !== d.self) return 'Not a QA member — add them to QA_MEMBERS first.';
+      return '';
+    },
+  }).then(function (v) { if (v != null) send(String(v).trim().toLowerCase()); });
+}
+
+// ── Detail: player + timestamped comments ──────────────────────────────────
+
+function qaOpenDetail_(fileId) {
+  const d = QA_STATE.queue;
+  const rec = d && (d.recordings || []).filter(function (r) { return r.fileId === fileId; })[0];
+  if (!rec) return;
+  QA_STATE.det = rec;
+  QA_STATE.comments = [];
+  QA_STATE.durationSec = 0;
+  qaRenderDetail_();
+  qaLoadAudio_(rec);
+  qaLoadComments_(rec.fileId);
+  qaEnsureKeysBound_();
+}
+
+function qaBackToQueue_() {
+  QA_STATE.det = null;
+  qaReleaseAudio_();
+  if (currentView !== 'qaQueue') return;
+  qaRenderQueue_();
+  // Background-refresh so status/assign changes made in the detail are fresh.
+  qaLoadQueue_();
+}
+
+function qaReleaseAudio_() {
+  QA_STATE.audioSeq++;   // orphan any in-flight chunk loads
+  if (QA_STATE.objectUrl) { try { URL.revokeObjectURL(QA_STATE.objectUrl); } catch (e) {} QA_STATE.objectUrl = null; }
+}
+
+function qaRenderDetail_() {
+  const area = document.getElementById('view-area');
+  area.innerHTML =
+    '<div class="qa-det-head" id="qa-det-head"></div>' +
+    '<div class="qa-player-card">' +
+      '<div id="qa-audio-slot"><div class="qa-note" id="qa-load-note">Loading audio…</div></div>' +
+      '<div class="qa-transport" id="qa-transport"></div>' +
+      '<div class="qa-timeline" id="qa-timeline" aria-hidden="true"></div>' +
+    '</div>' +
+    '<div class="qa-comments-card">' +
+      '<h2 class="card-label">Comments</h2>' +
+      '<div id="qa-comments"><div class="qa-note">Loading…</div></div>' +
+      '<div class="qa-add-row">' +
+        '<textarea id="qa-comment-text" aria-label="Comment text"></textarea>' +
+        '<button type="button" class="qa-btn prime" id="qa-comment-btn" onclick="qaSubmitComment_()">Comment at 0:00</button>' +
+      '</div>' +
+      '<div class="qa-note">Comments anchor to the playback position — click a timestamp to jump there. Space plays/pauses, ←/→ seek 5s.</div>' +
+    '</div>';
+  qaRenderDetailHead_();
+}
+
+function qaRenderDetailHead_() {
+  const host = document.getElementById('qa-det-head');
+  const r = QA_STATE.det, d = QA_STATE.queue || {};
+  if (!host || !r) return;
+  let statusBtns = '';
+  if (r.status === 'new' || r.status === 'skipped') {
+    statusBtns += '<button type="button" class="qa-btn" onclick="qaStatus_(\'in_review\')">Start review</button>';
+  }
+  if (r.status !== 'done') {
+    statusBtns += '<button type="button" class="qa-btn prime" onclick="qaStatus_(\'done\')">Mark done</button>';
+  } else {
+    statusBtns += '<button type="button" class="qa-btn" onclick="qaStatus_(\'in_review\')">Reopen</button>';
+  }
+  host.innerHTML =
+    '<button type="button" class="qa-btn" onclick="qaBackToQueue_()">' +
+      (typeof icon === 'function' ? icon('chevronLeft', 14) : '') + ' Queue</button>' +
+    '<div class="qa-det-title">' + esc(r.name || '(unnamed)') + '</div>' +
+    qaStatusPillHtml_(r.status) +
+    qaAssigneePillHtml_(r, d.self) +
+    '<div class="spacer" style="flex:1"></div>' +
+    statusBtns;
+}
+
+function qaChangeStatus_(st) {
+  const r = QA_STATE.det;
+  if (!r) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) { showToast((res && res.error) || 'Status change failed.', 'toast-error'); return; }
+      r.status = res.status;
+      qaRenderDetailHead_();
+    })
+    .withFailureHandler(function (err) { showToast('Status change failed: ' + (err && err.message), 'toast-error'); })
+    .qaSetRecordingStatus(r.fileId, st);
+}
+
+function qaSetLoadNote_(msg) {
+  const el = document.getElementById('qa-load-note');
+  if (el) el.textContent = msg;
+}
+
+function qaLoadAudio_(rec) {
+  const mySeq = ++QA_STATE.audioSeq;
+  const parts = [];
+  function fail(msg, oversize) {
+    if (QA_STATE.audioSeq !== mySeq) return;
+    const slot = document.getElementById('qa-audio-slot');
+    if (!slot) return;
+    let html = errorStateHtml_(msg || 'Could not load the audio.');
+    if (rec.url) {
+      html += '<div class="qa-note"><a href="' + esc(rec.url) + '" target="_blank" rel="noopener">Open in Drive ↗</a>' +
+        (oversize ? ' — Drive streams it without the in-app cap.' : '') + '</div>';
+    }
+    slot.innerHTML = html;
+  }
+  function fetchChunk(i) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (QA_STATE.audioSeq !== mySeq) return;   // stale — another recording opened (INV-156)
+        if (!r || r.error || !r.success) { fail(r && r.error, r && r.oversize); return; }
+        parts[r.chunkIndex] = r.b64;
+        qaSetLoadNote_('Loading audio — part ' + Math.min(i + 1, r.chunks) + ' of ' + r.chunks + '…');
+        if (i + 1 < r.chunks) fetchChunk(i + 1);
+        else qaAssembleAudio_(parts, r.mime, mySeq);
+      })
+      .withFailureHandler(function (err) { fail('Could not load the audio: ' + (err && err.message)); })
+      .qaGetAudioChunk(rec.fileId, i);
+  }
+  fetchChunk(0);
+}
+
+function qaAssembleAudio_(parts, mime, mySeq) {
+  try {
+    const bins = parts.map(function (b64) {
+      const s = atob(b64 || '');
+      const u = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+      return u;
+    });
+    const blob = new Blob(bins, { type: mime || 'audio/mpeg' });
+    if (QA_STATE.audioSeq !== mySeq) return;
+    if (QA_STATE.objectUrl) { try { URL.revokeObjectURL(QA_STATE.objectUrl); } catch (e) {} }
+    QA_STATE.objectUrl = URL.createObjectURL(blob);
+    const slot = document.getElementById('qa-audio-slot');
+    if (!slot) return;
+    slot.innerHTML = '<audio id="qa-audio" controls preload="metadata" aria-label="Call recording player"></audio>';
+    const audio = document.getElementById('qa-audio');
+    audio.src = QA_STATE.objectUrl;
+    audio.playbackRate = QA_STATE.speed;
+    audio.addEventListener('loadedmetadata', function () {
+      QA_STATE.durationSec = isFinite(audio.duration) ? audio.duration : 0;
+      qaRenderTimeline_();
+    });
+    audio.addEventListener('timeupdate', function () { qaTickPlayback_(audio); });
+    qaRenderTransport_();
+  } catch (e) {
+    const slot = document.getElementById('qa-audio-slot');
+    if (slot && QA_STATE.audioSeq === mySeq) slot.innerHTML = errorStateHtml_('Could not decode the audio: ' + e.message);
+  }
+}
+
+var QA_SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+function qaRenderTransport_() {
+  const host = document.getElementById('qa-transport');
+  if (!host) return;
+  host.innerHTML =
+    '<button type="button" class="qa-btn" onclick="qaSeekBy_(-5)" aria-label="Back 5 seconds">↺ 5s</button>' +
+    '<button type="button" class="qa-btn" onclick="qaSeekBy_(5)" aria-label="Forward 5 seconds">5s ↻</button>' +
+    QA_SPEEDS.map(function (s) {
+      return '<button type="button" class="qa-chip qa-speed" aria-pressed="' + (QA_STATE.speed === s ? 'true' : 'false') +
+        '" onclick="qaSetSpeed_(' + s + ')">' + s + '×</button>';
+    }).join('') +
+    '<span class="qa-kbd-hint">space · ← →</span>';
+}
+function qaSetSpeed_(s) {
+  QA_STATE.speed = s;
+  const audio = document.getElementById('qa-audio');
+  if (audio) audio.playbackRate = s;
+  qaRenderTransport_();   // aria-pressed stays in step (A11)
+}
+function qaSeekBy_(delta) {
+  const audio = document.getElementById('qa-audio');
+  if (!audio || !isFinite(audio.duration)) return;
+  audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + delta));
+}
+function qaSeekTo_(sec) {
+  const audio = document.getElementById('qa-audio');
+  if (!audio) return;
+  audio.currentTime = Math.max(0, Number(sec) || 0);
+  if (audio.paused) { try { audio.play(); } catch (e) {} }
+}
+
+function qaTickPlayback_(audio) {
+  const btn = document.getElementById('qa-comment-btn');
+  if (btn) btn.textContent = 'Comment at ' + qaFmtClock_(audio.currentTime);
+  const cur = document.getElementById('qa-tl-cursor');
+  if (cur && QA_STATE.durationSec > 0) cur.style.left = qaMarkerPct_(audio.currentTime, QA_STATE.durationSec) + '%';
+}
+
+function qaRenderTimeline_() {
+  const host = document.getElementById('qa-timeline');
+  if (!host) return;
+  const dur = QA_STATE.durationSec;
+  let html = '<div class="qa-tl-cursor" id="qa-tl-cursor" style="left:0%"></div>';
+  if (dur > 0) {
+    html += QA_STATE.comments.map(function (c) {
+      return '<button type="button" class="qa-tl-mark" style="left:' + qaMarkerPct_(c.atSec, dur) + '%"' +
+        ' aria-label="Comment at ' + esc(qaFmtClock_(c.atSec)) + '" title="' + esc(qaFmtClock_(c.atSec) + ' · ' + c.name) + '"' +
+        ' onclick="qaSeekTo_(' + Number(c.atSec) + ')"></button>';
+    }).join('');
+  }
+  host.innerHTML = html;
+}
+
+function qaLoadComments_(fileId) {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!QA_STATE.det || QA_STATE.det.fileId !== fileId) return;
+      const host = document.getElementById('qa-comments');
+      if (!host) return;
+      if (!r || r.error) { host.innerHTML = errorStateHtml_((r && r.error) || 'Could not load comments.'); return; }
+      QA_STATE.comments = r.comments || [];
+      QA_STATE.canModerate = !!r.canModerate;
+      qaRenderComments_();
+      qaRenderTimeline_();
+    })
+    .withFailureHandler(function (err) {
+      if (!QA_STATE.det || QA_STATE.det.fileId !== fileId) return;
+      const host = document.getElementById('qa-comments');
+      if (host) host.innerHTML = errorStateHtml_('Could not load comments: ' + (err && err.message));
+    })
+    .qaListComments(fileId);
+}
+
+function qaRenderComments_() {
+  const host = document.getElementById('qa-comments');
+  if (!host) return;
+  if (!QA_STATE.comments.length) {
+    host.innerHTML = '<div class="qa-empty">No comments yet — play the recording and comment at the moments worth flagging.</div>';
+    return;
+  }
+  host.innerHTML = QA_STATE.comments.map(function (c) {
+    const canDelete = c.mine || QA_STATE.canModerate;
+    return '<div class="qa-comment-row">' +
+      '<button type="button" class="qa-time-chip" onclick="qaSeekTo_(' + Number(c.atSec) + ')">' + esc(qaFmtClock_(c.atSec)) + '</button>' +
+      '<div><div class="qa-comment-text">' + esc(c.text) + '</div>' +
+        '<div class="qa-comment-by">' + esc(c.name) + '</div></div>' +
+      (canDelete
+        ? '<button type="button" class="qa-del-btn" aria-label="Remove comment" onclick="qaDeleteComment_(\'' + esc(c.commentId) + '\')">×</button>'
+        : '<span></span>') +
+      '</div>';
+  }).join('');
+}
+
+function qaSubmitComment_() {
+  const r = QA_STATE.det;
+  const ta = document.getElementById('qa-comment-text');
+  if (!r || !ta) return;
+  const text = String(ta.value || '').trim();
+  if (!text) { showToast('Write a comment first.', 'toast-warn'); return; }
+  const audio = document.getElementById('qa-audio');
+  const atSec = audio ? (audio.currentTime || 0) : 0;
+  const btn = document.getElementById('qa-comment-btn');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Comment failed.', 'toast-error'); return; }
+      ta.value = '';
+      if (QA_STATE.det && QA_STATE.det.fileId === r.fileId) qaLoadComments_(r.fileId);
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Comment failed: ' + (err && err.message), 'toast-error');
+    })
+    .qaAddComment(r.fileId, atSec, text);
+}
+
+function qaDeleteComment_(commentId) {
+  const r = QA_STATE.det;
+  if (!r) return;
+  uiConfirm({ title: 'Remove comment', message: 'Remove this comment?', tone: 'danger', confirmLabel: 'Remove' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) { showToast((res && res.error) || 'Remove failed.', 'toast-error'); return; }
+          if (QA_STATE.det && QA_STATE.det.fileId === r.fileId) qaLoadComments_(r.fileId);
+        })
+        .withFailureHandler(function (err) { showToast('Remove failed: ' + (err && err.message), 'toast-error'); })
+        .qaDeleteComment(commentId);
+    });
+}
+
+// Keyboard shortcuts — active only in the open detail, never while typing
+// (the isContentEditable + tagName guard the shell's ? handler documents).
+var _qaKeysBound = false;
+function qaEnsureKeysBound_() {
+  if (_qaKeysBound) return;
+  _qaKeysBound = true;
+  document.addEventListener('keydown', function (e) {
+    if (currentView !== 'qaQueue' || !QA_STATE.det) return;
+    const ae = document.activeElement;
+    if (ae && (ae.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(ae.tagName) >= 0)) return;
+    const audio = document.getElementById('qa-audio');
+    if (!audio) return;
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (audio.paused) { try { audio.play(); } catch (err) {} } else audio.pause();
+    } else if (e.key === 'ArrowLeft') { e.preventDefault(); qaSeekBy_(-5); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); qaSeekBy_(5); }
+  });
+}
+</script>

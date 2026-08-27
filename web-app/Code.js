@@ -1248,6 +1248,10 @@ function getEmployeeState() {
       // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
       // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
       canSeeSpanish: canSeeSpanishInbox_(emp),
+      // QA module access — managers OR a QA_MEMBERS rep (the same pattern);
+      // gates the qaQueue tab. Agents stay outside in v1 (operator decision:
+      // they do not see their reviews yet).
+      canSeeQa: canSeeQa_(emp),
       // DeptRequests v2 — the rep's department memberships (canonical names);
       // gates the Dept Requests "Incoming" inbox section client-side.
       departments: empDepartments_(emp),
@@ -24882,4 +24886,444 @@ function importQuizFromForm(formRef) {
     if (title.length > 120) title = title.substring(0, 120);
     return { success: true, title: title, passPct: 80, questions: questions, warnings: warnings };
   } catch (err) { return { error: err.message }; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QA MODULE — Phase 1 (operator 2026-08-27): call-recording review queue.
+// Ingestion model (operator decision): the operator DROPS recordings into ONE
+// Drive folder (Script Property QA_RECORDINGS_FOLDER_ID); a manual Sync
+// indexes new audio files into a DEDICATED QA spreadsheet (QA_SS_ID — NO
+// fallback store, the HR_DOCS_SS_ID posture: recordings + review comments
+// plausibly reference agents AND patients, so they never co-locate with the
+// ADP/KB stores). Access (operator decision): QA reps + managers ONLY —
+// agents do NOT see their reviews in v1. The gate is canSeeQa_ (isManager OR
+// QA_MEMBERS — the canSeeSpanishInbox_ pattern, INV-31 family) and every
+// endpoint checks it BEFORE any store/Drive access.
+// Playback: audio bytes are served in base64 chunks through qaGetAudioChunk
+// (the kbGetImageData Drive boundary — the file must live IN the QA folder
+// before any bytes leave, because the app runs as the deployer) and the
+// client assembles them into a Blob URL. Timestamped comments live in a
+// QaComments tab (the KbComments shape + an AtSec anchor).
+// Shared-AuditLog rows are id/count-only — recording FILE NAMES can carry a
+// patient or agent name, so they stay in the QA store (the INV-32 rule).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const QA_RECORDINGS_TAB = 'QaRecordings';
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9 };
+const QA_COMMENTS_TAB = 'QaComments';
+const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
+const QAC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, AT_SEC: 4, TEXT: 5, CREATED_MS: 6, STATUS: 7 };
+const QA_STATUSES = ['new', 'in_review', 'done', 'skipped'];
+const QA_LIST_SCAN = 2000;            // bounded tail over QaRecordings
+const QA_LIST_CAP = 200;              // payload cap; pre-slice total reported (INV-169)
+const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments
+const QA_COMMENT_MAX_CHARS = 2000;
+const QA_COMMENT_MAX_AT_SEC = 86400;  // sanity bound on the timestamp anchor
+const QA_SYNC_MAX_FILES = 500;        // folder files SCANNED per sync run; truncated reported
+// 3 MB raw per chunk (~4 MB base64 on the wire) — a 15-min ~64kbps MP3 is
+// 2-3 chunks. DriveApp has no ranged reads, so each chunk call re-reads the
+// blob; the size cap bounds that.
+const QA_AUDIO_CHUNK_BYTES = 3145728;
+const QA_AUDIO_MAX_BYTES = 41943040;  // 40 MB — over it, the client offers the Drive link instead
+
+/** QA access predicate — managers OR a rep listed in QA_MEMBERS (the
+ *  canSeeSpanishInbox_ pattern). Agents are deliberately OUTSIDE the gate in
+ *  v1 (operator decision: they do not see their reviews yet). */
+function canSeeQa_(emp) {
+  if (!emp) return false;
+  if (emp.isManager) return true;
+  return !!getQaMembers_()[String(emp.email || '').trim().toLowerCase()];
+}
+function getQaMembers_() {
+  let raw = '';
+  try { raw = PropertiesService.getScriptProperties().getProperty('QA_MEMBERS') || ''; } catch (e) {}
+  const set = {};
+  raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
+  return set;
+}
+function qaFolderId_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty('QA_RECORDINGS_FOLDER_ID') || '').trim(); }
+  catch (e) { return ''; }
+}
+/** The dedicated QA store — NO fallback (the getHrDocsSS_ posture): an unset
+ *  property is a friendly not-configured error, never a silent write into the
+ *  ADP/KB sheets. */
+function getQaSS_() {
+  if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_QA_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('QA_SS_ID');
+  if (!id) throw new Error('QA is not configured — set Script Property QA_SS_ID to a dedicated spreadsheet.');
+  return SpreadsheetApp.openById(id);
+}
+function getOrCreateQaSheet_(tabName, headers, textCols) {
+  const ss = getQaSS_();
+  let sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    // Pin the free-text columns to PLAIN TEXT for all future rows — a file
+    // named "5-12 Maria.mp3"-less "5-12" or a comment starting "5/12" would
+    // otherwise coerce to a Date on read (the kbImportDataTable lesson:
+    // format FIRST, then write).
+    (textCols || []).forEach(function (col) { sheet.getRange(col + '2:' + col).setNumberFormat('@'); });
+  }
+  return sheet;
+}
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B']); }
+function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
+
+/** PURE: byte range of chunk `idx` of a `size`-byte file cut into
+ *  `chunkBytes` slices. null when the file is empty or idx is out of range —
+ *  the caller answers "Invalid chunk", never serves bytes it did not mean to. */
+function qaChunkRange_(size, idx, chunkBytes) {
+  size = Number(size); idx = Number(idx); chunkBytes = Number(chunkBytes);
+  if (!isFinite(size) || size <= 0 || !isFinite(chunkBytes) || chunkBytes <= 0) return null;
+  if (!isFinite(idx) || idx < 0 || idx !== Math.floor(idx)) return null;
+  const chunks = Math.ceil(size / chunkBytes);
+  if (idx >= chunks) return null;
+  const start = idx * chunkBytes;
+  return { start: start, end: Math.min(size, start + chunkBytes), chunks: chunks };
+}
+
+/** The review queue. Read-only; QA-gated. An unset QA_SS_ID returns a
+ *  notConfigured shape (setup instructions beat an error card on a fresh
+ *  deploy); a configured-but-unreachable store is a real error. */
+function getQaQueue() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    let storeSet = true;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const members = Object.keys(getQaMembers_()).sort();
+    const base = {
+      members: members, self: String(emp.email || '').trim().toLowerCase(),
+      isManager: !!emp.isManager, folderConfigured: !!qaFolderId_(),
+    };
+    if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; return base; }
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const last = sheet.getLastRow();
+    const items = [];
+    if (last >= 2) {
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        items.push({
+          fileId: fid,
+          name: String(rows[i][QAR.NAME] || ''),
+          sizeBytes: Number(rows[i][QAR.SIZE]) || 0,
+          mime: String(rows[i][QAR.MIME] || ''),
+          createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
+          status: qaStatus_(rows[i][QAR.STATUS]),
+          assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
+          url: String(rows[i][QAR.URL] || ''),
+          comments: 0,
+        });
+      }
+    }
+    // One bounded pass over QaComments for the per-recording ACTIVE counts.
+    try {
+      const cs = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
+      if (cs && cs.getLastRow() >= 2) {
+        const cLast = cs.getLastRow();
+        const cStart = Math.max(2, cLast - QA_COMMENTS_SCAN + 1);
+        const cRows = cs.getRange(cStart, 1, cLast - cStart + 1, QA_COMMENTS_HEADERS.length).getValues();
+        const counts = {};
+        for (let i = 0; i < cRows.length; i++) {
+          if (String(cRows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+          const fid = String(cRows[i][QAC.FILE_ID] || '');
+          counts[fid] = (counts[fid] || 0) + 1;
+        }
+        items.forEach(function (it) { it.comments = counts[it.fileId] || 0; });
+      }
+    } catch (e) { /* counts are decoration — the queue still renders */ }
+    items.sort(function (a, b) { return b.createdMs - a.createdMs; });
+    base.recordings = items.slice(0, QA_LIST_CAP);
+    base.total = items.length;
+    base.cap = QA_LIST_CAP;
+    return base;
+  } catch (err) { return { error: err.message }; }
+}
+function qaStatus_(cell) {
+  const s = String(cell || '').trim().toLowerCase();
+  return QA_STATUSES.indexOf(s) >= 0 ? s : 'new';
+}
+
+/** Index NEW audio files from the QA recordings Drive folder. QA-gated,
+ *  locked, IDEMPOTENT (known FileIds are skipped), bounded per run with the
+ *  truncation REPORTED (INV-169). Non-audio files are counted, never indexed.
+ *  The audit row carries COUNTS ONLY — file names stay in the QA store. */
+function qaSyncRecordings() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const folderId = qaFolderId_();
+    if (!folderId) return { success: false, error: 'The QA recordings folder is not configured — set Script Property QA_RECORDINGS_FOLDER_ID to the Drive folder recordings are dropped into.' };
+    let folder;
+    try { folder = DriveApp.getFolderById(folderId); }
+    catch (e) { return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' }; }
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const known = {};
+    const last = sheet.getLastRow();
+    if (last >= 2) {
+      sheet.getRange(2, QAR.FILE_ID + 1, last - 1, 1).getValues()
+        .forEach(function (r) { const id = String(r[0] || '').trim(); if (id) known[id] = true; });
+    }
+    const files = folder.getFiles();
+    let scanned = 0, added = 0, nonAudio = 0, truncated = false;
+    const rows = [];
+    while (files.hasNext()) {
+      if (scanned >= QA_SYNC_MAX_FILES) { truncated = true; break; }
+      const f = files.next(); scanned++;
+      const id = f.getId();
+      if (known[id]) continue;
+      const mime = String(f.getMimeType() || '').toLowerCase();
+      if (mime.indexOf('audio/') !== 0) { nonAudio++; continue; }
+      rows.push([
+        id, String(f.getName() || ''), f.getSize(), mime,
+        f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
+        'new', '', 0, String(f.getUrl() || ''),
+      ]);
+      added++;
+    }
+    if (rows.length) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, QA_RECORDINGS_HEADERS.length).setValues(rows);
+    }
+    writeAuditLog_(emp, 'QaSync', '', '', false, 0,
+      'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated, emp.email);
+    return { success: true, scanned: scanned, added: added, nonAudio: nonAudio, truncated: truncated };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Locate a recording's sheet row by FileId (bounded tail; LAST match wins —
+ *  the findExistingPunch_ agreement, though sync idempotence means duplicates
+ *  should not exist). Returns {rowIdx, row} or null. */
+function qaFindRecordingRow_(sheet, fileId) {
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const start = Math.max(2, last - QA_LIST_SCAN + 1);
+  const ids = sheet.getRange(start, QAR.FILE_ID + 1, last - start + 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0] || '').trim() !== fileId) continue;
+    const rowIdx = start + i;
+    return { rowIdx: rowIdx, row: sheet.getRange(rowIdx, 1, 1, QA_RECORDINGS_HEADERS.length).getValues()[0] };
+  }
+  return null;
+}
+
+/** Set a recording's review status. QA-gated, locked; status is enum-bounded
+ *  so a crafted call can never write garbage into the column (INV-37 spirit).
+ *  Audit row is id + status only (the status is an enum, never free text). */
+function qaSetRecordingStatus(fileId, status) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const st = String(status || '').trim().toLowerCase();
+    if (QA_STATUSES.indexOf(st) < 0) return { success: false, error: 'Unknown status.' };
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    sheet.getRange(found.rowIdx, QAR.STATUS + 1).setValue(st);
+    sheet.getRange(found.rowIdx, QAR.STATUS_MS + 1).setValue(Date.now());
+    writeAuditLog_(emp, 'QaStatusChange', '', '', false, 0, 'fileId=' + fid + '; status=' + st, emp.email);
+    return { success: true, status: st };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Assign / release a recording. The Spanish-claim rules (INV-31 round 2):
+ *  any QA member self-assigns; assigning someone ELSE is manager-only and the
+ *  target must be a configured member; a non-manager cannot take over another
+ *  member's live assignment; release is assignee-or-manager, idempotent. */
+function qaAssignRecording(fileId, assigneeEmail) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const self = String(emp.email || '').trim().toLowerCase();
+    const target = String(assigneeEmail || '').trim().toLowerCase();
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    const current = String(found.row[QAR.ASSIGNEE] || '').trim().toLowerCase();
+    if (!target) {                              // release
+      if (current && current !== self && !emp.isManager) {
+        return { success: false, error: 'Only the assignee or a manager can release this recording.' };
+      }
+      if (current) sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue('');
+      writeAuditLog_(emp, 'QaAssign', '', '', false, 0, 'fileId=' + fid + '; released', emp.email);
+      return { success: true, assignee: '' };
+    }
+    if (target !== self && !emp.isManager) {
+      return { success: false, error: 'Only a manager can assign someone else.' };
+    }
+    if (!(emp.isManager && target === self)) {
+      // The target must be someone who can actually SEE the queue (a manager
+      // self-assigning is the one exemption — managers pass canSeeQa_ without
+      // a QA_MEMBERS entry).
+      if (!getQaMembers_()[target]) {
+        return { success: false, error: 'That email is not in QA_MEMBERS — add them there first.' };
+      }
+    }
+    if (current && current !== self && !emp.isManager) {
+      return { success: false, error: 'This recording is already assigned — a manager can reassign it.' };
+    }
+    sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue(target);
+    writeAuditLog_(emp, 'QaAssign', '', '', false, 0, 'fileId=' + fid + '; assigned', emp.email);
+    return { success: true, assignee: target };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** One base64 chunk of a recording's bytes — the playback path. THE Drive
+ *  BOUNDARY (the kbGetImageData rule): the file's parents must include the
+ *  QA recordings folder BEFORE any bytes leave, because the app runs as the
+ *  deployer — without it, any QA member could read ANY Drive file the
+ *  deployer can open, by id. The size cap is checked from metadata BEFORE the
+ *  blob is read; an over-cap file names the Drive fallback instead. */
+function qaGetAudioChunk(fileId, chunkIndex) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{10,}$/.test(fid)) return { error: 'Recording not found.' };
+    const folderId = qaFolderId_();
+    if (!folderId) return { error: 'The QA recordings folder is not configured (Script Property QA_RECORDINGS_FOLDER_ID).' };
+    let file;
+    try { file = DriveApp.getFileById(fid); }
+    catch (e) { return { error: 'Recording not found.' }; }
+    let inFolder = false;
+    const parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === folderId) { inFolder = true; break; }
+    }
+    if (!inFolder) return { error: 'Recording not found.' };
+    const size = file.getSize();
+    if (size > QA_AUDIO_MAX_BYTES) {
+      return {
+        error: 'This recording is ' + Math.round(size / 1048576) + ' MB — over the ' +
+          Math.round(QA_AUDIO_MAX_BYTES / 1048576) + ' MB in-app playback cap. Open it in Drive instead.',
+        oversize: true,
+      };
+    }
+    const mime = String(file.getMimeType() || '').toLowerCase();
+    if (mime.indexOf('audio/') !== 0) return { error: 'Not an audio file.' };
+    const range = qaChunkRange_(size, chunkIndex, QA_AUDIO_CHUNK_BYTES);
+    if (!range) return { error: 'Invalid chunk.' };
+    const bytes = file.getBlob().getBytes();
+    return {
+      success: true,
+      b64: Utilities.base64Encode(bytes.slice(range.start, range.end)),
+      chunkIndex: Math.floor(Number(chunkIndex)), chunks: range.chunks,
+      size: size, mime: mime,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** A recording's ACTIVE timestamped comments, by timeline position. */
+function qaListComments(fileId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const ss = getQaSS_();
+    const sheet = ss.getSheetByName(QA_COMMENTS_TAB);
+    if (!fid || !sheet || sheet.getLastRow() < 2) return { comments: [], canModerate: !!emp.isManager };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - QA_COMMENTS_SCAN + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, QA_COMMENTS_HEADERS.length).getValues();
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][QAC.FILE_ID] || '') !== fid) continue;
+      if (String(rows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+      out.push({
+        commentId: String(rows[i][QAC.ID] || ''),
+        empId: String(rows[i][QAC.EMP_ID] || ''),
+        name: String(rows[i][QAC.EMP_NAME] || ''),
+        atSec: Number(rows[i][QAC.AT_SEC]) || 0,
+        text: String(rows[i][QAC.TEXT] || ''),
+        createdMs: Number(rows[i][QAC.CREATED_MS]) || 0,
+        mine: String(rows[i][QAC.EMP_ID] || '') === String(emp.id),
+      });
+    }
+    out.sort(function (a, b) { return a.atSec - b.atSec; });
+    return { comments: out, canModerate: !!emp.isManager };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Add a timestamped comment. QA-gated (NOT merely employee — review notes
+ *  are QA/HR-adjacent), locked, target-must-exist (a junk fileId cannot seed
+ *  rows — the IntakeFeedback posture), over-cap REFUSES. The audit row is
+ *  id-only: comment text may name a patient, so it stays in the QA store. */
+function qaAddComment(fileId, atSec, text) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    if (!fid) return { success: false, error: 'Missing recording id.' };
+    const at = Math.round(Number(atSec) * 10) / 10;
+    if (!isFinite(at) || at < 0 || at > QA_COMMENT_MAX_AT_SEC) return { success: false, error: 'Bad timestamp.' };
+    const t = String(text || '').trim();
+    if (!t) return { success: false, error: 'Write a comment first.' };
+    if (t.length > QA_COMMENT_MAX_CHARS) {
+      return { success: false, error: 'Comments are capped at ' + QA_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and post again.' };
+    }
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const commentId = Utilities.getUuid();
+    getOrCreateQaCommentsSheet_().appendRow([
+      commentId, fid, emp.id, emp.name, at, t, Date.now(), 'active',   // AtSec/CreatedMs: NUMBER cells
+    ]);
+    writeAuditLog_(emp, 'QaCommentAdd', '', '', false, 0, 'fileId=' + fid + '; commentId=' + commentId, emp.email);
+    return { success: true, commentId: commentId, atSec: at };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Soft-delete a comment — its AUTHOR or a manager (the kbDeleteComment
+ *  shape: rows are never removed, Status flips to 'deleted'). */
+function qaDeleteComment(commentId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const wanted = String(commentId || '').trim();
+    if (!wanted) return { success: false, error: 'Missing comment id.' };
+    const sheet = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
+    const last = sheet.getLastRow();
+    const start = Math.max(2, last - QA_COMMENTS_SCAN + 1);
+    const ids = sheet.getRange(start, QAC.ID + 1, last - start + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') !== wanted) continue;
+      const rowIdx = start + i;
+      const row = sheet.getRange(rowIdx, 1, 1, QA_COMMENTS_HEADERS.length).getValues()[0];
+      if (String(row[QAC.STATUS] || '').trim().toLowerCase() !== 'active') return { success: true, already: true };
+      if (String(row[QAC.EMP_ID] || '') !== String(emp.id) && !emp.isManager) {
+        return { success: false, error: 'Only the comment\'s author or a manager can remove it.' };
+      }
+      sheet.getRange(rowIdx, QAC.STATUS + 1).setValue('deleted');
+      writeAuditLog_(emp, 'QaCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Comment not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }

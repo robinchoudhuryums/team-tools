@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 660 + DOM 82;
-  visual matrix on demand — 49 scenarios, last full shoot 2026-08-26 clean)
+Test Command: manual (Node harnesses: `npm test` = pure 667 + DOM 82;
+  visual matrix on demand — 51 scenarios, last full shoot 2026-08-27 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -327,12 +327,32 @@ real Intl oracle + PTA-3 wiring + a derived normalizeDate_-over-DATE_LOCAL
 ban; B6 rewritten in place; 4 mutations / 4 bites). Ships in the same
 pending deploy.
 
+NEWEST OF ALL #2 (2026-08-27, QA MODULE PHASE 1 — operator /broad-implement
+after the Part A deploy): the new QA tool (eighth in the registry) — a
+call-recording review queue for the QA rep(s). Both locked operator
+decisions honored: Drive-drop ingestion (QA_RECORDINGS_FOLDER_ID + a manual
+idempotent Sync) and agents OUTSIDE the gate in v1 (canSeeQa_ = managers +
+QA_MEMBERS, a THIRD gate tier 'QA access required.'; the also:'canSeeQa'
+tab flag + view-as personas hide the tool client-side). Dedicated QA_SS_ID
+store (NO fallback — HR posture), chunked audio playback through the
+kbGetImageData Drive boundary (folder parentage before bytes; >40MB names
+the Drive link), timestamped comments with click-to-seek timeline markers.
+Block `.cycle/blocks/19pre-qa-phase1-broad-implement.md`. Pure 660→667
+(QA-1..6 + the auto-added parse-guard test; 6 mutations / 6 bites, TWO pins
+strengthened when their first bite exposed them), DOM 82, matrix 49→51
+(qa-queue wide+mobile, 0 missing / 0 overflow, eyeballed). Editor +1
+(qa_gates_rejectNonMember) ≈ 311 — post-deploy runAllTests expects 295.
+INV-196 + S90 + the QA operator-state entry (QA_SS_ID /
+QA_RECORDINGS_FOLDER_ID / QA_MEMBERS) written. Phase 2 (waveform,
+scorecards, per-agent stats) and Phase 3 (sampling, calibration,
+agent-facing reviews) scoped, unbuilt.
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
      still-undeployed PR #176 + #177 from cycle 18.
-  2. `runAllTests()` in the editor — expect **294/294** (the beacon case
-     joined after the gate fixes landed).
+  2. `runAllTests()` in the editor — expect **295/295** (the beacon +
+     QA-gate cases joined after the gate fixes landed).
   3. Import the payor CSV — now doable IN-APP via Manage → Admin → Config →
      **Reference data tables** (previews first; dryRun defaults TRUE), so
      the manual File → Import → rename-to-`InsurancePayors` is optional.
@@ -347,6 +367,10 @@ THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
      your wall-clock time; have a PH agent confirm a fresh note appears in
      today's Log immediately. Historical notes' displayed times
      self-correct on the same deploy — nothing to re-enter.
+  7. QA setup (Phase 1): set QA_SS_ID (fresh dedicated spreadsheet),
+     QA_RECORDINGS_FOLDER_ID (the Drive drop folder, readable by the
+     deployer) and QA_MEMBERS (the QA rep emails); then drop one recording,
+     Sync, play it, comment at a timestamp (the S90 walk).
 
 BLOCKED ON THE OPERATOR: batch 7 (structured intake feedback). Free-text
 recipient feedback already shipped 2026-08-13, so only build field-level
