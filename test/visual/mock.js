@@ -926,6 +926,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
               note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
+          store('QA (recordings)', 'QaRecordings index + QaComments + QaScorecards', 'QA/HR-adjacent',
+            'Review-record purge disabled (QA_REVIEW_RETENTION_DAYS unset/0) — review records kept', 'QA_SS_ID'),
           {
             label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge',
             prop: 'Employees col L (CallNotesSheetId)', source: 'roster', note: '', configured: true, reachable: true,

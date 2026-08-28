@@ -13922,6 +13922,74 @@ test('PERF: Training + Manage SWR — paint-last-good, refresh behind pill, guar
     'argless post-mutation callers keep the unconditional re-render');
 });
 
+test('TN-SWR: Team Notes queues + stats — paint-last-good, clean-round-only cache, key-exact writes, failure split', () => {
+  // The operator's 2026-08-28 #3 follow-up ("check Team Notes next") — the
+  // two queue fetches + the stats fetch are cross-rep Sheet walks that
+  // re-ran with a skeleton on every enter and sub-tab switch.
+  const q = extractFunction('cn/script_callnotes.html', 'cnMgrLoadQueue_');
+  // (a) Paint from the per-kind session cache + pill; skeleton only cold.
+  assert.ok(/CN_STATE\.mgrQueueCache\[kind\]/.test(q) && /viewRefreshingPill_\(true\)/.test(q),
+    'a warm kind paints instantly and shows the refreshing pill');
+  assert.ok(/host\.innerHTML = loSkeleton\(4\)/.test(q), 'a cold kind keeps the skeleton');
+  // (b) The cache write is CLEAN-ROUND-ONLY (INV-129/187 — an {error} or a
+  // partial round with skippedReps must never be the instant paint a
+  // manager reads as the queue) and lands BEFORE the seq/view check
+  // (INV-156 — a stale response warms its own key; only the render drops).
+  const wIdx = q.indexOf("if (res && !res.error && !(res.skippedReps || []).length)");
+  const gIdx = q.indexOf('CN_STATE.mgrSubSeq !== requestedSub');
+  assert.ok(wIdx > -1 && gIdx > wIdx, 'clean-only cache write precedes the seq check');
+  // (c) C17-5 failure split on BOTH shapes: painted → warn toast keeps the
+  // last-good queue; cold → errorStateHtml_. Two res.error/transport sites.
+  assert.ok((q.match(/Could not refresh the queue/g) || []).length === 2,
+    'painted refresh failures degrade to a warn toast on both the {error} and transport shapes');
+  assert.ok((q.match(/errorStateHtml_\(/g) || []).length === 2, 'cold failures keep the error card');
+  // (d) Stats: the cache is KEY-EXACT PER DATE, clean = no notesUnavailable
+  // rep (a degraded round renders but never warms the cache), written to
+  // requestedDate — the date the response answers, not whatever the picker
+  // says by the time it lands.
+  const st = extractFunction('cn/script_callnotes.html', 'cnMgrLoadStats_');
+  assert.ok(/CN_STATE\.mgrStatsCache\[CN_STATE\.mgrStatsDate\]/.test(st) &&
+            /CN_STATE\.mgrStatsCache\[requestedDate\] = res/.test(st),
+    'per-date cache: painted from the CURRENT date, written to the REQUESTED date');
+  assert.ok(/notesUnavailable/.test(st), 'a round with any unreadable rep Sheet never warms the cache');
+  assert.ok((st.match(/Could not refresh stats/g) || []).length === 2 &&
+            (st.match(/errorStateHtml_\(/g) || []).length === 2,
+    'the same painted/cold failure split as the queues');
+  // (e) Per-Rep + Search stay COLD by design — bounded single-rep reads /
+  // on-demand queries, not the reported slowness; neither touches the
+  // caches or the pill.
+  const rep = extractFunction('cn/script_callnotes.html', 'cnMgrLoadRepNotes_');
+  const srch = extractFunction('cn/script_callnotes.html', 'cnMgrLoadSearchView_');
+  assert.ok(!/mgrQueueCache|mgrStatsCache|viewRefreshingPill_/.test(rep + srch),
+    'Per-Rep + Search are deliberately outside the SWR caches');
+});
+
+test('SH-QA: Storage Health carries the QA store with the LIVE retention window', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'getStorageHealth'));
+  // (a) The QA row exists and its retention field is BUILT from the live
+  // window getter — both branches present, so an enabled purge is visible
+  // where every other store's policy already is, and the never-touched
+  // clause travels with the enabled text (INV-196).
+  assert.ok(/label: 'QA \(recordings\)'/.test(f) && /prop: 'QA_SS_ID'/.test(f), 'the QA store row exists');
+  assert.ok(/qaReviewRetentionDays_\(\)/.test(f), 'retention reflects the LIVE window, never a hardcoded string');
+  assert.ok(/Review-record purge ENABLED — ' \+ qaDays \+ ' days/.test(f) &&
+            /recordings index \+ Drive files never touched/.test(f),
+    'the enabled branch names the window AND the never-purged half');
+  assert.ok(/Review-record purge disabled/.test(f), 'the disabled branch states the default');
+  assert.ok(/no fallback store, by design — INV-196/.test(f), 'the unset note names the posture');
+  // (b) The client's not-set pill reads QA as a FACT (muted), not a warning
+  // — the no-fallback-by-design set (External / HR / QA).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\/Employee Docs\|\^QA \/\.test\(s\.label\)/.test(cn),
+    "the storage panel's muted not-set set includes the QA store");
+  // (c) The visual fixture carries the row (INV-185 — the admin scenario
+  // renders the panel, so a missing fixture row hides the line on camera).
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/store\('QA \(recordings\)'/.test(mock) && /'QA_SS_ID'\)/.test(mock),
+    'the getStorageHealth fixture carries the QA row');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

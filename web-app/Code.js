@@ -6972,6 +6972,21 @@ function getStorageHealth(opts) {
       source: hrProp ? 'Script Property' : 'unset',
       note: hrProp ? '' : 'Unset → Employee Docs is disabled (no fallback store, by design — INV-122).' }));
 
+    // QA (recordings) store — operator 2026-08-28 #3: the retention field
+    // reflects the LIVE review-record window (qaReviewRetentionDays_), so an
+    // enabled purge is visible where every other store's policy already is.
+    // Review RECORDS only — the QaRecordings index + Drive audio files are
+    // never purged (INV-196).
+    const qaProp = props.getProperty('QA_SS_ID');
+    const qaDays = qaReviewRetentionDays_();
+    stores.push(probe({ label: 'QA (recordings)', role: 'QaRecordings index + QaComments + QaScorecards',
+      cls: 'QA/HR-adjacent', prop: 'QA_SS_ID', id: qaProp || '',
+      retention: qaDays > 0
+        ? ('Review-record purge ENABLED — ' + qaDays + ' days (QaComments + QaScorecards only; recordings index + Drive files never touched)')
+        : 'Review-record purge disabled (QA_REVIEW_RETENTION_DAYS unset/0) — review records kept',
+      source: qaProp ? 'Script Property' : 'unset',
+      note: qaProp ? '' : 'Unset → the QA tool shows its not-configured screen (no fallback store, by design — INV-196).' }));
+
     // Per-rep Call Notes Sheets — probe each enrolled rep (the established
     // cross-rep walk cost, e.g. managerGetUnresolvedActionCount). Summarize
     // reachability + tz drift; list up to 20 problem Sheets.

@@ -7417,7 +7417,22 @@ function cnMgrLoadQueue_(kind) {
       if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
-  if (host) host.innerHTML = loSkeleton(4);
+  // SWR (operator 2026-08-28 "check Team Notes next"): both queue fetches are
+  // cross-rep Sheet walks — the heaviest CN manager reads — and re-ran with a
+  // skeleton on EVERY enter and tab switch. The last CLEAN round per kind
+  // persists in CN_STATE.mgrQueueCache for the session, so a re-enter paints
+  // it instantly and refreshes behind the pill (the Training/Manage pattern).
+  // Partial rounds (skippedReps) render but never warm the cache (INV-129).
+  CN_STATE.mgrQueueCache = CN_STATE.mgrQueueCache || {};
+  const cached = CN_STATE.mgrQueueCache[kind];
+  let painted = false;
+  if (host && cached) {
+    cnMgrRenderQueue_(host, cached.results || []);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  } else if (host) {
+    host.innerHTML = loSkeleton(4);
+  }
   // F(M-8): all five Team Notes sub-tabs share the view key + #cn-mgr-results,
   // so the requestedView guard alone can't stop a late queue response from
   // overwriting a sub-tab the manager just switched to (tab bar highlighted
@@ -7426,17 +7441,32 @@ function cnMgrLoadQueue_(kind) {
   const requestedView = currentView;
   const requestedSub = CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;
   const fn = kind === 'training' ? 'managerGetTrainingQueue' : 'managerGetReviewCandidates';
+  const pillOff = function () { if (painted && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (res) {
+      // Cache write is KEY-EXACT and lands before the seq check (INV-156 —
+      // a stale response warms its own key; only the render is dropped).
+      // Only a CLEAN round is cached: an {error} or partial round must never
+      // be the instant paint a manager reads as the queue (INV-129/187).
+      if (res && !res.error && !(res.skippedReps || []).length) {
+        CN_STATE.mgrQueueCache[kind] = res;
+      }
+      pillOff();
       if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
       const liveHost = document.getElementById('cn-mgr-results');
       if (!liveHost) return;
-      if (res.error) { liveHost.innerHTML = errorStateHtml_(res.error); return; }
+      if (res.error) {
+        // C17-5 split: a failed REFRESH keeps the painted last-good queue.
+        if (painted) { showToast('Could not refresh the queue: ' + res.error, 'toast-warn'); return; }
+        liveHost.innerHTML = errorStateHtml_(res.error); return;
+      }
       cnMgrRenderQueue_(liveHost, res.results || []);
       liveHost.insertAdjacentHTML('afterbegin', cnSkippedRepsNoteHtml_(res.skippedReps));
     })
     .withFailureHandler(function (err) {
+      pillOff();
       if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
+      if (painted) { showToast('Could not refresh the queue: ' + ((err && err.message) || err), 'toast-warn'); return; }
       const liveHost = document.getElementById('cn-mgr-results');
       if (liveHost) liveHost.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })[fn]();
@@ -7841,20 +7871,48 @@ function cnMgrStatsDateChanged_(d) {
 function cnMgrLoadStats_() {
   const body = document.getElementById('cn-mgr-stats-body');
   if (!body) return;
-  body.innerHTML = loSkeleton(4);
+  // SWR (operator 2026-08-28): managerGetShiftStats is another cross-rep walk.
+  // The last CLEAN round per DATE persists for the session (key-exact — a
+  // warm date paints instantly on re-enter or a date flip back; a cold date
+  // keeps the skeleton). A round with any notesUnavailable rep renders but
+  // never warms the cache (INV-129 — a degraded round must not be the
+  // instant paint).
+  CN_STATE.mgrStatsCache = CN_STATE.mgrStatsCache || {};
+  const cachedStats = CN_STATE.mgrStatsCache[CN_STATE.mgrStatsDate];
+  let painted = false;
+  if (cachedStats) {
+    cnMgrRenderStats_(body, cachedStats);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  } else {
+    body.innerHTML = loSkeleton(4);
+  }
   const requestedView = currentView;
   const requestedDate = CN_STATE.mgrStatsDate;
+  const pillOff = function () { if (painted && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (res) {
+      // Key-exact cache write before the guards (INV-156): a stale-date
+      // response warms ITS date; only the render is dropped.
+      if (res && !res.error && !((res.reps || []).some(function (r) { return r.notesUnavailable; }))) {
+        CN_STATE.mgrStatsCache[requestedDate] = res;
+      }
+      pillOff();
       if (currentView !== requestedView) return;
       if (CN_STATE.mgrStatsDate !== requestedDate) return;
       const liveBody = document.getElementById('cn-mgr-stats-body');
       if (!liveBody) return;
-      if (res.error) { liveBody.innerHTML = errorStateHtml_(res.error); return; }
+      if (res.error) {
+        if (painted) { showToast('Could not refresh stats: ' + res.error, 'toast-warn'); return; }
+        liveBody.innerHTML = errorStateHtml_(res.error); return;
+      }
       cnMgrRenderStats_(liveBody, res);
     })
     .withFailureHandler(function (err) {
+      pillOff();
       if (currentView !== requestedView) return;
+      if (CN_STATE.mgrStatsDate !== requestedDate) return;
+      if (painted) { showToast('Could not refresh stats: ' + ((err && err.message) || err), 'toast-warn'); return; }
       const liveBody = document.getElementById('cn-mgr-stats-body');
       if (liveBody) liveBody.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })
@@ -9761,7 +9819,9 @@ function cnRenderStoragePanel_(res) {
   var rows = stores.map(function (s) {
     // Status pill
     var statusPill;
-    if (!s.configured) statusPill = pill('not set', s.cls === 'External' || /Employee Docs/.test(s.label) ? 'muted' : 'warn');
+    // No-fallback-by-design stores (External read-only, HR, QA — INV-122/196)
+    // read 'not set' as a fact, not a warning; the fallback-prone ones warn.
+    if (!s.configured) statusPill = pill('not set', s.cls === 'External' || /Employee Docs|^QA /.test(s.label) ? 'muted' : 'warn');
     else if (s.reachable === false) statusPill = pill('unreachable', 'crit');
     else statusPill = pill('ok', 'ok');
     // tz pill
