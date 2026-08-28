@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 686 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 688 + DOM 82;
   visual matrix on demand — 54 scenarios, last full shoot 2026-08-28 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -488,6 +488,32 @@ the derived trigger nets when purgeOldQaReviews entered TARGETS — INV-179
 expects **296** (triggerGate_qaReviewPurge_nonManagerThrows). Operator:
 re-run installAutomationTriggers() once (the 18th trigger — harmless
 while the window is 0).
+
+NEWEST OF ALL #8 (2026-08-28 #3, operator "check Team Notes for
+optimization next; the Storage Health QA line can be enabled" — block
+`.cycle/blocks/19pre-teamnotes-swr-storagehealth-broad-implement.md`):
+(a) TEAM NOTES CHECKED: the shell already painted synchronously and
+mgrEnrolledReps was session-cached, but the two QUEUE fetches
+(managerGetTrainingQueue/ReviewCandidates — cross-rep Sheet walks, the
+heaviest CN manager reads) and the STATS fetch (managerGetShiftStats,
+another cross-rep walk) re-ran with a skeleton on EVERY enter and tab
+switch. FIXED with the same session-state SWR: cnMgrLoadQueue_ paints
+CN_STATE.mgrQueueCache[kind] + pill, cnMgrLoadStats_ paints the per-DATE
+CN_STATE.mgrStatsCache entry; cache writes are key-exact and land BEFORE
+the mgrSubSeq check (INV-156) and CLEAN-round-only (an {error} or
+skippedReps/notesUnavailable round renders but never becomes the instant
+paint — INV-129/187); the C17-5 painted/cold failure split on both
+shapes; Per-Rep + Search stay cold by design (bounded single-rep read /
+on-demand query) and the pin asserts them OUTSIDE the caches.
+(b) STORAGE HEALTH QA LINE (operator-approved): getStorageHealth gains
+the QA (recordings) store row — retention BUILT from the live
+qaReviewRetentionDays_() ("ENABLED — N days … recordings index + Drive
+files never touched" / the disabled default), muted not-set pill (the
+no-fallback-by-design tone, INV-196), fixture row per INV-185, and
+deployReadinessItems_ picks it up generically (unset → the optional
+warn, like HR). Pure 686→688 (TN-SWR + SH-QA; 5 mutations / 5 bites),
+DOM 82, matrix 54 (admin scenario renders the new row in place), editor
+≈312 — post-deploy runAllTests still expects 296.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
