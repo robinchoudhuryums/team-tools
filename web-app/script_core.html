@@ -154,7 +154,12 @@ const TOOLS = {
       // tab is UNGATED, so the QA tool now appears for EVERY rep with just
       // this tab (enterTool bumps the gated defaultTab to it). An agent sees
       // ONLY reviews explicitly shared with them (server-scoped).
-      qaMyReviews: { label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView' },
+      // Phase 3 shipped this UNGATED (the tab that made QA visible to every
+      // rep); operator 2026-08-28: hide the tool from non-QA reps FOR NOW —
+      // same gate as the reviewer tabs. Re-opening agent visibility is this
+      // one line (drop managerOnly/also); the server read stays
+      // employee-gated + share-scoped either way.
+      qaMyReviews: { label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView', managerOnly: true, also: 'canSeeQa' },
     },
   },
   // Manage — the consolidated manager/admin home. Tabs are MOVED here from their

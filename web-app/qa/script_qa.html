@@ -142,6 +142,8 @@ var QA_STATE = {
   scoreNotes: '',
   statsSeq: 0,          // qaStats-load seq guard
   myRevSeq: 0,          // Phase 3 — My Reviews load seq guard
+  myRevAudioSeq: 0,     // follow-on — shared-review playback seq guard (one active load)
+  myRevObjectUrl: null, // follow-on — the shared-review Blob URL (revoked on replace)
 };
 
 function enterQaQueueView() {
@@ -1081,6 +1083,8 @@ function enterQaMyReviewsView() {
   if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
   QA_STATE.det = null;
   qaReleaseAudio_();
+  QA_STATE.myRevAudioSeq++;   // orphan any in-flight shared-review load
+  if (QA_STATE.myRevObjectUrl) { try { URL.revokeObjectURL(QA_STATE.myRevObjectUrl); } catch (e) {} QA_STATE.myRevObjectUrl = null; }
   const area = document.getElementById('view-area');
   renderLoading(area, 'Loading your reviews…', 'thumbsUp');
   const requestedView = currentView;
@@ -1118,6 +1122,13 @@ function qaRenderMyReviews_(d) {
         '<span class="qa-myrev-name">' + esc(r.name || r.fileId) + '</span>' +
         '<span class="qa-note" style="margin:0">' + (when ? 'call ' + esc(when) + ' · ' : '') + 'shared ' + esc(shared) + '</span>' +
       '</div>' +
+      // Follow-on (2026-08-28): playback of the SHARED recording through the
+      // SCOPED endpoint (getMyQaReviewAudioChunk — never the reviewer-gated
+      // qaGetAudioChunk). fileId is Drive-shaped ([A-Za-z0-9_-]); esc is
+      // defensive.
+      '<div class="qa-myrev-audio" id="qa-mra-' + esc(r.fileId) + '" style="margin:4px 0 8px">' +
+        '<button type="button" class="qa-btn" onclick="qaMyRevPlay_(\'' + esc(r.fileId) + '\')">' + icon('headset', 14) + ' Play recording</button>' +
+      '</div>' +
       ((r.scorecards || []).length
         ? qaScorecardListHtml_(r.scorecards, d.criteria)
         : '<div class="qa-note">No scorecard yet.</div>');
@@ -1135,6 +1146,57 @@ function qaRenderMyReviews_(d) {
   });
   html += '<div class="qa-note">Read-only — talk to your manager about anything here. Timestamps refer to positions in the call recording.</div>';
   area.innerHTML = html;
+}
+
+// Follow-on (2026-08-28) — per-card playback of a SHARED review. One active
+// load at a time: a second Play (or a nav re-enter) bumps myRevAudioSeq and
+// orphans the first (INV-156); the replaced Blob URL is revoked. Failures
+// render the error card WITHOUT a Drive link — the agent has no Drive access
+// to the deployer's recordings folder, so offering one would be a dead link.
+function qaMyRevPlay_(fileId) {
+  const mySeq = ++QA_STATE.myRevAudioSeq;
+  const slot = document.getElementById('qa-mra-' + fileId);
+  if (!slot) return;
+  slot.innerHTML = '<div class="qa-note" style="margin:0">Loading audio…</div>';
+  const parts = [];
+  function fail(msg) {
+    if (QA_STATE.myRevAudioSeq !== mySeq) return;
+    const el = document.getElementById('qa-mra-' + fileId);
+    if (el) el.innerHTML = errorStateHtml_(msg || 'Could not load the audio.');
+  }
+  function fetchChunk(i) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (QA_STATE.myRevAudioSeq !== mySeq) return;   // stale — another card played (INV-156)
+        if (!r || r.error || !r.success) { fail(r && r.error); return; }
+        parts[r.chunkIndex] = r.b64;
+        if (i + 1 < r.chunks) {
+          const el = document.getElementById('qa-mra-' + fileId);
+          if (el) el.innerHTML = '<div class="qa-note" style="margin:0">Loading audio — part ' + Math.min(i + 2, r.chunks) + ' of ' + r.chunks + '…</div>';
+          fetchChunk(i + 1);
+          return;
+        }
+        try {
+          const bins = parts.map(function (b64) {
+            const s = atob(b64 || '');
+            const u = new Uint8Array(s.length);
+            for (let k = 0; k < s.length; k++) u[k] = s.charCodeAt(k);
+            return u;
+          });
+          const blob = new Blob(bins, { type: r.mime || 'audio/mpeg' });
+          if (QA_STATE.myRevAudioSeq !== mySeq) return;
+          if (QA_STATE.myRevObjectUrl) { try { URL.revokeObjectURL(QA_STATE.myRevObjectUrl); } catch (e) {} }
+          QA_STATE.myRevObjectUrl = URL.createObjectURL(blob);
+          const el = document.getElementById('qa-mra-' + fileId);
+          if (!el) return;
+          el.innerHTML = '<audio controls preload="metadata" aria-label="Shared call recording player" style="width:100%;max-width:520px"></audio>';
+          el.querySelector('audio').src = QA_STATE.myRevObjectUrl;
+        } catch (e) { fail('Could not decode the audio: ' + e.message); }
+      })
+      .withFailureHandler(function (err) { fail('Could not load the audio: ' + (err && err.message)); })
+      .getMyQaReviewAudioChunk(fileId, i);
+  }
+  fetchChunk(0);
 }
 
 // Keyboard shortcuts — active only in the open detail, never while typing
