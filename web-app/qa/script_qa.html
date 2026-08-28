@@ -730,8 +730,13 @@ function qaTryWaveform_(bytes, mySeq) {
 }
 
 function qaDrawWave_(playedFrac) {
-  const wave = document.getElementById('qa-wave');
-  const peaks = QA_STATE.peaks;
+  qaDrawWaveOn_(document.getElementById('qa-wave'), QA_STATE.peaks, playedFrac);
+}
+
+// Shared painter (follow-on 2026-08-28) — the detail's #qa-wave and the
+// My Reviews per-card canvases render through this ONE body, so the two
+// waveforms cannot drift (the qaScorecardListHtml_ discipline).
+function qaDrawWaveOn_(wave, peaks, playedFrac) {
   if (!wave || !peaks || !peaks.length) return;
   try {
     if (wave.clientWidth > 0 && wave.width !== wave.clientWidth) wave.width = wave.clientWidth;
@@ -1191,12 +1196,62 @@ function qaMyRevPlay_(fileId) {
           if (!el) return;
           el.innerHTML = '<audio controls preload="metadata" aria-label="Shared call recording player" style="width:100%;max-width:520px"></audio>';
           el.querySelector('audio').src = QA_STATE.myRevObjectUrl;
+          // Follow-on (2026-08-28): the detail's Phase-2 waveform chrome on
+          // the agent player — strictly DECORATION (size gate; every failure
+          // leaves the plain audio element), with click-to-seek and a
+          // played-portion tint driven by this card's own audio element.
+          try { qaMyRevWave_(el, bins, mySeq); } catch (e) { /* decoration only */ }
         } catch (e) { fail('Could not decode the audio: ' + e.message); }
       })
       .withFailureHandler(function (err) { fail('Could not load the audio: ' + (err && err.message)); })
       .getMyQaReviewAudioChunk(fileId, i);
   }
   fetchChunk(0);
+}
+
+// Waveform + click-to-seek for a My Reviews card (follow-on 2026-08-28) —
+// the low-rate decode the detail uses, painted through the SHARED
+// qaDrawWaveOn_. Decoration throughout: the size gate, an undecodable
+// format, or any throw leaves the plain audio element working.
+function qaMyRevWave_(cardEl, bins, mySeq) {
+  let total = 0;
+  bins.forEach(function (u) { total += u.length; });
+  if (!(total > 0 && total <= QA_WAVE_MAX_BYTES)) return;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC) return;
+  const all = new Uint8Array(total);
+  let off = 0;
+  bins.forEach(function (u) { all.set(u, off); off += u.length; });
+  const ctx = new OAC(1, 8000, 8000);
+  ctx.decodeAudioData(all.buffer, function (decoded) {
+    try {
+      if (QA_STATE.myRevAudioSeq !== mySeq) return;   // another card played (INV-156)
+      const peaks = qaPeaks_(decoded.getChannelData(0), QA_WAVE_BUCKETS);
+      decoded = null;   // free the PCM once the peaks exist
+      const audio = cardEl.querySelector('audio');
+      if (!audio || !peaks.length) return;
+      const wave = document.createElement('canvas');
+      wave.className = 'qa-wave';
+      wave.height = 64;
+      wave.setAttribute('aria-hidden', 'true');   // decoration — the audio element is the control
+      cardEl.insertBefore(wave, audio);
+      qaDrawWaveOn_(wave, peaks, 0);
+      wave.addEventListener('click', function (ev) {
+        try {
+          const rect = wave.getBoundingClientRect();
+          if (!(rect.width > 0) || !isFinite(audio.duration) || !(audio.duration > 0)) return;
+          audio.currentTime = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * audio.duration;
+        } catch (e) { /* decoration only */ }
+      });
+      audio.addEventListener('timeupdate', function () {
+        try {
+          if (isFinite(audio.duration) && audio.duration > 0) {
+            qaDrawWaveOn_(wave, peaks, audio.currentTime / audio.duration);
+          }
+        } catch (e) { /* decoration only */ }
+      });
+    } catch (e) { /* decoration only */ }
+  }, function () { /* undecodable for the waveform — playback is unaffected */ });
 }
 
 // Keyboard shortcuts — active only in the open detail, never while typing
