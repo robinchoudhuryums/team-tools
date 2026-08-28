@@ -6,8 +6,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts seven tools today, registered side-by-side in the `TOOLS`
-  registry in `script_core.html` — the six feature modules below plus
+  Hosts eight tools today, registered side-by-side in the `TOOLS`
+  registry in `script_core.html` — the seven feature modules below plus
   **Manage**, the consolidated manager/admin home (Manage Time,
   Coverage, Punctuality, and an admin-only Admin tab — config,
   system health, compliance audit, and team-member onboarding:
@@ -91,6 +91,22 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (severity-graded, rep-acknowledged) with a team-scoped manager
     dashboard and analytics (ack-rate, median time-to-acknowledge,
     overdue, per-rep) — kept in the same HR store, never purged.
+  - **QA** — call-recording review for managers plus listed QA members
+    (currently hidden from other reps by operator decision). The
+    operator drops recordings into one Drive folder; an idempotent
+    "Sync from Drive" indexes them into a dedicated QA spreadsheet
+    (no fallback store — recordings and comments may reference agents
+    and patients). Reviewers get chunked in-app playback with a
+    waveform and click-to-seek, timestamped comments rendered as
+    seek markers, structured scorecards (criteria editable in Admin →
+    Config), per-agent stats, coverage-fair "Sample 3 for me"
+    self-assignment, and a reviewer-calibration table. Sharing a
+    review with its agent is an explicit per-recording release feeding
+    a read-only My Reviews view (scorecards, comments, and scoped
+    playback of the shared recording — dormant while the tool is
+    hidden). An optional retention purge (default off) ages out review
+    records only; the recordings index and Drive files are never
+    touched.
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
@@ -129,7 +145,7 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders a 20-scenario matrix in headless Chromium; it is
+(`test/visual/`) renders a 54-scenario matrix in headless Chromium; it is
 manual / on-demand, NOT in CI. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
