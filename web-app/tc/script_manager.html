@@ -71,6 +71,14 @@
 // alone stranded the Manage Time view on "Loading…" forever. Replace the
 // loader with a retryable error state.
 function mgrLoadError_(msg) {
+  if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+  // SWR (2026-08-28): a failed background REFRESH must not wipe the painted
+  // last-good dashboard with an error screen (the C17-5 preserve-last-good
+  // posture) — #mgr-refresh existing means a dashboard is rendered.
+  if (document.getElementById('mgr-refresh') && currentView === 'manage') {
+    showToast('Could not refresh the dashboard: ' + msg, 'toast-warn');
+    return;
+  }
   showToast(msg, 'toast-error');
   const area = document.getElementById('view-area');
   if (area && currentView === 'manage') {
@@ -79,13 +87,27 @@ function mgrLoadError_(msg) {
   }
 }
 
+// SWR render guard (2026-08-28): a background refresh must never wipe
+// in-progress interaction — a checked bulk-select box, or any open overlay
+// (Day Edit etc. re-fetch after their own submit anyway). Blocked = the
+// fresh data still lands in mgrData (state stays warm); the view re-renders
+// on the next enter/refresh.
+function mgrSwrRenderBlocked_() {
+  if (document.querySelector('.mgr-pending-chk:checked')) return true;
+  if (document.querySelector('.overlay.open')) return true;
+  return false;
+}
+
 function loadManagerDashboard() {
   google.script.run
     .withSuccessHandler(data => {
       if (data.error) { mgrLoadError_(data.error); return; }
       mgrData = data;
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
       const area = document.getElementById('view-area');
-      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); }
+      if (!area || currentView !== 'manage') return;
+      if (document.getElementById('mgr-refresh') && mgrSwrRenderBlocked_()) return;   // state warm, render deferred
+      renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_();
     })
     .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();

@@ -195,19 +195,35 @@ function enterTrainingHomeView() {
   if (!area) return;
   area.innerHTML =
         '<div id="tr-home-content"><div class="m-loading"><span class="lo-glyph">' + icon('check', 26) + '</span> Loading training&hellip;</div></div>';
-  trainLoadMy_();
+  // SWR (operator 2026-08-28 "Training takes longer to load"): TRAIN_STATE.my
+  // persists for the session, so a re-enter paints the last checklist
+  // instantly and refreshes behind the pill (the 2026-08-13 slow-tabs
+  // pattern; the render is read-only, so the refresh re-render is safe).
+  var painted = false;
+  if (TRAIN_STATE.my && !TRAIN_STATE.my.error) {
+    trainRenderMy_();
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  }
+  trainLoadMy_(painted);
 }
 
-function trainLoadMy_() {
+function trainLoadMy_(painted) {
   var requestedView = currentView;
+  var pillOff = function () { if (painted && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (data) {
       TRAIN_STATE.my = data;                       // state updates unconditionally (cache stays warm)
+      pillOff();
       if (currentView !== requestedView) return;   // late-callback guard (CN loader pattern)
       trainRenderMy_();
     })
     .withFailureHandler(function (err) {
+      pillOff();
       if (currentView !== requestedView) return;
+      // SWR: a failed background refresh keeps the painted last-good
+      // checklist (C17-5 posture); only a COLD failure renders the error card.
+      if (painted) { showToast('Could not refresh training: ' + ((err && err.message) || err), 'toast-warn'); return; }
       var el = document.getElementById('tr-home-content');
       if (el) el.innerHTML = errorStateHtml_('Could not load training: ' + ((err && err.message) || err));   // A12
     })
@@ -531,10 +547,38 @@ function enterTrainingManageView() {
   area.innerHTML =
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Team Training</h1></div>' +
     '<div id="tr-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('check', 26) + '</span> Loading dashboard&hellip;</div></div>';
-  trainLoadMgr_();
+  // SWR (operator 2026-08-28): the FIVE fan-in results persist in TRAIN_STATE
+  // for the session, and the old enter waited for the SLOWEST of the five
+  // RPCs before painting anything — the module's whole "takes longer than
+  // other pages" feel. A re-enter now paints from state instantly and
+  // refreshes behind the pill; the refresh render is guarded against wiping
+  // an in-progress assign form (trainMgrFormDirty_).
+  var painted = false;
+  if (TRAIN_STATE.dash && !TRAIN_STATE.dash.error && TRAIN_STATE.kbTree &&
+      TRAIN_STATE.emps && TRAIN_STATE.quizzes) {
+    trainRenderMgr_();
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  }
+  trainLoadMgr_(painted);
 }
 
-function trainLoadMgr_() {
+// SWR render guard (2026-08-28): a background refresh must never wipe an
+// in-progress interaction — a picked assign item, checked employee boxes, a
+// typed due date, or any open overlay (the quiz editor is one). Blocked =
+// the fresh data still lands in TRAIN_STATE; the next enter renders it.
+function trainMgrFormDirty_() {
+  var item = document.getElementById('tr-as-item');
+  if (item && item.value) return true;
+  var due = document.getElementById('tr-as-due');
+  if (due && due.value) return true;
+  var content = document.getElementById('tr-mgr-content');
+  if (content && content.querySelector('input[type="checkbox"]:checked')) return true;
+  if (document.querySelector('.overlay.open')) return true;
+  return false;
+}
+
+function trainLoadMgr_(painted) {
   var requestedView = currentView;
   // Batch-6 (cycle 17, INV-156): a same-view seq token. Two overlapping runs
   // for the SAME view (a post-mutation refresh while the first load is still
@@ -546,15 +590,24 @@ function trainLoadMgr_() {
   TRAIN_STATE.mgrSeq = (TRAIN_STATE.mgrSeq || 0) + 1;
   var seq = TRAIN_STATE.mgrSeq;
   var got = 0, failed = false;
+  var pillOff = function () { if (painted && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   function done() {
     got++;
     if (got < 5 || failed || currentView !== requestedView || seq !== TRAIN_STATE.mgrSeq) return;
+    pillOff();
+    // SWR: skip the refresh render while the manager is mid-form — the
+    // fresh data is already in TRAIN_STATE (warm for the next enter).
+    if (painted && trainMgrFormDirty_()) return;
     trainRenderMgr_();
   }
   function onFail(err) {
     if (failed || seq !== TRAIN_STATE.mgrSeq) return;
     failed = true;
+    pillOff();
     if (currentView !== requestedView) return;
+    // SWR: a failed background refresh keeps the painted last-good dashboard
+    // (C17-5 posture); only a COLD failure renders the error card.
+    if (painted) { showToast('Could not refresh Team Training: ' + ((err && err.message) || err), 'toast-warn'); return; }
     var el = document.getElementById('tr-mgr-content');
     if (el) el.innerHTML = errorStateHtml_('Could not load: ' + ((err && err.message) || err));   // A12
   }
