@@ -9598,6 +9598,7 @@ var CN_HEALTH_RUN_LABELS = {
   CallNotesArchivePurge:{ label: 'Cold-archive purge',         expect: 'daily 2am — writes a row only when archive retention is enabled' },
   TimesheetArchive:     { label: 'Timesheet cold-archive',     expect: 'daily 6pm — writes a row only when TIMESHEET_ARCHIVE_DAYS is set' },
   PtoAccrualCredit:     { label: 'PTO accrual credit',         expect: 'monthly (on/after the 1st) per accruing rep — never seen = no column-Q rates set, or no month boundary yet' },
+  QaReviewPurge:        { label: 'QA review-record purge',     expect: 'daily 2am — writes a row only when QA_REVIEW_RETENTION_DAYS is set' },
 };
 
 /** #1 — Storage Health panel. Independent load (contained failure), mirrors

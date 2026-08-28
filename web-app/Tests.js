@@ -1248,6 +1248,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
   _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
+  _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
@@ -4165,6 +4166,15 @@ function test_triggerGate_selfTest_nonManagerThrows() {
 function test_triggerGate_ptoAccrual_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { creditMonthlyPtoAccruals(); });
+  }, 'manager access required');
+}
+
+// The QA review-record retention purge (Phase-3 follow-on, 2026-08-28) is a
+// trigger handler → INV-44 gate. Destructive when enabled, so the gate is
+// load-bearing; with the default window 0 a gated caller still can't reach it.
+function test_triggerGate_qaReviewPurge_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeOldQaReviews(); });
   }, 'manager access required');
 }
 

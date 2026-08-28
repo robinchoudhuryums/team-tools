@@ -940,6 +940,10 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       { id: 'E-1088', name: 'Sam Ortiz', timezone: 'Asia/Manila', tzAbbr: 'PHT' },
       { id: 'E-1090', name: 'Leo Kim', timezone: 'America/Chicago', tzAbbr: 'CST' }] },
   };
+  // The agent-facing scoped audio endpoint serves the SAME chunk shape as the
+  // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),
+  // so the fixture is an alias of the real WAV chunk above.
+  FIXTURES.getMyQaReviewAudioChunk = FIXTURES.qaGetAudioChunk;
 
   window.__MISSING__ = [];
   window.__RPC_LOG__ = [];

@@ -116,7 +116,9 @@ const SCENARIOS = [
   ['qa-stats-light-wide', { tool: 'qa', tab: 'qaStats' }, WIDE, 'light', ''],
   // QA Phase 3 — the agent-facing read-only My Reviews tab (canSeeQa-gated
   // since the 2026-08-28 operator decision; the persona here is a QA member).
-  ['qa-myreviews-light-wide', { tool: 'qa', tab: 'qaMyReviews' }, WIDE, 'light', ''],
+  // The post hook presses Play on the first card, so the follow-on's
+  // per-card player + waveform (real decode of the mock's WAV) are on camera.
+  ['qa-myreviews-light-wide', { tool: 'qa', tab: 'qaMyReviews' }, WIDE, 'light', '', "qaMyRevPlay_('qaFileCccccccc3')"],
   // The recording DETAIL (follow-on 2026-08-28 — the standing matrix gap):
   // player assembled from the mock's real 1s WAV chunk, waveform, scorecard
   // form + list, comment timeline. Opened via the post hook (the sched-modal

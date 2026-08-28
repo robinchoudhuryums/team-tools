@@ -1501,7 +1501,19 @@ function enterManagerView(area) {
   area = area || document.getElementById('view-area');
   if (!area) return;
   stopClock();
-  renderLoading(area, 'Loading dashboard…', 'clock');
+  // SWR (operator 2026-08-28 "Manage takes longer to load"): mgrData persists
+  // for the session, so a RE-enter paints the last dashboard instantly and
+  // refreshes behind the pill — the 2026-08-13 slow-tabs pattern. The first
+  // enter of a session keeps the loader (the server work is real:
+  // getManagerDashboard is the app's heaviest live read). The refresh's
+  // render is guarded in loadManagerDashboard against wiping in-progress
+  // interaction (checked bulk boxes, an open overlay).
+  if (mgrData && !mgrData.error && typeof renderManagerView === 'function') {
+    renderManagerView(area, mgrData);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+  } else {
+    renderLoading(area, 'Loading dashboard…', 'clock');
+  }
   loadManagerDashboard();
 }
 

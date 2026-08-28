@@ -43,6 +43,15 @@ const CONFIG = {
   // the live tab. Enforced by the daily archiveOldTimesheetRows trigger.
   TIMESHEET_ARCHIVE_DAYS: 0,
 
+  // QA review-record retention (Phase-3 follow-on, 2026-08-28): QaComments +
+  // QaScorecards rows older than this many days are irreversibly deleted by
+  // the daily purgeOldQaReviews trigger. 0 = DISABLED (the safe committed
+  // default — the window CHOICE is the operator's policy call; the QA store
+  // is HR-adjacent and stays keep-forever until they set Script Property
+  // QA_REVIEW_RETENTION_DAYS). The QaRecordings INDEX and the Drive audio
+  // files are NEVER touched by this tier.
+  QA_REVIEW_RETENTION_DAYS: 0,
+
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
   COVERAGE_MIN_STAFF: 6,   // #3 — Coverage planner: minimum ADEQUATE reps per
@@ -6142,7 +6151,7 @@ function clientErrorsSummary_(mgrTz) {
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
   'CallNotesArchive', 'CallNotesArchivePurge', 'TimesheetArchive',
-  'PtoAccrualCredit',
+  'PtoAccrualCredit', 'QaReviewPurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -6184,6 +6193,9 @@ const AUTOMATION_JOB_CHECKS = [
   { action: 'FormDataPurge', label: 'form-data retention purge',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return getFormRetentionDays_() > 0; } },
+  { action: 'QaReviewPurge', label: 'QA review-record retention purge',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return qaReviewRetentionDays_() > 0 && qaStoreConfigured_(); } },
 ];
 
 /** Is any roster row carrying a column-Q accrual rate? Decides whether the
@@ -11042,6 +11054,7 @@ function installAutomationTriggers() {
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
+    'purgeOldQaReviews',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -11085,6 +11098,12 @@ function installAutomationTriggers() {
   // default). Staggered to 2am, BEFORE the 3am archive, so it operates on the
   // settled cold store from prior runs.
   ScriptApp.newTrigger('purgeArchivedCallNotes')
+    .timeBased().atHour(2).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // QA review-record retention purge (Phase-3 follow-on) — no-ops while
+  // QA_REVIEW_RETENTION_DAYS=0 (the default) or QA_SS_ID is unset, so
+  // installing it is harmless.
+  ScriptApp.newTrigger('purgeOldQaReviews')
     .timeBased().atHour(2).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
@@ -11217,6 +11236,7 @@ function removeAutomationTriggers() {
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
+    'purgeOldQaReviews',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -25687,6 +25707,75 @@ function saveQaScorecardCriteria(list) {
       'qaScorecardCriteria; count=' + clean.length, emp.email);
     return { success: true, qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA } };
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Is the QA store configured? (Script Property QA_SS_ID, or the test
+ *  override.) Consulted by the retention purge + its liveness check so an
+ *  enabled window with NO store never runs — or nags (INV-186). */
+function qaStoreConfigured_() {
+  if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) return true;
+  try { return !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); }
+  catch (e) { return false; }
+}
+
+/** QA review-record retention window: Script Property QA_REVIEW_RETENTION_DAYS
+ *  first, else CONFIG.QA_REVIEW_RETENTION_DAYS. 0/neg/unparseable → 0
+ *  (disabled — the getNoteRetentionDays_ shape). */
+function qaReviewRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('QA_REVIEW_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.QA_REVIEW_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** QA review-record retention purge (Phase-3 follow-on, 2026-08-28 —
+ *  default OFF). Irreversibly deletes QaComments + QaScorecards rows older
+ *  than the window; the QaRecordings INDEX and the Drive audio files are
+ *  NEVER touched (the operator manages recordings in Drive). ms NUMBER
+ *  cells, so no date coercion; a 0/garbage CreatedMs is never deleted
+ *  (fail-safe — the unparseable-date rule). Top-level trigger target →
+ *  reachable via google.script.run, so INV-44-gated; locked (INV-01);
+ *  counts-only audit EVERY enabled run (the job-liveness heartbeat,
+ *  INV-161). Read-only w.r.t. tab existence — never provisions. */
+function purgeOldQaReviews() {
+  assertManagerCaller_('purgeOldQaReviews');
+  try {
+    const days = qaReviewRetentionDays_();
+    if (!days) {
+      Logger.log('purgeOldQaReviews: retention disabled (QA_REVIEW_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    if (!qaStoreConfigured_()) {
+      Logger.log('purgeOldQaReviews: QA_SS_ID not set — nothing to purge.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let comments = 0, scorecards = 0;
+    try {
+      const ss = getQaSS_();
+      [[QA_COMMENTS_TAB, QAC.CREATED_MS, function (n) { comments = n; }],
+       [QA_SCORECARDS_TAB, QSC.CREATED_MS, function (n) { scorecards = n; }]].forEach(function (t) {
+        const sheet = ss.getSheetByName(t[0]);
+        if (!sheet || sheet.getLastRow() < 2) return;
+        const col = sheet.getRange(2, t[1] + 1, sheet.getLastRow() - 1, 1).getValues();
+        let removed = 0;
+        for (let i = col.length - 1; i >= 0; i--) {   // bottom-up so indices hold
+          const ms = Number(col[i][0]) || 0;
+          if (ms > 0 && ms < cutoffMs) { sheet.deleteRow(i + 2); removed++; }
+        }
+        t[2](removed);
+      });
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge', '', '', false, 0,
+      `retentionDays=${days}; commentsRemoved=${comments}; scorecardsRemoved=${scorecards}`);
+    Logger.log(`purgeOldQaReviews: removed ${comments} comment(s) + ${scorecards} scorecard(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeOldQaReviews failed: ' + err.message);
+  }
 }
 
 /** Set which AGENT a recording belongs to (feeds the per-agent stats). Free
