@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 680 + DOM 82;
-  visual matrix on demand — 53 scenarios, last full shoot 2026-08-27 clean)
+Test Command: manual (Node harnesses: `npm test` = pure 682 + DOM 82;
+  visual matrix on demand — 54 scenarios, last full shoot 2026-08-28 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -418,6 +418,37 @@ shadowed by the load-bearing reviewers.length<2 guard, so the bite was
 re-aimed and the pin documents it), DOM 82, matrix 52→53
 (qa-myreviews-light-wide). Editor ≈ 311 unchanged (QA gate case grew to 14
 endpoints + the getMyQaReviews read-shape rejection IN PLACE) — post-deploy
+runAllTests still expects 295.
+
+NEWEST OF ALL #6 (2026-08-28, operator "hide QA from non-QA reps for now" +
+/broad-implement follow-on items — block
+`.cycle/blocks/19pre-qa-gate-followons-broad-implement.md`): (a) THE GATE
+CHANGE — qaMyReviews now carries managerOnly+also:'canSeeQa' like the
+reviewer tabs, so the QA tool is invisible to non-admin/non-QA reps again
+(Phase 3's ungated tab lasted one day; the My Reviews machinery ships
+DORMANT and re-opening is dropping the two flags from that one registry
+line — the registry comment + QA-14 both say so; the employee-gated
+server reads are unchanged). (b) FOLLOW-ONS IMPLEMENTED: the Admin →
+Config "QA scorecard criteria" editor (saveQaScorecardCriteria — INV-136's
+48th admin endpoint; strict named-error save over the lenient
+qaCriteriaSanitize_ read, delete-on-reset when the exact CONFIG seed is
+saved, rename-orphans-ratings warning; reads ride
+getAdminConfig.qaCriteria {live, seed}); the agent audio path Phase 3
+deferred (qaAudioChunkFor_ extracted as the ONE shared Drive byte
+boundary — reviewer qaGetAudioChunk = gate+shape+delegate;
+getMyQaReviewAudioChunk = employee gate + the SAME double scope resolved
+read-only from the store BEFORE any Drive access, generic not-found on
+every scope refusal; My Reviews per-card Play button, seq-guarded, no
+Drive-fallback link); and the QA recording-DETAIL visual scenario (a real
+1s 8 kHz WAV chunk the mock serves + comments/scorecards fixtures →
+qa-detail-light-wide, matrix 53→54 — the standing gap). (c) SKIPPED with
+reasoning: the QaScorecards/QaComments retention tier — a retention
+window on review records needs an operator decision (the QA store is
+HR-adjacent, currently keep-forever). Pure 680→682 (QA-15/16 new;
+QA-2 + QA-14 REWRITTEN in place for the changed contracts; 7 mutations /
+7 bites; one INV-188 recurrence — QA-14's ban scans the comment-stripped
+body because the render fn's own comment names qaGetAudioChunk), DOM 82,
+editor ≈311 (omnibus + QA gate cases grew IN PLACE) — post-deploy
 runAllTests still expects 295.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:

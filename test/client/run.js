@@ -12941,21 +12941,30 @@ test('QA-1: qaChunkRange_ — exact slice arithmetic; out-of-range/empty is null
   assert.strictEqual(f(250, -1, 100), null);
 });
 
-test('QA-2: qaGetAudioChunk — gate first, folder parentage BEFORE bytes, size cap from metadata, audio-only', () => {
+test('QA-2: the audio Drive boundary — gate first, folder parentage BEFORE bytes, ONE shared helper', () => {
+  // (Rewritten in place for the 2026-08-28 follow-on: the Drive half moved
+  // into the SHARED qaAudioChunkFor_ so the reviewer path and the agent's
+  // scoped path cannot drift — the honest bookkeeping when a contract
+  // changes under a pin.)
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const f = nc(extractRawFunction('Code.js', 'qaGetAudioChunk'));
-  const gateIdx = f.indexOf('canSeeQa_');
-  assert.ok(gateIdx > -1 && gateIdx < f.indexOf('DriveApp'), 'the QA gate runs before any Drive access');
+  const wrap = nc(extractRawFunction('Code.js', 'qaGetAudioChunk'));
+  assert.ok(/canSeeQa_/.test(wrap) && /qaAudioChunkFor_\(fid, chunkIndex\)/.test(wrap),
+    'the reviewer wrapper is gate + shape + delegate');
+  assert.ok(!/DriveApp/.test(wrap), 'no Drive access outside the shared boundary helper');
+  const f = nc(extractRawFunction('Code.js', 'qaAudioChunkFor_'));
   const parentsIdx = f.indexOf('getParents()');
   const blobIdx = f.indexOf('getBlob()');
   assert.ok(parentsIdx > -1 && blobIdx > parentsIdx,
     'the folder-parentage check runs BEFORE the blob read — the app runs as the deployer, so without it any ' +
-    'QA member could read ANY Drive file the deployer can open, by id (the kbGetImageData boundary)');
+    'caller could read ANY Drive file the deployer can open, by id (the kbGetImageData boundary)');
   const sizeIdx = f.indexOf('getSize()');
   assert.ok(sizeIdx > -1 && sizeIdx < blobIdx, 'the size cap reads METADATA before the blob');
   assert.ok(/QA_AUDIO_MAX_BYTES/.test(f) && /oversize: true/.test(f), 'over-cap is a named refusal carrying the Drive-fallback flag');
   assert.ok(/indexOf\('audio\/'\) !== 0/.test(f), 'non-audio is refused');
   assert.ok(/qaChunkRange_\(/.test(f), 'slicing goes through the pure helper');
+  // Both callers reach Drive audio bytes ONLY through the helper.
+  const both = wrap + nc(extractRawFunction('Code.js', 'getMyQaReviewAudioChunk'));
+  assert.ok(!/getBlob|DriveApp/.test(both), 'neither caller touches Drive directly');
 });
 
 test('QA-3: qaSyncRecordings — gated, idempotent before any write, bounded + truncated reported, counts-only audit', () => {
@@ -13573,22 +13582,44 @@ test('QA-13: qaCalibration_ behavioral — 2+ reviewers only, spread arithmetic,
   assert.strictEqual(r3.spread, 3.5);
 });
 
-test('QA-14: Phase 3 client wiring — ungated My Reviews tab, read-only render, one scorecard builder', () => {
+test('QA-14: Phase 3 client wiring — gated My Reviews tab, review-only render, one scorecard builder', () => {
   const qaSrc = extractScript('qa/script_qa.html');
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
-  // The Phase-3 gate change: qaMyReviews is registered UNGATED (no
-  // managerOnly, no also flag), which is what makes the QA tool visible to
-  // every rep via toolVisibleForUser_ — with only this tab.
-  assert.ok(/qaMyReviews: \{ label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView' \}/.test(core),
-    'qaMyReviews registered ungated — the deliberate Phase-3 decision');
-  // The reviewer tabs stay behind the third-tier gate.
+  // (Rewritten in place TWICE — the honest bookkeeping: Phase 3 shipped the
+  // tab UNGATED, and the 2026-08-28 operator decision hid the tool from
+  // non-QA reps FOR NOW, so all three tabs carry the same gate. Re-opening
+  // agent visibility = dropping managerOnly/also from this one entry; the
+  // server read stays employee-gated + share-scoped either way.)
+  assert.ok(/qaMyReviews: \{ label: 'My Reviews', icon: 'thumbsUp', enter: 'enterQaMyReviewsView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
+    'qaMyReviews gated like the reviewer tabs — the operator 2026-08-28 decision');
   assert.ok(/qaQueue: \{[^}]*also: 'canSeeQa' \}/.test(core) && /qaStats: \{[^}]*also: 'canSeeQa' \}/.test(core),
     'queue + stats stay canSeeQa-gated');
-  // My Reviews renders READ-ONLY: no audio element, no scorecard form, no
-  // click handlers at all — the agent reads, they do not act here.
-  const myRev = qaSrc.match(/function qaRenderMyReviews_\([\s\S]*?\n\}/)[0];
-  assert.ok(!/onclick=/.test(myRev) && !/<audio/.test(myRev) && !/qaRenderScoreForm_|getQaAudioChunk/.test(myRev),
-    'the agent view carries no controls, no audio, no scorecard form');
+  // My Reviews renders REVIEW-only: no scorecard form, no share/status/
+  // comment controls. The ONE control is the follow-on's per-card Play
+  // button, and its audio comes ONLY from the SCOPED endpoint — the
+  // reviewer-gated qaGetAudioChunk is never referenced from the agent path.
+  // BAN scans run on the comment-STRIPPED body (INV-188 — the render fn's own
+  // comment names qaGetAudioChunk as the thing it must not call, and the raw
+  // form of this pin tripped on exactly that); the onclick extraction reads
+  // markup strings, which survive the strip.
+  const ncq = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');
+  const myRev = ncq(qaSrc.match(/function qaRenderMyReviews_\([\s\S]*?\n\}/)[0]);
+  const clicks = [];
+  let cm;
+  const clickRe = /onclick="([A-Za-z_$][\w$]*)\(/g;
+  while ((cm = clickRe.exec(myRev)) !== null) if (clicks.indexOf(cm[1]) < 0) clicks.push(cm[1]);
+  assert.deepStrictEqual(clicks, ['qaMyRevPlay_'],
+    'the agent view\'s ONLY control is the shared-review Play button');
+  assert.ok(!/qaRenderScoreForm_|qaGetAudioChunk|qaToggleShared_|qaChangeStatus_/.test(myRev),
+    'no scorecard form, no reviewer controls, no reviewer-gated audio in the agent view');
+  const play = ncq(qaSrc.match(/function qaMyRevPlay_\([\s\S]*?\n\}/)[0]);
+  assert.ok(/getMyQaReviewAudioChunk\(fileId, i\)/.test(play) && !/qaGetAudioChunk/.test(play),
+    'agent playback uses the SCOPED endpoint only');
+  assert.ok((play.match(/QA_STATE\.myRevAudioSeq !== mySeq/g) || []).length >= 2,
+    'the chunk loop is seq-guarded (INV-156) — a second Play orphans the first');
+  assert.ok(/revokeObjectURL\(QA_STATE\.myRevObjectUrl\)/.test(play), 'the replaced Blob URL is revoked');
+  assert.ok(!/rec\.url|Open in Drive/.test(play),
+    'agent failures never offer a Drive link — the agent has no Drive access to the recordings folder');
   assert.ok(/qaScorecardListHtml_\(r\.scorecards, d\.criteria\)/.test(myRev),
     'My Reviews renders through the SHARED scorecard builder');
   const detailList = qaSrc.match(/function qaRenderScorecardList_\([\s\S]*?\n\}/)[0];
@@ -13626,6 +13657,108 @@ test('QA-14: Phase 3 client wiring — ungated My Reviews tab, read-only render,
   serverKeys.forEach((k) => {
     assert.ok(fixBlock.indexOf(k + ':') >= 0, 'fixture carries server key "' + k + '" (INV-185)');
   });
+});
+
+// ---------------------------------------------------------------------------
+// QA gate change + Phase-3 follow-ons (operator 2026-08-28).
+console.log('\nQA gate change + follow-ons — criteria editor, scoped agent audio');
+
+test('QA-15: saveQaScorecardCriteria behavioral — gate, named errors, delete-on-reset, sanitize round-trip', () => {
+  const seed = [
+    { key: 'greeting', label: 'Greeting & opening' },
+    { key: 'communication', label: 'Communication & tone' },
+  ];
+  const props = {};
+  let audited = '';
+  const mkCtx = (isAdmin) => {
+    const ctx = {
+      getEmployeeInfo_: () => ({ isAdmin: isAdmin, email: 'mgr@x.com' }),
+      PropertiesService: { getScriptProperties: () => ({
+        setProperty: (k, v) => { props[k] = v; },
+        deleteProperty: (k) => { delete props[k]; },
+        getProperty: (k) => props[k] || null,
+      }) },
+      writeAuditLog_: function () { audited = String(arguments[6] || ''); },
+      QA_SCORECARD_CRITERIA: seed,
+      JSON: JSON,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getQaScorecardCriteria_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'saveQaScorecardCriteria'), ctx);
+    return ctx;
+  };
+  const rep = mkCtx(false);
+  const rejected = rep.saveQaScorecardCriteria([{ key: 'a1', label: 'A' }]);
+  assert.ok(!rejected.success && /Admin access required/.test(rejected.error), 'admin-gated (INV-136 — the 48th)');
+  const ctx = mkCtx(true);
+  const S = ctx.saveQaScorecardCriteria;
+  assert.ok(/criteria list/.test(S(null).error), 'non-array named');
+  assert.ok(/Between 1 and 12/.test(S([]).error), 'empty list named');
+  assert.ok(/Not a valid criterion key: "BAD KEY"/.test(S([{ key: 'BAD KEY', label: 'x' }]).error),
+    'a bad key is REJECTED by name (strict save vs the lenient qaCriteriaSanitize_ read)');
+  assert.ok(/Duplicate criterion key: "greeting"/.test(S([{ key: 'greeting', label: 'a' }, { key: ' GREETING ', label: 'b' }]).error),
+    'a case/space-variant duplicate is rejected by the canonical key');
+  assert.ok(/needs a label/.test(S([{ key: 'a1', label: '  ' }]).error), 'blank label named');
+  assert.ok(!('QA_SCORECARD_CRITERIA' in props), 'nothing written on any reject');
+  // Valid save: canonicalized, audited count-only, and the READ-side
+  // sanitizer keeps the stored JSON unchanged (strict-save ⇒ lenient-read
+  // round-trip — the BRK-1 property, on this pair).
+  const ok = S([{ key: ' Greeting ', label: ' Warmth ' }, { key: 'a1', label: 'A' }]);
+  assert.ok(ok.success && ok.qaCriteria && Array.isArray(ok.qaCriteria.live) && Array.isArray(ok.qaCriteria.seed),
+    'success returns the SERVER-resolved {live, seed} shape (the getAdminConfig twin)');
+  assert.strictEqual(ok.qaCriteria.live[0].key, 'greeting', 'the resolved live list reads the stored property');
+  const stored = JSON.parse(props.QA_SCORECARD_CRITERIA);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaCriteriaSanitize_(stored))), stored,
+    'a save the validator accepts round-trips through the lenient read UNCHANGED');
+  assert.ok(/^qaScorecardCriteria; count=2$/.test(audited),
+    'the audit note is count-only — criterion labels are config, but the pattern stays id/count (INV-32 discipline)');
+  // Delete-on-reset: saving the exact CONFIG seed removes the override
+  // entirely (the umsTheme/breaks posture — an untouched deploy and a
+  // deliberately-reset one look identical in Script Properties).
+  S(seed.map((c) => ({ key: c.key, label: c.label })));
+  assert.ok(!('QA_SCORECARD_CRITERIA' in props), 'saving the exact seed DELETES the property');
+  // Wiring: getAdminConfig ships the same {live, seed} shape; the Admin card
+  // saves through the endpoint and re-renders from the SERVER-resolved list
+  // (INV-185 posture), with the rename warning stated to the operator.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const cfg = nc(extractRawFunction('Code.js', 'getAdminConfig'));
+  assert.ok(/qaCriteria: \{ live: getQaScorecardCriteria_\(\), seed: QA_SCORECARD_CRITERIA \}/.test(cfg),
+    'getAdminConfig ships {live, seed}');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.saveQaScorecardCriteria\(list\)/.test(cn), 'the card saves through the endpoint');
+  assert.ok(/cnRenderQaCritRows_\(\(res\.qaCriteria \|\| \{\}\)\.live \|\| \[\]\)/.test(cn),
+    'the post-save re-render uses the SERVER-resolved list, never the client rows (INV-185)');
+  assert.ok(/adding or removing criteria over renaming a key/.test(cn),
+    'the card warns that a renamed key orphans stored ratings');
+});
+
+test('QA-16: getMyQaReviewAudioChunk — employee gate, double scope BEFORE Drive, shared boundary helper', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'getMyQaReviewAudioChunk'));
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(f),
+    'employee-gated with the bare read {error} shape (GATE-SHAPE)');
+  assert.ok(!/canSeeQa_/.test(f), 'deliberately NOT the QA-member gate — the agent-facing playback');
+  assert.ok(/getSheetByName\(QA_RECORDINGS_TAB\)/.test(f) && !/getOrCreateQa/.test(f),
+    'the store read never provisions');
+  // The double scope — the SAME two filter lines getMyQaReviews carries —
+  // resolved from the STORE before any Drive access, i.e. before the
+  // delegate call that owns the bytes.
+  const sharedIdx = f.indexOf("if (!(Number(found.row[QAR.SHARED_MS]) > 0)) return { error: 'Recording not found.' };");
+  const nameIdx = f.indexOf("String(found.row[QAR.AGENT] || '').trim().toLowerCase() !== myName");
+  const drvIdx = f.indexOf('qaAudioChunkFor_(fid, chunkIndex)');
+  assert.ok(sharedIdx > -1 && nameIdx > sharedIdx && drvIdx > nameIdx,
+    'SHARED filter, then NAME scope, then (and only then) the Drive boundary delegate');
+  assert.ok(!/DriveApp|getBlob/.test(f), 'no direct Drive access — bytes come only through qaAudioChunkFor_');
+  // Every scope/lookup refusal is the GENERIC not-found, so existence never
+  // leaks to a caller probing ids (5 refusal sites: shape, store/name,
+  // missing sheet, missing row, unshared, foreign agent).
+  assert.ok((f.match(/'Recording not found\.'/g) || []).length >= 5, 'generic refusals throughout');
+  // The editor gate case exists with the READ shape (the GATE-SHAPE lesson).
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/getMyQaReviewAudioChunk\('AbCdEfGhIjKl', 0\)/.test(testsSrc) &&
+            testsSrc.indexOf("String(chunk && chunk.error), 'Not authorized'") >= 0,
+    'the Tests.js case asserts the bare read rejection');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

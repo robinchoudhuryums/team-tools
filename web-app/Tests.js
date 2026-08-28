@@ -5086,6 +5086,7 @@ function test_managerGates_rejectNonManager() {
     // Break-schedule editor (operator 2026-08-27) — gate precedes any
     // property write; an empty payload could never write regardless.
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
+    ['saveQaScorecardCriteria',        function () { return saveQaScorecardCriteria([{ key: 'greeting', label: 'Greeting' }]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
@@ -5180,6 +5181,7 @@ function test_managerGates_rejectNonManager() {
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
     getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
     saveBreakSchedules: 1,
+    saveQaScorecardCriteria: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -5271,6 +5273,12 @@ function test_qa_gates_rejectNonMember() {
   _assertContains(String(mine && mine.error), 'Not authorized',
     'getMyQaReviews rejects a non-employee (bare read error)');
   _assertTrue(!mine.recordings, 'and no rows come back with the rejection');
+  // The scoped audio sibling (follow-on 2026-08-28) carries the SAME
+  // employee gate + read shape; the share/name scope is Node-pinned (QA-16).
+  const chunk = _asUser('not-a-registered-user@example.invalid', function () { return getMyQaReviewAudioChunk('AbCdEfGhIjKl', 0); });
+  _assertContains(String(chunk && chunk.error), 'Not authorized',
+    'getMyQaReviewAudioChunk rejects a non-employee (bare read error)');
+  _assertTrue(!chunk.b64, 'and no bytes come back with the rejection');
 }
 
 // A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note

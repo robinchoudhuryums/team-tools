@@ -5334,6 +5334,7 @@ function getAdminConfig() {
       autoTagRules: getAutoTagRules_(),
       spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
       breakSchedules: breakSchedulesAdminView_(),
+      qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA },
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
@@ -25444,6 +25445,17 @@ function qaGetAudioChunk(fileId, chunkIndex) {
     if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!/^[a-zA-Z0-9_-]{10,}$/.test(fid)) return { error: 'Recording not found.' };
+    return qaAudioChunkFor_(fid, chunkIndex);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** The SHARED Drive byte boundary behind both playback paths (reviewer
+ *  qaGetAudioChunk + the agent's getMyQaReviewAudioChunk) — folder parentage
+ *  checked BEFORE any bytes leave, size cap from METADATA before the blob,
+ *  audio-only, pure qaChunkRange_ slicing. Callers own their GATE and (for
+ *  the agent path) the share/name scope; this helper owns the bytes. */
+function qaAudioChunkFor_(fid, chunkIndex) {
+  try {
     const folderId = qaFolderId_();
     if (!folderId) return { error: 'The QA recordings folder is not configured (Script Property QA_RECORDINGS_FOLDER_ID).' };
     let file;
@@ -25474,6 +25486,36 @@ function qaGetAudioChunk(fileId, chunkIndex) {
       chunkIndex: Math.floor(Number(chunkIndex)), chunks: range.chunks,
       size: size, mime: mime,
     };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Agent playback of a SHARED review (Phase-3 follow-on, 2026-08-28) — the
+ *  audio path getMyQaReviews deliberately omitted, now with the SAME double
+ *  scope: EMPLOYEE-gated (bare read {error} — the GATE-SHAPE rule,
+ *  deliberately NOT canSeeQa_), and the recording row is resolved READ-ONLY
+ *  from the QA store FIRST — SharedMs set AND Agent = the caller's roster
+ *  name — BEFORE any Drive access. Every scope refusal is the generic
+ *  'Recording not found.' so existence never leaks. The Drive byte boundary
+ *  itself is the SHARED qaAudioChunkFor_, so the two playback paths cannot
+ *  drift. Unsharing (SharedMs → 0) revokes playback on the next chunk. */
+function getMyQaReviewAudioChunk(fileId, chunkIndex) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const fid = String(fileId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{10,}$/.test(fid)) return { error: 'Recording not found.' };
+    let storeSet = false;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const myName = String(emp.name || '').trim().toLowerCase();
+    if (!storeSet || !myName) return { error: 'Recording not found.' };
+    const sheet = getQaSS_().getSheetByName(QA_RECORDINGS_TAB);   // read-only — never provisions
+    if (!sheet) return { error: 'Recording not found.' };
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { error: 'Recording not found.' };
+    if (!(Number(found.row[QAR.SHARED_MS]) > 0)) return { error: 'Recording not found.' };   // shared-gated
+    if (String(found.row[QAR.AGENT] || '').trim().toLowerCase() !== myName) return { error: 'Recording not found.' };   // name-scoped
+    return qaAudioChunkFor_(fid, chunkIndex);
   } catch (err) { return { error: err.message }; }
 }
 
@@ -25600,6 +25642,51 @@ function getQaScorecardCriteria_() {
     }
   } catch (e) { /* corrupt property degrades to the seed */ }
   return QA_SCORECARD_CRITERIA;
+}
+
+/** Admin editor for the scorecard criteria (Script Property
+ *  QA_SCORECARD_CRITERIA; the CONFIG QA_SCORECARD_CRITERIA list stays the
+ *  seed). STRICT named-error save over the lenient sanitize-on-read (the
+ *  saveBreakSchedules pattern) — a save this validator accepts always
+ *  round-trips through qaCriteriaSanitize_ unchanged. Saving the exact seed
+ *  DELETES the property (the umsTheme posture — back to CONFIG entirely).
+ *  RENAMING a key orphans old ratings from that column (the stats fold and
+ *  scorecards read by key), so the client warns and add/remove is the
+ *  recommended edit. Admin tier (INV-136). */
+function saveQaScorecardCriteria(list) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(list)) return { success: false, error: 'Expected a criteria list.' };
+    if (!(list.length >= 1 && list.length <= 12)) {
+      return { success: false, error: 'Between 1 and 12 criteria.' };
+    }
+    const clean = [];
+    const seen = {};
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i] || {};
+      const key = String(c.key || '').trim().toLowerCase();
+      if (!/^[a-z][a-z0-9-]{1,23}$/.test(key)) {
+        return { success: false, error: 'Not a valid criterion key: "' + String(c.key || '') +
+          '" — lowercase letters/digits/hyphens, 2–24 chars, starting with a letter.' };
+      }
+      if (seen[key]) return { success: false, error: 'Duplicate criterion key: "' + key + '".' };
+      const label = String(c.label || '').trim();
+      if (!label) return { success: false, error: 'Criterion "' + key + '" needs a label.' };
+      if (label.length > 60) return { success: false, error: 'Label for "' + key + '" is over 60 characters.' };
+      seen[key] = true;
+      clean.push({ key: key, label: label });
+    }
+    const props = PropertiesService.getScriptProperties();
+    if (JSON.stringify(clean) === JSON.stringify(QA_SCORECARD_CRITERIA)) {
+      props.deleteProperty('QA_SCORECARD_CRITERIA');   // back to the CONFIG seed entirely
+    } else {
+      props.setProperty('QA_SCORECARD_CRITERIA', JSON.stringify(clean));
+    }
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'qaScorecardCriteria; count=' + clean.length, emp.email);
+    return { success: true, qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA } };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 /** Set which AGENT a recording belongs to (feeds the per-agent stats). Free

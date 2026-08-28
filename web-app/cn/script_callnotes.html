@@ -10870,6 +10870,7 @@ function cnRenderAdminBody_(cfg) {
   var ffDanger   = {};
   ffRegistry.forEach(function (f) { if (f.danger) ffDanger[f.key] = f.danger; });
   var kbAi = cfg.kbAi || null;
+  CN_STATE.qaCritSeed = (cfg.qaCriteria || {}).seed || [];   // the Reset-to-default source
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
@@ -10986,6 +10987,20 @@ function cnRenderAdminBody_(cfg) {
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Scheduled breaks drive the Clock tab’s “Next break” chip and the break reminder (chime + toast) in every open window, including the pinned pop-out. <strong>Default</strong> applies to every timezone without its own schedule; Customize a timezone to give it different breaks. Times are in each rep’s <strong>own</strong> timezone. Shift start/end times are separate (per-timezone in the app configuration; per-rep via roster column O) — this edits breaks only. Reps pick changes up on their next state refresh (page load or within ~10 minutes).</div>' +
       '<div id="cn-admin-brk-editor">' + cnRenderBreakSchedEditor_(cfg.breakSchedules || {}) + '</div>' +
       '<button class="btn-modal-ok" id="cn-admin-brk-save" style="margin:10px 0 0">Save break schedules</button>' +
+    '</div>' +
+
+    // QA scorecard criteria (Phase-3 follow-on, 2026-08-28) — the in-app
+    // editor for Script Property QA_SCORECARD_CRITERIA (was property-only).
+    // The CONFIG seed stays; saving the exact seed deletes the property.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('headset', 14) + ' QA scorecard criteria</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">The criteria QA reviewers rate 1–5 on each recording’s scorecard (and the per-criterion columns on QA → Stats). <strong>Prefer adding or removing criteria over renaming a key</strong> — old scorecards store ratings BY key, so a renamed key orphans every existing rating from that column. Saving the app-default list exactly clears the override.</div>' +
+      '<div id="cn-admin-qacrit-list">' + cnRenderQaCritRows_((cfg.qaCriteria || {}).live || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        '<button class="refresh-btn" id="cn-admin-qacrit-add" type="button">' + icon('plus', 12) + ' Add criterion</button>' +
+        '<button class="refresh-btn" id="cn-admin-qacrit-reset" type="button">Reset to app default</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-qacrit-save" style="margin:0">Save criteria</button>' +
+      '</div>' +
     '</div>' +
 
     // Phase A — KB AI guidance settings (cap + model; the on/off switch is
@@ -11458,6 +11473,49 @@ function cnRenderAdminBody_(cfg) {
       .saveBreakSchedules({ reminderMin: rm, schedules: schedules });
   });
 
+  // QA scorecard criteria (Phase-3 follow-on) — add/remove rows client-side;
+  // the STRICT validation is the server's (saveQaScorecardCriteria names the
+  // first problem; nothing is written on a reject).
+  var qcAddBtn = document.getElementById('cn-admin-qacrit-add');
+  if (qcAddBtn) qcAddBtn.addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-qacrit-list');
+    if (list) list.insertAdjacentHTML('beforeend', cnRenderQaCritRows_([{ key: '', label: '' }]));
+  });
+  var qcResetBtn = document.getElementById('cn-admin-qacrit-reset');
+  if (qcResetBtn) qcResetBtn.addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-qacrit-list');
+    if (list) list.innerHTML = cnRenderQaCritRows_(CN_STATE.qaCritSeed || []);
+  });
+  var qcSaveBtn = document.getElementById('cn-admin-qacrit-save');
+  if (qcSaveBtn) qcSaveBtn.addEventListener('click', function () {
+    var btn = this;
+    var rows = document.querySelectorAll('#cn-admin-qacrit-list .cn-qacrit-row');
+    var list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var key = (rows[i].querySelector('.cn-qacrit-key').value || '').trim();
+      var label = (rows[i].querySelector('.cn-qacrit-label').value || '').trim();
+      if (!key && !label) continue;               // fully blank row — ignore
+      list.push({ key: key, label: label });
+    }
+    if (!list.length) { showToast('Add at least one criterion', 'toast-warn'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save criteria';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('Scorecard criteria saved', 'toast-success');
+        CN_STATE.qaCritSeed = (res.qaCriteria || {}).seed || CN_STATE.qaCritSeed;
+        var listEl = document.getElementById('cn-admin-qacrit-list');
+        // Re-render from the SERVER-resolved list, never the client rows (INV-185 posture).
+        if (listEl) listEl.innerHTML = cnRenderQaCritRows_((res.qaCriteria || {}).live || []);
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save criteria';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveQaScorecardCriteria(list);
+  });
+
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
   if (slaSaveBtn) slaSaveBtn.addEventListener('click', function () {
     var btn = this;
@@ -11544,6 +11602,20 @@ function cnRenderSpanishMemberChips_(members) {
  *  its breaks as JSON in data-breaks so Customize can seed the inputs; the
  *  attribute round-trip is safe because every re-render goes back through
  *  esc() (INV-193 — the value never re-enters innerHTML raw). */
+// ── QA scorecard criteria rows (Phase-3 follow-on, 2026-08-28) ──
+// Key + label inputs over getAdminConfig.qaCriteria.live. Keys are the JOIN
+// column for stored ratings (scorecards + the stats fold read by key), which
+// is why the card copy steers renames toward add/remove instead.
+function cnRenderQaCritRows_(list) {
+  return (list || []).map(function (c) {
+    return '<div class="cn-qacrit-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">' +
+      '<input class="cn-qacrit-key" value="' + esc(c.key || '') + '" aria-label="Criterion key" placeholder="key (e.g. greeting)" style="font:inherit;font-size:12px;font-family:var(--mono);padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);width:170px">' +
+      '<input class="cn-qacrit-label" value="' + esc(c.label || '') + '" aria-label="Criterion label" placeholder="Label reviewers see" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);flex:1;min-width:220px">' +
+      '<button type="button" class="cn-brk-x" aria-label="Remove criterion" onclick="this.closest(\'.cn-qacrit-row\').remove()">' + icon('x', 12) + '</button>' +
+      '</div>';
+  }).join('');
+}
+
 function cnRenderBreakSchedEditor_(bs) {
   bs = bs || {};
   var list = (bs.schedules || []).map(function (s) { return cnBreakSchedSectionHtml_(s, !!s.custom); }).join('');
