@@ -13659,6 +13659,108 @@ test('QA-14: Phase 3 client wiring — gated My Reviews tab, review-only render,
   });
 });
 
+// ---------------------------------------------------------------------------
+// QA gate change + Phase-3 follow-ons (operator 2026-08-28).
+console.log('\nQA gate change + follow-ons — criteria editor, scoped agent audio');
+
+test('QA-15: saveQaScorecardCriteria behavioral — gate, named errors, delete-on-reset, sanitize round-trip', () => {
+  const seed = [
+    { key: 'greeting', label: 'Greeting & opening' },
+    { key: 'communication', label: 'Communication & tone' },
+  ];
+  const props = {};
+  let audited = '';
+  const mkCtx = (isAdmin) => {
+    const ctx = {
+      getEmployeeInfo_: () => ({ isAdmin: isAdmin, email: 'mgr@x.com' }),
+      PropertiesService: { getScriptProperties: () => ({
+        setProperty: (k, v) => { props[k] = v; },
+        deleteProperty: (k) => { delete props[k]; },
+        getProperty: (k) => props[k] || null,
+      }) },
+      writeAuditLog_: function () { audited = String(arguments[6] || ''); },
+      QA_SCORECARD_CRITERIA: seed,
+      JSON: JSON,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getQaScorecardCriteria_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'saveQaScorecardCriteria'), ctx);
+    return ctx;
+  };
+  const rep = mkCtx(false);
+  const rejected = rep.saveQaScorecardCriteria([{ key: 'a1', label: 'A' }]);
+  assert.ok(!rejected.success && /Admin access required/.test(rejected.error), 'admin-gated (INV-136 — the 48th)');
+  const ctx = mkCtx(true);
+  const S = ctx.saveQaScorecardCriteria;
+  assert.ok(/criteria list/.test(S(null).error), 'non-array named');
+  assert.ok(/Between 1 and 12/.test(S([]).error), 'empty list named');
+  assert.ok(/Not a valid criterion key: "BAD KEY"/.test(S([{ key: 'BAD KEY', label: 'x' }]).error),
+    'a bad key is REJECTED by name (strict save vs the lenient qaCriteriaSanitize_ read)');
+  assert.ok(/Duplicate criterion key: "greeting"/.test(S([{ key: 'greeting', label: 'a' }, { key: ' GREETING ', label: 'b' }]).error),
+    'a case/space-variant duplicate is rejected by the canonical key');
+  assert.ok(/needs a label/.test(S([{ key: 'a1', label: '  ' }]).error), 'blank label named');
+  assert.ok(!('QA_SCORECARD_CRITERIA' in props), 'nothing written on any reject');
+  // Valid save: canonicalized, audited count-only, and the READ-side
+  // sanitizer keeps the stored JSON unchanged (strict-save ⇒ lenient-read
+  // round-trip — the BRK-1 property, on this pair).
+  const ok = S([{ key: ' Greeting ', label: ' Warmth ' }, { key: 'a1', label: 'A' }]);
+  assert.ok(ok.success && ok.qaCriteria && Array.isArray(ok.qaCriteria.live) && Array.isArray(ok.qaCriteria.seed),
+    'success returns the SERVER-resolved {live, seed} shape (the getAdminConfig twin)');
+  assert.strictEqual(ok.qaCriteria.live[0].key, 'greeting', 'the resolved live list reads the stored property');
+  const stored = JSON.parse(props.QA_SCORECARD_CRITERIA);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaCriteriaSanitize_(stored))), stored,
+    'a save the validator accepts round-trips through the lenient read UNCHANGED');
+  assert.ok(/^qaScorecardCriteria; count=2$/.test(audited),
+    'the audit note is count-only — criterion labels are config, but the pattern stays id/count (INV-32 discipline)');
+  // Delete-on-reset: saving the exact CONFIG seed removes the override
+  // entirely (the umsTheme/breaks posture — an untouched deploy and a
+  // deliberately-reset one look identical in Script Properties).
+  S(seed.map((c) => ({ key: c.key, label: c.label })));
+  assert.ok(!('QA_SCORECARD_CRITERIA' in props), 'saving the exact seed DELETES the property');
+  // Wiring: getAdminConfig ships the same {live, seed} shape; the Admin card
+  // saves through the endpoint and re-renders from the SERVER-resolved list
+  // (INV-185 posture), with the rename warning stated to the operator.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const cfg = nc(extractRawFunction('Code.js', 'getAdminConfig'));
+  assert.ok(/qaCriteria: \{ live: getQaScorecardCriteria_\(\), seed: QA_SCORECARD_CRITERIA \}/.test(cfg),
+    'getAdminConfig ships {live, seed}');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.saveQaScorecardCriteria\(list\)/.test(cn), 'the card saves through the endpoint');
+  assert.ok(/cnRenderQaCritRows_\(\(res\.qaCriteria \|\| \{\}\)\.live \|\| \[\]\)/.test(cn),
+    'the post-save re-render uses the SERVER-resolved list, never the client rows (INV-185)');
+  assert.ok(/adding or removing criteria over renaming a key/.test(cn),
+    'the card warns that a renamed key orphans stored ratings');
+});
+
+test('QA-16: getMyQaReviewAudioChunk — employee gate, double scope BEFORE Drive, shared boundary helper', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const f = nc(extractRawFunction('Code.js', 'getMyQaReviewAudioChunk'));
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(f),
+    'employee-gated with the bare read {error} shape (GATE-SHAPE)');
+  assert.ok(!/canSeeQa_/.test(f), 'deliberately NOT the QA-member gate — the agent-facing playback');
+  assert.ok(/getSheetByName\(QA_RECORDINGS_TAB\)/.test(f) && !/getOrCreateQa/.test(f),
+    'the store read never provisions');
+  // The double scope — the SAME two filter lines getMyQaReviews carries —
+  // resolved from the STORE before any Drive access, i.e. before the
+  // delegate call that owns the bytes.
+  const sharedIdx = f.indexOf("if (!(Number(found.row[QAR.SHARED_MS]) > 0)) return { error: 'Recording not found.' };");
+  const nameIdx = f.indexOf("String(found.row[QAR.AGENT] || '').trim().toLowerCase() !== myName");
+  const drvIdx = f.indexOf('qaAudioChunkFor_(fid, chunkIndex)');
+  assert.ok(sharedIdx > -1 && nameIdx > sharedIdx && drvIdx > nameIdx,
+    'SHARED filter, then NAME scope, then (and only then) the Drive boundary delegate');
+  assert.ok(!/DriveApp|getBlob/.test(f), 'no direct Drive access — bytes come only through qaAudioChunkFor_');
+  // Every scope/lookup refusal is the GENERIC not-found, so existence never
+  // leaks to a caller probing ids (5 refusal sites: shape, store/name,
+  // missing sheet, missing row, unshared, foreign agent).
+  assert.ok((f.match(/'Recording not found\.'/g) || []).length >= 5, 'generic refusals throughout');
+  // The editor gate case exists with the READ shape (the GATE-SHAPE lesson).
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/getMyQaReviewAudioChunk\('AbCdEfGhIjKl', 0\)/.test(testsSrc) &&
+            testsSrc.indexOf("String(chunk && chunk.error), 'Not authorized'") >= 0,
+    'the Tests.js case asserts the bare read rejection');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
