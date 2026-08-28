@@ -13761,6 +13761,167 @@ test('QA-16: getMyQaReviewAudioChunk — employee gate, double scope BEFORE Driv
     'the Tests.js case asserts the bare read rejection');
 });
 
+test('QA-17: My Reviews waveform — ONE shared painter, decoration-only wiring, seq guard, scenario on camera', () => {
+  const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  // (a) The detail's qaDrawWave_ is now a thin delegate over the SHARED
+  // painter, so the two waveform surfaces (detail + My Reviews) cannot drift
+  // (the qaScorecardListHtml_/qaAudioChunkFor_ one-builder discipline).
+  const dw = extractFunction('qa/script_qa.html', 'qaDrawWave_');
+  assert.ok(/qaDrawWaveOn_\(document\.getElementById\('qa-wave'\), QA_STATE\.peaks, playedFrac\)/.test(dw),
+    'qaDrawWave_ delegates to qaDrawWaveOn_');
+  assert.strictEqual((qa.match(/function qaDrawWaveOn_\(/g) || []).length, 1, 'exactly one shared painter');
+  // (b) qaMyRevWave_ size-gates BEFORE any decode, drops a stale card's
+  // decode (INV-156 — a second Play bumps myRevAudioSeq), and paints ONLY
+  // through the shared painter (initial + the timeupdate tint).
+  const w = extractFunction('qa/script_qa.html', 'qaMyRevWave_');
+  assert.ok(/total <= QA_WAVE_MAX_BYTES/.test(w), 'size gate before decode');
+  assert.ok(/QA_STATE\.myRevAudioSeq !== mySeq/.test(w), 'seq guard inside the decode callback');
+  assert.ok((w.match(/qaDrawWaveOn_\(/g) || []).length >= 2 && !/qaDrawWave_\(/.test(w),
+    'paints through the SHARED painter only — never the detail-bound qaDrawWave_');
+  assert.ok(/qaPeaks_\(decoded\.getChannelData\(0\), QA_WAVE_BUCKETS\)/.test(w),
+    'low-rate peaks via the pure qaPeaks_ (QA-7 covers its behaviour)');
+  // (c) The call site treats it as DECORATION: its own try/catch, attempted
+  // only AFTER the playable audio element is mounted — a waveform failure
+  // (undecodable format, over-cap, no OfflineAudioContext) never costs playback.
+  const play = extractFunction('qa/script_qa.html', 'qaMyRevPlay_');
+  assert.ok(/try \{ qaMyRevWave_\(el, bins, mySeq\); \} catch \(e\)/.test(play),
+    'wired inside its own try/catch — decoration only');
+  assert.ok(play.indexOf('qaMyRevWave_') > play.indexOf(".querySelector('audio').src"),
+    'the waveform attempt comes AFTER the audio src is set');
+  // (d) The visual scenario actually exercises it: the mock aliases the agent
+  // chunk endpoint to the SAME WAV fixture (both server routes delegate to
+  // qaAudioChunkFor_, so one fixture serves both — INV-185), and the
+  // myreviews scenario PRESSES Play via the post hook.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/FIXTURES\.getMyQaReviewAudioChunk = FIXTURES\.qaGetAudioChunk;/.test(mock),
+    'the agent-chunk fixture is an ALIAS of the reviewer fixture, never a second copy');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  assert.ok(/qa-myreviews-light-wide[\s\S]{0,160}qaMyRevPlay_\('qaFileCccccccc3'\)/.test(shoot),
+    'the myreviews scenario presses Play (post hook) so the player + waveform are on camera');
+});
+
+test('QA-18: QA review-record retention — index untouched, ms fail-safe, bottom-up, counts-only audit, gated liveness', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const raw = extractRawFunction('Code.js', 'purgeOldQaReviews');
+  const f = nc(raw);
+  // (a) The purge deletes ONLY review records (QaComments + QaScorecards) —
+  // the QaRecordings INDEX and the Drive audio files are never touched (the
+  // operator manages recordings in Drive). Comment-stripped: the doc comment
+  // names QaRecordings as the thing it must not touch (the INV-188 family).
+  assert.ok(/QA_COMMENTS_TAB/.test(f) && /QA_SCORECARDS_TAB/.test(f), 'both review tabs purged');
+  assert.ok(!/QA_RECORDINGS_TAB/.test(f) && !/DriveApp/.test(f),
+    'the recordings index + Drive files are NEVER touched');
+  // (b) Fail-safe on an unreadable stamp: `ms > 0 &&` means a 0/garbage
+  // CreatedMs cell is never deleted (the unparseable-date purge rule), and
+  // the delete walks BOTTOM-UP so row indices hold as rows are removed.
+  assert.ok(/ms > 0 && ms < cutoffMs/.test(f), 'a 0/garbage stamp is never deleted (fail-safe)');
+  assert.ok(/for \(let i = col\.length - 1; i >= 0; i--\)/.test(f), 'bottom-up delete');
+  // (c) Both early returns come BEFORE the lock (a disabled window or an
+  // unset store never queues punch writes), and the read never provisions.
+  const lockIdx = f.indexOf('waitLock(15000)');
+  assert.ok(f.indexOf('if (!days)') > -1 && f.indexOf('if (!days)') < lockIdx &&
+            f.indexOf('qaStoreConfigured_()') < lockIdx, 'disabled/unconfigured returns precede the lock');
+  assert.ok(/getSheetByName\(/.test(f) && !/getOrCreate/.test(f), 'read-only w.r.t. tab existence');
+  // (d) Counts-only audit on EVERY enabled run (the job-liveness heartbeat,
+  // INV-161) — anchored to the CALL, not a comment (the quoted-`;` trap).
+  const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge'"));
+  assert.ok(/retentionDays=\$\{days\}; commentsRemoved=\$\{comments\}; scorecardsRemoved=\$\{scorecards\}/.test(call),
+    'the audit note carries counts only — never comment text, ratings, or agent names (INV-32)');
+  // (e) The liveness row is INV-186 in code: enabled() consults BOTH the
+  // window and the store, so a deployment with retention off (the default)
+  // or no QA store is never checked — rather than checked and forever amber.
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const jobRow = codeSrc.slice(codeSrc.indexOf("{ action: 'QaReviewPurge'"), codeSrc.indexOf("{ action: 'QaReviewPurge'") + 400);
+  assert.ok(/enabled: function \(\) \{ return qaReviewRetentionDays_\(\) > 0 && qaStoreConfigured_\(\); \}/.test(jobRow),
+    'AUTOMATION_JOB_CHECKS row gated on window>0 AND store configured (INV-186)');
+  assert.ok(codeSrc.indexOf("'PtoAccrualCredit', 'QaReviewPurge'") > -1,
+    'QaReviewPurge registered in AUTOMATION_AUDIT_ACTIONS (Automation Health last-seen)');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/QaReviewPurge:\s+\{ label: 'QA review-record purge'/.test(cn),
+    'CN_HEALTH_RUN_LABELS carries the panel label (the labels ⊇ actions coupling)');
+  // (f) Getter behavioural: property wins, CONFIG default 0 = disabled,
+  // negative/garbage → 0 (never a NaN window).
+  const mk = (prop) => {
+    const ctx = {
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => prop }) },
+      CONFIG: { QA_REVIEW_RETENTION_DAYS: 0 },
+      parseInt: parseInt, isNaN: isNaN,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'qaReviewRetentionDays_'), ctx);
+    return ctx.qaReviewRetentionDays_();
+  };
+  assert.strictEqual(mk(null), 0, 'unset property + CONFIG 0 → disabled');
+  assert.strictEqual(mk('45'), 45, 'property wins');
+  assert.strictEqual(mk('-3'), 0, 'negative → disabled');
+  assert.strictEqual(mk('soon'), 0, 'garbage → disabled, never NaN');
+  // The trigger-wiring/gate-type nets already cover TARGETS membership +
+  // assertManagerCaller_ (derived, INV-179); the editor gate test exists.
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/triggerGate_qaReviewPurge_nonManagerThrows/.test(testsSrc), 'editor gate test registered');
+});
+
+test('PERF: Training + Manage SWR — paint-last-good, refresh behind pill, guarded renders, failures keep last-good', () => {
+  // The operator's 2026-08-28 report ("Training and Manage take longer to
+  // load") — the 2026-08-13 slow-tabs SWR round never covered these two.
+  // (a) Manage Time: a warm mgrData re-enter paints instantly + pill; the
+  // first enter of a session keeps the loader (the server work is real).
+  const core = extractFunction('script_core.html', 'enterManagerView');
+  assert.ok(/if \(mgrData && !mgrData\.error && typeof renderManagerView === 'function'\)/.test(core) &&
+            /renderManagerView\(area, mgrData\);/.test(core) && /viewRefreshingPill_\(true\)/.test(core),
+    'enterManagerView paints from session state + shows the refreshing pill');
+  // (b) The refresh render is guarded: fresh data ALWAYS lands in mgrData
+  // (cache warm) BEFORE the render decision, and a render is deferred while
+  // a bulk-select box is checked or any overlay is open.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const load = extractFunction('tc/script_manager.html', 'loadManagerDashboard');
+  assert.ok(load.indexOf('mgrData = data;') > -1 &&
+            load.indexOf('mgrData = data;') < load.indexOf('mgrSwrRenderBlocked_()'),
+    'state write precedes the render guard — a deferred render never loses the data');
+  assert.ok(/getElementById\('mgr-refresh'\) && mgrSwrRenderBlocked_\(\)/.test(load),
+    'the guard applies only to a REFRESH of a painted view (mgr-refresh = rendered)');
+  const blocked = extractFunction('tc/script_manager.html', 'mgrSwrRenderBlocked_');
+  assert.ok(/\.mgr-pending-chk:checked/.test(blocked) && /\.overlay\.open/.test(blocked),
+    'blocked on checked bulk boxes or any open overlay');
+  // (c) A failed background refresh keeps the painted dashboard (C17-5
+  // preserve-last-good): warn toast, no error screen, pill off first.
+  const errFn = extractFunction('tc/script_manager.html', 'mgrLoadError_');
+  assert.ok(/getElementById\('mgr-refresh'\) && currentView === 'manage'/.test(errFn) &&
+            /Could not refresh the dashboard/.test(errFn),
+    'mgrLoadError_ degrades a painted view to a warn toast — never wipes it');
+  assert.ok(errFn.indexOf('viewRefreshingPill_') < errFn.indexOf('mgr-refresh'), 'pill off on every failure path');
+  // (d) Training My: warm TRAIN_STATE.my paints + pill; failed refresh keeps
+  // last-good; cold failure still renders the error card (A12).
+  const enterMy = extractFunction('train/script_training.html', 'enterTrainingHomeView');
+  assert.ok(/TRAIN_STATE\.my && !TRAIN_STATE\.my\.error/.test(enterMy) && /trainLoadMy_\(painted\)/.test(enterMy),
+    'enterTrainingHomeView paints from state and passes painted to the loader');
+  const loadMy = extractFunction('train/script_training.html', 'trainLoadMy_');
+  assert.ok(/if \(painted\) \{ showToast\('Could not refresh training/.test(loadMy) &&
+            /errorStateHtml_\('Could not load training/.test(loadMy),
+    'trainLoadMy_ splits painted (toast, keep last-good) from cold (error card)');
+  // (e) Team Training: painted requires ALL FOUR non-analytics state pieces
+  // (the analytics panel degrades on its own — E12); the refresh render is
+  // skipped while the assign form is dirty, with the data kept warm.
+  const enterMgr = extractFunction('train/script_training.html', 'enterTrainingManageView');
+  assert.ok(/TRAIN_STATE\.dash && !TRAIN_STATE\.dash\.error && TRAIN_STATE\.kbTree/.test(enterMgr) &&
+            /TRAIN_STATE\.emps && TRAIN_STATE\.quizzes/.test(enterMgr),
+    'a partial fan-in never paints — all four load-bearing pieces required');
+  const loadMgr = extractFunction('train/script_training.html', 'trainLoadMgr_');
+  assert.ok(/if \(painted && trainMgrFormDirty_\(\)\) return;/.test(loadMgr),
+    'done() consults the dirty-form guard before the refresh render');
+  assert.ok(/if \(painted\) \{ showToast\('Could not refresh Team Training/.test(loadMgr),
+    'a failed refresh keeps the painted dashboard (C17-5)');
+  const dirty = extractFunction('train/script_training.html', 'trainMgrFormDirty_');
+  assert.ok(/tr-as-item/.test(dirty) && /tr-as-due/.test(dirty) &&
+            /input\[type="checkbox"\]:checked/.test(dirty) && /\.overlay\.open/.test(dirty),
+    'dirty = picked item, typed due date, checked employee boxes, or an open overlay');
+  // (f) Post-mutation refreshes stay COLD-semantics (argless call — painted
+  // undefined), so a save/assign still re-renders unconditionally.
+  const train = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  assert.ok((train.match(/trainLoadMgr_\(\)/g) || []).length >= 1,
+    'argless post-mutation callers keep the unconditional re-render');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
