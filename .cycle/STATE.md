@@ -515,6 +515,37 @@ warn, like HR). Pure 686→688 (TN-SWR + SH-QA; 5 mutations / 5 bites),
 DOM 82, matrix 54 (admin scenario renders the new row in place), editor
 ≈312 — post-deploy runAllTests still expects 296.
 
+NEWEST OF ALL #9 (2026-08-28 #4, operator ALL-CST clarification — block
+`.cycle/blocks/19pre-allcst-policy-broad-implement.md`): the operator
+clarified that EVERY agent, offshore included, works a CST schedule (PH
+8:30–17:00 CST, India 8:00–17:00 CST) — flipping the assumption that the
+roster Timezone column = physical location. Verified the flip is CLEAN
+along the axis the operator worried about: the sheet-tz machinery
+(tzEquivalent_/adpSheetTz_/getSpreadsheetTimeZone) never reads
+EMP.TIMEZONE — zero overlap with S1.1 / Storage Health / the coercion
+round-trips; CONFIG.TIMEZONE stays Asia/Kolkata. The policy also EXPLAINS
+the offshore incorrect-incomplete-punch flags (a CST shift straddles the
+rep-local midnight → both halves incomplete → excluded from totals, pay
+statements, and the hours-driven accrual) and the recurring
+"note missing from today" (DateLocal rolls over mid-shift). CODE
+COMPANIONS (commit 153d96f): getEmployeeState ships workAnchorTz
+(additive = CONFIG.MANAGER_TIMEZONE); tzMismatchCheck_ REDESIGNED to
+compare PROFILE tz vs the work anchor by offset (browser comparison
+RETIRED — offshore browser ≠ correct CST profile is normal-by-policy;
+unresolvable anchor/absent field disables silently, unresolvable profile
+still warns); CONFIG.SHIFT_SCHEDULE.BY_TIMEZONE emptied (the Manila
+entry was wrong twice over — keyed on a retiring roster value AND written
+as Manila-local; PH 8:30 start moves to column O '8:30-17:00'; mechanism
+kept). Pure stays 688 (the tz pin REWRITTEN in place — anchor comparison,
+getTimezoneOffset ban, workAnchorTz wiring, BY_TIMEZONE:{} + Manila-entry
+ban; 3 mutations / 3 bites), DOM 82. RUNBOOK for the operator (also in
+the CLAUDE.md #4 entry): deploy → WEEKEND roster flip (Timezone =
+America/Chicago every row; column O 8:30-17:00 for PH) → breaks all in
+the Default CST section → before Sept 1 review offshore August timesheets
+(split days under-credit the accrual; Day-Edit repairs or manual top-ups)
+→ expect the once-daily profile-vs-anchor warning on offshore agents
+between deploy and flip.
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
