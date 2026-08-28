@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 682 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 686 + DOM 82;
   visual matrix on demand — 54 scenarios, last full shoot 2026-08-28 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -451,12 +451,52 @@ body because the render fn's own comment names qaGetAudioChunk), DOM 82,
 editor ≈311 (omnibus + QA gate cases grew IN PLACE) — post-deploy
 runAllTests still expects 295.
 
+NEWEST OF ALL #7 (2026-08-28 #2, operator "/broad-implement follow-on
+items + show me a QA mock + are Training/Manage optimized for load time?"
+— block `.cycle/blocks/19pre-qa-followons2-perf-broad-implement.md`):
+(a) MOCK — delivered as the four real fixture-backed QA screenshots
+(queue, detail, stats, my-reviews) rather than a drawing. (b) PERF ANSWER
+— Training and Manage were NOT optimized (the 2026-08-13 SWR round never
+covered them): Team Training's first paint waited on the SLOWEST of five
+parallel RPCs, Manage re-ran getManagerDashboard (the app's heaviest live
+read) behind a full-view loader on EVERY enter, My Training re-fetched
+every enter. FIXED with session-state SWR: enterTrainingHomeView /
+enterTrainingManageView / enterManagerView paint from TRAIN_STATE/mgrData
+instantly on a re-enter + refresh behind the pill; the refresh render is
+guarded (trainMgrFormDirty_ — picked item/typed due/checked boxes/open
+overlay; mgrSwrRenderBlocked_ — checked bulk boxes/open overlay; data
+lands in state BEFORE the guard so nothing is lost); a failed refresh
+keeps last-good via warn toast (C17-5), cold failures keep the error
+card; argless post-mutation callers keep cold semantics. First-load-of-
+session is unchanged (real server work). (c) My Reviews Play now renders
+the WAVEFORM + click-to-seek through the ONE shared qaDrawWaveOn_ painter
+(qaDrawWave_ is a thin delegate; decoration-only — its own try/catch
+after the audio mounts, size gate, INV-156 seq guard); the myreviews
+scenario PRESSES Play via the post hook so it is on camera, and the mock
+aliases getMyQaReviewAudioChunk to the reviewer WAV fixture (INV-185 —
+both server routes delegate to qaAudioChunkFor_). (d) QA review-record
+RETENTION tier shipped default-OFF (the deferred operator decision made
+shippable by the CN/forms 0=disabled precedent): purgeOldQaReviews is
+trigger #18 (daily 2am, INV-44 gate, locked; deletes QaComments +
+QaScorecards past QA_REVIEW_RETENTION_DAYS; recordings index + Drive
+NEVER touched; ms>0 fail-safe; bottom-up; counts-only QaReviewPurge audit
+= the liveness heartbeat, job-check row gated on window>0 AND store per
+INV-186; early-returns precede the lock). Pure 682→686 (ONE auto-added by
+the derived trigger nets when purgeOldQaReviews entered TARGETS — INV-179
+— plus QA-17/QA-18/PERF; 6 mutations / 6 bites), DOM 82, matrix stays 54
+(myreviews grew in place), editor ≈312 — post-deploy runAllTests now
+expects **296** (triggerGate_qaReviewPurge_nonManagerThrows). Operator:
+re-run installAutomationTriggers() once (the 18th trigger — harmless
+while the window is 0).
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
      still-undeployed PR #176 + #177 from cycle 18.
-  2. `runAllTests()` in the editor — expect **295/295** (the beacon +
-     QA-gate cases joined after the gate fixes landed).
+  2. `runAllTests()` in the editor — expect **296/296** (the beacon +
+     QA-gate cases + the QA-purge trigger gate joined after the QA rounds
+     landed). ALSO re-run `installAutomationTriggers()` once — the 18th
+     trigger (`purgeOldQaReviews`) is harmless while its window is 0.
   3. Import the payor CSV — now doable IN-APP via Manage → Admin → Config →
      **Reference data tables** (previews first; dryRun defaults TRUE), so
      the manual File → Import → rename-to-`InsurancePayors` is optional.
