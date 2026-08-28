@@ -2420,7 +2420,7 @@ this section before touching the relevant area.
   `TEST_CDR_SS_ID`) for the Metrics integration tests; `getCdrSS_`
   honors a `_TEST_OVERRIDE_CDR_SS_ID` global so those tests read the
   fixture instead of the real CDR Report (`_withTestCdr_` resets the
-  in-memory + CacheService CDR caches around each). **Two editor-test hazards, both found by the cycle-14 run
+  in-memory + CacheService CDR caches around each). **Three editor-test hazards — the first two found by the cycle-14 run
   after `runAllTests` had not been run since cycle 10.** (a) **A test that
   writes "today" in a TARGET employee's tz is time-of-day dependent.**
   `managerSaveDayRange_appliesAcrossDays` built its range in `CONFIG.TIMEZONE`
@@ -2454,7 +2454,21 @@ this section before touching the relevant area.
   approve ONE row through the front door, then append the duplicate
   already-Approved. This is the "update the test doubles as part of the fix"
   rule — it was missed, and the editor-only suite meant three cycles passed
-  before anyone saw it.
+  before anyone saw it. (c) **A MID-SHIFT full run races LIVE traffic for the
+  ONE project ScriptLock — a lock timeout in a locked-endpoint test is
+  ENVIRONMENTAL, not a regression (operator run, 2026-08-28 post-deploy).**
+  Every mutating endpoint shares one `waitLock(15000)` lock (INV-01), and with
+  real agents on the app a live punch/note write queuing ahead can push a
+  test's wait past 15s — `punchAdjust_submitApproveWritesPunch` failed exactly
+  this way ("Lock timeout: another process was holding the lock for too long")
+  on a 2:13–2:32 PM CST run that took 18.7 min (the documented quiet-window
+  figure is ~6), with ZERO commits touching that path since its last green
+  run. The classification test: the verbatim lock-timeout message + no code
+  change on the failing path = re-run, don't debug. The flip side is why the
+  advice is a QUIET WINDOW rather than a retry loop: while the suite runs,
+  LIVE punches queue behind TEST writes too — run `runAllTests` before the
+  CST shift or in the ~6pm CT all-team quiet window (the INV-153 reasoning),
+  and a retry-once in the test would only mask genuine deadlocks.
   **A GATE test must assert the shape its endpoint
   RETURNS (post-deploy 2026-08-25).** A READ gate returns a bare `{error}`
   (`getReferenceTree`, `searchReference`, `getTeamMetrics`,
