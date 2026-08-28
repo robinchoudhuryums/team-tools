@@ -46,6 +46,18 @@ only BECAUSE of that — tests appended after `process.exit` run nothing), DOM
 companion harnesses. Invariant library: 195 (INV-192..195 written in-cycle;
 seams rules folded as amendments into INV-112/185/188).
 
+**Post-close operator rounds (2026-08-21 → 2026-08-28, factual addendum —
+scores await the next /reflect):** the pilot-feedback rounds 1–3, the
+2026-08-25 batches 1–6 + follow-ons, the 2026-08-27 correction/QA-Phase-1/
+break-editor/Part-A rounds, and the 2026-08-28 QA Phases 2–3 + gate change +
+follow-ons + the Training/Manage/Team Notes SWR load-speed rounds all MERGED
+(through **PR #201**). Everything since PR #176 awaits the ONE `clasp push -f`
++ New-version deploy; post-deploy `runAllTests()` now expects **296**, and
+`installAutomationTriggers()` must be re-run once (the 18th trigger,
+`purgeOldQaReviews`, default-disabled). Tests now: pure **688**, DOM **82**,
+visual matrix **54**; invariant library **196** (INV-196 written for the QA
+module). Details per round: `.cycle/STATE.md` NEWEST #1–#8 + `.cycle/blocks/`.
+
 ## Prior standing (Cycle 17 close, 2026-08-05)
 **Cycle 17 (broad scan) CLOSED 2026-08-05 — reflected net +12 (15 prod fixes −
 3 new failure modes; 3 capabilities; 28 defensive).** 0 Critical / 1 High /
