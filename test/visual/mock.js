@@ -847,8 +847,9 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'KB_SS_ID', label: 'Knowledge Base + Training', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'INTAKE_SS_ID', label: 'Intake (PHI)', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
+        { key: 'QA_SS_ID', label: 'QA (recordings)', status: 'warn', detail: 'Optional — unset (no fallback store, by design — INV-196)' },
         { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
-      summary: { ok: 4, warn: 2, fail: 0 },
+      summary: { ok: 4, warn: 3, fail: 0 },
       configTimezone: 'Asia/Kolkata',
     },
     getAutomationHealth: {
@@ -926,6 +927,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
               note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
+          store('QA (recordings)', 'QaRecordings index + QaComments + QaScorecards', 'QA/HR-adjacent',
+            'Review-record purge disabled (QA_REVIEW_RETENTION_DAYS unset/0) — review records kept', 'QA_SS_ID'),
           {
             label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge',
             prop: 'Employees col L (CallNotesSheetId)', source: 'roster', note: '', configured: true, reachable: true,
