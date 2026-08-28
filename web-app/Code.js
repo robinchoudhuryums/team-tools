@@ -119,8 +119,16 @@ const CONFIG = {
   // Drives the day-ribbon scheduled band + the "until end of shift"
   // countdown BEFORE a rep clocks in (once they clock in, both re-anchor to
   // their actual ClockIn + the scheduled length — see INV-71). DEFAULT is the
-  // 8:00 AM–5:00 PM CST shift most agents work (C3); BY_TIMEZONE holds the
-  // handful of exceptions (PH agents start 8:30). Resolved by
+  // 8:00 AM–5:00 PM CST shift most agents work (C3). ALL-CST policy
+  // (operator 2026-08-28): every agent, regardless of location, operates on
+  // the CST work schedule, so every roster Timezone cell is America/Chicago
+  // and schedule times are read in that one frame. BY_TIMEZONE stays as the
+  // MECHANISM (a per-tz exception would be legitimate again if the policy
+  // ever changed) but ships EMPTY — the old 'Asia/Manila': 8:30 entry was
+  // written as a Manila-LOCAL shift, which under the policy is wrong twice
+  // over (the PH team works 8:30–5 CST, ~9:30 PM–6 AM Manila). The PH 8:30
+  // start now lives in roster column O ('8:30-17:00', read in the rep's tz =
+  // CST under the policy); India's 8:00–5 is DEFAULT. Resolved by
   // getShiftSchedule_ and shipped to the client via getEmployeeState.
   SHIFT_SCHEDULE: {
     DEFAULT:     { start: '08:00', end: '17:00',
@@ -135,7 +143,7 @@ const CONFIG = {
         { label: 'Afternoon break', start: '15:00', len: 15 },
       ],
     },
-    BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+    BY_TIMEZONE: {},   // empty under the ALL-CST policy — see the comment above
     BREAK_REMINDER_MINUTES: 10,         // lead time for the upcoming-break reminder toast
   },
 
@@ -1268,6 +1276,15 @@ function getEmployeeState() {
       departments: empDepartments_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
+      // ALL-CST policy (operator 2026-08-28): every agent, regardless of
+      // location, operates on the CST work schedule — so the roster Timezone
+      // column is the SCHEDULE FRAME and should equal this anchor for every
+      // agent. The client's tzMismatchCheck_ warns when a profile drifts from
+      // it (a blank cell falling back to CONFIG.TIMEZONE is the dangerous
+      // case); the old browser-vs-profile comparison is retired, since an
+      // offshore agent's browser disagreeing with a CST profile is
+      // normal-by-policy, not a fault. Additive — an older client ignores it.
+      workAnchorTz: CONFIG.MANAGER_TIMEZONE,
       schedule: empShiftSchedule_(emp, empTz),   // Turn D: column-O override wins
       // F2 (cycle 18) — the shell reminder ticker needs to know this is a day
       // OFF, not just what the shift shape is. Approved PTO only; a pending

@@ -9335,15 +9335,35 @@ test('tzOffsetMinAt_ behavioral + the mismatch check compares OFFSETS once a day
   assert.strictEqual(ctx.tzOffsetMinAt_('Asia/Kolkata', at), 330, 'IST');
   assert.strictEqual(ctx.tzOffsetMinAt_('UTC', at), 0);
   assert.strictEqual(ctx.tzOffsetMinAt_('Not/AZone', at), null, 'unknown id → null (itself a mismatch)');
+  // REWRITTEN IN PLACE for the ALL-CST policy (operator 2026-08-28 — the
+  // honest bookkeeping): the check now compares the PROFILE timezone against
+  // the server-shipped WORK ANCHOR (CONFIG.MANAGER_TIMEZONE), because every
+  // agent operates on the CST schedule and browser≠profile is
+  // normal-by-policy for offshore agents — the old browser comparison would
+  // have nagged them daily about the configuration working as intended.
   const chk = nc(extractFunction('script_core.html', 'tzMismatchCheck_'));
+  assert.ok(/String\(empState\.workAnchorTz \|\| ''\)/.test(chk) && /if \(!anchor\) return;/.test(chk),
+    'anchored on the server-shipped work anchor — no anchor (older server) disables the check');
   // Compare OFFSETS, never ids — America/Chicago vs US/Central must not warn.
-  assert.ok(/rosterOff !== null && rosterOff === browserOff\) return;/.test(chk), 'equal offsets → silent');
+  assert.ok(/profileOff !== null && profileOff === anchorOff\) return;/.test(chk), 'equal offsets → silent');
+  assert.ok(!/getTimezoneOffset/.test(chk),
+    'the browser comparison is RETIRED — an offshore browser disagreeing with a CST profile is not a fault');
+  assert.ok(/anchorOff === null\) return;/.test(chk), 'an unresolvable anchor never nags');
   // Intl sanity probe first: a browser that cannot resolve UTC cannot judge
-  // the roster id, and must not nag daily about its own limitation.
+  // the profile id, and must not nag daily about its own limitation.
   assert.ok(/tzOffsetMinAt_\('UTC', now\) !== 0\) return;/.test(chk), 'the UTC probe gates the check');
   assert.ok(/umsTzWarnedDay/.test(chk), 'once per browser-local day');
   assert.ok(/sticky: true/.test(chk), 'the warning is a sticky toast (INV-190 — it must wait for its reader)');
   assert.ok(/PROFILE timezone/.test(chk), 'the copy says which timezone stamps punches and notes');
+  // Wiring: getEmployeeState ships the anchor (additive), and the ALL-CST
+  // policy retired the Manila shift entry — BY_TIMEZONE stays as the
+  // MECHANISM but ships empty (the PH 8:30 start lives in roster column O).
+  const nc2 = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const st = nc2(extractRawFunction('Code.js', 'getEmployeeState'));
+  assert.ok(/workAnchorTz: CONFIG\.MANAGER_TIMEZONE/.test(st), 'getEmployeeState ships workAnchorTz');
+  const codeSrc = nc2(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(/BY_TIMEZONE: \{\}/.test(codeSrc) && !/'Asia\/Manila': \{ start/.test(codeSrc),
+    'the Manila-LOCAL shift entry is gone (it was wrong twice over under the policy)');
 });
 
 console.log('\nclock — dashboard cold-start round 2 (operator 2026-08-13)');

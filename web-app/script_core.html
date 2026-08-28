@@ -1978,22 +1978,37 @@ function tzOffsetMinAt_(tz, date) {
 function tzMismatchCheck_() {
   try {
     if (!empState || !empState.timezone) return;
+    // ALL-CST policy (operator 2026-08-28): every agent operates on the CST
+    // work schedule, so the check compares the PROFILE timezone against the
+    // server-shipped WORK ANCHOR (CONFIG.MANAGER_TIMEZONE) — the dangerous
+    // case it exists for is a blank/typo'd roster cell falling back to
+    // CONFIG.TIMEZONE (Asia/Kolkata), which mis-stamps every punch and note.
+    // The old browser-vs-profile comparison is RETIRED: an offshore agent's
+    // browser disagreeing with a CST profile is normal-by-policy, and nagging
+    // daily about the configuration working as intended teaches everyone to
+    // ignore the channel (the F2 lesson). No anchor on the payload (older
+    // server) = check disabled rather than guessing.
+    var anchor = String(empState.workAnchorTz || '');
+    if (!anchor) return;
     var now = new Date();
     // Sanity-probe Intl itself first: if a KNOWN zone doesn't resolve, this
-    // browser can't judge the roster id and must not nag daily about it.
+    // browser can't judge the profile id and must not nag daily about it.
     if (tzOffsetMinAt_('UTC', now) !== 0) return;
-    var rosterOff = tzOffsetMinAt_(String(empState.timezone), now);
-    var browserOff = -now.getTimezoneOffset();
-    if (rosterOff !== null && rosterOff === browserOff) return;
+    var anchorOff = tzOffsetMinAt_(anchor, now);
+    if (anchorOff === null) return;   // can't resolve the anchor → never nag
+    var profileOff = tzOffsetMinAt_(String(empState.timezone), now);
+    // Compare OFFSETS, never ids — America/Chicago vs US/Central must not
+    // warn. An unresolvable profile id falls through to the warning (it is
+    // itself the fault this check exists to surface).
+    if (profileOff !== null && profileOff === anchorOff) return;
     var day = isoDateTz ? isoDateTz(Intl.DateTimeFormat().resolvedOptions().timeZone) : String(now.getDate());
     try {
       if (localStorage.getItem('umsTzWarnedDay') === day) return;
       localStorage.setItem('umsTzWarnedDay', day);
     } catch (e) { /* privacy mode — warn every load rather than never */ }
-    var here = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'a different zone';
-    showToast('Heads up: your profile timezone is ' + empState.timezone + ', but this browser looks like ' +
-      here + '. Punches and call notes are stamped in the PROFILE timezone — if your timestamps look wrong, ' +
-      'ask your manager to correct it (Manage → Admin → Team Members, or the Employees sheet).',
+    showToast('Heads up: your profile timezone is ' + empState.timezone + ', but the whole team operates on the ' +
+      anchor + ' (CST) work schedule. Punches and call notes are stamped in the PROFILE timezone — ' +
+      'ask your manager to set it to ' + anchor + ' (Manage → Admin → Team Members, or the Employees sheet).',
       'toast-warn', { sticky: true });
   } catch (e) { /* advisory only — never break boot */ }
 }
