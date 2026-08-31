@@ -1211,6 +1211,8 @@ function _runAllTests() {
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
   _integrationTest('intake_sendPPD_staleHashRejected',          test_intake_sendPPD_staleHashRejected);
+  _integrationTest('smallEndpoints_gatesAndNoLeak',            test_smallEndpoints_gatesAndNoLeak);
+  _integrationTest('getMyCallNotesRange_validatesAndCaps',     test_getMyCallNotesRange_validatesAndCaps);
   _integrationTest('intake_previewAcct_bothFormsHashDistinctly', test_intake_previewAcct_bothFormsHashDistinctly);
   _integrationTest('intake_sendAcct_hashGateBothForms',         test_intake_sendAcct_hashGateBothForms);
   _integrationTest('intake_previewAcct_requiresPatientAndAuth', test_intake_previewAcct_requiresPatientAndAuth);
@@ -6765,6 +6767,80 @@ function test_intake_sendPPD_staleHashRejected() {
     });
   });
   _assertFailure(r, 'changed since you previewed', 'stale bodyHash must reject the send');
+}
+
+function test_smallEndpoints_gatesAndNoLeak() {
+  // Five public endpoints had ZERO coverage of any kind (measured
+  // 2026-08-31). Four are cheap reads whose value is entirely in what they
+  // REFUSE and what they DON'T return; the fifth throws before it touches
+  // Gmail. None of them writes, so this is safe on the live project.
+
+  // (a) getIntakeAgents — the intake recipient picker. The load-bearing
+  //     property is a NEGATIVE one: agent EMAIL addresses must never reach
+  //     the client (recipients are resolved server-side by
+  //     intakeResolveRecipient_). A future 'helpful' email field here would
+  //     hand every rep the whole roster's addresses.
+  const agents = _asUser(_TEST_INDIA_EMAIL, function () { return getIntakeAgents(); });
+  _assertNull(agents.error, 'an enrolled rep may list agents');
+  _assertTrue(Array.isArray(agents.agents) && agents.agents.length > 0, 'agents returned');
+  agents.agents.forEach(function (a) {
+    _assertEq(Object.keys(a).sort().join(','), 'id,name',
+      'an agent entry is {id, name} ONLY — no email may leak to the client');
+  });
+  const agentsAnon = _asUser('not-a-registered-user@example.invalid', getIntakeAgents);
+  _assertContains(String(agentsAnon.error || ''), 'Not authorized',
+    'getIntakeAgents is employee-gated (bare {error} — a READ shape)');
+
+  // (b) getFormCatalog — same posture: metadata only, never the fileName or
+  //     the raw GitHub URL the server fetches PDFs from.
+  const cat = _asUser(_TEST_INDIA_EMAIL, function () { return getFormCatalog(); });
+  _assertNull(cat.error, 'an enrolled rep may read the form catalog');
+  (cat.forms || []).forEach(function (f) {
+    _assertEq(Object.keys(f).sort().join(','), 'category,id,interactive,name',
+      'catalog entries expose metadata only — no fileName / fetch URL');
+  });
+  _assertContains(String(_asUser('nobody@example.invalid', getFormCatalog).error || ''),
+    'Employee not found', 'getFormCatalog is employee-gated');
+
+  // (c) getMySentForms — caller-scoped over FormTokens.
+  const sent = _asUser(_TEST_INDIA_EMAIL, function () { return getMySentForms(); });
+  _assertNull(sent.error, 'an enrolled rep may list their own sent forms');
+  _assertTrue(Array.isArray(sent.forms), 'forms is a list');
+  _assertContains(String(_asUser('nobody@example.invalid', getMySentForms).error || ''),
+    'Employee not found', 'getMySentForms is employee-gated');
+
+  // (d) authorizeGmailScope — a trigger-style helper that reaches Gmail. The
+  //     gate THROWS (the INV-44 idiom) and fires BEFORE GmailApp, so a
+  //     non-manager caller never touches the mailbox.
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { return authorizeGmailScope(); });
+  }, 'manager', 'authorizeGmailScope throws for a non-manager before any Gmail read');
+}
+
+function test_getMyCallNotesRange_validatesAndCaps() {
+  // Every rejection below precedes the Sheet open, so an unenrolled or
+  // enrolled caller alike gets the same validation answers with no read.
+  const call = function (a, b) {
+    return _asUser(_TEST_INDIA_EMAIL, function () { return getMyCallNotesRange(a, b); });
+  };
+  _assertContains(String(call('2026-8-1', '2026-08-02').error || ''), 'Invalid start date',
+    'a non-padded date is rejected, not coerced');
+  _assertContains(String(call('2026-08-01', 'yesterday').error || ''), 'Invalid end date',
+    'a free-text end date is rejected');
+  _assertContains(String(call('2026-08-10', '2026-08-01').error || ''), 'on or before',
+    'a reversed range is rejected');
+  // The 90-day cap is the point of the endpoint: an unbounded span would scan
+  // a rep's whole history on a rep-callable path.
+  _assertContains(String(call('2026-01-01', '2026-12-31').error || ''), 'exceed 90 days',
+    'a 365-day span is refused');
+  // Assert the boundary by what it must NOT say: an 89-day span is inside the
+  // cap. Checking for NO error at all would couple this to the test rep's
+  // call-notes enrollment, which is a different property.
+  _assertFalse(/exceed 90 days/.test(String(call('2026-06-01', '2026-08-29').error || '')),
+    'an 89-day span is INSIDE the cap (the boundary is not off by one)');
+  _assertContains(String(_asUser('nobody@example.invalid', function () {
+    return getMyCallNotesRange('2026-08-01', '2026-08-02');
+  }).error || ''), 'Employee not found', 'getMyCallNotesRange is employee-gated');
 }
 
 function test_intake_previewAcct_bothFormsHashDistinctly() {
