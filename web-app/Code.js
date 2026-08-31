@@ -2156,6 +2156,129 @@ function getManagerDashboard() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Team punches calendar (operator 2026-08-31) — the one manager cut the app
+ *  lacked: every rep's punch times for an ARBITRARY date in one place (Live
+ *  Status is this view pinned to today; Day Edit is one rep at a time). One
+ *  month per call so the client's calendar + day-table render from a single
+ *  read, matching buildCalendarForEmployee_'s one-shot month model.
+ *  READ-ONLY, manager-gated (read shape: bare {error} — the GATE-SHAPE rule).
+ *  Per-day per-rep derivation MIRRORS buildTimesheetForEmployee_ exactly
+ *  (last punch per type wins — the findExistingPunch_/Day-Edit convention;
+ *  calcHours_ null → INCOMPLETE, never 0; a ClockIn with no ClockOut is
+ *  in-progress on the rep's own today, incomplete on a past day) so this
+ *  table can never disagree with the pay statement over the same rows.
+ *  Live-tab-only by design (the calendar/Punctuality posture) — a month
+ *  predating the live tab's oldest row carries archiveNote (INV-187). */
+function getTeamCalendar(monthIso) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(monthIso || ''))) return { error: 'Invalid month (expected yyyy-MM).' };
+    monthIso = String(monthIso);
+
+    // Roster inclusion via the ONE predicate (INV-183/F3) — an offboarded
+    // name-only row is not a person to list.
+    const rosterRows = getEmployeeRosterRows_();
+    const reps = {};                    // id -> { name, todayStr (rep-tz) }
+    const todayByTz = {};               // memo — one Intl format per distinct tz
+    for (let i = 1; i < rosterRows.length; i++) {
+      if (!empRosterEmail_(rosterRows[i])) continue;
+      const id = String(rosterRows[i][EMP.ID] || '').trim();
+      if (!id) continue;
+      const tz = safeTimezone_(String(rosterRows[i][EMP.TIMEZONE] || '').trim());
+      if (todayByTz[tz] === undefined) todayByTz[tz] = fmtDateTz_(new Date(), tz);
+      reps[id] = { name: String(rosterRows[i][EMP.NAME] || '').trim(), todayStr: todayByTz[tz] };
+    }
+
+    // ONE Timesheet read; rows are APPEND order, so per-(rep,date) the last
+    // row per type wins (deliberately NOT time-sorted first — the Day Edit /
+    // managerSaveDay last-row-wins snapshot is what a pencil click will edit).
+    const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    const byDay = {};                   // dateIso -> id -> [{time, type, isAdjustment}]
+    let oldestLiveIso = null;
+    for (let i = 2; i < adpRows.length; i++) {
+      const dateIso = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (!dateIso) continue;
+      if (oldestLiveIso === null || dateIso < oldestLiveIso) oldestLiveIso = dateIso;
+      if (dateIso.substring(0, 7) !== monthIso) continue;
+      const id = String(adpRows[i][ADP.EMP_ID] || '').trim();
+      if (!reps[id]) continue;
+      const rawType = String(adpRows[i][ADP.COMMENTS] || '');
+      const type = normalizeType_(rawType);
+      if (PUNCH_LABELS_.indexOf(type) === -1) continue;   // garbage row ≠ a punch (the getNextActions_ lesson)
+      if (!byDay[dateIso]) byDay[dateIso] = {};
+      if (!byDay[dateIso][id]) byDay[dateIso][id] = [];
+      byDay[dateIso][id].push({ time: normalizeTime_(adpRows[i][ADP.TIME]), type,
+        isAdjustment: rawType.indexOf('ADJ-') === 0 });
+    }
+
+    const days = {};                    // dateIso -> { reps: [...], off: [...] }
+    Object.keys(byDay).forEach(dateIso => {
+      const repRows = [];
+      Object.keys(byDay[dateIso]).forEach(id => {
+        const punches = byDay[dateIso][id];
+        const pm = {}, adjMap = {};
+        punches.forEach(p => { pm[p.type] = p.time; adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
+        let hours = null, incomplete = false, inProgress = false;
+        if (pm.ClockIn) {
+          if (pm.ClockOut) {
+            hours = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
+            if (hours === null) incomplete = true;      // A3/INV-176: null, never 0
+          } else if (dateIso === reps[id].todayStr) inProgress = true;
+          else if (dateIso < reps[id].todayStr) incomplete = true;
+        } else incomplete = true;                        // lunch rows with no ClockIn
+        repRows.push({
+          id, name: reps[id].name,
+          clockIn: pm.ClockIn || null,    adjClockIn: !!adjMap.ClockIn,
+          lunchOut: pm.LunchOut || null,  adjLunchOut: !!adjMap.LunchOut,
+          lunchIn: pm.LunchIn || null,    adjLunchIn: !!adjMap.LunchIn,
+          clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
+          hours, incomplete, inProgress,
+          punchCount: punches.length,     // > filled slots ⇒ collapsed extras (multi-lunch / pre-guard duplicates)
+        });
+      });
+      repRows.sort((a, b) => a.name.localeCompare(b.name));
+      days[dateIso] = { reps: repRows, off: [] };
+    });
+
+    // PTO overlay — normalize the status cell ONCE at the read (the INV-183
+    // DR.STATUS/TO.STATUS family): trimmed + lowercased, approved/pending only.
+    const toRows = getAdpSS_().getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+    for (let i = 1; i < toRows.length; i++) {
+      const dateIso = normalizeDate_(toRows[i][TO.DATE]);
+      if (!dateIso || dateIso.substring(0, 7) !== monthIso) continue;
+      const id = String(toRows[i][TO.EMP_ID] || '').trim();
+      if (!reps[id]) continue;
+      const st = String(toRows[i][TO.STATUS] || '').trim().toLowerCase();
+      if (st !== 'approved' && st !== 'pending') continue;
+      if (!days[dateIso]) days[dateIso] = { reps: [], off: [] };
+      days[dateIso].off.push({ name: reps[id].name,
+        type: String(toRows[i][TO.TYPE] || '').trim(), status: st });
+    }
+    Object.keys(days).forEach(d => days[d].off.sort((a, b) => a.name.localeCompare(b.name)));
+
+    const holidays = {};
+    const calYear = parseInt(monthIso.substring(0, 4), 10);
+    // December also consults year+1: a Jan 1 falling on a Saturday observes
+    // on the PRIOR Dec 31 (fixedHoliday_'s shift), which lives in this month.
+    let holidayList = getUsHolidays_(calYear);
+    if (monthIso.substring(5) === '12') holidayList = holidayList.concat(getUsHolidays_(calYear + 1));
+    holidayList.forEach(h => {
+      if (h.date.substring(0, 7) === monthIso) holidays[h.date] = h.name;
+    });
+
+    return {
+      month: monthIso, days, holidays,
+      rosterCount: Object.keys(reps).length,
+      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS,
+      // Live-tab-only read: a month wholly older than the live tab may have
+      // been moved to TimesheetArchive — say so instead of rendering a
+      // confident empty month (INV-187; the pay-statement archiveNote shape).
+      archiveNote: !!(oldestLiveIso && monthIso < oldestLiveIso.substring(0, 7)),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);

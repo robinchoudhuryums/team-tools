@@ -14010,6 +14010,171 @@ test('SH-QA: Storage Health carries the QA store with the LIVE retention window'
     'the getStorageHealth fixture carries the QA row');
 });
 
+// ── Team punches calendar (operator 2026-08-31) ─────────────────────────────
+console.log('\nteam punches calendar');
+
+test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType_/calcHours_ in one vm)', () => {
+  // Load the REAL enums + the load-bearing helpers; stub only the
+  // environment (sheets, tz formatting, identity) — the empValidateNewEmployee_
+  // pattern: never re-declare an enum in the test.
+  const tcCtx = vm.createContext({});
+  ['const EMP = \\{[\\s\\S]*?\\};', 'const ADP = \\{[\\s\\S]*?\\};', 'const TO  = \\{[\\s\\S]*?\\};',
+   "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];"].forEach(re => {
+    const m = new RegExp(re).exec(codeSrc);
+    assert.ok(m, 'located: ' + re.slice(0, 20));
+    vm.runInContext(m[0], tcCtx);
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), tcCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'calcHours_'), tcCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'normalizeType_'), tcCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'empRosterEmail_'), tcCtx);
+  const EMPn = vm.runInContext('EMP', tcCtx), ADPn = vm.runInContext('ADP', tcCtx), TOn = vm.runInContext('TO', tcCtx);
+  const rosterRow = (email, id, name) => {
+    const r = new Array(18).fill('');
+    r[EMPn.EMAIL] = email; r[EMPn.ID] = id; r[EMPn.NAME] = name; r[EMPn.TIMEZONE] = 'America/Chicago';
+    return r;
+  };
+  const adpRow = (id, date, time, comments) => {
+    const r = new Array(9).fill('');
+    r[ADPn.EMP_ID] = id; r[ADPn.DATE] = date; r[ADPn.TIME] = time; r[ADPn.COMMENTS] = comments;
+    return r;
+  };
+  const toRow = (id, date, type, status) => {
+    const r = new Array(7).fill('');
+    r[TOn.EMP_ID] = id; r[TOn.DATE] = date; r[TOn.TYPE] = type; r[TOn.STATUS] = status;
+    return r;
+  };
+  const adpRows = [[], [],
+    adpRow('A1', '2026-08-10', '08:30:00', 'ClockIn'),
+    adpRow('A1', '2026-08-10', '17:00:00', 'ADJ-ClockOut'),
+    adpRow('A1', '2026-08-10', '12:00:00', 'LunchOut'),
+    adpRow('A1', '2026-08-10', '12:30:00', 'LunchIn'),
+    adpRow('A1', '2026-08-10', '08:45:00', 'ClockIn'),          // LAST per type wins (Day Edit agreement)
+    adpRow('B2', '2026-08-11', '09:00:00', 'ClockIn'),          // past day, no ClockOut → incomplete
+    adpRow('B2', '2026-08-10', '10:00:00', 'FixedRow'),         // garbage type — NOT a punch
+    adpRow('C3', '2026-08-10', '08:00:00', 'ClockIn'),          // offboarded (blank email) — excluded
+    adpRow('A1', '2026-07-30', '08:00:00', 'ClockIn'),          // out of month; sets oldestLiveIso
+    adpRow('A1', '2026-08-12', 'garbage',  'ClockIn'),          // corrupt TIME cell + a real ClockOut →
+    adpRow('A1', '2026-08-12', '17:00:00', 'ClockOut'),         //   calcHours_ null → INCOMPLETE, never 0
+  ];
+  const toRows = [[],
+    toRow('B2', '2026-08-12', 'Full Day', ' Approved '),        // padded status still counts (INV-183 family)
+    toRow('A1', '2026-08-13', 'Full Day', 'Denied'),            // denied never overlays
+    toRow('C3', '2026-08-12', 'Full Day', 'Approved'),          // offboarded — excluded
+  ];
+  Object.assign(tcCtx, {
+    getEmployeeInfo_: () => ({ isManager: true }),
+    getEmployeeRosterRows_: () => [[],
+      rosterRow('a@x.com', 'A1', 'Alice'), rosterRow('b@x.com', 'B2', 'Bob'),
+      rosterRow('   ', 'C3', 'Carl')],
+    safeTimezone_: (tz) => tz || 'America/Chicago',
+    fmtDateTz_: () => '2026-08-28',
+    normalizeDate_: (v) => String(v || ''),
+    normalizeTime_: (v) => String(v || ''),
+    getUsHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],
+    getAdpSS_: () => ({ getSheetByName: (tab) => ({ getDataRange: () => ({ getValues:
+      () => (tab === 'Timesheet' ? adpRows : toRows) }) }) }),
+    CONFIG: { ADP_TAB: 'Timesheet', TIMEOFF_TAB: 'TimeOffRequests', ADJUST_WINDOW_DAYS: 30 },
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'getTeamCalendar'), tcCtx, { filename: 'Code.js#getTeamCalendar' });
+
+  // Gate + read shape (bare {error}, never success:false — the GATE-SHAPE rule).
+  const gCtx = tcCtx; const realGei = gCtx.getEmployeeInfo_;
+  gCtx.getEmployeeInfo_ = () => null;
+  const rej = vm.runInContext("getTeamCalendar('2026-08')", tcCtx);
+  assert.strictEqual(rej.error, 'Manager access required.');
+  assert.ok(!('success' in rej), 'read gate ships a bare {error}');
+  gCtx.getEmployeeInfo_ = realGei;
+  assert.ok(/Invalid month/.test(vm.runInContext("getTeamCalendar('2026-8')", tcCtx).error), 'month shape validated');
+
+  const res = vm.runInContext("getTeamCalendar('2026-08')", tcCtx);
+  assert.ok(!res.error, 'clean run: ' + (res.error || ''));
+  const d10 = res.days['2026-08-10'];
+  assert.strictEqual(d10.reps.length, 1, 'garbage-type row is not a punch and the offboarded rep is excluded');
+  const a = d10.reps[0];
+  assert.strictEqual(a.name, 'Alice');
+  assert.strictEqual(a.clockIn, '08:45:00', 'LAST punch per type wins — the Day Edit/findExistingPunch_ agreement');
+  assert.strictEqual(a.adjClockOut, true, 'ADJ- prefix flags the slot');
+  assert.strictEqual(a.hours, 7.75, 'calcHours_ over the picked slots (8:45–17:00 minus the 30m lunch)');
+  assert.strictEqual(a.punchCount, 5, 'collapsed extras are countable (+N in the client)');
+  const a12 = res.days['2026-08-12'].reps[0];
+  assert.strictEqual(a12.hours, null, 'a corrupt time cell computes NO hours (A3 — calcHours_ null propagates)');
+  assert.strictEqual(a12.incomplete, true, '… and the day reads INCOMPLETE, never a confident 0 (INV-176)');
+  const b11 = res.days['2026-08-11'].reps[0];
+  assert.strictEqual(b11.hours, null, 'a ClockIn with no ClockOut on a past day computes NO hours (never 0)');
+  assert.strictEqual(b11.incomplete, true, '… and reads INCOMPLETE (INV-176/187)');
+  const off = res.days['2026-08-12'].off;
+  assert.strictEqual(off.length, 1, 'denied + offboarded rows never overlay');
+  assert.deepStrictEqual([off[0].name, off[0].status], ['Bob', 'approved'],
+    'a PADDED " Approved " cell is normalized at the ONE read (the TO.STATUS family)');
+  assert.strictEqual(res.holidays['2026-08-31'], 'Test Holiday');
+  assert.strictEqual(res.rosterCount, 2, 'the offboarded row is not a person to count (INV-183)');
+  assert.strictEqual(res.archiveNote, false, 'live rows reach back past the month — no archive note');
+  const older = vm.runInContext("getTeamCalendar('2026-06')", tcCtx);
+  assert.strictEqual(older.archiveNote, true,
+    'a month wholly older than the live tab says so instead of rendering a confident empty month (INV-187)');
+});
+
+test('team calendar — client SWR/wiring, Day Edit prefill, fixture shape (source)', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) Wired into the dashboard's loader list, and the slot exists in the render.
+  assert.ok(/loadPendingAdjustments_\(\); loadTeamCalendar_\(\);/.test(mgr), 'loader runs with the other lazy cards');
+  assert.ok(/id="mgr-team-cal"/.test(mgr), 'the slot renders');
+  // (b) INV-156/129: the cache write is KEY-EXACT (the requested month, not
+  // TEAMCAL.month), CLEAN-round-gated, and lands BEFORE the seq/view check.
+  const fetchFn = nc(mgr.slice(mgr.indexOf('function tcalFetch_'), mgr.indexOf('function tcalFail_')));
+  const wIdx = fetchFn.indexOf('TEAMCAL.cache[month] = res');
+  const sIdx = fetchFn.indexOf('seq !== TEAMCAL.seq');
+  assert.ok(wIdx !== -1 && sIdx !== -1 && wIdx < sIdx, 'cache write sits BEFORE the seq check (INV-156)');
+  assert.ok(/if \(res && !res\.error\) TEAMCAL\.cache\[month\] = res;/.test(fetchFn),
+    'error rounds are never cached (INV-129)');
+  // (c) C17-5: painted refresh failure keeps last-good via warn toast; a cold
+  // failure renders the error card.
+  const failFn = nc(mgr.slice(mgr.indexOf('function tcalFail_'), mgr.indexOf('function tcalNav_')));
+  assert.ok(/TEAMCAL\.cache\[TEAMCAL\.month\]/.test(failFn) && /toast-warn/.test(failFn), 'painted → warn toast');
+  assert.ok(/errorStateHtml_\(msg\)/.test(failFn), 'cold → errorStateHtml_');
+  // (d) The day cells are keyboard-reachable with exposed selection state
+  // (INV-173/174), names are escaped, and month/today derive from the
+  // MANAGER's roster tz (the F6 discipline), never browser-local.
+  assert.ok(/role="button" tabindex="0"/.test(mgr.slice(mgr.indexOf('function tcalRender_'))), 'cells carry role+tabindex');
+  assert.ok(/aria-pressed=/.test(mgr.slice(mgr.indexOf('function tcalRender_'))), 'selection exposed via aria-pressed');
+  assert.ok(/esc\(parts\.join/.test(mgr) && /esc\(r\.name\)/.test(mgr), 'server strings escaped');
+  assert.ok((nc(mgr.slice(mgr.indexOf('var TEAMCAL'), mgr.indexOf('function tcalDayTableHtml_'))).match(/isoDateTz\(empTz\(\)\)/g) || []).length >= 3,
+    'dates derive from the manager roster tz');
+  assert.ok(/if \(m > curMonth\) return;/.test(nc(mgr)), 'future-month nav is refused');
+  // (e) The pencil routes through the EXISTING Day Edit modal prefilled to the
+  // selected date, and the prefill is bounds-checked against the picker's own
+  // [min, today] window — the openAdjustModal precedent.
+  assert.ok(/openDayEditModal\(btn\.getAttribute\('data-tcal-edit'\), btn\.getAttribute\('data-tcal-name'\) \|\| '', TEAMCAL\.selDate\)/.test(mgr),
+    'pencil opens Day Edit at the selected date');
+  const ode = nc(mgr.slice(mgr.indexOf('function openDayEditModal'), mgr.indexOf('function loadDayEditPunches')));
+  assert.ok(/prefillDate >= deDateEl\.min && prefillDate <= today/.test(ode), 'prefill is bounds-checked');
+  assert.ok(/loadDayEditPunches\(empId, _deDate, _deDate\)/.test(ode), 'the initial load follows the prefilled date');
+  // (f) The "no punches" merge stays honest: only past/current weekdays, and
+  // never a rep already listed off.
+  const tbl = nc(mgr.slice(mgr.indexOf('function tcalDayTableHtml_'), mgr.indexOf('function openDayEditModal')));
+  assert.ok(/!isWeekend && dateIso <= todayIso/.test(tbl), 'absent-rep rows only on past/current weekdays');
+  assert.ok(/offNames\[ls\.name\]/.test(tbl), 'a rep listed off is not also "no punches"');
+  assert.ok(/mtRenderTable_\(/.test(tbl), 'renders through the shared table component (the V-11 rule)');
+  // (g) INV-185: the visual fixture's per-rep row keys mirror the server's own
+  // push literal (RAW source for shapes — the seams-18 F3 rule).
+  const push = /repRows\.push\(\{([\s\S]*?)\}\);/.exec(codeSrc);
+  assert.ok(push, "located the server's repRows.push literal");
+  const keys = [];
+  const keyRe = /(\w+):\s/g; let km;
+  while ((km = keyRe.exec(push[1]))) keys.push(km[1]);
+  assert.ok(keys.length >= 10, 'the push literal yields a real key set (' + keys.length + ')');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  const fi = mock.indexOf('getTeamCalendar:');
+  assert.ok(fi !== -1, 'the getTeamCalendar fixture exists (a missing fixture renders a loader in every manager shot)');
+  const fx = mock.slice(fi, fi + 4000);
+  keys.forEach(k => assert.ok(fx.indexOf(k + ':') !== -1,
+    'fixture rep rows carry the server key "' + k + '" (INV-185)'));
+  assert.ok(/getTeamCalendar: function/.test(mock),
+    'the fixture is a FUNCTION of its month argument (the F14 rule — the response shape depends on the args)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

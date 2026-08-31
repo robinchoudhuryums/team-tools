@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 688 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 690 + DOM 82;
   visual matrix on demand — 54 scenarios, last full shoot 2026-08-28 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -545,6 +545,34 @@ the Default CST section → before Sept 1 review offshore August timesheets
 (split days under-credit the accrual; Day-Edit repairs or manual top-ups)
 → expect the once-daily profile-vs-anchor warning on offshore agents
 between deploy and flip.
+
+NEWEST OF ALL #10 (2026-08-31, operator "no manager view of team punch
+times for a given date" — block
+`.cycle/blocks/19pre-team-calendar-broad-implement.md`): the TEAM PUNCHES
+CALENDAR in Manage → Manage Time. Placement deliberated with the operator
+(a role-scoped toggle on the rep-facing Time/PTO page was argued against —
+the registry-reorg convention puts team surfaces in Manage, and the Day
+Edit modal lives in that partial); shape operator-picked via
+AskUserQuestion: month calendar in the Time/PTO .cal-* vocabulary + a
+FULL-WIDTH team punch table below the selected day + a pencil per row
+opening Day Edit prefilled to that rep+date (openDayEditModal gained an
+optional bounds-checked 3rd prefillDate arg). Server getTeamCalendar(month)
+— manager-gated read, ONE Timesheet + ONE TimeOffRequests read per month,
+derivation MIRRORS buildTimesheetForEmployee_ (last-per-type wins,
+calcHours_ null → incomplete never 0), empRosterEmail_ inclusion, TO
+status normalized once, garbage COMMENTS types skipped, live-tab-only with
+archiveNote (INV-187). Client: per-month SWR (key-exact clean-round cache
+write BEFORE the seq check — INV-156/129; C17-5 painted/cold split),
+absent reps merged as muted "no punches" rows (past/current weekdays only,
+deduped by id AND name, off-listed reps excluded), manager-tz dates,
+future-nav refused, mtRenderTable_ per V-11. Pure 688→690 (behavioural
+endpoint pin + client wiring/fixture-shape pin; 6 mutations / 6 bites —
+TWO pins strengthened when first bites exposed them: a corrupt-time
+fixture row was needed to make the null-hours path observable, and the
+fixture-key mutation had to remove the key everywhere). Omnibus gained
+the getTeamCalendar case IN PLACE (runAllTests still 296); mock gained an
+argument-dependent getTeamCalendar fixture (the F14 rule), so the card is
+on camera in the existing manager scenarios.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
