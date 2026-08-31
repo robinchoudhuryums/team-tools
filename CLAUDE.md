@@ -9011,11 +9011,20 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    shot led to measuring an invisible 4px edit button (`icon('pencil')`
    resolved to NO glyph — the key is `adjust`; now tripwired, see the icon-key
    pin).
-   **Still uncovered: Manage → Coverage, Sent Forms, EmpDocs
-   My Docs, the QA recording DETAIL (player + comment timeline — it needs
-   chunked audio the mock cannot serve; the queue is covered), and most
-   OTHER modal/overlay states** (only the sched modal and
-   the Reference reader have `post` scenarios so far),
+   **The uncovered-tab list is DERIVED, not prose — the marker line below is
+   machine-checked against the matrix (VIS-COVER), because the hand-kept
+   sentence that used to sit here named 3 of 11 real gaps and a /sync-docs
+   pass read it rather than checking it. Edit the marker only by adding a
+   scenario or by accepting a new gap deliberately:**
+
+   VISUAL-GAP-TABS: callNotesForms, callNotesHistory, callNotesSearch, coverage, docsManage, intakeSent, myDocs, trainingManage
+
+   Of those, `callNotesHistory` / `callNotesSearch` are the same card
+   vocabulary the Log view already shoots, and `myDocs` / `docsManage` /
+   `trainingManage` are the manager/rep halves of Training & Employee Docs.
+   Also uncovered and NOT tab-shaped, so the marker cannot see them: **most
+   modal/overlay states** (only the sched modal and the Reference reader have
+   `post` scenarios so far),
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
    width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED
    component, also the CN search field tabs) kept a 25px page overflow at

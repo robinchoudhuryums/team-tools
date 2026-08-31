@@ -807,6 +807,35 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       },
       kbAi: { dailyCap: 3, model: 'claude-haiku-4-5', models: ['claude-haiku-4-5', 'claude-sonnet-5'], hasKey: false, spend: { date: todayIso, usd: 0, calls: 0 } },
     },
+    // Team Notes (callNotesManage) — the manager surface, never shot until
+    // 2026-08-31. Item keys MIRROR callNoteRowToObject_'s return plus the two
+    // fields managerAggregateFlagged_ attaches (repId/repName) — INV-185: a
+    // paraphrase here drifts and the screenshot then lies with confidence.
+    managerGetTrainingQueue: { flagType: 'training', skippedReps: [], results: [
+      { noteId: 'n-tq1', timestamp: daysAgo(0) + 'T09:14:00', dateLocal: daysAgo(0),
+        callback: '(555) 123-4567', caller: 'Dana Reyes', relationship: 'Patient',
+        patientAndTrx: 'M. Alvarez · TRX-88421', issue: 'Asked whether a replacement cushion needs a new order.',
+        transferredTo: '', resolution: 'Told them I would check and call back.',
+        flagType: 'training', emailedAt: '', emailDepartments: '',
+        subform: { trainingQuestion: 'Does a cushion swap need a new order, or can it ride the existing one?' },
+        rowIndex: 12, repId: 'E-1042', repName: 'Avery Blake' },
+      { noteId: 'n-tq2', timestamp: daysAgo(1) + 'T15:02:00', dateLocal: daysAgo(1),
+        callback: '(555) 998-2010', caller: 'Priya Nair', relationship: 'Caregiver',
+        patientAndTrx: 'R. Okafor · TRX-90117', issue: 'Insurance changed mid-cycle.',
+        transferredTo: 'Billing', resolution: 'Escalated to Billing.',
+        flagType: 'training', emailedAt: daysAgo(1) + 'T15:20:00', emailDepartments: 'Billing',
+        subform: { trainingQuestion: 'Which team owns a mid-cycle payor change?',
+          trainingReply: 'Billing owns it — log the note and transfer.',
+          trainingReplyBy: 'robin@umsupply.com', trainingReplyAt: daysAgo(0) + 'T08:40:00' },
+        rowIndex: 31, repId: 'E-1088', repName: 'Sam Ortiz' }] },
+    managerGetReviewCandidates: { flagType: 'review', skippedReps: [], results: [
+      { noteId: 'n-rv1', timestamp: daysAgo(2) + 'T11:33:00', dateLocal: daysAgo(2),
+        callback: '(555) 771-0044', caller: 'Marcus Webb', relationship: 'Patient',
+        patientAndTrx: 'M. Webb · TRX-77310', issue: 'Long call — patient upset about a delayed shipment.',
+        transferredTo: '', resolution: 'Apologised, confirmed the new ship date.',
+        flagType: 'review', emailedAt: '', emailDepartments: '',
+        subform: { reviewComment: 'Not sure I handled the escalation well — worth a listen.' },
+        rowIndex: 44, repId: 'E-1090', repName: 'Leo Kim' }] },
     getEnrolledCallNotesReps: { reps: [
       { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] },
     getCallNotesTagTaxonomy: {
