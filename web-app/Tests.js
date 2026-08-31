@@ -1125,6 +1125,7 @@ function _runAllTests() {
   _smokeTest('intake_engine_oxygenExcludesK0837',  test_intake_engine_oxygenExcludesK0837);
   _smokeTest('intake_engine_emptySafe',            test_intake_engine_emptySafe);
   _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
+  _smokeTest('intake_buildAcctBody_escapesAnswers', test_intake_buildAcctBody_escapesAnswers);
   _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
   _smokeTest('intake_resolveRecipient_customValidation', test_intake_resolveRecipient_customValidation);
 
@@ -1210,6 +1211,9 @@ function _runAllTests() {
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
   _integrationTest('intake_sendPPD_staleHashRejected',          test_intake_sendPPD_staleHashRejected);
+  _integrationTest('intake_previewAcct_bothFormsHashDistinctly', test_intake_previewAcct_bothFormsHashDistinctly);
+  _integrationTest('intake_sendAcct_hashGateBothForms',         test_intake_sendAcct_hashGateBothForms);
+  _integrationTest('intake_previewAcct_requiresPatientAndAuth', test_intake_previewAcct_requiresPatientAndAuth);
   _integrationTest('intake_send_unauthorizedRejected',          test_intake_send_unauthorizedRejected);
   _integrationTest('intake_sentViewer_callerScopedAndManager',  test_intake_sentViewer_callerScopedAndManager);
 
@@ -6684,6 +6688,32 @@ function test_intake_buildPpdBody_escapesAnswers() {
   _assertFalse(html.indexOf('<img src=x onerror') >= 0, 'raw answer markup must be escaped');
   _assertTrue(html.indexOf('&lt;img src=x') >= 0, 'answer is HTML-escaped');
 }
+function test_intake_buildAcctBody_escapesAnswers() {
+  // The PPD builder has had this pin since INV-89; the PMD/PAP builder — which
+  // renders the SAME class of patient field into the same innerHTML preview
+  // modal and the same sent email — had none. Both layouts are exercised
+  // because each carries its own HEADER_ROWS / CONDITIONAL_FORMATTING_ROWS
+  // branch, and a conditional-format hit takes a DIFFERENT code path to the
+  // answer cell than a plain row does.
+  var hostile = '<img src=x onerror=alert(1)>';
+  [INTAKE_PMD_LAYOUT, INTAKE_PAP_LAYOUT].forEach(function (layout) {
+    // qIndex 0 is a HEADER row in both layouts (HEADER_ROWS is 1-based) and
+    // qIndex 1 is a value row, so one call covers both branches — the header
+    // path renders the label through intakeSectionRowHtml_ instead of the
+    // normal answer cell, and it must escape too.
+    var html = intakeBuildAcctBodyHtml_([
+      { qIndex: 0, label: hostile, value: '' },
+      { qIndex: 1, label: hostile, value: hostile },
+    ], layout);
+    _assertFalse(html.indexOf('<img src=x onerror') >= 0,
+      'raw answer markup must be escaped (both layouts)');
+    _assertTrue(html.indexOf('&lt;img src=x') >= 0, 'answer is HTML-escaped');
+    // The LABEL is attacker-adjacent too (it rides the client question bank,
+    // but the server must not depend on that).
+    _assertFalse(/<img[^>]*onerror/.test(html), 'no unescaped markup anywhere in the body');
+  });
+}
+
 function test_intake_emailDomain_extracted() {
   _assertEq(intakeEmailDomain_('agent@umsupply.com'), 'umsupply.com');
   _assertEq(intakeEmailDomain_('garbage'), '(none)');
@@ -6735,6 +6765,101 @@ function test_intake_sendPPD_staleHashRejected() {
     });
   });
   _assertFailure(r, 'changed since you previewed', 'stale bodyHash must reject the send');
+}
+
+function test_intake_previewAcct_bothFormsHashDistinctly() {
+  // PMD/PAP preview needs NO Offerings fixture — the account forms run no
+  // recommendation engine, so this exercises the real endpoints directly.
+  const mk = function (fn) {
+    return _asUser(_TEST_INDIA_EMAIL, function () {
+      return fn({
+        patientInfo: 'TEST Patient 12345',
+        dob: '1950-01-02',
+        rows: [{ qIndex: 1, label: 'Address', value: '123 Test St' }],
+      });
+    });
+  };
+  const pmd = mk(intakePreviewPMD);
+  const pap = mk(intakePreviewPAP);
+  _assertSuccess(pmd, 'intakePreviewPMD should succeed for an enrolled rep');
+  _assertSuccess(pap, 'intakePreviewPAP should succeed for an enrolled rep');
+  [pmd, pap].forEach(function (r) {
+    _assertTrue(/^[0-9a-f]{64}$/.test(String(r.bodyHash || '')), 'bodyHash is a 64-hex SHA-256 (INV-111)');
+    _assertContains(r.subject, 'TEST Patient 12345', 'subject carries the patient label');
+    _assertContains(r.subject, '1950-01-02', 'subject carries the DOB when supplied');
+  });
+  _assertContains(pmd.subject, 'PMD Account Creation', 'PMD subject names its form');
+  _assertContains(pap.subject, 'PAP Account Creation', 'PAP subject names its form');
+  // THE PROPERTY THAT MATTERS: a preview of one form must not authorize a send
+  // of the other. The hash covers (body, subject) and the subject differs by
+  // form, so the two can never collide — assert it rather than assume it.
+  _assertFalse(pmd.bodyHash === pap.bodyHash,
+    'a PAP preview hash must never authorize a PMD send (and vice versa)');
+}
+
+function test_intake_sendAcct_hashGateBothForms() {
+  // Every rejection below fires BEFORE recipient resolution and before MailApp,
+  // so nothing is sent and nothing is stored — the same posture as the PPD
+  // sibling, which is why these are safe to run against the live project.
+  const payload = {
+    patientInfo: 'TEST Patient 12345',
+    dob: '1950-01-02',
+    rows: [{ qIndex: 1, label: 'Address', value: '123 Test St' }],
+  };
+  const to = { kind: 'custom', email: 'do-not-send@example.invalid' };
+  const send = function (fn, hash) {
+    return _asUser(_TEST_INDIA_EMAIL, function () { return fn(payload, to, [], hash); });
+  };
+  [[intakeSendPMD, intakePreviewPMD, 'PMD'], [intakeSendPAP, intakePreviewPAP, 'PAP']]
+    .forEach(function (trio) {
+      const sendFn = trio[0], previewFn = trio[1], label = trio[2];
+      // (a) NO hash at all — the L2 preview-gate parity: a direct RPC that
+      //     skips Preview entirely must not send.
+      _assertFailure(send(sendFn, ''), 'Missing preview hash',
+        label + ': a send with no preview hash is refused');
+      // (b) A hash that does not match the freshly re-rendered body.
+      _assertFailure(send(sendFn, '0'.repeat(64)), 'changed since you previewed',
+        label + ': a stale bodyHash must reject the send');
+      // (c) A VALID hash for the SIBLING form — the cross-form case (b) cannot
+      //     see, because a wrong-form hash is a real 64-hex hash of a real
+      //     preview, not obvious garbage.
+      const other = _asUser(_TEST_INDIA_EMAIL, function () {
+        return (previewFn === intakePreviewPMD ? intakePreviewPAP : intakePreviewPMD)(payload);
+      });
+      _assertTrue(/^[0-9a-f]{64}$/.test(String(other.bodyHash || '')), 'sibling preview produced a hash');
+      _assertFailure(send(sendFn, other.bodyHash), 'changed since you previewed',
+        label + ': the OTHER form\'s valid preview hash must not authorize this send');
+    });
+}
+
+function test_intake_previewAcct_requiresPatientAndAuth() {
+  // Preview is a READ endpoint, so its rejection is a BARE {error} — asserting
+  // it with _assertFailure (which requires success===false) would fail against
+  // a CORRECT refusal. This is the GATE-SHAPE trap the derived tripwire exists
+  // for; keep these as .error assertions.
+  [intakePreviewPMD, intakePreviewPAP].forEach(function (fn) {
+    const anon = _asUser('not-a-registered-user@example.invalid', function () {
+      return fn({ patientInfo: 'X' });
+    });
+    _assertContains(String(anon.error || ''), 'Not authorized',
+      'unregistered caller is rejected before any work');
+    const blank = _asUser(_TEST_INDIA_EMAIL, function () { return fn({ patientInfo: '   ' }); });
+    _assertContains(String(blank.error || ''), 'Patient Name',
+      'a whitespace-only patient label is refused, not previewed');
+  });
+  // The SEND twin is a write, so it carries the {success:false} shape. These
+  // two are written as DIRECT calls rather than a forEach: the derived
+  // GATE-SHAPE tripwire resolves an asserted variable back to the endpoint
+  // that produced it, and it cannot follow a loop variable — a folded loop
+  // here would pass while being invisible to the net that checks it.
+  const anonPmd = _asUser('not-a-registered-user@example.invalid', function () {
+    return intakeSendPMD({ patientInfo: 'X' }, { kind: 'custom', email: 'x@example.invalid' }, [], '');
+  });
+  _assertFailure(anonPmd, 'Not authorized', 'unregistered caller cannot send a PMD account form');
+  const anonPap = _asUser('not-a-registered-user@example.invalid', function () {
+    return intakeSendPAP({ patientInfo: 'X' }, { kind: 'custom', email: 'x@example.invalid' }, [], '');
+  });
+  _assertFailure(anonPap, 'Not authorized', 'unregistered caller cannot send a PAP account form');
 }
 
 function test_intake_send_unauthorizedRejected() {
