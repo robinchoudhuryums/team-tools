@@ -116,6 +116,11 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
       // field (INV-185); false = a normal working day, the scenario's intent.
       offToday: false,
+      // Operator 2026-08-31 — today's PENDING punch-adjustment requests. EMPTY
+      // is the common case (and what every existing scenario should show); the
+      // `?pendingadj=1` hook below seeds one so the Clock chip is shootable
+      // without putting a rare state in every clock screenshot.
+      pendingAdjustments: [],
       ptoEnabled: true, annualLeaveBalance: 11.5, sickLeaveBalance: 10, annualLeaveMax: 15,
       flags: { showTeammateStatus: true, showTeammateType: true, enablePtoTracking: true },
       instanceLabel: '',
@@ -976,6 +981,17 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
   // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),
   // so the fixture is an alias of the real WAV chunk above.
   FIXTURES.getMyQaReviewAudioChunk = FIXTURES.qaGetAudioChunk;
+
+  // `?pendingadj=1` — seeds a pending punch-adjustment request so the Clock
+  // view's awaiting-approval chip renders on camera (the state the operator
+  // reported as invisible). Not a missing fixture; a deliberate variant.
+  try {
+    if (/[?&]pendingadj=1/.test(window.location.search)) {
+      FIXTURES.getEmployeeState.pendingAdjustments = [{ punchType: 'ClockIn', time: '08:30' }];
+      FIXTURES.getEmployeeState.punches = [];
+      FIXTURES.getEmployeeState.nextActions = ['ClockIn', 'Adjust'];
+    }
+  } catch (e) {}
 
   window.__MISSING__ = [];
   window.__RPC_LOG__ = [];

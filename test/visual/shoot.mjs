@@ -41,6 +41,10 @@ const MOBILE = { width: 390, height: 844 };
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
+  // Operator 2026-08-31 — the rep forgot to punch in and has a request
+  // AWAITING approval: the chip must be visible above the punch buttons, which
+  // is the whole point (it is what stops them punching again "to be safe").
+  ['clock-pendingadj-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?pendingadj=1'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],

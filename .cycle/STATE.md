@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 690 + DOM 82;
-  visual matrix on demand — 54 scenarios, last full shoot 2026-08-28 clean)
+Test Command: manual (Node harnesses: `npm test` = pure 692 + DOM 82;
+  visual matrix on demand — 55 scenarios, last full shoot 2026-08-31 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -573,6 +573,27 @@ fixture-key mutation had to remove the key everywhere). Omnibus gained
 the getTeamCalendar case IN PLACE (runAllTests still 296); mock gained an
 argument-dependent getTeamCalendar fixture (the F14 rule), so the card is
 on camera in the existing manager scenarios.
+
+NEWEST OF ALL #11 (2026-08-31 #2, operator report: an approved same-day
+ClockIn adjustment left the rep's dashboard still offering Clock In — block
+`.cycle/blocks/19pre-adjust-feedback-broad-implement.md`). Investigated
+BEFORE proposing: the server was correct throughout (an ADJ row is a real
+punch; getNextActions_ returns Lunch Out), so this was three CLIENT/loop
+gaps, all fixed. ADJ-1 clkPeriodicReconcile_ — throttled 3-min reconcile
+riding the existing 1Hz tick (INV-190 cost rule, no new interval), gated
+to the Clock view open+visible, window stamped inside clkRefreshState_
+before the RPC so every trigger postpones it. ADJ-2 empPendingAdjustments_
+on getEmployeeState (today-scoped, range-bounded, never provisions the tab,
+status normalized at the one read, fails toward []) + clkPendingAdjustHtml_
+chip ABOVE the punch buttons (role=status, empty renders nothing). ADJ-3
+notifyEmployeeOfAdjustDecision_ on BOTH approve and deny, deferred past
+releaseLock via notifyAfter (M-7), branded/escaped/best-effort — adjustments
+were the ONLY request type with no notification (time off always had one),
+which is the answer to the operator's broader question: this closes the set
+rather than starting a notification subsystem. Pure 690→692 (6 mutations /
+6 bites), DOM 82, matrix 54→55 (clock-pendingadj-light-wide via a
+?pendingadj=1 mock hook, so the chip is on camera without putting a rare
+state in every clock shot). No operator state; runAllTests still 296.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →

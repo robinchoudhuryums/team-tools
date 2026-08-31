@@ -14214,6 +14214,14 @@ test('ADJ-1/2: the Clock view reconciles on a timer and shows pending adjustment
   assert.ok(strip.indexOf('clkPendingAdjustHtml_') !== -1 &&
     strip.indexOf('clkPendingAdjustHtml_') < strip.indexOf('renderActions('),
     'the chip renders ABOVE the punch buttons — the whole point is that it is seen before re-punching');
+  // (c) INV-185 — the fixture mirrors the server field (EMPTY, the common
+  // case) and a scenario opts IN to the chip, so it is on camera without
+  // putting a rare state in every clock screenshot.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/pendingAdjustments: \[\],/.test(mock), 'the getEmployeeState fixture carries the field');
+  assert.ok(/pendingadj=1/.test(mock), 'a query hook seeds the pending state');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  assert.ok(/clock-pendingadj/.test(shoot), 'and a scenario shoots it');
 });
 
 test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is post-lock', () => {
