@@ -91,6 +91,16 @@
   .clk-brk-chip { font-family: var(--mono); font-size: 10.5px; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
   /* Lunch shaded darker than the 15-min breaks so it reads as the main break. */
   .clk-brk-chip.lunch { background: var(--warn); color: var(--paper); font-weight: 600; }
+  /* Pending punch-adjustment chip (operator 2026-08-31) — INFO-toned, because
+     a request awaiting approval is a FACT about state, not a warning about
+     the rep's day. Sits directly above the punch buttons: the whole point is
+     that it is visible at the moment the rep would otherwise re-punch. */
+  .clk-adj-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0;
+    font-size: 12px; color: var(--info-deep); background: var(--info-soft);
+    border: 1px solid var(--info); border-radius: var(--radius-sm); padding: 6px 10px; }
+  .clk-adj-pending .aj-lbl { font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; }
+  .clk-adj-pending .aj-item { font-family: var(--mono); font-size: 11.5px; }
   .ss-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .ss-state { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
   .ss-state.working { background: var(--accent-soft); color: var(--success-deep); }
@@ -294,12 +304,20 @@ function enterClockCombinedView(area) {
   clkBindFreshness_();     // refresh on tab focus/visibility (idempotent)
 }
 
+var CLK_RECONCILE_MS = 180000;   // 3 min — the periodic-reconcile interval
+var _clkLastReconcile = 0;
+
 /** Re-fetch employee state and re-render the Clock view if still active. Fixes
  *  stale button state when a tab is left open across midnight (a forgotten
  *  clock-out shouldn't carry into the new day) or after a manager approves a
  *  punch-adjust for today — the open tab now reconciles instead of showing the
  *  prior day's "Clock Out" / pre-fix buttons. */
 function clkRefreshState_() {
+  // Any refresh — enter, focus, day rollover, periodic — restarts the periodic
+  // window. Stamped BEFORE the RPC so the 1Hz tick can't queue a second call
+  // while this one is in flight, and so the first periodic reconcile lands a
+  // full interval after the view-enter refresh rather than one second later.
+  _clkLastReconcile = Date.now();
   google.script.run
     .withSuccessHandler(function (state) {
       if (!state || state.error) return;
@@ -314,6 +332,34 @@ function clkRefreshState_() {
     })
     .withFailureHandler(function () {})
     .getEmployeeState();
+}
+
+/** Periodic reconcile while the Clock view is OPEN (operator 2026-08-31).
+ *
+ *  The bug this closes: a manager approves a same-day punch adjustment (the
+ *  rep forgot to clock in), the server immediately has it right — the ADJ row
+ *  is a real punch, so getNextActions_ returns Lunch Out / Clock Out — but the
+ *  rep's screen never asks again. clkRefreshState_ fired only on view-enter,
+ *  on focus/visibilitychange, and on day rollover, so an agent sitting on the
+ *  Dashboard with the tab focused kept the pre-approval buttons indefinitely
+ *  and saw a "Clock In" they had already been fixed out of needing.
+ *
+ *  Piggybacked on the 1Hz clock tick rather than a new interval (INV-190's
+ *  cost rule) and throttled to CLK_RECONCILE_MS, so the cost is ONE
+ *  getEmployeeState every few minutes and ONLY while the Clock view is open
+ *  and visible — nothing at all in Call Notes, in a background tab, or in the
+ *  pop-out of another tool. The same call also catches an approved adjustment
+ *  for a PAST day, a manager Day Edit, and a self-undo made in another window.
+ *
+ *  Deliberately NOT a shell-wide poll: the reminders ticker already refreshes
+ *  state inside the end-of-shift window, and making it unconditional would put
+ *  a per-minute RPC on every rep for a state only the Clock view renders. */
+function clkPeriodicReconcile_() {
+  if (currentView !== 'clock' || document.hidden) return;
+  var now = Date.now();
+  if (now - _clkLastReconcile < CLK_RECONCILE_MS) return;
+  _clkLastReconcile = now;
+  clkRefreshState_();
 }
 
 /** Bind a one-time focus/visibility refresh so a Clock tab left open reconciles
@@ -426,6 +472,7 @@ function renderClockView(area) {
           </div>
           ${renderDayRibbon_(s.punches, stats, tz)}
           ${clkBreakScheduleHtml_()}
+          ${clkPendingAdjustHtml_(s)}
           ${renderActions(s.nextActions, { afterLunch: !!(stats && stats.state === 'working' && (s.punches || []).some(p => p.type === 'LunchIn')) })}
         </div>
       </div>
@@ -1676,6 +1723,28 @@ function stopRibbonNowCursor_() {
 // Clock tab is open (Apps Script web apps have no background push); the
 // reminded-set dedupes so a toast fires once per break per day.
 function clkBreaks_() { return (CLK_SCHEDULE && Array.isArray(CLK_SCHEDULE.breaks)) ? CLK_SCHEDULE.breaks : []; }
+
+/** Pending punch-adjustment chip (operator 2026-08-31). Renders today's
+ *  awaiting-approval requests directly above the punch buttons, so a rep who
+ *  already asked for a fix sees that it is in flight instead of a bare
+ *  "Clock In" they are tempted to press again.
+ *
+ *  Server-guarded: `pendingAdjustments` is additive on getEmployeeState, so an
+ *  older server (or a failed read, which yields []) renders NOTHING — the
+ *  pre-fix appearance, never a broken strip. */
+function clkPendingAdjustHtml_(s) {
+  var list = (s && Array.isArray(s.pendingAdjustments)) ? s.pendingAdjustments : [];
+  if (!list.length) return '';
+  var items = list.map(function (a) {
+    var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
+    return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + '</span>';
+  }).join('<span aria-hidden="true">·</span>');
+  return '<div class="clk-adj-pending" role="status">' +
+    icon('clock', 13) +
+    '<span class="aj-lbl">Awaiting approval</span>' + items +
+    '<span style="color:var(--muted);font-size:11.5px">— your manager still has to approve this; no need to punch again</span>' +
+    '</div>';
+}
 /** #4 — full break schedule chips under the shift ribbon, so agents always see
  *  their scheduled breaks (the next-break chip only shows the upcoming one). */
 function clkBreakScheduleHtml_() {
@@ -2187,6 +2256,7 @@ function startClock() {
     // forgotten clock-out doesn't carry "Clock Out" into the new day.
     const dayNow = isoDateTz(empTz());
     if (dayNow !== _clkLastDay) { _clkLastDay = dayNow; clkRefreshState_(); }
+    clkPeriodicReconcile_();   // operator 2026-08-31 — see the function comment
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();

@@ -1290,6 +1290,11 @@ function getEmployeeState() {
       // OFF, not just what the shift shape is. Approved PTO only; a pending
       // request is not yet a day off.
       offToday: empIsOffToday_(emp.id, today),
+      // Operator 2026-08-31: today's PENDING adjustment requests, so the Clock
+      // view can say a fix is in flight instead of showing a bare punch button
+      // to a rep who has already asked for one. Additive + client-guarded —
+      // an older client ignores it.
+      pendingAdjustments: empPendingAdjustments_(emp.id, today),
       ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -12967,6 +12972,48 @@ function empIsOffToday_(empId, dateIso) {
   }
 }
 
+/** Today's PENDING punch-adjustment requests for one rep (operator
+ *  2026-08-31). Until this shipped a submitted request was visible ONLY inside
+ *  the Adjust modal — close it and the Clock view showed no trace, so a rep who
+ *  had already asked for a fix saw a bare "Clock In" button and the natural
+ *  next move was to punch again "to be safe". (That second punch is not lost —
+ *  writeAdjustPunchForEmployee_ updates the existing row on approval — but
+ *  nobody was told that is what would happen.)
+ *
+ *  Scoped to TODAY because the chip lives beside today's punch buttons; the
+ *  Adjust modal still lists every pending request. READ-ONLY and bounded (the
+ *  empIsOffToday_ precedent — a projected range, never getDataRange), and it
+ *  NEVER provisions the tab: a deployment with no adjustment requests yet must
+ *  not have getEmployeeState create a sheet. Best-effort — a failed read
+ *  yields [], which is exactly the pre-fix behaviour, never worse. */
+function empPendingAdjustments_(empId, dateIso) {
+  try {
+    const sheet = getAdpSS_().getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
+    if (!sheet) return [];
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    const width = Math.max(PAR.EMP_ID, PAR.DATE, PAR.PUNCH_TYPE, PAR.REQ_TIME, PAR.STATUS) + 1;
+    const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    const id = String(empId).trim();
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][PAR.EMP_ID]).trim() !== id) continue;
+      if (normalizeDate_(rows[i][PAR.DATE]) !== dateIso) continue;
+      // Status is normalized at the ONE read (the TO/DR.STATUS family) — a
+      // hand-edited " Pending " cell must not read as a decided request.
+      if (String(rows[i][PAR.STATUS] || '').trim().toLowerCase() !== 'pending') continue;
+      out.push({
+        punchType: String(rows[i][PAR.PUNCH_TYPE] || '').trim(),
+        time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+      });
+    }
+    return out;
+  } catch (e) {
+    Logger.log('empPendingAdjustments_ failed: ' + e.message);
+    return [];
+  }
+}
+
 function hasActiveTimeOffOnDate_(sheet, empId, date, excludeRowIndex) {
   const rows = sheet.getDataRange().getValues();
   const id = String(empId).trim();
@@ -15796,6 +15843,7 @@ function managerGetPendingAdjustments() {
 function updatePunchAdjustStatus(reqId, newStatus) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -15828,17 +15876,76 @@ function updatePunchAdjustStatus(reqId, newStatus) {
             '-day adjust window — deny it (the rep can re-submit if still needed).' };
         }
         writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+        // M-7: the decision email is DEFERRED to the post-lock finally — a
+        // MailApp send inside the ONE project lock stalls every rep's punch.
+        notifyAfter = function () {
+          notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved');
+        };
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
           `${punchType} ${reqTime} request denied`, callerEmp.email);
+        notifyAfter = function () {
+          notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied');
+        };
       }
       sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
       return { success: true };
     }
     return { success: false, error: 'Request not found.' };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
+}
+
+/** Tells the REP their punch-adjustment request was approved or denied
+ *  (operator 2026-08-31). Until this shipped, `updatePunchAdjustStatus` wrote
+ *  the punch and returned — the rep learned the outcome only by noticing their
+ *  Clock buttons change (which, before the periodic reconcile, they often did
+ *  not) or by reopening the Adjust modal to find the row gone. A DENIAL was
+ *  worse: indistinguishable from an approval that had not propagated yet.
+ *  Time-off decisions have always emailed (notifyEmployeeOfDecision_); punch
+ *  adjustments were the one request type with no notification at all.
+ *  Best-effort (INV-14) — a failed send never affects the approval, which is
+ *  already committed — and PHI-free (a punch time is not clinical data). */
+function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus) {
+  if (!emp || !emp.email) return;
+  try {
+    const approved = newStatus === 'Approved';
+    const verb = approved ? 'approved' : 'denied';
+    const label = PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '');
+    const subj = `Your punch adjustment for ${date} was ${verb}`;
+    const hasReason = !!String(reason || '').trim();
+    let body = `Hi ${emp.name},\n\n` +
+               `Your punch adjustment request has been ${verb}:\n\n` +
+               `Date:    ${date}\n` +
+               `Punch:   ${label}\n` +
+               `Time:    ${reqTime}\n`;
+    if (hasReason) body += `Reason:  ${reason}\n`;
+    body += `Status:  ${newStatus}\n\n`;
+    body += approved
+      ? `The punch has been added to your timesheet.\n\n`
+      : `No change was made to your timesheet. Contact your manager if you still need this fixed.\n\n`;
+    body += `— UMS Time Clock (automated)\n`;
+    const kv = [['Date', date], ['Punch', label], ['Time', reqTime]];
+    if (hasReason) kv.push(['Reason', reason]);
+    kv.push(['Status', newStatus]);
+    const html = buildBrandedEmailHtml_('Punch adjustment ' + verb,
+      '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
+      '<p style="margin:0 0 12px;">Your punch adjustment request has been <b>' + esc_(verb) + '</b>:</p>' +
+      brandedKvRows_(kv) +
+      '<p style="margin:14px 0 0;">' + (approved
+        ? 'The punch has been added to your timesheet.'
+        : 'No change was made to your timesheet — contact your manager if you still need this fixed.') + '</p>',
+      { accent: approved ? CN_EMAIL_PALETTE.accent : CN_EMAIL_PALETTE.danger,
+        subLabel: 'Time Clock',
+        statusLabel: approved ? 'Approved' : 'Denied',
+        ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Open Time Clock' });
+    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
+  } catch (e) { console.warn('Adjust decision email failed: ' + e.message); }
 }
 
 /** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve
