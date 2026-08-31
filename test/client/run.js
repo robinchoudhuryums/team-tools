@@ -14353,8 +14353,12 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
   const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
                               codeSrc.indexOf('function getSpanishInboxPending')));
   assert.ok(/businessMinutesBetween_\(/.test(sp), 'the stats compute business minutes');
-  assert.ok(/bizDurations\.push\(/.test(sp) && /!= null/.test(sp),
-    'a null duration is DROPPED from the sample, never pushed as 0 (INV-187)');
+  // The GUARDED push, not merely "a push exists": pushing `bizMin == null ? 0
+  // : bizMin` still contains a push and a `null` mention, and would drag the
+  // median toward zero with unreadable pairs (INV-187). The first bite-check
+  // of this pin passed against exactly that mutation.
+  assert.ok(/if \(bizMin != null\) bizDurations\.push\(bizMin\);/.test(sp),
+    'a null duration is DROPPED from the sample, never coerced to 0 (INV-187)');
   ['avgBusinessMinutes', 'medianBusinessMinutes', 'businessCount', 'businessHours'].forEach(k => {
     assert.ok(new RegExp(k + ':').test(sp), 'the stats ship ' + k);
   });

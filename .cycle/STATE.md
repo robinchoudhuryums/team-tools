@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 692 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 696 + DOM 82;
   visual matrix on demand — 55 scenarios, last full shoot 2026-08-31 clean)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -594,6 +594,46 @@ rather than starting a notification subsystem. Pure 690→692 (6 mutations /
 6 bites), DOM 82, matrix 54→55 (clock-pendingadj-light-wide via a
 ?pendingadj=1 mock hook, so the chip is on camera without putting a rare
 state in every clock shot). No operator state; runAllTests still 296.
+
+NEWEST OF ALL #12 (2026-08-31 #3, operator: "want to confirm that Median
+Spanish Inbox time is not including weekends?" → it WAS; operator picked
+option 2, exclude weekends AND holidays — block
+`.cycle/blocks/19pre-business-hours-broad-implement.md`). Confirmed by
+reading the code first: `getSpanishInboxStats` timed raw wall clock, and
+`getDeptRequests`/`drSlaStatus_` shared the class — so a Friday-afternoon
+request answered at Monday's open reported as a 3-day reply AND could go
+"overdue" purely by sitting through a weekend. BIZ-1 `businessMinutesBetween_`
+(+ the PURE `bizMinutesLocal_`, `bizPointInTz_`, `businessHours_`,
+`BIZ_MAX_SPAN_DAYS`=400): subtracts nights/weekends/US holidays in
+MANAGER_TIMEZONE (operating anchor, not the storage frame), REUSING the
+Coverage planner's window constants so coverage bands and response times
+share one definition of a working hour. The core takes pre-converted
+{date,min} points and walks days UTC-anchored — no Utilities dependency, so
+it is Node-testable off-platform. 0 is a real answer (nothing owed during
+the span); null is UNKNOWN (reversed pair, corrupt stamp, absurd span,
+inverted window) and is never substituted (F8). BIZ-2 applied to the Spanish
+stats (additive avgBusinessMinutes/medianBusinessMinutes/businessCount/
+businessHours beside the KEPT wall-clock pair), the per-thread resolved card
+(resolveMinutes is now business, resolveWallMinutes rides along), and Dept
+Requests (elapsedMin IS the business figure so deptStats avg/median follow
+free; elapsedWallMin + slaBusiness additive; slaStatus bands on business
+minutes) — AND `deptRequestsOverdueOpen_`, the daily SLA digest, which
+previously aged with raw wall clock: two readers of one store using
+different arithmetic could disagree about whether a request was overdue.
+BIZ-3 clients lead with business, keep wall clock as sub-line/tooltip, and
+NAME what is excluded (an unexplained 3d→2h drop reads as a bug); the
+DR note had to move INSIDE the `#dr-kpi` wrapper because `drRepaintKpi_`
+replaces that element's outerHTML on an in-place resolve and a sibling note
+would stack one copy per patch (id moved off the .telemetry grid).
+Pure 692→696 (13 mutations / 13 bites; ONE pin was too weak on its first
+bite — it passed against `bizMin == null ? 0 : bizMin` — and was tightened
+to the guarded push). DOM 82. Matrix 55, 0 problems: Spanish now shoots
+"Avg 52m / wall clock 1h 18m", "Median 31m / wall clock 45m". No operator
+state (it reuses COVERAGE_BUSINESS_* constants); runAllTests still 296.
+POST-DEPLOY EXPECTATION worth stating to the operator: every response-time
+figure they have been reading gets SMALLER, and Dept-Request SLA bands move
+with it. Nothing is recomputed in any sheet — the stored stamps are
+untouched, only derived figures change.
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
