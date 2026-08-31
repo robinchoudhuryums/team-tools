@@ -14269,6 +14269,181 @@ test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is 
   assert.ok(/safeWebAppUrl_\('clock'\)/.test(mail), 'the CTA lands on the Clock view');
 });
 
+
+// ════════════════════════════════════════════════════════════════════════════
+//  BIZ (operator 2026-08-31) — response times count BUSINESS hours.
+//  A Friday-afternoon request answered Monday morning read as a 3-day reply,
+//  which made the Spanish median and the Dept-Request SLA bands describe the
+//  calendar rather than the team. The subtraction is one PURE core; every
+//  surface that reports an elapsed time routes through the same wrapper so the
+//  on-screen tracker and the daily SLA digest cannot disagree.
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\nCode.js — business-hours elapsed (BIZ-1/2/3)');
+vm.runInContext(extractRawFunction('Code.js', 'daysBetween_'), sb, { filename: 'Code.js#daysBetween_' });
+// The walk bound is a module const the pure core closes over — seed it from
+// SOURCE so the pin moves with the app rather than hardcoding a second copy.
+vm.runInContext(codeSrc.match(/const BIZ_MAX_SPAN_DAYS = \d+;/)[0], sb, { filename: 'Code.js#BIZ_MAX_SPAN_DAYS' });
+vm.runInContext(extractRawFunction('Code.js', 'bizMinutesLocal_'), sb, { filename: 'Code.js#bizMinutesLocal_' });
+const bizMinutesLocal_ = sb.bizMinutesLocal_;
+// The shipped window (8:00–17:00, weekdays) — read from the source so a CONFIG
+// change moves the pin with the app rather than against it.
+const BIZ_WIN = { startMin: 8 * 60, endMin: 17 * 60, weekdaysOnly: true, holidays: {} };
+const bizAt = (date, h, m) => ({ date, min: h * 60 + (m || 0) });
+
+test('BIZ-1: business minutes — same day, clamping, and the weekend the operator asked about', () => {
+  // 2026-08-31 is a Monday; 2026-09-04 a Friday; 2026-09-05/06 the weekend.
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-08-31', 9), bizAt('2026-08-31', 11), BIZ_WIN), 120,
+    'a plain in-hours gap is wall clock');
+  // THE MOTIVATING CASE: Friday 16:00 → Monday 09:00 is 65 calendar hours and
+  // 2 business hours (Fri 16–17, Mon 08–09). The weekend contributes nothing.
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-07', 9), BIZ_WIN), 120,
+    'Fri 16:00 → Mon 09:00 = 2 business hours, not 3 days');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-05', 9), bizAt('2026-09-06', 17), BIZ_WIN), 0,
+    'a weekend-only span is 0 business minutes — a real answer, not a gap');
+  // Clamps: before the open and after the close contribute nothing.
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-08-31', 5), bizAt('2026-08-31', 9), BIZ_WIN), 60,
+    'a start before the window opens counts from the open');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-08-31', 18), bizAt('2026-08-31', 22), BIZ_WIN), 0,
+    'wholly after close is 0');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-08-31', 0), bizAt('2026-08-31', 23, 59), BIZ_WIN), 540,
+    'a full day is exactly the 9-hour window, never 24h');
+  // A whole intervening weekday counts in full.
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-08-31', 16), bizAt('2026-09-02', 9), BIZ_WIN), 60 + 540 + 60,
+    'Mon 16:00 → Wed 09:00 spans a full Tuesday');
+});
+
+test('BIZ-1: holidays are excluded, and an uncomputable pair is NULL (never a substitute)', () => {
+  // Labor Day 2026 = Mon 2026-09-07. Fri 16:00 → Tue 09:00 across it is the
+  // same 2 business hours as the plain weekend above.
+  const withHol = Object.assign({}, BIZ_WIN, { holidays: { '2026-09-07': true } });
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-08', 9), withHol), 120,
+    'a holiday Monday contributes nothing');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-08', 9), BIZ_WIN), 120 + 540,
+    'without the holiday set that same Monday is a full working day (the set is load-bearing)');
+  // The F8 rule: a pair that cannot be computed honestly yields null, so the
+  // caller renders "unknown" rather than a plausible-looking number.
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-01', 9), BIZ_WIN), null,
+    'reversed pair → null');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2016-01-04', 9), bizAt('2026-09-01', 9), BIZ_WIN), null,
+    'absurd span → null (the walk is bounded, not merely slow)');
+  assert.strictEqual(bizMinutesLocal_(bizAt('not-a-date', 9), bizAt('2026-09-01', 9), BIZ_WIN), null,
+    'malformed date → null');
+  assert.strictEqual(bizMinutesLocal_(bizAt('2026-09-01', 9), bizAt('2026-09-01', 11),
+    Object.assign({}, BIZ_WIN, { endMin: 8 * 60 })), null, 'a closed/inverted window → null, never 0');
+  // Weekend inclusion is a KNOB, not a hardcode — a deployment that works
+  // Saturdays turns it off and the same span becomes real minutes.
+  assert.ok(bizMinutesLocal_(bizAt('2026-09-05', 9), bizAt('2026-09-06', 17),
+    Object.assign({}, BIZ_WIN, { weekdaysOnly: false })) > 0, 'weekdaysOnly:false counts the weekend');
+});
+
+test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substituted', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const wrap = nc(codeSrc.slice(codeSrc.indexOf('function businessMinutesBetween_'),
+                                codeSrc.indexOf('// ── #3 Coverage planner')));
+  assert.ok(/CONFIG\.MANAGER_TIMEZONE/.test(wrap),
+    'the business calendar is the MANAGER tz (the operating anchor), not CONFIG.TIMEZONE (storage)');
+  assert.ok(/if \(!\(Number\(startMs\) > 0\) \|\| !\(Number\(endMs\) > 0\)\) return null;/.test(wrap),
+    'a missing/zero stamp yields null — the F8 "a gap beats a substitute" rule');
+  assert.ok(/catch \(e\)/.test(wrap) && /return null;\s*\n\s*\}/.test(wrap),
+    'any failure degrades to unknown rather than throwing into the caller');
+  assert.ok(/getUsHolidays_\(y\)/.test(wrap) && /\(y - y0\) <= 2/.test(wrap),
+    'holidays are built for the spanned years, bounded');
+
+  // (a) Spanish stats — the surface the operator asked about.
+  const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
+                              codeSrc.indexOf('function getSpanishInboxPending')));
+  assert.ok(/businessMinutesBetween_\(/.test(sp), 'the stats compute business minutes');
+  // The GUARDED push, not merely "a push exists": pushing `bizMin == null ? 0
+  // : bizMin` still contains a push and a `null` mention, and would drag the
+  // median toward zero with unreadable pairs (INV-187). The first bite-check
+  // of this pin passed against exactly that mutation.
+  assert.ok(/if \(bizMin != null\) bizDurations\.push\(bizMin\);/.test(sp),
+    'a null duration is DROPPED from the sample, never coerced to 0 (INV-187)');
+  ['avgBusinessMinutes', 'medianBusinessMinutes', 'businessCount', 'businessHours'].forEach(k => {
+    assert.ok(new RegExp(k + ':').test(sp), 'the stats ship ' + k);
+  });
+  assert.ok(/avgMinutes:/.test(sp) && /medianMinutes:/.test(sp),
+    'the wall-clock figures the operator has been reading are KEPT (nothing disappears)');
+
+  // (b) The per-thread resolved card — same unit as the aggregate above it,
+  //     or the two numbers on one screen contradict each other.
+  const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
+                               codeSrc.indexOf('function claimSpanishThread')));
+  assert.ok(/resolveMinutes: businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
+    'the card duration is business minutes');
+  assert.ok(/resolveWallMinutes: Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
+    'the wall-clock figure rides along for the title');
+
+  // (c) Dept Requests — elapsed AND the SLA bands.
+  const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
+                              codeSrc.indexOf('\nfunction getDeptRequestSla()')));
+  assert.ok(/elapsedBizMin/.test(dr) && /businessMinutesBetween_\(/.test(dr), 'DR computes business minutes');
+  assert.ok(/slaStatus: drSlaStatus_\(elapsedBizMin,/.test(dr),
+    'the SLA bands read BUSINESS minutes — banding on wall clock while displaying business would be two verdicts');
+  assert.ok(/elapsedWallMin:/.test(dr) && /slaBusiness: true/.test(dr),
+    'the wall figure is kept and the client is TOLD business mode is on (an older client ignores both)');
+
+  // (d) The daily SLA digest MUST agree with the tracker. This is the pin that
+  //     matters most: the two read the same store and previously used different
+  //     arithmetic, so a request could be "overdue" in an email and on-time on
+  //     screen.
+  const dig = nc(codeSrc.slice(codeSrc.indexOf('function deptRequestsOverdueOpen_'),
+                               codeSrc.indexOf('function sendDeptRequestReminderDigest')));
+  assert.ok(/businessMinutesBetween_\(createdMs, Date\.now\(\)\)/.test(dig),
+    'the digest ages requests through the SAME helper as the tracker');
+  assert.ok(/if \(ageMin == null\) continue;/.test(dig),
+    'an uncomputable age is skipped, not nagged about');
+  assert.ok(!/\(now - createdMs\)|\(Date\.now\(\) - createdMs\)/.test(dig),
+    'no raw wall-clock age survives in the digest');
+});
+
+test('BIZ-3: the clients lead with business time, keep wall clock, and say which is which', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const rd = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+  // Spanish KPI strip.
+  const mSrc = rd('metrics/script_metrics.html');
+  const head = nc(mSrc.slice(mSrc.indexOf('function spanishHeadHtml_'),
+                             mSrc.indexOf('function spanishRender_')));
+  assert.ok(/var bizOn = \(d\.avgBusinessMinutes != null \|\| d\.medianBusinessMinutes != null\)/.test(head),
+    'business mode is detected from the payload — an OLDER server keeps wall clock as the headline');
+  assert.ok(/bizOn \? bizMin : wallMin/.test(head), 'business is the headline when present');
+  assert.ok(/wall clock /.test(head), 'the wall-clock figure is the secondary line, not deleted');
+  assert.ok(/weekends and US holidays excluded/.test(head),
+    'the strip SAYS what it is measuring — an unexplained drop from 3d to 2h reads as a bug');
+  assert.ok(/if \(bizOn\) \{/.test(head), 'the note renders only in business mode');
+
+  // The resolved card carries the calendar gap in its title.
+  const card = nc(mSrc.slice(mSrc.indexOf('function spanishResolvedCard_'),
+                             mSrc.indexOf('function spanishResolvedCard_') + 1600));
+  assert.ok(/t\.resolveWallMinutes != null/.test(card) && /Business hours: /.test(card),
+    'the card title shows both units');
+
+  // Dashboard Spanish card — same unit as the tab, with a fallback.
+  const clkSrc = nc(rd('tc/script_clock.html'));
+  assert.ok(/\(res\.medianBusinessMinutes != null\) \? res\.medianBusinessMinutes : res\.medianMinutes/.test(clkSrc),
+    'the dashboard median prefers business and falls back mid-deploy');
+  assert.strictEqual((clkSrc.match(/\(res\.medianBusinessMinutes != null\)/g) || []).length, 2,
+    'both dashboard render paths (preview head + KPI tiles) moved together');
+
+  // Dept Requests: the note is gated, and — the bug this shape exists to
+  // prevent — the KPI id sits on the WRAPPER so an in-place resolve patch
+  // replaces the note instead of stacking another copy beside it.
+  const drSrc = rd('metrics/script_deptrequests.html');
+  const strip = nc(drSrc.slice(drSrc.indexOf('function drKpiStripHtml_'),
+                               drSrc.indexOf('function drRender_')));
+  assert.ok(/'<div id="dr-kpi"><div class="telemetry"/.test(strip),
+    'dr-kpi is the wrapper, not the telemetry grid (drRepaintKpi_ does outerHTML on it)');
+  assert.ok(/drBusinessNoteHtml_\(data\) \+ '<\/div>'/.test(strip), 'the note lives INSIDE the wrapper');
+  const note = nc(drSrc.slice(drSrc.indexOf('function drBusinessNoteHtml_'),
+                              drSrc.indexOf('function drRender_')));
+  assert.ok(/r\.slaBusiness/.test(note) && /if \(!on\) return '';/.test(note),
+    'the note renders only when the SERVER says business mode is on');
+  const st = nc(drSrc.slice(drSrc.indexOf('function drCardStatusHtml_'),
+                            drSrc.indexOf('function drRequestCardHtml_')));
+  assert.ok(/item\.slaBusiness && item\.elapsedWallMin != null/.test(st) && /Wall clock: /.test(st),
+    'the card keeps the calendar gap in its title');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
