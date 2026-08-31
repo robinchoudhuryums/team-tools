@@ -695,8 +695,13 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       for (var d = 1; d <= last; d++) {
         var dow = new Date(y, m - 1, d).getDay();
         if (dow === 0 || dow === 6) continue;
+        // Most days are complete (green); only every 7th carries the
+        // incomplete rep, so the amber tint reads as the EXCEPTION it is
+        // rather than painting the whole month.
+        var r = JSON.parse(JSON.stringify(reps));
+        if (d % 7 !== 0) { r[2].clockOut = '17:04:00'; r[2].hours = 8.55; r[2].incomplete = false; r[2].punchCount = 2; }
         days[month + '-' + ('0' + d).slice(-2)] = {
-          reps: JSON.parse(JSON.stringify(reps)),
+          reps: r,
           off: (d % 5 === 0) ? [{ name: 'Leo Kim', type: 'Full Day', status: (d % 10 === 0) ? 'pending' : 'approved' }] : [],
         };
       }

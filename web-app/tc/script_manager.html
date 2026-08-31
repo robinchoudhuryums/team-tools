@@ -65,7 +65,12 @@
      .cal-* vocabulary from styles.html; only the team-specific bits live
      here. Selection is a distinct inset ring (info, not the accent the
      .today ring uses) so today + selected read as two different facts. */
-  .tcal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  /* The calendar keeps the Time/PTO cell SIZE (.cal-cell is aspect-ratio: 1,
+     so a full-width grid would render ~180px cells and a ~1100px-tall month);
+     the .cal-card 720px cap is the existing answer, applied to the grid only
+     so the day TABLE below still spans the card. */
+  .tcal-cal { max-width: 720px; margin: 0 auto 4px; }
+  .tcal-head { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; }
   .tcal-month { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); min-width: 130px; text-align: center; }
   .cal-cell.tcal-sel { box-shadow: inset 0 0 0 2px var(--info); }
   .cal-cell.today.tcal-sel { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 4px var(--info); }
@@ -1173,7 +1178,8 @@ function tcalRender_() {
 
   slot.innerHTML = '<div class="card"><h2 class="card-label with-count"><span>Team Punches</span>' +
     '<span class="count-pill">' + esc(String((data.days[TEAMCAL.selDate] || { reps: [] }).reps.length)) + '/' + esc(String(data.rosterCount)) + ' punched</span></h2>' +
-    head + cal + legend + archNote + tcalDayTableHtml_(data) + '</div>';
+    '<div class="tcal-cal">' + head + cal + legend + archNote + '</div>' +
+    tcalDayTableHtml_(data) + '</div>';
 
   // Delegated cell handlers (the Time/PTO calendar's pattern — divs carry
   // role=button + tabindex; NO inline onclick on a div, per INV-173/A1).
