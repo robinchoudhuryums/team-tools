@@ -12696,9 +12696,20 @@ test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually retu
       const fn = varFn[f[1]];
       if (!fn) continue;                                   // not a simple _asUser capture
       if (!new RegExp('\\nfunction ' + fn + '\\s*\\(').test(code)) continue;   // local helper
+      // Follow a one-line DELEGATING wrapper through to its delegate. The four
+      // intake account endpoints are `return intakeSendAcct_(…)` inside a
+      // try/catch, and the wrapper's own catch carries `success: false` — so
+      // checking the wrapper passes no matter what the delegate returns, which
+      // is a pin that cannot fail. Bite-checked: swapping the DELEGATE's auth
+      // return to a bare {error} must trip this.
+      let target = fn, src = extractRawFunction('Code.js', fn);
+      const deleg = /\breturn\s+([A-Za-z][A-Za-z0-9_]*_)\s*\(/.exec(src);
+      if (deleg && new RegExp('\\nfunction ' + deleg[1] + '\\s*\\(').test(code)) {
+        target = deleg[1]; src = extractRawFunction('Code.js', target);
+      }
       checked++;
-      assert.ok(/success:\s*false/.test(extractRawFunction('Code.js', fn)),
-        t.name + ' uses _assertFailure on ' + fn + ', which returns a bare {error} — assert r.error instead (a READ gate has no success flag)');
+      assert.ok(/success:\s*false/.test(src),
+        t.name + ' uses _assertFailure on ' + target + ', which returns a bare {error} — assert r.error instead (a READ gate has no success flag)');
     }
   });
   assert.ok(checked >= 3, 'the variable→call link actually resolved (checked ' + checked + ')');
