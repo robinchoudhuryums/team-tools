@@ -14175,6 +14175,92 @@ test('team calendar — client SWR/wiring, Day Edit prefill, fixture shape (sour
     'the fixture is a FUNCTION of its month argument (the F14 rule — the response shape depends on the args)');
 });
 
+// ── Punch-adjustment feedback loop (operator 2026-08-31) ────────────────────
+console.log('\npunch-adjustment feedback loop');
+
+test('ADJ-1/2: the Clock view reconciles on a timer and shows pending adjustments', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const clkNc = nc(clk);
+  // (a) ADJ-1 — the reconcile rides the EXISTING 1Hz tick (INV-190's cost
+  // rule: no second interval), is throttled, and only runs while the Clock
+  // view is open AND visible. Without the view/hidden guard this becomes a
+  // shell-wide poll on every rep.
+  assert.ok(/clkPeriodicReconcile_\(\);/.test(clkNc), 'the tick calls the reconcile');
+  const rec = nc(clk.slice(clk.indexOf('function clkPeriodicReconcile_'), clk.indexOf('function clkBindFreshness_')));
+  assert.ok(/currentView !== 'clock' \|\| document\.hidden/.test(rec),
+    'the reconcile is gated on the Clock view being open and visible');
+  assert.ok(/now - _clkLastReconcile < CLK_RECONCILE_MS/.test(rec), 'and throttled');
+  assert.ok(/clkRefreshState_\(\)/.test(rec), 'and reconciles through the SHARED refresh (no second fetch path)');
+  const ms = /CLK_RECONCILE_MS = (\d+)/.exec(clkNc);
+  assert.ok(ms && Number(ms[1]) >= 60000 && Number(ms[1]) <= 600000,
+    'the interval is minutes, not seconds — a per-second poll would be a per-rep RPC storm (' + (ms && ms[1]) + ')');
+  // The window is stamped INSIDE clkRefreshState_, so every trigger (enter,
+  // focus, day rollover) postpones the periodic one — without this the first
+  // tick fires a duplicate RPC one second after the view-enter refresh.
+  const ref = nc(clk.slice(clk.indexOf('function clkRefreshState_'), clk.indexOf('function clkPeriodicReconcile_')));
+  assert.ok(/_clkLastReconcile = Date\.now\(\);/.test(ref), 'any refresh restarts the periodic window');
+  assert.ok(ref.indexOf('_clkLastReconcile = Date.now();') < ref.indexOf('google.script.run'),
+    '… stamped BEFORE the RPC, so an in-flight refresh cannot be re-queued by the tick');
+  // (b) ADJ-2 — the chip renders from the server field, is client-GUARDED (an
+  // older server or a failed read yields nothing, never a broken strip), sits
+  // above the punch buttons, and escapes.
+  const chip = nc(clk.slice(clk.indexOf('function clkPendingAdjustHtml_'), clk.indexOf('function clkBreakScheduleHtml_')));
+  assert.ok(/Array\.isArray\(s\.pendingAdjustments\)/.test(chip), 'the field is array-guarded');
+  assert.ok(/if \(!list\.length\) return '';/.test(chip), 'an empty/absent list renders NOTHING');
+  assert.ok(/esc\(label\)/.test(chip) && /esc\(a\.time/.test(chip), 'server strings escaped');
+  assert.ok(/role="status"/.test(chip), 'the chip is announced (it changes without a user action)');
+  const strip = clk.slice(clk.indexOf('<div class="shift-strip">'), clk.indexOf('<div class="dash-main"'));
+  assert.ok(strip.indexOf('clkPendingAdjustHtml_') !== -1 &&
+    strip.indexOf('clkPendingAdjustHtml_') < strip.indexOf('renderActions('),
+    'the chip renders ABOVE the punch buttons — the whole point is that it is seen before re-punching');
+});
+
+test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is post-lock', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) The read never provisions the tab (getEmployeeState is the hottest
+  // endpoint in the app — a deployment with no requests yet must not have it
+  // create a sheet), is RANGE-bounded (the empIsOffToday_ precedent, never
+  // getDataRange), normalizes the status at the one read (the TO/DR.STATUS
+  // family), and fails toward [] — the pre-fix behaviour, never worse.
+  const helper = nc(codeSrc.slice(codeSrc.indexOf('function empPendingAdjustments_'),
+                                  codeSrc.indexOf('function hasActiveTimeOffOnDate_')));
+  assert.ok(/getSheetByName\(CONFIG\.PUNCH_ADJUST_TAB\)/.test(helper) &&
+    !/getOrCreatePunchAdjustSheet_/.test(helper), 'read-only — never provisions the tab');
+  assert.ok(/getRange\(2, 1, lastRow - 1, width\)/.test(helper) && !/getDataRange\(\)/.test(helper),
+    'range-bounded, not a full-sheet read');
+  assert.ok(/\.trim\(\)\.toLowerCase\(\) !== 'pending'/.test(helper),
+    'status normalized at the ONE read (a padded " Pending " cell still counts)');
+  assert.ok(/return \[\];/.test(helper.slice(helper.indexOf('catch'))), 'a failed read yields [], never a throw');
+  assert.ok(/pendingAdjustments: empPendingAdjustments_\(emp\.id, today\)/.test(nc(codeSrc)),
+    'shipped on getEmployeeState');
+  // (b) ADJ-3 — the decision email exists for BOTH outcomes and is DEFERRED
+  // past the lock release (M-7: a MailApp send inside the one project lock
+  // stalls every rep's punch). The mail-in-lock tripwire covers the general
+  // rule; this pins the specific wiring.
+  const upd = nc(codeSrc.slice(codeSrc.indexOf('function updatePunchAdjustStatus'),
+                               codeSrc.indexOf('function notifyEmployeeOfAdjustDecision_')));
+  assert.ok(/let notifyAfter = null;/.test(upd), 'the closure slot exists');
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'\)/.test(upd),
+    'approve notifies');
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetForAudit, date, punchType, reqTime, reason, 'Denied'\)/.test(upd),
+    'DENY notifies too — a silent denial is indistinguishable from an approval that has not propagated');
+  assert.ok(!/MailApp/.test(upd), 'no MailApp inside the locked body (M-7)');
+  const relIdx = upd.indexOf('lock.releaseLock()');
+  assert.ok(relIdx !== -1 && upd.indexOf('notifyAfter()', relIdx) > relIdx,
+    'the closure fires AFTER releaseLock');
+  // (c) The email itself: branded, escaped, best-effort, and it must not
+  // pretend a denial changed the timesheet.
+  const mail = nc(codeSrc.slice(codeSrc.indexOf('function notifyEmployeeOfAdjustDecision_'),
+                                codeSrc.indexOf('function writeAdjustPunchForEmployee_')));
+  assert.ok(/if \(!emp \|\| !emp\.email\) return;/.test(mail), 'no email address → silent no-op');
+  assert.ok(/buildBrandedEmailHtml_\(/.test(mail) && /esc_\(emp\.name\)/.test(mail),
+    'branded chrome with escaped fields (INV-105)');
+  assert.ok(/catch \(e\)/.test(mail), 'best-effort — a failed send never affects the committed approval (INV-14)');
+  assert.ok(/No change was made to your timesheet/.test(mail), 'the denial says the timesheet is unchanged');
+  assert.ok(/safeWebAppUrl_\('clock'\)/.test(mail), 'the CTA lands on the Clock view');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
