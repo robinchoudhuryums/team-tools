@@ -5173,6 +5173,9 @@ function test_managerGates_rejectNonManager() {
     // SPANISH_INBOX_MEMBERS rep — not pure manager-only; asserted separately below.)
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
+    // Team punches calendar (Manage Time card, operator 2026-08-31) — gate
+    // precedes the roster/Timesheet/TimeOffRequests reads.
+    ['getTeamCalendar',                function () { return getTeamCalendar(D.substring(0, 7)); }],
     // Intake volume (Team Metrics block, operator 2026-08-25) — gate precedes
     // any submission-tab read.
     ['getIntakeVolumeStats',           function () { return getIntakeVolumeStats(); }],

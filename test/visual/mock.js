@@ -678,6 +678,30 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       ],
     },
     managerGetPendingAdjustments: { requests: [] },
+    // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
+    // argument (the F14 rule — the client asks for whatever month is on
+    // screen, and a static object would only ever cover one). Rep-row keys
+    // mirror getTeamCalendar's own repRows.push literal (INV-185; pinned).
+    // Weekdays get the same three punched rows (Leo Kim stays absent so the
+    // muted "no punches" merge row is on camera); every 5th day lists him off.
+    getTeamCalendar: function (month) {
+      var y = parseInt(month.slice(0, 4), 10), m = parseInt(month.slice(5, 7), 10);
+      var reps = [
+        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
+        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, hours: 8.52, incomplete: false, inProgress: false, punchCount: 5 },
+        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, hours: null, incomplete: true, inProgress: false, punchCount: 1 },
+      ];
+      var days = {}, last = new Date(y, m, 0).getDate();
+      for (var d = 1; d <= last; d++) {
+        var dow = new Date(y, m - 1, d).getDay();
+        if (dow === 0 || dow === 6) continue;
+        days[month + '-' + ('0' + d).slice(-2)] = {
+          reps: JSON.parse(JSON.stringify(reps)),
+          off: (d % 5 === 0) ? [{ name: 'Leo Kim', type: 'Full Day', status: (d % 10 === 0) ? 'pending' : 'approved' }] : [],
+        };
+      }
+      return { month: month, days: days, holidays: {}, rosterCount: 4, adjustWindowDays: 30, archiveNote: false };
+    },
     getTimesheetDoctor: { duplicates: [], inverted: [], windowDays: 92 },
     getReferenceTree: { isManager: true, isAdmin: true, items: [
       { id: 'kb-1', department: 'Billing', title: 'HIPAA refresher', type: 'article', status: 'published', sortOrder: 1 },

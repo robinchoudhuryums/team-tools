@@ -61,6 +61,22 @@
     text-transform: uppercase; color: var(--muted); margin: 12px 0; }
   .punct-bar { height: 5px; border-radius: 3px; background: var(--paper-2); overflow: hidden; margin-top: 5px; min-width: 56px; }
   .punct-bar > i { display: block; height: 100%; border-radius: 3px; }
+  /* Team punches calendar (operator 2026-08-31) — reuses the Time/PTO
+     .cal-* vocabulary from styles.html; only the team-specific bits live
+     here. Selection is a distinct inset ring (info, not the accent the
+     .today ring uses) so today + selected read as two different facts. */
+  .tcal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .tcal-month { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); min-width: 130px; text-align: center; }
+  .cal-cell.tcal-sel { box-shadow: inset 0 0 0 2px var(--info); }
+  .cal-cell.today.tcal-sel { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 4px var(--info); }
+  .tcal-row-warn td { background: var(--warn-soft); }
+  .tcal-row-mute td { color: var(--muted); }
+  .tcal-day-title { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
+  .tcal-off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tcal-off-chip { font-size: 12px; padding: 2px 9px; border-radius: var(--radius-pill); border: 1px solid var(--line); }
+  .tcal-off-chip.approved { background: var(--accent-soft); }
+  .tcal-off-chip.pending { background: var(--warn-soft); }
+  .tcal-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
 </style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
@@ -107,7 +123,7 @@ function loadManagerDashboard() {
       const area = document.getElementById('view-area');
       if (!area || currentView !== 'manage') return;
       if (document.getElementById('mgr-refresh') && mgrSwrRenderBlocked_()) return;   // state warm, render deferred
-      renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_();
+      renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); loadTeamCalendar_();
     })
     .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();
@@ -644,6 +660,8 @@ function renderManagerView(area, data) {
       ${liveHtml}
     </div>
 
+    <div id="mgr-team-cal"></div>
+
     <div class="card">
       <h2 class="card-label with-count">
         <span>Pending Time Off</span>
@@ -1020,7 +1038,233 @@ document.getElementById('mto-submit').addEventListener('click', () => {
 // ─── MANAGER: EDIT DAY MODAL ──────────────────────────────────────────────
 var _deEmpId = null, _deEmpName = null, _deDate = null;
 
-function openDayEditModal(empId, empName) {
+// ── Team punches calendar (operator 2026-08-31) ──────────────────────────
+// The manager cut the app lacked: every rep's punch times for an ARBITRARY
+// date in one place. Month calendar (the Time/PTO .cal-* visual vocabulary)
+// with a full-width team punch table below for the selected day; pencil per
+// row opens the existing Day Edit modal prefilled to that rep + date.
+// SWR: per-month cache paints instantly on re-render/nav (key-exact write
+// BEFORE the seq check, INV-156; clean rounds only); painted refresh
+// failures keep last-good via warn toast, cold failures render the error
+// card (C17-5). Dates/months derive from the MANAGER's roster tz via
+// isoDateTz(empTz()) — never browser-local (the F6 discipline).
+var TEAMCAL = { month: null, selDate: null, cache: {}, seq: 0 };
+var TCAL_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];   // DAY_ABBR is server-only (Code.js)
+
+function loadTeamCalendar_() {
+  if (!document.getElementById('mgr-team-cal')) return;
+  if (!TEAMCAL.month) {
+    var t = isoDateTz(empTz());
+    TEAMCAL.month = t.substring(0, 7);
+    TEAMCAL.selDate = t;
+  }
+  tcalFetch_(TEAMCAL.month);
+}
+
+function tcalFetch_(month) {
+  var slot = document.getElementById('mgr-team-cal');
+  if (!slot) return;
+  if (TEAMCAL.cache[month]) tcalRender_();
+  else slot.innerHTML = '<div class="card"><h2 class="card-label">Team Punches</h2>' + loSkeleton(3) + '</div>';
+  var seq = ++TEAMCAL.seq;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      // Key-exact cache write BEFORE the seq/view check (INV-156 — a stale
+      // response warms its own month; only the render drops). Error rounds
+      // are never cached (INV-129).
+      if (res && !res.error) TEAMCAL.cache[month] = res;
+      if (seq !== TEAMCAL.seq || currentView !== 'manage') return;
+      if (res && res.error) { tcalFail_(res.error); return; }
+      tcalRender_();
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== TEAMCAL.seq || currentView !== 'manage') return;
+      tcalFail_((err && err.message) || 'Load failed');
+    })
+    .getTeamCalendar(month);
+}
+
+function tcalFail_(msg) {
+  var slot = document.getElementById('mgr-team-cal');
+  if (!slot) return;
+  if (TEAMCAL.cache[TEAMCAL.month]) {   // painted → keep last-good (C17-5)
+    showToast('Could not refresh team punches: ' + msg, 'toast-warn');
+    tcalRender_();
+    return;
+  }
+  slot.innerHTML = '<div class="card"><h2 class="card-label">Team Punches</h2>' + errorStateHtml_(msg) + '</div>';
+}
+
+function tcalNav_(delta) {
+  var p = TEAMCAL.month.split('-');
+  var d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1 + delta, 1);
+  var m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  var curMonth = isoDateTz(empTz()).substring(0, 7);
+  if (m > curMonth) return;             // punches never exist in a future month
+  TEAMCAL.month = m;
+  TEAMCAL.selDate = (m === curMonth) ? isoDateTz(empTz()) : m + '-01';
+  tcalFetch_(m);
+}
+
+function tcalSelect_(dateIso) { TEAMCAL.selDate = dateIso; tcalRender_(); }
+
+function tcalRender_() {
+  var slot = document.getElementById('mgr-team-cal');
+  var data = TEAMCAL.cache[TEAMCAL.month];
+  if (!slot || !data) return;
+  var p = TEAMCAL.month.split('-');
+  var year = parseInt(p[0], 10), month = parseInt(p[1], 10);
+  var todayIso = isoDateTz(empTz());
+  var curMonth = todayIso.substring(0, 7);
+  var lastDay = new Date(year, month, 0).getDate();
+  var firstDow = new Date(year, month - 1, 1).getDay();
+
+  var cal = '<div class="cal-grid">';
+  ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(function (d) { cal += '<div class="cal-dow">' + d + '</div>'; });
+  for (var i = 0; i < firstDow; i++) cal += '<div class="cal-cell"></div>';
+  for (var d = 1; d <= lastDay; d++) {
+    var dateIso = TEAMCAL.month + '-' + String(d).padStart(2, '0');
+    var dow = new Date(year, month - 1, d).getDay();
+    var day = data.days[dateIso];
+    var punched = day ? day.reps.length : 0;
+    var anyIncomplete = !!(day && day.reps.some(function (r) { return r.incomplete; }));
+    var offN = day ? day.off.length : 0;
+    var hol = data.holidays[dateIso];
+    var sel = dateIso === TEAMCAL.selDate;
+
+    var cls = 'cal-cell clickable';
+    if (dow === 0 || dow === 6) cls += ' weekend';
+    if (dateIso === todayIso) cls += ' today';
+    if (punched) cls += anyIncomplete ? ' has-pending' : ' has-worked';
+    if (sel) cls += ' tcal-sel';
+
+    var parts = [MONTH_NAMES[month - 1] + ' ' + d];
+    if (dateIso === todayIso) parts.push('today');
+    if (hol) parts.push('US holiday');
+    parts.push(punched + ' punched');
+    if (anyIncomplete) parts.push('incomplete day(s)');
+    if (offN) parts.push(offN + ' off');
+    var holidayMark = hol ? '<div class="cal-holiday">' + icon('star', 12) + '</div>' : '';
+    var corner = punched ? '<div class="cal-hrs">' + punched + '</div>'
+      : (offN ? '<div class="cal-tm">+' + offN + '</div>' : '');
+    var dot = '';
+    if (offN) {
+      var anyApproved = day.off.some(function (o) { return o.status === 'approved'; });
+      dot = '<div class="cal-dot ' + (anyApproved ? 'approved' : 'pending') + '"></div>';
+    }
+    cal += '<div class="' + cls + '" data-date="' + dateIso + '" role="button" tabindex="0"' +
+      ' aria-pressed="' + (sel ? 'true' : 'false') + '" aria-label="' + esc(parts.join(', ')) + '">' +
+      holidayMark + '<span class="cal-dn">' + d + '</span>' + dot + corner + '</div>';
+  }
+  cal += '</div>';
+
+  var monthLabel = MONTH_NAMES[month - 1] + ' ' + year;
+  var atCur = TEAMCAL.month >= curMonth;
+  var head = '<div class="tcal-head">' +
+    '<button type="button" class="refresh-btn" onclick="tcalNav_(-1)" aria-label="Previous month">‹</button>' +
+    '<span class="tcal-month">' + esc(monthLabel) + '</span>' +
+    '<button type="button" class="refresh-btn" onclick="tcalNav_(1)" aria-label="Next month"' + (atCur ? ' disabled' : '') + '>›</button>' +
+    '</div>';
+
+  var archNote = data.archiveNote
+    ? '<div class="tcal-note">This month predates the live Timesheet tab — rows may have moved to the archive; use an export for full history.</div>'
+    : '';
+  var legend = '<div class="tcal-note">Cell badge = reps punched · +N = reps off · amber tint = incomplete day(s) present</div>';
+
+  slot.innerHTML = '<div class="card"><h2 class="card-label with-count"><span>Team Punches</span>' +
+    '<span class="count-pill">' + esc(String((data.days[TEAMCAL.selDate] || { reps: [] }).reps.length)) + '/' + esc(String(data.rosterCount)) + ' punched</span></h2>' +
+    head + cal + legend + archNote + tcalDayTableHtml_(data) + '</div>';
+
+  // Delegated cell handlers (the Time/PTO calendar's pattern — divs carry
+  // role=button + tabindex; NO inline onclick on a div, per INV-173/A1).
+  slot.querySelectorAll('.cal-cell[data-date]').forEach(function (cell) {
+    cell.addEventListener('click', function () { tcalSelect_(cell.getAttribute('data-date')); });
+    cell.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tcalSelect_(cell.getAttribute('data-date')); }
+    });
+  });
+  slot.querySelectorAll('[data-tcal-edit]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      openDayEditModal(btn.getAttribute('data-tcal-edit'), btn.getAttribute('data-tcal-name') || '', TEAMCAL.selDate);
+    });
+  });
+}
+
+function tcalDayTableHtml_(data) {
+  var dateIso = TEAMCAL.selDate;
+  var day = data.days[dateIso] || { reps: [], off: [] };
+  var todayIso = isoDateTz(empTz());
+  var p = dateIso.split('-');
+  var dow = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)).getDay();
+  var isWeekend = dow === 0 || dow === 6;
+  var title = TCAL_DOW[dow] + ', ' + MONTH_NAMES[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10);
+  var hol = data.holidays[dateIso];
+
+  // Merge in "no punches" rows from the roster (mgrData.liveStatus — the same
+  // INV-183-filtered set) so an ABSENT rep is visible, not silently missing —
+  // but only on past/current weekdays, and never for reps already listed off.
+  var rows = day.reps.slice();
+  if (!isWeekend && dateIso <= todayIso && mgrData && mgrData.liveStatus) {
+    var seen = {}, seenName = {};
+    day.reps.forEach(function (r) { seen[r.id] = 1; seenName[r.name] = 1; });
+    var offNames = {};
+    day.off.forEach(function (o) { offNames[o.name] = 1; });
+    mgrData.liveStatus.forEach(function (ls) {
+      if (seen[ls.id] || seenName[ls.name] || offNames[ls.name]) return;
+      rows.push({ id: ls.id, name: ls.name, noPunches: true, hours: null, punchCount: 0 });
+    });
+    rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  }
+
+  var adjWin = (typeof data.adjustWindowDays === 'number' && data.adjustWindowDays) || 30;
+  var editable = dateIso <= todayIso && daysBetweenIso(dateIso, todayIso) <= adjWin;
+  var adjChip = ' <span style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 3px">ADJ</span>';
+  var dash = '<span style="color:var(--muted-3)">—</span>';
+  function tCell(t, adj) { return t ? esc(dispTime(t)) + (adj ? adjChip : '') : dash; }
+
+  var table = mtRenderTable_({
+    columns: [
+      { key: 'name', label: 'Rep', name: true, cell: function (r) { return esc(r.name); } },
+      { key: 'in', label: 'Clock In', cell: function (r) { return r.noPunches ? '<span style="color:var(--muted)">no punches</span>' : tCell(r.clockIn, r.adjClockIn); } },
+      { key: 'lo', label: 'Lunch Out', cell: function (r) { return r.noPunches ? '' : tCell(r.lunchOut, r.adjLunchOut); } },
+      { key: 'li', label: 'Lunch In', cell: function (r) { return r.noPunches ? '' : tCell(r.lunchIn, r.adjLunchIn); } },
+      { key: 'out', label: 'Clock Out', cell: function (r) {
+          if (r.noPunches) return '';
+          var extra = r.punchCount > (['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length)
+            ? ' <span style="font-size:10px;color:var(--muted)" title="Extra punch rows collapsed (multi-lunch or duplicates) — open Day Edit for the full day">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
+          return tCell(r.clockOut, r.adjClockOut) + extra;
+        } },
+      { key: 'hours', label: 'Hours', numeric: true, cell: function (r) {
+          if (typeof r.hours === 'number') return '<b>' + esc(fmtHrs(r.hours)) + '</b>';
+          if (r.inProgress) return '<span style="color:var(--muted)">in progress</span>';
+          if (r.incomplete) return '<span style="color:var(--warning-deep)">incomplete</span>';
+          return dash;
+        } },
+      { key: 'edit', label: '', cell: function (r) {
+          return editable
+            ? '<button type="button" class="refresh-btn" data-tcal-edit="' + esc(r.id) + '" data-tcal-name="' + esc(r.name) + '" aria-label="Edit day for ' + esc(r.name) + '">' + icon('adjust', 12) + '</button>'
+            : '';
+        } },
+    ],
+    rows: rows,
+    rowClass: function (r) { return r.noPunches ? 'tcal-row-mute' : (r.incomplete ? 'tcal-row-warn' : ''); },
+    empty: '<div class="m-empty">' + (dateIso > todayIso ? 'Future date — no punches yet.' : 'No punches on this day.') + '</div>',
+  });
+
+  var offHtml = day.off.length
+    ? '<div class="tcal-off" role="list" aria-label="Reps off this day">' + day.off.map(function (o) {
+        return '<span class="tcal-off-chip ' + (o.status === 'approved' ? 'approved' : 'pending') + '" role="listitem">' +
+          esc(o.name) + ' · ' + esc(o.type) + (o.status === 'pending' ? ' (pending)' : '') + '</span>';
+      }).join('') + '</div>'
+    : '';
+  var editNote = !editable && dateIso <= todayIso
+    ? '<div class="tcal-note">Older than the ' + adjWin + '-day adjust window — edits need the sheet directly.</div>' : '';
+
+  return '<div class="tcal-day-title">' + esc(title) + (hol ? ' · ' + esc(hol) + ' (US holiday)' : '') + '</div>' +
+    table + offHtml + editNote;
+}
+
+function openDayEditModal(empId, empName, prefillDate) {
   _deEmpId = empId;
   _deEmpName = empName;
   // M-2 (cycle 10): bound the picker on the TARGET employee's "today", not the
@@ -1053,6 +1297,14 @@ function openDayEditModal(empId, empName) {
   var deMin = new Date(today + 'T00:00:00Z');
   deMin.setUTCDate(deMin.getUTCDate() - adjustWindowDays);
   deDateEl.min = deMin.toISOString().substring(0, 10);
+  // Team-calendar pencil (operator 2026-08-31): prefill to the clicked date
+  // when it sits inside the picker's own [min, today] bounds — the
+  // openAdjustModal(prefillDate) precedent; the server stays authoritative.
+  if (prefillDate && /^\d{4}-\d{2}-\d{2}$/.test(String(prefillDate)) &&
+      prefillDate >= deDateEl.min && prefillDate <= today) {
+    _deDate = prefillDate;
+    deDateEl.value = prefillDate;
+  }
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-lunchout').value = '';
   document.getElementById('de-lunchin').value = '';
@@ -1063,9 +1315,9 @@ function openDayEditModal(empId, empName) {
   // the edit date used to silently downgrade to the destructive single-day
   // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
-  if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(today); deToEl.max = today; }
+  if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(_deDate); deToEl.max = today; }
   document.getElementById('day-edit-overlay').classList.add('open');
-  loadDayEditPunches(empId, today, today);
+  loadDayEditPunches(empId, _deDate, _deDate);
 }
 
 function loadDayEditPunches(empId, start, end) {
