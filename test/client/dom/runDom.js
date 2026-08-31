@@ -1461,6 +1461,13 @@ test('Adjust is always present, always last, and never the primary', () => {
       assert.strictEqual(m.order[m.order.length - 1], 'Adjust', 'Adjust renders last');
       assert.notStrictEqual(m.primeAction, 'Adjust', 'Adjust is never the primary CTA');
       assert.ok(/\bsec\b/.test(m.cls('Adjust')), 'Adjust is a secondary');
+      // EXACTLY once. `Adjust` is IN the server's actions list, and the row
+      // also appends a trailing Adjust unconditionally — so dropping the
+      // filter that excludes it from the secondaries renders the button
+      // twice. The first bite-check of this test passed against exactly that:
+      // last-ness, non-primacy and the class all still held.
+      assert.strictEqual(m.order.filter((a) => a === 'Adjust').length, 1,
+        'Adjust renders exactly once — not duplicated into the secondaries');
     });
   // A finished shift: Adjust ALONE takes a different branch — the completion
   // message, and NO prime button at all (there is nothing to punch).

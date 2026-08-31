@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 697 + DOM 82;
+Test Command: manual (Node harnesses: `npm test` = pure 697 + DOM 91;
   visual matrix on demand — 58 scenarios, last full shoot 2026-08-31 clean;
   Regression Scenarios run to S93)
 Subsystem cycles since last Seams audit: 0
@@ -676,6 +676,34 @@ KNOWN REMAINING (documented, not closed): 8 tabs still unshot; 79% of the pure
 harness is source-scanning not behavioural (462 of 584 blocks, measured); the
 DOM harness is concentrated in the shell + Call Notes, with one test for Time
 Clock's punch state machine.
+
+NEWEST OF ALL #14 (2026-08-31 #5, operator: "take on the DOM harness gaps for
+Time Clock's punch state machine" — the third of the three gaps #13 recorded
+but did not close). The DOM harness had ONE punch test (the M-1 failure
+restore) for the app's most consequential client logic: the SERVER state
+machine is well covered, but which button a rep SEES and what happens to it
+across the four response shapes lived only in source pins. Nine tests, DOM
+82→**91**, driven through the REAL renderActions/submitPunch into a live DOM.
+Covered: the primary-CTA rules incl. the operator's afterLunch flip (ClockOut
+takes prime, LunchOut DEMOTED not removed — a second break stays reachable);
+Adjust always last, never primary, exactly ONCE; the completed-shift branch
+with no prime button; the F3 clicked-vs-prime morph target plus LunchIn's
+doorExit destination matching ClockOut's idle glyph; all four submitPunch
+response shapes (state-in-response ⇒ ZERO follow-up RPC, older-server refetch
+fallback, {success:false} restoring the button with the SERVER's reason, and
+D2b — punch succeeded / refresh died ⇒ restore + WARN not error, since an
+error toast tells a rep to re-punch when a duplicate is wrong); the
+pending-adjustment chip (announced, escaped, renders nothing when absent);
+and self-undo's midnight wrap incl. the −1 sentinel that must fail an obvious
+`<= window` test. 9 mutations / 9 bites — the NINTH exposed a weak assertion
+rather than a defect: dropping the `a !== 'Adjust'` filter renders Adjust
+TWICE, and last-ness/non-primacy/class all still held, so the pin now counts
+occurrences. jsdom lesson: `empState`, `renderActions`,
+`SELF_UNDO_WINDOW_SECONDS` are LEXICAL module bindings, not window
+properties — read via the `h.read()` vm bridge. No app change; pure 697,
+matrix 58, runAllTests unchanged at 302.
+STILL OPEN from #13: 8 tabs unshot; 79% of the pure harness is
+source-scanning (462 of 584 blocks).
 
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
