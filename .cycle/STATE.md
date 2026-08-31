@@ -22,7 +22,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
 Test Command: manual (Node harnesses: `npm test` = pure 696 + DOM 82;
-  visual matrix on demand — 55 scenarios, last full shoot 2026-08-31 clean)
+  visual matrix on demand — 55 scenarios, last full shoot 2026-08-31 clean;
+  Regression Scenarios run to S93)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
 
@@ -260,7 +261,22 @@ Updated: 2026-08-27
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-MOST RECENT (2026-08-26). Everything is MERGED to main and the branch is
+CURRENT (2026-08-31, after PR #207). Everything is MERGED to main and the
+branch is reset and clean — nothing is half-done in the repo. The three
+2026-08-31 operator rounds shipped as **#205** (team punches calendar),
+**#206** (punch-adjustment feedback loop: periodic Clock reconcile, pending
+chip, decision emails on both outcomes) and **#207** (business-hours elapsed
+across the Spanish stats, the per-thread card, Dept Requests' elapsed + SLA
+bands, and the daily SLA digest). /sync-docs was applied after each, plus a
+drift pass on 2026-08-31 that added the outerHTML-scope gotcha, the S74
+business-hours step, and scenarios **S91–S93** (team calendar / adjustment
+catch-up / business hours) — the three rounds had shipped without one, which
+matters because the Test Command is `manual` and scenarios ARE the
+verification protocol. Tests: pure **696**, DOM **82**, matrix **55**
+(0 missing, 0 overflow, last full shoot 2026-08-31). runAllTests still 296.
+The paragraph below is retained for the older context it carries.
+
+PREVIOUS (2026-08-26). Everything is MERGED to main and the branch is
 clean — nothing is half-done in the repo. The 2026-08-25 operator round
 shipped as four PRs: **#185** (batches 1–6: intake polish, A_Q_Spanish
 voicemails, insurance payor lookup, intake amend & re-send, note marker

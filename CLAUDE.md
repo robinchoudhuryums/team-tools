@@ -1584,6 +1584,22 @@ this section before touching the relevant area.
   which also makes an imprecise reverse-edit a safe `git checkout` recovery
   instead of lost work. The A14 ratchet caught the last occurrence; nothing
   catches it in general, so `bite.sh` should refuse to run against a dirty file.
+- **An `outerHTML` patch replaces ONE element, so that element must contain
+  everything its renderer emits (operator 2026-08-31).** `drRepaintKpi_` does
+  `host.outerHTML = drKpiStripHtml_(DR_LAST_DATA)` — the in-place resolve path
+  that exists so marking a request resolved doesn't blank the list. When the
+  business-hours round made that renderer emit an explanatory note AFTER the
+  `.telemetry` div carrying `id="dr-kpi"`, the first render was correct and
+  every SUBSEQUENT resolve appended another copy of the note beside the old
+  one: the patch replaced the grid it was pointed at and left the sibling
+  behind. The fix is structural, not a cleanup call — the id moved onto a
+  WRAPPER around strip + note, so the element being replaced IS the whole
+  rendered unit. The general rule: **when a renderer grows a new sibling,
+  check whether anything patches it by id.** The failure is invisible on
+  first paint and compounds once per interaction, which is exactly the shape
+  that survives a screenshot review. Same family as the class-vs-identity
+  entry below, one level up: there the SELECTOR was too broad, here the
+  REPLACEMENT was too narrow. Pinned by the BIZ-3 wrapper-shape assertion.
 - **A class-wide attribute write assumes every member of the class is yours
   (operator 2026-08-11).** `index.html`'s theme reflector did
   `querySelectorAll('.sb-theme-btn')` and wrote `aria-pressed` on every hit —
@@ -9742,8 +9758,9 @@ S74 | Department-request tracking end to end (INV-131/138; the tracker had NO sc
     - As a receiving-dept member (roster column N lists that dept) → confirm it appears under **Incoming** and can be resolved there
     - As a signed-in internal recipient, click the emailed link instead → `?resolve=` marks it resolved, attributed, and is idempotent on a second click
     - As a manager, confirm the per-department aggregate (open / resolved / avg / median / overdue) renders and that a resolved request is NOT counted as open
+    - **(operator 2026-08-31)** Read a request created on a FRIDAY AFTERNOON: its elapsed time must count only 8 AM–5 PM weekday minutes (a weekend adds nothing), the KPI strip must carry the note "Elapsed time and SLA bands count business hours only — weekends and US holidays excluded", and hovering a card's status text must show the wall-clock gap in a tooltip. Then confirm the DAILY SLA DIGEST agrees with the screen — a request reading on-time here must not appear in the overdue reminder email. Finally, resolve a request in place and confirm the business-hours note appears exactly ONCE.
     - **(cycle-16 F8, the two defects this scenario exists to catch)** In the `DeptRequests` sheet, hand-edit one resolved row's Status cell to `" resolved "` (padded) and BLANK another resolved row's `ResolvedAt`; reload the tracker
-  Expected: One open request per (note, dept) — re-sending re-notifies without opening a duplicate. The padded-status row is counted RESOLVED everywhere (the item's `status`, the `incoming`/`allOpen` filters and `deptStats` all read the same normalized value — before F8 the first three excluded it while `deptStats` counted it OPEN). The blank-`ResolvedAt` row reports its elapsed time as **unknown (`null`)**, and is EXCLUDED from the department's average and median — before F8 it reported its full age as its resolution time, inflating both a little more every day against the very numbers the SLA targets are set from. **(cycle-18 F5) The padded row is now read identically by EVERY consumer** — `drStatus_` is the one reader, so the re-send dedupe, the resolve idempotence check and the SLA digest all agree with the tracker. Verify the third and fourth directly: re-send the same note to the same dept and confirm NO second row appears (the audit row is annotated `resend`), and click an already-resolved request's email link a second time — the original `ResolvedAt`/`ResolvedBy` must survive unchanged.
+  Expected: One open request per (note, dept) — re-sending re-notifies without opening a duplicate. The padded-status row is counted RESOLVED everywhere (the item's `status`, the `incoming`/`allOpen` filters and `deptStats` all read the same normalized value — before F8 the first three excluded it while `deptStats` counted it OPEN). The blank-`ResolvedAt` row reports its elapsed time as **unknown (`null`)**, and is EXCLUDED from the department's average and median — before F8 it reported its full age as its resolution time, inflating both a little more every day against the very numbers the SLA targets are set from. **(cycle-18 F5) The padded row is now read identically by EVERY consumer** — `drStatus_` is the one reader, so the re-send dedupe, the resolve idempotence check and the SLA digest all agree with the tracker. Verify the third and fourth directly: re-send the same note to the same dept and confirm NO second row appears (the audit row is annotated `resend`), and click an already-resolved request's email link a second time — the original `ResolvedAt`/`ResolvedBy` must survive unchanged. **(operator 2026-08-31) Elapsed times and SLA bands count BUSINESS hours** (`businessMinutesBetween_` — weekends, US holidays and after-hours excluded), so a request no longer goes overdue purely by sitting through a weekend; `elapsedMin` IS the business figure, so `deptStats` avg/median follow, while `elapsedWallMin` keeps the calendar gap in the tooltip. `deptRequestsOverdueOpen_` ages through the SAME helper — before this round the digest and the tracker used different arithmetic and could disagree. The note renders exactly once because it lives INSIDE the `#dr-kpi` wrapper `drRepaintKpi_` replaces; a note rendered as a sibling would stack a copy per resolve (see the outerHTML-scope gotcha).
 
 S75 | Team-member onboarding (Admin → Config → Team Members) | Subsystem: Server, Client (Call Notes views)
   Steps:
@@ -9817,7 +9834,7 @@ S80 | Spanish Inbox — resolution-share chart | Subsystem: Server, Client (Metr
     - Read the "Resolution share" card between the KPI strip and the request list
     - Mark a pending request resolved manually and refresh after the cache TTL
     - Switch the window (Last 7 / 30 / 90 days)
-  Expected: One bar per resolver, count + % direct-labeled, sorted most-resolved first; a configured member with ZERO resolutions shows as a zero bar (never vanishes — the "completed equally" check is about them); a dashed neutral marker sits at the even-split share with a foot note naming it; manual resolves count toward whoever clicked, with an "N manual" suffix. NO verdict coloring anywhere on the chart — bars stay accent-toned regardless of share (the judgement is the operator's). A capped scan appends "shares may be incomplete". The chart re-renders with the window change and with background refreshes, and renders nothing (no empty card) when the window has no resolutions.
+  Expected: One bar per resolver, count + % direct-labeled, sorted most-resolved first; a configured member with ZERO resolutions shows as a zero bar (never vanishes — the "completed equally" check is about them); a dashed neutral marker sits at the even-split share with a foot note naming it; manual resolves count toward whoever clicked, with an "N manual" suffix. NO verdict coloring anywhere on the chart — bars stay accent-toned regardless of share (the judgement is the operator's). A capped scan appends "shares may be incomplete". The chart re-renders with the window change and with background refreshes, and renders nothing (no empty card) when the window has no resolutions. The chart counts RESOLVERS, not durations, so the 2026-08-31 business-hours change (S93) leaves it untouched.
 
 S86 | Interactive KB block re-render stays inert | Subsystem: Client (Reference views)
   Steps:
@@ -9960,6 +9977,42 @@ S90 | QA module — sync, queue, playback, timestamped comments | Subsystem: Ser
   agent, and a shared one is invisible to every other agent. Pinned by QA-1..QA-14 +
   `test_qa_gates_rejectNonMember`; the player itself is manual-only (no harness can
   drive `<audio>`).
+
+S91 | Team punches calendar (Manage → Manage Time) | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a manager, open Manage → Manage Time and scroll to the **Team Punches** card below Live Status
+    - Confirm a month calendar in the Time/PTO visual vocabulary: each day cell carries a reps-punched badge, a `+N` off-count, PTO dots, a holiday star, and an amber tint when any rep's day is incomplete; today and the selected day read as TWO distinct states (selection is an `--info` inset ring)
+    - Click a past weekday → the full-width table below shows one row per rep (ClockIn / LunchOut / LunchIn / ClockOut / Hours), ADJ chips on adjusted punches, warn-tinted incomplete rows, and ABSENT reps as muted "no punches" rows
+    - Confirm a rep who is OFF that day appears once (as off), not twice — the absent merge dedupes by id AND name
+    - Click a row's pencil → the Day Edit modal opens PREFILLED to that rep and that date; confirm no pencil renders on a row older than `ADJUST_WINDOW_DAYS`
+    - Navigate ‹ back several months, then try to navigate PAST the current month
+    - Re-enter the tab → the card paints instantly from the session cache and refreshes behind the pill; break the RPC (or go offline) mid-session → the painted month stays with a warn toast, and a COLD failure renders the warn error card instead
+    - If Timesheet archiving is enabled, navigate to a month older than the archive window
+    - As a non-manager, call `google.script.run...getTeamCalendar('2026-08')` from the console
+  Expected: the non-manager call returns a bare `{error:'Manager access required.'}` (a READ gate — never `success:false`). Hours come from the same `calcHours_` arithmetic as payroll, so a day missing a clock-out reads INCOMPLETE, never 0; a garbage COMMENTS value is not a punch; a padded `" Approved "` PTO status still counts as off; offboarded rows are excluded from both the rows AND the roster count. The month is derived from the MANAGER's roster timezone, not browser-local. A month predating the live Timesheet tab says so (`archiveNote`) rather than presenting a short day as complete — the calendar is live-tab-only by design, and the export is the archive-aware path.
+
+S92 | Approved punch adjustment catches up on the rep's screen | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a rep who forgot to clock in, open Adjust → request a same-day ClockIn → submit
+    - WITHOUT reloading, look above the punch buttons: an info chip reads "Awaiting approval · Clock In 08:30" and says the manager still has to approve it
+    - As a manager, approve the request from the dashboard queue
+    - Back on the rep's Dashboard — still not reloaded, tab left VISIBLE — wait up to ~3 minutes
+    - Repeat with a DENIAL on a second request
+    - Navigate the rep to Call Notes and leave it there for several minutes, watching the Network tab
+    - Background the browser tab entirely for several minutes, then return
+  Expected: the punch buttons catch up on their own — Clock In is replaced by Lunch Out / Clock Out without a reload, because an approved `ADJ-ClockIn` is a real punch and `getNextActions_` has always said so; the pending chip disappears with it. BOTH outcomes email the rep (branded, with an Open Time Clock button); the denial says explicitly that no change was made to the timesheet, so a denial is never mistaken for an approval that hasn't propagated. The reconcile rides the EXISTING 1Hz tick (no second interval) and is gated to the Clock view being open AND visible — Call Notes and a backgrounded tab make ZERO reconcile calls, and returning to a visible Clock view refreshes without queueing a burst. A rep with no pending adjustments sees no chip at all.
+
+S93 | Response times count business hours | Subsystem: Server, Client (Metrics views), Client (Time Clock views)
+  Steps:
+    - Have a Spanish request arrive Friday afternoon and be answered Monday morning (or hand-set the stamps)
+    - As a manager or bilingual member, open Metrics → Spanish Inbox
+    - Read the Avg time and Median cells, their sub-lines, and the note beneath the strip
+    - Hover a resolved card's green duration
+    - Open the Dashboard and read the Spanish card's "median reply"
+    - Open Metrics → Dept Requests and walk the business-hours step in S74
+    - Check the daily SLA reminder email against what the tracker shows
+    - Set a request's stamps so the pair is unusable (reverse them, or blank one)
+  Expected: the KPI cells lead with the BUSINESS figure and carry "wall clock <X>" as their sub-line, under a note naming the window ("Response times count 8 AM–5 PM business hours only — weekends and US holidays excluded"); the Friday→Monday case reads as ~2 hours, not ~3 days. The resolved card's tooltip shows both units. The Dashboard median matches the tab (same unit, not two numbers for one thing). An unusable pair is DROPPED from the sample and renders as unknown — never 0, which would drag the median down. A span falling entirely outside business hours legitimately reads 0: that is "nothing was owed during it", which is different from unknown. Deploy skew is safe in both directions: an older client ignores the additive fields, and an older server makes the client fall back to wall clock as the headline WITH the note suppressed (it must never claim an exclusion it didn't make).
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
