@@ -6068,6 +6068,16 @@ manually for a fresh deploy or environment:
   notification at all, which made a denial look exactly like an approval that
   had not propagated. Time-off decisions already emailed and are unchanged.
   **Post-deploy: run `runAllTests()`** — still **296**.
+- **The 2026-08-31 test-coverage round adds NO operator state and changes NO
+  app behaviour** — it is tests, fixtures and one doc marker. `runAllTests()`
+  goes **296 → 302**: four cases covering the PMD/PAP intake preview + send
+  paths (which had no test of any kind, while their PPD sibling was well
+  covered) and two covering five small read endpoints that had none. Every
+  new case only READS or asserts a refusal — nothing sends mail, writes a row
+  or touches Drive — so it is as safe on the live project as the existing
+  suite. The visual matrix goes 55 → 58 (both Intake account forms + Team
+  Notes). Nothing to configure; the only operator-visible change is the
+  higher expected pass count.
 - **The 2026-08-31 business-hours round adds NO operator state** — no
   properties, triggers, migrations, or new CONFIG constants (it REUSES the
   Coverage planner's existing `COVERAGE_BUSINESS_START_HOUR` /
@@ -6086,7 +6096,7 @@ manually for a fresh deploy or environment:
   the tracker (before this round they used different arithmetic and could
   disagree). Nothing is recomputed retroactively in any sheet; the stored
   `CreatedAt`/`ResolvedAt` stamps are untouched and only the DERIVED figures
-  change. **Post-deploy: run `runAllTests()`** — still 296.
+  change. **Post-deploy: run `runAllTests()`** — **302** since the 2026-08-31 coverage round (the four PMD/PAP intake cases + the two small-endpoint cases).
 - **The 2026-08-31 team-punches-calendar round adds NO operator state** — no
   properties, triggers, or migrations; one new MANAGER-gated read endpoint
   (`getTeamCalendar` — not admin-tier, so INV-136's count is unchanged).
@@ -6178,7 +6188,7 @@ manually for a fresh deploy or environment:
   open overlay (the fresh data waits, warm, for the next render), and a
   failed refresh keeps the painted view with a warn toast instead of an
   error screen (only a cold failure shows the error card). **Post-deploy:
-  run `runAllTests()`** — expect **296** (the new
+  run `runAllTests()`** — expect **302** (the new
   `triggerGate_qaReviewPurge_nonManagerThrows` case).
 - **The QA module Phase 1 (operator 2026-08-27) needs THREE Script Properties
   and one Drive folder before it does anything.** Setup: (1) create a FRESH
@@ -8491,6 +8501,7 @@ The 2026-08-25 operator round (batches 1–6) added twenty more → **642**, eve
 The same day's #4 round (the ALL-CST policy companions) kept the count at **688** — the `tzOffsetMinAt_`/mismatch-check pin was REWRITTEN in place for the changed contract (the honest bookkeeping): it now asserts the profile-vs-`workAnchorTz` offset comparison, the anchor-unresolvable/absent silent-disable guards, a BAN on `getTimezoneOffset` returning to the function (the retired browser comparison), the `workAnchorTz: CONFIG.MANAGER_TIMEZONE` wiring in `getEmployeeState` (comment-stripped per INV-188), and `BY_TIMEZONE: {}` with the Manila-local entry banned from returning — 3 mutations / 3 bites (browser-compare restored; workAnchorTz dropped; Manila entry re-added).
 The same day's punch-adjustment feedback round added two more → **692** (ADJ-1/2: the reconcile rides the EXISTING tick with a minutes-scale throttle and the view-open/visible gate — a dropped gate makes it a shell-wide poll — the window stamped inside `clkRefreshState_` BEFORE the RPC so no trigger double-fires, plus the chip's array guard, empty-renders-nothing, escaping, `role="status"`, its position ABOVE the punch buttons, and the INV-185 fixture field + `?pendingadj=1` scenario; ADJ-2/3: the helper is read-only + RANGE-bounded + never provisions the tab + normalizes status at the one read + fails toward `[]`, and the decision email fires for BOTH outcomes, carries no MailApp inside the locked body, runs after `releaseLock`, is branded/escaped/best-effort, and says the timesheet is unchanged on a denial) — 6 mutations / 6 bites (view/hidden gate dropped; chip moved below the buttons; deny notification dropped; throttle dropped; approve mail inlined into the lock — caught by the M-7 net AND the new pin; helper switched to provision + full-sheet read).
 The same day's business-hours round added four more → **696** (BIZ-1 behavioural — the motivating case Fri 16:00 → Mon 09:00 = 2 business hours rather than 3 days, plus both clamps, a full day equalling the 9-hour window, a whole intervening weekday, holiday exclusion asserted in BOTH directions so the holiday set is proven load-bearing, the weekdaysOnly knob, and every null path (reversed / absurd-span / malformed date / inverted window); BIZ-2 wiring — ONE wrapper on the MANAGER tz with a bounded holiday build, the GUARDED push, all four surfaces (Spanish stats, the per-thread card, DR elapsed + SLA bands, and the daily digest) plus a BAN on a raw wall-clock age returning to `deptRequestsOverdueOpen_`; BIZ-3 client wiring — business headline with an old-server fallback, the note gated on `slaBusiness`, both dashboard render paths moved together, and the `#dr-kpi` WRAPPER shape that keeps `drRepaintKpi_`'s outerHTML patch from stacking a note per resolve) — 13 mutations / 13 bites, one of which exposed a pin weaker than its property: the null-push assertion passed against `bizMin == null ? 0 : bizMin` (which keeps both a `push(` and a `null` mention) until it was tightened to the guarded shape.
+The 2026-08-31 coverage round added one more → **697** (VIS-COVER — the documented uncovered-tab list is DERIVED from the TOOLS registry vs `shoot.mjs`, checked against a `VISUAL-GAP-TABS:` marker line in this file, and bite-checked in BOTH directions: dropping a tab from the marker fails, and dropping a SCENARIO fails too). It also strengthened the derived GATE-SHAPE tripwire to follow a one-line DELEGATING wrapper through to its delegate — the four intake account endpoints are `return intakeSendAcct_(…)` inside a try/catch whose own `success: false` satisfied the check regardless of what the delegate returned, so the pin could not fail on them; found by bite-checking the new intake tests against it.
 The 2026-08-31 team-punches-calendar round added two more → **690**: the behavioural `getTeamCalendar` pin (the REAL endpoint driven in a vm with the real EMP/ADP/TO enums + `empRosterEmail_`/`normalizeType_`/`calcHours_` — gate + bare-{error} read shape, last-punch-per-type wins, garbage COMMENTS types are not punches, a corrupt time cell reads INCOMPLETE never 0, padded `" Approved "` overlays count, offboarded rows excluded from rows AND rosterCount, archiveNote on a pre-live-tab month) and the client wiring pin (loader beside the lazy cards, key-exact clean-round cache write BEFORE the seq check, the C17-5 painted/cold failure split, role/tabindex/aria-pressed day cells, manager-tz date derivation, future-nav refusal, the bounds-checked Day Edit prefill, the honest no-punches merge, `mtRenderTable_` per V-11, and the fixture's rep-row keys DERIVED from the server's own `repRows.push` literal per INV-185) — 6 mutations / 6 bites, TWO of which exposed the pin as weaker than its property on the first run (the null-hours mutation was UNOBSERVABLE until a corrupt-time fixture row exercised the `calcHours_`-null path — mutate against the property, not its neighbourhood — and the fixture-key drop had to remove the key from EVERY row before the presence check could see it). The omnibus gate test gained the `getTeamCalendar` case IN PLACE.
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends

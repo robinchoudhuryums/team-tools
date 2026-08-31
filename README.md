@@ -145,7 +145,7 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders a 55-scenario matrix in headless Chromium; it is
+(`test/visual/`) renders a 58-scenario matrix in headless Chromium; it is
 manual / on-demand, NOT in CI. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then

@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 696 + DOM 82;
-  visual matrix on demand — 55 scenarios, last full shoot 2026-08-31 clean;
+Test Command: manual (Node harnesses: `npm test` = pure 697 + DOM 82;
+  visual matrix on demand — 58 scenarios, last full shoot 2026-08-31 clean;
   Regression Scenarios run to S93)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -651,11 +651,37 @@ figure they have been reading gets SMALLER, and Dept-Request SLA bands move
 with it. Nothing is recomputed in any sheet — the stored stamps are
 untouched, only derived figures change.
 
+NEWEST OF ALL #13 (2026-08-31 #4, operator: "are there any gaps in test
+coverage currently in the app?" then "take on the remaining items" — block
+`.cycle/blocks/19pre-test-coverage-broad-implement.md`). MEASURED rather than
+recited. Five gaps found; the operator closed the biggest by RUNNING
+`runAllTests()` (296/296 green — it had not run across 22 PRs and +3,592 lines
+of Code.js, and it is the only thing that executes against the real Apps
+Script runtime). The rest: T1 the four PMD/PAP intake preview+send endpoints
+had ZERO coverage of any kind while the PPD sibling was well covered (now 4
+cases: the acct email builder's escaping pin, cross-form hash distinctness —
+a PAP preview must not authorize a PMD send — the three-way send hash gate
+incl. the sibling's VALID hash, and read-vs-write refusal shapes); T2 five
+more zero-coverage endpoints, pinned on what they REFUSE and what they must
+NOT return (getIntakeAgents is {id,name} exactly — agent emails are resolved
+server-side so they never reach a client); T3 the matrix covered 18 of 29
+tabs, +3 scenarios for both Intake ACCOUNT forms and Team Notes; T4 the
+documented uncovered-tab list was prose that had drifted to 3 of 11 real gaps
+— now a VISUAL-GAP-TABS marker checked by the derived VIS-COVER pin.
+Bite-checking T1 exposed a pin that could not fail: GATE-SHAPE resolved to the
+one-line wrapper whose own catch carries success:false, so it never saw the
+delegate; it now follows the delegation. Pure 696→697, DOM 82, matrix 55→58,
+editor suite 296→**302**. No app-behaviour change in this round.
+KNOWN REMAINING (documented, not closed): 8 tabs still unshot; 79% of the pure
+harness is source-scanning not behavioural (462 of 584 blocks, measured); the
+DOM harness is concentrated in the shell + Call Notes, with one test for Time
+Clock's punch state machine.
+
 THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
      still-undeployed PR #176 + #177 from cycle 18.
-  2. `runAllTests()` in the editor — expect **296/296** (the beacon +
+  2. DONE 2026-08-31 (296/296 green). The NEXT run expects **302/302** (the beacon +
      QA-gate cases + the QA-purge trigger gate joined after the QA rounds
      landed). ALSO re-run `installAutomationTriggers()` once — the 18th
      trigger (`purgeOldQaReviews`) is harmless while its window is 0.
