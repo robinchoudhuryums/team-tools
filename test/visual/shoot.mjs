@@ -60,6 +60,14 @@ const SCENARIOS = [
   ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  ''],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],
+  // 2026-08-31 coverage pass — the matrix covered 18 of 29 registry tabs.
+  // These three were the highest-value misses: BOTH Intake account forms are
+  // PHI-bearing 20+ field layouts that only the PPD sibling was ever shot
+  // against, and Team Notes is the manager surface for the whole Call Notes
+  // module (training queue, review candidates, per-rep, stats).
+  ['intake-pmd-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', ''],
+  ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
+  ['cn-teamnotes-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', ''],
   ['intake-dark-wide',      { tool: 'intake',    tab: null },         WIDE, 'dark',  ''],
   ['reference-light-wide',  { tool: 'reference', tab: null },         WIDE, 'light', ''],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],

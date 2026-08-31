@@ -12696,9 +12696,20 @@ test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually retu
       const fn = varFn[f[1]];
       if (!fn) continue;                                   // not a simple _asUser capture
       if (!new RegExp('\\nfunction ' + fn + '\\s*\\(').test(code)) continue;   // local helper
+      // Follow a one-line DELEGATING wrapper through to its delegate. The four
+      // intake account endpoints are `return intakeSendAcct_(…)` inside a
+      // try/catch, and the wrapper's own catch carries `success: false` — so
+      // checking the wrapper passes no matter what the delegate returns, which
+      // is a pin that cannot fail. Bite-checked: swapping the DELEGATE's auth
+      // return to a bare {error} must trip this.
+      let target = fn, src = extractRawFunction('Code.js', fn);
+      const deleg = /\breturn\s+([A-Za-z][A-Za-z0-9_]*_)\s*\(/.exec(src);
+      if (deleg && new RegExp('\\nfunction ' + deleg[1] + '\\s*\\(').test(code)) {
+        target = deleg[1]; src = extractRawFunction('Code.js', target);
+      }
       checked++;
-      assert.ok(/success:\s*false/.test(extractRawFunction('Code.js', fn)),
-        t.name + ' uses _assertFailure on ' + fn + ', which returns a bare {error} — assert r.error instead (a READ gate has no success flag)');
+      assert.ok(/success:\s*false/.test(src),
+        t.name + ' uses _assertFailure on ' + target + ', which returns a bare {error} — assert r.error instead (a READ gate has no success flag)');
     }
   });
   assert.ok(checked >= 3, 'the variable→call link actually resolved (checked ' + checked + ')');
@@ -14442,6 +14453,50 @@ test('BIZ-3: the clients lead with business time, keep wall clock, and say which
                             drSrc.indexOf('function drRequestCardHtml_')));
   assert.ok(/item\.slaBusiness && item\.elapsedWallMin != null/.test(st) && /Wall clock: /.test(st),
     'the card keeps the calendar gap in its title');
+});
+
+
+test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained', () => {
+  // CLAUDE.md's Visual Audit Stage names the tabs the matrix does not shoot.
+  // Measured 2026-08-31, that hand-kept sentence named 3 of 11 real gaps —
+  // it had silently understated the list as tabs were added, and a /sync-docs
+  // pass that verified file paths and Script Properties mechanically still
+  // READ that sentence rather than checking it. Same class as INV-179: the
+  // moment a list is derived, the gaps it was hiding surface.
+  //
+  // This pin does not demand full coverage (a scenario needs fixtures, and
+  // some tabs are genuinely low-value). It demands that the DOC agree with
+  // the matrix, so growing the gap silently is impossible.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+
+  const reg = /const TOOLS = \{([\s\S]*?)\n\};/.exec(core);
+  assert.ok(reg, 'found the TOOLS registry');
+  const allTabs = new Set([...reg[1].matchAll(/\n      (\w+):\s*\{/g)].map((m) => m[1]));
+  assert.ok(allTabs.size >= 25, 'extracted the tab set (got ' + allTabs.size + ')');
+
+  // tool -> defaultTab, so a scenario written as {tool, tab:null} resolves.
+  const defaults = {};
+  for (const m of reg[1].matchAll(/\n  (\w+):\s*\{[\s\S]*?defaultTab:\s*'(\w+)'/g)) defaults[m[1]] = m[2];
+
+  const covered = new Set();
+  for (const m of shoot.matchAll(/\{\s*tool:\s*'(\w+)'(?:,\s*tab:\s*'(\w+)')?/g)) {
+    covered.add(m[2] || defaults[m[1]]);
+  }
+  assert.ok(covered.size >= 15, 'resolved the shot tabs (got ' + covered.size + ')');
+
+  const gaps = [...allTabs].filter((t) => !covered.has(t)).sort();
+  // The doc sentence must NAME every uncovered tab. Tabs are named in prose
+  // by their LABEL, not their key, so match on either — and require the doc
+  // to carry a machine-checkable marker list so this cannot drift into
+  // "sort of mentions it somewhere".
+  const m = /VISUAL-GAP-TABS:\s*([a-zA-Z0-9,\s]*)\n/.exec(claude);
+  assert.ok(m, 'CLAUDE.md carries a VISUAL-GAP-TABS marker line for this pin to check');
+  const documented = m[1].split(',').map((x) => x.trim()).filter(Boolean).sort();
+  assert.deepStrictEqual(documented, gaps,
+    'the documented visual-coverage gaps disagree with the matrix.\n  matrix says: ' +
+    (gaps.join(', ') || '(none)') + '\n  doc says:    ' + (documented.join(', ') || '(none)'));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
