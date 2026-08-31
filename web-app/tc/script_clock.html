@@ -1094,7 +1094,10 @@ function clkDashSpanishCard_(res, pendingRes) {
     var age = r.ageHours >= 24 ? Math.round(r.ageHours / 24) + 'd' : (r.ageHours || 0) + 'h';
     var snip = String(r.snippet || r.subject || '').replace(/\s+/g, ' ').trim();
     if (snip.length > 130) snip = snip.slice(0, 130) + '…';
-    var median = res.medianMinutes != null ? '· median reply ' + res.medianMinutes + 'm' : '';
+    // Business-hours median (operator 2026-08-31); falls back to wall clock on
+    // an older server so the line never disappears mid-deploy.
+    var medMin = (res.medianBusinessMinutes != null) ? res.medianBusinessMinutes : res.medianMinutes;
+    var median = medMin != null ? '· median reply ' + medMin + 'm' : '';
     // Pilot round-2 follow-on: claim info on the preview. Reuses the metrics
     // partial's pure pill ("you" for the caller's own claim; escapes
     // internally) — a paraphrase here would be the INV-185 drift class.
@@ -1120,7 +1123,10 @@ function clkDashSpanishCard_(res, pendingRes) {
   return '<div class="dash-kpis">' +
     clkDashKpi_('Pending', res.pending != null ? res.pending : '—', { big: true }) +
     clkDashKpi_('Resolved · 7d', res.resolved != null ? res.resolved : '—') +
-    clkDashKpi_('Median reply', res.medianMinutes != null ? res.medianMinutes + 'm' : '—') +
+    clkDashKpi_('Median reply', (function () {
+      var m = (res.medianBusinessMinutes != null) ? res.medianBusinessMinutes : res.medianMinutes;
+      return m != null ? m + 'm' : '—';
+    })()) +
   '</div>' + openLink;
 }
 /** Page the Spanish pending-request preview (wraps); re-renders the extras. */

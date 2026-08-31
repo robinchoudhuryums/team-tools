@@ -2008,12 +2008,36 @@ function spanishHeadHtml_(d) {
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
     (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') +
     spanishTruncNote_(d) + '</div>';
+  // Operator 2026-08-31 — response times are BUSINESS hours (weekends,
+  // holidays and after-hours excluded), so a Friday-afternoon request answered
+  // Monday morning no longer reads as a 3-day reply. The wall-clock figure the
+  // operator has been reading rides underneath so nothing disappears; an older
+  // server (no business fields) falls back to wall-clock as the headline.
+  var bizOn = (d.avgBusinessMinutes != null || d.medianBusinessMinutes != null);
+  var durCell = function (label, bizMin, wallMin) {
+    var head = bizOn ? bizMin : wallMin;
+    var sub = bizOn ? ('wall clock ' + spanishFmtDur_(wallMin)) : 'to resolve';
+    return '<div class="tel-cell"><div class="tel-label">' + label + '</div><div class="tel-value">' +
+      esc(spanishFmtDur_(head)) + '</div><div class="tel-sub">' + esc(sub) + '</div></div>';
+  };
   var strip = '<div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + esc(String(d.resolved)) + '</div><div class="tel-sub">of ' + esc(String(total)) + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + esc(String(d.pending)) + '</div><div class="tel-sub">awaiting reply</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
+    durCell('Avg time', d.avgBusinessMinutes, d.avgMinutes) +
+    durCell('Median', d.medianBusinessMinutes, d.medianMinutes) +
     '</div>';
+  if (bizOn) {
+    var bh = d.businessHours || {};
+    var hrLabel = function (m) {
+      if (m == null) return '';
+      var h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? 'PM' : 'AM', h12 = (h % 12) || 12;
+      return h12 + (mm ? (':' + (mm < 10 ? '0' : '') + mm) : '') + ' ' + ap;
+    };
+    var win = (bh.startMin != null && bh.endMin != null) ? (hrLabel(bh.startMin) + '–' + hrLabel(bh.endMin) + ' ') : '';
+    strip += '<div style="font-size:11px;color:var(--muted-2);margin:-8px 0 14px">Response times count ' + esc(win) +
+      'business hours only — weekends and US holidays excluded' +
+      (d.businessCount != null ? (' · ' + esc(String(d.businessCount)) + ' timed') : '') + '</div>';
+  }
   // Operator feedback 2026-08-06 — ONE combined list, color-coded by status,
   // with filter chips instead of separate Pending/Resolved sub-tabs. The chips
   // FILTER the already-fetched lists client-side (no refetch).
@@ -2253,11 +2277,15 @@ function spanishPendingToneCls_(ageHours) {
 
 function spanishResolvedCard_(t) {
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
+  // Business-hours duration (operator 2026-08-31); the wall-clock figure rides
+  // in the title so a reader can still see the calendar gap.
   var took = spanishFmtDur_(t.resolveMinutes);
+  var tookTitle = (t.resolveWallMinutes != null && t.resolveMinutes != null)
+    ? ('Business hours: ' + spanishFmtDur_(t.resolveMinutes) + ' · wall clock: ' + spanishFmtDur_(t.resolveWallMinutes)) : '';
   var when = spanishFmtDateTime_(t.resolvedAtMs);
   return '<div class="sp-task st-resolved">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) +
-      '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
+      '<span class="sp-task-age" style="color:var(--success-deep)"' + (tookTitle ? (' title="' + esc(tookTitle) + '"') : '') + '>' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" style="color:var(--muted)">' +
       (when ? '<span class="sp-resolved-when">' + icon('clock', 11) + ' Resolved ' + esc(when) + '</span> · ' : '') +

@@ -375,14 +375,14 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
-        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 190, slaStatus: 'ontime', slaHours: 48 },
-        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 2900, slaStatus: 'overdue', slaHours: 24 },
-        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 1450, slaStatus: 'atrisk', slaHours: 48 },
-        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 220, resolvedBy: 'sam@umsupply.com' }],
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaHours: 24 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaHours: 48 },
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com' }],
       incoming: [
-        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 320, slaStatus: 'ontime', slaHours: 24 }],
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaHours: 24 }],
       allOpen: [
-        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 5800, slaStatus: 'overdue', slaHours: 48 }],
+        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaHours: 48 }],
       truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
     getMyTraining: { items: [
@@ -544,13 +544,19 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     kbDeleteComment: { success: true },
     kbEditComment: { success: true },
     getSpanishInboxResolved: { resolved: [
-      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
-      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
+      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolveWallMinutes: 3040, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
       // Resolution-share chart (2026-08-17): members incl. one who resolved
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       truncated: false },
-    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 3, resolved: 12, avgMinutes: 78, medianMinutes: 45, membersConfigured: 3, threadsScanned: 15, truncated: false },
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 3, resolved: 12, avgMinutes: 78, medianMinutes: 45,
+      // Business-hours figures (operator 2026-08-31) — deliberately SMALLER
+      // than the wall-clock pair beside them, which is the whole point of the
+      // change and the thing a screenshot must show.
+      avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 12,
+      businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
+      membersConfigured: 3, threadsScanned: 15, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {

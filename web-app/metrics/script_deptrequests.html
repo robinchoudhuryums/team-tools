@@ -138,11 +138,28 @@ function drKpiStripHtml_(data) {
   const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
   const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
-  return '<div class="telemetry" id="dr-kpi" style="margin-bottom:16px">' +
+  // The id sits on the WRAPPER, not the telemetry grid: drRepaintKpi_ replaces
+  // this element's outerHTML on an in-place resolve, and a note rendered as a
+  // SIBLING would accumulate one copy per patch.
+  return '<div id="dr-kpi"><div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
+    '</div>' + drBusinessNoteHtml_(data) + '</div>';
+}
+
+/** Operator 2026-08-31 — elapsed time and the SLA bands count BUSINESS hours
+ *  (weekends, US holidays and after-hours excluded), so a Friday-afternoon
+ *  request answered Monday morning is no longer "3 days old". Rendered only
+ *  when the server says so (`slaBusiness` on any item), so an older server
+ *  keeps its wall-clock figures with no note claiming otherwise. */
+function drBusinessNoteHtml_(data) {
+  const rows = (data && data.mine) || [];
+  const on = rows.some(function (r) { return r && r.slaBusiness; });
+  if (!on) return '';
+  return '<div style="font-size:11px;color:var(--muted-2);margin:-8px 0 14px">' +
+    'Elapsed time and SLA bands count business hours only — weekends and US holidays excluded' +
     '</div>';
 }
 
@@ -262,19 +279,23 @@ function drCapNoteHtml_(shown, total) {
  *  age). Resolved → green "resolved in Xh"; open → Open · elapsed, prefixed
  *  At risk / Overdue (+ the SLA hours) when the SLA machinery says so. */
 function drCardStatusHtml_(item) {
+  // The wall-clock figure rides in the title so a reader can still see the
+  // calendar gap behind the business-hours headline (operator 2026-08-31).
+  const ttl = (item.slaBusiness && item.elapsedWallMin != null)
+    ? ' title="' + esc('Wall clock: ' + drFmtMin_(item.elapsedWallMin)) + '"' : '';
   if (item.status === 'resolved') {
-    return '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' +
+    return '<span class="sp-task-age" style="color:var(--success-deep)"' + ttl + '>' + icon('check', 12) + ' ' +
       (item.elapsedMin != null ? esc(drFmtMin_(item.elapsedMin)) : 'resolved') + '</span>';
   }
   const elapsed = item.elapsedMin != null ? drFmtMin_(item.elapsedMin) + ' ago' : '';
   const sla = item.slaHours ? ' · ' + item.slaHours + 'h SLA' : '';
   if (item.slaStatus === 'overdue') {
-    return '<span class="sp-task-age" style="color:var(--danger-deep)">' + esc('Overdue' + sla) + '</span>';
+    return '<span class="sp-task-age" style="color:var(--danger-deep)"' + ttl + '>' + esc('Overdue' + sla) + '</span>';
   }
   if (item.slaStatus === 'atrisk') {
-    return '<span class="sp-task-age" style="color:var(--warning-deep)">' + esc('At risk · ' + elapsed) + '</span>';
+    return '<span class="sp-task-age" style="color:var(--warning-deep)"' + ttl + '>' + esc('At risk · ' + elapsed) + '</span>';
   }
-  return '<span class="sp-task-age" style="color:var(--warning-deep)">' + esc('Open · ' + elapsed) + '</span>';
+  return '<span class="sp-task-age" style="color:var(--warning-deep)"' + ttl + '>' + esc('Open · ' + elapsed) + '</span>';
 }
 
 function drRequestCardHtml_(item) {

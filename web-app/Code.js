@@ -13560,6 +13560,111 @@ function empShiftSchedule_(empLike, tz) {
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
 
+// ── Business-hours elapsed (operator 2026-08-31) ────────────────────────────
+// Response-time figures were RAW WALL CLOCK: a request arriving Friday 4pm and
+// answered Monday 9am counted as ~41 hours, not the ~1 hour of working time it
+// actually took. Because nobody replies overnight or at the weekend, those
+// spans dominated the AVERAGE and pulled the MEDIAN on any window containing a
+// weekend — and the per-department SLA targets are chosen against exactly
+// those numbers, so the distortion fed back into the thresholds.
+//
+// The business calendar is the app's EXISTING one (the `COVERAGE_BUSINESS_*`
+// CONFIG the Coverage planner bands against — the prefix is historical; there
+// is one business calendar, not two) plus the US holidays the calendar already
+// stars. Deliberate consequence: retuning those CONFIG values moves BOTH the
+// coverage bands and these figures, which is the correct coupling.
+//
+// This is tractable precisely because of the ALL-CST policy — every agent
+// shares one business calendar, so there is a single frame to subtract
+// against instead of a per-rep timezone question.
+
+/** The business window, read once. */
+function businessHours_() {
+  return {
+    startMin: ((CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8) * 60,
+    endMin:   ((CONFIG.COVERAGE_BUSINESS_END_HOUR   != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR   : 17) * 60,
+    weekdaysOnly: CONFIG.COVERAGE_WEEKDAYS_ONLY !== false,
+  };
+}
+
+/** Walk bound — an absurd pair (a corrupt stamp, a decade-old open request)
+ *  must not spin a per-day loop through the execution budget. Beyond this the
+ *  answer is "unknown", not a number. */
+const BIZ_MAX_SPAN_DAYS = 400;
+
+/** PURE core (Node-pinned). `start`/`end` are {date:'yyyy-MM-dd', min:0..1439}
+ *  ALREADY expressed in the business timezone; `opts` carries the window, the
+ *  holiday set, and the weekday rule. Returns business minutes, or NULL when
+ *  the pair cannot be computed honestly — a reversed pair is corrupt data, and
+ *  a plausible substitute is worse than a gap (the F8 rule).
+ *
+ *  Per-day overlap, which handles every clamp uniformly: a start before the
+ *  window opens counts from the open, a start after it closes contributes
+ *  nothing that day, and a weekend/holiday day contributes nothing at all. A
+ *  span lying wholly outside business hours legitimately yields 0 — that is a
+ *  real answer (nothing was owed during it), not a missing one. */
+function bizMinutesLocal_(start, end, opts) {
+  if (!start || !end || !opts) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start.date)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(end.date))) return null;
+  const sMin = Number(start.min), eMin = Number(end.min);
+  if (!isFinite(sMin) || !isFinite(eMin)) return null;
+  if (end.date < start.date || (end.date === start.date && eMin < sMin)) return null;   // reversed → unknown
+  const span = daysBetween_(start.date, end.date);
+  if (!isFinite(span) || span < 0 || span > BIZ_MAX_SPAN_DAYS) return null;             // absurd range → unknown
+  const openMin = Number(opts.startMin), closeMin = Number(opts.endMin);
+  if (!isFinite(openMin) || !isFinite(closeMin) || closeMin <= openMin) return null;
+  const hol = opts.holidays || {};
+  let total = 0;
+  for (let i = 0; i <= span; i++) {
+    // UTC-anchored day walk — no tz drift, and no Utilities dependency, which
+    // is what keeps this core testable off-platform.
+    const d = new Date(start.date + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + i);
+    const iso = d.toISOString().substring(0, 10);
+    const dow = d.getUTCDay();
+    if (opts.weekdaysOnly !== false && (dow === 0 || dow === 6)) continue;
+    if (hol[iso]) continue;
+    const segStart = (iso === start.date) ? sMin : 0;
+    const segEnd   = (iso === end.date)   ? eMin : 1440;
+    const overlap = Math.min(segEnd, closeMin) - Math.max(segStart, openMin);
+    if (overlap > 0) total += overlap;
+  }
+  return Math.round(total);
+}
+
+/** One instant → {date, min} in the business timezone. */
+function bizPointInTz_(ms, tz) {
+  const d = new Date(ms);
+  return {
+    date: Utilities.formatDate(d, tz, 'yyyy-MM-dd'),
+    min: parseInt(Utilities.formatDate(d, tz, 'H'), 10) * 60 + parseInt(Utilities.formatDate(d, tz, 'm'), 10),
+  };
+}
+
+/** Business minutes between two epoch-ms instants, in the manager timezone
+ *  (the app's operating anchor — MANAGER_TIMEZONE, not CONFIG.TIMEZONE, which
+ *  is the storage frame). NULL on any unusable input, so a caller renders
+ *  "unknown" instead of a confident zero (INV-187). */
+function businessMinutesBetween_(startMs, endMs, tz) {
+  try {
+    if (!(Number(startMs) > 0) || !(Number(endMs) > 0)) return null;
+    const zone = tz || CONFIG.MANAGER_TIMEZONE;
+    const s = bizPointInTz_(Number(startMs), zone);
+    const e = bizPointInTz_(Number(endMs), zone);
+    const hol = {};
+    const y0 = parseInt(s.date.substring(0, 4), 10), y1 = parseInt(e.date.substring(0, 4), 10);
+    for (let y = y0; y <= y1 && (y - y0) <= 2; y++) {
+      getUsHolidays_(y).forEach(function (h) { hol[h.date] = true; });
+    }
+    const win = businessHours_();
+    return bizMinutesLocal_(s, e, { startMin: win.startMin, endMin: win.endMin,
+      holidays: hol, weekdaysOnly: win.weekdaysOnly });
+  } catch (e) {
+    Logger.log('businessMinutesBetween_ failed: ' + e.message);
+    return null;
+  }
+}
+
 // ── #3 Coverage planner (manager, forward staffing view) ────────────────────
 // getCoveragePlan(from,to): for each manager-tz day, lists every rep's shift
 // (per-tz schedule, converted to the manager's tz) with a PTO overlay
@@ -13996,7 +14101,7 @@ function getSpanishInboxStats(days) {
 
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
-    const durations = [], pending = [];
+    const durations = [], bizDurations = [], pending = [];
     let resolvedCount = 0;
     const nowMs = Date.now();
     threads.forEach(function (th) {
@@ -14020,19 +14125,36 @@ function getSpanishInboxStats(days) {
       }
       if (resolveMs != null) {
         resolvedCount++;
-        durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // minutes
+        durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // wall-clock minutes
+        // Operator 2026-08-31 — BUSINESS minutes are the headline: nobody
+        // replies overnight or at the weekend, so a Friday-evening request
+        // answered first thing Monday was counting as ~41 hours of "response
+        // time". A null (corrupt stamp pair) is DROPPED from the business
+        // series rather than substituted, so the two series can legitimately
+        // differ in length — which is why each has its own count.
+        const bizMin = businessMinutesBetween_(reqMs, resolveMs);
+        if (bizMin != null) bizDurations.push(bizMin);
       } else {
         pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
       }
     });
     durations.sort(function (a, b) { return a - b; });
+    bizDurations.sort(function (a, b) { return a - b; });
     const avg = durations.length ? Math.round(durations.reduce(function (s, x) { return s + x; }, 0) / durations.length) : null;
     const median = durations.length ? durations[Math.floor(durations.length / 2)] : null;
+    const bizAvg = bizDurations.length ? Math.round(bizDurations.reduce(function (s, x) { return s + x; }, 0) / bizDurations.length) : null;
+    const bizMedian = bizDurations.length ? bizDurations[Math.floor(bizDurations.length / 2)] : null;
     pending.sort(function (a, b) { return b.ageHours - a.ageHours; });
     const result = {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
       avgMinutes: avg, medianMinutes: median,
+      // Business-hours figures (weekends + US holidays excluded, counted only
+      // within the business window). ADDITIVE — an older client keeps rendering
+      // the wall-clock pair unchanged.
+      avgBusinessMinutes: bizAvg, medianBusinessMinutes: bizMedian,
+      businessCount: bizDurations.length,
+      businessHours: businessHours_(),
       // Cycle-13 follow-on: `pendingList` / `pendingListCap` were REMOVED. The
       // list had NO client reader — both the Spanish tab and the Dashboard card
       // use the separate, uncapped, live-read `getSpanishInboxPending`, which is
@@ -14191,7 +14313,8 @@ function getSpanishInboxResolved(days) {
         requester: requester,
         resolver: resolver,
         manual: wasManual,
-        resolveMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
+        resolveMinutes: businessMinutesBetween_(reqMs, resolveMs),
+        resolveWallMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
         resolvedAtMs: resolveMs,
         subject: req.getSubject() || '(no subject)',
         permalink: th.getPermalink(),
@@ -15066,6 +15189,16 @@ function getDeptRequests() {
         isResolved
           ? ((resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000) : null)
           : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      // Operator 2026-08-31 — BUSINESS elapsed (weekends + US holidays and
+      // out-of-hours excluded) is what the SLA now bands on. The wall-clock
+      // figure rides along as `elapsedWallMin` so nothing that used to be
+      // readable disappears, but a request that sat over a weekend must not
+      // read as breached when nobody was on shift to answer it. Null (a corrupt
+      // stamp pair, or a resolved row with no ResolvedAt — the F8 case) stays
+      // null: drSlaStatus_ already renders an unknown elapsed as no verdict.
+      const elapsedBizMin = isResolved
+        ? ((resolvedMs && createdMs) ? businessMinutesBetween_(createdMs, resolvedMs) : null)
+        : (createdMs ? businessMinutesBetween_(createdMs, Date.now()) : null);
       const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
@@ -15075,8 +15208,13 @@ function getDeptRequests() {
         // the same value a padded/mixed-case cell would otherwise split.
         status: status, resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
-        elapsedMin: elapsedMin,
-        slaHours: slaHours, slaStatus: drSlaStatus_(elapsedMin, slaHours),
+        // `elapsedMin` is the BUSINESS figure (what the tracker and the SLA
+        // read); the raw wall-clock span is kept beside it, both for the
+        // "N wall-clock" secondary line and so the change is auditable.
+        elapsedMin: (elapsedBizMin != null) ? elapsedBizMin : null,
+        elapsedWallMin: elapsedMin,
+        slaHours: slaHours, slaStatus: drSlaStatus_(elapsedBizMin, slaHours),
+        slaBusiness: true,
       };
       all.push(item);
       if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
@@ -15360,7 +15498,14 @@ function deptRequestsOverdueOpen_() {
     const cv = r[DR.CREATED_AT];
     const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
     if (!createdMs) continue;
-    const ageMin = Math.round((Date.now() - createdMs) / 60000);
+    // Operator 2026-08-31 — band on BUSINESS minutes, the same figure the
+    // tracker shows. Computing wall-clock here while getDeptRequests computed
+    // business elapsed would make the daily digest and the on-screen card
+    // disagree about which requests are overdue — the parallel-source class.
+    // A null (unusable stamp) is NOT overdue: drSlaStatus_ gives no verdict on
+    // an unknown elapsed, and the digest must not invent one.
+    const ageMin = businessMinutesBetween_(createdMs, Date.now());
+    if (ageMin == null) continue;
     const dept = String(r[DR.TO_DEPT] || '');
     if (drSlaStatus_(ageMin, drSlaForToDept_(dept, slaCfg)) !== 'overdue') continue;   // F(cycle-8 M-5)
     overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
