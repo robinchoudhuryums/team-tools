@@ -848,7 +848,7 @@ test('M-1: submitPunch failure restores the clicked button + does not throw', ()
   wrap.className = 'actions';
   wrap.innerHTML = '<button class="prime" data-action="ClockIn">Clock In</button>';
   h.document.body.appendChild(wrap);
-  h.window.submitPunch('ClockIn');
+  h.read('submitPunch')('ClockIn');
   const btn = h.$('.actions [data-action="ClockIn"]');
   assert.ok(/Working/.test(btn.innerHTML), 'in-flight label shown');
   // Pre-fix: the failure handler read the undeclared `prime`/`primeHtml`
@@ -1378,7 +1378,7 @@ test('PPD notes: rendered inside the form, collected under a NON-numeric key, ri
   assert.ok(/id="intk-ppd-sec-notes"/.test(html), 'in its own trailing panel');
   // The 46-question ring: sections derive from the BANK, so 'notes' never
   // enters mainQNums (the denominator the E14 seed literal pins).
-  const secs = h.window.intakePpdSections_('EN');
+  const secs = h.read('intakePpdSections_')('EN');
   const allMain = [].concat(...secs.map((x) => x.mainQNums));
   assert.strictEqual(allMain.indexOf('notes'), -1, 'notes is not a counted question');
   assert.strictEqual(allMain.length, 46, 'denominator stays 46');
@@ -1393,4 +1393,222 @@ test('PPD notes: rendered inside the form, collected under a NON-numeric key, ri
   const noteRow = snap.rows.filter((r) => r.qNum === 'notes')[0];
   assert.ok(noteRow && noteRow.value === 'Lives with caregiver; call after 2pm',
     'and pushed as a row — the server email builder renders rows verbatim, no server change');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PUNCH STATE MACHINE — the client half (2026-08-31 coverage round)
+//
+// Measured gap: the DOM harness had ONE punch test (the M-1 failure restore)
+// for the app's most consequential client logic. The SERVER's state machine is
+// well covered (test_recordPunch_liveSequenceGuard + getNextActions_ behavioural
+// cases), but which button a rep actually SEES, and what happens to it across
+// the four response shapes, lived only in source pins.
+//
+// The buttons render from `actions` + `opts.afterLunch`; a wrong primary is not
+// a cosmetic defect here — it is the difference between a rep clocking out and
+// starting a second lunch (F7/#5a, an operator decision after accidental
+// clicks).
+// ═════════════════════════════════════════════════════════════════════════════
+section('Time Clock — punch state machine (client)');
+
+/** Render the action row into a live DOM and return handles. */
+function mountActions(h, actions, opts) {
+  const host = h.document.createElement('div');
+  host.innerHTML = h.read('renderActions')(actions, opts || {});
+  h.document.body.appendChild(host);
+  const prime = host.querySelector('.actions .prime');
+  return {
+    host,
+    prime,
+    primeAction: prime ? prime.getAttribute('data-action') : null,
+    order: [...host.querySelectorAll('.actions button')].map((b) => b.getAttribute('data-action')),
+    secondaries: [...host.querySelectorAll('.actions .sec')].map((b) => b.getAttribute('data-action')),
+    cls: (a) => {
+      const b = host.querySelector('.actions [data-action="' + a + '"]');
+      return b ? b.className : null;
+    },
+  };
+}
+
+test('the PRIMARY button follows the rep\'s state — including the afterLunch flip', () => {
+  const h = boot();
+  // Not clocked in.
+  assert.strictEqual(mountActions(h, ['ClockIn', 'Adjust']).primeAction, 'ClockIn',
+    'a fresh day leads with Clock In');
+  // Working, no lunch taken yet — Lunch Out is the frequent mid-shift action.
+  const working = mountActions(h, ['LunchOut', 'ClockOut', 'Adjust'], { afterLunch: false });
+  assert.strictEqual(working.primeAction, 'LunchOut', 'mid-shift leads with Lunch Out');
+  assert.ok(/act-lunchout/.test(working.cls('LunchOut')), 'and it carries the warn/gold treatment');
+  // On lunch — coming back is the only sensible headline.
+  assert.strictEqual(mountActions(h, ['LunchIn', 'Adjust']).primeAction, 'LunchIn',
+    'on lunch leads with Lunch In');
+  // THE OPERATOR DECISION: after a lunch RETURN, Clock Out takes the prime slot
+  // and Lunch Out demotes to a secondary. Most CSRs take one lunch, so a second
+  // gold "Lunch Out" invited accidental clicks — but it must stay REACHABLE for
+  // a genuine second break.
+  const after = mountActions(h, ['LunchOut', 'ClockOut', 'Adjust'], { afterLunch: true });
+  assert.strictEqual(after.primeAction, 'ClockOut', 'after a lunch, Clock Out is the primary');
+  assert.ok(after.secondaries.indexOf('LunchOut') >= 0,
+    'a second lunch is still available as a secondary — demoted, not removed');
+  assert.ok(/act-clockout/.test(after.cls('ClockOut')), 'the neutral treatment, not gold');
+});
+
+test('Adjust is always present, always last, and never the primary', () => {
+  const h = boot();
+  [['ClockIn', 'Adjust'], ['LunchOut', 'ClockOut', 'Adjust'], ['LunchIn', 'Adjust']]
+    .forEach((actions) => {
+      const m = mountActions(h, actions, { afterLunch: false });
+      assert.strictEqual(m.order[m.order.length - 1], 'Adjust', 'Adjust renders last');
+      assert.notStrictEqual(m.primeAction, 'Adjust', 'Adjust is never the primary CTA');
+      assert.ok(/\bsec\b/.test(m.cls('Adjust')), 'Adjust is a secondary');
+      // EXACTLY once. `Adjust` is IN the server's actions list, and the row
+      // also appends a trailing Adjust unconditionally — so dropping the
+      // filter that excludes it from the secondaries renders the button
+      // twice. The first bite-check of this test passed against exactly that:
+      // last-ness, non-primacy and the class all still held.
+      assert.strictEqual(m.order.filter((a) => a === 'Adjust').length, 1,
+        'Adjust renders exactly once — not duplicated into the secondaries');
+    });
+  // A finished shift: Adjust ALONE takes a different branch — the completion
+  // message, and NO prime button at all (there is nothing to punch).
+  const done = mountActions(h, ['Adjust']);
+  assert.strictEqual(done.prime, null, 'a completed shift renders no primary button');
+  assert.ok(/Shift complete/.test(done.host.innerHTML), 'it says the shift is complete');
+  assert.ok(done.host.querySelector('.actions [data-action="Adjust"]'), 'Adjust is still reachable');
+  // An EMPTY action list must not render a bare empty row.
+  const empty = h.document.createElement('div');
+  empty.innerHTML = h.read('renderActions')([], {});
+  assert.strictEqual(empty.querySelector('.actions'), null, 'no action row when there is nothing to do');
+});
+
+test('the in-flight morph animates the CLICKED button, not whichever one is prime (F3)', () => {
+  const h = boot();
+  // The afterLunch layout: ClockOut is prime, LunchOut is a secondary. Clicking
+  // the SECONDARY must morph the secondary — the pre-F3 code always grabbed
+  // `.prime`, so a second-lunch click animated the unrelated Clock Out button.
+  const m = mountActions(h, ['LunchOut', 'ClockOut', 'Adjust'], { afterLunch: true });
+  h.read('submitPunch')('LunchOut');
+  const lunchBtn = h.$('.actions [data-action="LunchOut"]');
+  const primeBtn = h.$('.actions .prime');
+  assert.ok(/Working/.test(lunchBtn.innerHTML), 'the clicked button shows the in-flight label');
+  assert.ok(/clk-morph/.test(lunchBtn.innerHTML), 'and a lunch punch morphs its icon');
+  assert.ok(!/Working/.test(primeBtn.innerHTML), 'the untouched prime button is left alone');
+  // The morph carries the rep FORWARD: LunchIn's destination is doorExit,
+  // because a lunch return sets afterLunch and makes ClockOut the next primary.
+  // A `to` of headset would leave the icon a half-step behind the re-render.
+  assert.strictEqual(h.read('PUNCH_MORPH').LunchIn.to, 'doorExit',
+    'LunchIn morphs toward the NEXT primary\'s idle glyph');
+  assert.strictEqual(h.read('clkIdleGlyph_')('ClockOut'), 'doorExit', 'which is ClockOut\'s idle glyph');
+  h.run.flushFailure('cleanup', 'recordPunch');
+});
+
+test('a punch that returns fresh state applies it in ONE round trip — no second RPC', () => {
+  const h = boot();
+  mountActions(h, ['ClockIn', 'Adjust']);
+  h.read('submitPunch')('ClockIn');
+  assert.strictEqual(h.run.pending('recordPunch').length, 1, 'the punch is in flight');
+  // Operator 2026-08-17: the state rides the response, so the toast and the
+  // button change land together instead of after a second round trip.
+  h.run.flushSuccess({
+    success: true, displayTime: '9:02 AM', isAdjustment: false,
+    state: { id: 'TEST_E1', name: 'Test Rep', nextActions: ['LunchOut', 'ClockOut', 'Adjust'],
+             adjustWindowDays: 30, timezone: 'Asia/Kolkata' },
+  }, 'recordPunch');
+  assert.strictEqual(h.run.pending('getEmployeeState').length, 0,
+    'NO follow-up getEmployeeState — that is the whole point of shipping state with the punch');
+  // empState is a top-level `let` in the partial, so it is NOT a window
+  // property — read it through the vm bridge.
+  assert.strictEqual(h.read('empState').nextActions.join(','), 'LunchOut,ClockOut,Adjust',
+    'the fresh state was applied');
+});
+
+test('an older server (no state on the response) still falls back to a refetch', () => {
+  const h = boot();
+  mountActions(h, ['ClockIn', 'Adjust']);
+  h.read('submitPunch')('ClockIn');
+  h.run.flushSuccess({ success: true, displayTime: '9:02 AM' }, 'recordPunch');
+  assert.strictEqual(h.run.pending('getEmployeeState').length, 1,
+    'deploy skew is survivable — the pre-2026-08-17 path is intact');
+  h.run.flushSuccess({ id: 'TEST_E1', nextActions: ['ClockOut', 'Adjust'], adjustWindowDays: 30 },
+    'getEmployeeState');
+  assert.strictEqual(h.read('empState').nextActions.join(','), 'ClockOut,Adjust', 'and applies it');
+});
+
+test('a punch that SUCCEEDS but whose refresh dies must not read as a failure (D2b)', () => {
+  const h = boot();
+  mountActions(h, ['ClockIn', 'Adjust']);
+  const btn = h.$('.actions [data-action="ClockIn"]');
+  // The label carries an icon SVG, so the property is "restored to what it
+  // was", not a literal string.
+  const before = btn.innerHTML;
+  h.read('submitPunch')('ClockIn');
+  h.run.flushSuccess({ success: true, displayTime: '9:02 AM' }, 'recordPunch');
+  assert.ok(/Working/.test(btn.innerHTML), 'still in flight while the state refetch runs');
+  h.run.flushFailure('state assembly blew up', 'getEmployeeState');
+  // The punch IS recorded. Leaving the button on "Working…" over the PRE-punch
+  // row invites a second click at the exact moment a duplicate would be wrong;
+  // an ERROR toast would tell the rep to punch again, which is worse still.
+  assert.strictEqual(btn.innerHTML, before, 'the clicked button is restored');
+  assert.strictEqual(btn.disabled, false, 'and re-enabled');
+  const toast = h.document.body.textContent;
+  assert.ok(/Punch recorded/.test(toast), 'the rep is told the punch WAS recorded');
+  assert.ok(!/toast-error/.test(h.document.body.innerHTML), 'not an error toast — it did not fail');
+});
+
+test('a server-side rejection restores the button and surfaces the reason', () => {
+  const h = boot();
+  mountActions(h, ['ClockIn', 'Adjust']);
+  const btn = h.$('.actions [data-action="ClockIn"]');
+  const before = btn.innerHTML;
+  h.read('submitPunch')('ClockIn');
+  // The M-1 sequence guard's shape: {success:false} with a real message.
+  h.run.flushSuccess({ success: false, error: 'You are already clocked in.' }, 'recordPunch');
+  assert.strictEqual(btn.innerHTML, before, 'button restored');
+  assert.strictEqual(btn.disabled, false, 'buttons re-enabled — the rep can act again');
+  assert.ok(/already clocked in/.test(h.document.body.textContent),
+    'the SERVER\'s reason is shown, not a generic error');
+  assert.strictEqual(h.run.pending('getEmployeeState').length, 0, 'no state refetch on a rejection');
+});
+
+test('the pending-adjustment chip renders above the punch buttons, and only when there is one', () => {
+  const h = boot();
+  // Operator 2026-08-31: a rep with a request awaiting approval must be told
+  // so, or the bare Clock In button invites them to punch again "to be safe".
+  const html = h.read('clkPendingAdjustHtml_')({
+    pendingAdjustments: [{ punchType: 'ClockIn', time: '08:30' }],
+  });
+  assert.ok(/role="status"/.test(html), 'announced to assistive tech');
+  assert.ok(/08:30/.test(html) && /Clock In/.test(html), 'it names the punch and the time');
+  // Absent / empty / an older server that ships no field at all → render
+  // NOTHING, rather than an empty chip.
+  assert.strictEqual(h.read('clkPendingAdjustHtml_')({ pendingAdjustments: [] }), '', 'empty renders nothing');
+  assert.strictEqual(h.read('clkPendingAdjustHtml_')({}), '', 'an older server renders nothing');
+  assert.strictEqual(h.read('clkPendingAdjustHtml_')(null), '', 'a missing state renders nothing');
+  // Hostile content cannot reach the DOM as markup.
+  const evil = h.read('clkPendingAdjustHtml_')({
+    pendingAdjustments: [{ punchType: '<img src=x onerror=alert(1)>', time: '08:30' }],
+  });
+  const probe = h.document.createElement('div');
+  probe.innerHTML = evil;
+  assert.strictEqual(probe.querySelectorAll('img').length, 0, 'no live element from a hostile punch type');
+});
+
+test('self-undo eligibility survives the midnight wrap but not a stale list', () => {
+  const h = boot();
+  const W = h.read('SELF_UNDO_WINDOW_SECONDS');
+  assert.ok(W > 0, 'the window constant is loaded');
+  // Ordinary same-day gap.
+  assert.strictEqual(h.read('timeDiffSecondsClient')('09:00:00', '09:02:00'), 120);
+  // THE WRAP: punch at 23:58, undo at 00:02 — 4 minutes, not minus a day.
+  assert.strictEqual(h.read('timeDiffSecondsClient')('23:58:00', '00:02:00'), 240,
+    'a punch just before midnight is still undoable just after it');
+  // A wrap BEYOND the window is not eligible — and must report the -1 sentinel,
+  // not a large positive number that would satisfy a `<= window` test.
+  assert.strictEqual(h.read('timeDiffSecondsClient')('23:58:00', '06:00:00'), -1,
+    'a stale post-midnight list is NOT undoable (the cycle-8 sentinel bug)');
+  assert.strictEqual(h.read('timeDiffSecondsClient')('garbage', '09:00:00'), -1, 'unparseable → -1');
+  // The sentinel must fail an eligibility test written the obvious way.
+  assert.ok(!(h.read('timeDiffSecondsClient')('23:58:00', '06:00:00') <= W
+    && h.read('timeDiffSecondsClient')('23:58:00', '06:00:00') >= 0),
+    '-1 cannot pass a non-negative window check');
 });
