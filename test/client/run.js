@@ -14054,6 +14054,8 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     adpRow('B2', '2026-08-10', '10:00:00', 'FixedRow'),         // garbage type — NOT a punch
     adpRow('C3', '2026-08-10', '08:00:00', 'ClockIn'),          // offboarded (blank email) — excluded
     adpRow('A1', '2026-07-30', '08:00:00', 'ClockIn'),          // out of month; sets oldestLiveIso
+    adpRow('A1', '2026-08-12', 'garbage',  'ClockIn'),          // corrupt TIME cell + a real ClockOut →
+    adpRow('A1', '2026-08-12', '17:00:00', 'ClockOut'),         //   calcHours_ null → INCOMPLETE, never 0
   ];
   const toRows = [[],
     toRow('B2', '2026-08-12', 'Full Day', ' Approved '),        // padded status still counts (INV-183 family)
@@ -14095,6 +14097,9 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
   assert.strictEqual(a.adjClockOut, true, 'ADJ- prefix flags the slot');
   assert.strictEqual(a.hours, 7.75, 'calcHours_ over the picked slots (8:45–17:00 minus the 30m lunch)');
   assert.strictEqual(a.punchCount, 5, 'collapsed extras are countable (+N in the client)');
+  const a12 = res.days['2026-08-12'].reps[0];
+  assert.strictEqual(a12.hours, null, 'a corrupt time cell computes NO hours (A3 — calcHours_ null propagates)');
+  assert.strictEqual(a12.incomplete, true, '… and the day reads INCOMPLETE, never a confident 0 (INV-176)');
   const b11 = res.days['2026-08-11'].reps[0];
   assert.strictEqual(b11.hours, null, 'a ClockIn with no ClockOut on a past day computes NO hours (never 0)');
   assert.strictEqual(b11.incomplete, true, '… and reads INCOMPLETE (INV-176/187)');
