@@ -15134,6 +15134,18 @@ test('FO-A2: an inline grid-template-columns must be COMPUTED, never a static ov
   assert.ok(/class="mgr-to-parts"/.test(mgr), 'and the markup uses it');
 });
 
+/** Assert `a` appears before `b`, requiring BOTH to be present.
+ *  indexOf on a missing needle returns -1, and -1 < anything is true — so a
+ *  bare `a < b` ordering check PASSES when the thing it guards is deleted.
+ *  That trap bit twice in one session (A4's snapshot read, B1's select reset),
+ *  both times caught only by bite-checking. */
+function assertBefore(hay, a, b, msg) {
+  const ia = hay.indexOf(a), ib = hay.indexOf(b);
+  assert.ok(ia >= 0, msg + ' — missing: ' + a);
+  assert.ok(ib >= 0, msg + ' — missing: ' + b);
+  assert.ok(ia < ib, msg);
+}
+
 /** Slice a named function out of an already-read client partial. */
 function extractFnFrom(src, name) {
   const i = src.indexOf('function ' + name + '(');
@@ -15160,7 +15172,7 @@ test('B1/B2: the done-state Adjust is prefilled, and a submitted request reaches
   assert.ok(/openAdjustModal\(null, btn\.dataset\.adjType \|\| null\)/.test(clk),
     'the dispatcher passes it through');
   const oam = extractFnFrom(clk, 'openAdjustModal');
-  assert.ok(oam.indexOf('typeSel.selectedIndex = 0;') < oam.indexOf("typeSel.value = prefillType"),
+  assertBefore(oam, 'typeSel.selectedIndex = 0;', 'typeSel.value = prefillType',
     'the select is reset BEFORE the prefill is applied');
   assert.ok(/\[\.\.\.typeSel\.options\]\.some\(o => o\.value === prefillType\)/.test(oam),
     'an unknown type is validated against the select’s OWN options, not a second hardcoded list');
