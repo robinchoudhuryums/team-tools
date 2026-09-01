@@ -1630,6 +1630,99 @@ test('self-undo eligibility survives the midnight wrap but not a stale list', ()
     '-1 cannot pass a non-negative window check');
 });
 
+section('Time Clock — resume path + adjust prefill (Workstream B)');
+
+test('the done state offers a way BACK, and only when there is one', () => {
+  const h = boot();
+  const render = (opts) => {
+    const host = h.document.createElement('div');
+    host.innerHTML = h.read('renderActions')(['Adjust'], opts || {});
+    return host;
+  };
+  // With a clock-out on record: both the Adjust prefill and Resume.
+  const done = render({ lastClockOut: { type: 'ClockOut', time: '17:00:00' } });
+  const adj = done.querySelector('[data-action="Adjust"]');
+  assert.strictEqual(adj.getAttribute('data-adj-type'), 'ClockIn',
+    'Adjust names the punch this state implies is missing');
+  const resume = done.querySelector('[data-action="ResumeShift"]');
+  assert.ok(resume, 'Resume shift is offered');
+  assert.strictEqual(resume.getAttribute('data-clockout'), '17:00:00',
+    'and carries the punch it will convert, so the confirm cannot quote a different one');
+
+  // No clock-out to convert → no button. (The done state can be reached with
+  // opts absent; offering to convert nothing would be a dead end.)
+  assert.strictEqual(render({}).querySelector('[data-action="ResumeShift"]'), null,
+    'nothing to resume from means no button');
+
+  // Already asked → no button. The pending chip is already saying so, and the
+  // server would refuse the duplicate.
+  const pending = render({ lastClockOut: { type: 'ClockOut', time: '17:00:00' },
+    pendingAdjustments: [{ punchType: 'ClockOut', time: '19:00', action: 'resume' }] });
+  assert.strictEqual(pending.querySelector('[data-action="ResumeShift"]'), null,
+    'an in-flight request hides the button');
+  // A pending ORDINARY adjustment must NOT hide it — that is a different request.
+  const other = render({ lastClockOut: { type: 'ClockOut', time: '17:00:00' },
+    pendingAdjustments: [{ punchType: 'ClockIn', time: '08:00', action: 'set' }] });
+  assert.ok(other.querySelector('[data-action="ResumeShift"]'),
+    'an unrelated pending adjustment leaves it alone');
+});
+
+test('a pending resume reads as a resume, not as the punch it consumes', () => {
+  const h = boot();
+  const html = (list) => h.read('clkPendingAdjustHtml_')({ pendingAdjustments: list });
+  const resumeChip = html([{ punchType: 'ClockOut', time: '19:00', action: 'resume' }]);
+  assert.ok(/Resume shift/.test(resumeChip) && /back at 19:00/.test(resumeChip),
+    'it describes what was asked for');
+  assert.ok(!/Clock Out/.test(resumeChip),
+    'and NOT "Clock Out 19:00" — that is the punch it converts, and the rep has already made it');
+  // An ordinary adjustment is unchanged.
+  assert.ok(/Clock In/.test(html([{ punchType: 'ClockIn', time: '08:00', action: 'set' }])),
+    'a normal request still names its punch');
+  // A legacy row carries no action at all.
+  assert.ok(/Clock In/.test(html([{ punchType: 'ClockIn', time: '08:00' }])),
+    'a row predating the Action column reads as an ordinary punch write');
+  assert.strictEqual(html([]), '', 'no requests renders nothing');
+});
+
+test('the resume request states the unpaid gap before it is filed', async () => {
+  const h = boot();
+  const calls = () => h.run.calls.filter((c) => c.method === 'submitPunchAdjustRequests');
+  let asked = null;
+  // uiConfirm is a LEXICAL binding in script_core, not a window property, so
+  // the call site inside the partial does not see a window assignment —
+  // reassign the binding itself through the vm bridge.
+  h.window.__stubConfirm = (opts) => { asked = opts; return Promise.resolve(false); };
+  h.read('uiConfirm = window.__stubConfirm');
+  // A clock-out just after midnight, so the "is it in the past yet" guard is
+  // satisfied whatever time the suite runs at.
+  const OUT = '00:01:00';
+
+  h.read('requestResumeShift_')(OUT);
+  await tick();
+  assert.ok(asked, 'it confirms rather than firing on one click');
+  assert.match(asked.message, /unpaid/, 'the confirm says the away time is unpaid');
+  assert.ok(asked.message.indexOf(h.read('dispTime')(OUT)) >= 0,
+    'and quotes the clock-out the button carried, formatted as the app formats it');
+  assert.strictEqual(calls().length, 0, 'declining sends nothing');
+
+  // Accepting files it through the ORDINARY approval queue.
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.read('requestResumeShift_')(OUT);
+  await tick();
+  assert.strictEqual(calls().length, 1, 'a request is submitted');
+  const req = calls()[0].args[0][0];
+  assert.strictEqual(req.action, 'resume', 'flagged as a resume');
+  assert.strictEqual(req.punchType, 'ClockOut', 'targeting the clock-out it converts');
+  assert.match(req.time, /^\d{2}:\d{2}$/, 'with the resume time');
+
+  // A missing clock-out never reaches the server — the button should not have
+  // rendered, but a direct call must not file a request against nothing.
+  h.read('requestResumeShift_')('');
+  await tick();
+  assert.strictEqual(calls().length, 1, 'no clock-out, no request');
+});
+
 section('Manage Time — Day Edit break list (A4)');
 
 /** Read the live break rows the way a user sees them (values, not source).
