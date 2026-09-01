@@ -702,6 +702,45 @@ occurrences. jsdom lesson: `empState`, `renderActions`,
 `SELF_UNDO_WINDOW_SECONDS` are LEXICAL module bindings, not window
 properties — read via the `h.read()` vm bridge. No app change; pure 697,
 matrix 58, runAllTests unchanged at 302.
+NEWEST (2026-09-01) — **PR #211**: `accrualMonthsToCredit_` collapsed a BLANK
+stamp (seed) and a stamp AHEAD of last month (a deliberate operator skip) into
+one branch, both returning `newStamp: ymOf(prev)`. The caller writes newStamp
+whenever it differs, so hand-setting column R forward was rewound by that same
+day's 18:00 run and the NEXT month credited exactly the month the operator had
+said to skip — the one lever they have, silently undone, and one CLAUDE.md
+tells them to use. A forward stamp now comes back unchanged so the write is a
+no-op; the seed path is untouched. Pins grew IN PLACE (pure stays 697):
+forward-stamp no-op in both fields, months-ahead likewise, seed still stamps
+last month, and the caller's write is CONDITIONAL (the no-op needs both
+halves). 2 mutations / 2 bites. Docs: column R states the forward stamp is
+honored + must be zero-padded (`accrualStampYm_` matches `^\d{4}-\d{2}`;
+anything else reads blank and SEEDS); INV-194 splits blank-vs-future; and a
+NEW **standing pre-flight** on the column-Q entry, referenced from runbook
+step 4 — before any month's credit, open an accruing rep's PAY STATEMENT for
+that month, since the accrual reads days through the same `calcHours_` and
+whatever the statement calls INCOMPLETE contributes ZERO hours. Exact preview,
+no timezone inference needed.
+
+ACCRUAL TIMING, as it actually stands (operator filled column Q for the PH
+agents on 2026-09-01): the first run with a rate is TODAY 18:00 CST, and with
+`nowYm='2026-09'` + a blank R it SEEDS (stamps `2026-08`, credits NOTHING).
+So **August is skipped automatically** — the documented enable convention, and
+the right outcome given August's offshore hours are split. **September credits
+on Oct 1**, which makes the roster flip the deadline that now matters: every
+unflipped day is a day of unreadable September hours.
+
+LIVE OPERATOR REPORT (2026-09-01): a PH rep could not clock in — the Dashboard
+showed "Shift complete for today". DIAGNOSED, no code defect. `getTodayPunches_`
+frames today in the REP's roster tz and `getNextActions_` returns `['Adjust']`
+on a trailing ClockOut. With roster tz still Asia/Manila, Monday's 17:00 CST
+clock-out is 06:00 Manila TUESDAY, so today's rep-local date already ends with
+a ClockOut. Blocks Tue–Fri every week (Monday is clean — Friday's clock-out
+lands on Manila-Saturday). Same root cause as the accrual under-count; ONE data
+change fixes both. Unblock = manager Day Edit putting Monday's pair on Monday
+(ClockIn 21:30 / ClockOut 06:00 — `calcHours_`'s overnight wrap gives 8.5h);
+permanent fix = the ALL-CST roster flip, which needs one cleanup Day Edit per
+offshore agent for the stray next-day clock-out at the seam.
+
 STILL OPEN from #13: 8 tabs unshot; 79% of the pure harness is
 source-scanning (462 of 584 blocks).
 
