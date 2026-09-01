@@ -440,7 +440,15 @@ function accrualMonthsToCredit_(stampYm, nowYm) {
   const prev = now - 1;
   const ymOf = (i) => Math.floor(i / 12) + '-' + String((i % 12) + 1).padStart(2, '0');
   const st = idx(stampYm);
-  if (st === null || st > prev) return { months: 0, newStamp: ymOf(prev), capped: 0, seeded: st === null };
+  if (st === null) return { months: 0, newStamp: ymOf(prev), capped: 0, seeded: true };
+  // A stamp AHEAD of last month is a DELIBERATE operator skip -- "treat these
+  // months as already settled" -- and it is the ONE lever the operator has over
+  // this feature (CLAUDE.md tells them to use it). Returning ymOf(prev) here
+  // REWOUND it: the caller writes newStamp whenever it differs from the stored
+  // stamp, so the same-day run rewrote the cell backwards and the next month's
+  // run then saw an owed month and credited exactly what the operator had just
+  // said to skip. Hand the stamp back unchanged so the write is a no-op.
+  if (st > prev) return { months: 0, newStamp: ymOf(st), capped: 0, seeded: false };
   const owed = prev - st;
   return { months: Math.min(owed, PTO_ACCRUAL_CATCHUP_MAX_MONTHS),
            newStamp: ymOf(prev),

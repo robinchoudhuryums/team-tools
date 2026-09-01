@@ -10358,6 +10358,20 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   assert.strictEqual(amc('2026-07', '2026-08').months, 0, 'in arrears — August is not complete in August');
   assert.strictEqual(amc('2026-06', '2026-08').months, 1, 'one completed month owed');
   assert.strictEqual(amc('2025-11', '2026-01').newStamp, '2025-12', 'year boundary');
+  // A stamp AHEAD of last month is a DELIBERATE operator skip and must be a
+  // NO-OP, not a rewind. The caller writes newStamp whenever it differs from
+  // the stored stamp, so returning ymOf(prev) here rewrote the cell backwards
+  // and the NEXT month's run credited exactly the month the operator had just
+  // said to skip -- the one lever they have over this feature, silently undone.
+  const ahead = amc('2026-08', '2026-08');
+  assert.strictEqual(ahead.months, 0, 'a stamp ahead of last month owes nothing');
+  assert.strictEqual(ahead.newStamp, '2026-08',
+    'a FORWARD stamp is handed back unchanged (newStamp === stamp) so the caller writes nothing');
+  assert.strictEqual(ahead.seeded, false, 'a forward stamp is not a seed');
+  assert.strictEqual(amc('2026-12', '2026-08').newStamp, '2026-12',
+    'a stamp months ahead is likewise left alone, not rewound');
+  // The seed path is unchanged: blank still stamps LAST month and credits nothing.
+  assert.strictEqual(amc('', '2026-08').newStamp, '2026-07', 'a blank stamp still seeds to last month');
   // The owed-month LIST the credit iterates (newest `months`, oldest dropped
   // by the cap — which the audit row names).
   vm.runInContext(extractRawFunction('Code.js', 'accrualMonthList_'), sb, { filename: 'Code.js#accrualMonthList_' });
@@ -10394,6 +10408,10 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(h[0]), 'INV-183 — the roster-inclusion predicate guards the walk');
   assert.ok(/adjustLeaveBalance_\(p\.emp\.id, 'annual', earned\.days\)/.test(h[0]),
     'credits go through THE balance mutator (per-row gate + cache invalidation ride along)');
+  // The forward-stamp NO-OP above is only a no-op because the caller's write is
+  // CONDITIONAL on the stamp actually changing. Both halves or neither.
+  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(p\.plan\.newStamp\)/.test(h[0]),
+    'the stamp cell is written ONLY when the plan changes it (so a forward stamp is left alone)');
   assert.ok(h[0].indexOf('adjustLeaveBalance_') < h[0].indexOf('EMP.ACCRUED_THROUGH + 1'),
     'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
   assert.ok(/hoursWorked=/.test(h[0]) && /ptoHours=/.test(h[0]) && /rate=/.test(h[0]),
