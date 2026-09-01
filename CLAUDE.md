@@ -2591,6 +2591,44 @@ this section before touching the relevant area.
   rejected with a "submit a request" message when it's off), so hiding the
   button can't be bypassed. The intent: keep the audit trail honest while
   putting older corrections under manager review by default.
+- **Resuming a closed day CONVERTS the clock-out into a break — it never
+  deletes it (B3, operator 2026-09-01).** A rep whose day shows "Shift complete
+  for today" and who is working again — asked to stay late, called back, or
+  clocked out by mistake — had no path at all except asking a manager to edit
+  the sheet. **The obvious implementation is the wrong one:** removing the
+  ClockOut so the day reopens silently PAYS the rep for every hour between
+  clocking out and coming back. That is harmless for a mistaken clock-out
+  resumed a minute later and a payroll error for the case the operator actually
+  described (finished, went home, was asked to come back), and nothing on screen
+  would show the difference. So approval CONVERTS: the ClockOut row keeps its
+  TIME and becomes an `ADJ-LunchOut`, and an `ADJ-LunchIn` is written at the
+  requested resume time. The away gap is a break, which is unpaid — the truth in
+  both cases, exact to the minute in both, and needing NO new arithmetic,
+  because `calcHours_` deducts every break pair since the 2026-09-01 multi-break
+  round (INV-176). It is only expressible at all because of that round; before
+  it, a second pair was silently discarded. Details worth keeping:
+  it rides the ORDINARY approval queue (the operator's rule — no employee
+  self-adjust without approval), so nothing changes until a manager says so;
+  `PunchAdjustRequests` gained a TRAILING **`Action`** column (`''`/`set` =
+  the ordinary punch write, `resume` = this — the header self-heals, and all
+  four readers normalize at their one read, the DR.STATUS/INV-183 discipline);
+  the clock-out's existence and the resume time's ordering are validated at
+  SUBMIT **and re-validated at APPROVAL**, because the day can be edited while
+  the request waits and converting a clock-out that is gone would leave an
+  unpaired LunchIn that `breakPairs_` correctly drops — silently costing the rep
+  the whole reopening; a refused resume returns `{success:false}` rather than
+  marking the request Approved. **Every surface states the EFFECT rather than
+  naming the punch it consumes** — the rep's confirm ("your 5:00 PM clock-out
+  becomes a break that ends now, so the time you were away is unpaid"), the
+  pending chip ("Resume shift · back at 19:00", never "Clock Out 19:00"), the
+  manager queue row ("clock-out becomes a break — the gap is unpaid"), and the
+  decision email. The button renders only when there IS a clock-out to convert
+  and no resume is already pending. **A genuine SECOND SHIFT (a distinct
+  clock-in/clock-out pair on one date) is still NOT supported** —
+  `getNextActions_` collapses it and both repair paths treat a repeated clock
+  punch as damage; this is deliberately the resume of ONE shift, not a
+  multi-shift model. Verify: the three Workstream-B pins, the three DOM tests,
+  and `test_punchAdjust_resumeConvertsClockOut`.
 - **Punch-adjustment requests are a TimeOffRequests-style queue (#4a).**
   `PunchAdjustRequests` sheet tab (auto-created), enum `PAR`, keyed by a
   UUID `ReqId`. `submitPunchAdjustRequests(requests[])` is caller-scoped,
@@ -2636,6 +2674,20 @@ this section before touching the relevant area.
   always emailed** (`notifyEmployeeOfDecision_`), and coaching / EmpDocs /
   training assignment all notify — punch adjustments were the ONLY hole, so
   this closes the set rather than starting a notification subsystem.
+  **WORKSTREAM B (operator 2026-09-01) closed the other three gaps in the same
+  loop.** (B1) The shift-complete state's Adjust button now PREFILLS the punch
+  type: that state is derived from a trailing ClockOut, so the punch a rep is
+  there to add is a ClockIn, and `openAdjustModal(prefillDate, prefillType)`
+  validates the type against the select's OWN options (the prefillDate
+  precedent) after RESETTING it — a `<select>` keeps its last value, and every
+  other field in that modal is cleared on open, so a stale prefill would leak
+  into an unrelated visit. (B2) `submitPunchAdjustRequests` notified NOBODY: it
+  wrote its Pending rows, audited, and returned, while the queue lives inside
+  the manager dashboard — so a request was seen only if a manager happened to
+  look, and the rep waited believing it was with their manager.
+  `notifyManagersOfAdjustRequests_` is branded, PHI-free, best-effort (INV-14)
+  and deferred past `releaseLock` (M-7). (B3) **The RESUME path** — see its own
+  Key Design Decision below.
 - **`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
   `row[ADP.TIME]` goes through `normalizeTime_`. New code must
@@ -6150,7 +6202,26 @@ manually for a fresh deploy or environment:
   the tracker (before this round they used different arithmetic and could
   disagree). Nothing is recomputed retroactively in any sheet; the stored
   `CreatedAt`/`ResolvedAt` stamps are untouched and only the DERIVED figures
-  change. **Post-deploy: run `runAllTests()`** — **304** since the 2026-09-01 multi-break round (302 after the 2026-08-31 coverage round's four PMD/PAP intake cases + two small-endpoint cases, plus `calcHours_multipleBreaks` and A4's `managerSaveDay_multipleBreaks`).
+  change. **Post-deploy: run `runAllTests()`** — **305** since the 2026-09-01 Workstream B round (302 after the 2026-08-31 coverage round's four PMD/PAP intake cases + two small-endpoint cases; then `calcHours_multipleBreaks` (A1), `managerSaveDay_multipleBreaks` (A4) and `punchAdjust_resumeConvertsClockOut` (B3)).
+- **The 2026-09-01 Workstream B round (adjust prefill, manager notification,
+  resume path) adds NO operator state to SET UP** — no Script Properties,
+  triggers, migrations, or CONFIG values. ONE auto-managed column appears: a
+  trailing **`Action`** on the `PunchAdjustRequests` tab, whose header
+  self-heals on first use; an existing row reads `''` and means the ordinary
+  punch write. Behaviour changes to expect post-deploy: (a) **you will now be
+  emailed when a rep files a punch-adjustment request** — until this round that
+  queue told nobody, so a request was seen only if you happened to open Manage
+  Time; (b) the shift-complete state's **Adjust** button opens on Clock In,
+  the punch that state implies is missing; (c) a rep whose day is closed and
+  who is working again gets a **Resume shift** button. Approving it does NOT
+  delete their clock-out — it turns that clock-out into a break and ends the
+  break at the time they came back, so **the hours they were away are unpaid**.
+  That is the deliberate model: deleting the clock-out would have paid the gap
+  silently. The queue row, the rep's confirmation and the decision email all say
+  so. Denying changes nothing. **A genuine second SHIFT is still not supported**
+  — for a rep who works two separate stints on one date, use Day Edit.
+  **Post-deploy: run `runAllTests()`** — expect **305** (the new
+  `punchAdjust_resumeConvertsClockOut` case).
 - **The 2026-09-01 multi-break round (Workstream A) adds NO operator state, but it
   CHANGES COMPUTED HOURS on some historical days — run the report before you
   deploy it.** `calcHours_` now deducts EVERY break pair instead of only the
@@ -8618,6 +8689,7 @@ The same day's business-hours round added four more → **696** (BIZ-1 behaviour
 The 2026-08-31 coverage round added one more → **697** (VIS-COVER — the documented uncovered-tab list is DERIVED from the TOOLS registry vs `shoot.mjs`, checked against a `VISUAL-GAP-TABS:` marker line in this file, and bite-checked in BOTH directions: dropping a tab from the marker fails, and dropping a SCENARIO fails too).  The same round's DOM half took the harness 82 → **91** — the punch state machine, which had ONE test (the M-1 failure restore) for the app's most consequential client logic: the primary-CTA rules driven through the REAL `renderActions` into a live DOM (incl. the operator's afterLunch flip, where ClockOut takes the prime slot and LunchOut is DEMOTED rather than removed), the F3 clicked-vs-prime morph target, all FOUR `submitPunch` response shapes (state-in-response = no second RPC; older server = the refetch fallback; a `{success:false}` rejection restoring the button with the SERVER's reason; and the D2b case where the punch succeeded but the refresh died — restore + a WARN toast saying it was recorded, because an error toast there tells a rep to punch again at the exact moment a duplicate is wrong), the pending-adjustment chip, and self-undo's midnight wrap incl. the −1 sentinel. 9 mutations / 9 bites — the ninth exposed a weak assertion rather than a defect: dropping the `a !== 'Adjust'` filter renders Adjust TWICE (the row appends a trailing one unconditionally), and last-ness, non-primacy and the class all still held, so the pin now counts occurrences. jsdom note: `empState`, `renderActions` and `SELF_UNDO_WINDOW_SECONDS` are lexical module bindings, NOT window properties — read them through the harness's `h.read()` vm bridge. It also strengthened the derived GATE-SHAPE tripwire to follow a one-line DELEGATING wrapper through to its delegate — the four intake account endpoints are `return intakeSendAcct_(…)` inside a try/catch whose own `success: false` satisfied the check regardless of what the delegate returned, so the pin could not fail on them; found by bite-checking the new intake tests against it.
 The same day's Workstream A (multi-break correctness) added four more → **703** (A1 — `calcHours_` deducts every pair, driven behaviourally through the real function: the operator's 08:00–21:00 split-shift day reads 10.5h and NOT the old 11.0, three pairs, an unpaired leave dropped, a malformed pair contributing nothing, the overnight ORDERING that is the whole reason `breakPairs_` normalizes onto the shift timeline, and every pre-existing string-param case byte-preserved; A2 — `punchDayAdd_` behavioural (breaks accumulate, a second ClockIn still REPLACES) plus a derived scan that all five hours builders route through it and NONE still inlines a last-wins map, and that the two publishing builders keep their scalars while adding `breaks`; A3 — `tsDoctorLegitBreaks_` behavioural over matched/unpaired/clock/unknown-day cases with BOTH the detector and the collapse asserted to consult it; A5 — the impact report is gated, writes nothing, reads through the archive, dedupes live-vs-archive, and reproduces the OLD figure by feeding the SAME `calcHours_` the last stamp of each type rather than re-implementing removed arithmetic). Two of the four failed on first run for reasons worth keeping: the vm-realm `deepStrictEqual` prototype trap (compare by value), and a count that was right about the code and wrong about the pin — `reportMultiBreakDays` is a SIXTH `punchDayAdd_` caller by design. Three EXISTING pins legitimately went red and were updated as part of the fix rather than reactively: two vm sandboxes needed the new helpers loaded, and the derived team-calendar fixture-shape pin read the word "Additive:" out of a COMMENT inside the push literal as a key — INV-188 in its shape-extraction direction, fixed by stripping line comments from that literal (safe: it carries no URLs, the shape the seams-18 F3 note warns a naive stripper would eat).
 The same day's **A4** (the Day Edit N-pair rebuild — the last path that destroyed legal break data) added four more → **707** and the DOM harness 91 → **98**. Pure: A4-1 `managerParseBreakSlots_` behavioural (the list shape, the legacy-scalar fallback and which wins when both are present, an EMPTY list as a valid "delete every break", a wholly blank form row skipped, then every refusal by name — half a pair, an inverted pair, an overlap detected ORDER-INDEPENDENTLY, a break outside the clock span with the overnight carve-out, and a stated cap); A4-2 the reconcile driven through the freshly extracted pure `managerPlanDay_` (the two-break no-op save that the old modal collapsed, add/remove/empty, an edit landing on the row it was DISPLAYED against across a scrambled append order, overnight pairing, a stray unpaired half removed, and the S7 clock semantics byte-preserved — plus the apply ORDER, updates → deletes DESCENDING → appends); A4-3 the range refusal by name with no reach for the full-day reconcile; A4-4 the client (the four fixed slots gone from markup AND every read, escaping, labels, real buttons, prefill-prefers-array, snapshot-before-render, the list in the submit, the range cap, every emitted class DEFINED in a stylesheet, and the client cap mirrored from the server constant). DOM: the round-trip, the snapshot property (typing in row 1 survives pressing Add), removing the FIRST row, the disabled add being inert, reopening after a range session re-enabling Add with no RPC (a defect found by READING the open path — `deRenderBreaks_` re-syncs range mode off the live "To", so rendering before clearing it left Add disabled from the previous session, and the prefill's early return on a day with no rows is exactly when a manager is entering punches by hand), and a hostile stored time staying inside its attribute — asserted on `getAttribute`, because an `<input type="time">` sanitizes `.value` to `''` and would report success even if the escape had failed. 18 mutations / 18 bites; TWO were corrected first — ONE pin — `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so removing the snapshot read passed an ordering check silently (a `before()` helper now asserts presence first), and ONE MUTATION was wrong rather than the pin: re-ADDING the early render left the correct later one in place, so it did not reproduce the defect at all — the honest inverse MOVES the call. Editor suite +1 (`managerSaveDay_multipleBreaks`, walking write → no-op re-save → remove one → empty → refuse-malformed against the real sheet) ≈ **304**; visual matrix 58 → **61** (`dayedit-{light,dark}-wide` + `-light-compact` — the modal had NEVER been shot, which is how a modal that silently collapsed a two-break day stayed invisible; measured 0 page overflow at 480 and 1440, the modal scrolling internally at 480 with Save reachable).
+The same day's **follow-on + Workstream B** added four more → **711** and the DOM harness 98 → **101**. The follow-on is FO-A2, a derived scan banning a STATIC inline `grid-template-columns` across the scanned partials — the A2 tripwire reads stylesheets, so it could not see the manager analytics pair's inline `1fr 1fr`, which beats every stylesheet rule INCLUDING the shell's own media queries and kept a 44px page overflow at 390px. Computed values are exempt by rule (the coverage heatmap and the training matrix compute their column counts, which CSS cannot express, and both sit in scrollers); one reasoned allowlist entry, exempt on construction because the block it guards renders only behind an opt-in scan no visual scenario reaches. **The misdiagnosis is the part worth keeping:** the first measurement blamed the team-punches `.m-table`, because `getBoundingClientRect().right` on a table inside an `overflow-x` scroller reports its full layout width and looks exactly like an overflow — to find a real overflower, walk the elements past the viewport edge and SKIP any with an overflow-x ancestor. Workstream B added B1/B2 (the done-state Adjust prefill; the manager notification that never existed — asserted post-`releaseLock` per M-7) and two B3 pins (the CONVERT-not-delete model with a ban on `deleteRow`, submit- and approval-side validation, a refused resume not marking the request Approved, back-compat on the trailing `Action` column across all four readers; and that every surface — confirm, chip, queue row, decision email — states the EFFECT rather than naming the punch it consumes). DOM: the Resume button's render conditions (including that an UNRELATED pending adjustment must not hide it), the chip's wording, and the confirm stating the unpaid gap before anything is filed — `uiConfirm` is a LEXICAL binding rather than a window property, so the stub reassigns the binding through the vm bridge. 15 mutations / 15 bites, plus 3 for the follow-on. TWO pins were corrected first, both the SAME trap: `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so an ordering check passed silently — the `assertBefore` helper is now hoisted and shared. INV-188 recurred a third time, again in a ban-shaped assertion tripping on the code comment that explains the ban. Editor suite +1 (`punchAdjust_resumeConvertsClockOut`) ≈ **305**; visual matrix 61 → **62** (`manage-light-mobile` — the tab had been wide-only, which is how the overflow survived).
 The 2026-09-01 operator round added two more → **699** (CLK-DONE — the shift-complete verdict names the ClockOut it was derived from: call-site wiring, the conditional clause, and the hint class being DEFINED in a stylesheet; and BCN-3 — `reloadApp_` escapes the HtmlService iframe rather than reloading its session-bound URL, with the fallback ORDER pinned by COUNTING reloads rather than checking that one appears last, because the first version of that assertion passed against a reload-first mutation). The same round grew three existing blocks IN PLACE: the accrual pin gained the forward-stamp no-op + the caller's conditional write (PR #211), BCN-2 now requires the action to delegate to `reloadApp_` and BANS a bare `location.reload()` in the tick, and the behavioural `getNextActions_` block gained the operator's own question as a test — a stray earlier ClockOut plus an approved `ADJ-ClockIn` (INV-09 strips the prefix, so it IS a state) yields `LunchOut / ClockOut / Adjust`, which is the property the backward scan provides and a forward-scan mutation breaks. DOM stays **91** — the done-state assertions (the named clock-out, the way-out line, and both degradation paths) grew inside the existing punch-state block rather than adding one. 11 mutations / 11 bites across the round; two exposed a pin weaker than its property and were rewritten before they bit.
 The 2026-08-31 team-punches-calendar round added two more → **690**: the behavioural `getTeamCalendar` pin (the REAL endpoint driven in a vm with the real EMP/ADP/TO enums + `empRosterEmail_`/`normalizeType_`/`calcHours_` — gate + bare-{error} read shape, last-punch-per-type wins, garbage COMMENTS types are not punches, a corrupt time cell reads INCOMPLETE never 0, padded `" Approved "` overlays count, offboarded rows excluded from rows AND rosterCount, archiveNote on a pre-live-tab month) and the client wiring pin (loader beside the lazy cards, key-exact clean-round cache write BEFORE the seq check, the C17-5 painted/cold failure split, role/tabindex/aria-pressed day cells, manager-tz date derivation, future-nav refusal, the bounds-checked Day Edit prefill, the honest no-punches merge, `mtRenderTable_` per V-11, and the fixture's rep-row keys DERIVED from the server's own `repRows.push` literal per INV-185) — 6 mutations / 6 bites, TWO of which exposed the pin as weaker than its property on the first run (the null-hours mutation was UNOBSERVABLE until a corrupt-time fixture row exercised the `calcHours_`-null path — mutate against the property, not its neighbourhood — and the fixture-key drop had to remove the key from EVERY row before the presence check could see it). The omnibus gate test gained the `getTeamCalendar` case IN PLACE.
 The 2026-08-17 post-deploy operator round added seven more → **539**
@@ -10173,6 +10245,20 @@ S93 | Response times count business hours | Subsystem: Server, Client (Metrics v
   Expected: the KPI cells lead with the BUSINESS figure and carry "wall clock <X>" as their sub-line, under a note naming the window ("Response times count 8 AM–5 PM business hours only — weekends and US holidays excluded"); the Friday→Monday case reads as ~2 hours, not ~3 days. The resolved card's tooltip shows both units. The Dashboard median matches the tab (same unit, not two numbers for one thing). An unusable pair is DROPPED from the sample and renders as unknown — never 0, which would drag the median down. A span falling entirely outside business hours legitimately reads 0: that is "nothing was owed during it", which is different from unknown. Deploy skew is safe in both directions: an older client ignores the additive fields, and an older server makes the client fall back to wall clock as the headline WITH the note suppressed (it must never claim an exclusion it didn't make).
 
 S94 | Done-state names its evidence; the update prompt actually reloads | Subsystem: Client (Time Clock views), Client (shell)
+
+S96 | Resuming a closed day, and the requests that reach a manager | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a rep, clock in and clock out so the Dashboard reads "Shift complete for today"
+    - Press **Adjust** and look at the Punch Type field
+    - Close it, press **Resume shift**, and read the confirmation before accepting
+    - Accept, then look at the punch area without reloading
+    - Press Resume shift again (if it is still there)
+    - As a MANAGER, check your inbox, then open Manage → Manage Time
+    - Read the pending row, approve it, and open the rep's day in Day Edit
+    - As the rep, check your inbox and your punch buttons
+    - Separately: file an ordinary missed-punch adjustment and check the manager inbox
+    - Edge case: as a manager, delete the rep's clock-out via Day Edit while a resume request is still pending, then approve it
+  Expected: Adjust opens with **Clock In** already selected — the punch that state implies is missing. The Resume confirmation states the consequence BEFORE you accept: your clock-out becomes a break ending now, so the time you were away is **unpaid**, and nothing changes until a manager approves. After accepting, the chip above the punch buttons reads "Resume shift · back at HH:MM" — never "Clock Out HH:MM", which is the punch it converts, not one it adds — and the Resume button disappears (a second press is refused server-side anyway). The manager is EMAILED — both for a resume and for an ordinary adjustment; before this round that queue notified nobody. The queue row says what approving does ("clock-out becomes a break — the gap is unpaid"), not just a punch type. After approval the rep's day shows a break where the clock-out was, at the SAME time, closed at the resume time — Day Edit lists it as a break pair — and the day is open again, so the punch buttons offer Clock Out. The decision email says the same thing. **The edge case must REFUSE**: with the clock-out deleted, approving reports that there is no clock-out any more and tells the manager to deny — the request must NOT be marked Approved, because converting a punch that is gone would leave an unpaired break half that the hours arithmetic silently drops. A genuine second SHIFT (two separate stints on one date) is still not supported — use Day Edit.
 
 S95 | A day with more than one break is counted, displayed and repaired correctly | Subsystem: Server, Client (Time Clock views)
   Steps:
