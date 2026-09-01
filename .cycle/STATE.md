@@ -9,23 +9,23 @@ everything un-reflected since `18pre-a-reflect.md`. Batch self-reports
 summed to 17−0; strict re-derivation gives 6−2 — the cycle-17 correction
 pattern, documented in the metrics notes. When cycle 19 opens, move this
 block to HISTORY.md and reset from the template.)
-Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
-  session, read-only; handoff block pasted into the implement session) and
-  its five findings F1–F5 are IMPLEMENTED, doc-synced, and **MERGED as
-  PR #177** (16aa3b0) — commits d467b94 + c105f04 + a4f33bf + 91f493c,
-  block `.cycle/blocks/18-seams-F1-F5-broad-implement.md`. NOT DEPLOYED —
-  it ships with the still-owed PR #176 deploy.
-  NOTE the cycle-18 PRE-audit batches 1–8 + 5B were implemented BEFORE this
-  cycle formally opened (between-cycles operator work) and are already
-  MERGED as PR #176 (4d5fc9f) but NOT DEPLOYED — the Apps Script
-  `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
-  are still owed (operator-only).
-Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
+Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
+  between-cycles operator work that followed it (PRs #178–#220) is closed and
+  reflected too, as `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
+  Cycle 19 opens on the next /broad-scan or /audit — at that point move the
+  cycle-18 block to HISTORY.md and reset this file from the template.
+  THE ONE OUTSTANDING ACTION IS THE OPERATOR'S DEPLOY: every PR from #176 to
+  #220 ships on a single `clasp push -f` + New version. `runAllTests()` after
+  it expects **305**; `installAutomationTriggers()` must be re-run once for
+  the 18th trigger; `reportMultiBreakDays()` has already been run and came
+  back CLEAN (2026-09-01).
+Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
+  correctness) — no audit-derived cycle is open
 Test Command: manual (Node harnesses: `npm test` = pure 713 + DOM 101;
   visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean, 67/67;
   Regression Scenarios run to S96)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-08-27
+Updated: 2026-09-02
 
 ## In progress (facts to carry forward — NOT judgments)
 - Seams F1–F5 implemented, tested (585 pure / 75 DOM, all green), and
