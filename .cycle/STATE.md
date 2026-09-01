@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 697 + DOM 91;
+Test Command: manual (Node harnesses: `npm test` = pure 699 + DOM 91;
   visual matrix on demand — 58 scenarios, last full shoot 2026-08-31 clean;
   Regression Scenarios run to S93)
 Subsystem cycles since last Seams audit: 0
@@ -740,6 +740,31 @@ change fixes both. Unblock = manager Day Edit putting Monday's pair on Monday
 (ClockIn 21:30 / ClockOut 06:00 — `calcHours_`'s overnight wrap gives 8.5h);
 permanent fix = the ALL-CST roster flip, which needs one cleanup Day Edit per
 offshore agent for the stray next-day clock-out at the seam.
+
+NEWEST #2 (2026-09-01) — **PR #212**, two operator reports: (a) the Clock
+done-state ASSERTED "Shift complete for today" from a trailing ClockOut, which
+told an offshore rep their shift was over before it started (INV-187's class in
+the punch UI); it now NAMES the punch ("· clocked out at 6:00 AM") + the way out
+(Adjust), conditional so a caller passing nothing gets the bare message. (b) The
+deploy-beacon's Reload ran `location.reload()` — which reloads the SESSION-BOUND
+googleusercontent iframe URL, the one popOutCurrentView already refuses to reuse
+(INV-78) — repainting the inner frame WHITE while the real page above never
+moved. `reloadApp_` now moves the TOP window to `SERVER_WEB_APP_URL` via
+`Location.replace`, then `'_top'` open, then the in-frame reload; compact
+carries `?compact=1&tool=`. THIRD instance of the iframe-location class, so it
+is a Common Gotcha now with the rule stated once. Pure 697→**699** (CLK-DONE,
+BCN-3); BCN-2 + the behavioural `getNextActions_` block grew IN PLACE, the
+latter with the operator's own question as a test (stray ClockOut + approved
+`ADJ-ClockIn` ⇒ LunchOut/ClockOut/Adjust). DOM stays 91. 6 mutations / 6 bites;
+BCN-3's ordering check used `lastIndexOf` and passed a reload-first mutation —
+it counts reloads now. Docs: beacon KDD, the new gotcha, the done-state rule,
+S94.
+
+ANSWERED for the operator: after approving a same-day ClockIn adjustment the rep
+DOES get Lunch Out / Clock Out — `normalizeType_` strips `ADJ-` (INV-09) so it is
+a real state, and the backward scan means a stray EARLIER ClockOut no longer
+decides. Their screen will not self-update on the deployed code (the 3-min
+`clkPeriodicReconcile_` is PR #206, undeployed): reload, or alt-tab away and back.
 
 STILL OPEN from #13: 8 tabs unshot; 79% of the pure harness is
 source-scanning (462 of 584 blocks).
