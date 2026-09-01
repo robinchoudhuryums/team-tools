@@ -21,7 +21,7 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 699 + DOM 91;
+Test Command: manual (Node harnesses: `npm test` = pure 703 + DOM 91;
   visual matrix on demand — 58 scenarios, last full shoot 2026-08-31 clean;
   Regression Scenarios run to S93)
 Subsystem cycles since last Seams audit: 0
@@ -765,6 +765,34 @@ DOES get Lunch Out / Clock Out — `normalizeType_` strips `ADJ-` (INV-09) so it
 a real state, and the backward scan means a stray EARLIER ClockOut no longer
 decides. Their screen will not self-update on the deployed code (the 3-min
 `clkPeriodicReconcile_` is PR #206, undeployed): reload, or alt-tab away and back.
+
+NEWEST (2026-09-01) — **Workstream A core** (block
+`.cycle/blocks/19pre-workstream-A-broad-implement.md`). Three subsystems
+disagreed about whether a second break pair is legal data: `getNextActions_`
+OFFERS it, `calcHours_` + five last-wins map builders MISCOUNTED it (only the
+last pair deducted, so every earlier break was silently PAID), and both repair
+paths (sheet doctor, Day Edit) treated it as damage to collapse. A1-A3 make the
+first three agree; A5 is the read-only `reportMultiBreakDays()` the operator
+runs BEFORE the deploy to see which historical days shrink. pure 699 -> 703,
+DOM 91, 4 mutations / 4 bites. THREE existing pins went red and were updated as
+part of the fix (two vm sandboxes; the derived fixture-shape pin read
+"Additive:" out of a comment as a key — INV-188 again, fixed in the extractor).
+Also corrected the team-calendar "+N" tooltip, which told a manager to open the
+one screen that destroys the data this change made legal.
+
+**A4 (Day Edit N pairs) is DEFERRED to its own PR and is REQUIRED** — it is the
+one remaining path that silently collapses a legal multi-break day, and A1
+elevated that from harmless to data loss. Then Workstream B (B1 prefill on the
+done state, B2 notify-manager on adjust-request submit — today it notifies
+NOBODY, B3 the resume path, which needs `writeAdjustPunchForEmployee_` to gain
+a remove/convert capability it does not have).
+
+OPERATOR DECISIONS on record (2026-09-01): breaks ARE legal; rebuild Day Edit
+for N pairs rather than warn; build B3 now; wants the historical impact list
+(hence A5 — I have no access to their live sheet, so it ships as a function
+they run). Overtime is occasional (a few times a month across the team), so the
+full multi-shift model was priced and REJECTED as disproportionate — the
+break-pair path expresses it with no new authority.
 
 STILL OPEN from #13: 8 tabs unshot; 79% of the pure harness is
 source-scanning (462 of 584 blocks).
