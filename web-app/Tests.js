@@ -1061,6 +1061,7 @@ function _runAllTests() {
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
+  _integrationTest('managerSaveDay_multipleBreaks',            test_managerSaveDay_multipleBreaks);
   _integrationTest('managerSaveDay_noChangesIsNoOp',           test_managerSaveDay_noChangesIsNoOp);
   _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
   _integrationTest('managerSaveDay_reasonRequiredBeyondWindow',test_managerSaveDay_reasonRequiredBeyondWindow);
@@ -3112,6 +3113,72 @@ function test_managerSaveDay_collapsesDuplicateRows() {
   _assertNotNull(fep, 'Surviving ClockIn row locatable');
   _assertEq(normalizeTime_(fep.sheet.getRange(fep.rowIndex, ADP.TIME + 1).getValue()).substring(0, 5),
     '09:05', 'Survivor is the LAST (displayed) row, untouched by a no-op slot');
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+}
+
+/** A4 (2026-09-01): the Day Edit modal can express N break pairs, and the
+ *  submitted list IS the day. Before this the modal carried four fixed slots,
+ *  so opening a two-break day and saving it COLLAPSED it to one pair —
+ *  silently deleting recorded unpaid time and starting to pay for it.
+ *
+ *  Walks the whole contract against the real sheet: write two pairs, re-save
+ *  unchanged (nothing written), drop one (only that pair's rows go), and
+ *  submit an empty list (every break row goes, clock punches untouched). */
+function test_managerSaveDay_multipleBreaks() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  const base = { ClockIn: '08:00', ClockOut: '21:00' };
+  const two = {
+    ClockIn: base.ClockIn, ClockOut: base.ClockOut,
+    breaks: [{ out: '12:00', in: '12:30' }, { out: '17:00', in: '19:00' }],
+  };
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, two, 'two breaks'));
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 2,
+    'both break leaves persisted');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 2,
+    'both break returns persisted');
+
+  // Re-saving the SAME day writes nothing — the regression this exists for is
+  // the opposite: the old modal silently dropped the second pair on re-save.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, two, 'no-op re-save');
+    _assertSuccess(r);
+    _assertEq(r.changes, 0, 'an unchanged two-break day writes nothing');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 2,
+    'and both pairs are still there');
+
+  // Removing one pair removes exactly that pair.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+      { ClockIn: base.ClockIn, ClockOut: base.ClockOut, breaks: [{ out: '12:00', in: '12:30' }] },
+      'drop the second break');
+    _assertSuccess(r);
+    _assertEq(r.changes, 2, 'exactly the two rows of the removed pair');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 1);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 1);
+
+  // An EMPTY list deletes every break; the clock punches are untouched.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+      { ClockIn: base.ClockIn, ClockOut: base.ClockOut, breaks: [] }, 'no breaks'));
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 0);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn'), 1,
+    'the clock punches survive a break-only edit');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockOut'), 1);
+
+  // A malformed pair is REFUSED, not written half-way (INV-187 direction).
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+      { ClockIn: base.ClockIn, ClockOut: base.ClockOut, breaks: [{ out: '12:00', in: '' }] }, 'half a pair');
+    _assertFailure(r, 'BOTH a leave and a return');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0,
+    'a refused save writes nothing');
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
 }
 

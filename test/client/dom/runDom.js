@@ -1721,6 +1721,22 @@ test('range mode caps the list at one pair and says why', () => {
   assert.strictEqual(note.hidden, true);
 });
 
+test('reopening after a range session re-enables Add even when the day has no rows', () => {
+  const h = boot();
+  // Found by reading the open path, not by a source scan: deRenderBreaks_
+  // re-syncs range mode off the LIVE "To" value, so rendering the empty list
+  // before clearing "To" left the add control disabled from the previous
+  // session. The prefill normally re-syncs — but it returns early when the day
+  // has no row, which is precisely when a manager is entering punches by hand.
+  h.document.getElementById('de-date-to').value = '2026-09-05';
+  h.document.getElementById('de-date-to').dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.document.getElementById('de-break-add').disabled, true, 'range mode disabled it');
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  assert.strictEqual(h.document.getElementById('de-date-to').value, '', '"To" is cleared on open');
+  assert.strictEqual(h.document.getElementById('de-break-add').disabled, false,
+    'and the add control comes back with it — no RPC required');
+});
+
 test('a hostile stored time renders as a value, never as markup', () => {
   const h = boot();
   // The server strings reach innerHTML; the break times come from a sheet a

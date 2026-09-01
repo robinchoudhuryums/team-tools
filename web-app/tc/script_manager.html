@@ -1237,7 +1237,7 @@ function tcalDayTableHtml_(data) {
       { key: 'out', label: 'Clock Out', cell: function (r) {
           if (r.noPunches) return '';
           var extra = r.punchCount > (['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length)
-            ? ' <span style="font-size:10px;color:var(--muted)" title="This day has extra punch rows beyond the four shown — a second break, or duplicates. The Hours figure already counts every break pair. Day Edit still shows only one pair and would COLLAPSE the rest on save, so do not open it here until the N-pair rebuild lands.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
+            ? ' <span style="font-size:10px;color:var(--muted)" title="This day has punch rows beyond the four columns shown — a second break, or duplicates. The Hours figure already counts every break pair, and Day Edit now lists every pair, so opening it here is safe.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
           return tCell(r.clockOut, r.adjClockOut) + extra;
         } },
       { key: 'hours', label: 'Hours', numeric: true, cell: function (r) {
@@ -1417,7 +1417,6 @@ function openDayEditModal(empId, empName, prefillDate) {
   }
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-clockout').value = '';
-  deRenderBreaks_([]);
   document.getElementById('de-reason').value = '';
   // #4b — multi-day "To" picker; cleared on open. F(cycle-8 M-2): min is the
   // day AFTER the edit date (range mode requires To > From — a To on/before
@@ -1425,6 +1424,12 @@ function openDayEditModal(empId, empName, prefillDate) {
   // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
   if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(_deDate); deToEl.max = today; }
+  // A4: render the (empty) break list AFTER the To reset — deRenderBreaks_
+  // re-syncs range mode off the live To value, so clearing it afterwards would
+  // leave the add control disabled from the PREVIOUS session. The prefill
+  // usually re-syncs a moment later, but not when the day has no row or the
+  // read fails, which is exactly when a manager is adding punches by hand.
+  deRenderBreaks_([]);
   document.getElementById('day-edit-overlay').classList.add('open');
   loadDayEditPunches(empId, _deDate, _deDate);
 }

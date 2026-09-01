@@ -690,6 +690,24 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { id: 'E-1077', name: 'Nina Patel',  tz: 'America/Chicago', startMin: 480, days: 19, onTime: 19, late: 0, onTimePct: 100, avgLate: 0, worst: 0,  lunchOnTimePct: 100 },
       ],
     },
+    // Day Edit's prefill read (A4, 2026-09-01). It had NO fixture, so the
+    // modal was unshootable and the four-slot → N-pair rebuild would have gone
+    // on camera empty. A FUNCTION of the date arguments per the F14 rule, and
+    // the day shape mirrors buildTimesheetForEmployee_'s own push literal —
+    // scalars for the legacy readers PLUS the `breaks` list (INV-185).
+    // Deliberately a TWO-break day: that is the case the old modal collapsed.
+    getEmployeeTimesheetForManager: function (empId, start, end) {
+      return {
+        days: [{
+          date: start, dayName: 'Tue',
+          clockIn: '08:00:00', clockOut: '21:00:00',
+          lunchOut: '12:00:00', lunchIn: '12:30:00',
+          breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
+          hours: 11.5, incomplete: false, isAdjustment: false, timeOff: null,
+        }],
+        totalHours: 11.5, daysWorked: 1,
+      };
+    },
     managerGetPendingAdjustments: { requests: [] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on
