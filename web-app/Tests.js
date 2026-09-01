@@ -1888,8 +1888,10 @@ function test_punchAdjust_duplicatePendingRejected() {
  *  refuse a backwards resume time, then approve and assert the conversion. */
 function test_punchAdjust_resumeConvertsClockOut() {
   const date = _TEST_DATE_OLD;
+  const clearRequests = () => _clearRowsByEmp(
+    getAdpSS_().getSheetByName(CONFIG.PUNCH_ADJUST_TAB), _TEST_PH_ID, PAR.EMP_ID, 2);
   _clearPunchesForDay(_TEST_PH_ID, date);
-  _clearAdjustRequests(_TEST_PH_ID);
+  clearRequests();
   const emp = lookupEmployeeById_(_TEST_PH_ID);
 
   // No clock-out yet → refused by name, and nothing is queued.
@@ -1944,7 +1946,7 @@ function test_punchAdjust_resumeConvertsClockOut() {
   _assertTrue(!!day, 'the day is readable');
   _assertTrue(day.incomplete === true, 'an open day is INCOMPLETE, never silently zero (INV-176)');
 
-  _clearAdjustRequests(_TEST_PH_ID);
+  clearRequests();
   _clearPunchesForDay(_TEST_PH_ID, date);
 }
 
@@ -4378,6 +4380,24 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     let res;
     // Two full 8-hour days INSIDE the month that will be credited. Written
     // directly (not via recordPunch) because the dates are weeks in the past.
+    //
+    // CLEAR THE WHOLE CREDITED MONTH FIRST. The credit reads every Timesheet
+    // row this employee has in that month, and _TEST_DATE_OLD / _VERY_OLD are
+    // today minus 14 / 20 days — so on any run in the first three weeks of a
+    // month, other tests' fixture punches for the SAME employee land inside
+    // the month being credited and the "16 worked hours" this test asserts is
+    // no longer the whole story (a 2026-09-01 run credited 35h). The same
+    // calendar-dependence class as the documented editor-test hazard (a): the
+    // test was date-dependent, not wrong, and passed for the fortnight after
+    // it was written.
+    const monthRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    if (monthRows) {
+      const all = monthRows.getDataRange().getValues();
+      for (let i = all.length - 1; i >= 2; i--) {
+        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
+        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) monthRows.deleteRow(i + 1);
+      }
+    }
     const d1 = lastYm + '-05', d2 = lastYm + '-06';
     _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN',  'ClockIn');
     _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '17:00:00', 'OUT', 'ClockOut');

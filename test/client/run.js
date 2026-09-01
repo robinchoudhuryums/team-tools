@@ -14867,10 +14867,23 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   assert.strictEqual(ok({ breaks: [{ out: '13:00', in: '13:20' }], LunchOut: '12:00', LunchIn: '12:30' }),
     '13:00-13:20', 'the LIST wins when both shapes are present');
 
-  // Half a pair is the shape four fixed slots could produce and N rows must not:
-  // an unpaired stamp deducts nothing (INV-176) and silently pays the break.
-  assert.match(err({ breaks: [{ out: '12:00', in: '' }] }), /BOTH a leave and a return/);
+  // A TRAILING leave with no return is an IN-PROGRESS break, not damage — the
+  // punch clock produces it every day at lunch, and refusing it made Day Edit
+  // unsavable for any rep who is out right now (caught by the editor suite's
+  // managerSaveDay_mixedChanges, which had encoded the pre-A4 behaviour
+  // correctly). It round-trips as a lone leave.
+  assert.strictEqual(ok({ breaks: [{ out: '12:00', in: '' }] }), '12:00-',
+    'a trailing open break is accepted and keeps its blank return');
+  assert.strictEqual(ok({ breaks: [{ out: '09:00', in: '09:15' }, { out: '12:00', in: '' }] }),
+    '09:00-09:15|12:00-', 'a completed break followed by an open one');
+  // Everything else that is half a pair is still damage: a RETURN with no leave
+  // is not producible by the punch flow, and a half in the MIDDLE means the
+  // rows after it are mis-entered.
   assert.match(err({ breaks: [{ out: '', in: '12:30' }] }), /BOTH a leave and a return/);
+  assert.match(err({ breaks: [{ out: '12:00', in: '' }, { out: '14:00', in: '14:30' }] }),
+    /BOTH a leave and a return/);
+  assert.match(err({ breaks: [{ out: '09:00', in: '09:15' }, { out: '', in: '12:30' }] }),
+    /BOTH a leave and a return/);
   assert.match(err({ breaks: [{ out: '12:00', in: '11:00' }] }), /at or before it leaves/);
   assert.match(err({ breaks: [{ out: '12:00', in: '12:00' }] }), /at or before it leaves/);
   assert.match(err({ breaks: [{ out: '25:00', in: '26:00' }] }), /Invalid time/);
