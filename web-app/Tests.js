@@ -1011,6 +1011,7 @@ function _runAllTests() {
   _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
   _integrationTest('punchAdjust_duplicatePendingRejected',     test_punchAdjust_duplicatePendingRejected);
   _integrationTest('punchAdjust_approveAgedPastWindowRejected', test_punchAdjust_approveAgedPastWindowRejected);
+  _integrationTest('punchAdjust_resumeConvertsClockOut',      test_punchAdjust_resumeConvertsClockOut);
   _integrationTest('recordPunch_immediateAdjustGatedByFlag',   test_recordPunch_immediateAdjustGatedByFlag);
   _integrationTest('managerSaveDayRange_appliesAcrossDays',    test_managerSaveDayRange_appliesAcrossDays);
   _integrationTest('managerSaveDayRange_rejectsFutureTimeToday', test_managerSaveDayRange_rejectsFutureTimeToday);
@@ -1878,6 +1879,75 @@ function test_punchAdjust_duplicatePendingRejected() {
 // P11 — approval-time re-validation of the adjust window (a request that aged
 // past the window in the queue must not write a punch the submit-time check
 // would have rejected).
+/** B3 (2026-09-01): a resume request reopens a day the rep has already clocked
+ *  out of — by CONVERTING the clock-out into a break rather than deleting it,
+ *  so the hours they were away are unpaid. Deleting it would silently pay the
+ *  gap, which is the whole reason this is not a delete.
+ *
+ *  Walks the contract against the real sheet: refuse without a clock-out,
+ *  refuse a backwards resume time, then approve and assert the conversion. */
+function test_punchAdjust_resumeConvertsClockOut() {
+  const date = _TEST_DATE_OLD;
+  _clearPunchesForDay(_TEST_PH_ID, date);
+  _clearAdjustRequests(_TEST_PH_ID);
+  const emp = lookupEmployeeById_(_TEST_PH_ID);
+
+  // No clock-out yet → refused by name, and nothing is queued.
+  _asUser(emp.email, () => {
+    const r = submitPunchAdjustRequests([
+      { date: date, time: '19:00', punchType: 'ClockOut', action: 'resume', reason: 'back at work' }]);
+    _assertFailure(r, 'no Clock Out');
+  });
+
+  // Give the day a shift, then a backwards resume time is refused too.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSaveDay(_TEST_PH_ID, date,
+      { ClockIn: '08:00', ClockOut: '17:00', breaks: [] }, 'fixture'));
+  });
+  _asUser(emp.email, () => {
+    const r = submitPunchAdjustRequests([
+      { date: date, time: '16:00', punchType: 'ClockOut', action: 'resume', reason: 'too early' }]);
+    _assertFailure(r, 'must be after the Clock Out');
+  });
+
+  // The real request queues, and the manager sees it AS a resume.
+  let reqId = '';
+  _asUser(emp.email, () => {
+    _assertSuccess(submitPunchAdjustRequests([
+      { date: date, time: '19:00', punchType: 'ClockOut', action: 'resume', reason: 'called back in' }]));
+  });
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const q = managerGetPendingAdjustments();
+    const mine = (q.requests || []).filter(r => r.empId === _TEST_PH_ID && r.date === date);
+    _assertEq(mine.length, 1, 'one pending resume');
+    _assertEq(mine[0].action, 'resume', 'the queue row knows it is a resume');
+    reqId = mine[0].reqId;
+    _assertSuccess(updatePunchAdjustStatus(reqId, 'Approved'));
+  });
+
+  // THE ASSERTION THIS EXISTS FOR: the clock-out is GONE as a clock-out and
+  // present as a break at the SAME time, with the resume time closing it.
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockOut'), 0,
+    'the clock-out was converted, not left behind');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'LunchOut'), 1,
+    'it became a break leave');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'LunchIn'), 1,
+    'and the resume time closed it');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockIn'), 1,
+    'the original clock-in is untouched');
+
+  // The hours reflect the unpaid gap: 08:00–17:00 worked, away 17:00–19:00.
+  // The day is now OPEN (no clock-out), so calcHours_ reports it incomplete
+  // rather than inventing an end — which is exactly the state the rep is in.
+  const ts = _asUser(_TEST_MGR_EMAIL, () => getEmployeeTimesheetForManager(_TEST_PH_ID, date, date));
+  const day = (ts.days || []).find(d => d.date === date);
+  _assertTrue(!!day, 'the day is readable');
+  _assertTrue(day.incomplete === true, 'an open day is INCOMPLETE, never silently zero (INV-176)');
+
+  _clearAdjustRequests(_TEST_PH_ID);
+  _clearPunchesForDay(_TEST_PH_ID, date);
+}
+
 function test_punchAdjust_approveAgedPastWindowRejected() {
   _clearTestState(_TEST_INDIA_ID);
   const sheet = getOrCreatePunchAdjustSheet_();

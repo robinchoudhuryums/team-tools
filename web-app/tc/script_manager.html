@@ -82,6 +82,19 @@
   .tcal-off-chip.approved { background: var(--accent-soft); }
   .tcal-off-chip.pending { background: var(--warn-soft); }
   .tcal-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  /* Follow-on (2026-09-01): the manager analytics pair carried an INLINE
+     `grid-template-columns:1fr 1fr`, which beats every stylesheet rule
+     including the shell's own media queries — so the two CARDS stayed 2-up at
+     390px and the Time Off card pushed the page 44px sideways. It is also
+     invisible to the A2 tripwire, which scans stylesheets. A real class with a
+     real breakpoint instead; ≤700px because the pair holds a 7-bar chart and a
+     three-part status line, not the 4-up metric TILES `.metric-grid` is sized
+     for. (Measured at 390px: 434 → 390, i.e. zero page overflow.) */
+  .mgr-analytics { grid-template-columns: 1fr 1fr; margin-bottom: 0; }
+  @media (max-width: 700px) { .mgr-analytics { grid-template-columns: 1fr; } }
+  /* The status line is three coloured spans; without wrap it has a hard
+     min-content width that no column count can satisfy on a phone. */
+  .mgr-to-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-top: 8px; }
 </style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
@@ -364,10 +377,19 @@ function loadPendingAdjustments_() {
 
 function renderAdjustQueueCard_(requests) {
   const rows = requests.map(function (r) {
+    // B3: a RESUME is a different decision from a missed punch — it converts
+    // the rep's clock-out into a break, so the hours they were away become
+    // unpaid. Saying "ClockOut 19:30" would describe the punch it consumes, not
+    // what approving does. State the effect.
+    const isResume = r.action === 'resume';
+    const detail = isResume
+      ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
+        ' (clock-out becomes a break — the gap is unpaid)'
+      : r.punchType + ' · ' + r.date + ' · ' + r.time;
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">' +
       '<div style="flex:1">' +
         '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
-          ' <span style="color:var(--muted);font-weight:400">— ' + esc(r.punchType) + ' · ' + esc(r.date) + ' · ' + esc(r.time) + '</span></div>' +
+          ' <span style="color:var(--muted);font-weight:400">— ' + esc(detail) + '</span></div>' +
         (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(r.reason) + '</div>' : '') +
       '</div>' +
       '<button class="pending-btn pb-approve" data-req-id="' + esc(r.reqId) + '" data-act="Approved" onclick="adjDecide_(this)">' + icon('check', 14) + 'Approve</button>' +
@@ -1642,7 +1664,7 @@ function renderAnalyticsSection(data) {
   if (toSum.denied)   toParts.push(`<span style="color:var(--danger-deep)">${toSum.denied} denied</span>`);
 
   return `
-    <div class="metric-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0">
+    <div class="metric-grid mgr-analytics">
       <div class="card" style="margin-bottom:16px">
         <h2 class="card-label">Punch Activity · last 7 days</h2>
         <div style="display:flex;align-items:flex-end;gap:2px;height:100px;padding:4px 0">${bars}</div>
@@ -1651,7 +1673,7 @@ function renderAnalyticsSection(data) {
         <h2 class="card-label">Time Off · this month</h2>
         <div style="font-size:28px;font-weight:600;color:var(--ink);margin:12px 0 4px">${toTotal}</div>
         <div style="font-size:12px;color:var(--muted)">requests total</div>
-        <div style="font-size:13px;margin-top:8px;display:flex;gap:12px">${toParts.join('')}</div>
+        <div class="mgr-to-parts">${toParts.join('')}</div>
       </div>
     </div>`;
 }

@@ -13241,7 +13241,7 @@ function empPendingAdjustments_(empId, dateIso) {
     if (!sheet) return [];
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return [];
-    const width = Math.max(PAR.EMP_ID, PAR.DATE, PAR.PUNCH_TYPE, PAR.REQ_TIME, PAR.STATUS) + 1;
+    const width = Math.max(PAR.EMP_ID, PAR.DATE, PAR.PUNCH_TYPE, PAR.REQ_TIME, PAR.STATUS, PAR.ACTION) + 1;
     const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
     const id = String(empId).trim();
     const out = [];
@@ -13254,6 +13254,10 @@ function empPendingAdjustments_(empId, dateIso) {
       out.push({
         punchType: String(rows[i][PAR.PUNCH_TYPE] || '').trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+        // B3: additive. A pending RESUME must not read as "Clock Out 19:30" —
+        // that is the punch it converts, not the one it adds. An older client
+        // ignores the field and renders as before.
+        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
       });
     }
     return out;
@@ -15889,7 +15893,10 @@ function findExistingPunch_(empId, date, punchType) {
     if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
     if (normalizeDate_(rows[i][ADP.DATE]) !== date) continue;
     if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
-    found = { sheet, rowIndex: i + 1 };
+    // `time` is additive (B3, 2026-09-01) — the resume path needs the existing
+    // ClockOut's stamp to validate the resume time against it and to state the
+    // unpaid gap. Every prior caller reads only sheet/rowIndex.
+    found = { sheet, rowIndex: i + 1, time: normalizeTime_(rows[i][ADP.TIME]) };
   }
   return found;
 }
@@ -16094,16 +16101,29 @@ function getOrCreateTimeOffSheet_() {
 // or denies. Distinct from the manager Day Edit (managerSaveDay), which is an
 // immediate full-day reconcile and must NOT be reused here (it would delete
 // punch types not present in its slots).
-const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8 };
+// B3 (2026-09-01): ACTION is a TRAILING add — a legacy row reads '' and means
+// 'set', the ordinary "write this punch" request. The only other value is
+// 'resume' (reopen a clocked-out day). Back-compat like every other trailing
+// column here (CN_HEADERS, FS_HEADERS, AmendsId).
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9 };
+const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action'];
 
 function getOrCreatePunchAdjustSheet_() {
   const ss = getAdpSS_();
   let sheet = ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.PUNCH_ADJUST_TAB);
-    sheet.appendRow(['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt']);
+    sheet.appendRow(PAR_HEADERS);
     sheet.setFrozenRows(1);
+    return sheet;
   }
+  // Self-heal a short header once (the getOrCreateEmpDocSheet_ / KB pattern):
+  // an existing tab predates the trailing Action column.
+  try {
+    if (sheet.getLastColumn() < PAR_HEADERS.length) {
+      sheet.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]);
+    }
+  } catch (e) { /* best-effort — a read still works, ACTION just reads '' */ }
   return sheet;
 }
 
@@ -16116,6 +16136,7 @@ function getOrCreatePunchAdjustSheet_() {
 function submitPunchAdjustRequests(requests) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
@@ -16131,9 +16152,17 @@ function submitPunchAdjustRequests(requests) {
       const time = String(r.time || '').trim();
       const punchType = String(r.punchType || '').trim();
       const reason = String(r.reason || '').trim();
+      // B3: 'resume' reopens a day the rep has already clocked out of. It is
+      // NOT a punch write — on approval the trailing ClockOut is CONVERTED to a
+      // break and the requested time becomes the break's end, so the hours the
+      // rep was away are unpaid. Any other value reads as the ordinary 'set'.
+      const action = String(r.action || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: label + ': invalid date.' };
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
       if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
+      if (action === 'resume' && punchType !== 'ClockOut') {
+        return { success: false, error: label + ': a resume request converts the Clock Out — it cannot target ' + punchType + '.' };
+      }
       if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
       // F(L-2): same-day future-TIME reject — INV-106 claims parity with
       // recordPunch's adjustment guards, but a request for TODAY at a
@@ -16145,7 +16174,7 @@ function submitPunchAdjustRequests(requests) {
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
-      clean.push({ date: date, time: time, punchType: punchType, reason: reason });
+      clean.push({ date: date, time: time, punchType: punchType, reason: reason, action: action });
     }
     // Duplicate guards (same family as INV-94's time-off dup-guard): reject a
     // batch carrying two entries for the same (date, punchType), and reject an
@@ -16158,6 +16187,25 @@ function submitPunchAdjustRequests(requests) {
       const key = clean[i].date + '|' + clean[i].punchType;
       if (batchSeen[key]) return { success: false, error: 'Duplicate adjustment in this batch: ' + clean[i].punchType + ' on ' + clean[i].date + '.' };
       batchSeen[key] = true;
+    }
+    // B3: a resume request is only meaningful against a REAL trailing
+    // ClockOut, and the resume time must come after it — otherwise approval
+    // would convert a punch that is not there, or fabricate a break that ends
+    // before it began. Checked at submit AND re-checked at approval (the day
+    // can be edited while the request waits).
+    for (let i = 0; i < clean.length; i++) {
+      if (clean[i].action !== 'resume') continue;
+      const co = findExistingPunch_(emp.id, clean[i].date, 'ClockOut');
+      if (!co) {
+        return { success: false, error: 'Adjustment #' + (i + 1) +
+          ': there is no Clock Out on ' + clean[i].date + ' to resume from.' };
+      }
+      const coHm = String(co.time || '').substring(0, 5);
+      if (!(clean[i].time > coHm)) {
+        return { success: false, error: 'Adjustment #' + (i + 1) +
+          ': the resume time must be after the Clock Out (' + coHm + ').' };
+      }
+      clean[i].clockOutTime = coHm;
     }
     const sheet = getOrCreatePunchAdjustSheet_();
     const existing = sheet.getDataRange().getValues();
@@ -16173,13 +16221,19 @@ function submitPunchAdjustRequests(requests) {
     }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     clean.forEach(function (c) {
-      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt]);
+      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action]);
     });
     writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
       'requested ' + clean.length + ' punch adjustment(s) pending approval');
+    // B2: tell the managers. Deferred past releaseLock (M-7) — a MailApp send
+    // inside the ONE project lock stalls every rep's punch.
+    notifyAfter = function () { notifyManagersOfAdjustRequests_(emp, clean); };
     return { success: true, count: clean.length };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** The caller's own adjustment requests, newest-first (employee status list).
@@ -16198,6 +16252,7 @@ function getMyPunchAdjustRequests() {
         punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
+        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
         status: String(rows[i][PAR.STATUS]).trim(),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
@@ -16225,6 +16280,10 @@ function managerGetPendingAdjustments() {
         punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
+        // B3: the manager must see WHICH kind of request this is — a resume
+        // converts an existing clock-out and leaves an unpaid gap, which is a
+        // materially different decision from adding a missed punch.
+        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
@@ -16258,6 +16317,8 @@ function updatePunchAdjustStatus(reqId, newStatus) {
       const punchType = String(rows[i][PAR.PUNCH_TYPE]).trim();
       const reqTime = normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5);
       const reason = String(rows[i][PAR.REASON] || '');
+      // B3: '' on a legacy row means the ordinary punch write.
+      const action = String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
         if (!targetEmp) return { success: false, error: 'Employee not found.' };
@@ -16271,18 +16332,23 @@ function updatePunchAdjustStatus(reqId, newStatus) {
             'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
             '-day adjust window — deny it (the rep can re-submit if still needed).' };
         }
-        writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+        if (action === 'resume') {
+          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
+          if (res && res.error) return { success: false, error: res.error };
+        } else {
+          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+        }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
         notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved');
+          notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action);
         };
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
           `${punchType} ${reqTime} request denied`, callerEmp.email);
         notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied');
+          notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action);
         };
       }
       sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
@@ -16297,6 +16363,42 @@ function updatePunchAdjustStatus(reqId, newStatus) {
   }
 }
 
+/** Tells the MANAGERS a rep has filed punch-adjustment request(s) (B2,
+ *  2026-09-01). Until this shipped, `submitPunchAdjustRequests` wrote its
+ *  Pending rows, audited, and told NOBODY — the queue lives inside the manager
+ *  dashboard, so a request was seen only if a manager happened to look. The
+ *  rep waits, believing it is with their manager; the manager has no idea it
+ *  exists. Every other request type in the app notifies somebody.
+ *
+ *  Best-effort (INV-14) and PHI-free — a punch time is not clinical data.
+ *  Deferred past the ScriptLock by the caller (M-7). */
+function notifyManagersOfAdjustRequests_(emp, entries) {
+  try {
+    const to = getManagerEmails_();
+    if (!to || !to.length || !entries || !entries.length) return;
+    const n = entries.length;
+    const subj = `${emp.name} requested ${n} punch adjustment${n === 1 ? '' : 's'}`;
+    const lines = entries.map(function (c) {
+      return `  ${c.date}  ${c.punchType} ${c.time}` + (c.reason ? `  — ${c.reason}` : '');
+    }).join('\n');
+    const body = `${emp.name} submitted ${n} punch adjustment request${n === 1 ? '' : 's'} ` +
+      `for your approval:\n\n${lines}\n\n` +
+      `Approve or deny from Manage \u2192 Manage Time. Nothing changes on their ` +
+      `timesheet until you do.\n\n\u2014 UMS Time Clock (automated)\n`;
+    const rows = entries.map(function (c) {
+      return [c.date, c.punchType + ' ' + c.time + (c.reason ? ' \u2014 ' + c.reason : '')];
+    });
+    const html = buildBrandedEmailHtml_('Punch adjustment' + (n === 1 ? '' : 's') + ' awaiting approval',
+      '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> submitted ' + n +
+      ' punch adjustment request' + (n === 1 ? '' : 's') + ' for your approval:</p>' +
+      brandedKvRows_(rows) +
+      '<p style="margin:14px 0 0;">Nothing changes on their timesheet until you approve it.</p>',
+      { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Pending',
+        ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open Manage Time' });
+    MailApp.sendEmail({ to: to.join(','), subject: subj, body: body, htmlBody: html });
+  } catch (e) { console.warn('Adjust request notification failed: ' + e.message); }
+}
+
 /** Tells the REP their punch-adjustment request was approved or denied
  *  (operator 2026-08-31). Until this shipped, `updatePunchAdjustStatus` wrote
  *  the punch and returned — the rep learned the outcome only by noticing their
@@ -16307,13 +16409,17 @@ function updatePunchAdjustStatus(reqId, newStatus) {
  *  adjustments were the one request type with no notification at all.
  *  Best-effort (INV-14) — a failed send never affects the approval, which is
  *  already committed — and PHI-free (a punch time is not clinical data). */
-function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus) {
+function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action) {
   if (!emp || !emp.email) return;
   try {
     const approved = newStatus === 'Approved';
     const verb = approved ? 'approved' : 'denied';
-    const label = PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '');
-    const subj = `Your punch adjustment for ${date} was ${verb}`;
+    const resume = String(action || '') === 'resume';
+    const label = resume ? 'Resume shift'
+      : (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || ''));
+    const subj = resume
+      ? `Your request to resume your ${date} shift was ${verb}`
+      : `Your punch adjustment for ${date} was ${verb}`;
     const hasReason = !!String(reason || '').trim();
     let body = `Hi ${emp.name},\n\n` +
                `Your punch adjustment request has been ${verb}:\n\n` +
@@ -16322,26 +16428,86 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
                `Time:    ${reqTime}\n`;
     if (hasReason) body += `Reason:  ${reason}\n`;
     body += `Status:  ${newStatus}\n\n`;
-    body += approved
-      ? `The punch has been added to your timesheet.\n\n`
-      : `No change was made to your timesheet. Contact your manager if you still need this fixed.\n\n`;
+    const approvedLine = resume
+      ? `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
+        `you were away is unpaid — clock out as usual when you finish.`
+      : `The punch has been added to your timesheet.`;
+    const deniedLine = `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
+    body += (approved ? approvedLine : deniedLine) + `\n\n`;
     body += `— UMS Time Clock (automated)\n`;
-    const kv = [['Date', date], ['Punch', label], ['Time', reqTime]];
+    const kv = [['Date', date], ['Punch', label], [resume ? 'Back at' : 'Time', reqTime]];
     if (hasReason) kv.push(['Reason', reason]);
     kv.push(['Status', newStatus]);
     const html = buildBrandedEmailHtml_('Punch adjustment ' + verb,
       '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
       '<p style="margin:0 0 12px;">Your punch adjustment request has been <b>' + esc_(verb) + '</b>:</p>' +
       brandedKvRows_(kv) +
-      '<p style="margin:14px 0 0;">' + (approved
-        ? 'The punch has been added to your timesheet.'
-        : 'No change was made to your timesheet — contact your manager if you still need this fixed.') + '</p>',
+      '<p style="margin:14px 0 0;">' + esc_(approved ? approvedLine : deniedLine) + '</p>',
       { accent: approved ? CN_EMAIL_PALETTE.accent : CN_EMAIL_PALETTE.danger,
         subLabel: 'Time Clock',
         statusLabel: approved ? 'Approved' : 'Denied',
         ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Open Time Clock' });
     MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Adjust decision email failed: ' + e.message); }
+}
+
+/** Reopens a day the rep has already clocked out of (B3, 2026-09-01).
+ *
+ *  THE MODEL, and why it is not a delete. The obvious implementation — remove
+ *  the ClockOut so the day is open again — silently PAYS the rep for the hours
+ *  between clocking out and coming back. That is fine for the one case where
+ *  the clock-out was a mistake and the rep resumed a minute later, and wrong
+ *  for the case the operator actually described (finished, went home, was
+ *  asked to come back for a few hours). One of those is a payroll error, and
+ *  nothing on screen would show it.
+ *
+ *  So the ClockOut is CONVERTED to a break instead: its row keeps its time and
+ *  becomes an `ADJ-LunchOut`, and an `ADJ-LunchIn` is written at the requested
+ *  resume time. The away gap is a break, which is unpaid — the truth in both
+ *  cases, exact to the minute in both, and needing no new arithmetic, because
+ *  `calcHours_` deducts EVERY break pair since the 2026-09-01 multi-break round
+ *  (INV-176). The day is then in the on-shift state and the rep clocks out
+ *  again normally.
+ *
+ *  A genuine SECOND SHIFT (a distinct clock-in/clock-out pair on one date) is
+ *  still not supported — `getNextActions_` collapses it and both repair paths
+ *  treat a repeated clock punch as damage. This is deliberately the resume of
+ *  ONE shift, not a multi-shift model.
+ *
+ *  Returns {} on success or {error} — the caller surfaces it to the manager
+ *  rather than marking the request approved.
+ */
+function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason) {
+  // Re-validate at APPROVAL time: the day can be edited while the request
+  // waits, and converting a ClockOut that is no longer there would leave the
+  // rep with a LunchIn and no matching leave (an unpaired half, which
+  // breakPairs_ correctly drops — silently costing them the whole reopening).
+  const co = findExistingPunch_(targetEmp.id, date, 'ClockOut');
+  if (!co) {
+    return { error: 'There is no Clock Out on ' + date + ' any more — deny this request ' +
+      '(the day was edited since it was filed).' };
+  }
+  const coHm = String(co.time || '').substring(0, 5);
+  if (!(resumeTime > coHm)) {
+    return { error: 'The resume time (' + resumeTime + ') is not after the Clock Out (' + coHm + ').' };
+  }
+  const outFull = coHm + ':00';
+  const inFull = resumeTime + ':00';
+  // Convert in place — the row keeps its TIME and changes only what it means.
+  co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue('ADJ-LunchOut');
+  appendToAdpSheet_(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn');
+  if (targetEmp.sheetId) {
+    // Best-effort mirror (INV-59): drop the stale Clock Out, write the pair.
+    try { clearFromEmployeeSheet_(targetEmp, date, 'ClockOut'); } catch (e) {}
+    try { writeToEmployeeSheet_(targetEmp, date, outFull, 'OUT', 'LunchOut'); } catch (e) {}
+    try { writeToEmployeeSheet_(targetEmp, date, inFull, 'IN', 'LunchIn'); } catch (e) {}
+  }
+  const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
+  const note = 'shift resumed — Clock Out ' + coHm + ' converted to a break, back at ' +
+    resumeTime + ' (unpaid gap)' + (reason ? ' — ' + reason : '');
+  writeAuditLog_(targetEmp, 'LunchOut', date, outFull, true, daysBack, note, actorEmail);
+  writeAuditLog_(targetEmp, 'LunchIn', date, inFull, true, daysBack, note, actorEmail);
+  return {};
 }
 
 /** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve

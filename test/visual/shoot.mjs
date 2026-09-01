@@ -183,6 +183,12 @@ const SCENARIOS = [
     "openDayEditModal('E-1077', 'Nina Patel')"],
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
+
+  // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
+  // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every
+  // stylesheet rule, media queries included — kept a 44px page overflow at
+  // 390px until it was measured by hand. On camera now so the next one is not.
+  ['manage-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', ''],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

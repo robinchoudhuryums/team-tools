@@ -10244,7 +10244,10 @@ test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit c
   // ── openAdjustModal prefill is bounds-guarded: only a well-formed date
   // inside the picker's own [min, today] range pre-selects; anything else
   // keeps today (existing argless callers are unchanged by construction).
-  const oam = clk.match(/function openAdjustModal\(prefillDate\) \{[\s\S]*?\n\}/);
+  // B1 (2026-09-01) added a second optional arg (prefillType), so the
+  // signature match no longer pins the arity — the date-bounds property below
+  // is what this assertion is for.
+  const oam = clk.match(/function openAdjustModal\(prefillDate(?:, prefillType)?\) \{[\s\S]*?\n\}/);
   assert.ok(oam, 'openAdjustModal takes the optional prefill');
   assert.ok(/prefillDate >= minIso && prefillDate <= todayIso/.test(oam[0]),
     'the prefill honors the [min, today] picker bounds');
@@ -14371,12 +14374,16 @@ test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is 
   // past the lock release (M-7: a MailApp send inside the one project lock
   // stalls every rep's punch). The mail-in-lock tripwire covers the general
   // rule; this pins the specific wiring.
-  const upd = nc(codeSrc.slice(codeSrc.indexOf('function updatePunchAdjustStatus'),
-                               codeSrc.indexOf('function notifyEmployeeOfAdjustDecision_')));
+  // Slice the function's OWN body. Slicing "up to the next named function"
+  // silently widened the moment a MailApp-using helper was inserted between
+  // them (B2, 2026-09-01) and the M-7 assertion below failed on correct code.
+  const upd = nc(extractRawFunction('Code.js', 'updatePunchAdjustStatus'));
   assert.ok(/let notifyAfter = null;/.test(upd), 'the closure slot exists');
-  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'\)/.test(upd),
+  // B3 (2026-09-01) added a trailing `action` arg so a resume decision reads as
+  // a resume rather than a punch write; the arity is not the property here.
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'/.test(upd),
     'approve notifies');
-  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetForAudit, date, punchType, reqTime, reason, 'Denied'\)/.test(upd),
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetForAudit, date, punchType, reqTime, reason, 'Denied'/.test(upd),
     'DENY notifies too — a silent denial is indistinguishable from an approval that has not propagated');
   assert.ok(!/MailApp/.test(upd), 'no MailApp inside the locked body (M-7)');
   const relIdx = upd.indexOf('lock.releaseLock()');
@@ -15072,6 +15079,227 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
     'the team-calendar pencil still passes its date through');
   assert.ok(/function openDayEditModal\(empId, empName, prefillDate\)/.test(mgr),
     'openDayEditModal still takes the prefill date');
+});
+
+
+test('FO-A2: an inline grid-template-columns must be COMPUTED, never a static override', () => {
+  // The A2 tripwire scans stylesheets, so it could not see the manager
+  // analytics pair's inline `grid-template-columns:1fr 1fr` — which beats every
+  // stylesheet rule INCLUDING the shell's own media queries, and pushed the
+  // page 44px sideways at 390px. A static inline grid is a breakpoint nothing
+  // can reach.
+  //
+  // EXEMPT BY RULE: a COMPUTED value (a dynamic column count), which CSS cannot
+  // express — the coverage heatmap's hour columns and the training matrix's
+  // per-rep columns, both of which sit in their own `overflow-x` scroller.
+  // EXEMPT BY REASONED ALLOWLIST (the A2_INVERSE_OK precedent), one entry:
+  const FO_A2_OK = {
+    // Admin → queue inventory. Column 1 is `1fr` on a cell that carries
+    // `min-width:0; overflow-wrap:anywhere`, so it genuinely shrinks, and
+    // column 2 is `auto` holding a short count. Exempt on CONSTRUCTION rather
+    // than measurement: the block renders only with the opt-in queue scan
+    // (`scanQueues`, default OFF), so no visual scenario reaches it.
+    'cn/script_callnotes.html': ['1fr auto'],
+  };
+  const offenders = [];
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', rel), 'utf8')
+      .replace(/<!--[\s\S]*?-->/g, '')                       // INV-188
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const re = /style\s*=\s*(["'])(?:(?!\1)[\s\S]){0,400}?grid-template-columns:\s*([^;"']*)/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const value = (m[2] || '').trim();
+      // A computed value interpolates — either a template `${…}` or a string
+      // concatenation, in which case the capture stops AT the quote and the
+      // characters right after it are the concatenation.
+      const tail = src.slice(m.index + m[0].length, m.index + m[0].length + 12);
+      if (/\$\{/.test(value) || /^["']\s*\+/.test(tail)) continue;
+      if ((FO_A2_OK[rel] || []).indexOf(value) >= 0) continue;
+      offenders.push(rel + ' → ' + value.slice(0, 60));
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'static inline grid-template-columns (use a class with a real breakpoint): ' + offenders.join(' | '));
+
+  // And the pair that caused it now carries a class with a real breakpoint.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/class="metric-grid mgr-analytics"/.test(mgr),
+    'the analytics pair uses the class, not an inline override');
+  assert.ok(/@media \(max-width: 700px\) \{ \.mgr-analytics \{ grid-template-columns: 1fr; \} \}/.test(mgr),
+    '.mgr-analytics stacks at a real viewport breakpoint');
+  // The status line must WRAP: three coloured spans have a hard min-content
+  // width that no column count can satisfy on a phone.
+  assert.ok(/\.mgr-to-parts \{[^}]*flex-wrap: wrap/.test(mgr), '.mgr-to-parts wraps');
+  assert.ok(/class="mgr-to-parts"/.test(mgr), 'and the markup uses it');
+});
+
+/** Assert `a` appears before `b`, requiring BOTH to be present.
+ *  indexOf on a missing needle returns -1, and -1 < anything is true — so a
+ *  bare `a < b` ordering check PASSES when the thing it guards is deleted.
+ *  That trap bit twice in one session (A4's snapshot read, B1's select reset),
+ *  both times caught only by bite-checking. */
+function assertBefore(hay, a, b, msg) {
+  const ia = hay.indexOf(a), ib = hay.indexOf(b);
+  assert.ok(ia >= 0, msg + ' — missing: ' + a);
+  assert.ok(ib >= 0, msg + ' — missing: ' + b);
+  assert.ok(ia < ib, msg);
+}
+
+/** Slice a named function out of an already-read client partial. */
+function extractFnFrom(src, name) {
+  const i = src.indexOf('function ' + name + '(');
+  assert.ok(i >= 0, name + ' exists');
+  const j = src.indexOf('\nfunction ', i + 10);
+  return src.slice(i, j > 0 ? j : undefined);
+}
+
+
+/* ── Workstream B: the adjustment-request feedback loop ───────────────────
+ * B1 prefill, B2 the manager notification that never existed, B3 the resume
+ * path — the way back from a closed day.
+ */
+
+test('B1/B2: the done-state Adjust is prefilled, and a submitted request reaches a manager', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+
+  // B1 — the button carries the type, the dispatcher passes it, and the modal
+  // RESETS before applying it (a <select> keeps its last value, so a prefill
+  // from one open would otherwise leak into an unrelated one).
+  assert.ok(/data-action="Adjust" data-adj-type="ClockIn"/.test(clk),
+    'the done-state Adjust names the punch that state implies');
+  assert.ok(/openAdjustModal\(null, btn\.dataset\.adjType \|\| null\)/.test(clk),
+    'the dispatcher passes it through');
+  const oam = extractFnFrom(clk, 'openAdjustModal');
+  assertBefore(oam, 'typeSel.selectedIndex = 0;', 'typeSel.value = prefillType',
+    'the select is reset BEFORE the prefill is applied');
+  assert.ok(/\[\.\.\.typeSel\.options\]\.some\(o => o\.value === prefillType\)/.test(oam),
+    'an unknown type is validated against the select’s OWN options, not a second hardcoded list');
+
+  // B2 — the notification exists, is best-effort, and is DEFERRED past the
+  // lock (M-7: a MailApp send inside the one project lock stalls every punch).
+  const sub = extractRawFunction('Code.js', 'submitPunchAdjustRequests');
+  assert.ok(/let notifyAfter = null;/.test(sub), 'the closure slot exists');
+  assert.ok(/notifyAfter = function \(\) \{ notifyManagersOfAdjustRequests_\(emp, clean\); \};/.test(sub),
+    'the submit arms the manager notification');
+  // Strip comments before the BAN: the code's own note explains WHY there is
+  // no MailApp here, and naming it is what a naive scan trips on (INV-188 —
+  // third recurrence this session, all in ban-shaped assertions).
+  const subCode = sub.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/MailApp/.test(subCode), 'no MailApp inside the locked body');
+  const relIdx = sub.indexOf('lock.releaseLock()');
+  assert.ok(relIdx !== -1 && sub.indexOf('notifyAfter()', relIdx) > relIdx,
+    'it fires AFTER releaseLock');
+  const notif = extractRawFunction('Code.js', 'notifyManagersOfAdjustRequests_');
+  assert.ok(/getManagerEmails_\(\)/.test(notif), 'it goes to the manager list');
+  assert.ok(/catch \(e\)/.test(notif), 'best-effort — a failed send never affects the request (INV-14)');
+  assert.ok(/buildBrandedEmailHtml_/.test(notif) && /esc_\(emp\.name\)/.test(notif),
+    'branded and escaped (INV-105)');
+  assert.ok(/safeWebAppUrl_\('manage'\)/.test(notif), 'the CTA lands on the queue');
+});
+
+test('B3: a resume CONVERTS the clock-out into a break — it never just deletes it', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const resume = extractRawFunction('Code.js', 'resumeShiftForEmployee_');
+  const stripped = resume.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+
+  // THE MODEL. Deleting the ClockOut is the obvious implementation and it
+  // silently PAYS the gap between clocking out and coming back. The clock-out
+  // becomes a BREAK instead, so the gap is unpaid — which needs no new
+  // arithmetic, because calcHours_ deducts every break pair (INV-176).
+  assert.ok(/setValue\('ADJ-LunchOut'\)/.test(stripped),
+    'the existing row is CONVERTED in place');
+  assert.ok(/appendToAdpSheet_\(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn'\)/.test(stripped),
+    'and the resume time closes the break');
+  assert.ok(!/deleteRow/.test(stripped),
+    'it must NOT delete the clock-out — that is the version that pays the gap');
+  // The converted row keeps its own TIME; only its meaning changes.
+  assert.ok(/co\.sheet\.getRange\(co\.rowIndex, ADP\.COMMENTS \+ 1\)/.test(stripped) &&
+            !/ADP\.TIME \+ 1/.test(stripped),
+    'the conversion touches COMMENTS only — the stamp is the truth about when they left');
+
+  // RE-VALIDATED at approval: the day can be edited while the request waits,
+  // and converting a clock-out that is gone leaves an unpaired LunchIn, which
+  // breakPairs_ correctly drops — silently costing the rep the whole reopening.
+  assert.ok(/findExistingPunch_\(targetEmp\.id, date, 'ClockOut'\)/.test(stripped),
+    'approval re-checks the clock-out exists');
+  assert.ok(/if \(!co\)[\s\S]{0,200}return \{ error:/.test(stripped),
+    'and refuses by name rather than half-applying');
+  assert.ok(/resumeTime > coHm/.test(stripped),
+    'the resume time must be after the clock-out');
+  assert.ok(/writeAuditLog_/.test(stripped) &&
+            (stripped.match(/writeAuditLog_/g) || []).length === 2,
+    'both halves of the pair are audited');
+  assert.ok(/unpaid gap/.test(resume), 'the audit note states the consequence');
+
+  // The approve branch routes to it, and its refusal blocks the approval —
+  // marking a request Approved that did not apply would be the worst outcome.
+  const upd = extractRawFunction('Code.js', 'updatePunchAdjustStatus');
+  assert.ok(/if \(action === 'resume'\)/.test(upd), 'approve branches on the action');
+  assert.ok(/if \(res && res\.error\) return \{ success: false, error: res\.error \};/.test(upd),
+    'a refused resume does NOT mark the request approved');
+
+  // SUBMIT-side: a resume is only meaningful against a real clock-out, and it
+  // can only ever target one.
+  const sub = extractRawFunction('Code.js', 'submitPunchAdjustRequests');
+  assert.ok(/action === 'resume' && punchType !== 'ClockOut'/.test(sub),
+    'a resume cannot target another punch type');
+  assert.ok(/there is no Clock Out on/.test(sub), 'submit refuses without one');
+  assert.ok(/the resume time must be after the Clock Out/.test(sub), 'and refuses a backwards one');
+  assert.ok(/c\.action\]\);/.test(sub) || /, c\.action\]/.test(sub),
+    'the action is persisted');
+
+  // Back-compat: PAR.ACTION is TRAILING and a legacy row reads as 'set'.
+  assert.ok(/SUBMITTED_AT:8, ACTION:9/.test(code), 'ACTION is the trailing column');
+  assert.ok(/sheet\.getLastColumn\(\) < PAR_HEADERS\.length/.test(
+    extractRawFunction('Code.js', 'getOrCreatePunchAdjustSheet_')),
+    'an existing tab self-heals its header');
+  ['empPendingAdjustments_', 'getMyPunchAdjustRequests', 'managerGetPendingAdjustments',
+   'updatePunchAdjustStatus'].forEach((fn) => {
+    assert.ok(/=== 'resume' \? 'resume' : 'set'/.test(extractRawFunction('Code.js', fn)),
+      fn + ' reads a missing ACTION as the ordinary punch write');
+  });
+});
+
+test('B3: every surface STATES the effect rather than naming the punch it consumes', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+
+  // The rep's confirm names the consequence BEFORE they file, not after.
+  const req = extractFnFrom(clk, 'requestResumeShift_');
+  assert.ok(/uiConfirm\(/.test(req), 'it confirms rather than firing on one click');
+  assert.ok(/unpaid/.test(req), 'and says the away time is unpaid');
+  assert.ok(/action: 'resume'/.test(req), 'the request carries the action');
+  assert.ok(/String\(clockOutTime \|\| ''\)/.test(req),
+    'the clock-out comes from the BUTTON — the confirm cannot quote a different stamp than the screen');
+
+  // The button renders only when there IS a clock-out to convert, and not
+  // while one is already pending (the server would refuse the duplicate).
+  assert.ok(/const resumeBtn = \(out && out\.time && !resumePending\)/.test(clk),
+    'no clock-out or an in-flight request means no button');
+  assert.ok(/pendingAdjustments: s\.pendingAdjustments \|\| \[\]/.test(clk),
+    'renderActions is told about pending requests');
+
+  // The pending chip must not read as "Clock Out 19:30" — that is the punch a
+  // resume consumes, not one it adds.
+  const chip = extractFnFrom(clk, 'clkPendingAdjustHtml_');
+  assert.ok(/a\.action === 'resume'/.test(chip) && /Resume shift/.test(chip),
+    'the chip describes a resume as a resume');
+
+  // The manager is deciding something materially different from a missed punch.
+  const card = extractFnFrom(mgr, 'renderAdjustQueueCard_');
+  assert.ok(/r\.action === 'resume'/.test(card), 'the queue row branches on it');
+  assert.ok(/the gap is unpaid/.test(card), 'and states what approving does');
+  assert.ok(/esc\(detail\)/.test(card), 'the composed detail is escaped');
+
+  // The decision email, both outcomes.
+  const mail = extractRawFunction('Code.js', 'notifyEmployeeOfAdjustDecision_');
+  assert.ok(/const resume = String\(action \|\| ''\) === 'resume';/.test(mail),
+    'the email knows which kind it is');
+  assert.ok(/is now a break, so the time/.test(mail), 'approval explains the unpaid gap');
+  assert.ok(/resume \? 'Back at' : 'Time'/.test(mail),
+    'and labels the stamp as a return, not a punch time');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
