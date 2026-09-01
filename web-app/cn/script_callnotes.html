@@ -457,9 +457,32 @@
   .cn-tax-act.danger { color: var(--danger-deep); }
   .cn-tax-act.danger:hover { background: var(--destructive-soft); border-color: var(--destructive); }
   @media (max-width: 720px) {
-    .cn-tax-head,
-    .cn-tax-row { grid-template-columns: 1fr; }
+    /* The ROW stacks into a card; the HEADER must not stack with it. Six
+       column labels in a column above the first row align with nothing, and
+       the bar cell rides straight over "Usage" — a header describing columns
+       that no longer exist is the INV-184 class in layout form. Hide it and
+       label the two bare numeric cells in place instead; the sparkline and
+       the arrow already read for themselves. */
+    .cn-tax-head { display: none; }
+    .cn-tax-row { grid-template-columns: 1fr; gap: 6px; padding: 10px 0; }
     .cn-tax-actions { justify-content: flex-start; }
+    .cn-tax-count,
+    .cn-tax-delta { text-align: left; }
+    .cn-tax-trend { justify-content: flex-start; }
+    .cn-tax-count::before,
+    .cn-tax-delta::before {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+      margin-right: 6px;
+    }
+    .cn-tax-count::before { content: 'Notes'; }
+    /* Literal delta, NOT a \0394 escape: CSS consumes the space AFTER a hex
+       escape as its terminator, so '\0394 wk' renders as the joined-up
+       "Δwk". The header markup uses the literal too. */
+    .cn-tax-delta::before { content: 'Δ wk'; }
+    /* preserveAspectRatio="none" + width:100% stretches a 120x22 sparkline
+       across the whole stacked row, which over-weights a glance-sized cell. */
+    .cn-tax-trend .cn-trend-spark { max-width: 140px; }
   }
 
   /* ─── ADMIN STORAGE HEALTH PANEL (#1) ────────────────────────────── */
