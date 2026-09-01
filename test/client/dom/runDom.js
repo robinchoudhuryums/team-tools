@@ -1629,3 +1629,108 @@ test('self-undo eligibility survives the midnight wrap but not a stale list', ()
     && h.read('timeDiffSecondsClient')('23:58:00', '06:00:00') >= 0),
     '-1 cannot pass a non-negative window check');
 });
+
+section('Manage Time — Day Edit break list (A4)');
+
+/** Read the live break rows the way a user sees them (values, not source).
+ *  Arrays built inside the vm context carry THAT realm's prototype, so every
+ *  assertion below compares by VALUE (join) rather than deepStrictEqual — the
+ *  documented realm trap, which this suite hit again writing these tests. */
+function deRows(h) {
+  return [...h.document.querySelectorAll('#de-breaks [data-de-break]')].map((r) => ({
+    out: r.querySelector('.de-brk-out').value,
+    in:  r.querySelector('.de-brk-in').value,
+    label: r.querySelector('label').textContent,
+  }));
+}
+
+test('a day with two breaks round-trips through the modal unchanged', () => {
+  const h = boot();
+  // THE REGRESSION: with four fixed slots the second pair had nowhere to go, so
+  // opening and saving this day silently deleted it and started paying the break.
+  h.read('deSetBreaksFromDay_')({
+    clockIn: '08:00:00', clockOut: '21:00:00',
+    lunchOut: '12:00:00', lunchIn: '12:30:00',
+    breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
+  });
+  assert.strictEqual(deRows(h).map((r) => r.out + '-' + r.in).join('|'),
+    '12:00-12:30|17:00-19:00', 'both pairs render');
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'),
+    '12:00-12:30|17:00-19:00', 'and both read back for the submit');
+  assert.ok(/Break 2/.test(deRows(h)[1].label), 'rows are numbered for the reader');
+});
+
+test('an older server (scalars only) still prefills its one pair', () => {
+  const h = boot();
+  h.read('deSetBreaksFromDay_')({ lunchOut: '12:00:00', lunchIn: '12:30:00' });
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'),
+    '12:00-12:30', 'the legacy scalars fill one pair');
+  // A day with genuinely no break renders the empty state, not a blank row —
+  // a blank row would read as "there is a break here, unfilled".
+  h.read('deSetBreaksFromDay_')({ clockIn: '08:00:00' });
+  assert.strictEqual(h.read('deReadBreaks_')().length, 0);
+  assert.ok(h.document.querySelector('#de-breaks .de-breaks-empty'), 'the empty state says so');
+});
+
+test('adding a row PRESERVES what is already typed in the others', () => {
+  const h = boot();
+  h.read('deRenderBreaks_')([{ out: '12:00', in: '12:30' }]);
+  // Type into the existing row, as a manager would, THEN add a second.
+  h.document.querySelector('#de-brk-in-0').value = '12:45';
+  h.document.getElementById('de-break-add').click();
+  const rows = deRows(h);
+  assert.strictEqual(rows.length, 2, 'a blank row is appended');
+  assert.strictEqual(rows[0].in, '12:45',
+    'the in-progress edit survives the re-render (the snapshot property)');
+  assert.strictEqual(rows[1].out + rows[1].in, '', 'the new row starts blank');
+});
+
+test('removing the FIRST row removes that row, not the last', () => {
+  const h = boot();
+  h.read('deRenderBreaks_')([{ out: '12:00', in: '12:30' }, { out: '17:00', in: '19:00' }]);
+  h.document.querySelector('[data-de-break-rm="0"]').click();
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'),
+    '17:00-19:00', 'the surviving pair is the one that was NOT removed');
+  // Removing the last one leaves an explicit empty list — which the server
+  // reads as "delete every break", the whole point of the list-is-the-day rule.
+  h.document.querySelector('[data-de-break-rm="0"]').click();
+  assert.strictEqual(h.read('deReadBreaks_')().length, 0);
+});
+
+test('range mode caps the list at one pair and says why', () => {
+  const h = boot();
+  h.read('deRenderBreaks_')([{ out: '12:00', in: '12:30' }, { out: '17:00', in: '19:00' }]);
+  const add = h.document.getElementById('de-break-add');
+  const note = h.document.getElementById('de-breaks-note');
+  assert.strictEqual(add.disabled, false, 'single-day mode allows more breaks');
+  assert.strictEqual(note.hidden, true, 'and says nothing about ranges');
+
+  h.document.getElementById('de-date-to').value = '2026-09-05';
+  h.document.getElementById('de-date-to').dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(add.disabled, true, 'a range disables the add control');
+  assert.strictEqual(note.hidden, false, 'and states the limit');
+  assert.match(note.textContent, /remove the extra pair/,
+    'with two pairs already present it names the action, not just the rule');
+  // A disabled control must be inert even if something clicks it.
+  add.click();
+  assert.strictEqual(h.read('deReadBreaks_')().length, 2, 'no row was appended');
+
+  h.document.getElementById('de-date-to').value = '';
+  h.document.getElementById('de-date-to').dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(add.disabled, false, 'clearing "To" restores single-day mode');
+  assert.strictEqual(note.hidden, true);
+});
+
+test('a hostile stored time renders as a value, never as markup', () => {
+  const h = boot();
+  // The server strings reach innerHTML; the break times come from a sheet a
+  // human can hand-edit, so the escape is load-bearing rather than theoretical.
+  h.read('deRenderBreaks_')([{ out: '"><img src=x onerror=alert(1)>', in: '12:30' }]);
+  assert.strictEqual(h.document.querySelectorAll('#de-breaks img').length, 0,
+    'no element is created from the stored value');
+  // Read the ATTRIBUTE, not .value: an <input type="time"> sanitizes a
+  // non-time value to '' , so .value would report success even if the escape
+  // had failed and the markup had broken out of the attribute.
+  assert.strictEqual(h.document.querySelector('#de-brk-out-0').getAttribute('value'),
+    '"><img src=x onerror=alert(1)>', 'the whole payload stayed inside the attribute');
+});
