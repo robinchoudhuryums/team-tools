@@ -14620,6 +14620,58 @@ test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained'
     (gaps.join(', ') || '(none)') + '\n  doc says:    ' + (documented.join(', ') || '(none)'));
 });
 
+// ── Follow-on (2026-09-01): ADMIN sub-tab visual coverage ──────────────────
+// The VIS-COVER pin above works at TAB granularity, and every Admin pane lives
+// INSIDE one tab (callNotesAdmin) — so five distinct panes hid behind one
+// covered tab, which is how they stayed wide-only long enough for a stacked
+// table header to ship. Derived from the client's own tab() call sites rather
+// than a hand list (INV-179), so a sixth pane owes a scenario the day it lands.
+test('VIS-ADMIN: every Admin sub-tab has a mobile visual scenario', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+
+  // The render site is a literal list of tab('key', 'Label') calls.
+  const panes = [...cn.matchAll(/tab\('(\w+)',\s*'[^']+'\)/g)].map((m) => m[1]);
+  assert.ok(panes.length >= 5,
+    'found the Admin tab() call sites (got ' + panes.length + ': ' + panes.join(', ') + ')');
+  assert.ok(panes.indexOf('overview') >= 0 && panes.indexOf('sheets') >= 0,
+    'the extracted panes look like the Admin set');
+
+  // A pane is covered when SOME mobile scenario lands on callNotesAdmin and
+  // either switches to it via the post hook, or is the landing pane (overview).
+  const adminMobile = [...shoot.matchAll(/\[\s*'([\w-]+)',\s*\{\s*tool:\s*'manage',\s*tab:\s*'callNotesAdmin'\s*\},\s*MOBILE[^\]]*\]/g)]
+    .map((m) => m[0]);
+  assert.ok(adminMobile.length >= panes.length,
+    'one mobile Admin scenario per pane (got ' + adminMobile.length + ' for ' + panes.length + ' panes)');
+
+  panes.forEach((key) => {
+    const covered = adminMobile.some((sc) =>
+      sc.indexOf("cnAdminTab_('" + key + "')") >= 0 ||
+      (key === 'overview' && !/cnAdminTab_/.test(sc)));   // overview is the landing pane
+    assert.ok(covered, 'Admin pane "' + key + '" has no mobile visual scenario');
+  });
+
+  // The stacked form is the whole point: at <=720px the ROW stacks and the
+  // HEADER must be hidden, because six column labels above a stacked card
+  // align with nothing (the defect this scenario set found). Comment-stripped
+  // per INV-188 — the rule's own comment quotes the shape it replaced.
+  const css = stripJsComments_(cn);
+  const bp = css.slice(css.indexOf('.cn-tax-act.danger:hover'));
+  const block = bp.slice(bp.indexOf('@media (max-width: 720px)'), bp.indexOf('ADMIN STORAGE HEALTH'));
+  assert.ok(/\.cn-tax-head\s*\{\s*display:\s*none/.test(block),
+    'the stacked breakpoint HIDES the tag-table header');
+  assert.ok(/\.cn-tax-row\s*\{[^}]*grid-template-columns:\s*1fr/.test(block),
+    'the stacked breakpoint still stacks the ROW');
+  assert.ok(!/\.cn-tax-head\s*,\s*\n?\s*\.cn-tax-row\s*\{[^}]*1fr/.test(block),
+    'head and row must NOT share the stacking rule (that is the defect)');
+  // The two bare numerics get their label back, and the delta uses the LITERAL
+  // character: CSS eats the space after a hex escape, so '\\0394 wk' renders
+  // "\u0394wk". Assert the escape form cannot come back.
+  assert.ok(/\.cn-tax-count::before\s*\{\s*content:/.test(block), 'the Notes cell is labelled when stacked');
+  assert.ok(/\.cn-tax-delta::before\s*\{\s*content:\s*'\u0394 wk'/.test(block),
+    'the delta label is the literal character, not a hex escape');
+});
+
 // ── Workstream A — multi-break correctness (operator 2026-09-01) ────────────
 // NOTE the placement: ABOVE process.exit (see the batch-3 note).
 

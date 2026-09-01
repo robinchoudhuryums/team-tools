@@ -184,6 +184,18 @@ const SCENARIOS = [
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
 
+  // Follow-on (2026-09-01): the ADMIN sub-tabs were the matrix's last
+  // wide-only surface, and the Visual Audit Stage had been carrying them as a
+  // known gap since the 2026-08-11 `.toolbar-tabs` overflow was found BY HAND
+  // at 390px. Each pane is genuinely different content — a status-card grid, a
+  // usage panel, three tables, and the long operator-editor stack — so one
+  // scenario per pane rather than one for the tab strip.
+  ['admin-light-mobile',            { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', ''],
+  ['admin-tags-light-mobile',       { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('tags')"],
+  ['admin-compliance-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('compliance')"],
+  ['admin-config-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('config')"],
+  ['admin-sheets-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('sheets')"],
+
   // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
   // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every
   // stylesheet rule, media queries included — kept a 44px page overflow at

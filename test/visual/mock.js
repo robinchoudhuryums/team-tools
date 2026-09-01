@@ -880,6 +880,78 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { timestamp: daysAgo(1) + ' 16:02:40', timestampMgr: daysAgo(1) + ' 05:32:40', repId: 'E-1088', repName: 'Sam Ortiz', actorEmail: 'mgr@umsupply.com', action: 'CallNoteTrainingReply', noteId: 'note-9', dateLocal: daysAgo(1) }],
       truncated: false,
     },
+    // Admin -> Sheets (2026-09-01 follow-on): the sub-tab had NO fixture at any
+    // viewport, so its scenario rendered a loader and its "0 overflow" meant
+    // nothing. A FUNCTION of viewKey, not a frozen object (INV-185's F14 rule):
+    // the key decides label/columns/rows/legend, so a static fixture would show
+    // the AuditLog rows under whichever label the picker last selected. Field
+    // names mirror adminSheetView_auditLog_ / adminSheetViewBuild_'s return
+    // sites; the rows cover all four row tones plus the neutral default.
+    getAdminSheetView: function (viewKey) {
+      var url = 'https://docs.google.com/spreadsheets/d/FIXTURE/edit#gid=0';
+      var row = function (n, tone, cells) {
+        return { cells: cells, tone: tone, rowUrl: url + '&range=A' + n };
+      };
+      if (viewKey === 'kb') {
+        return {
+          ok: true, viewKey: 'kb', label: 'Knowledge Base \u00b7 KB', storeUrl: url,
+          columns: [
+            { key: 'title', label: 'Title' }, { key: 'dept', label: 'Department' },
+            { key: 'type', label: 'Type' }, { key: 'updated', label: 'Updated' },
+            { key: 'reviewed', label: 'Reviewed' }],
+          rows: [
+            row(14, '', { title: 'Shipping escalation path', dept: 'Shipping', type: 'article', updated: daysAgo(3), reviewed: daysAgo(3) }),
+            row(13, 'warn', { title: 'PAP resupply eligibility', dept: 'Resupply', type: 'article', updated: daysAgo(140), reviewed: '' }),
+            row(12, '', { title: 'Payor acceptance legend', dept: 'Billing', type: 'embed', updated: daysAgo(9), reviewed: daysAgo(9) })],
+          truncated: false,
+          legend: [{ tone: 'warn', label: 'review due (90d+)' }],
+        };
+      }
+      if (viewKey === 'trainingAssign' || viewKey === 'trainingComplete') {
+        var isAssign = viewKey === 'trainingAssign';
+        return {
+          ok: true, viewKey: viewKey, storeUrl: url,
+          label: isAssign ? 'Training \u00b7 Assignments' : 'Training \u00b7 Completions',
+          columns: isAssign
+            ? [{ key: 'item', label: 'Item' }, { key: 'target', label: 'Assigned to' },
+               { key: 'assignedAt', label: 'Assigned' }, { key: 'due', label: 'Due' },
+               { key: 'revoked', label: 'Revoked' }]
+            : [{ key: 'item', label: 'Item' }, { key: 'emp', label: 'Employee' },
+               { key: 'completedAt', label: 'Completed' }, { key: 'via', label: 'Via' }],
+          rows: isAssign
+            ? [row(8, '', { item: 'kb:kb-1', target: '*', assignedAt: daysAgo(6), due: daysAgo(-8), revoked: '' }),
+               row(7, 'muted', { item: 'kb:kb-2', target: 'E-1088', assignedAt: daysAgo(30), due: daysAgo(-1), revoked: daysAgo(4) })]
+            : [row(5, '', { item: 'kb:kb-1', emp: 'Avery Blake', completedAt: daysAgo(2), via: 'read' }),
+               row(4, '', { item: 'quiz:q-1', emp: 'Sam Ortiz', completedAt: daysAgo(5), via: 'quiz' })],
+          truncated: false,
+          legend: isAssign ? [{ tone: 'muted', label: 'revoked' }] : [],
+        };
+      }
+      return {
+        ok: true, viewKey: 'auditLog', label: 'AuditLog \u00b7 ADP', storeUrl: url,
+        mgrTzAbbr: 'CST',
+        columns: [
+          { key: 'ts', label: 'Time' }, { key: 'action', label: 'Action' },
+          { key: 'rep', label: 'Employee' }, { key: 'actor', label: 'Actor' },
+          { key: 'notes', label: 'Detail' }],
+        rows: [
+          row(982, 'danger', { ts: daysAgo(0) + ' 04:12:00', action: 'PunchDelete', rep: 'Sam Ortiz',
+            actor: 'robin@umsupply.com', notes: 'duplicate collapsed (sheet doctor)' }),
+          row(981, 'warn', { ts: daysAgo(0) + ' 03:58:41', action: 'PersonalSheetSyncFail', rep: 'Leo Kim',
+            actor: 'system', notes: 'ClockIn: personal Sheet unreachable' }),
+          row(980, 'info', { ts: daysAgo(0) + ' 02:00:07', action: 'CallNotesArchive', rep: '', actor: 'system',
+            actorEmail: '', notes: 'rowsArchived=412; reps=7' }),
+          row(979, '', { ts: daysAgo(1) + ' 17:44:19', action: 'TimeOffStatusChange', rep: 'Avery Blake',
+            actor: 'robin@umsupply.com', notes: 'Pending -> Approved; annual -1.0' }),
+          row(978, '', { ts: daysAgo(1) + ' 16:02:40', action: 'CallNoteTrainingReply', rep: 'Sam Ortiz',
+            actor: 'robin@umsupply.com', notes: 'noteId=note-9' })],
+        truncated: true,
+        legend: [
+          { tone: 'danger', label: 'destructive' },
+          { tone: 'warn', label: 'degradation' },
+          { tone: 'info', label: 'automation' }],
+      };
+    },
     getRetentionConfig: {
       archiveDays: { value: 0, source: 'default' },
       retentionDays: { value: 0, source: 'default' },
