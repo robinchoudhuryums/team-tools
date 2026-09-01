@@ -15074,6 +15074,59 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
     'openDayEditModal still takes the prefill date');
 });
 
+
+test('FO-A2: an inline grid-template-columns must be COMPUTED, never a static override', () => {
+  // The A2 tripwire scans stylesheets, so it could not see the manager
+  // analytics pair's inline `grid-template-columns:1fr 1fr` — which beats every
+  // stylesheet rule INCLUDING the shell's own media queries, and pushed the
+  // page 44px sideways at 390px. A static inline grid is a breakpoint nothing
+  // can reach.
+  //
+  // EXEMPT BY RULE: a COMPUTED value (a dynamic column count), which CSS cannot
+  // express — the coverage heatmap's hour columns and the training matrix's
+  // per-rep columns, both of which sit in their own `overflow-x` scroller.
+  // EXEMPT BY REASONED ALLOWLIST (the A2_INVERSE_OK precedent), one entry:
+  const FO_A2_OK = {
+    // Admin → queue inventory. Column 1 is `1fr` on a cell that carries
+    // `min-width:0; overflow-wrap:anywhere`, so it genuinely shrinks, and
+    // column 2 is `auto` holding a short count. Exempt on CONSTRUCTION rather
+    // than measurement: the block renders only with the opt-in queue scan
+    // (`scanQueues`, default OFF), so no visual scenario reaches it.
+    'cn/script_callnotes.html': ['1fr auto'],
+  };
+  const offenders = [];
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', rel), 'utf8')
+      .replace(/<!--[\s\S]*?-->/g, '')                       // INV-188
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const re = /style\s*=\s*(["'])(?:(?!\1)[\s\S]){0,400}?grid-template-columns:\s*([^;"']*)/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const value = (m[2] || '').trim();
+      // A computed value interpolates — either a template `${…}` or a string
+      // concatenation, in which case the capture stops AT the quote and the
+      // characters right after it are the concatenation.
+      const tail = src.slice(m.index + m[0].length, m.index + m[0].length + 12);
+      if (/\$\{/.test(value) || /^["']\s*\+/.test(tail)) continue;
+      if ((FO_A2_OK[rel] || []).indexOf(value) >= 0) continue;
+      offenders.push(rel + ' → ' + value.slice(0, 60));
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'static inline grid-template-columns (use a class with a real breakpoint): ' + offenders.join(' | '));
+
+  // And the pair that caused it now carries a class with a real breakpoint.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/class="metric-grid mgr-analytics"/.test(mgr),
+    'the analytics pair uses the class, not an inline override');
+  assert.ok(/@media \(max-width: 700px\) \{ \.mgr-analytics \{ grid-template-columns: 1fr; \} \}/.test(mgr),
+    '.mgr-analytics stacks at a real viewport breakpoint');
+  // The status line must WRAP: three coloured spans have a hard min-content
+  // width that no column count can satisfy on a phone.
+  assert.ok(/\.mgr-to-parts \{[^}]*flex-wrap: wrap/.test(mgr), '.mgr-to-parts wraps');
+  assert.ok(/class="mgr-to-parts"/.test(mgr), 'and the markup uses it');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

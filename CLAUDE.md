@@ -9156,12 +9156,22 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    and — the gap that bit on 2026-08-11 — **every ADMIN sub-tab at a mobile
    width**: the Admin scenarios are wide-only, so `.toolbar-tabs` (a SHARED
    component, also the CN search field tabs) kept a 25px page overflow at
-   390px until it was measured by hand. **The same shape is open on MANAGE
-   TIME (measured 2026-09-01 while shooting the Day Edit modal): the tab is
-   covered only at WIDE, and at 390px it overflows the page by 44px — the
-   team-punches `.m-table` is the widest element. Pre-existing, unrelated to
-   the modal (it measures the same with the modal closed), and a viewport gap
-   the DERIVED marker cannot see, because the tab itself is covered.**
+   390px until it was measured by hand. **The same shape WAS open on MANAGE
+   TIME and is now closed (measured 2026-09-01 while shooting the Day Edit
+   modal): the tab is covered only at WIDE, and at 390px it overflowed the page
+   by 44px. Worth keeping for the misdiagnosis: the first measurement blamed
+   the team-punches `.m-table`, because `getBoundingClientRect().right` on a
+   table INSIDE an `overflow-x` scroller reports the table's full layout width
+   and looks like an overflow. It was not — the wrap was scrolling correctly.
+   The real cause was an INLINE `grid-template-columns:1fr 1fr` on the manager
+   analytics pair, which beats every stylesheet rule including the shell's own
+   media queries, plus a non-wrapping flex status line. **To find a real
+   overflower, walk the elements whose right edge exceeds the viewport and SKIP
+   any with an `overflow-x` ancestor** — a widest-rect scan cannot tell the two
+   apart. An inline grid declaration is also invisible to the A2 tripwire,
+   which scans stylesheets; the manager pair was the only STATIC one (the
+   coverage heatmap and the training matrix compute their column counts, which
+   CSS cannot express, and both sit in scrollers).**
    Every scenario also logs the pre-existing Google-Fonts
    `ERR_CONNECTION_RESET` console line (no network in the sandbox) — ignore it.
 4. Re-shoot after ANY change to `styles*.html`, `styles_design_tokens.html`, or
