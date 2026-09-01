@@ -479,6 +479,7 @@ function renderClockView(area) {
             // already time-sorted (getTodayPunches_), and a done state means the
             // trailing recognized punch IS a ClockOut, so the last one is it.
             lastClockOut: (s.punches || []).filter(p => p.type === 'ClockOut').pop() || null,
+            pendingAdjustments: s.pendingAdjustments || [],
           })}
         </div>
       </div>
@@ -1748,6 +1749,11 @@ function clkPendingAdjustHtml_(s) {
   var list = (s && Array.isArray(s.pendingAdjustments)) ? s.pendingAdjustments : [];
   if (!list.length) return '';
   var items = list.map(function (a) {
+    // B3: a resume converts the clock-out rather than adding a punch, so
+    // rendering it as "Clock Out 19:30" would name the wrong thing entirely.
+    if (a.action === 'resume') {
+      return '<span class="aj-item">' + esc('Resume shift · back at ' + (a.time || '')) + '</span>';
+    }
     var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
     return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + '</span>';
   }).join('<span aria-hidden="true">·</span>');
@@ -2111,9 +2117,25 @@ function renderActions(actions, opts) {
     // something the rep can recognise as wrong, and names the way out.
     const out = opts && opts.lastClockOut;
     const at = (out && out.time) ? ` \u00b7 clocked out at ${dispTime(out.time)}` : '';
+    // B3: the way BACK. A rep whose day is closed and who is working again —
+    // asked to stay late, called back, or clocked out by mistake — had no path
+    // at all except asking a manager to edit the sheet. "Resume shift" files a
+    // request through the SAME approval queue as every other adjustment (the
+    // operator's rule: no employee self-adjust without approval). It renders
+    // only when there IS a clock-out to resume from, because that is what the
+    // approval converts.
+    // Hide it while one is already pending — the chip above the buttons is
+    // already saying so, and the server would refuse the duplicate anyway.
+    const resumePending = !!(opts && Array.isArray(opts.pendingAdjustments) &&
+      opts.pendingAdjustments.some(a => a && a.action === 'resume'));
+    const resumeBtn = (out && out.time && !resumePending)
+      ? `<button class="sec" data-action="ResumeShift" data-clockout="${esc(String(out.time))}">`
+        + `${icon('undo', 18)}Resume shift</button>`
+      : '';
     return `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today${at}</div>`
-      + `<div class="shift-done-hint">Didn't clock out? Use Adjust to add a missing punch, or ask your manager.</div>`
-      + `<div class="actions"><button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button></div>`;
+      + `<div class="shift-done-hint">Didn't clock out? Use Adjust to add a missing punch. Back at work? Ask to resume.</div>`
+      + `<div class="actions">${resumeBtn}`
+      + `<button class="sec" data-action="Adjust" data-adj-type="ClockIn">${icon('adjust', 18)}Adjust</button></div>`;
   }
   // Pick the primary CTA by state (#5a): ClockIn (start) → LunchIn (back from
   // lunch) → LunchOut (the frequent mid-shift action, gold) → ClockOut (end) →
@@ -2181,11 +2203,57 @@ function clkPunchMorphHtml_(morph) {
     + '</span>';
 }
 
+/** B3 — ask to reopen a day the rep has already clocked out of.
+ *
+ *  The confirm STATES the consequence rather than just asking. Approval does
+ *  not delete the clock-out: it turns it into a break and ends that break at
+ *  the resume time, so the hours the rep was away are unpaid. That is the
+ *  honest model for the case the operator described (finished, went home, came
+ *  back), and it is the difference between a correct timesheet and one that
+ *  quietly pays for the gap — so the rep sees it before they file, not after.
+ *  It rides the ORDINARY approval queue (the operator's rule: no employee
+ *  self-adjust without approval), so nothing changes until a manager says so. */
+function requestResumeShift_(clockOutTime) {
+  const tz = empTz();
+  const date = isoDateTz(tz);
+  const now = timeHmTz(tz);
+  // The clock-out comes from the BUTTON, which renderActions built from the
+  // same punch it named on screen — so the confirm can never quote a different
+  // stamp than the one the rep is reading.
+  const outHm = String(clockOutTime || '').substring(0, 5);
+  if (!outHm) { showToast('No clock-out found for today to resume from', 'toast-warn'); return; }
+  if (!(now > outHm)) { showToast('Your clock-out is not in the past yet — try again in a minute', 'toast-warn'); return; }
+  uiConfirm({
+    title: 'Resume your shift?',
+    message: 'This asks your manager to reopen today. If they approve, your ' +
+      dispTime(outHm + ':00') + ' clock-out becomes a break that ends now (' +
+      dispTime(now + ':00') + '), so the time you were away is unpaid. Nothing ' +
+      'changes on your timesheet until they approve it.',
+    confirmLabel: 'Send request',
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Request failed', 'toast-error'); return; }
+        showToast('Resume request sent to your manager', 'toast-success');
+        clkRefreshState_();          // surface the pending chip without a reload
+      })
+      .withFailureHandler(function (err) { showToast((err && err.message) || 'Request failed', 'toast-error'); })
+      .submitPunchAdjustRequests([{ date: date, time: now, punchType: 'ClockOut',
+        action: 'resume', reason: 'Resuming shift after clocking out' }]);
+  });
+}
+
 function bindClockBtns() {
   document.querySelectorAll('.actions .prime, .actions .sec').forEach(btn => {
     btn.addEventListener('click', () => {
       const a = btn.dataset.action;
-      if (a === 'Adjust') { openAdjustModal(); return; }
+      // B1: the done state's Adjust knows which punch is missing — that state
+      // is DERIVED from a trailing ClockOut, so the punch a rep is there to add
+      // is a ClockIn. Landing them on the right row is the difference between
+      // "use Adjust" and a dropdown they have to reason about.
+      if (a === 'Adjust') { openAdjustModal(null, btn.dataset.adjType || null); return; }
+      if (a === 'ResumeShift') { requestResumeShift_(btn.dataset.clockout || ''); return; }
       handlePunch(a);
     });
   });
@@ -2425,7 +2493,7 @@ function adjLoadPending_() {
   }).withFailureHandler(function () {}).getMyPunchAdjustRequests();
 }
 
-function openAdjustModal(prefillDate) {
+function openAdjustModal(prefillDate, prefillType) {
   const tz = empTz();
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
   const now = new Date();
@@ -2447,6 +2515,21 @@ function openAdjustModal(prefillDate) {
   if (prefillDate && /^\d{4}-\d{2}-\d{2}$/.test(String(prefillDate)) &&
       prefillDate >= minIso && prefillDate <= todayIso) {
     document.getElementById('adj-date').value = prefillDate;
+  }
+  // B1 (2026-09-01): optional punch-type prefill, validated against the
+  // select's OWN options rather than a second hardcoded list — the server
+  // re-validates against PUNCH_LABELS_ regardless (INV-106), so this only
+  // decides which row the rep lands on. An unknown value silently keeps the
+  // default, exactly like the date prefill above.
+  // Reset first: every other field in this modal is cleared on open, and a
+  // <select> that KEEPS its last value would silently carry a prefill from a
+  // previous open into an unrelated one.
+  const typeSel = document.getElementById('adj-type');
+  if (typeSel) {
+    typeSel.selectedIndex = 0;
+    if (prefillType && [...typeSel.options].some(o => o.value === prefillType)) {
+      typeSel.value = prefillType;
+    }
   }
   document.getElementById('adj-time').value = timeHmTz(tz);
   document.getElementById('adj-reason').value = '';

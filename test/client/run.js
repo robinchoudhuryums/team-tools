@@ -10244,7 +10244,10 @@ test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit c
   // ── openAdjustModal prefill is bounds-guarded: only a well-formed date
   // inside the picker's own [min, today] range pre-selects; anything else
   // keeps today (existing argless callers are unchanged by construction).
-  const oam = clk.match(/function openAdjustModal\(prefillDate\) \{[\s\S]*?\n\}/);
+  // B1 (2026-09-01) added a second optional arg (prefillType), so the
+  // signature match no longer pins the arity — the date-bounds property below
+  // is what this assertion is for.
+  const oam = clk.match(/function openAdjustModal\(prefillDate(?:, prefillType)?\) \{[\s\S]*?\n\}/);
   assert.ok(oam, 'openAdjustModal takes the optional prefill');
   assert.ok(/prefillDate >= minIso && prefillDate <= todayIso/.test(oam[0]),
     'the prefill honors the [min, today] picker bounds');
@@ -14371,12 +14374,16 @@ test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is 
   // past the lock release (M-7: a MailApp send inside the one project lock
   // stalls every rep's punch). The mail-in-lock tripwire covers the general
   // rule; this pins the specific wiring.
-  const upd = nc(codeSrc.slice(codeSrc.indexOf('function updatePunchAdjustStatus'),
-                               codeSrc.indexOf('function notifyEmployeeOfAdjustDecision_')));
+  // Slice the function's OWN body. Slicing "up to the next named function"
+  // silently widened the moment a MailApp-using helper was inserted between
+  // them (B2, 2026-09-01) and the M-7 assertion below failed on correct code.
+  const upd = nc(extractRawFunction('Code.js', 'updatePunchAdjustStatus'));
   assert.ok(/let notifyAfter = null;/.test(upd), 'the closure slot exists');
-  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'\)/.test(upd),
+  // B3 (2026-09-01) added a trailing `action` arg so a resume decision reads as
+  // a resume rather than a punch write; the arity is not the property here.
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'/.test(upd),
     'approve notifies');
-  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetForAudit, date, punchType, reqTime, reason, 'Denied'\)/.test(upd),
+  assert.ok(/notifyEmployeeOfAdjustDecision_\(targetForAudit, date, punchType, reqTime, reason, 'Denied'/.test(upd),
     'DENY notifies too — a silent denial is indistinguishable from an approval that has not propagated');
   assert.ok(!/MailApp/.test(upd), 'no MailApp inside the locked body (M-7)');
   const relIdx = upd.indexOf('lock.releaseLock()');

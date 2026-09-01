@@ -377,10 +377,19 @@ function loadPendingAdjustments_() {
 
 function renderAdjustQueueCard_(requests) {
   const rows = requests.map(function (r) {
+    // B3: a RESUME is a different decision from a missed punch — it converts
+    // the rep's clock-out into a break, so the hours they were away become
+    // unpaid. Saying "ClockOut 19:30" would describe the punch it consumes, not
+    // what approving does. State the effect.
+    const isResume = r.action === 'resume';
+    const detail = isResume
+      ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
+        ' (clock-out becomes a break — the gap is unpaid)'
+      : r.punchType + ' · ' + r.date + ' · ' + r.time;
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">' +
       '<div style="flex:1">' +
         '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
-          ' <span style="color:var(--muted);font-weight:400">— ' + esc(r.punchType) + ' · ' + esc(r.date) + ' · ' + esc(r.time) + '</span></div>' +
+          ' <span style="color:var(--muted);font-weight:400">— ' + esc(detail) + '</span></div>' +
         (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(r.reason) + '</div>' : '') +
       '</div>' +
       '<button class="pending-btn pb-approve" data-req-id="' + esc(r.reqId) + '" data-act="Approved" onclick="adjDecide_(this)">' + icon('check', 14) + 'Approve</button>' +
