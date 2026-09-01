@@ -170,6 +170,19 @@ const SCENARIOS = [
   // editors live, incl. the 2026-08-25 Reference data-table upload — had no
   // coverage at all. One post-hook closes it (the sched-modal precedent).
   ['admin-config-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('config')"],
+
+  // A4 (2026-09-01): the Day Edit modal, rebuilt from four fixed slots to an
+  // N-row break list. It had never been shot at all, which is how a modal that
+  // silently collapsed a two-break day stayed invisible for as long as it did.
+  // The fixture day carries TWO breaks, so the list, its numbering and the
+  // remove controls are on camera; compact covers the pop-out width, where a
+  // 3-column row (leave / return / remove) is the geometry most at risk.
+  ['dayedit-light-wide',    { tool: 'manage', tab: 'manage' }, WIDE,    'light', '',
+    "openDayEditModal('E-1077', 'Nina Patel')"],
+  ['dayedit-dark-wide',     { tool: 'manage', tab: 'manage' }, WIDE,    'dark',  '',
+    "openDayEditModal('E-1077', 'Nina Patel')"],
+  ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
+    "openDayEditModal('E-1077', 'Nina Patel')"],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;

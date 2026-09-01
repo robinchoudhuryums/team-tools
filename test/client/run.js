@@ -5507,6 +5507,7 @@ console.log('\ncycle 13 — A1 / A2 / A3 / A11 / A12 fix pins');
 test('A3: timeToMins_ returns null (never NaN) for an unparseable time', () => {
   const b = buildSandbox([]);
   vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), b, { filename: 'Code.js#timeToMins_' });
+  vm.runInContext(extractRawFunction('Code.js', 'breakSortKey_'), b, { filename: 'Code.js#breakSortKey_' });
   vm.runInContext(extractRawFunction('Code.js', 'breakPairs_'), b, { filename: 'Code.js#breakPairs_' });
   vm.runInContext(extractRawFunction('Code.js', 'calcHours_'), b, { filename: 'Code.js#calcHours_' });
   const t = b.timeToMins_, c = b.calcHours_;
@@ -14140,6 +14141,7 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     vm.runInContext(m[0], tcCtx);
   });
   vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), tcCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'breakSortKey_'), tcCtx);
   vm.runInContext(extractRawFunction('Code.js', 'breakPairs_'), tcCtx);
   vm.runInContext(extractRawFunction('Code.js', 'punchDayAdd_'), tcCtx);
   vm.runInContext(extractRawFunction('Code.js', 'punchFirst_'), tcCtx);
@@ -14616,7 +14618,7 @@ test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained'
 
 test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairing rule', () => {
   const ctx = vm.createContext({});
-  ['timeToMins_', 'breakPairs_', 'calcHours_'].forEach((fn) =>
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'calcHours_'].forEach((fn) =>
     vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
   const ch = ctx.calcHours_, bp = ctx.breakPairs_;
   const close = (a, b, why) => assert.ok(Math.abs(a - b) < 1e-9, why + ' (got ' + a + ', want ' + b + ')');
@@ -14659,6 +14661,11 @@ test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairin
   // calcHours_ must not re-implement the pairing.
   const src = extractRawFunction('Code.js', 'calcHours_');
   assert.ok(/breakPairs_\(/.test(src), 'calcHours_ delegates to breakPairs_');
+  // The shift-timeline ordering is ONE function, because the Day Edit reconcile
+  // pairs SHEET ROWS with the same rule — two orderings would pair a manager's
+  // edit against the wrong existing row.
+  assert.ok(/breakSortKey_\(/.test(extractRawFunction('Code.js', 'breakPairs_')),
+    'breakPairs_ orders through the shared breakSortKey_');
   assert.ok(!/\+= 1440/.test(src.replace(/outMins \+= 1440;/, '')),
     'the break wrap lives in breakPairs_ only, not duplicated in calcHours_');
 });
@@ -14762,6 +14769,309 @@ test('A5: reportMultiBreakDays is read-only, gated, and reproduces the old value
     'old hours = the same calcHours_ fed the last stamp of each type');
   assert.strictEqual((stripped.match(/calcHours_\(/g) || []).length, 2,
     'exactly two calcHours_ calls — the new value and the old one');
+});
+
+
+/* ── A4: Day Edit rebuilt for N break pairs ──────────────────────────────
+ * Until this round the modal carried four fixed slots, so opening and saving
+ * a day that legitimately held two breaks COLLAPSED it to one — the last path
+ * in the app that destroyed legal break data (INV-155's named gap).
+ */
+
+test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, refuses nonsense', () => {
+  const ctx = vm.createContext({ MANAGER_DAY_MAX_BREAKS: 12 });
+  vm.runInContext(extractRawFunction('Code.js', 'managerParseBreakSlots_'), ctx,
+    { filename: 'Code.js#managerParseBreakSlots_' });
+  const parse = ctx.managerParseBreakSlots_;
+  const ok = (slots) => {
+    const r = parse(slots);
+    assert.ok(!r.error, 'expected no error, got: ' + r.error);
+    return r.breaks.map((b) => b.out + '-' + b.in).join('|');
+  };
+  const err = (slots) => {
+    const r = parse(slots);
+    assert.ok(r.error, 'expected an error');
+    return r.error;
+  };
+
+  // The new shape, and the operator's own two-break day.
+  assert.strictEqual(ok({ breaks: [{ out: '12:00', in: '12:30' }, { out: '17:00', in: '19:00' }] }),
+    '12:00-12:30|17:00-19:00', 'two pairs survive as two pairs');
+  assert.strictEqual(ok({ breaks: [] }), '', 'an EMPTY list is valid — it means "no breaks", and deletes them');
+  assert.strictEqual(ok({}), '', 'no breaks key and no legacy scalars is also no breaks');
+  assert.strictEqual(ok({ breaks: [{ out: '', in: '' }, { out: '12:00', in: '12:30' }] }), '12:00-12:30',
+    'a wholly blank row is an untouched form row, not an error');
+
+  // Legacy fallback — an older client, and managerSaveDayRange, still work.
+  assert.strictEqual(ok({ LunchOut: '12:00', LunchIn: '12:30' }), '12:00-12:30',
+    'the legacy scalar pair still parses');
+  assert.strictEqual(ok({ breaks: [{ out: '13:00', in: '13:20' }], LunchOut: '12:00', LunchIn: '12:30' }),
+    '13:00-13:20', 'the LIST wins when both shapes are present');
+
+  // Half a pair is the shape four fixed slots could produce and N rows must not:
+  // an unpaired stamp deducts nothing (INV-176) and silently pays the break.
+  assert.match(err({ breaks: [{ out: '12:00', in: '' }] }), /BOTH a leave and a return/);
+  assert.match(err({ breaks: [{ out: '', in: '12:30' }] }), /BOTH a leave and a return/);
+  assert.match(err({ breaks: [{ out: '12:00', in: '11:00' }] }), /at or before it leaves/);
+  assert.match(err({ breaks: [{ out: '12:00', in: '12:00' }] }), /at or before it leaves/);
+  assert.match(err({ breaks: [{ out: '25:00', in: '26:00' }] }), /Invalid time/);
+  assert.match(err({ breaks: [{ out: '12:00', in: '13:00' }, { out: '12:30', in: '13:30' }] }), /overlap/);
+  // Overlap detection must be ORDER-INDEPENDENT — a manager types rows in any order.
+  assert.match(err({ breaks: [{ out: '12:30', in: '13:30' }, { out: '12:00', in: '13:00' }] }), /overlap/);
+
+  // Inside the shift, when a shift is given.
+  assert.match(err({ ClockIn: '09:00', ClockOut: '17:00', breaks: [{ out: '08:00', in: '08:30' }] }),
+    /outside the shift/);
+  assert.match(err({ ClockIn: '09:00', ClockOut: '17:00', breaks: [{ out: '16:30', in: '17:30' }] }),
+    /outside the shift/);
+  assert.strictEqual(ok({ ClockIn: '09:00', ClockOut: '17:00', breaks: [{ out: '09:00', in: '17:00' }] }),
+    '09:00-17:00', 'the boundaries themselves are inside');
+  // OVERNIGHT carve-out: on a wrapping shift a plain string compare would
+  // reject every legitimate break, so the containment check is skipped.
+  assert.strictEqual(ok({ ClockIn: '22:00', ClockOut: '06:00', breaks: [{ out: '01:00', in: '01:30' }] }),
+    '01:00-01:30', 'an overnight shift does not reject its own breaks');
+  assert.strictEqual(ok({ ClockOut: '17:00', breaks: [{ out: '08:00', in: '08:30' }] }), '08:00-08:30',
+    'with no ClockIn there is no span to be outside of');
+
+  // The cap is stated, not silently truncated (INV-169 direction).
+  const many = []; for (let i = 0; i < 13; i++) many.push({ out: '01:00', in: '01:05' });
+  assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
+});
+
+test('A4-2: the day reconcile treats the submitted break list AS the day', () => {
+  const ctx = vm.createContext({});
+  ['timeToMins_', 'breakSortKey_', 'managerPlanDay_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const plan = (rows, slots, breaks) => {
+    const p = ctx.managerPlanDay_(rows, slots, breaks);
+    return {
+      add: p.additions.map((a) => a.type + '@' + a.time).sort().join('|'),
+      del: p.deletions.map((d) => d.type + '@' + d.oldTime).sort().join('|'),
+      upd: p.updates.map((u) => u.type + ':' + u.oldTime + '>' + u.time).sort().join('|'),
+    };
+  };
+  const day = (lo, li, extra) => Object.assign({
+    ClockIn:  [{ rowIndex: 2, time: '08:00:00' }],
+    ClockOut: [{ rowIndex: 9, time: '17:00:00' }],
+    LunchOut: lo, LunchIn: li,
+  }, extra || {});
+
+  // Nothing changed → nothing written. The HH:mm-vs-HH:mm:ss compare matters:
+  // live punches carry real seconds and the modal can only express HH:mm.
+  const noop = plan(day([{ rowIndex: 3, time: '12:00:37' }], [{ rowIndex: 4, time: '12:30:11' }]),
+    { ClockIn: '08:00', ClockOut: '17:00' }, [{ out: '12:00', in: '12:30' }]);
+  assert.strictEqual(noop.add + noop.del + noop.upd, '', 'an untouched day writes nothing');
+
+  // THE REGRESSION THIS EXISTS FOR: a two-break day opened and saved unchanged
+  // must keep BOTH pairs. The old four-slot modal deleted the second one.
+  const twoBreak = day(
+    [{ rowIndex: 3, time: '12:00:00' }, { rowIndex: 5, time: '17:00:00' }],
+    [{ rowIndex: 4, time: '12:30:00' }, { rowIndex: 6, time: '19:00:00' }]);
+  const kept = plan(twoBreak, { ClockIn: '08:00', ClockOut: '17:00' },
+    [{ out: '12:00', in: '12:30' }, { out: '17:00', in: '19:00' }]);
+  assert.strictEqual(kept.add + kept.del + kept.upd, '', 'both pairs survive a no-op save');
+
+  // Adding a pair appends only the two new rows.
+  assert.deepStrictEqual(
+    plan(day([{ rowIndex: 3, time: '12:00:00' }], [{ rowIndex: 4, time: '12:30:00' }]),
+      { ClockIn: '08:00', ClockOut: '17:00' },
+      [{ out: '12:00', in: '12:30' }, { out: '15:00', in: '15:15' }]),
+    { add: 'LunchIn@15:15|LunchOut@15:00', del: '', upd: '' });
+
+  // Removing one deletes exactly that pair's rows…
+  assert.deepStrictEqual(
+    plan(twoBreak, { ClockIn: '08:00', ClockOut: '17:00' }, [{ out: '12:00', in: '12:30' }]),
+    { add: '', del: 'LunchIn@19:00:00|LunchOut@17:00:00', upd: '' });
+  // …and submitting NONE deletes them all. That is the contract's whole point:
+  // the list is the day, so an emptied list is a deletion, not "leave as-is".
+  assert.deepStrictEqual(
+    plan(twoBreak, { ClockIn: '08:00', ClockOut: '17:00' }, []),
+    { add: '', del: 'LunchIn@12:30:00|LunchIn@19:00:00|LunchOut@12:00:00|LunchOut@17:00:00', upd: '' });
+
+  // An edit lands on the row it was DISPLAYED against — the reason the pairing
+  // uses breakSortKey_ rather than sheet order. These rows are stored in a
+  // scrambled append order (a same-day back-fill lands late, INV-004-adjacent).
+  const scrambled = day(
+    [{ rowIndex: 8, time: '17:00:00' }, { rowIndex: 3, time: '12:00:00' }],
+    [{ rowIndex: 4, time: '12:30:00' }, { rowIndex: 9, time: '19:00:00' }]);
+  assert.deepStrictEqual(
+    plan(scrambled, { ClockIn: '08:00', ClockOut: '17:00' },
+      [{ out: '12:00', in: '12:45' }, { out: '17:00', in: '19:00' }]),
+    { add: '', del: '', upd: 'LunchIn:12:30:00>12:45' },
+    'the FIRST break edits the chronologically-first row, not the first appended one');
+
+  // Overnight ordering: a 00:30 stamp belongs after 23:00 on a 22:00 shift.
+  const night = {
+    ClockIn: [{ rowIndex: 2, time: '22:00:00' }], ClockOut: [{ rowIndex: 9, time: '06:00:00' }],
+    LunchOut: [{ rowIndex: 3, time: '00:30:00' }, { rowIndex: 4, time: '23:00:00' }],
+    LunchIn:  [{ rowIndex: 5, time: '23:20:00' }, { rowIndex: 6, time: '00:50:00' }],
+  };
+  assert.deepStrictEqual(
+    plan(night, { ClockIn: '22:00', ClockOut: '06:00' },
+      [{ out: '23:00', in: '23:20' }, { out: '00:30', in: '00:50' }]),
+    { add: '', del: '', upd: '' }, 'the overnight pairs match on the shift timeline');
+
+  // An unpaired leftover half is removed rather than left dangling behind the
+  // submitted list — the sheet doctor surfaces it, the reconcile cleans it.
+  const stray = day([{ rowIndex: 3, time: '12:00:00' }, { rowIndex: 5, time: '17:00:00' }],
+    [{ rowIndex: 4, time: '12:30:00' }]);
+  assert.deepStrictEqual(
+    plan(stray, { ClockIn: '08:00', ClockOut: '17:00' }, [{ out: '12:00', in: '12:30' }]),
+    { add: '', del: 'LunchOut@17:00:00', upd: '' });
+
+  // CLOCK semantics are untouched (S7): a blank slot still deletes that punch,
+  // and duplicates still collapse to the row the modal displayed (the last).
+  assert.deepStrictEqual(
+    plan(day([], []), { ClockIn: '08:00', ClockOut: '' }, []),
+    { add: '', del: 'ClockOut@17:00:00', upd: '' }, 'a blank clock slot still deletes');
+  assert.deepStrictEqual(
+    plan({ ClockIn: [{ rowIndex: 2, time: '08:00:00' }, { rowIndex: 7, time: '08:05:00' }],
+           ClockOut: [], LunchOut: [], LunchIn: [] },
+      { ClockIn: '08:05', ClockOut: '' }, []),
+    { add: '', del: 'ClockIn@08:00:00', upd: '' }, 'duplicate clock rows collapse to the last');
+
+  // managerSaveDay must not re-implement any of it.
+  const save = extractRawFunction('Code.js', 'managerSaveDay');
+  assert.ok(/managerPlanDay_\(rowsByType, cleanSlots, cleanBreaks\)/.test(save),
+    'managerSaveDay plans through the shared decision');
+  assert.ok(/managerParseBreakSlots_\(/.test(save), 'and validates through the shared parser');
+  // Apply ORDER is load-bearing: row-index updates first, deletes DESCENDING
+  // (a lower delete shifts every index below it), appends last.
+  const apply = save.slice(save.indexOf('const plan = managerPlanDay_'));
+  assert.ok(apply.indexOf('updates.forEach') < apply.indexOf('deletions.forEach') &&
+            apply.indexOf('deletions.forEach') < apply.indexOf('additions.forEach'),
+    'updates → deletes → appends');
+  assert.ok(apply.indexOf('deletions.sort((a, b) => b.rowIndex - a.rowIndex)') > 0 &&
+            apply.indexOf('deletions.sort(') < apply.indexOf('deletions.forEach'),
+    'deletions run bottom-up — a lower delete shifts every index below it');
+});
+
+test('A4-3: range mode REFUSES a multi-break payload rather than guessing', () => {
+  const src = extractRawFunction('Code.js', 'managerSaveDayRange');
+  const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  // Operator decision: adding N pairs per day is not idempotent across a
+  // re-apply, and REPLACING them contradicts range mode's additive contract
+  // (INV-108, where a blank slot is left unchanged). So it refuses, by name.
+  assert.ok(/Array\.isArray\(slots\.breaks\)/.test(stripped),
+    'range mode inspects the submitted break list');
+  assert.ok(/length > 1[\s\S]{0,400}success: false/.test(stripped),
+    'more than one pair is refused');
+  assert.ok(/Range apply supports one break pair/.test(stripped),
+    'the refusal NAMES the limit rather than silently dropping pairs');
+  // A single pair still works, mapped down to the legacy scalars the additive
+  // writer already understands.
+  assert.ok(/LunchOut/.test(stripped) && /LunchIn/.test(stripped),
+    'one pair maps to the legacy scalars');
+  // And it must NOT reach for the full-day reconcile, which would make a blank
+  // slot destructive across every day in the range.
+  assert.ok(!/managerPlanDay_|managerSaveDay\(/.test(stripped),
+    'range mode stays additive — it never calls the full-day reconcile');
+});
+
+test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const modals = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+
+  // The four fixed slots are GONE from the markup and from every client read —
+  // leaving one behind means a silent half-migration where the modal shows a
+  // pair the submit never sends.
+  ['de-lunchout', 'de-lunchin'].forEach((id) => {
+    assert.ok(modals.indexOf(id) < 0, 'modals.html no longer declares #' + id);
+    assert.ok(mgr.indexOf(id) < 0, 'script_manager.html no longer reads #' + id);
+  });
+  assert.ok(/id="de-breaks"/.test(modals) && /id="de-break-add"/.test(modals),
+    'the modal declares the break list host and its add control');
+  assert.ok(/<button type="button"[^>]*id="de-break-add"/.test(modals),
+    'add is a real <button> (INV-173)');
+  assert.ok(/id="de-breaks"[^>]*aria-live/.test(modals),
+    'the list announces itself when rows are added or removed');
+
+  const fn = (name) => {
+    const i = mgr.indexOf('function ' + name + '(');
+    assert.ok(i >= 0, name + ' exists');
+    return mgr.slice(i, mgr.indexOf('\nfunction ', i + 10));
+  };
+  // Ordering assertions must require BOTH needles to be PRESENT: a missing one
+  // gives indexOf === -1, and -1 < anything is true, so a deletion passes an
+  // `a < b` check silently. Caught by bite-check, not by review.
+  const before = (hay, a, b, msg) => {
+    const ia = hay.indexOf(a), ib = hay.indexOf(b);
+    assert.ok(ia >= 0, msg + ' — missing: ' + a);
+    assert.ok(ib >= 0, msg + ' — missing: ' + b);
+    assert.ok(ia < ib, msg);
+  };
+  const render = fn('deRenderBreaks_');
+  // Every row is named + escaped + removable (INV-173/195, and the server
+  // strings reach innerHTML).
+  assert.ok(/<label for="de-brk-out-/.test(render) && /<label for="de-brk-in-/.test(render),
+    'each input is associated with a real label');
+  assert.strictEqual((render.match(/esc\(list\[i\]\./g) || []).length, 2,
+    'both stored times are escaped before innerHTML');
+  assert.ok(/<button type="button" class="de-break-rm"[\s\S]*?aria-label="Remove break/.test(render),
+    'remove is a real, named <button>');
+  assert.ok(/de-breaks-empty/.test(render), 'an empty list says so rather than rendering nothing');
+
+  // Prefill prefers the A4 array and FALLS BACK to the scalars, so a payload
+  // cached before the deploy (or an older server) still fills its one pair.
+  const setFrom = fn('deSetBreaksFromDay_');
+  assert.ok(/Array\.isArray\(day\.breaks\)/.test(setFrom), 'prefers the breaks array');
+  assert.ok(/day\.lunchOut/.test(setFrom) && /day\.lunchIn/.test(setFrom),
+    'falls back to the legacy scalars');
+  before(setFrom, 'Array.isArray(day.breaks)', 'day.lunchOut',
+    'the array is checked FIRST — the fallback must not win over real data');
+
+  // Add/remove SNAPSHOT first. Re-rendering without reading the DOM back would
+  // wipe every other row's in-progress input (the cnRenderSubforms_ lesson).
+  const addBlock = mgr.slice(mgr.indexOf("getElementById('de-break-add').addEventListener"));
+  // NOTE the body contains `pairs.push({ out: '', in: '' });`, so slice on the
+  // NEWLINE-anchored terminator — a bare '});' truncates mid-handler and the
+  // ordering assertion below silently passes on half a function.
+  const addBody = addBlock.slice(0, addBlock.indexOf('\n});') + 4);
+  before(addBody, 'deReadBreaks_()', 'deRenderBreaks_(',
+    'add reads the typed values before re-rendering');
+  const rmBlock = mgr.slice(mgr.indexOf("getElementById('de-breaks').addEventListener('click'"));
+  const rmBody = rmBlock.slice(0, rmBlock.indexOf('\n});') + 4);
+  before(rmBody, 'deReadBreaks_()', 'deRenderBreaks_(',
+    'remove reads the typed values before re-rendering');
+  assert.ok(/closest/.test(rmBody), 'remove is delegated on the host so it survives a re-render');
+
+  // The submit sends the LIST, and no longer the two dead scalars.
+  const saveBlock = mgr.slice(mgr.indexOf("getElementById('de-save').addEventListener"));
+  assert.ok(/breaks:\s*deReadBreaks_\(\)/.test(saveBlock.slice(0, 1200)),
+    'slots carries the break list');
+  assert.ok(!/LunchOut:|LunchIn:/.test(saveBlock.slice(0, 1200)),
+    'the legacy scalars are gone from the submit');
+
+  // Range mode caps the list at one pair, client-side as a courtesy — the
+  // server refuses by name regardless (A4-3).
+  const sync = fn('deSyncRangeMode_');
+  assert.ok(/addBtn\.disabled = rangeMode/.test(sync), 'the add control is disabled in range mode');
+  assert.ok(/note\.hidden = !rangeMode/.test(sync), 'and the reason is stated');
+  assert.ok(/count > 1/.test(sync), 'an already-multi list in range mode is called out');
+  assert.ok(/getElementById\('de-date-to'\)\.addEventListener\('change', deSyncRangeMode_\)/.test(mgr),
+    'filling or clearing "To" re-syncs the control');
+
+  // The client cap MIRRORS the server constant (a drift degrades to a server
+  // rejection, but the two should not disagree).
+  const cap = (extractRawFunction('Code.js', 'managerParseBreakSlots_'), 
+    fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+      .match(/const MANAGER_DAY_MAX_BREAKS = (\d+);/));
+  assert.ok(cap, 'the server declares the cap');
+  assert.ok(new RegExp('var DE_MAX_BREAKS = ' + cap[1] + ';').test(mgr),
+    'the client cap mirrors MANAGER_DAY_MAX_BREAKS = ' + cap[1]);
+
+  // Every class the render emits is DEFINED (INV-184 in reverse — the
+  // .tr-section-h class shipped undefined and rendered as body text).
+  ['de-breaks-head', 'de-break-add', 'de-break-row', 'de-break-rm',
+   'de-breaks-empty', 'de-breaks-note'].forEach((cls) =>
+    assert.ok(new RegExp('\\.' + cls + '[\\s.,:{]').test(styles), '.' + cls + ' is defined in styles.html'));
+
+  // The team-calendar pencil still prefills (the optional 3rd arg survived).
+  assert.ok(/openDayEditModal\(btn\.getAttribute\('data-tcal-edit'\)[\s\S]{0,120}TEAMCAL\.selDate\)/.test(mgr),
+    'the team-calendar pencil still passes its date through');
+  assert.ok(/function openDayEditModal\(empId, empName, prefillDate\)/.test(mgr),
+    'openDayEditModal still takes the prefill date');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

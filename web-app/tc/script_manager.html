@@ -1237,7 +1237,7 @@ function tcalDayTableHtml_(data) {
       { key: 'out', label: 'Clock Out', cell: function (r) {
           if (r.noPunches) return '';
           var extra = r.punchCount > (['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length)
-            ? ' <span style="font-size:10px;color:var(--muted)" title="This day has extra punch rows beyond the four shown — a second break, or duplicates. The Hours figure already counts every break pair. Day Edit still shows only one pair and would COLLAPSE the rest on save, so do not open it here until the N-pair rebuild lands.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
+            ? ' <span style="font-size:10px;color:var(--muted)" title="This day has punch rows beyond the four columns shown — a second break, or duplicates. The Hours figure already counts every break pair, and Day Edit now lists every pair, so opening it here is safe.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
           return tCell(r.clockOut, r.adjClockOut) + extra;
         } },
       { key: 'hours', label: 'Hours', numeric: true, cell: function (r) {
@@ -1268,6 +1268,110 @@ function tcalDayTableHtml_(data) {
 
   return '<div class="tcal-day-title">' + esc(title) + (hol ? ' · ' + esc(hol) + ' (US holiday)' : '') + '</div>' +
     table + offHtml + editNote;
+}
+
+/* ─── DAY EDIT · BREAK PAIRS (A4) ─────────────────────────────────────
+ * The modal used to carry four fixed slots, so the ONLY way to save a day
+ * that legitimately carried two breaks was to collapse it to one pair —
+ * silently deleting recorded unpaid time (INV-155's named gap, closed here).
+ * The list is now N rows. Everything below reads and writes it; the server
+ * (`managerParseBreakSlots_`) stays authoritative on validation.
+ */
+
+/** Client-side convenience cap. MIRROR of MANAGER_DAY_MAX_BREAKS in Code.js —
+ *  the server refuses past it with a named error either way, so a drift
+ *  degrades to a server rejection rather than a bad write. Pinned equal. */
+var DE_MAX_BREAKS = 12;
+
+/** Read the break rows currently in the DOM as [{out, in}] (HH:MM strings).
+ *  Order is DOM order — the server re-sorts onto the shift timeline, so a
+ *  manager entering pairs out of order still saves correctly. */
+function deReadBreaks_() {
+  var host = document.getElementById('de-breaks');
+  if (!host) return [];
+  var out = [];
+  var rows = host.querySelectorAll('[data-de-break]');
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      out: (rows[i].querySelector('.de-brk-out') || {}).value || '',
+      in:  (rows[i].querySelector('.de-brk-in')  || {}).value || '',
+    });
+  }
+  return out;
+}
+
+/** Render the break list. Each row carries labelled inputs (INV-195) and a
+ *  real remove <button> (INV-173); ids are re-minted per render so they stay
+ *  unique after an add/remove. */
+function deRenderBreaks_(pairs) {
+  var host = document.getElementById('de-breaks');
+  if (!host) return;
+  var list = pairs || [];
+  if (!list.length) {
+    host.innerHTML = '<div class="de-breaks-empty">No breaks recorded for this day.</div>';
+  } else {
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var n = i + 1;
+      html += '<div class="de-break-row" data-de-break>' +
+        '<div class="field"><label for="de-brk-out-' + i + '">Break ' + n + ' · leave</label>' +
+        '<input type="time" id="de-brk-out-' + i + '" class="de-brk-out" value="' + esc(list[i].out || '') + '"></div>' +
+        '<div class="field"><label for="de-brk-in-' + i + '">Break ' + n + ' · return</label>' +
+        '<input type="time" id="de-brk-in-' + i + '" class="de-brk-in" value="' + esc(list[i].in || '') + '"></div>' +
+        '<button type="button" class="de-break-rm" data-de-break-rm="' + i + '" ' +
+        'aria-label="Remove break ' + n + '" title="Remove break ' + n + '">' + icon('trash', 15) + '</button>' +
+      '</div>';
+    }
+    host.innerHTML = html;
+  }
+  deSyncRangeMode_();
+}
+
+/** Set the list from the server's day shape. Prefers the A4 `breaks` array;
+ *  falls back to the legacy lunchOut/lunchIn scalars so an older server (or a
+ *  cached payload predating the deploy) still prefills its single pair. */
+function deSetBreaksFromDay_(day) {
+  var pairs = [];
+  if (day && Array.isArray(day.breaks)) {
+    for (var i = 0; i < day.breaks.length; i++) {
+      pairs.push({
+        out: (day.breaks[i].out || '').substring(0, 5),
+        in:  (day.breaks[i].in  || '').substring(0, 5),
+      });
+    }
+  } else if (day && (day.lunchOut || day.lunchIn)) {
+    pairs.push({
+      out: (day.lunchOut || '').substring(0, 5),
+      in:  (day.lunchIn  || '').substring(0, 5),
+    });
+  }
+  deRenderBreaks_(pairs);
+}
+
+/** Range mode accepts ONE break pair (operator decision — adding is not
+ *  idempotent and replacing contradicts INV-108's additive contract), so with
+ *  a "To" date filled the add control is disabled and the reason is stated.
+ *  The server refuses a multi-pair range payload by name regardless. */
+function deSyncRangeMode_() {
+  var toEl = document.getElementById('de-date-to');
+  var addBtn = document.getElementById('de-break-add');
+  var note = document.getElementById('de-breaks-note');
+  var rangeMode = !!(toEl && toEl.value);
+  var count = deReadBreaks_().length;
+  if (addBtn) {
+    addBtn.disabled = rangeMode || count >= DE_MAX_BREAKS;
+    addBtn.title = rangeMode
+      ? 'Range mode applies one break pair per day'
+      : (count >= DE_MAX_BREAKS ? 'Maximum ' + DE_MAX_BREAKS + ' breaks' : '');
+  }
+  if (note) {
+    var over = rangeMode && count > 1;
+    note.hidden = !rangeMode;
+    note.textContent = over
+      ? 'Range mode applies one break pair per day — remove the extra pair(s) or clear “To”.'
+      : 'Range mode applies one break pair per day.';
+    note.className = over ? 'de-breaks-note is-warn' : 'de-breaks-note';
+  }
 }
 
 function openDayEditModal(empId, empName, prefillDate) {
@@ -1312,8 +1416,6 @@ function openDayEditModal(empId, empName, prefillDate) {
     deDateEl.value = prefillDate;
   }
   document.getElementById('de-clockin').value = '';
-  document.getElementById('de-lunchout').value = '';
-  document.getElementById('de-lunchin').value = '';
   document.getElementById('de-clockout').value = '';
   document.getElementById('de-reason').value = '';
   // #4b — multi-day "To" picker; cleared on open. F(cycle-8 M-2): min is the
@@ -1322,6 +1424,12 @@ function openDayEditModal(empId, empName, prefillDate) {
   // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
   if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(_deDate); deToEl.max = today; }
+  // A4: render the (empty) break list AFTER the To reset — deRenderBreaks_
+  // re-syncs range mode off the live To value, so clearing it afterwards would
+  // leave the add control disabled from the PREVIOUS session. The prefill
+  // usually re-syncs a moment later, but not when the day has no row or the
+  // read fails, which is exactly when a manager is adding punches by hand.
+  deRenderBreaks_([]);
   document.getElementById('day-edit-overlay').classList.add('open');
   loadDayEditPunches(empId, _deDate, _deDate);
 }
@@ -1338,13 +1446,40 @@ function loadDayEditPunches(empId, start, end) {
       var day = (data.days || []).find(function (d) { return d.date === _deDate; });
       if (!day) return;
       document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : '';
-      document.getElementById('de-lunchout').value = day.lunchOut ? day.lunchOut.substring(0, 5) : '';
-      document.getElementById('de-lunchin').value  = day.lunchIn  ? day.lunchIn.substring(0, 5) : '';
       document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : '';
+      deSetBreaksFromDay_(day);
     })
     .withFailureHandler(function () {})
     .getEmployeeTimesheetForManager(empId, start, end);
 }
+
+/* A4 break-list controls. Add/remove SNAPSHOT the typed values first and
+ * re-render from the snapshot (the cnRenderSubforms_ pattern) — re-rendering
+ * without it would wipe every other row's in-progress input. Remove is
+ * delegated on the host so it survives each re-render. */
+document.getElementById('de-break-add').addEventListener('click', function () {
+  if (this.disabled) return;
+  var pairs = deReadBreaks_();
+  if (pairs.length >= DE_MAX_BREAKS) return;
+  pairs.push({ out: '', in: '' });
+  deRenderBreaks_(pairs);
+  var last = document.querySelectorAll('#de-breaks .de-brk-out');
+  if (last.length) last[last.length - 1].focus();
+});
+document.getElementById('de-breaks').addEventListener('click', function (e) {
+  var btn = e.target.closest ? e.target.closest('[data-de-break-rm]') : null;
+  if (!btn) return;
+  var idx = parseInt(btn.getAttribute('data-de-break-rm'), 10);
+  var pairs = deReadBreaks_();
+  if (!(idx >= 0) || idx >= pairs.length) return;
+  pairs.splice(idx, 1);
+  deRenderBreaks_(pairs);
+});
+// Filling/clearing "To" flips range mode, which caps the list at one pair.
+document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode_);
+// Typing into a break field can change nothing structural, but the row COUNT
+// is what gates the add button and the range note, so keep them in step.
+document.getElementById('de-breaks').addEventListener('input', deSyncRangeMode_);
 
 document.getElementById('de-cancel').addEventListener('click', function () {
   document.getElementById('day-edit-overlay').classList.remove('open');
@@ -1381,19 +1516,19 @@ document.getElementById('de-date').addEventListener('change', function () {
   var deToEl = document.getElementById('de-date-to');
   if (deToEl) { deToEl.min = deNextDay_(d); if (deToEl.value && deToEl.value <= d) deToEl.value = ''; }
   document.getElementById('de-clockin').value = '';
-  document.getElementById('de-lunchout').value = '';
-  document.getElementById('de-lunchin').value = '';
   document.getElementById('de-clockout').value = '';
+  deRenderBreaks_([]);
   loadDayEditPunches(_deEmpId, d, d);
 });
 
 document.getElementById('de-save').addEventListener('click', function () {
   if (!_deEmpId || !_deDate) return;
+  // A4: the break LIST is the day. A blank clock slot still deletes that punch
+  // (unchanged S7 semantics); an empty breaks array deletes every break row.
   var slots = {
     ClockIn:  document.getElementById('de-clockin').value || '',
-    LunchOut: document.getElementById('de-lunchout').value || '',
-    LunchIn:  document.getElementById('de-lunchin').value || '',
     ClockOut: document.getElementById('de-clockout').value || '',
+    breaks:   deReadBreaks_(),
   };
   var reason = document.getElementById('de-reason').value.trim();
   var toDate = (document.getElementById('de-date-to') || {}).value || '';

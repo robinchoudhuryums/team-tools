@@ -1037,6 +1037,9 @@ const TZ_ABBR = {
 };
 
 const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut'];
+/** Day Edit break-row cap (A4). Not a policy limit — a payload bound, so a
+ *  crafted slots.breaks cannot make the reconcile loop unbounded. */
+const MANAGER_DAY_MAX_BREAKS = 12;
 
 
 // ── WEB APP ENTRY ───────────────────────────────────────────────────────────
@@ -3197,11 +3200,152 @@ function getEmployeeTimesheetForManager(targetEmpId, startDate, endDate) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Parse and validate the Day Edit break list (A4, operator 2026-09-01).
+ *
+ *  Accepts the NEW `slots.breaks` array `[{out, in}]` and falls back to the
+ *  legacy `{LunchOut, LunchIn}` scalars when it is absent, so an older client —
+ *  and managerSaveDayRange, which deliberately stays single-pair — keeps
+ *  working unchanged.
+ *
+ *  A pair must be COMPLETE (both stamps) and well-ordered, pairs must not
+ *  OVERLAP, and each must fall inside the clock span when one is given. None of
+ *  that could happen with four fixed slots; with N rows a manager can now type
+ *  a break that starts before it ends, two that overlap, or one outside the
+ *  shift — and calcHours_ would faithfully deduct the nonsense, quietly
+ *  shortening a paid day. Refusing is the INV-187 direction: a stated error
+ *  beats a plausible number.
+ *
+ *  Returns { breaks } or { error }. */
+function managerParseBreakSlots_(slots) {
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  let raw = (slots && Array.isArray(slots.breaks)) ? slots.breaks : null;
+  if (!raw) {
+    // Legacy single-pair shape. A lone half is still a half — it round-trips
+    // as an unpaired stamp exactly as it did before N pairs existed.
+    const lo = String((slots && slots.LunchOut) || '').trim();
+    const li = String((slots && slots.LunchIn) || '').trim();
+    raw = (lo || li) ? [{ out: lo, in: li }] : [];
+  }
+  if (raw.length > MANAGER_DAY_MAX_BREAKS)
+    return { error: `Too many breaks (${raw.length}); at most ${MANAGER_DAY_MAX_BREAKS} per day.` };
+
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const o = String((raw[i] && raw[i].out) || '').trim();
+    const n = String((raw[i] && raw[i].in) || '').trim();
+    const label = 'Break ' + (i + 1);
+    if (!o && !n) continue;                                  // a wholly blank row is "no break"
+    if (!o || !n)
+      return { error: `${label} needs BOTH a leave and a return time (got ${o || '(blank)'} / ${n || '(blank)'}).` };
+    if (!HHMM.test(o) || !HHMM.test(n))
+      return { error: `Invalid time for ${label} (expected HH:mm, 24-hour).` };
+    if (n <= o)
+      return { error: `${label} returns at or before it leaves (${o} → ${n}).` };
+    out.push({ out: o, in: n });
+  }
+  // Overlap check on the SUBMITTED order-independent set: sort a copy by leave
+  // time and require each to start at or after the previous one ended.
+  const sorted = out.slice().sort((a, b) => a.out.localeCompare(b.out));
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].out < sorted[i - 1].in)
+      return { error: `Breaks overlap (${sorted[i - 1].out}–${sorted[i - 1].in} and ${sorted[i].out}–${sorted[i].in}).` };
+  }
+  // Inside the shift, when the shift is given. Skipped for an overnight span
+  // (ClockOut <= ClockIn) — the clock pair wraps midnight there and a plain
+  // string compare would reject every legitimate break on such a day.
+  const ci = String((slots && slots.ClockIn) || '').trim();
+  const co = String((slots && slots.ClockOut) || '').trim();
+  if (ci && co && co > ci) {
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].out < ci || out[i].in > co)
+        return { error: `Break ${i + 1} (${out[i].out}–${out[i].in}) falls outside the shift ${ci}–${co}.` };
+    }
+  }
+  return { breaks: out };
+}
+
+/** Plan one day's punch reconcile — the DECISION half of managerSaveDay,
+ *  extracted so it can be driven directly (A4). Every pairing bug this feature
+ *  has had lived in the decision rather than in the sheet writes, and the
+ *  writes need a whole spreadsheet to exercise.
+ *
+ *  `rowsByType` is the day's existing rows grouped by punch type, each
+ *  `{rowIndex, time}` in append order. `cleanSlots` carries the validated
+ *  HH:mm clock stamps; `cleanBreaks` is the validated `[{out, in}]` list, which
+ *  IS the day's break list (zero submitted removes every break row).
+ *
+ *  Returns `{updates, deletions, additions}` — pure, no sheet access.
+ */
+function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
+  const updates = [], deletions = [], additions = [];
+
+  // ── CLOCK punches: one slot each, semantics unchanged from S7 ──
+  ['ClockIn', 'ClockOut'].forEach(type => {
+    const newTime = cleanSlots[type];
+    const list = rowsByType[type] || [];
+    if (!newTime) {
+      list.forEach(r => deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: false }));
+      return;
+    }
+    if (!list.length) { additions.push({ type, time: newTime }); return; }
+    // Duplicates collapse to the row the modal displayed (the last).
+    list.slice(0, -1).forEach(r =>
+      deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: true }));
+    const cur = list[list.length - 1];
+    // No-op compare on HH:mm, NOT HH:mm:ss (cycle-9 M-1): live punches store
+    // real seconds while the modal can only express HH:mm, so an equal HH:mm
+    // IS unchanged — a full-string compare rewrote every untouched punch.
+    if (cur.time.substring(0, 5) !== newTime)
+      updates.push({ rowIndex: cur.rowIndex, type, oldTime: cur.time, time: newTime });
+  });
+
+  // ── BREAKS: the submitted list IS the day (A4) ──
+  // Existing break rows are paired positionally using the SAME shift-timeline
+  // ordering breakPairs_ applies (breakSortKey_), so a manager's edit lands on
+  // the row it was displayed against. Extra rows beyond the submitted list are
+  // deleted; missing ones are added; a pair whose HH:mm is unchanged is a
+  // genuine no-op and writes nothing.
+  const anchorMins = timeToMins_((cleanSlots.ClockIn || '') + ':00');
+  const orderRows = (type) => (rowsByType[type] || []).slice()
+    .map(r => ({ ...r, key: breakSortKey_(r.time, anchorMins) }))
+    .filter(r => r.key !== null)
+    .sort((a, b) => a.key - b.key);
+  const curOuts = orderRows('LunchOut'), curIns = orderRows('LunchIn');
+  const curPairCount = Math.min(curOuts.length, curIns.length);
+  // Unpaired leftovers are damage the doctor surfaces; the reconcile removes
+  // them rather than leaving a stray half behind the submitted list.
+  curOuts.slice(curPairCount).forEach(r =>
+    deletions.push({ rowIndex: r.rowIndex, type: 'LunchOut', oldTime: r.time, dup: true }));
+  curIns.slice(curPairCount).forEach(r =>
+    deletions.push({ rowIndex: r.rowIndex, type: 'LunchIn', oldTime: r.time, dup: true }));
+
+  const n = Math.max(curPairCount, cleanBreaks.length);
+  for (let i = 0; i < n; i++) {
+    const want = cleanBreaks[i];
+    const haveOut = i < curPairCount ? curOuts[i] : null;
+    const haveIn  = i < curPairCount ? curIns[i]  : null;
+    if (!want) {
+      if (haveOut) deletions.push({ rowIndex: haveOut.rowIndex, type: 'LunchOut', oldTime: haveOut.time, dup: false });
+      if (haveIn)  deletions.push({ rowIndex: haveIn.rowIndex,  type: 'LunchIn',  oldTime: haveIn.time,  dup: false });
+      continue;
+    }
+    [['LunchOut', want.out, haveOut], ['LunchIn', want.in, haveIn]].forEach(([type, time, have]) => {
+      if (!have) { additions.push({ type, time }); return; }
+      if (have.time.substring(0, 5) !== time)
+        updates.push({ rowIndex: have.rowIndex, type, oldTime: have.time, time });
+    });
+  }
+  return { updates, deletions, additions };
+}
+
 /**
- * Manager commits a "desired state" for one employee's day. The slots object
- * has at most four keys (ClockIn / LunchOut / LunchIn / ClockOut) each with
- * an HH:mm string or empty string. The server diffs against current state
- * and applies add/edit/delete per slot, writing one audit row per change.
+ * Manager commits a "desired state" for one employee's day. `slots` carries
+ * the two clock stamps (ClockIn / ClockOut, HH:mm or empty) plus `breaks`:
+ * an array of `{out, in}` pairs that IS the day's break list — zero submitted
+ * removes every break row, N submitted leaves exactly N pairs. The legacy
+ * `{LunchOut, LunchIn}` scalars are still accepted (an older client, and
+ * managerSaveDayRange, which stays deliberately single-pair). The server diffs
+ * against current state and applies add/edit/delete, one audit row per change.
  */
 function managerSaveDay(targetEmpId, date, slots, reason) {
   const lock = LockService.getScriptLock();
@@ -3225,15 +3369,24 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
         `Cannot edit dates more than ${CONFIG.ADJUST_WINDOW_DAYS} days back.` };
     }
 
-    // Validate slot time formats
+    // Validate slot time formats. A4 (operator 2026-09-01): the CLOCK punches
+    // are still one slot each, but breaks arrive as a LIST — the modal can now
+    // express N pairs, because calcHours_ deducts all of them (INV-176) and
+    // collapsing the extras here was the last path that destroyed legal data.
     const cleanSlots = {};
-    for (let k = 0; k < PUNCH_LABELS_.length; k++) {
-      const type = PUNCH_LABELS_[k];
+    ['ClockIn', 'ClockOut'].forEach((type) => {
       const raw = String((slots && slots[type]) || '').trim();
       if (raw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
-        return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm, 24-hour)` };
-      cleanSlots[type] = raw;
+        cleanSlots[type] = { bad: raw };
+      else cleanSlots[type] = raw;
+    });
+    for (const t of ['ClockIn', 'ClockOut']) {
+      if (cleanSlots[t] && cleanSlots[t].bad !== undefined)
+        return { success: false, error: `Invalid time for ${t}: "${cleanSlots[t].bad}" (expected HH:mm, 24-hour)` };
     }
+    const parsedBreaks = managerParseBreakSlots_(slots);
+    if (parsedBreaks.error) return { success: false, error: parsedBreaks.error };
+    const cleanBreaks = parsedBreaks.breaks;   // [{out, in}] in submitted order
 
     // Cycle-9 L-4 — same-day future times: recordPunch and the employee
     // adjust queue both reject them (INV-05 / cycle-7 L-2) but the manager
@@ -3245,10 +3398,14 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     // blocks even a no-op re-save of its slot — deliberate; blank or fix it.
     if (daysBack === 0) {
       const nowTime = fmtTimeTz_(new Date(), empTz);
-      for (let k = 0; k < PUNCH_LABELS_.length; k++) {
-        const t = cleanSlots[PUNCH_LABELS_[k]];
+      const futureChecks = [['ClockIn', cleanSlots.ClockIn], ['ClockOut', cleanSlots.ClockOut]];
+      cleanBreaks.forEach((b, i) => {
+        futureChecks.push(['Break ' + (i + 1) + ' out', b.out], ['Break ' + (i + 1) + ' return', b.in]);
+      });
+      for (let k = 0; k < futureChecks.length; k++) {
+        const t = futureChecks[k][1];
         if (t && t > nowTime)
-          return { success: false, error: `Cannot set a future time today (${PUNCH_LABELS_[k]} ${t}).` };
+          return { success: false, error: `Cannot set a future time today (${futureChecks[k][0]} ${t}).` };
       }
     }
 
@@ -3285,29 +3442,33 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
         time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
       });
     }
-    const currentByType = {};  // last row wins — what the modal displayed
-    PUNCH_LABELS_.forEach(type => {
-      const list = rowsByType[type];
-      if (list && list.length) currentByType[type] = list[list.length - 1];
-    });
-
     const changes = [];
 
-    // Pass 1: deletions (sort descending so row shifts don't break later indices)
-    const deletions = [];
-    PUNCH_LABELS_.forEach(type => {
-      const newTime = cleanSlots[type];
-      const list = rowsByType[type] || [];
-      if (!list.length) return;
-      if (!newTime) {
-        // Blank slot → the whole type goes (every row, not just the last).
-        list.forEach(r => deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: false }));
-      } else if (list.length > 1) {
-        // Kept slot with duplicates → collapse to the displayed (last) row.
-        list.slice(0, -1).forEach(r =>
-          deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: true }));
+    // A4: PLAN first, then apply UPDATES (by row index) → DELETES (descending)
+    // → ADDS. The old order deleted first and re-located each update through
+    // findExistingPunch_, which only works while a type has ONE surviving row —
+    // no longer true now that a day can carry N break pairs. Planning first
+    // also means a delete can never shift a row an update still needs.
+    const plan = managerPlanDay_(rowsByType, cleanSlots, cleanBreaks);
+    const updates = plan.updates, deletions = plan.deletions, additions = plan.additions;
+
+    // Apply: updates by row index first (nothing has shifted yet).
+    updates.forEach(u => {
+      const timeFull = u.time + ':00';
+      sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(timeFull);
+      sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(`ADJ-${u.type}`);
+      if (targetEmp.sheetId) {
+        try {
+          const dir = ['ClockIn', 'LunchIn'].indexOf(u.type) >= 0 ? 'IN' : 'OUT';
+          writeToEmployeeSheet_(targetEmp, date, timeFull, dir, u.type);
+        } catch (e) {}
       }
+      writeAuditLog_(targetEmp, 'PunchEdit', date, timeFull, true, daysBack,
+        `${u.type}: ${u.oldTime} → ${timeFull} (manager edit)${noteSuffix}`, callerEmp.email);
+      changes.push({ type: u.type, action: 'update' });
     });
+
+    // Then deletions, descending, so earlier removals don't shift later indices.
     deletions.sort((a, b) => b.rowIndex - a.rowIndex);
     deletions.forEach(d => {
       sheet.deleteRow(d.rowIndex);
@@ -3317,51 +3478,17 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       changes.push({ type: d.type, action: d.dup ? 'collapse-dup' : 'delete' });
     });
 
-    // Pass 2: updates (use findExistingPunch_ since indices may have shifted)
-    PUNCH_LABELS_.forEach(type => {
-      const newTime = cleanSlots[type];
-      const cur = currentByType[type];
-      if (!cur || !newTime) return;
-      const newTimeFull = newTime + ':00';
-      // No-op compare on HH:mm, NOT the full HH:mm:ss (cycle-9 M-1): live
-      // punches store REAL seconds (recordPunch → fmtTimeTz_ 'HH:mm:ss') while
-      // the Day Edit client prefills <input type=time> with HH:mm and submits
-      // every slot. A full-string compare made every untouched live punch
-      // read as "changed" — truncating its seconds to :00, overwriting
-      // COMMENTS to ADJ-{type}, and writing a spurious PunchEdit audit row on
-      // EVERY Day Edit save (S7 violation). The UI can only express HH:mm, so
-      // an equal HH:mm IS unchanged.
-      if (cur.time.substring(0, 5) === newTime) return;  // no-op
-      const existing = findExistingPunch_(targetEmp.id, date, type);
-      if (!existing) return;
-      const oldTime = cur.time;
-      existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(newTimeFull);
-      existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(`ADJ-${type}`);
+    // Then additions (appends — unaffected by either).
+    additions.forEach(a => {
+      const timeFull = a.time + ':00';
+      const dir = ['ClockIn', 'LunchIn'].indexOf(a.type) >= 0 ? 'IN' : 'OUT';
+      appendToAdpSheet_(targetEmp, date, timeFull, dir, `ADJ-${a.type}`);
       if (targetEmp.sheetId) {
-        try {
-          const dir = ['ClockIn','LunchIn'].indexOf(type) >= 0 ? 'IN' : 'OUT';
-          writeToEmployeeSheet_(targetEmp, date, newTimeFull, dir, type);
-        } catch (e) {}
+        try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, a.type); } catch (e) {}
       }
-      writeAuditLog_(targetEmp, 'PunchEdit', date, newTimeFull, true, daysBack,
-        `${type}: ${oldTime} → ${newTimeFull} (manager edit)${noteSuffix}`, callerEmp.email);
-      changes.push({ type, action: 'update' });
-    });
-
-    // Pass 3: additions
-    PUNCH_LABELS_.forEach(type => {
-      const newTime = cleanSlots[type];
-      const cur = currentByType[type];
-      if (cur || !newTime) return;
-      const newTimeFull = newTime + ':00';
-      const dir = ['ClockIn','LunchIn'].indexOf(type) >= 0 ? 'IN' : 'OUT';
-      appendToAdpSheet_(targetEmp, date, newTimeFull, dir, `ADJ-${type}`);
-      if (targetEmp.sheetId) {
-        try { writeToEmployeeSheet_(targetEmp, date, newTimeFull, dir, type); } catch (e) {}
-      }
-      writeAuditLog_(targetEmp, 'PunchAdd', date, newTimeFull, true, daysBack,
-        `${type} at ${newTimeFull} (manager add)${noteSuffix}`, callerEmp.email);
-      changes.push({ type, action: 'add' });
+      writeAuditLog_(targetEmp, 'PunchAdd', date, timeFull, true, daysBack,
+        `${a.type} at ${timeFull} (manager add)${noteSuffix}`, callerEmp.email);
+      changes.push({ type: a.type, action: 'add' });
     });
 
     return {
@@ -15748,10 +15875,12 @@ function convertAuditTs_(tsStr, fromTz, toTz) {
 
 // M-1 (cycle 10): returns the LAST matching row, not the first. When duplicate
 // same-(emp, date, type) rows exist (pre-guard stale-window double punches,
-// direct sheet edits), managerSaveDay's snapshot (`currentByType`) keeps the
-// last row it sees — so the update path MUST target that same row or the
-// manager edits a row different from the one displayed. Single-row days
-// (the normal case) are unaffected.
+// direct sheet edits), the last row is the one a manager was shown — so an
+// update MUST target it or they edit a row different from the one displayed.
+// Single-row days (the normal case) are unaffected. A4 note: managerSaveDay no
+// longer routes through here (it plans against row INDICES, because a day can
+// now carry N break pairs and this returns one row per TYPE); the remaining
+// caller is the adjust-queue writer, which is single-punch by construction.
 function findExistingPunch_(empId, date, punchType) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -16284,11 +16413,36 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
     const targetEmp = lookupEmployeeById_(targetEmpId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
 
+    // A4 (operator decision, 2026-09-01): range mode REFUSES a multi-break
+    // payload rather than guessing what "additive" means for a list. Adding the
+    // pairs to each day is not idempotent — re-running the same range doubles
+    // them — and replacing that day's breaks contradicts this endpoint's whole
+    // contract, which the modal's own hint states: a blank slot is left
+    // UNCHANGED, not removed. Neither reading is safe to pick on the operator's
+    // behalf for a write that touches up to 31 days of payroll at once, so the
+    // combination is rejected by name and multi-break days are edited singly.
+    if (slots && Array.isArray(slots.breaks) && slots.breaks.filter(
+          b => String((b && b.out) || '').trim() || String((b && b.in) || '').trim()).length > 1) {
+      return { success: false, error:
+        'Range apply supports one break pair. Applying several across a range is ambiguous — ' +
+        'adding them would double on a re-run, and replacing a day\'s breaks would contradict ' +
+        'range mode leaving blank slots unchanged. Edit multi-break days one date at a time.' };
+    }
+    // A single submitted pair maps onto the legacy scalars so everything below
+    // — validation, the additive per-day write — is untouched.
+    const rangeSlots = Object.assign({}, slots);
+    if (slots && Array.isArray(slots.breaks)) {
+      const one = slots.breaks.filter(
+        b => String((b && b.out) || '').trim() || String((b && b.in) || '').trim())[0] || {};
+      rangeSlots.LunchOut = String(one.out || '').trim();
+      rangeSlots.LunchIn  = String(one.in  || '').trim();
+    }
+
     const cleanSlots = {};
     let anyTime = false;
     for (let k = 0; k < PUNCH_LABELS_.length; k++) {
       const type = PUNCH_LABELS_[k];
-      const raw = String((slots && slots[type]) || '').trim();
+      const raw = String((rangeSlots && rangeSlots[type]) || '').trim();
       if (raw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
         return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm, 24-hour)` };
       cleanSlots[type] = raw;
@@ -16529,6 +16683,17 @@ function punchFirst_(v) {
   return v || null;
 }
 
+/** The ordering key a break stamp takes on the SHIFT's timeline: a time at or
+ *  before the clock-in belongs to the next calendar day, the same wrap the
+ *  clock pair uses. Extracted so breakPairs_ (which pairs TIMES) and the Day
+ *  Edit reconcile (which pairs SHEET ROWS) sort identically — two orderings
+ *  would silently pair a manager's edit against the wrong existing row. */
+function breakSortKey_(time, anchorMins) {
+  const m = timeToMins_(time);
+  if (m === null) return null;
+  return (typeof anchorMins === 'number' && anchorMins !== null && m <= anchorMins) ? m + 1440 : m;
+}
+
 /** THE break-pairing rule — one implementation, shared by calcHours_ (which
  *  sums the pairs) and by the display builders (which render them), so the
  *  arithmetic and the UI can never disagree about which stamps form a pair.
@@ -16569,13 +16734,8 @@ function punchDayAdd_(pm, type, time) {
 
 function breakPairs_(lunchOut, lunchIn, clockInMins) {
   const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
-  const norm = (v) => {
-    const m = timeToMins_(v);
-    if (m === null) return null;
-    return (anchor !== null && m <= anchor) ? m + 1440 : m;
-  };
   const list = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
-    .map((t) => ({ raw: t, mins: norm(t) }))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
     .filter((x) => x.mins !== null)
     .sort((a, b) => a.mins - b.mins);
   const outs = list(lunchOut), ins = list(lunchIn);

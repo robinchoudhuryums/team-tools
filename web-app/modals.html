@@ -79,9 +79,10 @@
     <div class="modal-sub" id="day-edit-subtitle">—</div>
     <div class="modal-hint">
       Set each punch's time in 24-hour format. Leave a field blank to remove that punch.
+      A day may carry more than one break — every pair is deducted from the hours.
       Edits more than <span id="de-reason-days">7</span> days back require a reason. Fill <b>To</b>
       to apply the times across a date range — range mode is additive: a blank punch is left
-      unchanged (not removed).
+      unchanged (not removed), and it accepts <b>one</b> break pair only.
     </div>
     <div class="field-row">
       <div class="field"><label for="de-date">Date</label><input type="date" id="de-date"></div>
@@ -89,11 +90,17 @@
     </div>
     <div class="field-row">
       <div class="field"><label for="de-clockin">Clock In</label><input type="time" id="de-clockin"></div>
-      <div class="field"><label for="de-lunchout">Lunch Out</label><input type="time" id="de-lunchout"></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label for="de-lunchin">Lunch Return</label><input type="time" id="de-lunchin"></div>
       <div class="field"><label for="de-clockout">Clock Out</label><input type="time" id="de-clockout"></div>
+    </div>
+    <!-- A4: N break pairs. Rows are built by deRenderBreaks_(); each carries its
+         own labelled leave/return inputs and a remove button (INV-173/195). -->
+    <div class="de-breaks-head">
+      <h2 class="card-label">Breaks</h2>
+      <button type="button" class="de-break-add" id="de-break-add">+ Add break</button>
+    </div>
+    <div id="de-breaks" aria-live="polite"></div>
+    <div class="de-breaks-note" id="de-breaks-note" hidden>
+      Range mode applies one break pair per day.
     </div>
     <div class="field">
       <label id="de-reason-label" for="de-reason">Reason <span class="opt-marker">(optional)</span></label>

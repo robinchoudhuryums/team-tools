@@ -1932,6 +1932,54 @@
   }
   .field textarea { resize: vertical; min-height: 72px; line-height: 1.4; }
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ─── DAY EDIT · BREAK PAIRS (A4) ────────────────────────────
+     The Day Edit modal used to carry four fixed slots, so a day with a
+     second break could only be SAVED by collapsing it to one pair. The
+     break list is now N rows built by deRenderBreaks_(). The row grid is
+     `1fr 1fr auto` and is deliberately given NO compact override and no
+     breakpoint: two <input type="time"> controls plus a small icon button
+     measure ~305px, which fits the 480px pop-out and a 390px phone inside
+     the modal's own padding — adding a compact re-columning here would owe
+     a viewport breakpoint it does not need (the A2 rule). */
+  .de-breaks-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin: 14px 0 8px;
+  }
+  .de-break-add {
+    font-family: var(--ui); font-size: 12px; font-weight: 600;
+    color: var(--accent); background: transparent;
+    border: 1px solid var(--accent); border-radius: var(--radius-sm);
+    padding: 5px 11px; cursor: pointer;
+    transition: background var(--t) var(--ease);
+  }
+  .de-break-add:hover { background: var(--accent-soft); }
+  .de-break-add:disabled { opacity: .4; cursor: not-allowed; }
+  .de-break-row {
+    display: grid; grid-template-columns: 1fr 1fr auto;
+    gap: 12px; align-items: end; margin-bottom: 10px;
+  }
+  .de-break-rm {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex: 0 0 auto;
+    color: var(--destructive); background: transparent;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    cursor: pointer; transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .de-break-rm:hover { background: var(--destructive-soft); border-color: var(--destructive); }
+  .de-breaks-empty {
+    font-family: var(--ui); font-size: 12px; color: var(--muted-2);
+    padding: 8px 0 4px;
+  }
+  .de-breaks-note {
+    font-family: var(--ui); font-size: 12px; color: var(--muted-2);
+    padding: 2px 0 4px;
+  }
+  .de-breaks-note.is-warn { color: var(--warning-deep); font-weight: 600; }
+  /* NOTE checked against the [hidden] gotcha: neither .de-breaks-note nor
+     .de-breaks-empty sets `display`, so the UA sheet's [hidden] rule wins and
+     no companion `.class[hidden] { display: none }` is owed. Adding a display
+     to either of them means adding that companion in the same edit. */
   /* On-system select: replace the native OS chevron with a paper-register glyph.
      Centralized here (single source) for every app dropdown; the gray stroke is a
      data-URI glyph color — the one place a literal hex is unavoidable (a data-URI
