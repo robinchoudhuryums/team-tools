@@ -654,6 +654,14 @@
     display: flex; align-items: center; justify-content: center; gap: 8px;
   }
   .shift-done-msg svg { width: 16px; height: 16px; }
+  /* The done state NAMES the punch it was derived from (see renderActions);
+     this is the "and here is what to do if that isn't yours" line. Quiet on
+     purpose — it must not compete with the punch buttons below it. */
+  .shift-done-hint {
+    text-align: center; color: var(--muted-2);
+    font-family: var(--ui); font-size: 12px;
+    margin: -6px 0 12px;
+  }
 
   /* ─── CLOCK HERO (V1·E1) ─────────────────────────────────────────
      Above-the-fold masthead replacing the centered .hero-clock block.

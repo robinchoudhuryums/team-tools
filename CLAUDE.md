@@ -1600,6 +1600,27 @@ this section before touching the relevant area.
   that survives a screenshot review. Same family as the class-vs-identity
   entry below, one level up: there the SELECTOR was too broad, here the
   REPLACEMENT was too narrow. Pinned by the BIZ-3 wrapper-shape assertion.
+- **`location.reload()` reloads the IFRAME, not the app — and that URL is
+  session-bound (operator 2026-09-01).** The shell renders inside
+  HtmlService's cross-origin iframe, so `window.location` is the
+  `script.googleusercontent.com/userCodeAppPanel` URL. Refetching it paints a
+  BLANK inner frame while the real `/exec` page above it never moves — which
+  is what the deploy-beacon's Reload button did until an operator reported
+  having to press the browser's own reload afterwards. This is the THIRD
+  instance of one class: the iframe sandbox already poisoned
+  `window.location.search` (INV-78, which silently no-op'd every deep link)
+  and `origin + pathname` (which shipped the pop-out broken), and both were
+  fixed by using the server-injected `SERVER_WEB_APP_URL` instead. **Any code
+  that navigates or reloads the app must go through `reloadApp_()` /
+  `SERVER_WEB_APP_URL`, never `window.location`.** `reloadApp_` moves the TOP
+  window via `Location.replace` — one of only two members a cross-origin
+  Location exposes, and a click supplies the user activation a sandboxed
+  top-navigation needs — then falls back to a `'_top'` open and only last to
+  the in-frame reload. Note the ordering is the contract, not decoration: an
+  "obvious" simplification that reloads first short-circuits straight back to
+  the blank frame, which is why the pin COUNTS the reloads rather than
+  checking that one appears last (the first version of it did, and a
+  reload-first mutation passed). Pinned by BCN-3.
 - **A class-wide attribute write assumes every member of the class is yours
   (operator 2026-08-11).** `index.html`'s theme reflector did
   `querySelectorAll('.sb-theme-btn')` and wrote `aria-pressed` on every hit —
@@ -3014,12 +3035,26 @@ this section before touching the relevant area.
   with a real Reload button (`showToast`'s additive `actionLabel`/`onAction`
   option — INV-173), NEVER a forced reload (yanking the pinned pop-out
   mid-call is worse than a stale UI; the sticky drafts make a chosen reload
-  safe). Net prompt lag ≤ poll 15 min + cache TTL 5 min. Correctness property
+  safe). **The Reload button goes through `reloadApp_()`, NOT `location.reload()`
+  (operator 2026-09-01).** `location` inside the shell is HtmlService's
+  session-bound `googleusercontent.com` iframe URL — the very one
+  `popOutCurrentView` refuses to reuse because it renders blank as a top-level
+  document (INV-78) — so a plain reload repainted the inner frame WHITE while
+  the real page above it never moved, and the rep had to press the browser's
+  own reload. `reloadApp_` navigates the TOP window to `SERVER_WEB_APP_URL`
+  via `Location.replace` (one of the two members a cross-origin Location
+  exposes; the click supplies the user activation a sandboxed top-navigation
+  needs), falling back to a `'_top'` `window.open` and only then to the
+  in-frame reload — every fallback strictly better than a blank frame. An
+  un-framed page (local dev, the visual harness) or a missing base reloads
+  normally. A COMPACT reload carries `?compact=1&tool=<currentView>`, because
+  `umsLastView` is deliberately not written in the pop-out (D8) and the pinned
+  window must come back as the pop-out. Net prompt lag ≤ poll 15 min + cache TTL 5 min. Correctness property
   worth knowing: `google.script.run` executes the DEPLOYED version's code, so
   a bare `clasp push` with no New version changes neither the served files nor
   the hash — no false prompt; the hash moves exactly when a New version is
   cut. An empty boot stamp disables the check entirely (harness pages, hash
-  failure). Pinned by BCN-1/BCN-2 + the DOM toast-action test +
+  failure). Pinned by BCN-1/BCN-2/BCN-3 + the DOM toast-action test +
   `test_deployStamp_requiresEmployeeAndHashes`.
 - **Reminders are a SHELL capability, not a Clock-view one (operator
   2026-08-11).** Break reminders used to fire only while the Clock tab was
@@ -3956,6 +3991,25 @@ this section before touching the relevant area.
   tz currently in the big clock (it's already the headline); the displayed
   zone's minute stays live each tick, the slide-in (`.clk-region-rot`) fires
   only on a rotation step and is neutralized by `prefers-reduced-motion`.
+- **The DONE state NAMES the punch it was derived from (operator 2026-09-01).**
+  `getNextActions_` returns `['Adjust']` when the day's punches end with a
+  ClockOut, and `renderActions` rendered that as a bare "Shift complete for
+  today" — an ASSERTION the data may not support, which is INV-187's class in
+  the punch UI. It fired live: an offshore rep whose roster tz still split a
+  CST shift across two rep-local dates got the PREVIOUS shift's clock-out on
+  today's date, was told their shift was finished before they had started it,
+  and had Clock In simply absent with no hint why (the server agrees, so it is
+  not a UI-only block — INV-155's live sequence guard rejects a ClockIn in that
+  state too). The message now reads "Shift complete for today · clocked out at
+  6:00 AM" plus a quiet "Didn't clock out? Use Adjust to add a missing punch, or
+  ask your manager." Stating the evidence turns a dead end into something a rep
+  can recognise as wrong and act on. The call site passes `opts.lastClockOut`
+  (the trailing ClockOut off the already-time-sorted `punches`); the clause is
+  conditional, so a caller passing nothing gets the bare message rather than
+  "clocked out at undefined". **The fix for the underlying split-day state is
+  the roster flip, not the copy** — see the timezone-model entry. Pinned by
+  CLK-DONE (call-site wiring + the conditional clause + the hint class being
+  DEFINED) and the DOM done-state assertions.
 - **Day ribbon (Clock view).** Horizontal 06:00–22:00 time ribbon
   rendered between the actions row and the coverage strip. Shows a
   dashed scheduled band, filled accent-green work segments + dashed
@@ -8530,6 +8584,7 @@ The same day's #4 round (the ALL-CST policy companions) kept the count at **688*
 The same day's punch-adjustment feedback round added two more → **692** (ADJ-1/2: the reconcile rides the EXISTING tick with a minutes-scale throttle and the view-open/visible gate — a dropped gate makes it a shell-wide poll — the window stamped inside `clkRefreshState_` BEFORE the RPC so no trigger double-fires, plus the chip's array guard, empty-renders-nothing, escaping, `role="status"`, its position ABOVE the punch buttons, and the INV-185 fixture field + `?pendingadj=1` scenario; ADJ-2/3: the helper is read-only + RANGE-bounded + never provisions the tab + normalizes status at the one read + fails toward `[]`, and the decision email fires for BOTH outcomes, carries no MailApp inside the locked body, runs after `releaseLock`, is branded/escaped/best-effort, and says the timesheet is unchanged on a denial) — 6 mutations / 6 bites (view/hidden gate dropped; chip moved below the buttons; deny notification dropped; throttle dropped; approve mail inlined into the lock — caught by the M-7 net AND the new pin; helper switched to provision + full-sheet read).
 The same day's business-hours round added four more → **696** (BIZ-1 behavioural — the motivating case Fri 16:00 → Mon 09:00 = 2 business hours rather than 3 days, plus both clamps, a full day equalling the 9-hour window, a whole intervening weekday, holiday exclusion asserted in BOTH directions so the holiday set is proven load-bearing, the weekdaysOnly knob, and every null path (reversed / absurd-span / malformed date / inverted window); BIZ-2 wiring — ONE wrapper on the MANAGER tz with a bounded holiday build, the GUARDED push, all four surfaces (Spanish stats, the per-thread card, DR elapsed + SLA bands, and the daily digest) plus a BAN on a raw wall-clock age returning to `deptRequestsOverdueOpen_`; BIZ-3 client wiring — business headline with an old-server fallback, the note gated on `slaBusiness`, both dashboard render paths moved together, and the `#dr-kpi` WRAPPER shape that keeps `drRepaintKpi_`'s outerHTML patch from stacking a note per resolve) — 13 mutations / 13 bites, one of which exposed a pin weaker than its property: the null-push assertion passed against `bizMin == null ? 0 : bizMin` (which keeps both a `push(` and a `null` mention) until it was tightened to the guarded shape.
 The 2026-08-31 coverage round added one more → **697** (VIS-COVER — the documented uncovered-tab list is DERIVED from the TOOLS registry vs `shoot.mjs`, checked against a `VISUAL-GAP-TABS:` marker line in this file, and bite-checked in BOTH directions: dropping a tab from the marker fails, and dropping a SCENARIO fails too).  The same round's DOM half took the harness 82 → **91** — the punch state machine, which had ONE test (the M-1 failure restore) for the app's most consequential client logic: the primary-CTA rules driven through the REAL `renderActions` into a live DOM (incl. the operator's afterLunch flip, where ClockOut takes the prime slot and LunchOut is DEMOTED rather than removed), the F3 clicked-vs-prime morph target, all FOUR `submitPunch` response shapes (state-in-response = no second RPC; older server = the refetch fallback; a `{success:false}` rejection restoring the button with the SERVER's reason; and the D2b case where the punch succeeded but the refresh died — restore + a WARN toast saying it was recorded, because an error toast there tells a rep to punch again at the exact moment a duplicate is wrong), the pending-adjustment chip, and self-undo's midnight wrap incl. the −1 sentinel. 9 mutations / 9 bites — the ninth exposed a weak assertion rather than a defect: dropping the `a !== 'Adjust'` filter renders Adjust TWICE (the row appends a trailing one unconditionally), and last-ness, non-primacy and the class all still held, so the pin now counts occurrences. jsdom note: `empState`, `renderActions` and `SELF_UNDO_WINDOW_SECONDS` are lexical module bindings, NOT window properties — read them through the harness's `h.read()` vm bridge. It also strengthened the derived GATE-SHAPE tripwire to follow a one-line DELEGATING wrapper through to its delegate — the four intake account endpoints are `return intakeSendAcct_(…)` inside a try/catch whose own `success: false` satisfied the check regardless of what the delegate returned, so the pin could not fail on them; found by bite-checking the new intake tests against it.
+The 2026-09-01 operator round added two more → **699** (CLK-DONE — the shift-complete verdict names the ClockOut it was derived from: call-site wiring, the conditional clause, and the hint class being DEFINED in a stylesheet; and BCN-3 — `reloadApp_` escapes the HtmlService iframe rather than reloading its session-bound URL, with the fallback ORDER pinned by COUNTING reloads rather than checking that one appears last, because the first version of that assertion passed against a reload-first mutation). The same round grew three existing blocks IN PLACE: the accrual pin gained the forward-stamp no-op + the caller's conditional write (PR #211), BCN-2 now requires the action to delegate to `reloadApp_` and BANS a bare `location.reload()` in the tick, and the behavioural `getNextActions_` block gained the operator's own question as a test — a stray earlier ClockOut plus an approved `ADJ-ClockIn` (INV-09 strips the prefix, so it IS a state) yields `LunchOut / ClockOut / Adjust`, which is the property the backward scan provides and a forward-scan mutation breaks. DOM stays **91** — the done-state assertions (the named clock-out, the way-out line, and both degradation paths) grew inside the existing punch-state block rather than adding one. 11 mutations / 11 bites across the round; two exposed a pin weaker than its property and were rewritten before they bit.
 The 2026-08-31 team-punches-calendar round added two more → **690**: the behavioural `getTeamCalendar` pin (the REAL endpoint driven in a vm with the real EMP/ADP/TO enums + `empRosterEmail_`/`normalizeType_`/`calcHours_` — gate + bare-{error} read shape, last-punch-per-type wins, garbage COMMENTS types are not punches, a corrupt time cell reads INCOMPLETE never 0, padded `" Approved "` overlays count, offboarded rows excluded from rows AND rosterCount, archiveNote on a pre-live-tab month) and the client wiring pin (loader beside the lazy cards, key-exact clean-round cache write BEFORE the seq check, the C17-5 painted/cold failure split, role/tabindex/aria-pressed day cells, manager-tz date derivation, future-nav refusal, the bounds-checked Day Edit prefill, the honest no-punches merge, `mtRenderTable_` per V-11, and the fixture's rep-row keys DERIVED from the server's own `repRows.push` literal per INV-185) — 6 mutations / 6 bites, TWO of which exposed the pin as weaker than its property on the first run (the null-hours mutation was UNOBSERVABLE until a corrupt-time fixture row exercised the `calcHours_`-null path — mutate against the property, not its neighbourhood — and the fixture-key drop had to remove the key from EVERY row before the presence check could see it). The omnibus gate test gained the `getTeamCalendar` case IN PLACE.
 The 2026-08-17 post-deploy operator round added seven more → **539**
 (the `mPrevWorkdayIso_` behavioural pin — Monday lands on Friday, weekends
@@ -10061,6 +10116,15 @@ S93 | Response times count business hours | Subsystem: Server, Client (Metrics v
     - Check the daily SLA reminder email against what the tracker shows
     - Set a request's stamps so the pair is unusable (reverse them, or blank one)
   Expected: the KPI cells lead with the BUSINESS figure and carry "wall clock <X>" as their sub-line, under a note naming the window ("Response times count 8 AM–5 PM business hours only — weekends and US holidays excluded"); the Friday→Monday case reads as ~2 hours, not ~3 days. The resolved card's tooltip shows both units. The Dashboard median matches the tab (same unit, not two numbers for one thing). An unusable pair is DROPPED from the sample and renders as unknown — never 0, which would drag the median down. A span falling entirely outside business hours legitimately reads 0: that is "nothing was owed during it", which is different from unknown. Deploy skew is safe in both directions: an older client ignores the additive fields, and an older server makes the client fall back to wall clock as the headline WITH the note suppressed (it must never claim an exclusion it didn't make).
+
+S94 | Done-state names its evidence; the update prompt actually reloads | Subsystem: Client (Time Clock views), Client (shell)
+  Steps:
+    - As a rep with a ClockOut already on today's rep-local date (an offshore rep pre-flip, or clock out on purpose in a test account), open the Dashboard
+    - Read the punch area
+    - Have a manager approve a same-day ClockIn adjustment for that rep, then reload the rep's page
+    - Separately: cut a New-version deploy, leave a tab open ~20 min, and press **Reload** on the "Team Tools was updated" toast
+    - Repeat that from a pinned COMPACT pop-out
+  Expected: the message reads "Shift complete for today · clocked out at <time>" with a quiet "Didn't clock out? Use Adjust to add a missing punch, or ask your manager." below it — never a bare assertion, so a rep who has NOT worked yet can see which punch the app is reasoning from. Adjust remains the only action. After the approved adjustment, the trailing ClockIn wins the backward scan and **Lunch Out / Clock Out / Adjust** return (the `ADJ-` prefix is stripped on read, so an approved adjustment is a real punch — INV-09). The rep's own screen does NOT self-update on the currently-deployed code; they reload, or alt-tab away and back (`clkRefreshState_` on focus). The toast's Reload navigates the TOP window to the real `/exec` URL and the app comes back — **not** a white inner frame needing the browser's reload button. From a pop-out it comes back AS the pop-out, on the same tool.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

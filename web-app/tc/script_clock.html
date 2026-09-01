@@ -473,7 +473,13 @@ function renderClockView(area) {
           ${renderDayRibbon_(s.punches, stats, tz)}
           ${clkBreakScheduleHtml_()}
           ${clkPendingAdjustHtml_(s)}
-          ${renderActions(s.nextActions, { afterLunch: !!(stats && stats.state === 'working' && (s.punches || []).some(p => p.type === 'LunchIn')) })}
+          ${renderActions(s.nextActions, {
+            afterLunch: !!(stats && stats.state === 'working' && (s.punches || []).some(p => p.type === 'LunchIn')),
+            // The done-state names the punch it was derived from. `punches` is
+            // already time-sorted (getTodayPunches_), and a done state means the
+            // trailing recognized punch IS a ClockOut, so the last one is it.
+            lastClockOut: (s.punches || []).filter(p => p.type === 'ClockOut').pop() || null,
+          })}
         </div>
       </div>
 
@@ -2094,7 +2100,19 @@ function renderActions(actions, opts) {
   if (!actions || actions.length === 0) return '<div class="no-data">No actions available</div>';
   const onlyAdjust = actions.length === 1 && actions[0] === 'Adjust';
   if (onlyAdjust) {
-    return `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today</div>`
+    // NAME THE EVIDENCE. This state is DERIVED from a trailing ClockOut on the
+    // rep-local date (getNextActions_ returns ['Adjust'] there), so a bare
+    // "shift complete" ASSERTS a fact the data may not support — the INV-187
+    // class, in the punch UI. Live report 2026-09-01: an offshore rep whose
+    // roster tz still splits a CST shift across two rep-local dates had the
+    // PREVIOUS shift's clock-out land on today, and was told their shift was
+    // finished before they had started it, with Clock In simply gone and no
+    // hint why. Stating WHICH punch produced the verdict turns a dead end into
+    // something the rep can recognise as wrong, and names the way out.
+    const out = opts && opts.lastClockOut;
+    const at = (out && out.time) ? ` \u00b7 clocked out at ${dispTime(out.time)}` : '';
+    return `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today${at}</div>`
+      + `<div class="shift-done-hint">Didn't clock out? Use Adjust to add a missing punch, or ask your manager.</div>`
       + `<div class="actions"><button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button></div>`;
   }
   // Pick the primary CTA by state (#5a): ClockIn (start) → LunchIn (back from

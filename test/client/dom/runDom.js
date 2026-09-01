@@ -1475,6 +1475,23 @@ test('Adjust is always present, always last, and never the primary', () => {
   assert.strictEqual(done.prime, null, 'a completed shift renders no primary button');
   assert.ok(/Shift complete/.test(done.host.innerHTML), 'it says the shift is complete');
   assert.ok(done.host.querySelector('.actions [data-action="Adjust"]'), 'Adjust is still reachable');
+  // ── The verdict must NAME the punch it was derived from (operator
+  // 2026-09-01). Bare "shift complete" asserts a fact the data may not
+  // support: an offshore rep whose roster tz splits a CST shift across two
+  // rep-local dates gets the PREVIOUS shift's clock-out on today, and is told
+  // their shift is over before it started, with Clock In simply gone.
+  const named = mountActions(h, ['Adjust'], { lastClockOut: { type: 'ClockOut', time: '06:00:00' } });
+  assert.ok(/clocked out at 6:00 AM/.test(named.host.innerHTML),
+    'the done state names the clock-out it derived the verdict from');
+  assert.ok(/Adjust to add a missing punch/.test(named.host.innerHTML),
+    'and names the way out for a rep who does not recognise that punch');
+  // Absent evidence degrades to the bare message rather than "clocked out at
+  // undefined" — the field is optional and an older caller passes nothing.
+  assert.ok(!/clocked out at/.test(done.host.innerHTML),
+    'with no lastClockOut the time clause is omitted entirely');
+  const blankTime = mountActions(h, ['Adjust'], { lastClockOut: { type: 'ClockOut', time: '' } });
+  assert.ok(!/clocked out at/.test(blankTime.host.innerHTML),
+    'a punch with no usable time likewise omits the clause');
   // An EMPTY action list must not render a bare empty row.
   const empty = h.document.createElement('div');
   empty.innerHTML = h.read('renderActions')([], {});
