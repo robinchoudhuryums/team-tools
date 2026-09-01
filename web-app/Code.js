@@ -3220,8 +3220,7 @@ function managerParseBreakSlots_(slots) {
   const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
   let raw = (slots && Array.isArray(slots.breaks)) ? slots.breaks : null;
   if (!raw) {
-    // Legacy single-pair shape. A lone half is still a half — it round-trips
-    // as an unpaired stamp exactly as it did before N pairs existed.
+    // Legacy single-pair shape, folded into the same list.
     const lo = String((slots && slots.LunchOut) || '').trim();
     const li = String((slots && slots.LunchIn) || '').trim();
     raw = (lo || li) ? [{ out: lo, in: li }] : [];
@@ -3235,11 +3234,24 @@ function managerParseBreakSlots_(slots) {
     const n = String((raw[i] && raw[i].in) || '').trim();
     const label = 'Break ' + (i + 1);
     if (!o && !n) continue;                                  // a wholly blank row is "no break"
-    if (!o || !n)
+    // A TRAILING leave with no return is an IN-PROGRESS break, not damage: the
+    // punch clock creates that state every day at lunch, and a rep who is out
+    // right now has exactly this shape. Refusing it made Day Edit unsavable for
+    // that rep — a manager could not fix a mistyped clock-in for anyone on
+    // lunch (caught by test_managerSaveDay_mixedChanges, which had encoded the
+    // pre-A4 behaviour correctly). It writes as a lone LunchOut, which is what
+    // the sheet holds while the rep is away; breakPairs_ drops it from the
+    // hours (nothing to pair with) and the sheet doctor flags it if it never
+    // gets a return. Only the LAST row may be half, and only on the leave side
+    // — a return with no leave is not producible by the punch flow, and a half
+    // in the middle means the rows below it are mis-entered.
+    const isLast = (i === raw.length - 1);
+    const trailingOpen = isLast && o && !n;
+    if (!trailingOpen && (!o || !n))
       return { error: `${label} needs BOTH a leave and a return time (got ${o || '(blank)'} / ${n || '(blank)'}).` };
-    if (!HHMM.test(o) || !HHMM.test(n))
+    if (!HHMM.test(o) || (n && !HHMM.test(n)))
       return { error: `Invalid time for ${label} (expected HH:mm, 24-hour).` };
-    if (n <= o)
+    if (n && n <= o)
       return { error: `${label} returns at or before it leaves (${o} → ${n}).` };
     out.push({ out: o, in: n });
   }
@@ -3311,25 +3323,24 @@ function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
     .filter(r => r.key !== null)
     .sort((a, b) => a.key - b.key);
   const curOuts = orderRows('LunchOut'), curIns = orderRows('LunchIn');
-  const curPairCount = Math.min(curOuts.length, curIns.length);
-  // Unpaired leftovers are damage the doctor surfaces; the reconcile removes
-  // them rather than leaving a stray half behind the submitted list.
-  curOuts.slice(curPairCount).forEach(r =>
-    deletions.push({ rowIndex: r.rowIndex, type: 'LunchOut', oldTime: r.time, dup: true }));
-  curIns.slice(curPairCount).forEach(r =>
-    deletions.push({ rowIndex: r.rowIndex, type: 'LunchIn', oldTime: r.time, dup: true }));
-
-  const n = Math.max(curPairCount, cleanBreaks.length);
+  // Each HALF is matched independently at its own index, so the two sides need
+  // not be balanced. That is what lets an OPEN break (a leave with no return —
+  // the rep is out right now) round-trip: the submitted blank REMOVES the
+  // return row instead of writing an empty time into it, and an existing lone
+  // leave is left alone rather than deleted and re-added, which would have
+  // written a spurious PunchDelete+PunchAdd pair for an untouched punch. A
+  // stray half the submitted list does not cover is removed the same way.
+  const n = Math.max(curOuts.length, curIns.length, cleanBreaks.length);
   for (let i = 0; i < n; i++) {
-    const want = cleanBreaks[i];
-    const haveOut = i < curPairCount ? curOuts[i] : null;
-    const haveIn  = i < curPairCount ? curIns[i]  : null;
-    if (!want) {
-      if (haveOut) deletions.push({ rowIndex: haveOut.rowIndex, type: 'LunchOut', oldTime: haveOut.time, dup: false });
-      if (haveIn)  deletions.push({ rowIndex: haveIn.rowIndex,  type: 'LunchIn',  oldTime: haveIn.time,  dup: false });
-      continue;
-    }
-    [['LunchOut', want.out, haveOut], ['LunchIn', want.in, haveIn]].forEach(([type, time, have]) => {
+    const want = cleanBreaks[i] || null;
+    const haveOut = curOuts[i] || null;
+    const haveIn  = curIns[i]  || null;
+    [['LunchOut', want ? want.out : '', haveOut],
+     ['LunchIn',  want ? want.in  : '', haveIn]].forEach(([type, time, have]) => {
+      if (!time) {
+        if (have) deletions.push({ rowIndex: have.rowIndex, type, oldTime: have.time, dup: false });
+        return;
+      }
       if (!have) { additions.push({ type, time }); return; }
       if (have.time.substring(0, 5) !== time)
         updates.push({ rowIndex: have.rowIndex, type, oldTime: have.time, time });
