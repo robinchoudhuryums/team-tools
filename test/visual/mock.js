@@ -613,6 +613,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
           lunchOut: has ? '12:00:00' : null, adjLunchOut: false,
           lunchIn: has ? '12:30:00' : null, adjLunchIn: false,
           clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false,
+          // Every break pair, mirroring buildTimesheetForEmployee_ (INV-185).
+          breaks: has ? [{ out: '12:00:00', in: '12:30:00' }] : [],
           hoursWorked: hrs, isIncomplete: inc, inProgress: false });
         cur.setUTCDate(cur.getUTCDate() + 1);
       }
@@ -698,9 +700,9 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     getTeamCalendar: function (month) {
       var y = parseInt(month.slice(0, 4), 10), m = parseInt(month.slice(5, 7), 10);
       var reps = [
-        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
-        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, hours: 8.52, incomplete: false, inProgress: false, punchCount: 5 },
-        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, hours: null, incomplete: true, inProgress: false, punchCount: 1 },
+        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, breaks: [{ out: '12:00:00', in: '12:30:00' }], hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
+        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, breaks: [{ out: '11:45:00', in: '12:15:00' }, { out: '15:00:00', in: '15:10:00' }], hours: 8.35, incomplete: false, inProgress: false, punchCount: 6 },
+        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, breaks: [], hours: null, incomplete: true, inProgress: false, punchCount: 1 },
       ];
       var days = {}, last = new Date(y, m, 0).getDate();
       for (var d = 1; d <= last; d++) {

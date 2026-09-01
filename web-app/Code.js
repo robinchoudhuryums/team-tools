@@ -484,7 +484,7 @@ function workedHoursByEmpForRange_(startIso, endIso) {
     if (!id || !date || date < startIso || date > endIso) return;
     if (!perDay[id]) perDay[id] = {};
     if (!perDay[id][date]) perDay[id][date] = {};
-    perDay[id][date][type] = time;
+    punchDayAdd_(perDay[id][date], type, time);
     if (keyRow) liveKeys.add(keyRow);
   };
   for (let i = 2; i < rows.length; i++) {
@@ -1862,7 +1862,7 @@ function getManagerDashboard() {
       const key = `${id}|${rowDate}`;
       if (!sparkPunchMap[key]) sparkPunchMap[key] = {};
       const ptype = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
-      sparkPunchMap[key][ptype] = normalizeTime_(adpRows[i][ADP.TIME]);
+      punchDayAdd_(sparkPunchMap[key], ptype, normalizeTime_(adpRows[i][ADP.TIME]));
     }
     const sparkHoursMap = {};
     Object.keys(sparkPunchMap).forEach(key => {
@@ -2231,7 +2231,7 @@ function getTeamCalendar(monthIso) {
       Object.keys(byDay[dateIso]).forEach(id => {
         const punches = byDay[dateIso][id];
         const pm = {}, adjMap = {};
-        punches.forEach(p => { pm[p.type] = p.time; adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
+        punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
         let hours = null, incomplete = false, inProgress = false;
         if (pm.ClockIn) {
           if (pm.ClockOut) {
@@ -2243,8 +2243,12 @@ function getTeamCalendar(monthIso) {
         repRows.push({
           id, name: reps[id].name,
           clockIn: pm.ClockIn || null,    adjClockIn: !!adjMap.ClockIn,
-          lunchOut: pm.LunchOut || null,  adjLunchOut: !!adjMap.LunchOut,
-          lunchIn: pm.LunchIn || null,    adjLunchIn: !!adjMap.LunchIn,
+          lunchOut: punchFirst_(pm.LunchOut),  adjLunchOut: !!adjMap.LunchOut,
+          lunchIn: punchFirst_(pm.LunchIn),    adjLunchIn: !!adjMap.LunchIn,
+          // Every break pair, in the order calcHours_ deducts them. Additive:
+          // the two scalars above still carry the first stamp for older clients.
+          breaks: breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn))
+            .map(b => ({ out: b.out, in: b.in })),
           clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
           hours, incomplete, inProgress,
           punchCount: punches.length,     // > filled slots ⇒ collapsed extras (multi-lunch / pre-guard duplicates)
@@ -2714,6 +2718,24 @@ var TS_DOCTOR_MAX_GROUPS = 200;   // payload bound; narrow by fixing + re-runnin
 // same reasoning that moved the Timesheet archive off 1am — INV-153).
 var TS_DOCTOR_FIX_MAX_ROWS = 200;
 
+/** Is a duplicate group legitimate multi-break data rather than damage?
+ *  ONE predicate, consulted by BOTH the detector and the collapse, so the card
+ *  can never offer to delete something the repair would keep (or the reverse).
+ *
+ *  Breaks became legal on 2026-09-01 — calcHours_ deducts every pair — so a day
+ *  carrying N LunchOut and N LunchIn stamps is a rep who took N breaks, and
+ *  collapsing it would DELETE recorded unpaid time and silently start paying
+ *  for it. Extras remain damage when the counts DISAGREE (a stray leave with no
+ *  return is exactly what the doctor exists to surface), and a repeated
+ *  ClockIn/ClockOut is ALWAYS damage: multi-shift is not supported, and
+ *  managerSaveDay still collapses those too. */
+function tsDoctorLegitBreaks_(days, empId, date, type) {
+  if (type !== 'LunchOut' && type !== 'LunchIn') return false;
+  const d = days[empId + '|' + date];
+  if (!d) return false;
+  return d.lo.length > 1 && d.lo.length === d.li.length;
+}
+
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
 function tsDoctorScan_() {
@@ -2760,6 +2782,7 @@ function getTimesheetDoctor() {
     let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0;
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
+      if (tsDoctorLegitBreaks_(scan.days, g.empId, g.date, g.type)) return;   // legal multi-break, not damage
       if (g.rows.length > 1) {
         totalDuplicates++;
         totalDuplicateRows += g.rows.length - 1;   // rows a collapse would delete
@@ -2828,6 +2851,7 @@ function fixTimesheetDuplicates(empIdFilter) {
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
       if (g.rows.length < 2) return;
+      if (tsDoctorLegitBreaks_(scan.days, g.empId, g.date, g.type)) return;   // never delete a matched break pair
       if (filter && g.empId !== filter) return;
       // Keep the LAST row (highest row index = latest append); delete the rest.
       for (let j = 0; j < g.rows.length - 1; j++) {
@@ -2859,6 +2883,92 @@ function fixTimesheetDuplicates(empIdFilter) {
 }
 
 /** Manager deletes a single punch within the delete window. */
+/** READ-ONLY operator report: which historical days change when calcHours_
+ *  started deducting EVERY break pair instead of only the last (2026-09-01).
+ *
+ *  Run it from the Apps Script editor BEFORE deploying that change. It writes
+ *  nothing — no sheet, no audit row, no cache — and reads the live Timesheet
+ *  plus TimesheetArchive so a day that has already aged out of the live tab is
+ *  still counted (the INV-153/F1 read-through rule).
+ *
+ *  "Old" hours are reproduced by passing only the LAST stamp of each break type
+ *  through the SAME calcHours_ — which is exactly what the old last-wins map
+ *  handed it — rather than re-implementing the removed arithmetic, so this
+ *  report cannot drift from the behaviour it is describing.
+ *
+ *  Every listed day gets SHORTER: the earlier breaks were being paid. */
+function reportMultiBreakDays() {
+  assertManagerCaller_('reportMultiBreakDays');
+  const ss = getAdpSS_();
+  const perDay = {};      // 'empId|date' -> { name, pm }
+  // A row present in BOTH tabs (a mid-run archive duplicate) must be counted
+  // ONCE — the INV-132 duplicate-not-lose rule the accrual index already
+  // applies. Without it a duplicated LunchOut/LunchIn would fabricate a phantom
+  // second pair and put a day on this report that never changes.
+  const liveKeys = new Set();
+  const readTab = (tabName, label) => {
+    const sh = ss.getSheetByName(tabName);
+    if (!sh) return 0;
+    const rows = sh.getDataRange().getValues();
+    let seen = 0;
+    for (let i = 2; i < rows.length; i++) {
+      const id = String(rows[i][ADP.EMP_ID] || '').trim();
+      if (!id) continue;
+      const date = normalizeDate_(rows[i][ADP.DATE]);
+      if (!date) continue;
+      const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+      if (PUNCH_LABELS_.indexOf(type) < 0) continue;      // garbage is not a punch (C17 batch-6)
+      const time = normalizeTime_(rows[i][ADP.TIME]);
+      const rowKey = id + '|' + date + '|' + time + '|' + String(rows[i][ADP.COMMENTS]);
+      if (label === 'live') liveKeys.add(rowKey);
+      else if (liveKeys.has(rowKey)) continue;
+      const key = id + '|' + date;
+      if (!perDay[key]) perDay[key] = { empId: id, date: date,
+        name: String(rows[i][ADP.EMP_NAME] || '').trim(), pm: {}, source: label };
+      punchDayAdd_(perDay[key].pm, type, time);
+      seen++;
+    }
+    return seen;
+  };
+  const liveRows = readTab(CONFIG.ADP_TAB, 'live');
+  const archRows = readTab(TIMESHEET_ARCHIVE_TAB, 'archive');
+
+  const lastOf = (v) => (Array.isArray(v) ? (v.length ? v.slice().sort()[v.length - 1] : null) : (v || null));
+  const affected = [];
+  let totalDelta = 0;
+  Object.keys(perDay).forEach((key) => {
+    const d = perDay[key], pm = d.pm;
+    if (!pm.ClockIn || !pm.ClockOut) return;              // incomplete days contribute no hours either way
+    const pairs = breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn));
+    if (pairs.length < 2) return;                          // only multi-pair days can move
+    const newH = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut, pm.LunchIn);
+    const oldH = calcHours_(pm.ClockIn, pm.ClockOut, lastOf(pm.LunchOut), lastOf(pm.LunchIn));
+    if (newH === null || oldH === null) return;
+    const delta = +(newH - oldH).toFixed(2);
+    if (delta === 0) return;
+    totalDelta += delta;
+    affected.push({ empId: d.empId, name: d.name, date: d.date, source: d.source,
+      breaks: pairs.length, oldHours: +oldH.toFixed(2), newHours: +newH.toFixed(2), deltaHours: delta,
+      pairs: pairs.map((b) => b.out + '\u2192' + b.in).join(', ') });
+  });
+  affected.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name) : a.date.localeCompare(b.date)));
+
+  Logger.log('=== Multi-break impact report ===');
+  Logger.log('Scanned ' + liveRows + ' live + ' + archRows + ' archived punch rows across '
+    + Object.keys(perDay).length + ' rep-days.');
+  if (!affected.length) {
+    Logger.log('NO historical day changes — every completed day has at most one break pair.');
+  } else {
+    Logger.log(affected.length + ' day(s) change; total ' + totalDelta.toFixed(2) + ' hours (always a reduction —'
+      + ' the earlier breaks were being paid).');
+    affected.forEach((a) => Logger.log('  ' + a.date + '  ' + a.name + ' (' + a.empId + ')  ['
+      + a.source + ']  breaks: ' + a.pairs + '  ' + a.oldHours + 'h -> ' + a.newHours + 'h  ('
+      + a.deltaHours.toFixed(2) + ')'));
+  }
+  return { liveRows: liveRows, archiveRows: archRows, repDays: Object.keys(perDay).length,
+    affected: affected, totalDeltaHours: +totalDelta.toFixed(2) };
+}
+
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -12707,7 +12817,7 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     const dow     = local.getDay();
     const punches = byDate[dateStr] || [];
     const pm = {}, adjMap = {};
-    punches.forEach(p => { pm[p.type] = p.time; adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
+    punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
 
     let hoursWorked = null, isIncomplete = false, inProgress = false;
     if (pm.ClockIn) {
@@ -12729,8 +12839,12 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       isToday: dateStr === todayStr, isFuture: dateStr > todayStr,
       hasData: punches.length > 0,
       clockIn: pm.ClockIn || null,    adjClockIn: !!adjMap.ClockIn,
-      lunchOut: pm.LunchOut || null,  adjLunchOut: !!adjMap.LunchOut,
-      lunchIn: pm.LunchIn || null,    adjLunchIn: !!adjMap.LunchIn,
+      lunchOut: punchFirst_(pm.LunchOut),  adjLunchOut: !!adjMap.LunchOut,
+      lunchIn: punchFirst_(pm.LunchIn),    adjLunchIn: !!adjMap.LunchIn,
+      // Every break pair, in the order calcHours_ deducts them. Additive:
+      // the two scalars above still carry the first stamp for older clients.
+      breaks: breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn))
+        .map(b => ({ out: b.out, in: b.in })),
       clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
       hoursWorked, isIncomplete, inProgress,
     });
@@ -12758,7 +12872,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
     const time = normalizeTime_(rows[i][ADP.TIME]);
     if (!punchesByDate[rowDate]) punchesByDate[rowDate] = {};
-    punchesByDate[rowDate][type] = time;
+    punchDayAdd_(punchesByDate[rowDate], type, time);
     if (type === 'ClockIn') workedDates.add(rowDate);
   }
   // Compute hours per worked date (when both ClockIn and ClockOut are present)
@@ -16403,6 +16517,76 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
 
+/** The chronologically-first stamp of an accumulated punch type, for the
+ *  BACK-COMPAT scalar fields (`lunchOut`/`lunchIn`) every existing client still
+ *  reads. Identical to the pre-2026-09-01 value on a single-break day, which is
+ *  the overwhelming majority; on a multi-break day it now names the FIRST break
+ *  (the real lunch) rather than the last. Deliberately independent of
+ *  breakPairs_ so an UNPAIRED stamp still renders — a rep who is on lunch right
+ *  now has a LunchOut and no LunchIn, and that must keep showing. */
+function punchFirst_(v) {
+  if (Array.isArray(v)) return v.length ? v.slice().sort()[0] : null;
+  return v || null;
+}
+
+/** THE break-pairing rule — one implementation, shared by calcHours_ (which
+ *  sums the pairs) and by the display builders (which render them), so the
+ *  arithmetic and the UI can never disagree about which stamps form a pair.
+ *
+ *  `lunchOut`/`lunchIn` accept a single time string OR an array of them: a rep
+ *  may legitimately take more than one break (getNextActions_ has always
+ *  re-offered Lunch Out after Lunch In), and before 2026-09-01 only the LAST
+ *  pair was deducted, so every earlier break was silently paid.
+ *
+ *  Stamps are normalized onto the SHIFT's own timeline before sorting — a time
+ *  at or before the clock-in belongs to the next calendar day, the same wrap
+ *  the clock pair uses — so an overnight shift's 02:00 break correctly sorts
+ *  AFTER its 23:50 one instead of ahead of it. Pairing is then positional.
+ *
+ *  An UNPAIRED extra (more outs than ins, a corrupt stamp, or an in that does
+ *  not follow its out) is DROPPED rather than guessed at: the same shape as a
+ *  missing lunch, so one bad break can never void an otherwise-good clock pair
+ *  (INV-176). The sheet doctor is what surfaces those rows as damage. */
+/** THE per-day punch accumulator every hours consumer builds through (A2,
+ *  operator 2026-09-01). ClockIn/ClockOut stay LAST-WINS — a second CLOCK pair
+ *  is multi-shift support, a different feature, deliberately out of scope and
+ *  still collapsed by managerSaveDay / the sheet doctor. LunchOut/LunchIn
+ *  ACCUMULATE into arrays, because calcHours_ now deducts every pair.
+ *
+ *  Five builders feed hours off this shape — the accrual index, the timesheet,
+ *  the employee calendar, the team calendar and the dashboard sparkline — and
+ *  they each used to inline `map[type] = time`, so a change like this one had
+ *  five places to miss. Route new ones through here. */
+function punchDayAdd_(pm, type, time) {
+  if (type === 'LunchOut' || type === 'LunchIn') {
+    if (!pm[type]) pm[type] = [];
+    pm[type].push(time);
+  } else {
+    pm[type] = time;
+  }
+  return pm;
+}
+
+function breakPairs_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const norm = (v) => {
+    const m = timeToMins_(v);
+    if (m === null) return null;
+    return (anchor !== null && m <= anchor) ? m + 1440 : m;
+  };
+  const list = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: norm(t) }))
+    .filter((x) => x.mins !== null)
+    .sort((a, b) => a.mins - b.mins);
+  const outs = list(lunchOut), ins = list(lunchIn);
+  const pairs = [];
+  for (let i = 0; i < Math.min(outs.length, ins.length); i++) {
+    if (ins[i].mins <= outs[i].mins) continue;             // malformed: in at/before out
+    pairs.push({ out: outs[i].raw, in: ins[i].raw, minutes: ins[i].mins - outs[i].mins });
+  }
+  return pairs;
+}
+
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);
   // A3 (cycle 13): an unparseable clock pair yields NULL, not NaN. Callers all
@@ -16410,16 +16594,9 @@ function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   // null routes a corrupt cell there instead of poisoning a running total.
   if (inMins === null || outMins === null) return null;
   if (outMins <= inMins) outMins += 1440;
+  // EVERY break pair is deducted, not just the last (operator 2026-09-01).
   let lunchMins = 0;
-  if (lunchOut && lunchIn) {
-    let lo = timeToMins_(lunchOut), li = timeToMins_(lunchIn);
-    // A3: a corrupt LUNCH pair must not void the whole day — the clock pair is
-    // still good, so drop the deduction (the same shape as a missing lunch).
-    if (lo !== null && li !== null) {
-      if (li <= lo) li += 1440;
-      lunchMins = li - lo;
-    }
-  }
+  breakPairs_(lunchOut, lunchIn, inMins).forEach((b) => { lunchMins += b.minutes; });
   return (outMins - inMins - lunchMins) / 60;
 }
 
