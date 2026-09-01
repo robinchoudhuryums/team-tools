@@ -1,0 +1,14 @@
+---CYCLE SUMMARY BLOCK---
+Scope: between-cycles operator work (39 merged PRs, #178–#216) | Cycle: 19pre / 2026-09-01
+Production fixes: 14 — severity: 0 Critical / 0 High / 8 Medium / 6 Low
+New capabilities/features: 20
+Defensive/structural: 15
+New failure modes: 2 — severity: 1 Medium (introduced and closed in-span) / 1 Low (declared, stated in the UI)
+Net score: 14 − 2 = 12
+Invariant candidates:
+  INV-197 | Elapsed time is BUSINESS hours, computed by ONE pure core on the manager-tz anchor, and `null` means UNKNOWN — never substituted. Every surface that reports an elapsed time or bands an SLA routes through the same wrapper, so a tracker and the digest reading the same store cannot disagree about "overdue". | Server + Client (Metrics views) | Verify: BIZ-1 (behavioural incl. the Fri→Mon case, both clamps, holiday exclusion asserted in BOTH directions, every null path), BIZ-2 (one wrapper, all four surfaces, a ban on a raw wall-clock age returning to `deptRequestsOverdueOpen_`), BIZ-3 (client headline + old-server fallback + the `#dr-kpi` wrapper shape)
+  INV-198 | Reopening a closed day CONVERTS its ClockOut into a break — it never deletes it, so the away gap is unpaid. Validated at SUBMIT and RE-VALIDATED at approval (the day can be edited while the request waits, and converting a punch that is gone leaves an unpaired half the arithmetic silently drops); a refused resume never marks the request Approved. Every surface states the EFFECT rather than naming the punch it consumes. | Server + Client (Time Clock views) | Verify: the three B3 pins (convert-not-delete with a `deleteRow` ban, dual-side validation, back-compat on the trailing `Action` column across all four readers; every surface's wording), three DOM tests, `test_punchAdjust_resumeConvertsClockOut`
+  INV-199 | A coverage marker is only as fine-grained as the unit it enumerates. VIS-COVER works at TAB granularity, so five Admin panes hid behind one covered tab for three weeks; a tab that hosts sub-panes owes a scan that DERIVES the pane set from the client's own render site (INV-179 applied one level down). | Test Suite | Verify: VIS-ADMIN (pane set derived from the `tab('key','Label')` call sites, one mobile scenario per pane, bite-checked with a sixth pane landing uncovered) alongside VIS-COVER
+Most structurally significant change: Workstream A's `breakPairs_` — break time became a summed, first-class concept shared by all five hours builders and the repair paths, which both corrected payroll arithmetic and is the ONLY reason the resume path is expressible at all.
+Should-have-been-deferred: QA Phase 3's agent-facing half. v1 had explicitly decided agents do not see their reviews; Phase 3 built My Reviews, shipped it UNGATED (making the whole QA tool visible to every rep), and the operator hid it again the next day. The machinery is correct and now dormant — work done ahead of the decision it depended on.
+---END CYCLE SUMMARY BLOCK---

@@ -24,7 +24,7 @@ Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
 Test Command: manual (Node harnesses: `npm test` = pure 712 + DOM 101;
   visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean;
   Regression Scenarios run to S96)
-Subsystem cycles since last Seams audit: 0
+Subsystem cycles since last Seams audit: 1
 Updated: 2026-08-27
 
 ## In progress (facts to carry forward — NOT judgments)
