@@ -46,17 +46,45 @@ only BECAUSE of that — tests appended after `process.exit` run nothing), DOM
 companion harnesses. Invariant library: 195 (INV-192..195 written in-cycle;
 seams rules folded as amendments into INV-112/185/188).
 
-**Post-close operator rounds (2026-08-21 → 2026-08-28, factual addendum —
-scores await the next /reflect):** the pilot-feedback rounds 1–3, the
-2026-08-25 batches 1–6 + follow-ons, the 2026-08-27 correction/QA-Phase-1/
-break-editor/Part-A rounds, and the 2026-08-28 QA Phases 2–3 + gate change +
-follow-ons + the Training/Manage/Team Notes SWR load-speed rounds all MERGED
-(through **PR #201**). Everything since PR #176 awaits the ONE `clasp push -f`
-+ New-version deploy; post-deploy `runAllTests()` now expects **296**, and
-`installAutomationTriggers()` must be re-run once (the 18th trigger,
-`purgeOldQaReviews`, default-disabled). Tests now: pure **688**, DOM **82**,
-visual matrix **54**; invariant library **196** (INV-196 written for the QA
-module). Details per round: `.cycle/STATE.md` NEWEST #1–#8 + `.cycle/blocks/`.
+**Cycle 19pre (between-cycles OPERATOR work) REFLECTED 2026-09-01 — net +12
+(14 production fixes − 2 new failure modes; 20 capabilities, 15 defensive).**
+39 merged PRs (#178–#219) over 12 days and 33 implementation blocks, none of it
+scan-derived: the largest span this project has reflected, and the first drawn
+entirely from operator reports and operator requests. Self-reports summed to
+~19; strict re-derivation gives 14 — a NARROWER gap than cycles 17 (36→15) or
+18 (17→6), because several blocks scored their capability rounds honestly at 0.
+**Axis-B lowest: Test Coverage Quality, FOURTH cycle running.**
+
+**The scoring split that defines the span:** nothing here is deployed, so
+"fired in production" separates defects the operator REPORTED against live code
+(counted) from defects introduced and fixed inside the span (defensive). The
+eight Medium fixes were all reported: the Part A host-tz recovery (fired twice
+in one week, two reporters — and the first diagnosis was FALSIFIED by the
+operator checking the roster column), rep-sender identity sending customer
+replies to the deployer's inbox, 14 pre-existing wrong-company-name strings in
+customer-facing mail, the stale punch buttons after an approved adjustment, an
+adjustment queue that notified nobody on either side, the deploy beacon's
+white-iframe Reload, and a done-state asserting a verdict with no evidence.
+
+**Both new failure modes are ours:** a wrong-company-name suffix that a round-1
+fix ADDED and that reached a live pilot send before a later round removed it,
+and the resume path's unpaid away gap (declared in three places; the
+alternative silently PAYS it).
+
+**A record defect found while scoping it:** cycle 18's notes cite an "18pre row"
+in metrics.csv that was never written — only the block exists on disk.
+
+**Post-reflection (2026-09-01/02), factual:** PR #218 fixed a REAL REGRESSION
+the operator's own pre-deploy `runAllTests` caught — A4 refused an IN-PROGRESS
+break, making Day Edit unsavable for any rep on lunch — plus two test-side
+failures (an invented helper; a CALENDAR-dependent accrual fixture). PR #219
+restored the rep's line breaks in the note email. **`reportMultiBreakDays()` was
+run and came back CLEAN** (84 rows, 46 rep-days, no historical day changes).
+Tests now: pure **713**, DOM **101**, editor **305**, visual matrix **67**;
+invariant library **196** (INV-197/198/199 proposed, not yet written).
+Everything since PR #176 still awaits the ONE `clasp push -f` + New-version
+deploy — the single outstanding operator action. Details per round:
+`.cycle/STATE.md` + `.cycle/blocks/19pre-*`.
 
 ## Prior standing (Cycle 17 close, 2026-08-05)
 **Cycle 17 (broad scan) CLOSED 2026-08-05 — reflected net +12 (15 prod fixes −

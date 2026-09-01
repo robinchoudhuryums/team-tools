@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 712 + DOM 101;
-  visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean;
+Test Command: manual (Node harnesses: `npm test` = pure 713 + DOM 101;
+  visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean, 67/67;
   Regression Scenarios run to S96)
 Subsystem cycles since last Seams audit: 1
 Updated: 2026-08-27
@@ -303,16 +303,33 @@ Shipped this session (all merged unless noted):
   so the tag-taxonomy header rendered as six labels in a column above the first
   row. 7 mutations / 7 bites; pure 712, matrix 67/67 clean.
 
-NEXT: open the Admin sub-tab PR, wait for CI, squash-merge, reset the branch.
-Then /reflect — cycle 18 is closed, so this opens CYCLE 19 and the reflection
-covers everything merged since PR #201 (the 2026-08-28 → 2026-09-01 operator
-rounds: team calendar, ADJ feedback loop, business hours, test coverage,
-Workstreams A/A4/B, and this).
+- **PR #216** — the Admin sub-tab mobile coverage (five scenarios + the
+  `getAdminSheetView` fixture + VIS-ADMIN) and the stacked tag-table header it
+  found.
+- **PR #217** — the cycle-19pre REFLECTION (net 12 = 14 fixes − 2 new failure
+  modes; 20 capabilities, 15 defensive; block + metrics row + seam counter 0→1).
+- **PR #218** — the operator's pre-deploy `runAllTests` reported 302/305 and one
+  was a REAL REGRESSION: A4 refused a break with a leave and no return, which is
+  an IN-PROGRESS break, so Day Edit was unsavable for any rep on lunch. Fixed at
+  both layers; the A4-1 pin (which had encoded the wrong rule) rewritten. The
+  other two were test-side — an invented helper and a CALENDAR-dependent accrual
+  fixture (documented as a fourth editor-test hazard).
+- **PR #219** — note-email line breaks: the `.ce` fields are `pre-wrap` so Enter
+  stores a real `\n`, but HTML collapsed it, so a Resolution written as
+  paragraphs emailed as one run-on block while the CRM paste was correct.
+  `cnNlBr_` runs LAST in `cnFmtEmailHtml_` (the marker regexes are `[^…\n]+`,
+  so converting first would make `**a\nb**` start matching).
+- **PR #220** — this sync-docs pass.
 
-Standing operator-side, unchanged: the deploy backlog (now ~20 PRs), a
-`reportMultiBreakDays()` run before deploying the break work, `runAllTests()`
-expecting 305, `installAutomationTriggers()` for trigger #18, and the ALL-CST
-roster flip.
+NEXT: nothing in flight. The operator's deploy is the only outstanding action.
+Cycle 19 opens on the next /broad-scan or /audit — at which point the cycle-18
+block moves to HISTORY.md and STATE resets from the template.
+
+Standing operator-side: the deploy backlog (PRs #176–#220), `runAllTests()`
+expecting **305**, `installAutomationTriggers()` for trigger #18, and the
+ALL-CST roster flip on a weekend. **`reportMultiBreakDays()` HAS BEEN RUN
+(2026-09-01) and came back CLEAN** — 84 live rows, 46 rep-days, no historical
+day changes, so the break-arithmetic change moves no existing timesheet.
 
 ## Pending / not yet done
 - DEPLOY (operator, the ONE outstanding action): PRs #176 + #177 (cycle 18)
