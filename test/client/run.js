@@ -14992,6 +14992,15 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
     assert.ok(i >= 0, name + ' exists');
     return mgr.slice(i, mgr.indexOf('\nfunction ', i + 10));
   };
+  // Ordering assertions must require BOTH needles to be PRESENT: a missing one
+  // gives indexOf === -1, and -1 < anything is true, so a deletion passes an
+  // `a < b` check silently. Caught by bite-check, not by review.
+  const before = (hay, a, b, msg) => {
+    const ia = hay.indexOf(a), ib = hay.indexOf(b);
+    assert.ok(ia >= 0, msg + ' — missing: ' + a);
+    assert.ok(ib >= 0, msg + ' — missing: ' + b);
+    assert.ok(ia < ib, msg);
+  };
   const render = fn('deRenderBreaks_');
   // Every row is named + escaped + removable (INV-173/195, and the server
   // strings reach innerHTML).
@@ -15009,7 +15018,7 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
   assert.ok(/Array\.isArray\(day\.breaks\)/.test(setFrom), 'prefers the breaks array');
   assert.ok(/day\.lunchOut/.test(setFrom) && /day\.lunchIn/.test(setFrom),
     'falls back to the legacy scalars');
-  assert.ok(setFrom.indexOf('Array.isArray(day.breaks)') < setFrom.indexOf('day.lunchOut'),
+  before(setFrom, 'Array.isArray(day.breaks)', 'day.lunchOut',
     'the array is checked FIRST — the fallback must not win over real data');
 
   // Add/remove SNAPSHOT first. Re-rendering without reading the DOM back would
@@ -15019,11 +15028,11 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
   // NEWLINE-anchored terminator — a bare '});' truncates mid-handler and the
   // ordering assertion below silently passes on half a function.
   const addBody = addBlock.slice(0, addBlock.indexOf('\n});') + 4);
-  assert.ok(addBody.indexOf('deReadBreaks_()') < addBody.indexOf('deRenderBreaks_('),
+  before(addBody, 'deReadBreaks_()', 'deRenderBreaks_(',
     'add reads the typed values before re-rendering');
   const rmBlock = mgr.slice(mgr.indexOf("getElementById('de-breaks').addEventListener('click'"));
   const rmBody = rmBlock.slice(0, rmBlock.indexOf('\n});') + 4);
-  assert.ok(rmBody.indexOf('deReadBreaks_()') < rmBody.indexOf('deRenderBreaks_('),
+  before(rmBody, 'deReadBreaks_()', 'deRenderBreaks_(',
     'remove reads the typed values before re-rendering');
   assert.ok(/closest/.test(rmBody), 'remove is delegated on the host so it survives a re-render');
 
