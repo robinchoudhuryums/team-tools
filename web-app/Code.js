@@ -9086,12 +9086,33 @@ function generateOOPResolutionText_(selections) {
  *  esc_'d; output is email-safe (strong/u/inline-styled span — no <mark>,
  *  whose default rendering varies across mail clients; hex from
  *  CN_EMAIL_PALETTE per the email-color rule). */
+/** Escaped text → HTML with the rep's LINE BREAKS preserved (operator
+ *  2026-09-02). The note fields are contenteditable divs styled
+ *  `white-space: pre-wrap`, so pressing Enter stores a real \n and
+ *  `textContent` carries it through to the sheet — but HTML collapses a bare
+ *  newline to a space, so a Resolution the rep wrote as paragraphs arrived in
+ *  the email (and its preview) as one run-on block. The CRM paste was always
+ *  right, which is why the two disagreed.
+ *
+ *  The rule already existed for the SERVER-GENERATED OOP resolution, inline
+ *  and in one branch only; both callers share it now rather than keeping two
+ *  copies of the same replace. `<br>` is safe in every mail client (unlike
+ *  flex/gap — see the CN_EMAIL_PALETTE email-safe rule). */
+function cnNlBr_(escaped) {
+  return String(escaped == null ? '' : escaped).replace(/\r\n?|\n/g, '<br>');
+}
+
 function cnFmtEmailHtml_(escaped) {
   var out = String(escaped == null ? '' : escaped);
   out = out.replace(/==([^=\n]+)==/g, '<span style="background:' + CN_EMAIL_PALETTE.warnSoft + ';border-radius:2px;">$1</span>');
   out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   out = out.replace(/__([^_\n]+)__/g, '<u>$1</u>');
-  return out;
+  // LINE BREAKS LAST, and the order is load-bearing: every marker regex is
+  // written [^…\n]+ so a pair deliberately cannot span lines. Converting the
+  // newlines first would delete the \n those classes exclude on, and
+  // `**a\nb**` would silently start matching — quietly changing the documented
+  // marker contract rather than just adding breaks.
+  return cnNlBr_(out);
 }
 
 function buildCallNoteEmailHtml_(callData, selections) {
@@ -9160,7 +9181,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
   // ── Resolution overrides ────────────────────────────────────────────
   let resolutionText = callData.resolution || '';
   if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
-    resolutionText = esc_(generateOOPResolutionText_(selections)).replace(/\n/g, '<br>');
+    resolutionText = cnNlBr_(esc_(generateOOPResolutionText_(selections)));
   } else {
     resolutionText = cnFmtEmailHtml_(esc_(resolutionText));
   }

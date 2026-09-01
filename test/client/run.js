@@ -12365,6 +12365,56 @@ test('B5: the three marker regexes are byte-equal client and server', () => {
   assert.deepStrictEqual(cliRx.slice(0, 3), srvRx, 'client and server marker regexes byte-equal (the INV-72 family)');
 });
 
+test('NLBR: the email keeps the rep\'s line breaks, and converts them AFTER the markers', () => {
+  const sb = vm.createContext({ CN_EMAIL_PALETTE: { warnSoft: '#fff3e0' } });
+  ['cnNlBr_', 'cnFmtEmailHtml_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
+  const fmt = sb.cnFmtEmailHtml_, nl = sb.cnNlBr_;
+
+  // The reported defect: a Resolution written as paragraphs arrived as one
+  // run-on block, because HTML collapses a bare newline to a space.
+  assert.strictEqual(fmt('Called the payor.\n\nThey confirmed coverage.'),
+    'Called the payor.<br><br>They confirmed coverage.', 'paragraph breaks survive into the email');
+  assert.strictEqual(nl('a\r\nb\rc\nd'), 'a<br>b<br>c<br>d', 'CRLF and lone CR count as one break each');
+  assert.strictEqual(nl(''), '', 'empty stays empty');
+  assert.strictEqual(nl(null), '', 'null is not the string "null"');
+  assert.strictEqual(fmt('no breaks here'), 'no breaks here', 'text without newlines is byte-identical');
+
+  // Markers still work, and still compose with breaks.
+  assert.strictEqual(fmt('**bold**\nplain'), '<strong>bold</strong><br>plain',
+    'a marker on one line, a break after it');
+
+  // ORDER IS LOAD-BEARING. Every marker regex is [^...\n]+ so a pair cannot
+  // span lines (the documented contract). Converting breaks FIRST would remove
+  // the \n those classes exclude on, and this would start matching.
+  assert.strictEqual(fmt('**a\nb**'), '**a<br>b**',
+    'a marker pair spanning a newline stays literal — breaks convert LAST');
+  assert.strictEqual(fmt('==a\nb=='), '==a<br>b==', 'same for the highlight marker');
+
+  // The formatter's input contract is unchanged: it wraps INERT text only, so
+  // an escaped payload cannot be revived by the break conversion.
+  assert.strictEqual(fmt('&lt;img src=x&gt;\nnext'), '&lt;img src=x&gt;<br>next',
+    'escaped markup stays escaped');
+
+  // Both email callers share the ONE rule rather than repeating the replace:
+  // the free-text branch through cnFmtEmailHtml_, the server-generated OOP
+  // resolution directly (it is deliberately never marker-processed).
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');          // INV-188
+  assert.ok(/resolutionText = cnNlBr_\(esc_\(generateOOPResolutionText_/.test(code),
+    'the OOP branch routes through the shared helper');
+  // Scoped to the note-email path this fix governs. THREE other sites do the
+  // same escape-then-break inline (the external customer/provider message body
+  // x2, the form-submission table cell) — pre-existing, correct, and out of
+  // scope here; routing them through cnNlBr_ is a logged consistency follow-on,
+  // not something to slip into a bug fix that touches PHI rendering.
+  const noteEmail = extractRawFunction('Code.js', 'buildCallNoteEmailHtml_')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.strictEqual((noteEmail.match(/\.replace\(\/\\n\/g, '<br>'\)/g) || []).length, 0,
+    'the note email carries no inline newline->br replace — both branches use cnNlBr_');
+  assert.ok(code.indexOf('return cnNlBr_(out);') > 0, 'cnFmtEmailHtml_ ends with the break conversion');
+});
+
 test('B5 wiring: cards render formatted, copy strips, email applies post-esc_, keyboard replaces native bold', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const cn = nc(extractScript('cn/script_callnotes.html'));
