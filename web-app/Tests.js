@@ -932,6 +932,7 @@ function _runAllTests() {
   _smokeTest('calcHours_withLunch',                test_calcHours_withLunch);
   _smokeTest('calcHours_overnight',                test_calcHours_overnight);
   _smokeTest('calcHours_overnightWithLunch',       test_calcHours_overnightWithLunch);
+  _smokeTest('calcHours_multipleBreaks',           test_calcHours_multipleBreaks);
   _smokeTest('timeToMins_nullOnUnparseable',       test_timeToMins_nullOnUnparseable);
 
   _smokeTest('daysBetween_basic',                  test_daysBetween_basic);
@@ -1404,6 +1405,26 @@ function test_calcHours_overnight() {
 function test_calcHours_overnightWithLunch() {
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00','02:00:00','03:00:00'), 7.0);
+}
+/** Multi-break (operator 2026-09-01). getNextActions_ has always re-offered
+ *  Lunch Out after Lunch In, but only the LAST pair used to be deducted, so
+ *  every earlier break was silently PAID. The split-shift day below is the
+ *  operator's own case: 08:00–21:00 with a 30-minute lunch and a 2-hour
+ *  evening gap is 10.5 hours, not the 11.0 the old arithmetic produced. */
+function test_calcHours_multipleBreaks() {
+  _assertEqClose(calcHours_('08:00:00', '21:00:00',
+    ['12:00:00', '17:00:00'], ['12:30:00', '19:00:00']), 10.5);
+  // Two ordinary lunches deduct BOTH, not just the second.
+  _assertEqClose(calcHours_('09:00:00', '17:00:00',
+    ['12:00:00', '15:00:00'], ['12:30:00', '15:30:00']), 7.0);
+  // An UNPAIRED leave is dropped; the matched pair still counts (INV-176 —
+  // one bad break never voids an otherwise-good clock pair).
+  _assertEqClose(calcHours_('09:00:00', '17:00:00',
+    ['12:00:00', '15:00:00'], ['12:30:00']), 7.5);
+  // Overnight ordering: a 01:00 break belongs AFTER a 23:00 one on a 22:00
+  // shift, which is why breakPairs_ normalizes onto the shift's timeline.
+  _assertEqClose(calcHours_('22:00:00', '06:00:00',
+    ['23:00:00', '01:00:00'], ['23:20:00', '01:30:00']), 7 + 1 / 6);
 }
 /** A3 (cycle 13) — timeToMins_ returns NULL, never NaN, on an unparseable
  *  Timesheet TIME cell. NaN's comparisons are all false, so the old sentinel
