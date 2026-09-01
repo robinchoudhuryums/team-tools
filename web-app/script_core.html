@@ -2079,6 +2079,37 @@ function remindOnce_(key, msg, tone) {
 // Saturday is still stale. Best-effort end to end: an empty boot stamp
 // (server hash failed, or a harness page) disables the check entirely, and a
 // failed poll is silent.
+// Reloading the app is NOT `location.reload()`. The whole shell renders inside
+// HtmlService's cross-origin iframe, so `location` here is the SESSION-BOUND
+// script.googleusercontent.com URL — the very URL popOutCurrentView refuses to
+// reuse because it "renders BLANK as a top-level window" (INV-78). Refetching
+// it repaints the inner frame white while the real page above it never moves,
+// which is exactly what the deploy-beacon's Reload button did until an operator
+// reported it (2026-09-01) and had to press the browser's own reload. Navigate
+// the TOP window to the canonical /exec base instead: `Location.replace` is one
+// of the two members a cross-origin Location exposes, and a click gives us the
+// user activation a sandboxed top-navigation needs. Layered because the sandbox
+// flags are Google's to change, and every fallback is strictly better than the
+// blank frame: top-replace -> a '_top' open -> the old in-frame reload.
+function reloadApp_() {
+  var framed = true;
+  try { framed = window.top !== window.self; } catch (e) {}
+  var base = String(window.SERVER_WEB_APP_URL || '');
+  // A genuinely top-level page (local dev, the visual harness) has no iframe to
+  // escape, and with no server-shipped base there is nowhere better to go.
+  if (!framed || !base) { location.reload(); return; }
+  // The pop-out must come back AS the pop-out: umsLastView is deliberately not
+  // written in compact mode (D8 — a pinned pop-out must not steer the main
+  // window's boot tab), so carry the tool explicitly. The main window needs no
+  // params; umsLastView restores its tab on boot.
+  var url = COMPACT_MODE
+    ? base + '?compact=1&tool=' + encodeURIComponent(currentView)
+    : base;
+  try { window.top.location.replace(url); return; } catch (e) {}
+  try { window.open(url, '_top'); return; } catch (e) {}
+  location.reload();
+}
+
 var BUILD_STAMP_CHECK_MS = 15 * 60 * 1000;
 var _buildLastCheckMs = 0;
 var _buildPrompted = false;
@@ -2098,7 +2129,7 @@ function buildStampTick_() {
         showToast('Team Tools was updated \u2014 reload to get the latest version', 'toast-info', {
           sticky: true,
           actionLabel: 'Reload',
-          onAction: function () { location.reload(); },
+          onAction: function () { reloadApp_(); },
         });
       })
       .withFailureHandler(function () {})

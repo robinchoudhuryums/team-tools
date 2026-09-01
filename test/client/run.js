@@ -7062,6 +7062,24 @@ test('batch-6: an unknown punch type is not a state — getNextActions_ skips it
     '["ClockIn","Adjust"]', 'a garbage-only day reads as not-clocked-in');
   assert.strictEqual(na([{ type: 'ClockOut' }]), '["Adjust"]', 'done-state unchanged');
   assert.strictEqual(na([]), '["ClockIn","Adjust"]', 'fresh-day unchanged');
+  // ── An APPROVED same-day adjustment restores the punch buttons (operator
+  // question 2026-09-01). Two halves make that true and both are pinned:
+  //  (a) INV-09 — the ADJ- prefix is stripped on read, so an approved
+  //      adjustment is a REAL punch and therefore a real state, not a
+  //      row getNextActions_ skips as unrecognized;
+  //  (b) the scan is BACKWARD over time-sorted punches, so a stray EARLIER
+  //      ClockOut (an offshore rep's previous shift landing on today's
+  //      rep-local date) no longer decides the state once a later ClockIn
+  //      exists. Without (b) the rep would still be told the shift was over.
+  vm.runInContext(extractRawFunction('Code.js', 'normalizeType_'), nctx, { filename: 'Code.js#normalizeType_' });
+  assert.strictEqual(nctx.normalizeType_('ADJ-ClockIn'), 'ClockIn',
+    'an approved adjustment reads as its punch type (INV-09)');
+  assert.strictEqual(na([{ type: 'ClockOut' }, { type: 'ClockIn' }]),
+    '["LunchOut","ClockOut","Adjust"]',
+    'stray earlier ClockOut + an approved ClockIn => Lunch Out / Clock Out are back');
+  assert.strictEqual(na([{ type: 'ClockOut' }, { type: 'ClockIn' }, { type: 'LunchOut' }]),
+    '["LunchIn","ClockOut","Adjust"]',
+    'and the rest of the day proceeds normally from there');
 });
 
 test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab renders it', () => {
@@ -12844,8 +12862,10 @@ test('BCN-2: the beacon client half — piggybacked, throttled, empty-stamp-disa
     'the first window starts at BOOT — the freshly served stamp needs no immediate RPC');
   assert.ok(/BUILD_STAMP_CHECK_MS = 15 \* 60 \* 1000/.test(nc(core)), 'the poll is ~15 min, not the 60s tick rate');
   assert.ok(/withFailureHandler\(function \(\) \{\}\)/.test(tick), 'a failed poll is silent — best-effort end to end');
-  assert.ok(/sticky: true/.test(tick) && /actionLabel: 'Reload'/.test(tick) && /location\.reload\(\)/.test(tick),
+  assert.ok(/sticky: true/.test(tick) && /actionLabel: 'Reload'/.test(tick) && /onAction: function \(\) \{ reloadApp_\(\); \}/.test(tick),
     'the mismatch prompt is a STICKY toast with a real Reload action — never a forced reload');
+  assert.ok(!/location\.reload\(\)/.test(tick),
+    'the action delegates to reloadApp_ — a bare location.reload() reloads the SANDBOXED iframe URL and paints white');
   // Hosted by the shell reminders ticker (INV-190 cost rule — no new interval),
   // ABOVE its empState/schedule early-returns and OUTSIDE the dayOff gate (the
   // per-branch rule: a stale client on a Saturday is still stale).
@@ -12864,6 +12884,71 @@ test('BCN-2: the beacon client half — piggybacked, throttled, empty-stamp-disa
   assert.ok(/opts\.onAction\(\); \} catch \(e\) \{\}/.test(st) && st.indexOf('dismiss()', st.indexOf('opts.onAction')) > -1,
     'the action fires guarded and the toast dismisses after');
 });
+
+test('CLK-DONE: the shift-complete verdict names the punch it was derived from', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const ra = nc(extractFunction('tc/script_clock.html', 'renderActions'));
+  // The DOM test drives renderActions with its own opts, so it cannot see the
+  // WIRING — the call site must actually hand over the evidence, or the render
+  // silently degrades to the bare (and possibly false) assertion for everyone.
+  assert.ok(/lastClockOut: \(s\.punches \|\| \[\]\)\.filter\(p => p\.type === 'ClockOut'\)\.pop\(\) \|\| null/.test(nc(clk)),
+    'the Clock render passes the trailing ClockOut into renderActions');
+  assert.ok(/opts && opts\.lastClockOut/.test(ra) && /dispTime\(out\.time\)/.test(ra),
+    'the done branch reads it and formats the time through the innerHTML-safe dispTime');
+  assert.ok(/shift-done-hint/.test(ra) && /Adjust to add a missing punch/.test(ra),
+    'and names the way out — Adjust is the only reachable action in this state');
+  // Optional by construction: an older/other caller passing no opts must get
+  // the bare message, never "clocked out at undefined".
+  assert.ok(/\? ` \\u00b7 clocked out at \$\{dispTime\(out\.time\)\}` : ''/.test(ra),
+    'the clause is conditional on a usable time');
+  assert.ok(/\.shift-done-hint \{/.test(fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8')),
+    'the hint class is DEFINED (INV-184 in reverse — a read-but-undeclared class renders as raw body text)');
+});
+
+test('BCN-3: reloadApp_ escapes the HtmlService iframe instead of reloading its session-bound URL', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const fn = nc(extractFunction('script_core.html', 'reloadApp_'));
+  // THE defect (operator 2026-09-01): `location` inside the shell is the
+  // session-bound googleusercontent URL — the one popOutCurrentView already
+  // refuses to reuse because it renders blank as a top-level document
+  // (INV-78). The PRIMARY path must move the TOP window to the canonical base.
+  assert.ok(/window\.top\.location\.replace\(url\)/.test(fn),
+    'the primary path navigates the TOP window (Location.replace — cross-origin accessible)');
+  assert.ok(/window\.SERVER_WEB_APP_URL/.test(fn),
+    'the destination is the server-shipped /exec base, never window.location');
+  // Ordering is the contract: every fallback must be strictly better than the
+  // blank frame, so the in-frame reload is LAST, not first.
+  const iTop = fn.indexOf('window.top.location.replace');
+  const iOpen = fn.indexOf("window.open(url, '_top')");
+  // Count, don't lastIndexOf: an EXTRA reload inserted BEFORE the top-navigation
+  // short-circuits everything while a trailing one still satisfies a naive
+  // ordering check — and "just reload first" is precisely the simplification
+  // this pin exists to stop. Exactly two: the un-framed early return, and the
+  // final fallback.
+  const reloads = [];
+  fn.replace(/location\.reload\(\)/g, (m, i) => { reloads.push(i); return m; });
+  assert.strictEqual(reloads.length, 2,
+    'exactly two in-frame reloads — the un-framed early return and the last resort');
+  assert.ok(iTop > -1 && iOpen > iTop && reloads[0] < iTop && reloads[1] > iOpen,
+    'top-replace -> _top open -> in-frame reload, in that order (the reload is the last resort)');
+  // A genuinely top-level page (local dev, the visual harness) and a missing
+  // base have no iframe to escape — plain reload is CORRECT there, so the
+  // early return must exist and must precede the top-navigation attempts.
+  assert.ok(/if \(!framed \|\| !base\) \{ location\.reload\(\); return; \}/.test(fn),
+    'un-framed or base-less falls straight through to a normal reload');
+  assert.ok(fn.indexOf('if (!framed || !base)') < iTop,
+    'that early return comes BEFORE the top-navigation attempts');
+  // The pinned pop-out must come back AS the pop-out: umsLastView is not
+  // written in compact mode (D8), so the tool rides the URL explicitly.
+  assert.ok(/COMPACT_MODE[\s\S]{0,120}\?compact=1&tool=' \+ encodeURIComponent\(currentView\)/.test(fn),
+    'a compact reload carries compact=1 + the current tool (umsLastView cannot restore it)');
+  // Cross-origin `window.top` property access throws in some engines; the
+  // framed probe must not be able to take the whole function down.
+  assert.ok(/try \{ framed = window\.top !== window\.self; \} catch \(e\) \{\}/.test(fn),
+    'the framed probe is guarded — a throwing cross-origin read must not break reloading');
+});
+
 
 // ── Part A (operator 2026-08-27): CN coercion recovery uses the HOST sheet's tz ──
 // The live failure: a coercing per-rep sheet interprets stored digits in ITS
