@@ -6150,7 +6150,7 @@ manually for a fresh deploy or environment:
   the tracker (before this round they used different arithmetic and could
   disagree). Nothing is recomputed retroactively in any sheet; the stored
   `CreatedAt`/`ResolvedAt` stamps are untouched and only the DERIVED figures
-  change. **Post-deploy: run `runAllTests()`** — **302** since the 2026-08-31 coverage round (the four PMD/PAP intake cases + the two small-endpoint cases).
+  change. **Post-deploy: run `runAllTests()`** — **303** since the 2026-09-01 multi-break round (302 after the 2026-08-31 coverage round's four PMD/PAP intake cases + two small-endpoint cases, plus `calcHours_multipleBreaks`).
 - **The 2026-09-01 multi-break round (Workstream A) adds NO operator state, but it
   CHANGES COMPUTED HOURS on some historical days — run the report before you
   deploy it.** `calcHours_` now deducts EVERY break pair instead of only the
@@ -6175,6 +6175,9 @@ manually for a fresh deploy or environment:
   everywhere. **KNOWN GAP until Workstream A4 lands: the Day Edit modal still
   has four fixed slots, so opening and saving a multi-break day collapses it to
   one pair.** Until then, avoid Day Edit on a day the report names.
+  **Post-deploy: run `runAllTests()`** — expect **303** (the new
+  `calcHours_multipleBreaks` smoke case: the operator's split-shift day,
+  two ordinary lunches, an unpaired leave, and overnight ordering).
 - **The 2026-08-31 team-punches-calendar round adds NO operator state** — no
   properties, triggers, or migrations; one new MANAGER-gated read endpoint
   (`getTeamCalendar` — not admin-tier, so INV-136's count is unchanged).

@@ -801,7 +801,7 @@ THE ONLY OUTSTANDING WORK IS OPERATOR-SIDE, in this order:
   1. `cd web-app && clasp push -f`, then Deploy → Manage deployments →
      Edit → Version: **New version**. This one deploy also carries the
      still-undeployed PR #176 + #177 from cycle 18.
-  2. DONE 2026-08-31 (296/296 green). The NEXT run expects **302/302** (the beacon +
+  2. DONE 2026-08-31 (296/296 green). The NEXT run expects **303/303** (the beacon +
      QA-gate cases + the QA-purge trigger gate joined after the QA rounds
      landed). ALSO re-run `installAutomationTriggers()` once — the 18th
      trigger (`purgeOldQaReviews`) is harmless while its window is 0.
