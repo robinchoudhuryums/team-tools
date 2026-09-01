@@ -21,8 +21,8 @@ Phase: reflect — DONE. The DUE Seams & Invariants audit ran 2026-08-21 (fresh
   `clasp push -f` + New-version deploy and a post-deploy `runAllTests()`
   are still owed (operator-only).
 Scope: Seams & Invariants (whole-repo seams pass — the counter was 4/4)
-Test Command: manual (Node harnesses: `npm test` = pure 711 + DOM 101;
-  visual matrix on demand — 62 scenarios, last full shoot 2026-08-31 clean;
+Test Command: manual (Node harnesses: `npm test` = pure 712 + DOM 101;
+  visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean;
   Regression Scenarios run to S96)
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-08-27
@@ -291,8 +291,23 @@ Shipped this session (all merged unless noted):
   away gap is unpaid and the rep gets their punch buttons back. 18 mutations /
   18 bites; pure 711, DOM 101, runAllTests 305, visual 62.
 
-NEXT: open the follow-on + Workstream B PR, wait for CI, squash-merge, reset
-the branch.
+- **PR #215** — the A4 follow-on + Workstream B (the 390px Manage Time
+  overflow; the prefilled adjust modal; the manager notified at SUBMIT; the
+  RESUME path converting a ClockOut into a break so the away gap is unpaid).
+- **Admin sub-tab follow-on (this session, NOT yet PR'd)** — the matrix's last
+  wide-only surface. Five mobile scenarios (62 → 67) + a `getAdminSheetView`
+  fixture the Sheets pane never had, and **VIS-ADMIN**, which derives the pane
+  set from the client's own `tab()` call sites (the VIS-COVER marker works at
+  TAB granularity, and all five panes live inside ONE covered tab). Its first
+  run found a live defect: `.cn-tax-head` shared the row's `1fr` stacking rule,
+  so the tag-taxonomy header rendered as six labels in a column above the first
+  row. 7 mutations / 7 bites; pure 712, matrix 67/67 clean.
+
+NEXT: open the Admin sub-tab PR, wait for CI, squash-merge, reset the branch.
+Then /reflect — cycle 18 is closed, so this opens CYCLE 19 and the reflection
+covers everything merged since PR #201 (the 2026-08-28 → 2026-09-01 operator
+rounds: team calendar, ADJ feedback loop, business hours, test coverage,
+Workstreams A/A4/B, and this).
 
 Standing operator-side, unchanged: the deploy backlog (now ~20 PRs), a
 `reportMultiBreakDays()` run before deploying the break work, `runAllTests()`
