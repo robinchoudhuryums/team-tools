@@ -45,6 +45,13 @@ const SCENARIOS = [
   // AWAITING approval: the chip must be visible above the punch buttons, which
   // is the whole point (it is what stops them punching again "to be safe").
   ['clock-pendingadj-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?pendingadj=1'],
+  // Design handoff PR 6 — "Needs you" leads the dashboard's main column. The
+  // populated fixture rides every clock scenario; these two shoot the states a
+  // populated fixture can never show: a CLEAN empty round (the block renders
+  // nothing — the design's own rule) and a failed fetch (the warn card, never
+  // "nothing pending" — INV-175/187).
+  ['clock-needsyou-empty-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?fixture=empty'],
+  ['clock-needsyou-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyPendingTasks'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],

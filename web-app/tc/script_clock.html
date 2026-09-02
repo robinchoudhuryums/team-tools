@@ -18,35 +18,42 @@
      sky gradient is FIXED (identical in both modes). Measured contrast against
      that gradient: light 2.08:1 / 3.46 / 5.82; dark 1.20-2.00:1 across the
      whole card — AM/PM was effectively invisible in dark mode, on the live
-     clock of a time-tracking app. Fixed colour, matching its .clk-meta /
-     .clk-regions siblings. RULE: any text on this card must use a literal
-     colour, never a --muted/--ink token. */
+     clock of a time-tracking app. Fixed colour, matching its .clk-meta
+     sibling. RULE: any text on this card must use a literal colour, never a
+     --muted/--ink token — and anything at the card's bottom-right needs the
+     .clk-state scrim (see below). */
   .clk-sky .clk-time .ampm { color: rgba(255, 255, 255, .88); }
-  .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
-  .clk-sky .clk-region b { color: #fff; }
-  /* Rotating world-clock chip — one zone at a time, slides in on each rotation
-     (neutralized by the global prefers-reduced-motion block). */
-  .clk-region-rot { display: inline-flex; align-items: baseline; gap: 5px; animation: clkRegSlide .42s var(--ease) both; }
+  .clk-sky .clk-meta { color: rgba(255, 255, 255, .92); }
+  /* Greeting-rotator slide-in (formerly shared with the retired world-clock
+     chip; neutralized by the global prefers-reduced-motion block). */
   @keyframes clkRegSlide { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
-  /* Night-sky decor (operator picks a+b+d, 2026-07-10) — star field, shooting
-     star, moon. All inside .clk-sky-layers (z 0, hidden with a photo bg); the
-     twinkle/streak keyframes animate opacity/transform only and are killed by
-     the global prefers-reduced-motion block (clkShootMaybe_ additionally skips
-     spawning streaks there, so no static line lingers). Whites are the same
-     decorative-inline-hex class as the sky gradients. */
+  /* Night-sky decor (operator picks a+b+d, 2026-07-10) — the STATIC star
+     field, inside .clk-sky-layers (z 0). The twinkle keyframes animate opacity
+     only and are killed by the global prefers-reduced-motion block. Whites are
+     the same decorative-inline-hex class as the sky gradients. The randomized
+     shooting star and the rotating world-clock chip were RETIRED by the design
+     handoff (PR 6, 2026-09-02): motion with no information, on the one card a
+     rep is reading. The tz <select> keeps the deliberate-lookup use case. */
   .clk-stars { position: absolute; inset: 0; pointer-events: none; }
   .clk-stars .st { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff;
     opacity: .3; animation: clkTwinkle 3.6s ease-in-out infinite; }
   .clk-stars .st.big { width: 3px; height: 3px; box-shadow: 0 0 4px rgba(255, 255, 255, .55); }
   @keyframes clkTwinkle { 0%, 100% { opacity: .22; } 50% { opacity: .95; } }
-  .clk-shoot { position: absolute; width: 74px; height: 2px; border-radius: 999px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff);
-    animation: clkShoot 1.15s ease-out forwards; }
-  @keyframes clkShoot {
-    from { opacity: 0; transform: translate(0, 0) rotate(-32deg); }
-    12%  { opacity: .95; }
-    to   { opacity: 0; transform: translate(-150px, 94px) rotate(-32deg); }
-  }
+  /* STATE LINE (PR 6, T2/T4) — dot + On the clock / On lunch / Not in + the ONE
+     hours readout, at the card foot. Every gradient in clkSkyFor_ is 135deg, so
+     its LIGHT second stop lands exactly bottom-right, under a right-aligned
+     readout: white at .92 measured ≈1.4:1 over Mid-afternoon's #f0c674. So the
+     line is a full-bleed strip with its OWN scrim (edge-to-edge via negative
+     margins against the card padding, text-shadow OFF inside it) — 4.5:1 on
+     all nine phases. V-2 / OP-3 class: a literal colour is necessary on this
+     card but NOT sufficient; anything at the bottom-right needs the scrim. */
+  .clk-sky .clk-state { display: flex; align-items: center; gap: 8px; margin: 12px -18px -16px; padding: 9px 18px;
+    background: rgba(10, 13, 20, .72); color: #fff; text-shadow: none; font-size: 12px; }
+  .clk-sky .clk-state-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: rgba(255, 255, 255, .45); }
+  .clk-sky .clk-state-dot.working { background: #4ade80; }
+  .clk-sky .clk-state-dot.lunch { background: #fbbf24; }
+  .clk-sky .clk-state-lbl { font-family: var(--ui); font-weight: 600; letter-spacing: .01em; }
+  .clk-sky .clk-state-hours { margin-left: auto; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; color: rgba(255, 255, 255, .92); }
 
   /* Dashboard card-shaped skeletons (operator pick 2026-07-10) — compose the
      shared .skel shimmer (styles.html) into the shapes the briefing cards
@@ -124,7 +131,18 @@
     color: var(--warning-deep); background: var(--warn-soft); border: 1px solid transparent; border-radius: 999px;
     padding: 2px 9px; cursor: pointer; transition: background .12s; }
   .ss-cov-cta:hover { background: var(--warn-soft); border-color: var(--warn); }
-  .shift-strip .actions { margin-top: 12px; margin-bottom: 0; }
+  /* PR 6 (T2/3b): the punch actions sit in their OWN block between the clock
+     card and the shift strip; the pending chip stays directly above them. */
+  .clk-actions-block { margin: 14px 0 0; }
+  .clk-actions-block .actions { margin: 12px 0 0; }
+  .clk-actions-block .clk-adj-pending { margin-top: 0; }
+  /* Break-chip states (T4): taken = struck through + muted, now = the live
+     one, next = outlined + its countdown. */
+  .clk-brk-chip.taken .clk-brk-txt { text-decoration: line-through; opacity: .55; }
+  .clk-brk-chip.next { background: transparent; color: var(--warning-deep); border: 1px solid var(--warn); font-weight: 600; }
+  .clk-brk-chip.next.lunch { color: var(--warning-deep); }
+  .clk-brk-chip.now { outline: 2px solid var(--warn); outline-offset: 1px; }
+  .clk-brk-when:not(:empty)::before { content: ' · '; }
 
   /* Note-volume histogram behind the ribbon track (C2 — sourced from today's
      own notes bucketed by rep-local hour; Timestamp is stored in the rep's tz). */
@@ -162,7 +180,7 @@
   /* Pop-out (compact) density: drop the secondary world-clock strip + greeting
      kicker (the big clock already shows the rep's time), and tighten the cards
      so the actionable bits — clock, punch buttons, today's punches — sit higher. */
-  :root[data-compact] #clk-regions { display: none !important; }
+  :root[data-compact] #dash-needsyou { display: none; }   /* T6 — same gate as #dash-cards; the loader early-outs too */
   :root[data-compact] .hero .greet-kicker { display: none; }
   :root[data-compact] .hero { padding: 14px 16px 12px; gap: 10px; }
   :root[data-compact] .shift-strip { padding: 12px 14px; margin: 10px 0; }
@@ -182,9 +200,36 @@
   /* Greeting is a full-width header above both columns, in a subtle panel. */
   .dash-greet-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
     background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 18px; }
-  .dash-onclock { display: inline-flex; align-items: center; gap: 7px; flex: none; font-family: var(--mono); font-size: 11px; font-weight: 600;
-    color: var(--success-deep); background: var(--accent-soft); border-radius: 999px; padding: 6px 12px; white-space: nowrap; }
-  .dash-onclock-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success-deep); }
+  /* (PR 6: the greeting bar's on-the-clock pill was RETIRED — the clock card's
+     state line is where "am I clocked in" lives; two copies were worse.) */
+  /* "Needs you" (PR 6, T1/T6) — leads the main column above the carousels. A
+     real list of real links; overdue in WORDS plus an inset bar. */
+  .ny-head-right { font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .ny-head-right.ny-overdue { color: var(--danger-deep); }
+  .ny-count { font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .ny-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .ny-item { border-top: 1px solid var(--line); }
+  .ny-item:first-child { border-top: none; }
+  .ny-link { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 8px 8px 12px; margin: 0 -8px 0 -12px;
+    color: inherit; text-decoration: none; border-radius: var(--radius-sm); border-left: 3px solid transparent; }
+  .ny-link:hover { background: var(--paper-2); }
+  .ny-link:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: -2px; }
+  .ny-item.is-overdue .ny-link { border-left-color: var(--warn); }
+  .ny-item.is-overdue.is-past .ny-link { border-left-color: var(--destructive); }
+  .ny-ico { flex: none; width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--paper-2); color: var(--muted-2);
+    display: inline-flex; align-items: center; justify-content: center; }
+  .ny-ico svg { width: 15px; height: 15px; }
+  .ny-body { min-width: 0; flex: 1; }
+  .ny-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .ny-detail { font-size: 11.5px; color: var(--muted-2); margin-top: 2px; }
+  .ny-detail .ny-late { color: var(--danger-deep); font-weight: 600; }
+  .ny-go { flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--info-deep);
+    display: inline-flex; align-items: center; gap: 2px; }
+  .ny-unavail { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--warning-deep); margin-top: 10px; }
+  .ny-unavail svg { width: 13px; height: 13px; flex: none; }
+  .ny-skel-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+  .ny-skel-row .skel { height: 10px; }
+  .dash-pair.dash-pair-single { grid-template-columns: minmax(0, 1fr); }
   /* Metric carousels side by side (the inbox switcher stays full-width below). */
   .dash-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
   .dash-pair .dash-card, .dash-pair .card { margin-bottom: 0; }
@@ -406,34 +451,38 @@ function renderClockView(area) {
   const greetName = (s.name || '').split(' ')[0] || 'there';
   const stats = computeShiftStats_(s.punches, tz);
   const statusSentence = buildStatusSentence_(stats, s.nextActions, tzAbbr);
-  clkBuildRegionFmts_(tz, tzAbbr);   // item 5 — world-clock strip formatters
   if (!CLK_DISPLAY_TZ) CLK_DISPLAY_TZ = tz;   // tz selector default = rep's roster tz
 
-  // Shift-strip header: state pill + hours-worked readout (hours moved off the
-  // old ledger here per #5a).
+  // Shift-strip header: state pill + the state-adjacent facts only (lunch total
+  // + note coverage). HOURS RENDER ONCE, on the clock card's state line (PR 6,
+  // T4 — they used to render here AND in the greeting sentence, ~100px apart).
   const stateLabel = stats ? (stats.state === 'lunch' ? 'On lunch' : stats.state === 'out' ? 'Done' : 'Working') : 'Not in';
   const stateCls   = stats ? (stats.state === 'lunch' ? 'lunch' : stats.state === 'out' ? 'out' : 'working') : 'out';
-  const hoursReadout = stats
-    // V-4 (cycle 12): each value+unit+word is its own nowrap span, so
-    // "5h 54m worked · 32m lunch" wraps only BETWEEN the two readouts and never
-    // mid-value (it used to break as "5h / 54m / worked / · 32m / lunch" at both
-    // 1440px and 390px). Exactly the rule cycle-11's V-10 applied to `.tz-chip`
-    // — "a time must never break internally" — on its sibling component.
-    ? `<span class="ss-hours"><span class="ss-val">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked</span>` +
-        (stats.lunchMinutes ? ` <span class="ss-sub ss-val">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
-    : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
+  // V-4 (cycle 12): a duration is its own nowrap span, so it never breaks
+  // mid-value (the cycle-11 V-10 `.tz-chip` rule on its sibling component).
+  const lunchReadout = (stats && stats.lunchMinutes)
+    ? `<span class="ss-hours"><span class="ss-sub ss-val">${stats.lunchMinutes}m lunch</span></span>`
+    : '';
+  const hoursWorked = stats
+    ? `${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked`
+    : 'Not clocked in yet';
 
   // Dashboard (Time Clock → Dashboard): two-column grid — clock rail (left) +
-  // briefing carousels (main). The greeting moves to the top of the main column
-  // so the clock card fits the 360px rail; #clk-hero is kept (just the clock now)
-  // so all clock machinery (#clk-sky, #live-time, #clk-regions, ribbon) keeps
-  // working. Annual PTO relocated to the Time/PTO tab.
+  // briefing column (main). The greeting is the header above both columns;
+  // #clk-hero is kept (just the clock now) so all clock machinery (#clk-sky,
+  // #live-time, ribbon) keeps working. Annual PTO lives on the Time/PTO tab.
+  // Rail order (PR 6, T2): clock card → punch actions → shift strip, so the
+  // buttons clear the fold (MEASURED at 1440×900, see the PR 6 block).
   const isMgr = !!(s && s.isManager);
   const onClock = !!(stats && (stats.state === 'working' || stats.state === 'lunch'));
-  const onClockPill = onClock
-    ? `<span class="dash-onclock"><span class="dash-onclock-dot"></span>${stats.state === 'lunch' ? 'On lunch' : 'On the clock'}</span>`
-    : '';
+  const stateLine = `<div class="clk-state" id="clk-state" role="status">` +
+    `<span class="clk-state-dot ${onClock ? (stats.state === 'lunch' ? 'lunch' : 'working') : ''}" aria-hidden="true"></span>` +
+    `<span class="clk-state-lbl">${onClock ? (stats.state === 'lunch' ? 'On lunch' : 'On the clock') : (stats ? 'Shift complete' : 'Not in')}</span>` +
+    `<span class="clk-state-hours">${esc(hoursWorked)}</span></div>`;
   CLK_GREET_ROT.statusHtml = statusSentence;   // slide 0 of the greeting rotator
+  // T3 — the rotator never rotates away from an ACTIVE shift: hold on slide 0
+  // while working / on lunch, resume when out or not yet clocked in.
+  CLK_GREET_ROT.held = onClock;
   area.innerHTML = `
     <div class="dash-greet-bar">
       <div class="dash-greet-text">
@@ -441,7 +490,6 @@ function renderClockView(area) {
         <div class="greet-name">Hi, ${esc(greetName)}</div>
         <div class="status-sentence dash-greet-rot" id="greet-rot">${statusSentence}</div>
       </div>
-      ${onClockPill}
     </div>
     <div class="dash-grid" id="dash-grid">
       <div class="dash-rail">
@@ -457,21 +505,11 @@ function renderClockView(area) {
               <span id="clk-date">${esc(dateStr)}</span>
               ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
             </div>
-            <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
-            <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
+            ${stateLine}
           </div>
         </div>
 
-        <div class="shift-strip">
-          <div class="shift-strip-head">
-            <span class="ss-label">Today's shift</span>
-            <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
-            <span class="ss-grow"></span>
-            <span class="ss-cov" id="clk-shift-cov"></span>
-            ${hoursReadout}
-          </div>
-          ${renderDayRibbon_(s.punches, stats, tz)}
-          ${clkBreakScheduleHtml_()}
+        <div class="clk-actions-block">
           ${clkPendingAdjustHtml_(s)}
           ${renderActions(s.nextActions, {
             afterLunch: !!(stats && stats.state === 'working' && (s.punches || []).some(p => p.type === 'LunchIn')),
@@ -482,9 +520,22 @@ function renderClockView(area) {
             pendingAdjustments: s.pendingAdjustments || [],
           })}
         </div>
+
+        <div class="shift-strip">
+          <div class="shift-strip-head">
+            <span class="ss-label">Today's shift</span>
+            <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
+            <span class="ss-grow"></span>
+            <span class="ss-cov" id="clk-shift-cov"></span>
+            ${lunchReadout}
+          </div>
+          ${renderDayRibbon_(s.punches, stats, tz)}
+          ${clkBreakScheduleHtml_()}
+        </div>
       </div>
 
       <div class="dash-main" id="dash-main">
+        <div id="dash-needsyou">${clkNeedsYouHtml_(CLK_NEEDS.data)}</div>
         <div id="dash-cards">${clkDashSkeleton_()}</div>
         <div class="dash-pair dash-foot">
           <div class="card">
@@ -500,9 +551,10 @@ function renderClockView(area) {
   loadTeammateStatus();
   loadCoverageStrip_();
   clkApplySky_(true);        // initial gradient + phase glyph
-  clkUpdateRegions_();       // paint the rotating world-clock strip immediately
+  clkUpdateBreak_();         // paint the break chips' taken / now / next states immediately
   clkBindTzSelect_();
   clkLoadNoteVolume_();      // C2 — note-volume histogram (async, best-effort)
+  clkLoadNeedsYou_();        // "Needs you" (async, SWR, best-effort — T1/T6)
   clkLoadDashboard_(isMgr);  // briefing carousels (async, best-effort)
 }
 
@@ -561,11 +613,15 @@ function clkDashSkelExtra_() {
  *  when their RPCs returned — the first frame now holds the full 4-card
  *  layout, so arrivals swap content without moving anything). */
 function clkDashSkeleton_() {
+  // PR 6: Training folded into "Needs you", so the extras row is [Spanish |
+  // Requests] for Spanish-capable users and a single Requests card for everyone
+  // else — the skeleton holds the shape that will actually land.
+  var canSp = !!(typeof empState !== 'undefined' && empState && empState.canSeeSpanish);
   return '<div class="dash-pair" role="status" aria-label="Loading dashboard">' +
     clkDashSkelCard_() + clkDashSkelCard_() +
   '</div>' +
-  '<div class="dash-pair" aria-hidden="true">' +
-    clkDashSkelExtra_() + clkDashSkelExtra_() +
+  '<div class="dash-pair' + (canSp ? '' : ' dash-pair-single') + '" aria-hidden="true">' +
+    (canSp ? clkDashSkelExtra_() + clkDashSkelExtra_() : clkDashSkelExtra_()) +
   '</div>';
 }
 
@@ -981,7 +1037,7 @@ function clkLoadDashboardExtras_() {
   if (CLK_DASH.extraBusy) return;
   CLK_DASH.extraBusy = true;
   if (!hasCache) {
-    CLK_DASH.extra = { spanish: undefined, requests: undefined, spanishPending: undefined, training: undefined };
+    CLK_DASH.extra = { spanish: undefined, requests: undefined, spanishPending: undefined };
     CLK_DASH.spIdx = 0;
   }
   // D2a (cycle 10): stamp the DAY at request time but freshness only on a
@@ -999,7 +1055,9 @@ function clkLoadDashboardExtras_() {
   // as fresh for the full 60s window and the next enter early-returned
   // without a retry — the D2a comment's claim held only when ALL fetches
   // failed. Same shape as the metrics loader's anyFail -> loadedAt=0.
-  var expected = canSp ? 3 : 2;
+  // PR 6: Training folded into "Needs you" (getMyPendingTasks), so a
+  // non-Spanish rep's extras round is the Requests card alone.
+  var expected = canSp ? 3 : 1;
   var anyFail = false;
   var settle = function () {
     if (--expected !== 0) return;
@@ -1021,12 +1079,6 @@ function clkLoadDashboardExtras_() {
       .withSuccessHandler(function (r) { CLK_DASH.extra.spanishPending = (r && r.pending) ? r : { pending: [] }; fresh(); render(); })
       .withFailureHandler(function () { failSet('spanishPending', { pending: [] }); render(); })
       .getSpanishInboxPending(7);
-  } else {
-    // Non-Spanish agents get a pending-training card in place of the Spanish one.
-    google.script.run
-      .withSuccessHandler(function (r) { CLK_DASH.extra.training = r || { items: [] }; fresh(); render(); })
-      .withFailureHandler(function () { failSet('training', { error: 'Training unavailable' }); render(); })
-      .getMyTraining();
   }
   // Dept Requests — everyone (a rep sees their own open/resolved; a manager the
   // team aggregate).
@@ -1036,50 +1088,131 @@ function clkLoadDashboardExtras_() {
     .getDeptRequests();
 }
 
-// 2-up extras row: [Spanish Inbox | Requests] for Spanish-capable users,
-// [Training | Requests] for everyone else. (Replaced the 1-card slider.)
+// Extras row: [Spanish Inbox | Requests] for Spanish-capable users, the
+// Requests card alone for everyone else (PR 6 — Training folded into "Needs
+// you"; the old Training card + clkDashTrainingCard_ are retired, INV-184).
 function clkRenderDashboardExtras_() {
   var host = document.getElementById('dash-extra');
   if (!host) return;
   var canSp = !!(empState && empState.canSeeSpanish), x = CLK_DASH.extra || {};
-  var leftLabel = canSp ? 'Spanish Inbox' : 'Training';
-  var leftBody = canSp ? clkDashSpanishCard_(x.spanish, x.spanishPending) : clkDashTrainingCard_(x.training);
   var card = function (label, body) {
     return '<div class="dash-card"><div class="dash-card-head"><h2 class="dash-seclabel">' + esc(label) + '</h2></div>' + body + '</div>';
   };
-  host.innerHTML = '<div class="dash-pair">' + card(leftLabel, leftBody) + card('Requests', clkDashRequestsCard_(x.requests)) + '</div>';
+  var req = card('Requests', clkDashRequestsCard_(x.requests));
+  host.innerHTML = canSp
+    ? '<div class="dash-pair">' + card('Spanish Inbox', clkDashSpanishCard_(x.spanish, x.spanishPending)) + req + '</div>'
+    : '<div class="dash-pair dash-pair-single">' + req + '</div>';
 }
 
-/** Pending-training card for non-Spanish agents (getMyTraining, rep-callable). */
-function clkDashTrainingCard_(res) {
-  if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
-  // A12/INV-175: the extras loaders coerce every result to an object and set
-  // `.error` ONLY on a genuine failure (an empty training list arrives as
-  // `{items:[]}` and renders the normal card), so reaching here means the fetch
-  // failed — render the warn card, not `.dash-empty`. No outer esc(): the
-  // helper escapes internally.
-  if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
-  var items = res.items || [];
-  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'develop\',\'trainingHome\')">Open My Training →</a></div>';
-  if (!items.length) return '<div class="dash-empty">No training assigned.</div>' + openLink;
-  var overdue = 0, pending = 0, doneN = 0, nextDue = null;
-  items.forEach(function (i) {
-    if (i.status === 'overdue') overdue++;
-    else if (i.status === 'done') doneN++;
-    else pending++;
-    if (i.status !== 'done' && i.dueDate && (!nextDue || String(i.dueDate) < String(nextDue.dueDate))) nextDue = i;
-  });
-  var todo = overdue + pending;
-  var kpis = '<div class="dash-kpis">' +
-    clkDashKpi_('To do', todo, { big: true }) +
-    clkDashKpi_('Overdue', overdue) +
-    clkDashKpi_('Done', doneN) +
-  '</div>';
-  var foot = (todo === 0)
-    ? '<div class="dash-card-foot mono">' + icon('checkCircle', 11) + ' All caught up</div>'
-    : (nextDue ? '<div class="dash-card-foot mono">Next: ' + esc(String(nextDue.title || nextDue.itemId || 'item')) +
-        (nextDue.dueDate ? ' · due ' + esc(String(nextDue.dueDate)) : '') + '</div>' : '');
-  return kpis + foot + openLink;
+// ── "Needs you" (design handoff PR 6, T1/T6) ────────────────────────────────
+// ONE rep-callable aggregate (getMyPendingTasks) leading the main column above
+// the carousels: training / coaching / calls without a note / dept requests /
+// scheduled calls due today / signable docs. Pending ≠ empty: `undefined`
+// renders the card-shaped skeleton, `null` renders "couldn't load"
+// (errorStateHtml_), an empty CLEAN list renders NOTHING, and a source the
+// server could not read is NAMED ("couldn't check …") — never a confident
+// zero (INV-187). SWR like CLK_DASH: paint the cache instantly, refetch only
+// when stale, and never stamp a degraded or failed round fresh (INV-129/156).
+var CLK_NEEDS = { data: undefined, day: '', at: 0, busy: false };
+var CLK_NEEDS_ICON = { training: 'check', coaching: 'thumbsUp', notes: 'fileText', requests: 'outbox', sched: 'phone', docs: 'paperclip' };
+var CLK_NEEDS_LABEL = { training: 'training', coaching: 'coaching', notes: 'call notes', requests: 'department requests', sched: 'scheduled calls', docs: 'employee docs' };
+
+function clkNeedsYouSkel_() {
+  var row = '<div class="ny-skel-row" aria-hidden="true"><span class="skel" style="width:28px;height:28px;border-radius:6px"></span>' +
+    '<span class="skel" style="width:46%"></span><span class="skel" style="width:12%;margin-left:auto"></span></div>';
+  return '<div class="dash-card" role="status" aria-label="Loading your pending tasks">' +
+    '<span class="skel dash-skel-label"></span>' + row + row + row + '</div>';
+}
+
+/** Pure render: the whole block from a getMyPendingTasks payload. */
+function clkNeedsYouHtml_(res) {
+  if (res === undefined) return clkNeedsYouSkel_();
+  if (res === null || res.error) return '<div class="dash-card">' + errorStateHtml_((res && res.error) || 'Could not load your pending tasks') + '</div>';
+  var items = Array.isArray(res.items) ? res.items : [];
+  var unavailable = Array.isArray(res.unavailable) ? res.unavailable : [];
+  if (!items.length && !unavailable.length) return '';   // clean and empty — nothing to say
+  var overdue = items.filter(function (i) { return i.overdue; }).length;
+  var count = Number(res.total) || items.length;
+  var head = '<div class="dash-card-head"><h2 class="dash-seclabel">Needs you<span class="ny-count">(' + count + ')</span></h2>' +
+    '<span class="ny-head-right' + (overdue ? ' ny-overdue' : '') + '">' +
+    (overdue ? overdue + ' overdue' : (items.length ? 'nothing overdue' : '')) + '</span></div>';
+  var todayIso = String(res.todayIso || '');
+  var list = items.length
+    ? '<ul class="ny-list" aria-label="Needs you, ' + count + ' item' + (count === 1 ? '' : 's') + '">' +
+      items.map(function (it, idx) {
+        var past = !!(it.overdue && it.dueIso && todayIso && String(it.dueIso) < todayIso);
+        var late = it.overdue ? '<span class="ny-late">' + (past ? 'Overdue' : 'Past due') + '</span> · ' : '';
+        return '<li class="ny-item' + (it.overdue ? ' is-overdue' : '') + (past ? ' is-past' : '') + '" data-kind="' + esc(String(it.kind || '')) + '">' +
+          '<a class="ny-link" href="#" onclick="event.preventDefault();clkNeedsYouGo_(' + idx + ')">' +
+          '<span class="ny-ico" aria-hidden="true">' + icon(CLK_NEEDS_ICON[it.kind] || 'info', 15) + '</span>' +
+          '<span class="ny-body"><span class="ny-title">' + esc(String(it.title || '')) + '</span>' +
+          '<span class="ny-detail">' + late + esc(String(it.detail || '')) + '</span></span>' +
+          '<span class="ny-go">' + esc(String(it.action || 'Open')) + ' ' + icon('chevronRight', 10) + '</span></a></li>';
+      }).join('') + '</ul>'
+    : '';
+  var more = (count > items.length)
+    ? '<div class="dash-card-foot mono">' + (count - items.length) + ' more not shown — open each area for the full list</div>' : '';
+  var unavail = unavailable.length
+    ? '<div class="ny-unavail" role="status">' + icon('warning', 13) + '<span>Couldn\'t check ' +
+      esc(unavailable.map(function (k) { return CLK_NEEDS_LABEL[k] || String(k); }).join(', ')) + ' — those may have items too.</span></div>'
+    : '';
+  return '<div class="dash-card ny-card">' + head + list + more + unavail + '</div>';
+}
+
+function clkRenderNeedsYou_() {
+  var host = document.getElementById('dash-needsyou');
+  if (!host) return;
+  host.innerHTML = clkNeedsYouHtml_(CLK_NEEDS.data);
+}
+
+/** Loader — the SAME compact gate as clkLoadDashboard_ (cycle-8 M-12): the
+ *  block is display:none in the pop-out, so fetching it there would re-pay a
+ *  hidden RPC on every ≥20s focus wake. */
+function clkLoadNeedsYou_() {
+  if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
+  if (!document.getElementById('dash-needsyou')) return;
+  var today = isoDateTz(empTz());
+  var hasCache = CLK_NEEDS.data !== undefined && CLK_NEEDS.data !== null && CLK_NEEDS.day === today;
+  if (hasCache) {
+    clkRenderNeedsYou_();
+    if (Date.now() - (CLK_NEEDS.at || 0) < CLK_DASH_FRESH_MS) return;
+  } else if (CLK_NEEDS.day !== today) {
+    CLK_NEEDS.data = undefined;   // a new day never paints yesterday's tasks
+    clkRenderNeedsYou_();
+  }
+  if (CLK_NEEDS.busy) return;
+  CLK_NEEDS.busy = true;
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      CLK_NEEDS.busy = false;
+      var ok = !!(r && !r.error);
+      var clean = ok && !(Array.isArray(r.unavailable) && r.unavailable.length);
+      // Keep last-good on a failed refetch; a cold miss shows the error card.
+      if (ok) { CLK_NEEDS.data = r; CLK_NEEDS.day = today; }
+      else if (!hasCache) { CLK_NEEDS.data = null; CLK_NEEDS.day = today; }
+      // Freshness only on a CLEAN round — a degraded one retries next enter.
+      CLK_NEEDS.at = clean ? Date.now() : 0;
+      if (currentView === requestedView) clkRenderNeedsYou_();
+    })
+    .withFailureHandler(function () {
+      CLK_NEEDS.busy = false;
+      CLK_NEEDS.at = 0;
+      if (!hasCache) { CLK_NEEDS.data = null; CLK_NEEDS.day = today; }
+      if (currentView === requestedView) clkRenderNeedsYou_();
+    })
+    .getMyPendingTasks();
+}
+
+/** Row click: the notes route rides the SAME CLK_NAV_HINT hand-off the
+ *  coverage strip's "File N missing" uses; everything else is a plain
+ *  enterTool(tool, tab) to the server-named registry tab (C8). */
+function clkNeedsYouGo_(idx) {
+  var it = (CLK_NEEDS.data && Array.isArray(CLK_NEEDS.data.items)) ? CLK_NEEDS.data.items[idx] : null;
+  if (!it || !it.route) return;
+  var r = it.route;
+  if (it.kind === 'notes' && r.hint) { fileMissingCalls_(r.hint.date, r.hint.missingCount); return; }
+  if (typeof enterTool === 'function') enterTool(r.tool, r.tab);
 }
 
 function clkDashSpanishCard_(res, pendingRes) {
@@ -1239,11 +1372,11 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
     return `You haven't clocked in yet — tap <strong>Clock In</strong> to start your day.`;
   }
   const tzSuffix = tzAbbr ? ` ${esc(tzAbbr)}` : '';
-  const workedStr = `<strong>${stats.workedHM.h}h ${stats.workedHM.m}m</strong> worked today`;
-  const lunchStr = stats.lunchMinutes > 0 ? ` · <strong>${stats.lunchMinutes}m</strong> lunch` : '';
-
+  // PR 6 (T4): hours render ONCE — on the clock card's state line, nearest the
+  // clock. The sentence keeps state + the countdown only (the #5a move,
+  // finished: hours moved off the old ledger and were never trimmed here).
   if (stats.state === 'out') {
-    return `Shift complete · ${workedStr}${lunchStr}.`;
+    return `Shift complete for today.`;
   }
   const stateLabel = stats.state === 'lunch' ? 'on lunch since' : 'clocked in since';
   const since = stats.clockedInSince ? `<strong>${dispTime(stats.clockedInSince)}${tzSuffix}</strong>` : '—';
@@ -1258,7 +1391,7 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
     const oh = Math.floor(over / 60), om = Math.floor(over % 60);
     endStr = ` · <strong>${oh}h ${om}m</strong> past end of shift`;
   }
-  return `You're ${stateLabel} ${since}. ${workedStr}${lunchStr}${endStr}.`;
+  return `You're ${stateLabel} ${since}${endStr}.`;
 }
 
 // (F(cycle-8): renderPtoMini_ was removed — the Dashboard redesign relocated
@@ -1277,7 +1410,7 @@ let _clkLastDay = null;   // rep-tz date last rendered — drives the day-rollov
 
 function tzSelectHtml_(repTz, repAbbr) {
   const zones = [{ label: repAbbr || 'Local', tz: repTz }];
-  CLK_REGION_ZONES.forEach(function (z) { if (z.tz !== repTz) zones.push(z); });
+  CLK_TZ_ZONES.forEach(function (z) { if (z.tz !== repTz) zones.push(z); });
   const cur = CLK_DISPLAY_TZ || repTz;
   return '<select class="clk-tz-pill" id="clk-tz-sel" aria-label="Preview another timezone’s clock" title="Preview another timezone’s clock">' +
     zones.map(function (z) {
@@ -1304,7 +1437,8 @@ function clkDisplayHour_() {
  *  (IST) used to sit in one flat "Night" for nearly the whole shift. The night
  *  now walks Dusk → Nightfall → Midnight → Late night → Pre-dawn, each with
  *  its own gradient and a `stars` density (0–3) that drives the twinkling
- *  star field + moon rendered by clkSkyDecor_. Node-pinned. */
+ *  star field rendered by clkSkyDecor_. Node-pinned at every phase edge (the
+ *  midnight wrap `h >= 23 || h < 2` is the off-by-one waiting to happen). */
 function clkSkyFor_(h) {
   if (h >= 5 && h < 8)   return { grad: 'linear-gradient(135deg,#e8835a,#f6c177)', phase: 'Sunrise',       glyph: 'sun',  stars: 0 };
   if (h >= 8 && h < 12)  return { grad: 'linear-gradient(135deg,#4a89c8,#9ec9e8)', phase: 'Morning',       glyph: 'sun',  stars: 0 };
@@ -1316,8 +1450,8 @@ function clkSkyFor_(h) {
   return { grad: 'linear-gradient(135deg,#232a52,#7a4a63)', phase: 'Pre-dawn', glyph: 'moon', stars: 1 };   // 4–5
 }
 
-/** (b) — star field. Lives INSIDE .clk-sky-layers, so it sits under the z-1
- *  card content. Star positions are
+/** (b) — the STATIC star field. Lives INSIDE .clk-sky-layers, so it sits under
+ *  the z-1 card content. Star positions are
  *  deterministic (index-hashed), so re-renders never scatter them; the
  *  twinkle keyframes are neutralized by the global reduced-motion block. */
 var _clkLastStarDensity = -1;
@@ -1345,42 +1479,6 @@ function clkSkyDecor_(sky) {
       '%;animation-delay:' + ((i % 7) * 0.55).toFixed(2) + 's;animation-duration:' + (2.8 + (i % 4) * 0.7).toFixed(1) + 's"></span>';
   }
   deco.innerHTML = html;
-}
-
-/** (b) Shooting star — the mid-shift marker: fires only in deep night
- *  (density ≥ 2), only after the rep-local shift midpoint, every ~2.5–4.5 min
- *  from the 1Hz tick (a cheap ms compare per second). Skipped under
- *  prefers-reduced-motion (a non-animating streak would just linger) and when
- *  a background photo replaces the sky. Purely decorative — every guard
- *  degrades to "no streak". */
-var _clkNextShootAt = 0;
-function clkShootMaybe_() {
-  if (_clkLastStarDensity < 2) return;
-  var now = Date.now();
-  if (!_clkNextShootAt) { _clkNextShootAt = now + 20000 + Math.random() * 40000; return; }
-  if (now < _clkNextShootAt) return;
-  _clkNextShootAt = now + 150000 + Math.random() * 120000;
-  try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
-  // After the rep-local shift midpoint only (the operator's "after mid-shift").
-  try {
-    var start = (typeof clkSchedStartMin_ === 'function') ? clkSchedStartMin_() : 480;
-    var len = (typeof clkSchedLenMin_ === 'function') ? clkSchedLenMin_() : 540;
-    var parts = new Intl.DateTimeFormat('en-US', { timeZone: empTz(), hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
-    var hh = 0, mm = 0;
-    parts.forEach(function (x) {
-      if (x.type === 'hour') hh = parseInt(x.value, 10) || 0;
-      if (x.type === 'minute') mm = parseInt(x.value, 10) || 0;
-    });
-    if (((hh % 24) * 60 + mm) < start + len / 2) return;
-  } catch (e) { return; }
-  var deco = document.getElementById('clk-sky-deco');
-  if (!deco) return;
-  var s = document.createElement('span');
-  s.className = 'clk-shoot';
-  s.style.left = (35 + Math.random() * 55) + '%';
-  s.style.top = (5 + Math.random() * 30) + '%';
-  deco.appendChild(s);
-  setTimeout(function () { try { s.remove(); } catch (e) {} }, 1600);
 }
 
 function clkApplySky_(force) {
@@ -1508,66 +1606,18 @@ let CLK_SCHEDULE = null;
 function clkSchedStartMin_() { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.startMin === 'number') ? CLK_SCHEDULE.startMin : RIBBON_DEFAULT_SHIFT_START; }
 function clkSchedLenMin_()   { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.lengthMin === 'number') ? CLK_SCHEDULE.lengthMin : RIBBON_DEFAULT_SHIFT_LEN; }
 
-// Clock-view world-clock strip (item 5): US customer-service regions + the
-// rep's own offshore tz (IST/PHT) when it isn't already a US zone. Pure
-// client-side Intl.DateTimeFormat — no server cost. Formatters are cached
-// (built once per render) so the per-second tick doesn't reconstruct them.
-const CLK_REGION_ZONES = [
+// Timezone-preview options for the clock card's <select> (the deliberate
+// lookup the retired rotating world-clock strip never served — PR 6): US
+// customer-service regions + the offshore team zones. The rep's own roster tz
+// is prepended by tzSelectHtml_ when it is not already in the list.
+const CLK_TZ_ZONES = [
   { label: 'ET',  tz: 'America/New_York' },
   { label: 'CT',  tz: 'America/Chicago' },
   { label: 'PT',  tz: 'America/Los_Angeles' },
   { label: 'HST', tz: 'Pacific/Honolulu' },
-  { label: 'IST', tz: 'Asia/Kolkata' },   // offshore team zones — always listed
+  { label: 'IST', tz: 'Asia/Kolkata' },
   { label: 'PHT', tz: 'Asia/Manila' },
 ];
-let CLK_REGION_FMTS = [];
-// Rotation state — the strip shows ONE non-displayed zone at a time and cycles,
-// instead of listing them all (declutter). Reset per render in clkBuildRegionFmts_.
-const CLK_REGION_ROTATE_MS = 4500;
-let _clkRegionIdx = -1;
-let _clkRegionRotateAt = 0;
-function clkBuildRegionFmts_(repTz, repAbbr) {
-  const zones = CLK_REGION_ZONES.slice();
-  if (repTz && !zones.some(function (z) { return z.tz === repTz; })) {
-    zones.unshift({ label: repAbbr || 'Local', tz: repTz });   // offshore reps see their own tz first
-  }
-  CLK_REGION_FMTS = zones.map(function (z) {
-    let fmt = null;
-    try { fmt = new Intl.DateTimeFormat('en-US', { timeZone: z.tz, hour: 'numeric', minute: '2-digit' }); }
-    catch (e) { fmt = null; }   // unknown tz → drop
-    return { label: z.label, tz: z.tz, fmt: fmt };
-  }).filter(function (z) { return z.fmt; });
-  _clkRegionIdx = -1; _clkRegionRotateAt = 0;   // restart the rotation on each render
-}
-// Zones eligible for rotation = all formatted zones EXCEPT the one currently in
-// the big clock (that tz is already the headline).
-function clkRotationZones_() {
-  const disp = (typeof CLK_DISPLAY_TZ !== 'undefined' && CLK_DISPLAY_TZ) ? CLK_DISPLAY_TZ : empTz();
-  return CLK_REGION_FMTS.filter(function (z) { return z.tz !== disp; });
-}
-// 1Hz tick: keep the displayed zone's time live, and slide to the next zone every
-// CLK_REGION_ROTATE_MS. Re-renders the element (to animate) only on a rotation step;
-// otherwise it just updates the minute in place.
-function clkUpdateRegions_() {
-  const host = document.getElementById('clk-regions');
-  if (!host) return;
-  const zones = clkRotationZones_();
-  if (!zones.length) { host.innerHTML = ''; return; }
-  const now = Date.now();
-  let rotate = (now >= _clkRegionRotateAt);
-  if (_clkRegionIdx < 0 || _clkRegionIdx >= zones.length) { _clkRegionIdx = 0; rotate = true; }
-  else if (rotate) { _clkRegionIdx = (_clkRegionIdx + 1) % zones.length; }
-  if (rotate) _clkRegionRotateAt = now + CLK_REGION_ROTATE_MS;
-  const z = zones[_clkRegionIdx];
-  const timeStr = z.fmt.format(new Date());
-  const timeEl = host.querySelector('.clk-region-time');
-  if (rotate || !timeEl) {
-    host.innerHTML = '<span class="clk-region clk-region-rot">' +
-      '<b>' + esc(z.label) + '</b> <span class="clk-region-time">' + esc(timeStr) + '</span></span>';
-  } else {
-    timeEl.textContent = timeStr;   // same zone, just tick the minute — no re-animate
-  }
-}
 
 function ribbonPct_(min) {
   if (typeof min !== 'number' || isNaN(min)) return 0;
@@ -1770,6 +1820,9 @@ function clkBreakScheduleHtml_() {
   if (!breaks.length) return '';
   // Terser labels (B1 / Lunch / B2) + compact times so the three chips fit on
   // one row in the 360px rail. The Lunch chip is shaded darker to stand out.
+  // PR 6 (T4): the chips ABSORB the retired next-break chip — clkUpdateBreak_
+  // marks each one taken (struck through) / now / next (outlined + countdown)
+  // off its data-start/data-end, so breaks render ONCE, not three times.
   var shortLabel = function (lbl) {
     var l = String(lbl || '');
     if (/morning/i.test(l)) return 'B1';
@@ -1778,10 +1831,13 @@ function clkBreakScheduleHtml_() {
   };
   var chips = breaks.map(function (b) {
     var isLunch = /lunch/i.test(b.label);
-    return '<span class="clk-brk-chip' + (isLunch ? ' lunch' : '') + '" title="' + esc(b.label) + '">' +
-      esc(shortLabel(b.label)) + ' · ' + esc(clkFmtMinShort_(b.startMin)) + '–' + esc(clkFmtMinShort_(b.startMin + b.lenMin)) + '</span>';
+    var start = Number(b.startMin) || 0, end = start + (Number(b.lenMin) || 0);
+    return '<span class="clk-brk-chip' + (isLunch ? ' lunch' : '') + '" title="' + esc(b.label) + '"' +
+      ' data-start="' + start + '" data-end="' + end + '">' +
+      '<span class="clk-brk-txt">' + esc(shortLabel(b.label)) + ' · ' + esc(clkFmtMinShort_(start)) + '–' + esc(clkFmtMinShort_(end)) + '</span>' +
+      '<span class="clk-brk-when"></span></span>';
   }).join('');
-  return '<div class="clk-brk-sched"><span class="clk-brk-label">' + icon('clock', 12) + ' Breaks</span>' + chips + '</div>';
+  return '<div class="clk-brk-sched" id="clk-brk-sched"><span class="clk-brk-label">' + icon('clock', 12) + ' Breaks</span>' + chips + '</div>';
 }
 /** Compact time: "10:30a" / "1:30p" (single am/pm letter, no space). */
 function clkFmtMinShort_(min) {
@@ -1795,11 +1851,6 @@ function clkNowMin_(tz) {
   parts.forEach(function (p) { if (p.type === 'hour') h = parseInt(p.value, 10) || 0; if (p.type === 'minute') m = parseInt(p.value, 10) || 0; });
   return (h % 24) * 60 + m;
 }
-function clkFmtMin_(min) {
-  const h24 = Math.floor(min / 60) % 24, m = min % 60;
-  let h = h24 % 12; if (h === 0) h = 12;
-  return h + ':' + String(m).padStart(2, '0') + ' ' + (h24 < 12 ? 'AM' : 'PM');
-}
 function clkNextBreak_(nowMin) {
   const breaks = clkBreaks_().slice().sort(function (a, b) { return a.startMin - b.startMin; });
   for (let i = 0; i < breaks.length; i++) {
@@ -1810,26 +1861,32 @@ function clkNextBreak_(nowMin) {
   }
   return null;
 }
+var _clkLastBreakMin = -1;
 function clkUpdateBreak_() {
-  const host = document.getElementById('clk-next-break');
+  const host = document.getElementById('clk-brk-sched');
   if (!host) return;
-  const tz = empTz();
-  const next = clkNextBreak_(clkNowMin_(tz));
-  if (!next) { host.innerHTML = ''; return; }
-  const b = next.brk;
-  const chip = function (txt) {
-    return '<span style="display:inline-block;font-size:11px;font-family:var(--mono);color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:2px 10px;">' + esc(txt) + '</span>';
-  };
-  if (next.inProgress) {
-    host.innerHTML = chip('On ' + b.label + ' · until ' + clkFmtMin_(b.startMin + b.lenMin));
-    return;
-  }
-  host.innerHTML = chip('Next break · ' + b.label + ' at ' + clkFmtMin_(b.startMin) +
-    (next.minsUntil <= 90 ? ' (in ' + next.minsUntil + 'm)' : ''));
-  // The REMINDER itself is not fired here any more — it moved to the shell's
+  const nowMin = clkNowMin_(empTz());
+  if (nowMin === _clkLastBreakMin) return;   // 1Hz tick, minute-granular states — repaint on the minute only
+  _clkLastBreakMin = nowMin;
+  const next = clkNextBreak_(nowMin);
+  host.querySelectorAll('.clk-brk-chip').forEach(function (chip) {
+    const start = Number(chip.getAttribute('data-start')) || 0;
+    const end = Number(chip.getAttribute('data-end')) || 0;
+    const when = chip.querySelector('.clk-brk-when');
+    chip.classList.remove('taken', 'now', 'next');
+    let txt = '';
+    if (nowMin >= end) chip.classList.add('taken');
+    else if (nowMin >= start) { chip.classList.add('now'); txt = 'now'; }
+    else if (next && next.brk && Number(next.brk.startMin) === start) {
+      chip.classList.add('next');
+      if (next.minsUntil <= 90) txt = 'in ' + next.minsUntil + 'm';
+    }
+    if (when) when.textContent = txt;
+  });
+  // The REMINDER itself is not fired here — it lives in the shell's
   // remindersTick_ (operator 2026-08-11) so it also reaches the pinned pop-out
   // and other tabs. Firing it in both places would double-toast. This function
-  // only paints the chip.
+  // only paints the chip row.
 }
 
 /** Note coverage — now rendered INLINE in the shift-strip header (#3): the
@@ -2268,7 +2325,7 @@ function bindClockBtns() {
 // with ≥2 slides, reuses the world-clock strip's slide-up animation (which the
 // global prefers-reduced-motion block neutralizes), and is tied to the
 // startClock/stopClock lifecycle so no timer survives a tab nav-away.
-var CLK_GREET_ROT = { idx: 0, timer: null, statusHtml: '', hover: false };
+var CLK_GREET_ROT = { idx: 0, timer: null, statusHtml: '', hover: false, held: false };
 var CLK_GREET_ROT_MS = 8000;
 
 function clkGreetSlides_() {
@@ -2323,6 +2380,10 @@ function clkGreetRotTick_() {
   if (!el) return;                    // mid-render; stopClock cleans the timer on nav-away
   clkGreetRotBind_();                 // re-render replaced the element → rebind + clear stale hover
   if (CLK_GREET_ROT.hover) return;    // reading — hold this slide
+  // T3 (operator: "keep rotating, never rotate away from an active shift") —
+  // held while working / on lunch (set per render); What's-new slides simply
+  // wait for the shift to end, and the sidebar star stays the entry.
+  if (CLK_GREET_ROT.held) return;
   var slides = clkGreetSlides_();
   if (slides.length < 2) return;      // nothing to rotate (no What's-new configured)
   CLK_GREET_ROT.idx = (CLK_GREET_ROT.idx + 1) % slides.length;
@@ -2341,9 +2402,7 @@ function startClock() {
     if (!document.getElementById('live-time')) return;
     clkTickTime_();        // big time in the displayed tz (#5a)
     clkApplySky_();        // repaint the sky gradient when the displayed hour rolls over
-    clkShootMaybe_();      // (b) occasional shooting star after mid-shift (cheap ms compare)
-    clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
-    clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
+    clkUpdateBreak_();     // break chips: taken / in progress / next (+ countdown) — paint only
     // Day rollover — a tab open past midnight must reconcile state so a
     // forgotten clock-out doesn't carry "Clock Out" into the new day.
     const dayNow = isoDateTz(empTz());

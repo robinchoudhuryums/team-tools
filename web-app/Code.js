@@ -18757,6 +18757,194 @@ function getMyMetrics(date) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
+// (design handoff PR 6, T1). The dashboard already pays ~3 RPCs for the
+// carousels + 2 for the extras on every focus wake past the SWR window; five
+// more per-source fetches would be felt on the Apps Script webview, so the
+// client asks ONE question. Six sources, each try/catch'd INDIVIDUALLY: a
+// source that could not be read is NAMED in `unavailable` so the client
+// renders "couldn't check", never a confident zero (INV-187) — and a degraded
+// round is never cached (INV-129). Operator decisions (2026-09-02, #3): the QA
+// source is OMITTED (there is no ack on a QA review, and agents do not see the
+// tool), Requests = dept requests open + incoming (what the extras card
+// shows; a rep's own pending punch-edit already renders as the chip above the
+// punch buttons and their pending PTO waits on the MANAGER), and signable docs
+// are the sixth kind. Every route below names a REGISTERED TOOLS tab (pinned
+// like safeWebAppUrl_'s keys); the notes route carries the CLK_NAV_HINT
+// payload fileMissingCalls_ already speaks.
+var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
+var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
+
+/** Previous WORKDAY (Mon–Fri) before an ISO date — the server twin of the
+ *  client's mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never
+ *  populated same-day, so "calls without a note" is a previous-workday
+ *  question). Pure; a bad input yields ''. */
+function prevWorkdayIso_(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return '';
+  var d = new Date(iso + 'T12:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+
+/** Pure sort: overdue first, then by due date (blank due LAST), then title. */
+function pendingTasksSort_(items) {
+  return (items || []).slice().sort(function (a, b) {
+    var ao = a.overdue ? 0 : 1, bo = b.overdue ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    var ad = a.dueIso || '9999-99-99', bd = b.dueIso || '9999-99-99';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  });
+}
+
+function getMyPendingTasks() {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    var cache = CacheService.getScriptCache();
+    var key = PENDING_TASKS_CACHE_PREFIX + emp.id;
+    try {
+      var hit = cache.get(key);
+      if (hit) { var c = JSON.parse(hit); c.cached = true; return c; }
+    } catch (_) {}
+    var tz = safeTimezone_(emp.timezone);
+    var todayIso = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    var prev = prevWorkdayIso_(todayIso);
+    var nowMs = Date.now();
+    var items = [];
+    var unavailable = [];
+    var pushDate = function (iso) { return String(iso || '').slice(0, 10); };
+
+    // training — getMyTraining's own status rule (trainDeriveStatus_) decides
+    // overdue; a done item is not a task.
+    try {
+      var tr = getMyTraining();
+      if (!tr || tr.error) throw new Error((tr && tr.error) || 'unreadable');
+      (tr.items || []).forEach(function (it) {
+        if (it.status === 'done') return;
+        var due = pushDate(it.dueDate);
+        items.push({
+          kind: 'training', title: String(it.title || 'Training item'),
+          detail: (it.itemType === 'quiz' ? 'Quiz' : 'Training module') + (due ? ' · due ' + due : ''),
+          dueIso: due, overdue: it.status === 'overdue', action: 'Start',
+          route: { tool: 'develop', tab: 'trainingHome' },
+        });
+      });
+    } catch (e) { unavailable.push('training'); }
+
+    // coaching — open, NON-praise (praise needs no acknowledgement — PR 4,
+    // decision 8). Overdue = ageDays (BUSINESS days, server-computed; null =
+    // unknown and never overdue) at or past the reminder window.
+    try {
+      var co = getMyCoaching();
+      if (!co || co.error) throw new Error((co && co.error) || 'unreadable');
+      var remind = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
+      (co.items || []).forEach(function (it) {
+        if (it.status !== 'open' || it.severity === 'praise') return;
+        var sev = COACH_SEV_LABELS[it.severity] || String(it.severity || '');
+        items.push({
+          kind: 'coaching', title: 'Coaching note to acknowledge',
+          detail: sev + ' · logged ' + pushDate(it.createdAt) + (it.createdByName ? ' by ' + it.createdByName : ''),
+          dueIso: '', overdue: (it.ageDays != null) && Number(it.ageDays) >= remind, action: 'Open',
+          route: { tool: 'develop', tab: 'coaching' },
+        });
+      });
+    } catch (e) { unavailable.push('coaching'); }
+
+    // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
+    // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
+    // "couldn't check", never "0 missing" (F5 / INV-187).
+    try {
+      var m = prev ? getMyMetrics(prev) : null;
+      if (!m || m.error || m.noteCountUnavailable) throw new Error('unreadable');
+      var answered = (m.cdr && m.cdr.totalAnswered) ? Number(m.cdr.totalAnswered) : 0;
+      var logged = Number(m.noteCount) || 0;
+      var missing = answered - logged;
+      if (missing > 0) {
+        items.push({
+          kind: 'notes', title: missing + ' call' + (missing === 1 ? '' : 's') + ' without a note',
+          detail: 'Answered ' + prev + (m.noteCoverage != null ? ' · notes at ' + m.noteCoverage + '%' : ''),
+          dueIso: prev, overdue: false, action: 'File',
+          route: { tool: 'callNotes', tab: 'callNotes', hint: { date: prev, missingCount: missing } },
+        });
+      }
+    } catch (e) { unavailable.push('notes'); }
+
+    // requests — the rep's own OPEN dept requests + the incoming ones their
+    // desk owes (getDeptRequests already scopes both). Overdue = the SLA band.
+    try {
+      var dr = getDeptRequests();
+      if (!dr || dr.error) throw new Error((dr && dr.error) || 'unreadable');
+      var reqRoute = { tool: 'metrics', tab: 'metricsDeptReq' };
+      (dr.mine || []).forEach(function (r) {
+        if (r.status === 'resolved') return;
+        items.push({
+          kind: 'requests', title: 'Request to ' + String(r.toDept || '—') + (r.label ? ' · ' + r.label : ''),
+          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
+        });
+      });
+      (dr.incoming || []).forEach(function (r) {
+        items.push({
+          kind: 'requests', title: 'Incoming from ' + String(r.byName || 'a teammate') + (r.label ? ' · ' + r.label : ''),
+          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
+        });
+      });
+    } catch (e) { unavailable.push('requests'); }
+
+    // sched — the rep's own scheduled call-backs due TODAY (rep tz); a past
+    // due time today is overdue.
+    try {
+      var sc = getMyScheduledCalls();
+      if (!sc || sc.error) throw new Error((sc && sc.error) || 'unreadable');
+      (sc.calls || []).forEach(function (c) {
+        if (!(c.whenMs > 0)) return;
+        if (Utilities.formatDate(new Date(c.whenMs), tz, 'yyyy-MM-dd') !== todayIso) return;
+        items.push({
+          kind: 'sched', title: String(c.label || 'Scheduled call'),
+          detail: 'Call-back at ' + Utilities.formatDate(new Date(c.whenMs), tz, 'h:mm a'),
+          dueIso: todayIso, overdue: c.whenMs < nowMs, action: 'Open',
+          route: { tool: 'callNotes', tab: 'callNotes' },
+        });
+      });
+    } catch (e) { unavailable.push('sched'); }
+
+    // docs — signable / fillable employee docs (getMyDocs' needsAction);
+    // overdue = past dueAt (date compare in the rep's own frame).
+    try {
+      var dc = getMyDocs();
+      if (!dc || dc.error) throw new Error((dc && dc.error) || 'unreadable');
+      (dc.docs || []).forEach(function (d) {
+        if (!d.needsAction) return;
+        var due = pushDate(d.dueAt);
+        items.push({
+          kind: 'docs', title: String(d.title || 'Document'),
+          detail: String(d.docType || 'Document') + (d.requiresSignature ? ' · needs your signature' : ' · needs your answers') + (due ? ' · due ' + due : ''),
+          dueIso: due, overdue: !!(due && due < todayIso), action: 'Sign',
+          route: { tool: 'develop', tab: 'myDocs' },
+        });
+      });
+    } catch (e) { unavailable.push('docs'); }
+
+    var sorted = pendingTasksSort_(items);
+    var result = {
+      items: sorted.slice(0, PENDING_TASKS_CAP), total: sorted.length, cap: PENDING_TASKS_CAP,
+      overdue: sorted.filter(function (i) { return i.overdue; }).length,
+      unavailable: unavailable, todayIso: todayIso, prevWorkday: prev,
+    };
+    // INV-129: cache only a round where EVERY source was readable — a pinned
+    // degraded round would hide a task for the full TTL.
+    if (!unavailable.length) {
+      try { cache.put(key, JSON.stringify(result), PENDING_TASKS_CACHE_TTL); } catch (_) {}
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
+}
+
 /**
  * My Stats over a date RANGE (deferred #1). Caller-scoped self-view: aggregates
  * the calling rep's own CDR over [from, to] (reusing getCdrAgentMetrics_ for the

@@ -4268,6 +4268,13 @@ test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Nigh
   assert.strictEqual(clkSkyFor_(23).phase, 'Midnight', '23:00 joins the midnight band');
   assert.strictEqual(clkSkyFor_(3).phase + '|' + clkSkyFor_(3).stars, 'Late night|3');
   assert.strictEqual(clkSkyFor_(4).phase + '|' + clkSkyFor_(4).stars, 'Pre-dawn|1', 'stars fade toward dawn');
+  // PR 6 (design handoff §7): every phase EDGE, because the night walk wraps
+  // midnight (`h >= 23 || h < 2`) and an off-by-one there is invisible to
+  // anyone not working that shift.
+  const edges = { 5: 'Sunrise', 7: 'Sunrise', 8: 'Morning', 11: 'Morning', 12: 'Mid-afternoon', 16: 'Mid-afternoon',
+    17: 'Dusk', 19: 'Dusk', 20: 'Nightfall', 22: 'Nightfall', 23: 'Midnight', 0: 'Midnight', 1: 'Midnight',
+    2: 'Late night', 3: 'Late night', 4: 'Pre-dawn' };
+  Object.keys(edges).forEach((h) => assert.strictEqual(clkSkyFor_(Number(h)).phase, edges[h], 'hour ' + h + ' → ' + edges[h]));
   // The IST overnight shift (~18:30–03:00 local) now crosses ≥4 distinct looks.
   const gradients = [18, 21, 0, 3, 4].map((h) => clkSkyFor_(h).grad);
   assert.strictEqual(new Set(gradients).size, gradients.length, 'each night sub-phase has its own gradient');
@@ -4313,13 +4320,25 @@ test('L-35: spanishSearchQuery_ keeps the {to: cc:} brace-OR (Cc\'d requests ent
   assert.ok(/newer_than:7d$/.test(q), 'window rides the query');
 });
 
-test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok', () => {
-  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
-  const fn = clockSrc.match(/function clkShootMaybe_\(\) \{[\s\S]*?\n\}/);
-  assert.ok(fn, 'clkShootMaybe_ found');
-  assert.ok(/_clkLastStarDensity < 2/.test(fn[0]), 'deep-night density gate (< 2 returns)');
-  assert.ok(/prefers-reduced-motion/.test(fn[0]), 'reduced-motion skip (a non-animating streak would linger)');
-  assert.ok(/clkSchedStartMin_/.test(fn[0]), 'rep-local shift-midpoint gate');
+// Design handoff PR 6 (T2), 2026-09-02: the L-35 night-sky gating pin used to
+// REQUIRE clkShootMaybe_; the shooting star, the rotating world-clock strip,
+// the next-break chip and the greeting bar's on-the-clock pill are RETIRED
+// (motion with no information / breaks rendered three times / the state pill
+// 200px from the state), so the pin is rewritten IN PLACE into bans. Scanned
+// comment-stripped (INV-188 — the retirement is explained in a comment that
+// names what went). The STATIC star field and the tz <select> survive.
+test('PR6 (T2): the shooting star, world-clock strip, next-break chip and greeting pill are gone — bans', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const clk = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['clkShootMaybe_', 'clk-shoot', '_clkNextShootAt', 'CLK_REGION_ZONES', 'CLK_REGION_FMTS', 'clkBuildRegionFmts_',
+   'clkRotationZones_', 'clkUpdateRegions_', 'clk-region', 'clk-regions', 'clk-next-break', 'dash-onclock',
+   'clkDashTrainingCard_', 'clkFmtMin_('].forEach((dead) => {
+    assert.ok(clk.indexOf(dead) < 0, dead + ' reappeared in the Clock partial (retired by PR 6)');
+  });
+  assert.ok(/deco\.className = 'clk-stars'/.test(clk) && /class="st'/.test(clk), 'the static star field still renders');
+  assert.ok(/id="clk-tz-sel"/.test(clk) && /CLK_TZ_ZONES\.forEach/.test(clk), 'the tz <select> stays (the deliberate lookup the strip never served)');
+  const tick = clk.slice(clk.indexOf('function startClock()'), clk.indexOf('function stopClock()'));
+  assert.ok(/clkUpdateBreak_\(\);/.test(tick) && !/clkUpdateRegions_|clkShootMaybe_/.test(tick), 'the 1Hz tick paints the break chips and nothing retired');
 });
 
 test('L-35: greeting rotator ties to the startClock/stopClock lifecycle + hover-holds', () => {
@@ -5398,13 +5417,16 @@ test('V-5/V-6/V-7: the sidebar + nav use shortLabel and never truncate without a
     'name + employee id carry titles — both truncate at the DEFAULT sidebar width');
 });
 
-test('V-4: shift-strip durations never break mid-value', () => {
+test('V-4: shift-strip + state-line durations never break mid-value', () => {
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   assert.ok(/\.ss-hours \.ss-val \{ white-space: nowrap; \}/.test(clk),
     'each value+unit is a nowrap span (the cycle-11 .tz-chip `.seg` rule on its sibling)');
-  assert.ok(/class="ss-hours"><span class="ss-val">/.test(clk) &&
-            /class="ss-sub ss-val">/.test(clk),
-    'BOTH readouts (worked + lunch) are wrapped — one span alone leaves the other breaking');
+  // PR 6 (T4): the strip header keeps ONLY the lunch total (a nowrap .ss-val);
+  // the hours readout moved to the clock card's state line, which is nowrap too.
+  assert.ok(/class="ss-hours"><span class="ss-sub ss-val">\$\{stats\.lunchMinutes\}m lunch<\/span>/.test(clk),
+    'the lunch readout is wrapped');
+  const stateRule = clk.slice(clk.indexOf('.clk-sky .clk-state-hours {'));
+  assert.ok(/white-space: nowrap/.test(stateRule.slice(0, stateRule.indexOf('}'))), 'the state-line hours readout is nowrap');
 });
 
 test('V-8: the shared modal primary uses the app accent, not an inverted --ink', () => {
@@ -8689,12 +8711,14 @@ test('the clock-card photo capability and the moon are fully gone (INV-184)', ()
    'clkBgDownscale_', 'clkMoonPhase_', 'CLK_MOON_SHADE'].forEach((dead) => {
     assert.ok(clk.indexOf(dead) < 0, dead + ' reappeared in the Clock partial');
   });
-  // The star field and the shooting star SURVIVE — only the moon went.
-  // Assert the star field is still EMITTED, not merely that the class is
-  // mentioned somewhere — a surviving CSS rule proves nothing about the render.
+  // The star field SURVIVES — the moon went here, and the shooting star went
+  // with the design handoff's PR 6 (T2). Assert the star field is still
+  // EMITTED, not merely that the class is mentioned somewhere — a surviving
+  // CSS rule proves nothing about the render.
   assert.ok(/deco\.className = 'clk-stars'/.test(clk) && /class="st'/.test(clk),
     'the star field still renders');
-  assert.ok(/function clkShootMaybe_/.test(clk) && /clk-shoot/.test(clk), 'and the shooting star with it');
+  const clkNc = clk.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.ok(!/function clkShootMaybe_|clk-shoot/.test(clkNc), 'the shooting star is retired too (PR 6 — motion with no information)');
   // And the z-index rule no longer excludes selectors nothing emits.
   assert.ok(!/:not\(\.clk-sky-bg\)|:not\(\.clk-bg-ctrl\)/.test(clk),
     'the sky z-index rule dropped its dead :not() exclusions');
@@ -9437,8 +9461,11 @@ test('the first frame holds all four cards, and the extras start in parallel', (
   const skel = nc(extractFunction('tc/script_clock.html', 'clkDashSkeleton_'));
   // The extras row used to POP IN below the metrics pair; the initial skeleton
   // now renders BOTH pairs so nothing moves when content lands.
-  assert.strictEqual((skel.match(/dash-pair/g) || []).length, 2, 'skeleton holds both pairs');
-  assert.ok(/clkDashSkelExtra_\(\) \+\s*clkDashSkelExtra_\(\)/.test(skel), 'the second pair is extras-shaped');
+  assert.strictEqual((skel.match(/<div class="dash-pair/g) || []).length, 2, 'skeleton holds both pairs');
+  // PR 6: Training folded into "Needs you", so the extras pair is TWO cards
+  // for Spanish-capable users and ONE (Requests) for everyone else — the
+  // skeleton holds whichever shape will land.
+  assert.ok(/canSp \? clkDashSkelExtra_\(\) \+ clkDashSkelExtra_\(\) : clkDashSkelExtra_\(\)/.test(skel), 'the second pair is extras-shaped (2 or 1 cards)');
   const load = nc(extractFunction('tc/script_clock.html', 'clkLoadDashboard_'));
   // Extras RPCs no longer wait for the first metrics response.
   assert.ok(/clkLoadDashboardExtras_\(\);/.test(load), 'the cold branch kicks the extras in parallel');
@@ -14463,7 +14490,9 @@ test('ADJ-1/2: the Clock view reconciles on a timer and shows pending adjustment
   assert.ok(/if \(!list\.length\) return '';/.test(chip), 'an empty/absent list renders NOTHING');
   assert.ok(/esc\(label\)/.test(chip) && /esc\(a\.time/.test(chip), 'server strings escaped');
   assert.ok(/role="status"/.test(chip), 'the chip is announced (it changes without a user action)');
-  const strip = clk.slice(clk.indexOf('<div class="shift-strip">'), clk.indexOf('<div class="dash-main"'));
+  // PR 6 (T2): the chip + punch buttons moved out of the shift strip into their
+  // own block between the clock card and the strip; the ordering holds there.
+  const strip = clk.slice(clk.indexOf('<div class="clk-actions-block">'), clk.indexOf('<div class="shift-strip">'));
   assert.ok(strip.indexOf('clkPendingAdjustHtml_') !== -1 &&
     strip.indexOf('clkPendingAdjustHtml_') < strip.indexOf('renderActions('),
     'the chip renders ABOVE the punch buttons — the whole point is that it is seen before re-punching');
@@ -15601,7 +15630,7 @@ test('PR1-4: mock.js honors ?fixture=empty additively; EMPTY_FIXTURES is consult
   assert.ok(/var EMPTY_FIXTURES = \{/.test(mock), 'the empty-shape map exists');
   assert.ok(/FIXTURE_MODE === 'empty' && Object\.prototype\.hasOwnProperty\.call\(EMPTY_FIXTURES, name\)\)\s*\? EMPTY_FIXTURES\[name\] : FIXTURES\[name\]/.test(mock),
     'empty mode swaps ONLY RPCs that have an empty shape (additive — never a missing fixture)');
-  const OWED = ['getCoachingDashboard', 'getMyCoaching'];   // grows with each block: 'getMyPendingTasks' (PR 6), …
+  const OWED = ['getCoachingDashboard', 'getMyCoaching', 'getMyPendingTasks'];   // grows with each block
   const body = /var EMPTY_FIXTURES = \{([\s\S]*?)\n  \};/.exec(mock);
   assert.ok(body, 'EMPTY_FIXTURES is a literal object');
   OWED.forEach((name) => assert.ok(new RegExp('\\b' + name + '\\s*:').test(body[1]), name + ' has an empty shape'));
@@ -16493,6 +16522,176 @@ test('QA-23: PR 5 client wiring — period control + pref, coverage-derived stri
   assert.ok(keys.indexOf('durationSec') >= 0 && keys.indexOf('agentEmpId') >= 0 && keys.length >= 14, 'sanity: keys extracted');
   const recFn = mock.slice(mock.indexOf('var rec = function (id, name, ymd'), mock.indexOf('recs.push(r); return r;'));
   keys.forEach((k) => assert.ok(recFn.indexOf(k + ':') >= 0, 'fixture recording carries server key "' + k + '" (INV-185)'));
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Design handoff PR 6 (2026-09-02) — the Time Clock surface (T1–T4/T6).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\ndesign handoff PR 6 — Time Clock (Needs you, state line, rail order, rotator hold, readouts)');
+
+const pr6nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+
+test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailable`, degraded rounds never cached, bare {error} read shape, registered routes, prevWorkdayIso_ + pendingTasksSort_ behavioural', () => {
+  const raw = extractRawFunction('Code.js', 'getMyPendingTasks');
+  const fn = pr6nc(raw);
+  assert.ok(/return \{ error: 'Not authorized\.' \};/.test(fn), 'READ gate — a bare {error}, never success:false (the GATE-SHAPE rule)');
+  // Every source is its own try/catch and NAMES itself on failure (INV-187):
+  // a source that could not be read must render "couldn\'t check", never 0.
+  const pushes = [...fn.matchAll(/unavailable\.push\('(\w+)'\)/g)].map((m) => m[1]);
+  const kindsLine = /PENDING_TASKS_KINDS = \[([^\]]+)\]/.exec(pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')));
+  const kinds = kindsLine[1].match(/'(\w+)'/g).map((k) => k.replace(/'/g, ''));
+  assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one `unavailable` push per declared kind: ' + pushes.join(','));
+  assert.ok((fn.match(/\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length, 'each push sits in its OWN catch — one failed source must not take the others with it');
+  // INV-129: the cache put is guarded on a CLEAN round, and there is exactly one.
+  assert.strictEqual((fn.match(/cache\.put\(key/g) || []).length, 1, 'one cache write');
+  assertBefore(fn, 'if (!unavailable.length) {', 'cache.put(key', 'the put sits INSIDE the clean-round guard');
+  assert.ok(/PENDING_TASKS_CACHE_PREFIX \+ emp\.id/.test(fn), 'cached per rep');
+  // Operator decisions #3: praise is not a task; a done training item is not
+  // a task; a failed NOTES read is "couldn\'t check", never "0 missing".
+  assert.ok(/it\.severity === 'praise'\) return;/.test(fn), 'praise excluded');
+  assert.ok(/it\.status === 'done'\) return;/.test(fn), 'done training excluded');
+  assert.ok(/m\.noteCountUnavailable\) throw/.test(fn), 'noteCountUnavailable → unavailable, never a count');
+  assert.ok(/prevWorkdayIso_\(todayIso\)/.test(fn), 'notes are a PREVIOUS-workday question (CDR is never same-day)');
+  assert.ok(/hint: \{ date: prev, missingCount: missing \}/.test(fn), 'the notes route carries the CLK_NAV_HINT payload');
+  assert.ok(/total: sorted\.length/.test(fn) && /slice\(0, PENDING_TASKS_CAP\)/.test(fn), 'capped with the pre-slice total (INV-169)');
+  // Every route names a REGISTERED tab of the tool it claims (the
+  // safeWebAppUrl_ key pin, one level up: a stale key renders a working row
+  // that lands on the wrong view).
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = core.slice(core.indexOf('const TOOLS = {'), core.indexOf('\n};', core.indexOf('const TOOLS = {')));
+  const routes = [...fn.matchAll(/\{ tool: '(\w+)', tab: '(\w+)'/g)].map((m) => ({ tool: m[1], tab: m[2] }));
+  assert.ok(routes.length >= 6, 'routes found (' + routes.length + ')');
+  routes.forEach((r) => {
+    const at = toolsBlock.indexOf('\n  ' + r.tool + ':');
+    assert.ok(at >= 0, 'tool "' + r.tool + '" is a registered TOOL');
+    const next = toolsBlock.slice(at + 3).search(/\n  \w+:/);
+    const toolBody = toolsBlock.slice(at, next >= 0 ? at + 3 + next : undefined);
+    assert.ok(new RegExp('\\n\\s{6}' + r.tab + ':\\s*\\{').test(toolBody), 'tab "' + r.tab + '" is registered under "' + r.tool + '"');
+  });
+  // Behavioural: the previous-workday helper + the sort.
+  const ctx = { String, Number, Date, isNaN };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'prevWorkdayIso_') + '\n' + extractRawFunction('Code.js', 'pendingTasksSort_'), ctx);
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-07'), '2026-09-04', 'Monday → Friday');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-06'), '2026-09-04', 'Sunday → Friday');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-05'), '2026-09-04', 'Saturday → Friday');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08'), '2026-09-07', 'Tuesday → Monday');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-01-01'), '2025-12-31', 'year boundary');
+  assert.strictEqual(ctx.prevWorkdayIso_('nope'), '', 'a bad input yields \'\'');
+  const sorted = ctx.pendingTasksSort_([
+    { title: 'c', dueIso: '', overdue: false }, { title: 'b', dueIso: '2026-09-10', overdue: false },
+    { title: 'a', dueIso: '2026-09-09', overdue: false }, { title: 'z', dueIso: '', overdue: true }, { title: 'y', dueIso: '2026-09-01', overdue: true },
+  ]).map((i) => i.title).join('|');
+  assert.strictEqual(sorted, 'y|z|a|b|c', 'overdue first (due before blank), then due ascending, blank due LAST');
+});
+
+test('PR6-2: "Needs you" client — compact gate, leads the main column, pending ≠ empty ≠ error, real list with the count announced, overdue in words, degraded rounds never fresh, notes row through CLK_NAV_HINT, Training folded out of the extras', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const clk = pr6nc(raw);
+  const load = pr6nc(extractFunction('tc/script_clock.html', 'clkLoadNeedsYou_'));
+  assertBefore(load, "COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;", 'google.script.run', 'the loader early-outs in the pop-out BEFORE any RPC (cycle-8 M-12 — the hidden column must not re-pay a fetch on every focus wake)');
+  assert.ok(/CLK_NEEDS\.at = clean \? Date\.now\(\) : 0;/.test(load), 'freshness is stamped only on a CLEAN round (INV-129/156)');
+  assert.ok(/withFailureHandler\(function \(\) \{[\s\S]*?CLK_NEEDS\.at = 0;/.test(load), 'a failed refetch is never fresh');
+  assert.ok(/if \(ok\) \{ CLK_NEEDS\.data = r;/.test(load) && /else if \(!hasCache\) \{ CLK_NEEDS\.data = null;/.test(load), 'keep last-good on a failed refetch; null only on a cold miss');
+  const render = clk.slice(clk.indexOf('function renderClockView('), clk.indexOf('// ── Dashboard briefing carousels'));
+  assert.ok(render.indexOf('id="dash-needsyou"') > 0 && render.indexOf('id="dash-needsyou"') < render.indexOf('id="dash-cards"'), 'Needs you LEADS #dash-main, above the carousels (T6)');
+  assert.ok(/:root\[data-compact\] #dash-needsyou \{ display: none; \}/.test(raw), 'hidden in the pop-out like #dash-cards');
+  const html = pr6nc(extractFunction('tc/script_clock.html', 'clkNeedsYouHtml_'));
+  assert.ok(/if \(res === undefined\) return clkNeedsYouSkel_\(\);/.test(html), 'undefined → the card-shaped skeleton');
+  assert.ok(/if \(res === null \|\| res\.error\) return [^\n]*errorStateHtml_\(/.test(html) && !/errorStateHtml_\(esc\(/.test(html), 'null/error → errorStateHtml_ (A12/INV-175), no double escape');
+  assert.ok(/if \(!items\.length && !unavailable\.length\) return '';/.test(html), 'a CLEAN empty list renders NOTHING (the design\'s rule)');
+  assert.ok(/<ul class="ny-list" aria-label="Needs you, ' \+ count \+ ' item/.test(html), 'a real <ul> with the count announced');
+  assert.ok(/'Overdue'/.test(html) && /'Past due'/.test(html), 'overdue is carried in WORDS, never colour alone');
+  assert.ok(/Couldn\\'t check /.test(html) && /CLK_NEEDS_LABEL\[k\]/.test(html), 'an unreadable source is NAMED');
+  assert.ok(/esc\(String\(it\.title/.test(html) && /esc\(String\(it\.detail/.test(html) && /esc\(String\(it\.action/.test(html), 'server strings escaped');
+  assert.ok(/min-height: 44px/.test(raw.slice(raw.indexOf('.ny-link {'), raw.indexOf('.ny-link:hover'))), '44px targets');
+  const go = pr6nc(extractFunction('tc/script_clock.html', 'clkNeedsYouGo_'));
+  assert.ok(/it\.kind === 'notes' && r\.hint\) \{ fileMissingCalls_\(r\.hint\.date, r\.hint\.missingCount\); return; \}/.test(go), 'the notes row rides the coverage strip\'s CLK_NAV_HINT hand-off (C8)');
+  assert.ok(/enterTool\(r\.tool, r\.tab\)/.test(go), 'everything else is enterTool(tool, tab) to the server-named tab');
+  // Extras: Training folded into Needs you (the doc\'s §2); the row is [Spanish | Requests] or Requests alone.
+  const extras = pr6nc(extractFunction('tc/script_clock.html', 'clkLoadDashboardExtras_'));
+  assert.ok(/var expected = canSp \? 3 : 1;/.test(extras) && !/getMyTraining/.test(extras), 'the extras round no longer fetches training');
+  assert.ok(!/getMyTraining/.test(clk), 'no getMyTraining call remains in the Clock partial');
+  const rx = pr6nc(extractFunction('tc/script_clock.html', 'clkRenderDashboardExtras_'));
+  assert.ok(/dash-pair dash-pair-single/.test(rx) && /\.dash-pair\.dash-pair-single \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(raw), 'a lone Requests card gets a single-column pair, not an empty second track');
+  // Behavioural render through the real function.
+  const ctx = { String, Number, Array, esc: (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+    icon: (n) => '<svg data-i="' + n + '"></svg>', errorStateHtml_: (m) => '<div role="alert">' + m + '</div>' };
+  vm.createContext(ctx);
+  const consts = raw.match(/var CLK_NEEDS_ICON = \{[^\n]*\n/)[0] + raw.match(/var CLK_NEEDS_LABEL = \{[^\n]*\n/)[0];
+  vm.runInContext(consts + extractFunction('tc/script_clock.html', 'clkNeedsYouSkel_') + '\n' + extractFunction('tc/script_clock.html', 'clkNeedsYouHtml_'), ctx);
+  assert.ok(/role="status"/.test(ctx.clkNeedsYouHtml_(undefined)), 'skeleton announces loading');
+  assert.ok(/role="alert"/.test(ctx.clkNeedsYouHtml_(null)), 'null → the error card');
+  assert.strictEqual(ctx.clkNeedsYouHtml_({ items: [], unavailable: [] }), '', 'clean-empty → nothing');
+  const degraded = ctx.clkNeedsYouHtml_({ items: [], unavailable: ['docs', 'sched'] });
+  assert.ok(/Couldn't check employee docs, scheduled calls/.test(degraded), 'empty + unavailable → the named couldn\'t-check line (never "nothing pending")');
+  const out = ctx.clkNeedsYouHtml_({ items: [
+    { kind: 'docs', title: '<b>x</b>', detail: 'd', dueIso: '2026-09-01', overdue: true, action: 'Sign' },
+    { kind: 'notes', title: '3 calls', detail: 'e', dueIso: '', overdue: false, action: 'File' }], total: 2, unavailable: [], todayIso: '2026-09-02' });
+  assert.ok(/aria-label="Needs you, 2 items"/.test(out) && (out.match(/<li /g) || []).length === 2, 'two rows, count announced');
+  assert.ok(/1 overdue/.test(out) && /is-overdue is-past/.test(out) && /Overdue<\/span>/.test(out), 'overdue in words + past-due tone');
+  assert.ok(out.indexOf('&lt;b&gt;x&lt;/b&gt;') >= 0 && out.indexOf('<b>x</b>') < 0, 'a hostile title is inert');
+  // Fixtures + scenarios (INV-185: keys derived from the server push literals).
+  const code = pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const fnSrc = pr6nc(extractRawFunction('Code.js', 'getMyPendingTasks'));
+  const itemKeys = [];
+  [...fnSrc.matchAll(/items\.push\(\{([\s\S]*?)\}\);/g)].forEach((m) => {
+    [...m[1].matchAll(/(?:^|[\s{,])(\w+):\s/g)].forEach((k) => { if (itemKeys.indexOf(k[1]) < 0 && ['tool', 'tab', 'hint', 'date', 'missingCount'].indexOf(k[1]) < 0) itemKeys.push(k[1]); });
+  });
+  assert.ok(itemKeys.indexOf('route') >= 0 && itemKeys.indexOf('overdue') >= 0 && itemKeys.length >= 7, 'sanity: item keys extracted (' + itemKeys.join(',') + ')');
+  const envBlock = /var result = \{([\s\S]*?)\};/.exec(fnSrc)[1];
+  const envKeys = [...envBlock.matchAll(/(?:^|[\s{,])(\w+):\s/g)].map((k) => k[1]);
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fx = mock.slice(mock.indexOf('getMyPendingTasks: {'), mock.indexOf('getMyPendingTasks: {') + 3000);
+  const firstItem = fx.slice(fx.indexOf('{ kind:'), fx.indexOf('},', fx.indexOf('{ kind:')));
+  itemKeys.forEach((k) => assert.ok(new RegExp('\\b' + k + ':').test(firstItem), 'fixture item carries server key "' + k + '"'));
+  envKeys.forEach((k) => assert.ok(new RegExp('\\b' + k + ':').test(fx), 'fixture envelope carries server key "' + k + '"'));
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  assert.ok(/\['clock-needsyou-empty-light-wide'[^\n]*'\?fixture=empty'\]/.test(shoot), 'the clean-empty scenario shoots ?fixture=empty');
+  assert.ok(/\['clock-needsyou-error-light-wide'[^\n]*'\?failrpc=getMyPendingTasks'\]/.test(shoot), 'the failed-fetch scenario shoots ?failrpc');
+  void code;
+});
+
+test('PR6-3: the rail — clock card → punch actions → shift strip; the state line has its scrim and literal colours; hours render ONCE; the rotator holds on an active shift; break chips absorb the next-break chip; the punch primary is full-width', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const clk = pr6nc(raw);
+  const render = clk.slice(clk.indexOf('function renderClockView('), clk.indexOf('// ── Dashboard briefing carousels'));
+  const iSky = render.indexOf('id="clk-sky"'), iAct = render.indexOf('class="clk-actions-block"'), iStrip = render.indexOf('class="shift-strip"');
+  assert.ok(iSky > 0 && iAct > iSky && iStrip > iAct, 'rail order: clock card → punch actions → shift strip (T2)');
+  assert.ok(render.indexOf('${stateLine}') > iSky && render.indexOf('${stateLine}') < iAct, 'the state line is INSIDE the clock card');
+  // Scrim (the V-2 / OP-3 class, third time): full-bleed, its own dark fill,
+  // text-shadow OFF, and no theme colour token inside the state-line rules.
+  const rule = raw.slice(raw.indexOf('.clk-sky .clk-state {'), raw.indexOf('.clk-sky .clk-state-hours {'));
+  assert.ok(/background: rgba\(10, 13, 20, \.72\)/.test(rule) && /text-shadow: none/.test(rule) && /margin: 12px -18px -16px/.test(rule), 'scrim: rgba(10,13,20,.72), edge-to-edge, shadow off');
+  const stateRules = raw.slice(raw.indexOf('.clk-sky .clk-state {'), raw.indexOf('.dash-skel-label'));
+  assert.ok(!/color: var\(--/.test(stateRules) && !/background: var\(--/.test(stateRules), 'every colour on the state line is a LITERAL (the card\'s gradient is fixed — a theme token flips against it)');
+  // Hours ONCE (T4): the state line carries them; neither the sentence nor the strip header does.
+  assert.strictEqual((render.match(/m worked/g) || []).length, 1, 'exactly one "worked" readout in the render');
+  assert.ok(/class="clk-state-hours">\$\{esc\(hoursWorked\)\}/.test(render), 'and it is the state line');
+  const sentence = pr6nc(extractFunction('tc/script_clock.html', 'buildStatusSentence_'));
+  assert.ok(!/worked|workedHM|lunchMinutes/.test(sentence), 'the greeting sentence carries neither hours nor the lunch total');
+  assert.ok(/Shift complete for today\./.test(sentence) && /\$\{since\}\$\{endStr\}/.test(sentence), 'trimmed to state + countdown');
+  assert.ok(!/onClockPill|dash-onclock/.test(render), 'the greeting bar\'s duplicate on-the-clock pill is gone');
+  // Rotator hold (T3): set per render, honoured by the tick AFTER the hover hold.
+  assert.ok(/CLK_GREET_ROT\.held = onClock;/.test(render), 'held is derived from the live state on every render');
+  const tick = pr6nc(extractFunction('tc/script_clock.html', 'clkGreetRotTick_'));
+  assertBefore(tick, 'if (CLK_GREET_ROT.hover) return;', 'if (CLK_GREET_ROT.held) return;', 'the hold sits after the hover-hold');
+  assertBefore(tick, 'if (CLK_GREET_ROT.held) return;', 'CLK_GREET_ROT.idx = (', 'and before the slide advance');
+  assert.ok(/held: false/.test(raw.match(/var CLK_GREET_ROT = \{[^\n]*/)[0]), 'the state carries the flag');
+  // Break chips absorb the next-break chip (T4): one row, three states, no toast, clkNextBreak_ kept.
+  const upd = pr6nc(extractFunction('tc/script_clock.html', 'clkUpdateBreak_'));
+  assert.ok(/getElementById\('clk-brk-sched'\)/.test(upd) && /classList\.remove\('taken', 'now', 'next'\)/.test(upd) && /data-start/.test(upd), 'clkUpdateBreak_ paints the chip ROW\'s taken / now / next states');
+  assert.ok(!/showToast\(/.test(upd), 'and never toasts (INV-190 — the shell owns the reminder)');
+  assert.ok(/function clkNextBreak_\(/.test(clk) && /clkNextBreak_\(nowMin\)/.test(upd), 'clkNextBreak_ is kept — the outlined-next chip needs it');
+  assert.ok(/\.clk-brk-chip\.taken \.clk-brk-txt \{ text-decoration: line-through/.test(raw) && /\.clk-brk-chip\.next \{/.test(raw), 'taken = struck through, next = outlined');
+  // Punch primary full-width (3b): base rule, no viewport re-columning left.
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const actions = styles.slice(styles.indexOf('  .actions {'), styles.indexOf('  .actions .prime,'));
+  assert.ok(/grid-template-columns: 1fr 1fr;/.test(actions) && /\.actions \.prime \{ grid-column: 1 \/ -1; \}/.test(actions), 'primary spans both tracks; secondaries + Adjust sit 2-up');
+  const m540 = styles.slice(styles.indexOf('@media (max-width: 540px)'));
+  assert.ok(!/\.actions \{ grid-template-columns/.test(m540.slice(0, m540.indexOf('\n  }\n'))), 'the 540px block no longer re-columns .actions (its base IS that shape)');
+  assert.ok(/\.clk-actions-block \.actions \{ margin: 12px 0 0; \}/.test(raw), 'the actions block owns its spacing');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

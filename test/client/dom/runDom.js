@@ -1980,3 +1980,70 @@ test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes 
   assert.strictEqual(h.$('#coach-what').value, '', 'no stale prefill leaks into a fresh drawer');
   assert.ok(!h.$('#coach-note-chip'), 'no linked-note chip without a prefill');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Design handoff PR 6 (T1/T6) — "Needs you". Pending ≠ empty ≠ error, driven
+// through the real renderer into a live DOM, plus the loader's freshness rule
+// and the notes row's CLK_NAV_HINT hand-off.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Time Clock — Needs you (design handoff PR 6)');
+
+test('PR6: Needs you renders skeleton → list → error; clean-empty renders nothing; degraded rounds are never fresh; the notes row hands off through CLK_NAV_HINT', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  // bootShell lands on the Dashboard, whose render already emitted the slot
+  // (and whose loader is in flight — reset it so the assertions below own it).
+  const host = h.$('#dash-needsyou');
+  assert.ok(host, 'the Dashboard rendered the Needs-you slot ABOVE the carousels');
+  assert.ok(host.compareDocumentPosition(h.$('#dash-cards')) & 4, 'and it precedes #dash-cards in the DOM');
+  const NEEDS = h.read('CLK_NEEDS');
+  NEEDS.busy = false;
+  const render = h.read('clkRenderNeedsYou_');
+  // undefined → skeleton (pending is NOT empty)
+  NEEDS.data = undefined; render();
+  assert.ok(host.querySelector('[role="status"] .skel'), 'undefined renders the card-shaped skeleton');
+  // populated → a real list, count announced, overdue in words
+  NEEDS.data = { items: [
+    { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Moderate · logged 2026-08-23', dueIso: '', overdue: true, action: 'Open', route: { tool: 'develop', tab: 'coaching' } },
+    { kind: 'docs', title: 'Annual review', detail: 'review · due 2026-09-01', dueIso: '2026-09-01', overdue: true, action: 'Sign', route: { tool: 'develop', tab: 'myDocs' } },
+    { kind: 'notes', title: '3 calls without a note', detail: 'Answered 2026-09-01', dueIso: '2026-09-01', overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: '2026-09-01', missingCount: 3 } } },
+  ], total: 3, unavailable: [], todayIso: '2026-09-02' };
+  render();
+  const ul = host.querySelector('ul.ny-list');
+  assert.ok(ul && ul.getAttribute('aria-label') === 'Needs you, 3 items', 'a real <ul> with the count announced');
+  assert.strictEqual(ul.querySelectorAll('li a.ny-link').length, 3, 'one real link per item');
+  assert.ok(/2 overdue/.test(host.querySelector('.ny-head-right').textContent), 'the overdue count is in words');
+  assert.ok(/Past due/.test(ul.children[0].textContent) && /Overdue/.test(ul.children[1].textContent), 'overdue carried in words per row (no due date = past due; a past due date = overdue)');
+  assert.ok(ul.children[1].classList.contains('is-past'), 'a past due date takes the stronger tone');
+  // null → the error card (never "nothing pending")
+  NEEDS.data = null; render();
+  assert.ok(host.querySelector('[role="alert"]'), 'null renders the error card');
+  // clean-empty → nothing at all
+  NEEDS.data = { items: [], total: 0, unavailable: [], todayIso: '2026-09-02' }; render();
+  assert.strictEqual(host.innerHTML, '', 'a clean empty round renders nothing');
+  // empty + an unreadable source → the named couldn't-check line
+  NEEDS.data = { items: [], total: 0, unavailable: ['docs'], todayIso: '2026-09-02' }; render();
+  assert.ok(/Couldn't check employee docs/.test(host.textContent), 'an unreadable source is named, never rendered as nothing pending');
+  // Loader freshness: a degraded round never stamps fresh; a clean one does.
+  NEEDS.data = undefined; NEEDS.day = ''; NEEDS.at = 0; NEEDS.busy = false;
+  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: ['sched'], todayIso: '2026-09-02' }));
+  h.read('clkLoadNeedsYou_')();
+  h.flushTimers();
+  assert.strictEqual(NEEDS.at, 0, 'a degraded round is painted but never stamped fresh (INV-129)');
+  assert.ok(NEEDS.data && NEEDS.data.unavailable.length === 1, 'and its payload is kept for the render');
+  NEEDS.busy = false; NEEDS.day = '';
+  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: [], todayIso: '2026-09-02' }));
+  h.read('clkLoadNeedsYou_')();
+  h.flushTimers();
+  assert.ok(NEEDS.at > 0, 'a clean round stamps freshness');
+  // LAST, because it navigates away: the notes row → the coverage strip's
+  // CLK_NAV_HINT hand-off (C8), not a bare enterTool.
+  NEEDS.data = { items: [
+    { kind: 'notes', title: '3 calls without a note', detail: 'Answered 2026-09-01', dueIso: '2026-09-01', overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: '2026-09-01', missingCount: 3 } } },
+  ], total: 1, unavailable: [], todayIso: '2026-09-02' };
+  h.window.CLK_NAV_HINT = null;
+  h.read('clkNeedsYouGo_')(0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.window.CLK_NAV_HINT)), { source: 'coverageStrip', date: '2026-09-01', missingCount: 3 }, 'CLK_NAV_HINT parked for the Call Notes Log');
+  assert.strictEqual(h.read('currentView'), 'callNotes', 'and the Log view is entered');
+});

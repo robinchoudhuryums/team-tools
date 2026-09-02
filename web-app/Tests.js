@@ -1195,6 +1195,7 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('insurance_search_requiresEmployee',         test_insurance_search_requiresEmployee);
+  _integrationTest('pendingTasks_requiresEmployeeAndShape',      test_pendingTasks_requiresEmployeeAndShape);
   _integrationTest('deployStamp_requiresEmployeeAndHashes',      test_deployStamp_requiresEmployeeAndHashes);
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
@@ -5931,6 +5932,31 @@ function test_adminEmails_subsetOfManagersEnforced() {
 // Insurance payor lookup (operator 2026-08-25): rep-callable, so the gate case
 // is unregistered-caller-rejected (the kbRecordView idiom). The search logic
 // itself is Node-pinned (insPayorScore_/insPayorRowObj_/insToneCls_).
+/** Design handoff PR 6 — getMyPendingTasks (the Dashboard "Needs you"
+ *  aggregate). A READ gate returns a bare {error} (the GATE-SHAPE rule — never
+ *  success:false); a registered caller gets the envelope: items[] / total /
+ *  unavailable[] (an ARRAY of source KINDS, never a boolean) / todayIso. Every
+ *  item names a registered route, and the sort puts overdue first. */
+function test_pendingTasks_requiresEmployeeAndShape() {
+  const rejected = _asUser('not-a-registered-user@example.invalid', function () {
+    return getMyPendingTasks();
+  });
+  _assertContains(String(rejected && rejected.error), 'Not authorized', 'unregistered caller rejected before any source is read');
+  _assertTrue(!rejected.items, 'and no items come back with the rejection');
+  const r = _asUser(_TEST_INDIA_EMAIL, function () { return getMyPendingTasks(); });
+  _assertTrue(!r.error, 'registered caller gets the envelope: ' + JSON.stringify(r).slice(0, 200));
+  _assertTrue(Array.isArray(r.items), 'items is an array');
+  _assertTrue(Array.isArray(r.unavailable), 'unavailable is an ARRAY of source kinds (never a boolean)');
+  _assertTrue(typeof r.total === 'number' && r.total >= r.items.length, 'total carries the pre-slice count (INV-169)');
+  _assertTrue(/^\d{4}-\d{2}-\d{2}$/.test(String(r.todayIso)), 'todayIso rides the payload');
+  let lastOverdue = true;
+  r.items.forEach(function (it) {
+    _assertTrue(it.route && it.route.tool && it.route.tab, 'every item names a route: ' + JSON.stringify(it).slice(0, 120));
+    _assertTrue(!(it.overdue && !lastOverdue), 'overdue items sort first');
+    lastOverdue = !!it.overdue;
+  });
+}
+
 function test_insurance_search_requiresEmployee() {
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return searchInsurancePayors('aetna');

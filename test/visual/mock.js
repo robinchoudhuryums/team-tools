@@ -300,6 +300,23 @@ function qaLatestScorecards_(cards) {
       instanceLabel: '',
     },
     getWhatsNew: { none: true },
+    // Design handoff PR 6 — "Needs you". Shape mirrors getMyPendingTasks'
+    // return block (INV-185): {items[], total, cap, overdue, unavailable[],
+    // todayIso, prevWorkday}; item keys mirror the server's push literals
+    // (kind/title/detail/dueIso/overdue/action/route). All six kinds + one
+    // overdue-in-words row + one PAST-due row are on camera; `unavailable`
+    // carries one source so the "couldn't check" line renders too.
+    getMyPendingTasks: {
+      items: [
+        { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Moderate · logged ' + daysAgo(9) + ' by Robin Choudhury', dueIso: '', overdue: true, action: 'Open', route: { tool: 'develop', tab: 'coaching' } },
+        { kind: 'docs', title: 'Annual Performance Review', detail: 'review · needs your signature · due ' + daysAgo(1), dueIso: daysAgo(1), overdue: true, action: 'Sign', route: { tool: 'develop', tab: 'myDocs' } },
+        { kind: 'sched', title: 'Call back — J. Rivera · insurance question', detail: 'Call-back at 9:30 AM', dueIso: todayIso, overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'callNotes' } },
+        { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
+        { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
+        { kind: 'requests', title: 'Request to Shipping · Verified Shipping', detail: 'Sent ' + daysAgo(0), dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+      ],
+      total: 6, cap: 30, overdue: 3, unavailable: ['sched'], todayIso: todayIso, prevWorkday: daysAgo(1),
+    },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
     getAutomationHealthBadge: { failing: false, count: 0 },
@@ -1485,6 +1502,10 @@ function qaLatestScorecards_(cards) {
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
       analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
     getMyCoaching: { items: [], businessDayMinutes: 540 },
+    // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING
+    // (the design's "render nothing when the list is empty"), which is what
+    // changes most under this design and a populated fixture never shows.
+    getMyPendingTasks: { items: [], total: 0, cap: 30, overdue: 0, unavailable: [], todayIso: todayIso, prevWorkday: daysAgo(1) },
     // PR 5 (QA): a configured store with nothing indexed and no roster rows —
     // the coverage block's own empty state + the recordings empty state.
     getQaQueue: (function () {
