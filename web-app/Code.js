@@ -69,6 +69,9 @@ const CONFIG = {
   // start counts as on-time (grace). Lunch-out within this of scheduled lunch
   // counts as on-time too.
   PUNCTUALITY_GRACE_MIN:        5,
+  // PR 3 (M2): the punctuality report is per-rep PER-DAY, so its range is
+  // capped server-side (the QTR preset is 90 days).
+  PUNCT_MAX_RANGE_DAYS: 92,
   // Coaching (Training module): un-acknowledged coaching items older than this
   // many days are nudged to the issuing/team manager in the daily overdue
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
@@ -14142,6 +14145,44 @@ function getCoveragePlan(fromDate, toDate) {
  *  CONFIG.SHIFT_SCHEDULE), with a grace window. Also a secondary lunch-adherence
  *  stat (first LunchOut vs scheduled lunch). PHI-free (names + minute deltas).
  *  Only days the rep actually clocked in are counted (PTO/off days excluded). */
+/** Design handoff PR 3 (M2) — the per-day STATE of one attendance-record
+ *  cell. Pure so the client's day strip and the manager's read of it are
+ *  pinned to one rule. A day with a clock-in is graded (on time within the
+ *  grace window, else late) EVEN on a holiday or a PTO day — the punch is the
+ *  fact. With no clock-in: a holiday reads `holiday`, approved PTO reads
+ *  `off`, a weekday reads `nopunch` (an absent weekday drawn as a GAP would
+ *  read as an untracked absence — the doc's own rule, INV-187), and a weekend
+ *  is not a day in the record at all (`null` — the roster works no Sat/Sun). */
+function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
+  if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
+  if (holidayName) return 'holiday';
+  if (ptoType) return 'off';
+  return isWeekend ? null : 'nopunch';
+}
+
+/** Design handoff PR 3 (M2) — four consecutive 7-day buckets ending at
+ *  `toIso` (oldest first), clipped to `fromIso`. Only graded days (ontime /
+ *  late) count; a bucket with none reads `onTimePct: null`, never 0, and a
+ *  bucket wholly before the range still appears (with 0 days) so the client's
+ *  four bars keep their positions. Pure — `addDays(iso, n)` is injected. */
+function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
+  const out = [];
+  for (let w = 3; w >= 0; w--) {
+    const bTo = addDays(toIso, -(w * 7));
+    let bFrom = addDays(bTo, -6);
+    if (bFrom < fromIso) bFrom = fromIso;
+    let days = 0, onTime = 0;
+    (dayDetail || []).forEach(function (d) {
+      if (d.date < bFrom || d.date > bTo) return;
+      if (d.state === 'ontime') { days++; onTime++; }
+      else if (d.state === 'late') { days++; }
+    });
+    out.push({ from: bFrom, to: bTo, days: days, onTime: onTime,
+      onTimePct: days ? Math.round((onTime / days) * 100) : null });
+  }
+  return out;
+}
+
 function getPunctualityReport(fromDate, toDate) {
   try {
     const emp = getEmployeeInfo_();
@@ -14149,7 +14190,17 @@ function getPunctualityReport(fromDate, toDate) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate)))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
     if (toDate < fromDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+    // PR 3 (M2): the payload is now per-rep PER-DAY, so the range is bounded
+    // server-side — the QTR preset is 90 days × roster size, and an unbounded
+    // hand-typed range would also double the Timesheet scan for the
+    // previous-range comparison below.
+    const numDays = daysBetween_(fromDate, toDate) + 1;
+    if (numDays > CONFIG.PUNCT_MAX_RANGE_DAYS) return { error: 'Range must be at most ' + CONFIG.PUNCT_MAX_RANGE_DAYS + ' days.' };
     const grace = (CONFIG.PUNCTUALITY_GRACE_MIN != null) ? CONFIG.PUNCTUALITY_GRACE_MIN : 5;
+    // The previous EQUIVALENT range (same length, immediately before) — the
+    // summary strip's delta and each rep's prevOnTimePct read from it.
+    const prevTo = addDaysIso_(fromDate, -1);
+    const prevFrom = addDaysIso_(prevTo, -(numDays - 1));
 
     const roster = getEmployeeRosterRows_();
     const repMap = {};
@@ -14170,7 +14221,7 @@ function getPunctualityReport(fromDate, toDate) {
         let longest = -1;
         (sched.breaks || []).forEach(function (b) { if (b.lenMin > longest) { longest = b.lenMin; lunchMin = b.startMin; } });
       }
-      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {} };
+      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {}, prevDays: {} };
     }
 
     const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
@@ -14178,7 +14229,8 @@ function getPunctualityReport(fromDate, toDate) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
       const r = repMap[id]; if (!r) continue;
       const d = normalizeDate_(rows[i][ADP.DATE]);
-      if (!d || d < fromDate || d > toDate) continue;
+      if (!d || d < prevFrom || d > toDate) continue;
+      const bucket = (d < fromDate) ? r.prevDays : r.days;
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
@@ -14188,26 +14240,76 @@ function getPunctualityReport(fromDate, toDate) {
       // valid ClockIn existed on it, and (b) fell through the `lateMin > grace`
       // test into the else, scoring the day ON TIME.
       if (mins === null) continue;
-      if (!r.days[d]) r.days[d] = {};
-      if (type === 'ClockIn') { if (r.days[d].in == null || mins < r.days[d].in) r.days[d].in = mins; }
-      else { if (r.days[d].lunch == null || mins < r.days[d].lunch) r.days[d].lunch = mins; }
+      if (!bucket[d]) bucket[d] = {};
+      if (type === 'ClockIn') { if (bucket[d].in == null || mins < bucket[d].in) bucket[d].in = mins; }
+      else { if (bucket[d].lunch == null || mins < bucket[d].lunch) bucket[d].lunch = mins; }
     }
+
+    // Approved PTO in range (the `off` state) — BEST-EFFORT, and the outcome
+    // is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
+    // day would read `nopunch`, which is the less reassuring direction, but
+    // the client still needs to say the record is incomplete.
+    const ptoMap = {};
+    let ptoUnavailable = false;
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        if (!eid || !dt || dt < fromDate || dt > toDate) continue;
+        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
+      }
+    } catch (e) {
+      ptoUnavailable = true;
+      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
+    }
+    // Holidays from the SAME source the Coverage grid reads.
+    const holMap = {};
+    const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
+    Object.keys(yrs).forEach(function (y) {
+      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      catch (e) { /* ignore */ }
+    });
 
     const reps = [];
     Object.keys(repMap).forEach(function (id) {
       const r = repMap[id];
       const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
       if (!dates.length) return;
-      let onTime = 0, late = 0, totLate = 0, worst = 0, lunchDays = 0, lunchOnTime = 0;
+      let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
       dates.forEach(function (d) {
         const lateMin = r.days[d].in - r.startMin;
-        if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) worst = lateMin; }
+        if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = d; } }
         else onTime++;
         if (r.lunchMin != null && r.days[d].lunch != null) {
           lunchDays++;
           if (r.days[d].lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
         }
       });
+      // The previous equivalent range — same grading, no day detail.
+      let prevOn = 0, prevN = 0;
+      Object.keys(r.prevDays).forEach(function (d) {
+        if (r.prevDays[d].in == null) return;
+        prevN++;
+        if ((r.prevDays[d].in - r.startMin) <= grace) prevOn++;
+      });
+      // M2 — the attendance record, one entry per day in range (the client's
+      // day strip, late-day chips, timeline and weekly bars all draw from it).
+      const dayDetail = [];
+      for (let k = 0; k < numDays; k++) {
+        const dIso = addDaysIso_(fromDate, k);
+        const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
+        const hasIn = !!(r.days[dIso] && r.days[dIso].in != null);
+        const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
+        const ptoType = (ptoMap[id] && ptoMap[id][dIso]) || null;
+        const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
+        if (!state) continue;
+        dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
+          lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
+          ptoType: ptoType, holidayName: holMap[dIso] || null });
+      }
       reps.push({
         id: r.id, name: r.name, tz: r.tz, startMin: r.startMin,
         days: dates.length, onTime: onTime, late: late,
@@ -14215,10 +14317,18 @@ function getPunctualityReport(fromDate, toDate) {
         avgLate: late ? Math.round(totLate / late) : 0,
         worst: worst,
         lunchOnTimePct: lunchDays ? Math.round((lunchOnTime / lunchDays) * 100) : null,
+        // PR 3 (M2) — ADDITIVE. `days` stays the day COUNT the client + fixture
+        // consume; the per-day array is `dayDetail` (never rename `days`).
+        worstDate: worstDate,
+        prevDays: prevN, prevOnTime: prevOn,
+        prevOnTimePct: prevN ? Math.round((prevOn / prevN) * 100) : null,
+        weekly: punctWeeklyBuckets_(dayDetail, fromDate, toDate, addDaysIso_),
+        dayDetail: dayDetail,
       });
     });
     reps.sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });   // least punctual first
-    return { from: fromDate, to: toDate, grace: grace, reps: reps };
+    return { from: fromDate, to: toDate, grace: grace, reps: reps,
+             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable };
   } catch (err) { return { error: err.message }; }
 }
 

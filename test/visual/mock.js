@@ -69,6 +69,31 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
   return { start: first.toISOString().substring(0, 10), end: last.toISOString().substring(0, 10), offset: off };
 }
 
+// PR 3 (M2): the punctuality fixture's per-day states and weekly buckets are
+// the SERVER's own rules, not a paraphrase (INV-185).
+function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
+  if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
+  if (holidayName) return 'holiday';
+  if (ptoType) return 'off';
+  return isWeekend ? null : 'nopunch';
+}
+function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
+  const out = [];
+  for (let w = 3; w >= 0; w--) {
+    const bTo = addDays(toIso, -(w * 7));
+    let bFrom = addDays(bTo, -6);
+    if (bFrom < fromIso) bFrom = fromIso;
+    let days = 0, onTime = 0;
+    (dayDetail || []).forEach(function (d) {
+      if (d.date < bFrom || d.date > bTo) return;
+      if (d.state === 'ontime') { days++; onTime++; }
+      else if (d.state === 'late') { days++; }
+    });
+    out.push({ from: bFrom, to: bTo, days: days, onTime: onTime,
+      onTimePct: days ? Math.round((onTime / days) * 100) : null });
+  }
+  return out;
+}
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -681,14 +706,76 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // shot). Shape mirrors getPunctualityReport's return block: {from, to,
     // grace, reps[{id,name,tz,startMin,days,onTime,late,onTimePct,avgLate,
     // worst,lunchOnTimePct}]}, least punctual first.
-    getPunctualityReport: {
-      from: daysAgo(29), to: todayIso, grace: 5,
-      reps: [
-        { id: 'E-1090', name: 'Leo Kim',     tz: 'America/Chicago', startMin: 480, days: 18, onTime: 12, late: 6, onTimePct: 67, avgLate: 14, worst: 41, lunchOnTimePct: 88 },
-        { id: 'E-1088', name: 'Sam Ortiz',   tz: 'Asia/Manila',     startMin: 510, days: 20, onTime: 17, late: 3, onTimePct: 85, avgLate: 6,  worst: 12, lunchOnTimePct: 95 },
-        { id: 'E-1042', name: 'Avery Blake', tz: 'Asia/Kolkata',    startMin: 480, days: 21, onTime: 20, late: 1, onTimePct: 95, avgLate: 4,  worst: 4,  lunchOnTimePct: null },
-        { id: 'E-1077', name: 'Nina Patel',  tz: 'America/Chicago', startMin: 480, days: 19, onTime: 19, late: 0, onTimePct: 100, avgLate: 0, worst: 0,  lunchOnTimePct: 100 },
-      ],
+    // Punctuality (operator 2026-08-18 width round — the tab had never been
+    // shot; design handoff PR 3 made it a FUNCTION of the range, the F14 rule).
+    // Shape mirrors getPunctualityReport's return block: {from, to, grace,
+    // reps[{…, dayDetail[], weekly[], prevOnTimePct}], prevFrom, prevTo,
+    // ptoUnavailable}, least punctual first. dayDetail rows are classified by
+    // the SERVER's punctDayState_ / punctWeeklyBuckets_ (verbatim above), and
+    // Leo Kim carries a holiday AND an approved-PTO day in range — the two
+    // states easiest to get wrong, so they are always on camera.
+    getPunctualityReport: function (from, to) {
+      var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      var span = Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1;
+      var grace = 5;
+      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn) {
+        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null;
+        for (var k = 0; k < span; k++) {
+          var iso = addIso(from, k), dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+          var isHol = holOn != null && k === holOn, pto = (offOn != null && k === offOn) ? 'Full Day' : null;
+          var hasIn = !(dow === 0 || dow === 6) && !isHol && !pto;
+          var lateMin = hasIn ? ((k % lateEvery === 0) ? lateMins[(k / lateEvery) % lateMins.length] : 2) : null;
+          var st = punctDayState_(hasIn, lateMin, grace, isHol ? 'Labor Day' : null, pto, dow === 0 || dow === 6);
+          if (!st) continue;
+          if (hasIn) { days++; if (lateMin > grace) { late++; tot += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = iso; } } else on++; }
+          dd.push({ date: iso, schedStartMin: startMin, actualMin: hasIn ? startMin + lateMin : null,
+            lateMin: hasIn ? (lateMin > grace ? lateMin : 0) : null, state: st, ptoType: pto, holidayName: isHol ? 'Labor Day' : null });
+        }
+        var pct = days ? Math.round((on / days) * 100) : 0;
+        return { id: id, name: name, tz: tz, startMin: startMin, days: days, onTime: on, late: late, onTimePct: pct,
+          avgLate: late ? Math.round(tot / late) : 0, worst: worst, lunchOnTimePct: lunch, worstDate: worstDate,
+          prevDays: days, prevOnTime: Math.max(0, on - 2), prevOnTimePct: days ? Math.round((Math.max(0, on - 2) / days) * 100) : null,
+          weekly: punctWeeklyBuckets_(dd, from, to, addIso), dayDetail: dd };
+      };
+      var reps = [
+        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6),
+        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6),
+        mk('E-1042', 'Avery Blake', 'Asia/Kolkata',    480, 15, [4],        null, null, 6),
+        mk('E-1077', 'Nina Patel',  'America/Chicago', 480, 99, [0],        100, null, 6),
+      ].sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });
+      return { from: from, to: to, grace: grace, reps: reps, prevFrom: addIso(from, -span), prevTo: addIso(from, -1), ptoUnavailable: false };
+    },
+    // Coverage (design handoff PR 3, M6 — the tab had NO fixture and no
+    // scenario). A FUNCTION of the range (F14); keys mirror getCoveragePlan's
+    // return block + its days[].reps[] push literal (INV-185, pinned). One
+    // weekend, one holiday, one rep off, one tentative, one cross-tz shift.
+    getCoveragePlan: function (from, to) {
+      var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      var n = Math.min(14, Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1);
+      var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var days = [];
+      for (var d = 0; d < n; d++) {
+        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6;
+        var reps = [
+          { name: 'Avery Blake', tz: 'America/Chicago', status: (d === 2) ? 'off' : 'working', ptoType: (d === 2) ? 'Full Day' : null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'tentative' : 'working', ptoType: (d === 3) ? 'Half Day' : null, startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Nina Patel', tz: 'America/Chicago', status: 'working', ptoType: null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Leo Kim', tz: 'Asia/Kolkata', status: 'working', ptoType: null, startMgr: '9:30 PM', endMgr: '6:30 AM', startsPrevDay: true },
+        ];
+        var hours = [];
+        for (var h = 0; h < 24; h++) {
+          var c = 0, t = 0;
+          if (!closed) {
+            if (h >= 8 && h < 17) c += reps.filter(function (r, i) { return i < 3 && r.status === 'working' && !(i === 1 && h < 9); }).length;
+            if (h >= 8 && h < 17 && reps[1].status === 'tentative' && h >= 9) t++;
+            if (h < 7 || h >= 21) c++;   // Leo's cross-tz shift
+          }
+          hours.push({ hour: h, confirmed: c, tentative: t });
+        }
+        days.push({ date: iso, weekday: DOW[dow], holidayName: (d === 5) ? 'Labor Day' : null, closed: closed, reps: reps, hours: hours });
+      }
+      return { from: from, to: addIso(from, n - 1), managerTz: 'America/Chicago', minStaff: 2, goodStaff: 3, days: days,
+        businessStartHour: 8, businessEndHour: 17, weekdaysOnly: true, ptoUnavailable: false };
     },
     // Day Edit's prefill read (A4, 2026-09-01). It had NO fixture, so the
     // modal was unshootable and the four-slot → N-pair rebuild would have gone

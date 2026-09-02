@@ -118,6 +118,15 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
+  // Design handoff PR 3 (Manage): Punctuality dark parity + mobile + the
+  // EXPANDED row (the detailRow is the whole point of the redesign), and
+  // Coverage — which had never been shot at all — in light/dark/mobile.
+  ['punctuality-dark-wide',   { tool: 'manage', tab: 'punctuality' }, WIDE, 'dark', ''],
+  ['punctuality-light-mobile', { tool: 'manage', tab: 'punctuality' }, MOBILE, 'light', ''],
+  ['punctuality-expanded-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', '', "(function(){var b=document.querySelector('.pt-wrap .m-qtoggle'); if (b) b.click();})()"],
+  ['coverage-light-wide',  { tool: 'manage', tab: 'coverage' }, WIDE, 'light', ''],
+  ['coverage-dark-wide',   { tool: 'manage', tab: 'coverage' }, WIDE, 'dark', ''],
+  ['coverage-light-mobile', { tool: 'manage', tab: 'coverage' }, MOBILE, 'light', ''],
   // QA module Phase 1 (2026-08-27): the queue list — status tones, assignee
   // pills, filter chips. The detail/player needs chunked audio and stays an
   // uncovered scenario (noted in the Visual Audit Stage).

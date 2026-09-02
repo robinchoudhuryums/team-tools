@@ -45,22 +45,78 @@
   .cov-risk-item { font-size: 13px; padding: 3px 0; color: var(--ink); }
   .cov-risk-item b { font-family: var(--mono); }
   /* Punctuality table */
-  .punct-table { border-collapse: collapse; font-size: 13px; width: 100%; }
-  .punct-table th { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 7px 16px 7px 0; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
-  .punct-table td { padding: 7px 16px 7px 0; border-bottom: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
-  .punct-table tbody tr:last-child td { border-bottom: none; }
-  .punct-table .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  /* design rev §3 — preset chips, table card, per-rep adherence bar */
-  .punct-presets { display: inline-flex; gap: 6px; }
-  .punct-preset { font: inherit; font-size: 12px; padding: 6px 11px; border: 1px solid var(--line);
-    border-radius: var(--radius-sm); background: var(--paper-card); color: var(--muted); cursor: pointer; }
-  .punct-preset:hover { background: var(--accent-soft); color: var(--accent); }
-  .punct-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card);
-    padding: 6px 16px 12px; }
-  .punct-card-h { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted); margin: 12px 0; }
-  .punct-bar { height: 5px; border-radius: 3px; background: var(--paper-2); overflow: hidden; margin-top: 5px; min-width: 56px; }
-  .punct-bar > i { display: block; height: 100%; border-radius: 3px; }
+  /* ─── MANAGE TIME — grouped scroll (design handoff PR 3, M5) ────────── */
+  .mgr-group-h { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 22px 0 10px;
+    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .mgr-group-toggle { appearance: none; -webkit-appearance: none; font: inherit; letter-spacing: inherit; text-transform: inherit;
+    background: none; border: 0; padding: 0; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .mgr-group-toggle:hover { color: var(--accent); }
+  .mgr-group-toggle:focus-visible { outline: none; box-shadow: var(--ring-focus); border-radius: 4px; }
+  .mgr-group-toggle .chev { display: inline-flex; color: var(--muted-3); }
+  .mgr-group-sum { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 400; letter-spacing: .04em; text-transform: none; font-family: var(--ui); font-size: 12px; }
+  .mgr-sum-state[data-tone="ok"]   { color: var(--success-deep); }
+  .mgr-sum-state[data-tone="warn"] { color: var(--warning-deep); }
+  .mgr-sum-state[data-tone="crit"] { color: var(--danger-deep); font-weight: 600; }
+  .mgr-group[hidden] { display: none; }
+  .mgr-card-sub { font-size: 12px; color: var(--muted); margin: -6px 0 10px; }
+  .card[data-tone="warn"]        { box-shadow: inset 3px 0 0 var(--warn); }
+  .card[data-tone="destructive"] { box-shadow: inset 3px 0 0 var(--destructive); }
+
+  /* ─── PUNCTUALITY (design handoff PR 3, M1–M3) — the table rides the shared
+     .m-table; these are the cell/detail pieces. The retired hand-rolled
+     hand-rolled table/card/bar/preset rules are retired and banned (INV-184). */
+  .pt-bar { height: 5px; border-radius: 3px; background: var(--paper-2); overflow: hidden; margin-top: 5px; min-width: 56px; }
+  .pt-bar > i { display: block; height: 100%; border-radius: 3px; background: var(--muted-3); }
+  .pt-bar > i.m-pct-high { background: var(--accent); }
+  .pt-bar > i.m-pct-mid  { background: var(--warn); }
+  .pt-bar > i.m-pct-low  { background: var(--destructive); }
+  .pt-na { color: var(--muted-3); cursor: help; }
+  .pt-worst { box-shadow: inset 3px 0 0 var(--destructive); }
+  .pt-outliers { margin-bottom: 16px; }
+  .pt-out-list { display: flex; flex-direction: column; gap: 6px; }
+  .pt-out { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .pt-out:last-child { border-bottom: none; }
+  .pt-out-main { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .pt-out-name { font-weight: 600; color: var(--ink); }
+  .pt-out-sub { font-size: 12px; color: var(--muted); }
+  .pt-wrap .m-table { width: 100%; }
+  .pt-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 28px; padding: 8px 4px 10px; background: var(--paper-2); border-radius: var(--radius); }
+  .pt-col { min-width: 0; }
+  .pt-h { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 8px 0 6px; display: flex; align-items: center; gap: 8px; }
+  .pt-strip { display: flex; flex-wrap: wrap; gap: 3px; }
+  .pt-day { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--muted-3); }
+  .pt-day.ontime  { background: var(--accent); }
+  .pt-day.late    { background: var(--warn); }
+  .pt-day.late15  { background: var(--destructive); }
+  .pt-day.off     { background: var(--paper-3); border: 1px dashed var(--muted-3); box-sizing: border-box; }
+  .pt-day.holiday { background: var(--info-soft); }
+  .pt-day.nopunch { background: var(--paper-card); border: 1px solid var(--line); box-sizing: border-box; }
+  .pt-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .pt-legend .pt-day { vertical-align: -2px; margin-right: 4px; }
+  .pt-late { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pt-quiet { font-size: 12px; color: var(--muted); }
+  .pt-tl { position: relative; height: 22px; background: var(--paper-card); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .pt-tl-grace { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); }
+  .pt-tl-rule { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: .6; }
+  .pt-dot { position: absolute; top: 6px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--accent); opacity: .85; }
+  .pt-dot.late   { background: var(--warn); }
+  .pt-dot.late15 { background: var(--destructive); }
+  .pt-tl-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 2px; }
+  .pt-weeks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: end; }
+  .pt-week-bar { height: 44px; background: var(--paper-card); border: 1px solid var(--line); border-radius: 4px; display: flex; align-items: flex-end; overflow: hidden; }
+  .pt-week-bar > i { display: block; width: 100%; background: var(--muted-3); }
+  .pt-week-bar > i.high { background: var(--accent); }
+  .pt-week-bar > i.mid  { background: var(--warn); }
+  .pt-week-bar > i.low  { background: var(--destructive); }
+  .pt-week-lbl { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; margin-top: 2px; }
+  .pt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  @media (max-width: 720px) {
+    .pt-detail { grid-template-columns: 1fr; }
+    /* Drop Shift start (2), Avg late (5) and Lunch (7); keep Rep / Days / On-time / Worst. */
+    .pt-wrap .m-table th:nth-child(2), .pt-wrap .m-table td:nth-child(2),
+    .pt-wrap .m-table th:nth-child(5), .pt-wrap .m-table td:nth-child(5),
+    .pt-wrap .m-table th:nth-child(7), .pt-wrap .m-table td:nth-child(7) { display: none; }
+  }
   /* Team punches calendar (operator 2026-08-31) — reuses the Time/PTO
      .cal-* vocabulary from styles.html; only the team-specific bits live
      here. Selection is a distinct inset ring (info, not the accent the
@@ -121,6 +177,45 @@ function mgrLoadError_(msg) {
   }
 }
 
+// Design handoff PR 3 (M5) — Manage Time group state. Session-only (the doc
+// says "collapsed by default" and nothing more — a persisted key was
+// deliberately dropped), re-applied by renderManagerView on every re-render.
+// NOT a third mgrSwrRenderBlocked_ condition: a refresh landing on a
+// collapsed group re-renders it collapsed, losing nothing.
+var MGR_STATE = { collapsed: { periodic: true } };
+function mgrToggleGroup_(key, btn) {
+  var el = document.getElementById('mgr-' + key);
+  if (!el) return;
+  var open = el.hasAttribute('hidden');
+  if (open) el.removeAttribute('hidden'); else el.setAttribute('hidden', '');
+  MGR_STATE.collapsed[key] = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  var chev = btn.querySelector('.chev');
+  if (chev) chev.innerHTML = icon(open ? 'chevronDown' : 'chevronRight', 14);
+}
+/** The Periodic summary row's per-panel state — a collapsed panel still
+ *  SAYS what it found. tone: 'ok' | 'warn' | 'crit'. */
+function mgrSetSummary_(id, text, tone) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.setAttribute('data-tone', tone || 'ok');
+}
+/** Age in whole days of the oldest pending request (roster-tz today), or
+ *  null when the queue is empty / unstamped. */
+function mgrOldestPendingDays_(pending) {
+  var oldest = null;
+  (pending || []).forEach(function (p) {
+    var d = String(p.submittedAt || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (oldest === null || d < oldest) oldest = d;
+  });
+  if (oldest === null) return null;
+  var t = isoDateTz(empTz()).split('-'), o = oldest.split('-');
+  var days = Math.round((Date.UTC(+t[0], +t[1] - 1, +t[2]) - Date.UTC(+o[0], +o[1] - 1, +o[2])) / 86400000);
+  return days < 0 ? 0 : days;
+}
+
 // SWR render guard (2026-08-28): a background refresh must never wipe
 // in-progress interaction — a checked bulk-select box, or any open overlay
 // (Day Edit etc. re-fetch after their own submit anyway). Blocked = the
@@ -160,14 +255,18 @@ function loadPtoReconciliation_() {
       if (!s || currentView !== 'manage') return;
       // C17-7 — a FAILED check is not a CLEAN check (INV-187): only a
       // genuinely drift-free result may stay invisible.
-      if (res && res.error) { s.innerHTML = errorStateHtml_('PTO reconciliation check could not run — this is a failed check, not a clean result. (' + res.error + ')'); return; }
-      if (!res || !res.reps || res.reps.length === 0) { s.innerHTML = ''; return; }
+      if (res && res.error) { s.innerHTML = errorStateHtml_('PTO reconciliation check could not run — this is a failed check, not a clean result. (' + res.error + ')'); mgrSetSummary_('mgr-sum-pto', 'check failed', 'warn'); return; }
+      // M5 — a clean lazy card still STATES its state in the Periodic summary
+      // row ("all clear"), never nothing: a collapsed group must not hide it.
+      if (!res || !res.reps || res.reps.length === 0) { s.innerHTML = ''; mgrSetSummary_('mgr-sum-pto', 'all clear', 'ok'); return; }
+      mgrSetSummary_('mgr-sum-pto', res.reps.length + ' mismatch' + (res.reps.length === 1 ? '' : 'es') + ' · ' + res.reps.map(function (r) { return r.name; }).join(', '), 'crit');
       s.innerHTML = renderPtoReconCard_(res);
     })
     .withFailureHandler(function (err) {
       const s = document.getElementById('mgr-pto-recon');
       if (!s || currentView !== 'manage') return;
       s.innerHTML = errorStateHtml_('PTO reconciliation check could not run — this is a failed check, not a clean result. (' + ((err && err.message) || 'load failed') + ')');
+      mgrSetSummary_('mgr-sum-pto', 'check failed', 'warn');
     })
     .getPtoReconciliation();
 }
@@ -250,17 +349,21 @@ function loadSheetDoctor_() {
       const s = document.getElementById('mgr-sheet-doctor');
       if (!s || currentView !== 'manage') return;
       // C17-7 — same failed-vs-clean split as loadPtoReconciliation_.
-      if (res && res.error) { s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + res.error + ')'); return; }
+      if (res && res.error) { s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + res.error + ')'); mgrSetSummary_('mgr-sum-doctor', 'scan failed', 'warn'); return; }
       if (!res ||
           ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length))) {
-        s.innerHTML = ''; return;
+        s.innerHTML = ''; mgrSetSummary_('mgr-sum-doctor', 'all clear', 'ok'); return;   // M5 — state, never silence
       }
+      var nd = (res.totalDuplicates != null) ? res.totalDuplicates : (res.duplicates || []).length;
+      var ni = (res.totalInverted != null) ? res.totalInverted : (res.inverted || []).length;
+      mgrSetSummary_('mgr-sum-doctor', (nd ? nd + ' duplicate' : '') + (nd && ni ? ' · ' : '') + (ni ? ni + ' inverted' : ''), 'warn');
       s.innerHTML = renderSheetDoctorCard_(res);
     })
     .withFailureHandler(function (err) {
       const s = document.getElementById('mgr-sheet-doctor');
       if (!s || currentView !== 'manage') return;
       s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + ((err && err.message) || 'load failed') + ')');
+      mgrSetSummary_('mgr-sum-doctor', 'scan failed', 'warn');
     })
     .getTimesheetDoctor();
 }
@@ -668,15 +771,54 @@ function renderManagerView(area, data) {
     ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;text-align:right;letter-spacing:.08em;text-transform:uppercase">Times shown in ${esc(mgrTzAbbr)}</div>`
     : '';
 
+  // Design handoff PR 3 (M5) — one scroll, two labelled groups. "Needs you
+  // today" (the three panels that block a PERSON, then the live state) comes
+  // first; "Periodic" (export, the two diagnostic cards, the two recent lists)
+  // is a real disclosure, collapsed by default, whose summary row still
+  // STATES each panel's state — collapse that hides a problem is worse than a
+  // long scroll. Collapse state lives in MGR_STATE (session only, re-applied
+  // on every re-render) and is deliberately NOT a refresh blocker.
+  const oldestPending = mgrOldestPendingDays_(data.pending);
+  const periodicOpen = !MGR_STATE.collapsed.periodic;
   area.innerHTML = `
     ${COMPACT_MODE
       ? `<div style="display:flex;justify-content:flex-end;padding:8px 14px 0"><button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}</button></div>`   // title dropped in the pop-out; the refresh button stays (its handler is unguarded)
-      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Manager Dashboard</span></div><h1 class="display-title">Manager Dashboard</h1></div><div class="app-bar-right"><button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}Refresh</button></div></div>`}
+      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Manage</span><span class="crumb-sep">›</span><span class="crumb-current">Manage Time</span></div><h1 class="display-title">Manage Time</h1></div><div class="app-bar-right"><button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}Refresh</button></div></div>`}
 
     ${heroHtml}
     ${renderAnalyticsSection(data)}
-    <div id="mgr-pto-recon"></div>
-    <div id="mgr-sheet-doctor"></div>
+
+    <h2 class="mgr-group-h" id="mgr-group-needs"><span>Needs you today</span></h2>
+
+    <div class="card" data-tone="${data.pending.length > 0 ? 'warn' : ''}">
+      <h2 class="card-label with-count">
+        <span>Pending Time Off</span>
+        <span style="display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0">
+          ${data.pending.length > 0 ? `<span class="count-pill ${data.pending.length>0?'warn':''}">${data.pending.length}</span>` : ''}
+          <button class="refresh-btn" id="mgr-add-timeoff">${icon('plus', 12)}Add Time Off</button>
+        </span>
+      </h2>
+      ${oldestPending != null ? `<div class="mgr-card-sub">oldest ${oldestPending} day${oldestPending === 1 ? '' : 's'} in the queue</div>` : ''}
+      ${data.pending.length > 1 ? `<div id="mgr-bulk-bar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2)">
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-family:var(--ui);text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink);cursor:pointer">
+          <input type="checkbox" id="mgr-select-all" style="width:auto;margin:0"> Select all
+        </label>
+        <span style="flex:1"></span>
+        <button class="pending-btn pb-approve" id="mgr-bulk-approve" disabled>${icon('check', 14)}Approve Selected</button>
+        <button class="pending-btn pb-deny" id="mgr-bulk-deny" disabled>${icon('x', 14)}Deny Selected</button>
+      </div>` : ''}
+      ${pendingHtml}
+    </div>
+
+    <div class="card" data-tone="${data.missedPunches.length > 0 ? 'destructive' : ''}">
+      <h2 class="card-label with-count">
+        <span>Missed Clock-Outs · last ${data.missedLookbackDays}d</span>
+        ${data.missedPunches.length > 0 ? `<span class="count-pill danger">${data.missedPunches.length}</span>` : ''}
+      </h2>
+      ${data.missedPunches.length > 0 ? '<div class="mgr-card-sub">fix before payroll — Day Edit on the rep’s card, or approve their adjustment request</div>' : ''}
+      ${missedHtml}
+    </div>
+
     <div id="mgr-adjust-queue"></div>
 
     <div class="card">
@@ -689,50 +831,40 @@ function renderManagerView(area, data) {
 
     <div id="mgr-team-cal"></div>
 
-    <div class="card">
-      <h2 class="card-label with-count">
-        <span>Pending Time Off</span>
-        <span style="display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0">
-          ${data.pending.length > 0 ? `<span class="count-pill ${data.pending.length>0?'warn':''}">${data.pending.length}</span>` : ''}
-          <button class="refresh-btn" id="mgr-add-timeoff">${icon('plus', 12)}Add Time Off</button>
-        </span>
-      </h2>
-      ${data.pending.length > 1 ? `<div id="mgr-bulk-bar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2)">
-        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-family:var(--ui);text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink);cursor:pointer">
-          <input type="checkbox" id="mgr-select-all" style="width:auto;margin:0"> Select all
-        </label>
-        <span style="flex:1"></span>
-        <button class="pending-btn pb-approve" id="mgr-bulk-approve" disabled>${icon('check', 14)}Approve Selected</button>
-        <button class="pending-btn pb-deny" id="mgr-bulk-deny" disabled>${icon('x', 14)}Deny Selected</button>
-      </div>` : ''}
-      ${pendingHtml}
-    </div>
+    <h2 class="mgr-group-h" id="mgr-group-periodic">
+      <button type="button" class="mgr-group-toggle" aria-expanded="${periodicOpen ? 'true' : 'false'}" aria-controls="mgr-periodic" onclick="mgrToggleGroup_('periodic', this)">
+        <span class="chev">${icon(periodicOpen ? 'chevronDown' : 'chevronRight', 14)}</span>Periodic
+      </button>
+      <span class="mgr-group-sum" id="mgr-periodic-sum" aria-live="polite">
+        <span class="mgr-sum-item">Export</span>
+        <span class="mgr-sum-item">PTO drift: <span id="mgr-sum-pto" class="mgr-sum-state">checking…</span></span>
+        <span class="mgr-sum-item">Sheet health: <span id="mgr-sum-doctor" class="mgr-sum-state">checking…</span></span>
+        <span class="mgr-sum-item">${recent.length} recent punch${recent.length === 1 ? '' : 'es'}</span>
+        <span class="mgr-sum-item">${data.recentAudits.length} activit${data.recentAudits.length === 1 ? 'y' : 'ies'}</span>
+      </span>
+    </h2>
+    <div id="mgr-periodic" class="mgr-group"${periodicOpen ? '' : ' hidden'}>
+      <div class="card">
+        <h2 class="card-label">Export ADP Upload</h2>
+        <button class="export-btn-large" id="mgr-export">${icon('download', 16)}Generate ADP Export</button>
+      </div>
 
-    <div class="card">
-      <h2 class="card-label with-count">
-        <span>Missed Clock-Outs · last ${data.missedLookbackDays}d</span>
-        ${data.missedPunches.length > 0 ? `<span class="count-pill danger">${data.missedPunches.length}</span>` : ''}
-      </h2>
-      ${missedHtml}
-    </div>
+      <div id="mgr-pto-recon"></div>
+      <div id="mgr-sheet-doctor"></div>
 
-    <div class="card">
-      <h2 class="card-label">Export ADP Upload</h2>
-      <button class="export-btn-large" id="mgr-export">${icon('download', 16)}Generate ADP Export</button>
-    </div>
+      <div class="card">
+        <h2 class="card-label with-count">
+          <span>Recent Punches · within ${data.mgrDeleteWindowDays}d to delete</span>
+          ${recent.length > 0 ? `<span class="count-pill">${recent.length}</span>` : ''}
+        </h2>
+        ${recentHtml}
+      </div>
 
-    <div class="card">
-      <h2 class="card-label with-count">
-        <span>Recent Punches · within ${data.mgrDeleteWindowDays}d to delete</span>
-        ${recent.length > 0 ? `<span class="count-pill">${recent.length}</span>` : ''}
-      </h2>
-      ${recentHtml}
-    </div>
-
-    <div class="card">
-      <h2 class="card-label">Recent Activity</h2>
-      ${auditHtml}
-      ${auditFootnote}
+      <div class="card">
+        <h2 class="card-label">Recent Activity</h2>
+        ${auditHtml}
+        ${auditFootnote}
+      </div>
     </div>`;
 
   document.getElementById('mgr-refresh').addEventListener('click', () => {
@@ -1681,15 +1813,42 @@ function renderAnalyticsSection(data) {
 // ════════════════════════════════════════════════════════════════════════════
 //  COVERAGE PLANNER (#3 — manager forward staffing view, managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var COV_STATE = { from: '', to: '' };
+var COV_STATE = { from: '', to: '', customOpen: false };
+// M4 — FORWARD presets: Coverage is a staffing plan, so its presets look
+// ahead (the server caps the range at 14 days). Reusing 7D/30D/QTR here would
+// point a staffing planner at the past.
+var COV_PRESETS = [{ key: 'week', label: 'This week', off: 0, len: 7 }, { key: 'next', label: 'Next week', off: 7, len: 7 }, { key: '2w', label: '2 weeks', off: 0, len: 14 }];
+function covActivePreset_() {
+  var todayIso = isoDateTz(empTz());
+  for (var i = 0; i < COV_PRESETS.length; i++) {
+    var p = COV_PRESETS[i];
+    if (COV_STATE.from === mgrAddDaysIso_(todayIso, p.off) && COV_STATE.to === mgrAddDaysIso_(todayIso, p.off + p.len - 1)) return p.key;
+  }
+  return '';
+}
+function covToggleCustom_(scope, rowId) {
+  var next = mtDateRangeToggle_(scope, rowId);
+  if (next !== null) COV_STATE.customOpen = next;
+}
+function covPreset_(key) {
+  var p = null;
+  COV_PRESETS.forEach(function (x) { if (x.key === key) p = x; });
+  if (!p) return;
+  var todayIso = isoDateTz(empTz());
+  COV_STATE.from = mgrAddDaysIso_(todayIso, p.off);
+  COV_STATE.to = mgrAddDaysIso_(todayIso, p.off + p.len - 1);
+  COV_STATE.defaultDay = null;   // D5 — a preset is a user choice; sticks across midnight
+  var f = document.getElementById('cov-from'), t = document.getElementById('cov-to');
+  if (f) f.value = COV_STATE.from;
+  if (t) t.value = COV_STATE.to;
+  mtDateRangeSync_('cov', key);
+  covLoad_();
+}
 
 function enterCoverageView(area) {
   if (typeof stopClock === 'function') stopClock();
   area = area || document.getElementById('view-area');
   if (!area) return;
-  var isoLocal = function (d) {
-    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-  };
   // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight — a
   // long-lived tab (the pinned pop-out pattern) re-entering Coverage kept
   // yesterday-anchored defaults with no signal. `defaultDay` marks the range
@@ -1707,21 +1866,29 @@ function enterCoverageView(area) {
     COV_STATE.from = todayIso;
     COV_STATE.to = mgrAddDaysIso_(todayIso, 6);   // F(cycle-8): DST-safe
   }
+  var active = covActivePreset_();
+  var open = COV_STATE.customOpen || active === '';
+  var control = mtDateRange_({ scope: 'cov', ariaLabel: 'Coverage range',
+    presets: COV_PRESETS.map(function (p) { return { key: p.key, label: p.label }; }),
+    active: active, onPreset: 'covPreset_', rowId: 'cov-custom', customOpen: open, onToggle: 'covToggleCustom_' });
   area.innerHTML =
     (COMPACT_MODE
-      ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
-      : '<div class="view-title-row"><div><h1 class="view-title">Coverage</h1><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div></div>') +
-    '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
+      ? control   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
+      : '<div class="app-bar"><div class="app-bar-left">' +
+          '<div class="breadcrumb"><span>Manage</span><span class="crumb-sep">›</span><span class="crumb-current">Coverage</span></div>' +
+          '<h1 class="display-title">Coverage</h1>' +
+        '</div><div class="app-bar-right">' + control + '</div></div>') +
+    mtDateRangeRow_('cov-custom', open,
       '<div class="field"><label for="cov-from">From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
       '<div class="field"><label for="cov-to">To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
-      '<button class="refresh-btn" id="cov-load">Load</button>' +
-    '</div>' +
+      '<button type="button" class="refresh-btn" id="cov-load">Load</button>') +
     '<div id="cov-body">' + loSweep() + '</div>';
   var loadBtn = document.getElementById('cov-load');
   if (loadBtn) loadBtn.onclick = function () {
     COV_STATE.from = document.getElementById('cov-from').value;
     COV_STATE.to = document.getElementById('cov-to').value;
     COV_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
+    mtDateRangeSync_('cov', covActivePreset_());
     covLoad_();
   };
   covLoad_();
@@ -1905,15 +2072,23 @@ function covRender_(data) {
 // ════════════════════════════════════════════════════════════════════════════
 //  PUNCTUALITY (start-time adherence vs scheduled shift start, managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var PUNCT_STATE = { from: '', to: '' };
+var PUNCT_STATE = { from: '', to: '', sort: { key: 'onTimePct', dir: 'asc' }, customOpen: false, data: null };
+var PUNCT_PRESETS = [{ key: '7d', label: '7D', days: 7 }, { key: '30d', label: '30D', days: 30 }, { key: 'qtr', label: 'QTR', days: 90 }];
+
+/** Which backward preset the current range matches ('' = custom). */
+function punctActivePreset_() {
+  var todayIso = isoDateTz(empTz());
+  if (PUNCT_STATE.to !== todayIso) return '';
+  for (var i = 0; i < PUNCT_PRESETS.length; i++) {
+    if (PUNCT_STATE.from === mgrAddDaysIso_(todayIso, -(PUNCT_PRESETS[i].days - 1))) return PUNCT_PRESETS[i].key;
+  }
+  return '';
+}
 
 function enterPunctualityView(area) {
   if (typeof stopClock === 'function') stopClock();
   area = area || document.getElementById('view-area');
   if (!area) return;
-  var isoLocal = function (d) {
-    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-  };
   // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight (see
   // enterCoverageView) — user-chosen ranges are never touched.
   var punctToday = isoDateTz(empTz());
@@ -1925,52 +2100,71 @@ function enterPunctualityView(area) {
     PUNCT_STATE.to = todayIso;
     PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -29);   // default last 30 days (F(cycle-8): DST-safe)
   }
+  var active = punctActivePreset_();
+  var open = PUNCT_STATE.customOpen || active === '';
   area.innerHTML =
     (COMPACT_MODE
       ? ''   /* pop-out: the tool tab bar names the active tab (2026-08-11) */
-      : '<div class="view-title-row"><div><h1 class="view-title">Punctuality</h1><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div></div>') +
-    '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
+      : '<div class="app-bar"><div class="app-bar-left">' +
+          '<div class="breadcrumb"><span>Manage</span><span class="crumb-sep">›</span><span class="crumb-current">Punctuality</span></div>' +
+          '<h1 class="display-title">Punctuality</h1>' +
+          '<p class="view-subtitle">Start-time adherence vs each rep’s scheduled shift start. On-time = clock-in within the grace window.</p>' +
+        '</div><div class="app-bar-right">' +
+          // M4 — the shared range control, BACKWARD presets (this tab looks back).
+          mtDateRange_({ scope: 'punct', ariaLabel: 'Punctuality range',
+            presets: PUNCT_PRESETS.map(function (p) { return { key: p.key, label: p.label }; }),
+            active: active, onPreset: 'punctPreset_', rowId: 'punct-custom', customOpen: open, onToggle: 'punctToggleCustom_' }) +
+        '</div></div>') +
+    (COMPACT_MODE
+      ? mtDateRange_({ scope: 'punct', ariaLabel: 'Punctuality range',
+          presets: PUNCT_PRESETS.map(function (p) { return { key: p.key, label: p.label }; }),
+          active: active, onPreset: 'punctPreset_', rowId: 'punct-custom', customOpen: open, onToggle: 'punctToggleCustom_' })
+      : '') +
+    mtDateRangeRow_('punct-custom', open,
       '<div class="field"><label for="punct-from">From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
       '<div class="field"><label for="punct-to">To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
-      '<button class="refresh-btn" id="punct-load">Load</button>' +
-      '<div class="punct-presets">' +
-        '<button type="button" class="punct-preset" data-punct-days="7">7D</button>' +
-        '<button type="button" class="punct-preset" data-punct-days="30">30D</button>' +
-        '<button type="button" class="punct-preset" data-punct-days="90">QTR</button>' +
-      '</div>' +
-    '</div>' +
+      '<button type="button" class="refresh-btn" id="punct-load">Load</button>') +
     '<div id="punct-body">' + loSweep() + '</div>';
   var b = document.getElementById('punct-load');
   if (b) b.onclick = function () {
     PUNCT_STATE.from = document.getElementById('punct-from').value;
     PUNCT_STATE.to = document.getElementById('punct-to').value;
     PUNCT_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
+    mtDateRangeSync_('punct', punctActivePreset_());
     punctLoad_();
   };
-  area.querySelectorAll('.punct-preset').forEach(function (el) {
-    el.onclick = function () { punctPreset_(parseInt(el.getAttribute('data-punct-days'), 10)); };
-  });
   punctLoad_();
 }
 
-function punctPreset_(days) {
-  var iso = function (d) {
-    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-  };
+function punctToggleCustom_(scope, rowId) {
+  var next = mtDateRangeToggle_(scope, rowId);
+  if (next !== null) PUNCT_STATE.customOpen = next;
+}
+
+function punctPreset_(key) {
+  var p = null;
+  PUNCT_PRESETS.forEach(function (x) { if (x.key === key) p = x; });
+  if (!p) return;
   // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
   var todayIso = isoDateTz(empTz());
   PUNCT_STATE.to = todayIso;
-  PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -(days - 1));   // F(cycle-8): DST-safe
+  PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -(p.days - 1));   // F(cycle-8): DST-safe
   PUNCT_STATE.defaultDay = null;   // D5 — a preset is a user choice; sticks across midnight
   var f = document.getElementById('punct-from'), t = document.getElementById('punct-to');
   if (f) f.value = PUNCT_STATE.from;
   if (t) t.value = PUNCT_STATE.to;
+  mtDateRangeSync_('punct', key);
   punctLoad_();
 }
 
 function punctFmtMin_(m) {
   var hh = Math.floor(m / 60), mm = m % 60, ap = hh < 12 ? 'AM' : 'PM', h12 = hh % 12 || 12;
   return h12 + ':' + ('0' + mm).slice(-2) + ' ' + ap;
+}
+function punctFmtDate_(iso) {
+  if (!iso) return '';
+  var p = String(iso).split('-');
+  return MONTH_NAMES[parseInt(p[1], 10) - 1].slice(0, 3) + ' ' + parseInt(p[2], 10);
 }
 
 var _punctSeq = 0;   // cycle-9 L-31 — same-view range race (see covLoad_)
@@ -1980,7 +2174,7 @@ function punctLoad_() {
   var seq = ++_punctSeq;
   body.innerHTML = loSweep();
   google.script.run
-    .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _punctSeq) return; punctRender_(data); })
+    .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _punctSeq) return; PUNCT_STATE.data = data; punctRender_(data); })
     .withFailureHandler(function (err) {
       if (currentView !== requested || seq !== _punctSeq) return;
       body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load punctuality');   // A12
@@ -1988,47 +2182,201 @@ function punctLoad_() {
     .getPunctualityReport(PUNCT_STATE.from, PUNCT_STATE.to);
 }
 
+/** M3 — "Worth a conversation": reps below the concern band (on-time < 75%)
+ *  or with an average late arrival past 15 minutes. FACTS ONLY — the trend
+ *  word compares the newest weekly bucket with the oldest one that has graded
+ *  days (Worsening / Flat / Improving at ±5 points), and nothing here is a
+ *  verdict beyond the bands the table already paints. Pure, Node-pinned. */
+function punctOutliers_(reps) {
+  return (reps || []).filter(function (r) {
+    return (r.onTimePct != null && r.onTimePct < 75) || (r.late > 0 && r.avgLate > 15);
+  }).map(function (r) {
+    return { id: r.id, name: r.name, onTimePct: r.onTimePct, late: r.late, avgLate: r.avgLate,
+      worst: r.worst, worstDate: r.worstDate || null, trend: punctTrend_(r.weekly) };
+  });
+}
+function punctTrend_(weekly) {
+  var graded = (weekly || []).filter(function (w) { return w && w.onTimePct != null; });
+  if (graded.length < 2) return { word: 'Flat', delta: null };
+  var delta = graded[graded.length - 1].onTimePct - graded[0].onTimePct;
+  return { word: delta <= -5 ? 'Worsening' : (delta >= 5 ? 'Improving' : 'Flat'), delta: delta };
+}
+function punctTrendChip_(t) {
+  var tone = t.word === 'Worsening' ? 'destructive' : (t.word === 'Improving' ? 'sage' : 'info');
+  return '<span class="kicker-pill" data-tone="' + tone + '">' + esc(t.word) +
+    (t.delta != null ? ' ' + (t.delta > 0 ? '+' : '') + t.delta + 'pt' : '') + '</span>';
+}
+
+/** M2f — Log coaching from a punctuality row: parks a narrative on
+ *  COACH_PREFILL (the park-and-consume pattern, C8) and opens Training →
+ *  Coaching in Team mode. The TOOL key is `develop` (cycle-9 H-1). */
+function punctCoach_(btn) {
+  var id = btn.getAttribute('data-emp-id');
+  var reps = (PUNCT_STATE.data && PUNCT_STATE.data.reps) || [];
+  var r = null; reps.forEach(function (x) { if (x.id === id) r = x; });
+  if (!r) return;
+  var days = PUNCT_STATE.data.from && PUNCT_STATE.data.to ? punctDaysBetween_(PUNCT_STATE.data.from, PUNCT_STATE.data.to) + 1 : 0;
+  var what = r.onTimePct + '% on-time over ' + (days || r.days) + ' days; ' + r.late + ' late day' + (r.late === 1 ? '' : 's') +
+    (r.worst ? ', worst ' + r.worst + 'm' + (r.worstDate ? ' on ' + punctFmtDate_(r.worstDate) : '') : '') + '.';
+  window.COACH_PREFILL = { empId: id, patientTRX: '', noteId: '', what: what };
+  if (typeof enterTool === 'function') enterTool('develop', 'coaching');
+}
+function punctDaysBetween_(a, b) {
+  var pa = a.split('-'), pb = b.split('-');
+  return Math.round((Date.UTC(+pb[0], +pb[1] - 1, +pb[2]) - Date.UTC(+pa[0], +pa[1] - 1, +pa[2])) / 86400000);
+}
+
+function punctSort_(key) {
+  var s = PUNCT_STATE.sort;
+  if (s.key === key) s.dir = (s.dir === 'asc' ? 'desc' : 'asc');
+  else { s.key = key; s.dir = (key === 'name' || key === 'startMin') ? 'asc' : (key === 'onTimePct' ? 'asc' : 'desc'); }
+  if (PUNCT_STATE.data) punctRender_(PUNCT_STATE.data);
+}
+
+/** The expanded row (M2d): the record on the left (day strip + late-day
+ *  chips), the diagnosis on the right (scheduled-vs-actual timeline + weekly
+ *  bars), then the actions. Everything draws from dayDetail. */
+function punctDetailHtml_(r, grace) {
+  var dd = r.dayDetail || [];
+  if (!dd.length) return '';
+  var n = { ontime: 0, late: 0, late15: 0, off: 0, holiday: 0, nopunch: 0 };
+  dd.forEach(function (d) {
+    if (d.state === 'late') { n.late++; if (d.lateMin > 15) n.late15++; }
+    else if (n[d.state] !== undefined) n[d.state]++;
+  });
+  var stripLabel = dd.length + ' days: ' + n.ontime + ' on time, ' + n.late + ' late, ' + n.late15 +
+    ' late over 15 minutes, ' + n.off + ' time off, ' + n.holiday + ' holiday' + (n.holiday === 1 ? '' : 's') +
+    (n.nopunch ? ', ' + n.nopunch + ' with no clock-in' : '');
+  var strip = '<div class="pt-strip" role="img" aria-label="' + esc(stripLabel) + '">' + dd.map(function (d) {
+    var cls = d.state === 'late' ? (d.lateMin > 15 ? 'late15' : 'late') : d.state;
+    var t = punctFmtDate_(d.date) + ' — ' + (d.state === 'ontime' ? 'on time' : d.state === 'late' ? d.lateMin + 'm late'
+      : d.state === 'off' ? 'time off (' + (d.ptoType || '') + ')' : d.state === 'holiday' ? (d.holidayName || 'holiday') : 'no clock-in');
+    return '<i class="pt-day ' + cls + '" title="' + esc(t) + '"></i>';
+  }).join('') + '</div>';
+  var legend = '<div class="pt-legend"><span><i class="pt-day ontime"></i>on time</span><span><i class="pt-day late"></i>late ≤15m</span>' +
+    '<span><i class="pt-day late15"></i>late &gt;15m</span><span><i class="pt-day off"></i>time off</span><span><i class="pt-day holiday"></i>holiday</span>' +
+    (n.nopunch ? '<span><i class="pt-day nopunch"></i>no clock-in</span>' : '') + '</div>';
+  var lateDays = dd.filter(function (d) { return d.state === 'late'; }).sort(function (a, b) { return b.lateMin - a.lateMin; });
+  var LATE_CAP = 8;
+  var chips = lateDays.length
+    ? '<div class="pt-late">' + lateDays.slice(0, LATE_CAP).map(function (d) {
+        return '<span class="cn-pill" data-tone="' + (d.lateMin > 15 ? 'crit' : 'warn') + '">' + esc(punctFmtDate_(d.date)) + ' · ' + d.lateMin + 'm</span>';
+      }).join('') + (lateDays.length > LATE_CAP ? '<span class="cn-pill" data-tone="muted">+' + (lateDays.length - LATE_CAP) + ' more</span>' : '') + '</div>'
+    : '<div class="pt-quiet">No late days in this range.</div>';
+  // Scheduled start vs actual: a 0–60 min axis from 15 minutes early to 45
+  // minutes late, the grace window shaded, one dot per clock-in.
+  var SPAN = 60, EARLY = 15;
+  var pos = function (m) { return Math.max(0, Math.min(100, ((m + EARLY) / SPAN) * 100)); };
+  var dots = dd.filter(function (d) { return d.actualMin != null; }).map(function (d) {
+    var delta = d.actualMin - d.schedStartMin;
+    return '<i class="pt-dot ' + (delta > grace ? (delta > 15 ? 'late15' : 'late') : 'ontime') + '" style="left:' + pos(delta).toFixed(1) + '%" title="' +
+      esc(punctFmtDate_(d.date) + ' — ' + punctFmtMin_(d.actualMin) + (delta > 0 ? ' (+' + delta + 'm)' : '')) + '"></i>';
+  }).join('');
+  var timeline = '<div class="pt-tl" role="img" aria-label="' + esc('Clock-ins relative to the ' + punctFmtMin_(r.startMin) + ' start; grace ' + grace + ' minutes') + '">' +
+    '<span class="pt-tl-grace" style="left:' + pos(0).toFixed(1) + '%;width:' + ((grace / SPAN) * 100).toFixed(1) + '%"></span>' +
+    '<span class="pt-tl-rule" style="left:' + pos(0).toFixed(1) + '%"></span>' + dots + '</div>' +
+    '<div class="pt-tl-axis"><span>−15m</span><span>' + esc(punctFmtMin_(r.startMin)) + '</span><span>+45m</span></div>';
+  var weekly = r.weekly || [];
+  var bars = '<div class="pt-weeks">' + weekly.map(function (w) {
+    var pct = w.onTimePct;
+    var tone = pct == null ? 'none' : mtPctTone_(pct, 90, 75).replace('m-pct-', '');
+    return '<div class="pt-week" title="' + esc(punctFmtDate_(w.from) + '–' + punctFmtDate_(w.to) + ': ' + (pct == null ? 'no graded days' : pct + '% (' + w.onTime + '/' + w.days + ')')) + '">' +
+      '<div class="pt-week-bar"><i class="' + tone + '" style="height:' + (pct == null ? 0 : pct) + '%"></i></div>' +
+      '<div class="pt-week-lbl">' + (pct == null ? '—' : pct + '%') + '</div></div>';
+  }).join('') + '</div>';
+  var trend = punctTrend_(weekly);
+  var prev = (r.prevOnTimePct != null)
+    ? '<div class="pt-quiet">Previous range: ' + r.prevOnTimePct + '% (' + r.prevOnTime + '/' + r.prevDays + ' days)</div>' : '';
+  return '<div class="pt-detail">' +
+    '<div class="pt-col"><h3 class="pt-h">Day by day</h3>' + strip + legend + '<h3 class="pt-h">Late days</h3>' + chips + '</div>' +
+    '<div class="pt-col"><h3 class="pt-h">Scheduled start vs actual</h3>' + timeline +
+      '<h3 class="pt-h">On-time by week ' + punctTrendChip_(trend) + '</h3>' + bars + prev +
+      '<div class="pt-actions">' +
+        '<button type="button" class="pending-btn pb-approve" data-emp-id="' + esc(r.id) + '" onclick="punctCoach_(this)">' + icon('bulb', 13) + 'Log coaching</button>' +
+        '<button type="button" class="refresh-btn" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) + '" onclick="openDayEditModal(this.dataset.empId, this.dataset.empName)">' + icon('adjust', 13) + 'Open timesheet</button>' +
+      '</div></div>' +
+  '</div>';
+}
+
 function punctRender_(data) {
   var body = document.getElementById('punct-body'); if (!body) return;
   if (!data || data.error) { body.innerHTML = errorStateHtml_((data && data.error) || 'No data'); return; }   // A12
   var reps = data.reps || [];
   if (!reps.length) { body.innerHTML = '<div class="no-data">No clock-ins in this range.</div>'; return; }   // genuinely empty — stays quiet
-  var totDays = 0, totOn = 0, totLateDays = 0, totLateMin = 0, worstAll = 0;
+  var totDays = 0, totOn = 0, totLateDays = 0, totLateMin = 0, worstAll = 0, worstRep = null, prevDays = 0, prevOn = 0;
   reps.forEach(function (r) {
     totDays += r.days; totOn += r.onTime;
     if (r.late) { totLateDays += r.late; totLateMin += r.avgLate * r.late; }
-    if (r.worst > worstAll) worstAll = r.worst;
+    if (r.worst > worstAll) { worstAll = r.worst; worstRep = r; }
+    prevDays += r.prevDays || 0; prevOn += r.prevOnTime || 0;
   });
   var teamPct = totDays ? Math.round((totOn / totDays) * 100) : 0;
+  var prevPct = prevDays ? Math.round((prevOn / prevDays) * 100) : null;
   var teamAvgLate = totLateDays ? Math.round(totLateMin / totLateDays) : 0;
-  var toneCol = function (p) { return p >= 90 ? 'var(--success-deep)' : (p >= 75 ? 'var(--warning-deep)' : 'var(--danger-deep)'); };
   var teamCls = teamPct >= 90 ? 'success' : (teamPct >= 75 ? 'warn' : 'crit');
   var lateCls = teamAvgLate <= 5 ? 'success' : (teamAvgLate <= 15 ? 'warn' : 'crit');
+  var deltaTxt = prevPct == null ? 'no previous range to compare'
+    : ((teamPct - prevPct > 0 ? '+' : '') + (teamPct - prevPct) + 'pt vs ' + esc(punctFmtDate_(data.prevFrom)) + '–' + esc(punctFmtDate_(data.prevTo)));
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">On-time = clock-in within ' + esc(String(data.grace)) +
-    ' min of the scheduled start. Only days with a clock-in are counted. Least punctual first.</div>';
+    ' min of the scheduled start. Only days with a clock-in are graded; time off and holidays are drawn in the day-by-day record but never counted against a rep.' +
+    (data.ptoUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' Time-off data could not be read — approved PTO days show as no clock-in.</span>' : '') + '</div>';
   var summary = '<div class="telemetry" style="margin-bottom:16px">' +
-    '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + teamPct + '%</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + teamPct + '%</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days · ' + deltaTxt + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + reps.length + '</div><div class="tel-sub">with clock-ins</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Avg late</div><div class="tel-value ' + (totLateDays ? lateCls : '') + '">' + (totLateDays ? teamAvgLate + 'm' : '0m') + '</div><div class="tel-sub">on late days</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Worst</div><div class="tel-value ' + (worstAll > 15 ? 'crit' : '') + '">' + (worstAll ? worstAll + 'm' : '—') + '</div><div class="tel-sub">single day</div></div>' +
+    '<div class="tel-cell' + (worstAll > 15 ? ' pt-worst' : '') + '"><div class="tel-label">Worst</div><div class="tel-value ' + (worstAll > 15 ? 'crit' : '') + '">' + (worstAll ? worstAll + 'm' : '—') + '</div>' +
+      '<div class="tel-sub">' + (worstRep ? esc(worstRep.name.split(' ')[0]) + (worstRep.worstDate ? ' · ' + esc(punctFmtDate_(worstRep.worstDate)) : '') : 'single day') + '</div></div>' +
     '</div>';
-  var rowsHtml = reps.map(function (r) {
-    return '<tr>' +
-      '<td>' + esc(r.name) + '</td>' +
-      '<td class="num">' + esc(punctFmtMin_(r.startMin)) + '</td>' +
-      '<td class="num">' + r.days + '</td>' +
-      '<td class="num"><span style="color:' + toneCol(r.onTimePct) + ';font-weight:700">' + r.onTimePct + '%</span>' +
-        '<div class="punct-bar"><i style="width:' + r.onTimePct + '%;background:' + toneCol(r.onTimePct) + '"></i></div></td>' +
-      '<td class="num">' + (r.late ? r.avgLate + 'm' : '—') + '</td>' +
-      '<td class="num">' + (r.worst ? r.worst + 'm' : '—') + '</td>' +
-      '<td class="num">' + (r.lunchOnTimePct == null ? '—' : r.lunchOnTimePct + '%') + '</td>' +
-    '</tr>';
-  }).join('');
-  body.innerHTML = summary + note +
-    '<div class="punct-card"><div class="punct-card-h">Per-rep punctuality</div>' +
-    '<div style="overflow-x:auto"><table class="punct-table"><thead><tr>' +
-      '<th>Rep</th><th class="num">Shift start</th><th class="num">Days</th><th class="num">On-time</th>' +
-      '<th class="num">Avg late</th><th class="num">Worst</th><th class="num">Lunch on-time</th>' +
-    '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>';
+  // M3 — outliers. Nothing renders when the list is empty (no empty panel).
+  var outliers = punctOutliers_(reps);
+  var outHtml = outliers.length
+    ? '<div class="panel pt-outliers" data-tone="destructive"><h2 class="card-label"><span>Worth a conversation</span><span class="count-pill danger">' + outliers.length + '</span></h2>' +
+      '<div class="pt-out-list">' + outliers.map(function (o) {
+        return '<div class="pt-out"><div class="pt-out-main"><span class="pt-out-name">' + esc(o.name) + '</span> ' +
+          '<span class="' + mtPctTone_(o.onTimePct, 90, 75) + '">' + o.onTimePct + '%</span> ' + punctTrendChip_(o.trend) +
+          '<span class="pt-out-sub">' + o.late + ' late day' + (o.late === 1 ? '' : 's') + (o.late ? ' · avg ' + o.avgLate + 'm' : '') +
+          (o.worst ? ' · worst ' + o.worst + 'm' + (o.worstDate ? ' on ' + esc(punctFmtDate_(o.worstDate)) : '') : '') + '</span></div>' +
+          '<button type="button" class="pending-btn pb-approve" data-emp-id="' + esc(o.id) + '" onclick="punctCoach_(this)">' + icon('bulb', 13) + 'Log coaching</button></div>';
+      }).join('') + '</div></div>'
+    : '';
+  // Sort (default on-time ascending — least punctual first, now a real control).
+  var s = PUNCT_STATE.sort;
+  var sorted = reps.slice().sort(function (a, b) {
+    var av = a[s.key], bv = b[s.key];
+    if (av == null) av = (s.key === 'name') ? '' : -1;
+    if (bv == null) bv = (s.key === 'name') ? '' : -1;
+    var c = (typeof av === 'string') ? av.localeCompare(bv) : (av - bv);
+    if (c === 0) c = b.late - a.late;
+    return s.dir === 'asc' ? c : -c;
+  });
+  var cols = [
+    { key: 'name', label: 'Rep', name: true, sortable: true, cell: function (r) {
+        var has = r.dayDetail && r.dayDetail.length;
+        return esc(r.name) + (has
+          ? ' <button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="punct-r-' + esc(String(r.id).replace(/[^\w.$-]/g, '')) + '"' +
+            ' aria-label="Day-by-day record for ' + esc(r.name) + '" onclick="cnToggleDetailRow_(this)">' + icon('chevronDown', 12) + '</button>' : '');
+      } },
+    { key: 'startMin', label: 'Shift start', numeric: true, sortable: true, cell: function (r) { return esc(punctFmtMin_(r.startMin)); } },
+    { key: 'days', label: 'Days', numeric: true, sortable: true, cell: function (r) { return String(r.days); } },
+    { key: 'onTimePct', label: 'On-time', numeric: true, sortable: true, cell: function (r) {
+        var cls = mtPctTone_(r.onTimePct, 90, 75);
+        return '<span class="' + cls + '">' + r.onTimePct + '%</span><div class="pt-bar"><i class="' + cls + '" style="width:' + r.onTimePct + '%"></i></div>';
+      } },
+    { key: 'avgLate', label: 'Avg late', numeric: true, sortable: true, cell: function (r) { return r.late ? r.avgLate + 'm' : '—'; } },
+    { key: 'worst', label: 'Worst', numeric: true, sortable: true, cell: function (r) { return r.worst ? r.worst + 'm' : '—'; } },
+    { key: 'lunchOnTimePct', label: 'Lunch', numeric: true, sortable: true, cell: function (r) {
+        return r.lunchOnTimePct == null
+          ? '<span class="pt-na" title="No scheduled lunch break, or no lunch punches in range">—</span>'
+          : '<span class="' + mtPctTone_(r.lunchOnTimePct, 90, 75) + '">' + r.lunchOnTimePct + '%</span>';
+      } },
+  ];
+  var table = mtRenderTable_({
+    columns: cols, rows: sorted, sort: s, onSort: 'punctSort_',
+    rowId: function (r) { return 'punct-r-' + r.id; },
+    detailRow: function (r) { return punctDetailHtml_(r, data.grace); },
+    empty: '<div class="no-data">No clock-ins in this range.</div>',
+  });
+  body.innerHTML = summary + outHtml + note +
+    '<div class="panel pt-wrap"><h2 class="card-label"><span>Per-rep punctuality</span></h2>' + table + '</div>';
 }
 </script>

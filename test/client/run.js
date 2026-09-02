@@ -9982,10 +9982,11 @@ test('Punctuality + Admin fill the view width (operator 2026-08-18)', () => {
     'no 900px card caps anywhere in the Admin partial');
   assert.ok(!/'<div style="max-width:1000px">'/.test(cn), 'the Sheets viewer wrapper is uncapped');
   const tm = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
-  const punctTable = tm.match(/\.punct-table\s*\{[^}]*\}/);
-  const punctCard = tm.match(/\.punct-card\s*\{[^}]*\}/);
-  assert.ok(punctTable && !/max-width/.test(punctTable[0]), '.punct-table carries no max-width');
-  assert.ok(punctCard && !/max-width/.test(punctCard[0]), '.punct-card carries no max-width');
+  // REWRITTEN in place (design handoff PR 3): the hand-rolled .punct-table /
+  // .punct-card are retired (the table rides mtRenderTable_ inside .pt-wrap);
+  // the cap must not return on the new wrapper either.
+  const ptWrap = tm.match(/\.pt-wrap[^{]*\{[^}]*\}/g) || [];
+  assert.ok(ptWrap.length >= 1 && ptWrap.every((r) => !/max-width/.test(r)), '.pt-wrap carries no max-width');
   assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
 });
 
@@ -15738,6 +15739,177 @@ test('PR2-4: mock.js carries the Admin all-clear empty shapes; shoot.mjs covers 
     .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
   assert.ok(/admin-system-allclear-light-wide'[^\]]*\?fixture=empty/.test(shoot), 'the all-clear scenario rides ?fixture=empty');
   assert.ok(/admin-system-error-light-wide'[^\]]*failrpc=getAutomationHealth/.test(shoot), 'the error scenario forces the health RPC to fail');
+});
+
+
+/* ── Design handoff PR 3 — Manage surface ───────────────────────────────
+ * M1–M3 Punctuality on the shared table/control with a per-day record,
+ * M4 the forward/backward preset split, M5 Manage Time's grouped scroll,
+ * M6 Coverage chrome + fixture, M8 the retirements. NOTE the placement:
+ * ABOVE process.exit.
+ */
+
+test('PR3-1: getPunctualityReport — dayDetail is ADDITIVE beside `days`, capped at 92 days, classified by the pure helpers', () => {
+  const ctx = vm.createContext({ Math: Math });
+  ['punctDayState_', 'punctWeeklyBuckets_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'Code.js#' + f }));
+  const st = ctx.punctDayState_, wk = ctx.punctWeeklyBuckets_;
+  // A clock-in is graded even on a holiday / PTO day — the punch is the fact.
+  assert.strictEqual(st(true, 3, 5, 'Labor Day', 'Full Day', false), 'ontime');
+  assert.strictEqual(st(true, 6, 5, null, null, false), 'late');
+  assert.strictEqual(st(true, 5, 5, null, null, false), 'ontime', 'within the grace window is on time');
+  assert.strictEqual(st(false, null, 5, 'Labor Day', 'Full Day', false), 'holiday', 'holiday wins over PTO when no punch');
+  assert.strictEqual(st(false, null, 5, null, 'Full Day', false), 'off');
+  assert.strictEqual(st(false, null, 5, null, null, false), 'nopunch', 'an absent weekday is DRAWN, never a gap (INV-187)');
+  assert.strictEqual(st(false, null, 5, null, null, true), null, 'a weekend with no punch is not a day in the record');
+  // Weekly buckets: four, oldest first, ending at `to`; only graded days count;
+  // an empty bucket reads null (never 0); clipped to `from`.
+  const add = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const dd = [{ date: '2026-08-31', state: 'late' }, { date: '2026-09-01', state: 'ontime' }, { date: '2026-09-02', state: 'off' }];
+  const w = wk(dd, '2026-08-20', '2026-09-02', add);
+  assert.strictEqual(w.length, 4);
+  assert.strictEqual(w[3].to, '2026-09-02'); assert.strictEqual(w[3].from, '2026-08-27');
+  assert.strictEqual(w[3].onTimePct, 50, 'one late + one on time; the off day is not graded');
+  assert.strictEqual(w[0].onTimePct, null, 'a bucket with no graded days reads null, never 0');
+  assert.strictEqual(w[0].from, '2026-08-20', 'the oldest bucket is clipped to the range start');
+  // Endpoint contract (source): the cap, the previous equivalent range, the
+  // best-effort PTO overlay REPORTED, `days` still the count, dayDetail additive.
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/numDays > CONFIG\.PUNCT_MAX_RANGE_DAYS/.test(src), 'range capped server-side');
+  assert.ok(/prevTo = addDaysIso_\(fromDate, -1\)/.test(src) && /prevFrom = addDaysIso_\(prevTo, -\(numDays - 1\)\)/.test(src), 'the previous EQUIVALENT range');
+  assert.ok(/ptoUnavailable = true/.test(src) && /ptoUnavailable: ptoUnavailable/.test(src), 'a failed PTO read is reported (F4 rule)');
+  assert.ok(/days: dates\.length,/.test(src) && /dayDetail: dayDetail,/.test(src), '`days` stays the count; the array is `dayDetail`');
+  assert.ok(/getUsHolidays_\(/.test(src), 'holidays from the Coverage source');
+  assert.ok(/if \(!empRosterEmail_\(roster\[i\]\)\) continue;/.test(src), 'F3 roster predicate kept');
+  assert.ok(/if \(mins === null\) continue;/.test(src), 'A3 unparseable-time skip kept');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/PUNCT_MAX_RANGE_DAYS: 92,/.test(code), 'the cap is a CONFIG key (92 — the QTR preset fits)');
+  // INV-185: the fixture's dayDetail keys EQUAL the server's push literal.
+  const push = /dayDetail\.push\(\{([\s\S]*?)\}\);/.exec(src)[1];
+  const serverKeys = [...push.matchAll(/(\w+):\s/g)].map((x) => x[1]).sort();
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fxPush = /dd\.push\(\{([\s\S]*?)\}\);/.exec(mock)[1];
+  const fxKeys = [...fxPush.matchAll(/(\w+):\s/g)].map((x) => x[1]).sort();
+  assert.strictEqual(fxKeys.join('|'), serverKeys.join('|'), 'fixture dayDetail keys mirror the server (INV-185)');
+  assert.ok(/getPunctualityReport: function \(from, to\)/.test(mock), 'the fixture is a FUNCTION of the range (F14)');
+});
+
+test('PR3-2: punctOutliers_ names reps below 75% or averaging >15m late — facts, with a worded trend', () => {
+  const ctx = vm.createContext({});
+  ['punctOutliers_', 'punctTrend_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), ctx, { filename: 'mgr#' + f }));
+  const reps = [
+    { id: 'a', name: 'A', onTimePct: 59, late: 9, avgLate: 12, worst: 41, worstDate: '2026-08-12', weekly: [{ onTimePct: 80 }, { onTimePct: 70 }, { onTimePct: 60 }, { onTimePct: 50 }] },
+    { id: 'b', name: 'B', onTimePct: 92, late: 2, avgLate: 22, worst: 30, weekly: [{ onTimePct: null }, { onTimePct: 90 }, { onTimePct: 95 }, { onTimePct: 92 }] },
+    { id: 'c', name: 'C', onTimePct: 88, late: 3, avgLate: 6, worst: 9, weekly: [] },
+    { id: 'd', name: 'D', onTimePct: 100, late: 0, avgLate: 0, worst: 0, weekly: [{ onTimePct: 100 }, { onTimePct: 100 }, { onTimePct: 100 }, { onTimePct: 100 }] },
+  ];
+  const out = ctx.punctOutliers_(reps);
+  assert.strictEqual(out.map((o) => o.id).join('|'), 'a|b', 'below 75% OR avg late >15m; a fine rep never appears');
+  assert.strictEqual(out[0].trend.word, 'Worsening'); assert.strictEqual(out[0].trend.delta, -30);
+  assert.strictEqual(out[1].trend.word, 'Flat', 'null buckets are skipped; +2pt is Flat');
+  assert.strictEqual(ctx.punctTrend_([{ onTimePct: 60 }, { onTimePct: 80 }]).word, 'Improving');
+  assert.strictEqual(ctx.punctTrend_([{ onTimePct: 60 }]).word, 'Flat', 'one graded bucket cannot trend');
+  assert.strictEqual(ctx.punctOutliers_(null).length, 0);
+  // The panel renders NOTHING when empty; the words are in the chip, not only colour.
+  const render = extractFunction('tc/script_manager.html', 'punctRender_');
+  assert.ok(/outliers\.length\s*\?\s*'<div class="panel pt-outliers" data-tone="destructive"/.test(render.replace(/\s+/g, ' ')), 'the outliers panel renders only with members');
+  const chip = extractFunction('tc/script_manager.html', 'punctTrendChip_');
+  assert.ok(/esc\(t\.word\)/.test(chip), 'the trend chip carries the WORD');
+  // Log coaching parks a narrative on COACH_PREFILL and routes the REAL tool key.
+  const coach = extractFunction('tc/script_manager.html', 'punctCoach_');
+  assert.ok(/window\.COACH_PREFILL = \{ empId: id, patientTRX: '', noteId: '', what: what \}/.test(coach) && /enterTool\('develop', 'coaching'\)/.test(coach));
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/pre && pre\.what \? esc\(pre\.what\)/.test(co), 'the composer consumes the narrative, escaped');
+});
+
+test('PR3-3: Manage Time — Needs-you before Periodic, a real collapse disclosure, state in the summary, not a refresh blocker, not persisted', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const code = stripJsComments_(mgr);
+  const render = extractFnFrom(code, 'renderManagerView');
+  const tpl = render.slice(render.indexOf('area.innerHTML = `'));
+  const order = ['Manage Time</h1>', 'Needs you today', 'Pending Time Off', 'Missed Clock-Outs', 'id="mgr-adjust-queue"', 'Live Status', 'id="mgr-team-cal"',
+    'mgrToggleGroup_(\'periodic\'', 'id="mgr-periodic"', 'Export ADP Upload', 'id="mgr-pto-recon"', 'id="mgr-sheet-doctor"', 'Recent Punches', 'Recent Activity'];
+  let last = -1;
+  order.forEach((needle) => { const i = tpl.indexOf(needle); assert.ok(i > last, 'ORDER: ' + needle + ' comes after the previous item'); last = i; });
+  assert.ok(/<span>Manage<\/span><span class="crumb-sep">›<\/span><span class="crumb-current">Manage Time<\/span>/.test(tpl), 'two-level crumb, registry label');
+  assert.ok(!/Manager Dashboard/.test(tpl), 'the stale H1 is gone');
+  // Real disclosure (INV-173/174) + the [hidden] companion rule.
+  assert.ok(/<button type="button" class="mgr-group-toggle" aria-expanded="\$\{periodicOpen \? 'true' : 'false'\}" aria-controls="mgr-periodic"/.test(tpl));
+  assert.ok(/\.mgr-group\[hidden\] \{ display: none; \}/.test(mgr), 'the hidden companion rule');
+  const tog = extractFnFrom(code, 'mgrToggleGroup_');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(tog) && /MGR_STATE\.collapsed\[key\] = !open/.test(tog), 'the toggle keeps aria + state in step');
+  assert.ok(/var MGR_STATE = \{ collapsed: \{ periodic: true \} \};/.test(code), 'collapsed by default, session-only');
+  assert.ok(!/umsManageCollapsed/.test(mgr) && !/localStorage/.test(tog), 'collapse state is NOT persisted');
+  // The summary row states each panel's state; the lazy cards feed it on
+  // clean, drift AND failure (a collapsed group must not hide a problem).
+  ['mgr-sum-pto', 'mgr-sum-doctor'].forEach((id) => assert.ok(tpl.indexOf('id="' + id + '"') > -1, id + ' in the summary row'));
+  const pto = extractFnFrom(code, 'loadPtoReconciliation_'), doc = extractFnFrom(code, 'loadSheetDoctor_');
+  assert.ok(/mgrSetSummary_\('mgr-sum-pto', 'all clear', 'ok'\)/.test(pto) && (pto.match(/mgrSetSummary_\('mgr-sum-pto', 'check failed', 'warn'\)/g) || []).length === 2 && /'crit'\)/.test(pto));
+  assert.ok(/mgrSetSummary_\('mgr-sum-doctor', 'all clear', 'ok'\)/.test(doc) && (doc.match(/'scan failed', 'warn'\)/g) || []).length === 2);
+  // Collapse is NOT a refresh blocker: exactly the two existing conditions.
+  const blocked = extractFnFrom(code, 'mgrSwrRenderBlocked_');
+  assert.strictEqual((blocked.match(/return true;/g) || []).length, 2, 'mgrSwrRenderBlocked_ keeps exactly two conditions');
+  assert.ok(!/MGR_STATE/.test(blocked), 'collapse never blocks a refresh render');
+  // Tones per the doc: pending → warn inset, missed → destructive inset; the
+  // "oldest N days" line rides the pending card.
+  assert.ok(/data-tone="\$\{data\.pending\.length > 0 \? 'warn' : ''\}"/.test(tpl) && /data-tone="\$\{data\.missedPunches\.length > 0 \? 'destructive' : ''\}"/.test(tpl));
+  assert.ok(/oldest \$\{oldestPending\} day/.test(tpl) && /fix before payroll/.test(tpl));
+  const oldest = extractFnFrom(code, 'mgrOldestPendingDays_');
+  assert.ok(/isoDateTz\(empTz\(\)\)/.test(oldest), 'the age anchors on roster-tz today (F6), not the browser clock');
+});
+
+test('PR3-4: Coverage + Punctuality render the SHARED range control (forward vs backward presets); the retired pieces are banned', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const code = stripJsComments_(mgr);
+  const cov = extractFnFrom(code, 'enterCoverageView'), pun = extractFnFrom(code, 'enterPunctualityView');
+  assert.ok(/mtDateRange_\(\{ scope: 'cov'/.test(cov) && /mtDateRangeRow_\('cov-custom'/.test(cov), 'Coverage renders the shared control');
+  assert.ok((pun.match(/mtDateRange_\(\{ scope: 'punct'/g) || []).length === 2 && /mtDateRangeRow_\('punct-custom'/.test(pun), 'Punctuality renders it (wide + compact)');
+  // Forward vs backward: Coverage never points at the past, Punctuality never ahead.
+  assert.ok(/var COV_PRESETS = \[\{ key: 'week', label: 'This week', off: 0, len: 7 \}, \{ key: 'next', label: 'Next week', off: 7, len: 7 \}, \{ key: '2w', label: '2 weeks', off: 0, len: 14 \}\];/.test(code), 'forward presets, ≤14 days (the server cap)');
+  assert.ok(/var PUNCT_PRESETS = \[\{ key: '7d', label: '7D', days: 7 \}, \{ key: '30d', label: '30D', days: 30 \}, \{ key: 'qtr', label: 'QTR', days: 90 \}\];/.test(code), 'backward presets');
+  const cp = extractFnFrom(code, 'covPreset_'), pp = extractFnFrom(code, 'punctPreset_');
+  assert.ok(/mgrAddDaysIso_\(todayIso, p\.off\)/.test(cp) && /mgrAddDaysIso_\(todayIso, -\(p\.days - 1\)\)/.test(pp), 'presets are DST-safe day math off roster-tz today');
+  assert.ok(/COV_STATE\.defaultDay = null/.test(cp) && /PUNCT_STATE\.defaultDay = null/.test(pp), 'a preset is a user choice (D5 — sticks across midnight)');
+  // The guards the handoff says must not move.
+  assert.ok(/seq !== _covSeq/.test(code) && /seq !== _punctSeq/.test(code), 'both same-view seq guards survive');
+  assert.ok(/COV_STATE\.defaultDay && COV_STATE\.defaultDay !== covToday/.test(cov) && /PUNCT_STATE\.defaultDay && PUNCT_STATE\.defaultDay !== punctToday/.test(pun), 'D5 midnight re-anchor survives');
+  ['<span>Manage</span><span class="crumb-sep">›</span><span class="crumb-current">Coverage</span>', '<span class="crumb-current">Punctuality</span>'].forEach((c) =>
+    assert.ok(code.indexOf(c) > -1, 'two-level crumb: ' + c));
+  // M1: Punctuality's bands go through the shared rule with ITS numbers.
+  const pr = extractFnFrom(code, 'punctRender_');
+  assert.ok((pr.match(/mtPctTone_\([^)]*, 90, 75\)/g) || []).length >= 3, 'mtPctTone_(…, 90, 75) — Punctuality’s own thresholds');
+  assert.ok(/mtRenderTable_\(\{/.test(pr) && /detailRow: function \(r\) \{ return punctDetailHtml_\(r, data\.grace\); \}/.test(pr) && /onSort: 'punctSort_'/.test(pr), 'V-11: the shared table with the detail row + a real sort');
+  // M8 / INV-184 — the hand-rolled pieces and the dead locals do not come back.
+  ['.punct-table', '.punct-card', '.punct-card-h', '.punct-bar', '.punct-preset', '.punct-presets', 'cov-controls', 'toneCol', 'var isoLocal', 'var iso = function'].forEach((dead) =>
+    assert.ok(code.indexOf(dead) < 0, dead + ' is retired'));
+  // The detail strip carries its meaning in words too (A6), and the ≤720px
+  // breakpoint drops Shift start / Avg late / Lunch, stacking the detail.
+  assert.ok(/aria-label="' \+ esc\(stripLabel\)/.test(extractFnFrom(code, 'punctDetailHtml_')), 'the day strip has a summarising aria-label');
+  assert.ok(/@media \(max-width: 720px\) \{\s*\.pt-detail \{ grid-template-columns: 1fr; \}/.test(mgr), 'the detail stacks at ≤720px');
+  assert.ok(/\.pt-wrap \.m-table th:nth-child\(2\)[\s\S]{0,300}nth-child\(7\)[^}]*display: none/.test(mgr), 'three columns drop at ≤720px');
+});
+
+test('PR3-5: fixtures + scenarios — getCoveragePlan is a FUNCTION whose keys mirror the return block; the new scenarios exist; coverage left the gap marker', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/getCoveragePlan: function \(from, to\)/.test(mock), 'coverage fixture is a function of the range (F14)');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getCoveragePlan'));
+  const ret = /return \{ from: fromDate,([\s\S]*?)\};/.exec(src)[1];
+  const topKeys = ['from'].concat([...ret.matchAll(/(\w+):\s/g)].map((x) => x[1])).sort();
+  // The fixture's anchor consumes ONLY `from` (the `to:` value is an addIso(...) call,
+  // which the `(\w+):\s` scan would otherwise mis-read) — so `to` is re-added by hand.
+  const fxRet = /return \{ from: from, to: addIso\(from, n - 1\),([\s\S]*?)\};\n    \},/.exec(mock)[1];
+  const fxTop = ['from', 'to'].concat([...fxRet.matchAll(/(\w+):\s/g)].map((x) => x[1])).sort();
+  assert.strictEqual(fxTop.join('|'), topKeys.join('|'), 'coverage fixture top-level keys mirror the server');
+  const repPush = /days\[dd\]\.reps\.push\(\{([\s\S]*?)\}\);/.exec(src)[1];
+  const repKeys = [...repPush.matchAll(/(\w+):\s/g)].map((x) => x[1]).sort();
+  const fxRep = /\{ name: 'Avery Blake', tz: 'America\/Chicago',([^}]*)\}/.exec(mock)[1];
+  const fxRepKeys = ['name', 'tz'].concat([...fxRep.matchAll(/(\w+):\s/g)].map((x) => x[1])).sort();
+  assert.strictEqual(fxRepKeys.join('|'), repKeys.join('|'), 'coverage fixture rep keys mirror the server push literal');
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  ['punctuality-dark-wide', 'punctuality-light-mobile', 'punctuality-expanded-light-wide', 'coverage-light-wide', 'coverage-dark-wide', 'coverage-light-mobile']
+    .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
+  assert.ok(/punctuality-expanded-light-wide'[^\]]*\.pt-wrap \.m-qtoggle/.test(shoot), 'the expanded scenario opens the first detail row');
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  assert.ok(!/VISUAL-GAP-TABS:[^\n]*\bcoverage\b/.test(claude), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
