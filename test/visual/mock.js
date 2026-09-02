@@ -860,20 +860,60 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
       ],
       totals: { n7: 125, n30: 506, reps7: 8, reps30: 8 },
     } },
+    // Design handoff PR 4 (K12): the manager fixture carries a critical, an
+    // overdue (business-day age past the window), a praise, a replied item and
+    // a voided-with-reason row; the rep fixture is POPULATED for the first time
+    // (the view had never been shot). Field names mirror coachRowToObj_ +
+    // getCoachingDashboard's additive fields (INV-185).
     getCoachingDashboard: { items: [
       { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',
-        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '' },
-      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'acknowledged',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: 'n-4471', noteDate: daysAgo(3), qaFileId: '',
+        ageDays: 2.4, overdueUnacked: false, followUpDue: false, nudgedToday: false },
+      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'open',
         whatHappened: 'Great de-escalation on a billing dispute.', whatShould: '', createdBy: 'avery@umsupply.com',
-        createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: daysAgo(5) + ' 09:00:00', ackBy: 'leo@umsupply.com' }],
-      counts: { open: 1, acknowledged: 1, overdueUnacked: 0, praise: 1 },
-      analytics: { total: 2, acknowledged: 1, ackRatePct: 50, medianDaysToAck: 1, overdueUnacked: 0,
-        bySeverity: { praise: 1, minor: 1, major: 0, critical: 0 },
+        createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        ageDays: 4.1, overdueUnacked: false, followUpDue: false, nudgedToday: false },
+      { coachId: 'c3', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-190', severity: 'critical', status: 'open',
+        whatHappened: 'Released a shipment without insurance verification; the claim was denied.', whatShould: 'Verification is a hard gate — never release before the auth is on file.',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(12) + ' 09:10:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-2), nudgedAt: daysAgo(1) + ' 08:30:00', noteId: 'n-4402', noteDate: daysAgo(12), qaFileId: 'qa-file-1',
+        ageDays: 8.0, overdueUnacked: true, followUpDue: false, nudgedToday: false },
+      { coachId: 'c4', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'major', status: 'acknowledged',
+        whatHappened: 'Put a caller on hold for nine minutes without a check-in.', whatShould: 'Check back every two minutes; offer a call-back past five.',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(9) + ' 13:45:00', acknowledgedAt: daysAgo(7) + ' 09:00:00', ackBy: 'avery@umsupply.com',
+        voidReason: '', repResponse: 'Understood — I will set a two-minute timer on holds.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        ageDays: 6.3, overdueUnacked: false, followUpDue: false, nudgedToday: false }],
+      voided: [
+      { coachId: 'c5', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-300', severity: 'minor', status: 'void',
+        whatHappened: 'Logged against the wrong patient.', whatShould: '', createdBy: 'avery@umsupply.com',
+        createdAt: daysAgo(14) + ' 11:00:00', acknowledgedAt: '', ackBy: '',
+        voidReason: 'Wrong patient — re-logged as a separate item.', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '' }],
+      voidedTotal: 1,
+      counts: { open: 2, acknowledged: 1, overdueUnacked: 1, praise: 1 },
+      reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      analytics: { total: 4, acknowledged: 1, ackRatePct: 33, medianDaysToAck: 1.6, overdueUnacked: 1,
+        bySeverity: { praise: 1, minor: 1, major: 1, critical: 1 },
         perRep: [
-          { empId: 'E-1088', empName: 'Sam Ortiz', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 },
-          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1 }] } },
-    getMyCoaching: { items: [] },
+          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: 0 },
+          { empId: 'E-1042', empName: 'Avery Blake', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1.6 },
+          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 }] } },
+    getMyCoaching: { items: [
+      { coachId: 'm1', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-508', severity: 'major', status: 'open',
+        whatHappened: 'Quoted a delivery date the warehouse could not meet.', whatShould: 'Check the carrier ETA in the CRM before committing to a date.',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(2) + ' 14:05:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-5), nudgedAt: '', noteId: 'n-4510', noteDate: daysAgo(2), qaFileId: '', ageDays: 1.2 },
+      { coachId: 'm2', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-471', severity: 'praise', status: 'open',
+        whatHappened: 'Walked a nervous first-time CPAP user through mask fitting with real patience — the follow-up survey called you out by name.', whatShould: '',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(5) + ' 16:40:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 3.5 },
+      { coachId: 'm3', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'minor', status: 'acknowledged',
+        whatHappened: 'Missed the callback-number field on two notes in a row.', whatShould: 'The callback number is the first field for a reason — fill it before the narrative.',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(40) + ' 09:12:00', acknowledgedAt: daysAgo(39) + ' 10:00:00', ackBy: 'avery@umsupply.com',
+        voidReason: '', repResponse: 'Got it — I moved the number to the top of my template.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 28 }],
+      businessDayMinutes: 540 },
     // ── Batch-7 (cycle 17): the Admin panel scenario. Field names mirror the
     // server return sites (INV-185): getAdminConfig's config bag, the
     // computeAutomationHealth_ report (syncFails/automationLastRuns/digests/
@@ -1121,7 +1161,8 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
         { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
         { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
         { key: 'managerBrief', last: null, stale: false },
-        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false }],
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
       cdr: {
         ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
         transferColumnWarning: null,
@@ -1205,6 +1246,15 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
       FIXTURES.getEmployeeState.punches = [];
       FIXTURES.getEmployeeState.nextActions = ['ClockIn', 'Adjust'];
     }
+    // `?role=rep` (design handoff PR 4) — shoot a view AS A REP: every role
+    // flag off, so rep-only chrome (the Coaching search field, the rep My
+    // Coaching view with its reply boxes) renders instead of the manager's.
+    if (/[?&]role=rep\b/.test(window.location.search)) {
+      FIXTURES.getEmployeeState.isManager = false;
+      FIXTURES.getEmployeeState.isAdmin = false;
+      FIXTURES.getEmployeeState.canSeeSpanish = false;
+      FIXTURES.getEmployeeState.canSeeQa = false;
+    }
   } catch (e) {}
 
   window.__MISSING__ = [];
@@ -1242,6 +1292,11 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
     // tz-matched, no likely name mismatches — so the System tab's "Nothing
     // needs attention" state is shootable. The populated fixtures above carry
     // one warning per area on purpose (a likely mismatch, an unset FORMS_SS_ID).
+    // PR 4 (Coaching): both coaching payloads in their genuinely-empty shape.
+    getCoachingDashboard: { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+      reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
+    getMyCoaching: { items: [], businessDayMinutes: 540 },
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],
@@ -1253,7 +1308,8 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
         { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
         { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
         { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
-        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false }],
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
       cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
         unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
         queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,

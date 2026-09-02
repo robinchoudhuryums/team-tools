@@ -102,6 +102,17 @@ const SCENARIOS = [
   ['reference-dark-wide',     { tool: 'reference', tab: null },              WIDE, 'dark',  ''],
   ['training-dark-wide',      { tool: 'develop',   tab: null },              WIDE, 'dark',  ''],
   ['coaching-dark-wide',      { tool: 'develop',   tab: 'coaching' },        WIDE, 'dark',  ''],
+  // Design handoff PR 4 (K12) — the composer DRAWER (post hook), the empty
+  // team state (`?fixture=empty`), the REP view (never shot before — the
+  // fixture returned {items:[]}; `?role=rep` flips the role flags), a phone
+  // width, and a forced-fail error state (INV-175 — failed ≠ empty).
+  ['coaching-drawer-light-wide', { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', 'coachOpenDrawer_(null)'],
+  ['coaching-empty-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?fixture=empty'],
+  ['coaching-mine-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?role=rep'],
+  ['coaching-mine-dark-wide',    { tool: 'develop', tab: 'coaching' }, WIDE, 'dark',  '?role=rep'],
+  ['coaching-light-mobile',      { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', ''],
+  ['coaching-mine-light-mobile', { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', '?role=rep'],
+  ['coaching-error-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?failrpc=getCoachingDashboard'],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'metrics',   tab: null },          WIDE,   'light', '?failrpc=getMyMetrics'],

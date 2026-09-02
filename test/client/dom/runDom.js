@@ -1843,3 +1843,55 @@ test('a hostile stored time renders as a value, never as markup', () => {
   assert.strictEqual(h.document.querySelector('#de-brk-out-0').getAttribute('value'),
     '"><img src=x onerror=alert(1)>', 'the whole payload stayed inside the attribute');
 });
+
+// ── Design handoff PR 4 — the Coaching composer DRAWER (K1). The first DOM
+// test the coaching partial has had: open from a parked COACH_PREFILL (the C8
+// hint is read FIRST, nulled, then acted on), prefilled, named, closes on
+// Escape through the shell's topmost-overlay path, and its onClose is
+// idempotent (the ensureOverlay contract).
+test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes on Escape, close hook idempotent', () => {
+  const h = boot();
+  // flushTimers below would also fire the onboarding tour's auto-start, whose
+  // CAPTURE-phase Escape handler ends the tour and stopImmediatePropagation()s
+  // the key before the shell's overlay handler sees it — mark the tour seen.
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getCoachingDashboard', () => ({ items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+    reminderDays: 7, businessDayMinutes: 540, todayIso: '2026-09-02', analytics: { total: 0, perRep: [], bySeverity: {} } }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] }));
+  h.window.COACH_PREFILL = { empId: 'E-1090', patientTRX: 'TRX-9', noteId: 'n-1', noteDate: '2026-08-30', what: 'prefilled narrative' };
+  h.window.enterTool('develop', 'coaching');
+  h.flushTimers();
+  const ov = h.$('#coach-compose-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'the drawer opened from the prefill');
+  assert.strictEqual(h.window.COACH_PREFILL, null, 'the hint was consumed (nulled) — it cannot fire on a later plain navigation');
+  assert.strictEqual(ov.getAttribute('aria-labelledby'), 'coach-drawer-title', 'named by its visible heading (A14)');
+  assert.ok(h.$('#coach-drawer-title'), 'the heading the name points at exists');
+  assert.strictEqual(h.$('#coach-emp').value, 'E-1090', 'employee preselected');
+  assert.strictEqual(h.$('#coach-trx').value, 'TRX-9', 'TRX prefilled');
+  assert.strictEqual(h.$('#coach-what').value, 'prefilled narrative', 'narrative prefilled');
+  assert.ok(h.$('#coach-note-chip'), 'the linked-note chip renders when a note is prefilled');
+  assert.ok(ov.querySelector('.modal.drawer'), 'the shared side-anchored drawer variant');
+  // Praise mode hides severity + the coaching point and relabels the narrative.
+  h.click('[data-coach-kind="praise"]');
+  assert.strictEqual(h.$('#coach-sev-wrap').hidden, true, 'praise hides the severity chips');
+  assert.strictEqual(h.$('#coach-should-wrap').hidden, true, 'praise hides the coaching point');
+  assert.strictEqual(h.$('#coach-what-label').textContent, 'What they did', 'praise relabels the narrative');
+  h.click('[data-coach-kind="coaching"]');
+  assert.strictEqual(h.$('#coach-sev-wrap').hidden, false, 'back to coaching restores the chips');
+  h.click('[data-coach-sevchip="critical"]');
+  assert.strictEqual(h.$('[data-coach-sevchip="critical"]').getAttribute('aria-checked'), 'true', 'the chip is a radio with aria-checked');
+  // Escape closes through the shell handler → the registered close hook.
+  h.dispatchKey('Escape');
+  assert.ok(!ov.classList.contains('open'), 'Escape closed the drawer');
+  assert.strictEqual(h.read('COACH_DRAWER'), null, 'drawer state cleared');
+  // Idempotent close: calling the hook on an already-closed drawer is a no-op.
+  h.read('coachCloseDrawer_')();
+  h.read('coachCloseDrawer_')();
+  assert.ok(!ov.classList.contains('open'), 'still closed, no throw');
+  // Reopen from the app-bar button with NO prefill: a fresh, empty drawer.
+  h.click('#coach-open-drawer');
+  assert.ok(ov.classList.contains('open'), 'reopened from the button');
+  assert.strictEqual(h.$('#coach-what').value, '', 'no stale prefill leaks into a fresh drawer');
+  assert.ok(!h.$('#coach-note-chip'), 'no linked-note chip without a prefill');
+});

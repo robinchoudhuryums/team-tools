@@ -1895,6 +1895,22 @@
     box-shadow: var(--shadow-md);
     animation: modalin .22s var(--ease);
   }
+  /* Side-anchored DRAWER variant (design handoff PR 4 — the Coaching composer;
+     reusable by any surface that wants a right-anchored form instead of a
+     centred card). The host overlay pins the modal to the right edge at full
+     height; the modal itself keeps the .modal card vocabulary and slides in
+     (the #kb-drawer motion). */
+  .overlay.drawer-host { align-items: stretch; justify-content: flex-end; padding: 0; }
+  .modal.drawer {
+    max-width: 520px; width: 100%; height: 100%; max-height: 100vh;
+    border-radius: 0; border-width: 0 0 0 1px;
+    display: flex; flex-direction: column;
+    animation: drawerin .22s var(--ease);
+  }
+  @keyframes drawerin {
+    from { transform: translateX(24px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+  }
   @keyframes modalin {
     from { transform: translateY(10px) scale(.98); opacity: 0; }
     to   { transform: translateY(0) scale(1); opacity: 1; }

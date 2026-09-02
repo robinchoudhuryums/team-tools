@@ -770,6 +770,8 @@ const coachTrxMatch = codeSrc.match(/const (COACH_TRX_MAX\s*=\s*\d+);/);
 assert.ok(coachSevMatch && coachTmaxMatch && coachTrxMatch, 'COACH_* consts found in Code.js');
 vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';', sb,
   { filename: 'Code.js#COACH_consts' });
+vm.runInContext(extractRawFunction('Code.js', 'coachIsoDateOrBlank_'), sb, { filename: 'Code.js#coachIsoDateOrBlank_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachAgeDays_'), sb, { filename: 'Code.js#coachAgeDays_' });
 vm.runInContext(extractRawFunction('Code.js', 'coachValidate_'), sb, { filename: 'Code.js#coachValidate_' });
 vm.runInContext(extractRawFunction('Code.js', 'coachUnackedOverdue_'), sb, { filename: 'Code.js#coachUnackedOverdue_' });
 const coachValidate_ = sb.coachValidate_;
@@ -842,7 +844,9 @@ test('coachAnalytics_ aggregates severity / ack-rate / median-days / per-rep', (
   assert.strictEqual(a.bySeverity.major, 1);
   assert.strictEqual(a.bySeverity.critical, 1);
   assert.strictEqual(a.acknowledged, 2);
-  assert.strictEqual(a.ackRatePct, 50);
+  // PR 4 / K3 (operator decision 8): the denominator is the items that REQUIRE
+  // an answer — praise is excluded, so 2 acked of 3 non-praise = 67%, not 50%.
+  assert.strictEqual(a.ackRatePct, 67);
   assert.strictEqual(a.overdueUnacked, 1, 'critical open+old overdue; praise excluded');
   assert.strictEqual(a.medianDaysToAck, 2, 'median of [3,1] days = 2');
   const ana = a.perRep.find((r) => r.empId === 'A');
@@ -896,7 +900,7 @@ test('C9 M-11: coachCanManagerSee_ — creator OR roster column-M manager; blank
     'a missing roster row denies (fail-closed)');
 });
 test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
-  ['getCoachingDashboard', 'coachUnackedAll_'].forEach((fn) => {
+  ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching', 'coachRecapBuckets_'].forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
     assert.ok(!/parseTimestampMs_\(/.test(src),
@@ -1732,6 +1736,8 @@ const MIRROR_INDEX = [
     guards: ['CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS'] },
   { pair: 'coaching severity <select> ⊆ server COACH_SEVERITIES (INV-134)',
     guards: ['coaching severity options === COACH_SEVERITIES'] },
+  { pair: 'COACH_SEV_LABELS client ↔ server (K4 — Moderate is a display word)',
+    guards: ['PR4-3: COACH_SEV_LABELS'] },
   { pair: 'cnExtLinkOptionsHtml_ inlined categories ↔ CN_EXTERNAL_LINK_CATEGORIES',
     guards: ['ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES'] },
   { pair: 'PUNCH_META keys ⊇ server PUNCH_LABELS_ (INV-155 button render)',
@@ -1779,13 +1785,14 @@ test('F17: client CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS', () => {
 
 test('F17: coaching severity options === COACH_SEVERITIES', () => {
   const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  // Anchor on the id, NOT on the exact open tag: this pin extracted nothing
-  // (and silently compared []) the moment the select gained an aria-label.
-  const selAt = /<select id="coach-sev"[^>]*>/.exec(co);
-  assert.ok(selAt, 'found the severity select');
-  const sel = co.slice(selAt.index);
-  const opts = (sel.slice(0, sel.indexOf('</select>')).match(/value="([a-z]+)"/g) || [])
-    .map((v) => v.replace(/value="|"/g, ''));
+  // PR 4 (K1): the <select> became a Kind control (Coaching / Praise) plus
+  // three severity CHIPS. The stored enum is the union — `praise` comes from
+  // the kind button, the rest from the chips' data-sev values, in enum order.
+  const chips = /\['minor', 'major', 'critical'\]\.map\(function \(s\) \{/.test(co) ? ['minor', 'major', 'critical'] : [];
+  assert.ok(chips.length === 3, 'found the three severity chips');
+  assert.ok(/data-coach-kind="praise"/.test(co), 'found the Praise kind button');
+  assert.ok(/COACH_DRAWER\.kind === 'praise' \? 'praise' : COACH_DRAWER\.sev/.test(co), 'kind === praise stores the praise enum; else the chip (no migration)');
+  const opts = ['praise'].concat(chips);
   const server = arrayLiteral_(codeSrc, 'COACH_SEVERITIES');
   assert.deepStrictEqual(opts, server,
     'coachValidate_ whitelists against COACH_SEVERITIES — an option outside it is ' +
@@ -5452,8 +5459,11 @@ test('V-11: the Coaching per-rep table uses the shared component', () => {
     'CLAUDE.md: "New manager tables should reuse it rather than hand-rolling <table> markup"');
   assert.ok(!/<table class="tr-table coach-rep-table"/.test(co),
     'the hand-rolled markup is gone (no header treatment / hover / sticky header)');
-  assert.ok(/rowClass: function \(r\) \{ return r\.overdue/.test(co),
-    'the overdue tone survives via the component\'s rowClass hook');
+  // PR 4 (K7): the per-employee table became the signal BOARD; the tier
+  // (priority / watch) rides the same rowClass hook as an inset on the first
+  // cell — the full-row .coach-row-overdue tint is retired (INV-184).
+  assert.ok(/rowClass: function \(r\) \{ return r\.tier === 'priority' \? 'coach-row-priority' : r\.tier === 'watch' \? 'coach-row-watch' : ''; \}/.test(co),
+    'the tier tone survives via the component\'s rowClass hook');
   // The KPI strip is the visual twin of .telemetry — same alignment.
   assert.ok(/\.coach-kpi \{[^}]*text-align:left/.test(co),
     'the KPI strip is left-aligned like its .telemetry twin (it was centred)');
@@ -15564,7 +15574,7 @@ test('PR1-4: mock.js honors ?fixture=empty additively; EMPTY_FIXTURES is consult
   assert.ok(/var EMPTY_FIXTURES = \{/.test(mock), 'the empty-shape map exists');
   assert.ok(/FIXTURE_MODE === 'empty' && Object\.prototype\.hasOwnProperty\.call\(EMPTY_FIXTURES, name\)\)\s*\? EMPTY_FIXTURES\[name\] : FIXTURES\[name\]/.test(mock),
     'empty mode swaps ONLY RPCs that have an empty shape (additive — never a missing fixture)');
-  const OWED = [];   // grows with each block: 'getCoachingDashboard', 'getMyCoaching', 'getMyPendingTasks', …
+  const OWED = ['getCoachingDashboard', 'getMyCoaching'];   // grows with each block: 'getMyPendingTasks' (PR 6), …
   const body = /var EMPTY_FIXTURES = \{([\s\S]*?)\n  \};/.exec(mock);
   assert.ok(body, 'EMPTY_FIXTURES is a literal object');
   OWED.forEach((name) => assert.ok(new RegExp('\\b' + name + '\\s*:').test(body[1]), name + ' has an empty shape'));
@@ -15578,9 +15588,11 @@ test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; 
   const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
   assert.ok(/\.qa-kbd-hint \{ color: var\(--muted-2\)/.test(qa), '.qa-kbd-hint on the secondary-TEXT tone, not the decoration tone (--muted-3 is decoration-only)');
   const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  const banner = /\.coach-banner \{([^}]*)\}/.exec(co);
-  assert.ok(banner && /background:var\(--warn-soft\)/.test(banner[1]) && /border:1px solid var\(--warn\)/.test(banner[1]),
-    'the banner border and background are different tokens (they were both --warn-soft)');
+  // PR 4 renamed the rep banner to the action CALLOUT (.coach-callout) — the
+  // same rule holds: border and background are different tokens + the inset.
+  const banner = /\.coach-callout \{([^}]*)\}/.exec(co);
+  assert.ok(banner && /background:var\(--warn-soft\)/.test(banner[1]) && /border:1px solid var\(--warn\)/.test(banner[1]) && /inset 3px 0 0 var\(--warn\)/.test(banner[1]),
+    'the callout border and background are different tokens (they were both --warn-soft), plus the inset rule');
 });
 
 
@@ -15915,6 +15927,267 @@ test('PR3-5: fixtures + scenarios — getCoveragePlan is a FUNCTION whose keys m
   assert.ok(/punctuality-expanded-light-wide'[^\]]*\.pt-wrap \.m-qtoggle/.test(shoot), 'the expanded scenario opens the first detail row');
   const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
   assert.ok(!/VISUAL-GAP-TABS:[^\n]*\bcoverage\b/.test(claude), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Design handoff PR 4 (2026-09-02) — the Coaching surface (K1–K13).
+// ═════════════════════════════════════════════════════════════════════════════
+console.log('\ndesign handoff PR 4 — Coaching');
+
+test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, validate accepts the new fields, reply only on the open→acked transition, praise never counts as open, voided capped + reported', () => {
+  const headers = arrayLiteral_(codeSrc, 'COACH_HEADERS');
+  assert.strictEqual(headers.join('|'), ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'].join('|'),
+    'the five PR-4 columns are TRAILING (back-compat like CN_HEADERS — operator decision 2)');
+  const coSrc = /const CO = \{([^}]*)\};/.exec(codeSrc)[1];
+  const co = {}; [...coSrc.matchAll(/(\w+):\s*(\d+)/g)].forEach((m) => { co[m[1]] = +m[2]; });
+  assert.strictEqual(Object.keys(co).length, headers.length, 'CO names every header');
+  ['REP_RESPONSE|RepResponse', 'FOLLOW_UP_AT|FollowUpAt', 'NUDGED_AT|NudgedAt', 'NOTE_DATE|NoteDate', 'QA_FILE_ID|QaFileId', 'VOID_REASON|VoidReason'].forEach((pair) => {
+    const [k, h] = pair.split('|');
+    assert.strictEqual(headers[co[k]], h, 'CO.' + k + ' points at the ' + h + ' column');
+  });
+  // The row builder reads every new column, and the appendRow literal is exactly as wide as the header.
+  const rowObj = stripJsComments_(extractRawFunction('Code.js', 'coachRowToObj_'));
+  ['CO.REP_RESPONSE', 'CO.FOLLOW_UP_AT', 'CO.NUDGED_AT', 'CO.NOTE_DATE', 'CO.QA_FILE_ID'].forEach((k) => assert.ok(rowObj.indexOf(k) > -1, 'coachRowToObj_ reads ' + k));
+  const create = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
+  const appendLit = /appendRow\(\[([\s\S]*?)\]\)/.exec(create)[1];
+  assert.strictEqual(appendLit.split(',').filter((x) => x.trim()).length, headers.length, 'createCoaching appends a full-width row (a short row would leave FollowUpAt/NoteDate/QaFileId in the wrong cells)');
+  assert.ok(/v\.item\.followUpAt, '', v\.item\.noteDate, v\.item\.qaFileId/.test(appendLit), 'followUpAt / noteDate / qaFileId land in their own trailing cells (NudgedAt starts blank)');
+  // Validate: the three new fields are optional, normalized, and bounded.
+  const v = sb.coachValidate_({ empId: 'E-1', severity: 'Minor', whatHappened: 'x', followUpAt: '2026-09-10T00:00:00', noteDate: 'garbage', qaFileId: '  ' + 'f'.repeat(300) + '  ' });
+  assert.ok(v.ok, 'well-formed');
+  assert.strictEqual(v.item.followUpAt, '2026-09-10', 'a datetime-ish follow-up collapses to its ISO date');
+  assert.strictEqual(v.item.noteDate, '', 'a garbage date is blank, never a throw');
+  assert.strictEqual(v.item.qaFileId.length, 200, 'the QA file id is trimmed + capped at 200');
+  assert.strictEqual(sb.coachValidate_({ empId: 'E-1', severity: 'praise', whatHappened: 'nice' }).item.followUpAt, '', 'absent optional fields read blank');
+  // Acknowledge: the reply is written ONLY after the already-acked / void guards (a second ack can never overwrite a reply).
+  const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeCoaching'));
+  const iAlready = ack.indexOf("found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true");
+  const iVoid = ack.indexOf("found.item.status === 'void') return { success: false");
+  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(reply)');
+  assert.ok(iAlready > -1 && iVoid > -1 && iReply > -1 && iAlready < iReply && iVoid < iReply, 'reply write sits after both terminal-state guards');
+  assert.ok(/reply\.length > COACH_RESPONSE_MAX\) return \{ success: false/.test(ack), 'the reply is bounded by name');
+  assert.ok(/notifyAfter = function \(\) \{ notifyManagerOfCoachingAck_\(found\.item, emp, !!reply\); \}/.test(ack), 'the manager ack mail is deferred past the lock and says whether a reply exists (M-7)');
+  // Dashboard: praise is never "open" (K3 — operator decision 8), void rows leave the feed, and the voided list is capped + reported (INV-169).
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getCoachingDashboard'));
+  assert.ok(/if \(c\.status === 'open' && c\.severity !== 'praise'\) counts\.open\+\+;/.test(dash), 'counts.open excludes praise');
+  assert.ok(/if \(c\.status === 'void'\) \{ voided\.push\(c\); continue; \}/.test(dash), 'void rows never enter items');
+  assert.ok(/voided: voided\.slice\(0, COACH_VOIDED_CAP\), voidedTotal: voided\.length/.test(dash), 'voided is capped and the pre-slice total rides along');
+  assert.ok(/coachAnalytics_\(items, nowMs, reminderDays, biz\)/.test(dash), 'analytics get the business-day opts');
+  const mine = stripJsComments_(extractRawFunction('Code.js', 'getMyCoaching'));
+  assert.ok(/if \(c\.status === 'void'\) continue;/.test(mine), 'a rep never sees a voided item (operator decision 9)');
+  // The two new manager writes: gate → team scope → lock → audit, and the nudge's once-per-day + praise/open guards.
+  ['setCoachingFollowUp', 'nudgeCoaching'].forEach((fn) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(/waitLock\(15000\)/.test(src) && /callerEmp\.isManager\) return \{ success: false, error: 'Manager access required\.' \}/.test(src) && /coachCanManagerSee_\(callerEmp, found\.item\)/.test(src), fn + ': locked, manager-gated, team-scoped (INV-134)');
+    assert.ok(/writeAuditLog_\(callerEmp, 'Coaching(FollowUp|Nudge)'/.test(src) && !/whatHappened|patientTRX/.test(src.slice(src.indexOf('writeAuditLog_'))), fn + ': content-free audit row');
+  });
+  const nudge = stripJsComments_(extractRawFunction('Code.js', 'nudgeCoaching'));
+  assert.ok(/found\.item\.nudgedAt\.substring\(0, 10\) === todayIso\) \{\s*return \{ success: false/.test(nudge), 'once per manager-tz day per item');
+  assert.ok(/status !== 'open'\) return \{ success: false/.test(nudge) && /severity === 'praise'\) return \{ success: false/.test(nudge), 'only an open non-praise item can be nudged');
+  assert.ok(/notifyAfter = function \(\) \{ result\.mailed = notifyRepOfCoachingNudge_\(target, item, callerEmp\); \}/.test(nudge), 'the nudge mail is post-lock and its outcome rides back as `mailed`');
+});
+
+test('PR4-2: K9 — overdue is measured in BUSINESS days (operator decision 7): coachAgeDays_ takes an injected minute counter, unknown is never overdue, praise never nags, follow-up-due is its own signal, and every consumer routes through it', () => {
+  const ageDays = sb.coachAgeDays_, overdue = sb.coachUnackedOverdue_, analytics = sb.coachAnalytics_;
+  const DAY = 86400000;
+  // Wall-clock fallback (no opts) vs. injected business minutes.
+  assert.strictEqual(ageDays(0 + 1000, 1000 + 3 * DAY), 3, 'no opts → calendar days');
+  assert.strictEqual(ageDays(1000, 1000 + 3 * DAY, { bizMinutes: () => 1080, dayMinutes: 540 }), 2, 'injected 1080 business minutes over a 540-minute day = 2.0 business days');
+  assert.strictEqual(ageDays(1000, 1000 + 3 * DAY, { bizMinutes: () => null, dayMinutes: 540 }), null, 'a null minute count is UNKNOWN, never 0 (INV-187)');
+  assert.strictEqual(ageDays(0, 5), null, 'a missing createdAt is unknown');
+  // A Friday-afternoon item read on Monday morning is NOT 3 days old.
+  const fri = Date.UTC(2026, 8, 4, 21, 0, 0), mon = Date.UTC(2026, 8, 7, 14, 30, 0);   // Fri 16:00 → Mon 09:30 CDT
+  const bizFriMon = (a, b) => (a === fri && b === mon ? 90 : null);                    // 1h Fri + 30m Mon
+  assert.strictEqual(ageDays(fri, mon, { bizMinutes: bizFriMon, dayMinutes: 540 }), 0.2, 'the weekend does not age the item');
+  assert.strictEqual(ageDays(fri, mon), 2.7, 'the wall-clock figure the old code reported');
+  // coachUnackedOverdue_ with injected opts.
+  const mk = (o) => Object.assign({ coachId: 'c', status: 'open', severity: 'minor', createdAtMs: 1000, followUpAt: '' }, o);
+  const opts = (mins) => ({ bizMinutes: () => mins, dayMinutes: 540, todayIso: '2026-09-02' });
+  assert.strictEqual(overdue([mk({})], 99, 7, opts(540 * 5)).length, 0, '5 business days < 7 → not overdue');
+  assert.strictEqual(overdue([mk({})], 99, 7, opts(540 * 7)).length, 1, '7 business days → overdue');
+  assert.strictEqual(overdue([mk({ severity: 'praise' })], 99, 7, opts(540 * 30)).length, 0, 'praise never nags (K3)');
+  assert.strictEqual(overdue([mk({ status: 'acknowledged' })], 99, 7, opts(540 * 30)).length, 0, 'an acked item never nags');
+  assert.strictEqual(overdue([mk({})], 99, 7, opts(null)).length, 0, 'an UNKNOWN age is never overdue — the old wall-clock read would have called it overdue');
+  const fu = overdue([mk({ followUpAt: '2026-09-01' })], 99, 7, opts(540));
+  assert.strictEqual(fu.length, 1, 'a follow-up date in the past surfaces the item even when not overdue');
+  assert.strictEqual(fu[0].followUpDue, true, 'and is flagged as the follow-up being due, not as overdue');
+  assert.strictEqual(overdue([mk({ followUpAt: '2026-09-02' })], 99, 7, opts(540)).length, 0, 'a follow-up dated TODAY is not yet due');
+  // coachAnalytics_ takes the same opts: the ack-rate denominator excludes praise (operator decision 8) and the median is in business days.
+  const items = [
+    { empId: 'a', empName: 'A', severity: 'minor', status: 'acknowledged', createdAt: '2026-08-20 09:00:00', acknowledgedAt: '2026-08-24 09:00:00' },
+    { empId: 'a', empName: 'A', severity: 'praise', status: 'open', createdAt: '2026-08-21 09:00:00' },
+    { empId: 'b', empName: 'B', severity: 'major', status: 'open', createdAt: '2026-08-01 09:00:00' },
+  ];
+  const a = analytics(items, Date.UTC(2026, 8, 2), 7, { bizMinutes: () => 540 * 2, dayMinutes: 540 });
+  assert.strictEqual(a.ackRatePct, 50, '1 acked of 2 NON-praise items (praise excluded from the denominator)');
+  assert.strictEqual(a.medianDaysToAck, 2, 'median days-to-ack in business days (injected 2 days, not the 4 calendar days)');
+  assert.strictEqual(a.overdueUnacked, 0, 'with 2 business days of age nothing is overdue at 7');
+  // Wiring: the ONE opts builder rides the shared business-hours helpers, and every consumer passes it.
+  const biz = stripJsComments_(extractRawFunction('Code.js', 'coachBizOpts_'));
+  assert.ok(/bizMinutes: businessMinutesBetween_/.test(biz) && /businessHours_\(\)/.test(biz) && /win\.endMin - win\.startMin/.test(biz), 'coachBizOpts_ reuses the Spanish/DR business-hours core (one definition of a working hour)');
+  ['getCoachingDashboard', 'getMyCoaching', 'coachUnackedAll_'].forEach((fn) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(/coachBizOpts_\(\)/.test(src), fn + ' builds the business-day opts');
+    assert.ok(!/86400000/.test(src), fn + ' carries no raw day arithmetic');
+  });
+  ['coachUnackedOverdue_', 'coachAnalytics_'].forEach((fn) => {
+    assert.ok(!/86400000/.test(stripJsComments_(extractRawFunction('Code.js', fn))), fn + ': age comes only from coachAgeDays_ (the wall-clock constant is banned here)');
+  });
+  assert.ok(/coachAgeDays_\(isNaN\(createdMs\) \? 0 : createdMs, nowMs, biz\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getCoachingDashboard'))), 'the dashboard age is the business-day age');
+});
+
+test('PR4-3: COACH_SEV_LABELS client ↔ server byte-equal (K4 — Moderate is a display word, the stored enum stays major), and every label sink routes through it', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const srv = /const COACH_SEV_LABELS = (\{[^}]*\});/.exec(codeSrc), cli = /var COACH_SEV_LABELS = (\{[^}]*\});/.exec(co);
+  assert.ok(srv && cli, 'both declarations found');
+  assert.strictEqual(cli[1], srv[1], 'the two literals are byte-identical');
+  assert.ok(/major: 'Moderate'/.test(srv[1]), 'major DISPLAYS as Moderate');
+  assert.strictEqual(arrayLiteral_(codeSrc, 'COACH_SEVERITIES').join('|'), 'praise|minor|major|critical', 'the stored enum is unchanged (no migration)');
+  const cs = stripJsComments_(co);
+  assert.ok(/function coachSevLabel_\(sev\) \{ return COACH_SEV_LABELS\[sev\]/.test(cs) && /function coachSevChip_\(sev\) \{[^}]*coachSevLabel_\(sev\)/.test(cs), 'the chip renders the label map, never a bare severity');
+  assert.ok(!/'Moderate'/.test(cs.replace(/var COACH_SEV_LABELS = \{[^}]*\};/, '')), 'the client never hand-types the display word outside the map');
+  ['coachCriticalMailHtml_', 'coachNudgeMailHtml_', 'sendCoachingRecapDigest', 'notifyManagerOfCoachingAck_'].forEach((fn) => {
+    assert.ok(/COACH_SEV_LABELS/.test(extractRawFunction('Code.js', fn)), fn + ' labels severities through the map');
+  });
+});
+
+test('PR4-4: K8 — critical-only immediate mail (operator decision 1) that carries NO narrative/TRX/note id, a retraction on a critical void, and a weekly recap that is a gated trigger which never consults the brief flag', () => {
+  // Builders run in a vm: the critical mail is built from FOUR non-content inputs only.
+  const ctx = vm.createContext({
+    CN_EMAIL_PALETTE: sb.CN_EMAIL_PALETTE, esc_: sb.esc_, brandedKvRows_: sb.brandedKvRows_, buildBrandedEmailHtml_: sb.buildBrandedEmailHtml_,
+    CONFIG: { COACHING_UNACK_REMINDER_DAYS: 7 }, COACH_SEV_LABELS: { praise: 'Praise', minor: 'Minor', major: 'Moderate', critical: 'Critical' },
+  });
+  ['coachCriticalMailHtml_', 'coachRetractionMailHtml_', 'coachNudgeMailHtml_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  assert.ok(/function coachCriticalMailHtml_\(mgrName, loggedAt, followUpAt, ctaUrl\)/.test(codeSrc), 'the critical builder has no parameter through which the narrative, TRX or note id could pass');
+  const crit = ctx.coachCriticalMailHtml_('<b>Robin</b>', '2026-09-02 09:00', '', 'https://x/exec');
+  assert.ok(crit.indexOf('&lt;b&gt;Robin&lt;/b&gt;') > -1 && crit.indexOf('<b>Robin</b>') < 0, 'the manager name is escaped');
+  assert.ok(crit.indexOf('1-on-1') < 0, 'no 1-on-1 row without a follow-up date');
+  assert.ok(crit.indexOf('Critical') > -1 && /business days/.test(crit) && /Open Coaching/.test(crit), 'severity label, the business-day window, and a real CTA');
+  const critFu = ctx.coachCriticalMailHtml_('Robin', '2026-09-02 09:00', '2026-09-09', 'https://x/exec');
+  assert.ok(critFu.indexOf('1-on-1') > -1 && critFu.indexOf('2026-09-09') > -1, 'a follow-up date renders the 1-on-1 row');
+  const nud = ctx.coachNudgeMailHtml_('Robin', '2026-09-02 09:00', 'major', 'https://x/exec');
+  assert.ok(nud.indexOf('Moderate') > -1 && /Reminder/.test(nud), 'the nudge names the display severity');
+  // The notify gate + the create/void wiring.
+  const notify = stripJsComments_(extractRawFunction('Code.js', 'notifyRepOfCoaching_'));
+  assert.ok(/if \(item\.severity !== 'critical'\) return false;/.test(notify), 'minor/major NEVER email immediately — they ride the weekly recap');
+  assert.ok(!/whatHappened|whatShould|patientTRX|noteId/.test(notify), 'the immediate mail never touches content fields');
+  assert.ok(/cc: manager\.email/.test(notify), 'the manager is cc\'d (the paper trail lives in two inboxes)');
+  const create = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
+  assert.ok(/if \(v\.item\.severity === 'critical'\) \{\s*result\.mailed = false;\s*notifyAfter = function/.test(create), 'the mail closure exists ONLY for critical, and `mailed` starts false');
+  assert.ok(create.indexOf('lock.releaseLock()') < create.lastIndexOf('notifyAfter()'), 'the closure fires after the lock (M-7)');
+  const voidFn = stripJsComments_(extractRawFunction('Code.js', 'voidCoaching'));
+  assert.ok(/if \(found\.item\.severity === 'critical' && found\.item\.status !== 'void'\) \{[\s\S]*?notifyRepOfCoachingRetraction_/.test(voidFn), 'voiding a critical item sends the retraction (a rep already told to act must be told to stop)');
+  // The weekly recap: trigger-gated, heartbeat on BOTH exits, brief-flag-free (INV-151), non-critical only, recap window read from CONFIG (F1).
+  const recap = stripJsComments_(extractRawFunction('Code.js', 'sendCoachingRecapDigest'));
+  assert.ok(/^function sendCoachingRecapDigest\(\) \{\s*assertManagerCaller_\('sendCoachingRecapDigest'\)/.test(recap), 'INV-44 gate first');
+  assert.strictEqual((recap.match(/stampDigestLastRun_\('coachingRecap'\)/g) || []).length, 2, 'heartbeat on the store-unavailable exit AND the normal exit');
+  assert.ok(!/managerDailyBrief|managerBriefSuppressionActive_|getFlag_/.test(recap), 'an AGENT-facing mail never consults the manager brief flag (INV-151)');
+  assert.ok(/CONFIG\.COACHING_RECAP_DAYS/.test(recap) && /COACHING_RECAP_DAYS: 7/.test(codeSrc), 'the lookback is a read CONFIG key');
+  assert.ok(/onWeekDay\(ScriptApp\.WeekDay\.FRIDAY\)/.test(codeSrc.slice(codeSrc.indexOf("newTrigger('sendCoachingRecapDigest')"), codeSrc.indexOf("newTrigger('sendCoachingRecapDigest')") + 400)), 'Friday cadence, one constant away from a change');
+  assert.ok(/coachingRecap: 192/.test(codeSrc), 'the heartbeat has a weekly staleness window (the `weekly` precedent)');
+  assert.ok(/coachRowToObj_\(rows\[i\], ssTz\)/.test(recap) && /empRosterEmail_\(roster\[r\]\)/.test(recap), 'reads through the typed row builder + the roster inclusion predicate (INV-183)');
+  // coachRecapBuckets_ behavioural: non-critical, non-void, inside the window, grouped by agent.
+  vm.runInContext(extractRawFunction('Code.js', 'coachParseTs_'), ctx, { filename: 'Code.js#coachParseTs_' });
+  vm.runInContext(extractRawFunction('Code.js', 'coachRecapBuckets_'), ctx, { filename: 'Code.js#coachRecapBuckets_' });
+  const now = Date.UTC(2026, 8, 4, 13, 0, 0);
+  const d = (n) => new Date(now - n * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const buckets = ctx.coachRecapBuckets_([
+    { coachId: '1', empId: 'A', severity: 'minor', status: 'open', createdAt: d(1) },
+    { coachId: '2', empId: 'A', severity: 'praise', status: 'open', createdAt: d(3) },
+    { coachId: '3', empId: 'A', severity: 'critical', status: 'open', createdAt: d(1) },   // emailed immediately — never recapped
+    { coachId: '4', empId: 'B', severity: 'major', status: 'void', createdAt: d(2) },      // voided — gone
+    { coachId: '5', empId: 'B', severity: 'major', status: 'acknowledged', createdAt: d(9) },   // outside the 7-day window
+    { coachId: '6', empId: 'B', severity: 'minor', status: 'open', createdAt: d(6) },
+    { coachId: '', empId: 'B', severity: 'minor', status: 'open', createdAt: d(1) },        // blank row
+  ], now, 7);
+  assert.strictEqual(Object.keys(buckets).sort().join('|'), 'A|B');
+  assert.strictEqual(buckets.A.map((c) => c.coachId).join('|'), '1|2', 'A: the minor + the praise; the critical is excluded');
+  assert.strictEqual(buckets.B.map((c) => c.coachId).join('|'), '6', 'B: only the in-window live item');
+});
+
+test('PR4-5: client — coachRepSignal_ tiers (nosignal is INFO and out-ranks steady/clear), the retired toggle/tint/helper stay retired, the filter key is validated, voided leave All, praise has no Acknowledge, the board drops two columns at ≤720px, ack sends the reply', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const cs = stripJsComments_(co);
+  const ctx = vm.createContext({});
+  ['coachTsMs_', 'coachRepSignal_'].forEach((fn) => vm.runInContext(extractFnFrom(cs, fn), ctx, { filename: 'coaching#' + fn }));
+  const now = Date.UTC(2026, 8, 2, 12, 0, 0);
+  const at = (days) => new Date(now - days * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const emps = [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }, { id: 'C', name: 'C' }, { id: 'D', name: 'D' }, { id: 'E', name: 'E' }, { id: 'F', name: 'F' }];
+  const rows = ctx.coachRepSignal_([
+    { empId: 'A', severity: 'critical', status: 'open', createdAt: at(25) },                          // a 25-day-old critical is still PRIORITY
+    { empId: 'B', severity: 'minor', status: 'open', createdAt: at(2) }, { empId: 'B', severity: 'major', status: 'open', createdAt: at(4) },   // 1+2 = 3 → watch
+    { empId: 'C', severity: 'minor', status: 'acknowledged', createdAt: at(40) },                     // outside 30d and nothing in 21d → nosignal
+    { empId: 'D', severity: 'minor', status: 'open', createdAt: at(3) },                             // 1 → steady
+    { empId: 'E', severity: 'praise', status: 'open', createdAt: at(3) },                             // −1 → clear (recent)
+    { empId: 'F', severity: 'major', status: 'void', createdAt: at(1) },                              // void is invisible → nosignal
+  ], emps, now);
+  const tier = {}; rows.forEach((r) => { tier[r.empId] = r.tier; });
+  assert.strictEqual(tier.A, 'priority', 'any critical in 30d → priority'); assert.strictEqual(tier.B, 'watch');
+  assert.strictEqual(tier.C, 'nosignal', 'no item in 21 days → no signal (precedence over steady/clear)'); assert.strictEqual(tier.D, 'steady');
+  assert.strictEqual(tier.E, 'clear'); assert.strictEqual(tier.F, 'nosignal', 'a voided item is not a signal');
+  assert.strictEqual(rows.filter((r) => r.empId === 'A')[0].score, 4);
+  assert.ok(/nosignal: \{ label: 'No signal', tone: 'info' \}/.test(cs), 'No signal is INFO-toned — absence of data is not a verdict (INV-187)');
+  // INV-184: the segmented toggle, the full-row overdue tint and the old narrative helper are gone from CODE (comments may name them).
+  ['.coach-modes', '.coach-mode ', '.coach-mode{', '.coach-row-overdue', 'coachNarrativeHtml_'].forEach((dead) =>
+    assert.ok(cs.indexOf(dead) < 0, dead + ' is retired'));
+  // The Mine ⇄ Team switch itself SURVIVES (coachSwitchMode_ + umsCoachingMode) — it moved onto
+  // the shared .toolbar-tabs vocabulary as real role="tab" buttons (A11/INV-174).
+  assert.ok(/class="toolbar-tabs" role="tablist" aria-label="Coaching view">/.test(cs) && /role="tab" aria-controls="coach-content" aria-selected="' \+ \(COACH_MODE === 'team'\) \+ '" data-coach-mode="team"/.test(cs), 'the mode switch renders as shared tabs');
+  assert.ok(/closest\('\[data-coach-mode\]'\)\)\) \{ coachSwitchMode_\(hit\.getAttribute\('data-coach-mode'\)\)/.test(cs), 'the tabs dispatch to the surviving switch handler');
+  assert.ok(/umsCoachingFilter'\); if \(COACH_FILTERS\.indexOf\(v\) >= 0\) return v;/.test(cs), 'a stored filter is validated against COACH_FILTERS (a corrupt value falls back)');
+  assert.ok(/var COACH_FILTERS = \['all', 'ack', 'overdue', 'praise', 'voided'\];/.test(cs), 'the five filters');
+  assert.ok(/all: items\.length,/.test(cs) && /if \(f === 'voided'\) list = voided;\s*else list = items\.filter/.test(cs), 'voided items are EXCLUDED from All (K6 — operator decision 9)');
+  // Praise never gets an Acknowledge button: the rep view routes praise to the recognition feed BEFORE the card builder sees it.
+  const renderMy = extractFnFrom(cs, 'coachRenderMy_');
+  assert.ok(/var praise = items\.filter\(function \(i\) \{ return i\.severity === 'praise'; \}\);\s*if \(praise\.length\) h \+= coachRecognitionHtml_\(praise, true\);/.test(renderMy), 'praise → recognition cards');
+  assert.ok(/var coaching = items\.filter\(function \(i\) \{ return i\.severity !== 'praise'; \}\);/.test(renderMy) && /coachMonthGroups_\(shown, function \(it\) \{ return coachCardMy_\(it, nowMs\); \}\)/.test(renderMy), 'only NON-praise items reach coachCardMy_ (the one place an Acknowledge button renders)');
+  assert.ok(!/data-coach-ack=/.test(extractFnFrom(cs, 'coachRecognitionHtml_')), 'the recognition card has no Acknowledge');
+  const mgrCard = extractFnFrom(cs, 'coachCardMgr_');
+  assert.ok(/if \(it\.status === 'open' && it\.severity !== 'praise'\) \{\s*actions \+= '<button type="button" class="tr-complete-btn coach-sec" data-coach-nudge=/.test(mgrCard), 'Nudge renders only on an open non-praise item');
+  // Ack sends the optional reply; the double-click guard survives.
+  const ack = extractFnFrom(cs, 'coachAck_');
+  assert.ok(/\.acknowledgeCoaching\(coachId, reply\)/.test(ack) && /_coachAckInFlight\[coachId\]/.test(ack), 'the reply rides the ack RPC behind the in-flight guard');
+  // CSS: the board drops the Mix + Last columns at ≤720px (A2), the reveal-able rows carry their [hidden] companions, acked cards dim.
+  assert.ok(/@media \(max-width: 720px\) \{\s*\.coach-board \.m-table th:nth-child\(2\), \.coach-board \.m-table td:nth-child\(2\),\s*\.coach-board \.m-table th:nth-child\(4\), \.coach-board \.m-table td:nth-child\(4\) \{ display:none; \}/.test(co), 'two board columns drop at ≤720px');
+  assert.ok(/\.coach-praise-note\[hidden\], #coach-sev-wrap\[hidden\], #coach-should-wrap\[hidden\] \{ display:none; \}/.test(co), 'the [hidden] companions (the display-class trap)');
+  assert.ok(/\.coach-card\.is-acked \{ opacity:\.86; \}/.test(co), 'acked cards recede without disappearing');
+  assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(co), 'the KPI strip goes 2×2 on a phone');
+  // The drawer is the shared side-anchored variant, named by its heading (A14).
+  assert.ok(/ensureOverlay\('coach-compose-overlay', \{ labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_ \}\)/.test(cs), 'drawer via ensureOverlay with a labelledBy name');
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.overlay\.drawer-host \{ align-items: stretch; justify-content: flex-end; padding: 0; \}/.test(styles) && /\.modal\.drawer \{[^}]*max-height: 100vh;[^}]*flex-direction: column;/.test(styles), 'the shared drawer geometry lives in styles.html');
+});
+
+test('PR4-6: fixtures + scenarios + hand-offs — the coaching fixtures carry every coachRowToObj_ key, the seven scenarios exist, the rep-role hook exists, the Coach-on-this hand-off carries the note date, the QA hint is consumed-then-nulled', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const rowObj = stripJsComments_(extractRawFunction('Code.js', 'coachRowToObj_'));
+  const keys = [...(/return \{([\s\S]*?)\};/.exec(rowObj)[1]).matchAll(/(\w+):\s/g)].map((x) => x[1]);
+  assert.ok(keys.length >= 19, 'row-builder keys derived from source');
+  const first = /getCoachingDashboard: \{ items: \[\s*\{([\s\S]*?)\},\s*\{ coachId: 'c2'/.exec(mock)[1];
+  const fxKeys = [...first.matchAll(/(\w+):\s/g)].map((x) => x[1]);
+  keys.forEach((k) => assert.ok(fxKeys.indexOf(k) > -1, 'dashboard fixture carries ' + k + ' (INV-185)'));
+  ['ageDays', 'overdueUnacked', 'followUpDue', 'nudgedToday'].forEach((k) => assert.ok(fxKeys.indexOf(k) > -1, 'fixture carries the additive dashboard field ' + k));
+  const mine = /getMyCoaching: \{ items: \[\s*\{([\s\S]*?)\},\s*\{ coachId: 'm2'/.exec(mock)[1];
+  const myKeys = [...mine.matchAll(/(\w+):\s/g)].map((x) => x[1]);
+  keys.concat(['ageDays', 'createdByName']).forEach((k) => assert.ok(myKeys.indexOf(k) > -1, 'rep fixture carries ' + k));
+  assert.ok(/getCoachingDashboard: \{ items: \[\], voided: \[\], voidedTotal: 0/.test(mock) && /getMyCoaching: \{ items: \[\], businessDayMinutes: 540 \}/.test(mock), 'both EMPTY twins exist (C7)');
+  assert.ok(/\[\?&\]role=rep\\b/.test(mock) && /FIXTURES\.getEmployeeState\.isManager = false;/.test(mock), 'the ?role=rep hook flips every role flag');
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  ['coaching-drawer-light-wide', 'coaching-empty-light-wide', 'coaching-mine-light-wide', 'coaching-mine-dark-wide', 'coaching-light-mobile', 'coaching-mine-light-mobile', 'coaching-error-light-wide']
+    .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
+  assert.ok(/coaching-drawer-light-wide'[^\]]*'coachOpenDrawer_\(null\)'/.test(shoot) && /coaching-error-light-wide'[^\]]*\?failrpc=getCoachingDashboard/.test(shoot) && /coaching-mine-light-wide'[^\]]*\?role=rep/.test(shoot), 'the drawer / error / rep scenarios drive their hooks');
+  // Coach-on-this hands the NOTE DATE across (K5 — the drill is date-keyed).
+  const cn = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/data-note-date="\$\{esc\(note\.dateLocal \|\| ''\)\}"/.test(cn) && /noteDate: btn\.dataset\.noteDate \|\| ''/.test(extractFnFrom(cn, 'cnMgrCoachOnNote_')), 'the Coach button carries the note date into COACH_PREFILL');
+  const coach = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8'));
+  const openNote = extractFnFrom(coach, 'coachOpenNote_');
+  assert.ok(/cnAuditDrillToNote_\(empId, noteDate, noteId\)/.test(openNote) && /enterTool\('callNotes', 'callNotesHistory'\)/.test(openNote), 'manager → the Per-Rep drill; rep → their own History (both date-keyed)');
+  // The QA chip parks a hint the queue consumes FIRST, then nulls (C8).
+  assert.ok(/window\.QA_OPEN_HINT = \{ fileId: fileId \};\s*if \(typeof enterTool === 'function'\) enterTool\('qa', 'qaQueue'\);/.test(coach), 'park then navigate');
+  const qa = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
+  assert.ok(/const hint = window\.QA_OPEN_HINT \|\| null;\s*window\.QA_OPEN_HINT = null;\s*if \(hint && hint\.fileId\) qaOpenDetail_\(String\(hint\.fileId\)\);/.test(qa), 'read → null → act, after the queue renders');
+  assert.ok(qa.indexOf('window.QA_OPEN_HINT = null') > qa.indexOf('qaRenderQueue_()'), 'consumed only once the queue is on screen (a hint for a recording not in this queue is simply dropped)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

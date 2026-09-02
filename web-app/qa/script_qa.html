@@ -169,6 +169,12 @@ function qaLoadQueue_() {
       QA_STATE.queue = data;
       if (QA_STATE.det) return;   // a detail opened while the refresh ran — leave it
       qaRenderQueue_();
+      // K13 (design handoff PR 4) — a Coaching card's "QA review" chip parks a
+      // {fileId} hint (the C8 park-and-consume pattern): read it FIRST, null
+      // it, then open the detail if the recording is in this queue.
+      const hint = window.QA_OPEN_HINT || null;
+      window.QA_OPEN_HINT = null;
+      if (hint && hint.fileId) qaOpenDetail_(String(hint.fileId));
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || QA_STATE.seq !== mySeq) return;

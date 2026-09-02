@@ -7705,6 +7705,7 @@ function cnMgrRenderReadonlyCard_(note) {
       ${editor}
       <div class="cn-mgr-card-actions">
         <button type="button" class="cn-mgr-coach-btn" data-rep-id="${esc(repId)}" data-note-id="${esc(note.noteId)}"
+                data-note-date="${esc(note.dateLocal || '')}"
                 data-patient-trx="${esc(note.patientAndTrx || '')}" onclick="cnMgrCoachOnNote_(this)"
                 title="Log coaching for this rep about this call">${icon('bulb', 12)} Coach</button>
         <button type="button" class="cn-mgr-del-btn" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}"
@@ -7722,6 +7723,9 @@ function cnMgrCoachOnNote_(btn) {
     empId: btn.dataset.repId || '',
     patientTRX: btn.dataset.patientTrx || '',
     noteId: btn.dataset.noteId || '',
+    // K5 (design handoff PR 4): the drill-through back to the note is
+    // DATE-keyed, so the date travels with the id (stored as NoteDate).
+    noteDate: btn.dataset.noteDate || '',
   };
   // The tool's TOOLS-registry key is 'develop' (label "Training & Employee
   // Docs") — enterTool returns SILENTLY on an unknown key, so the old
@@ -10277,6 +10281,7 @@ var CN_DIGEST_LABELS_ = {
   eod: 'EOD unresolved-flag digest', urgent: 'Urgent-flag digest', weekly: 'Weekly training/review digests',
   trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
   managerBrief: 'Manager daily brief', selfTest: 'Nightly self-test',
+  coachingRecap: 'Weekly coaching recap',
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
 
@@ -10571,6 +10576,7 @@ function cnRenderHealthPanel_(res) {
     deptReqReminder: { label: 'Dept-request SLA reminder', expect: 'daily 10am — stale past 26h' },
     managerBrief: { label: 'Manager daily brief', expect: 'daily 8am — heartbeats even while the managerDailyBrief toggle is off' },
     selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
+    coachingRecap: { label: 'Weekly coaching recap', expect: 'Friday 8am — agent-facing recap of non-critical coaching; stale past 8d' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
