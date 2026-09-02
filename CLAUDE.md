@@ -9340,6 +9340,14 @@ after with `test/visual/fold-measure.mjs` rather than reasoned (704 → 367).
 Visual matrix 90 → **92** (`clock-needsyou-empty-light-wide` via
 `?fixture=empty`, `clock-needsyou-error-light-wide` via `?failrpc=`); editor
 suite +1 (`pendingTasks_requiresEmployeeAndShape`) ≈ **308**.
+The browser-timezone dimension (operator 2026-09-02, "can I see what the PH
+reps see?") added one more → **744** (VIS-TZ — the 7th tuple entry reaches the
+Playwright context as `timezoneId`, the frozen instant is per scenario, the
+mock honours `?tz=` for the ROSTER zone with abbreviations checked against the
+server's own `TZ_ABBR`, and the PHT scenario's two zones are asserted DIFFERENT
+— a scenario where they agree tests nothing). The R2-FU pin was rewritten in
+place for the seven-entry destructuring. Visual matrix 92 → **93**
+(`clock-light-wide-pht`, clean on its first shoot).
 The Timesheet timezone repair (operator 2026-09-02, the same afternoon) added
 two more → **743**: TZR-1 drives the pure `tzRepairPlanRow_` with INJECTED tz
 functions (a fixed 13h offset — the pre-flip shift collapses onto one date, a
@@ -9939,6 +9947,20 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    The blocks that owe an entry are listed by name in the PR1-4 pin as they land
    (a fully derived "every fixture has an empty twin" scan is not expressible —
    fixtures are objects, not call sites).
+   **The BROWSER timezone is a scenario dimension since 2026-09-02 (VIS-TZ).**
+   A PH agent saw "Clock In" at midnight PHT; the server half was roster data,
+   but the CLIENT half — any site reading the browser clock instead of the
+   roster frame via `isoDateTz(empTz())` — only shows when browser and roster
+   DISAGREE, which no scenario had ever arranged with the clock frozen across
+   the browser's midnight. A scenario tuple's optional 7th entry
+   `{ tz, utc: [h, m] }` sets Playwright's `timezoneId` (the browser) and the
+   frozen instant; the mock's `?tz=<IANA>` sets the ROSTER zone the fixture rep
+   carries. `clock-light-wide-pht` holds them apart (roster America/Chicago
+   viewed from Asia/Manila at 16:05 UTC = 00:05 PHT = 11:05 CDT mid-shift) and
+   must read entirely as the Chicago day. Its first shoot was clean. Pair any
+   new browser-clock read in a rep-facing partial with a scenario in this
+   dimension; the VIS-TZ pin keeps the two zones from silently collapsing
+   back to equal.
    **The uncovered-tab list is DERIVED, not prose — the marker line below is
    machine-checked against the matrix (VIS-COVER), because the hand-kept
    sentence that used to sit here named 3 of 11 real gaps and a /sync-docs

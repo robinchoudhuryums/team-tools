@@ -11665,7 +11665,7 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
 
   test('R2-FU: shoot.mjs consumes the post hook and the sched-modal scenario uses it', () => {
     const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
-    assert.ok(/query, post\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element');
+    assert.ok(/query, post, opts\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element (and, since VIS-TZ, the 7th)');
     assert.ok(/if \(post\) \{/.test(shoot), 'the hook is consumed after nav');
     assert.ok(/\['cn-sched-modal-light-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot),
       'the sched-modal scenario opens the modal via the hook');
@@ -16760,6 +16760,35 @@ test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, lock
   const dry = extractRawFunction('Code.js', 'repairTimesheetTimezone_dryRun');
   const app = extractRawFunction('Code.js', 'repairTimesheetTimezone_apply');
   assert.ok(/dryRun: true/.test(dry) && /dryRun: false/.test(app), 'wrappers pass the mode explicitly');
+});
+
+
+/* ── VIS-TZ: the browser-vs-roster timezone dimension (operator 2026-09-02) ──
+ * A PH agent's browser and roster row disagree by design under the ALL-CST
+ * policy. The harness can now hold the two apart: `timezoneId` on the
+ * Playwright context (browser), `?tz=` on the mock (roster), and a frozen
+ * instant chosen to sit just past the BROWSER's midnight. Pinned so the
+ * dimension cannot silently collapse back to "browser == roster". */
+test('VIS-TZ: shoot.mjs carries a browser-timezone tuple entry, the mock honours ?tz=, and the PHT scenario holds them apart', () => {
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/for \(const \[name, nav, vp, mode, query, post, opts\] of SCENARIOS\)/.test(shoot), 'the 7th tuple entry is destructured');
+  assert.ok(/if \(opts && opts\.tz\) ctxOpts\.timezoneId = opts\.tz;/.test(shoot), 'the BROWSER timezone rides the Playwright context');
+  assert.ok(/if \(opts && opts\.utc\) fake\.setUTCHours\(opts\.utc\[0\], opts\.utc\[1\] \|\| 0, 0, 0\);/.test(shoot), 'the frozen instant is per scenario');
+  const m = /\['clock-light-wide-pht', \{ tool: 'timeClock', tab: 'clock' \}, WIDE, 'light', '([^']*)', '', \{ tz: '([^']*)', utc: \[(\d+), (\d+)\] \}\]/.exec(shoot);
+  assert.ok(m, 'the PHT scenario exists with a query, a browser tz and a frozen instant');
+  assert.ok(/[?&]tz=America%2FChicago|[?&]tz=America\/Chicago/.test(m[1]) && /role=rep/.test(m[1]), 'roster = America/Chicago, viewed as a CSR');
+  assert.strictEqual(m[2], 'Asia/Manila', 'browser = Asia/Manila — the two MUST differ or the scenario tests nothing');
+  // 16:05 UTC = 00:05 PHT (UTC+8) = 11:05 CDT: just past the BROWSER midnight, mid-shift in the roster frame.
+  assert.strictEqual(Number(m[3]), 16); assert.strictEqual(Number(m[4]), 5);
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\/\[\?&\]tz=\(\[\^&\]\+\)\/\.exec\(window\.location\.search\)/.test(mock), 'the mock parses ?tz=');
+  assert.ok(/FIXTURES\.getEmployeeState\.timezone = tzId;/.test(mock) && /FIXTURES\.getEmployeeState\.timezoneAbbr = TZ_ABBR_FIX\[tzId\] \|\| tzId;/.test(mock), 'the hook overrides the ROSTER timezone + its abbreviation');
+  // The abbreviations the hook can emit are the server's own (INV-185).
+  const tzAbbr = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(/const TZ_ABBR = \{([^}]*)\}/);
+  assert.ok(tzAbbr, 'TZ_ABBR found');
+  [['America/Chicago', 'CST'], ['Asia/Kolkata', 'IST'], ['Asia/Manila', 'PHT']].forEach(([z, a]) => {
+    assert.ok(new RegExp("'" + z.replace('/', '\\/') + "':\\s*'" + a + "'").test(tzAbbr[1]), z + ' → ' + a + ' matches the server map');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

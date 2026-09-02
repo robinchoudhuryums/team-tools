@@ -21,8 +21,8 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 743 + DOM 104;
-  visual matrix on demand — 92 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 744 + DOM 104;
+  visual matrix on demand — 93 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
@@ -126,6 +126,13 @@ day — `coachStampDayMgr_`, PR4-1 rewritten + bite-checked) and four test-side
 faults (setup restores the TEST rows' fixture timezone; `isIncomplete`; the
 multi-break refusal case). The operator re-runs after the next push; expect
 308/308.
+**Browser-timezone scenario dimension (2026-09-02, same evening):** the
+operator asked for a "PH CSR view"; the answer is View-as CSR + a DevTools
+timezone override for a live look, and for the harness a 7th scenario tuple
+entry `{ tz, utc }` (Playwright `timezoneId` + frozen instant) plus the mock's
+`?tz=` roster override. `clock-light-wide-pht` (roster Chicago, browser
+Manila, 00:05 PHT) shot clean — no client-side browser-clock read surfaced.
+VIS-TZ pin; matrix 93.
 Next: nothing in flight — the operator's single deploy (`clasp push -f` + New
 version, then `runAllTests()` → 308, `installAutomationTriggers()` once) ships
 PRs #176–#220 plus the six handoff PRs together. Facts PR 3+ depended on: `mtDateRange_`/`mtPctTone_` now exist in

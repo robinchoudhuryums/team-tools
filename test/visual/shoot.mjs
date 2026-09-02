@@ -242,15 +242,31 @@ const SCENARIOS = [
   // stylesheet rule, media queries included — kept a 44px page overflow at
   // 390px until it was measured by hand. On camera now so the next one is not.
   ['manage-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', ''],
+  // Operator 2026-09-02: a PH agent saw "Clock In" at midnight PHT. The
+  // server half was roster data (Timezone = Asia/Manila under the ALL-CST
+  // policy; fixed by the roster flip + the profile-vs-anchor warning). The
+  // CLIENT half — any site reading the browser clock instead of the roster
+  // frame — only shows when the two disagree, which no scenario had ever
+  // arranged: the harness browser is UTC and the fixture roster was Kolkata,
+  // but never with the clock frozen ACROSS the browser's midnight. This one
+  // is a CSR whose roster says America/Chicago (`?tz=`), viewed from a
+  // Manila browser (7th tuple entry: `timezoneId`), at 00:05 PHT = 11:05 CDT
+  // mid-shift. The Dashboard must still read as Chicago: today's date, the
+  // punches, the ribbon's now-cursor and the break-chip states all on the
+  // CST day, not a fresh PHT day with "Clock In".
+  ['clock-light-wide-pht', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?tz=America/Chicago&role=rep', '', { tz: 'Asia/Manila', utc: [16, 5] }],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
-for (const [name, nav, vp, mode, query, post] of SCENARIOS) {
+for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (only && !only.some((o) => name.includes(o))) continue;
-  const ctx = await browser.newContext({ viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' });
+  // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
+  const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
+  if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
+  const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -260,7 +276,9 @@ for (const [name, nav, vp, mode, query, post] of SCENARIOS) {
   // (9c5df81) would cover the top of EVERY screenshot. Seed "already warned
   // today" — the steady state, same posture as the tour-seen flag.
   await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
-  const fake = new Date(); fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift
+  const fake = new Date();
+  if (opts && opts.utc) fake.setUTCHours(opts.utc[0], opts.utc[1] || 0, 0, 0);
+  else fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift
   await page.clock.install({ time: fake });
   await page.goto(PAGE + query, { waitUntil: 'load' });
   await page.waitForTimeout(1200);
