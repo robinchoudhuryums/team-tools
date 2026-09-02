@@ -15717,6 +15717,12 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   assert.ok(/Intake &lt;b&gt;x&lt;\/b&gt;/.test(html), 'labels are escaped');
   assert.ok(/data-tone="crit">unreachable</.test(html) && /≠ CONFIG/.test(html), 'status + tz pills');
   assert.ok(/id="cn-sys-sec-storage"/.test(html), 'the section anchor');
+  // Two MEASURED defects (1440px): the retention sentence must wrap inside its
+  // own span (td is nowrap — the QA row pushed the Link column off-canvas), and
+  // the count pill must not be .card-label's FIRST span (flex:1 → a full-width bar).
+  assert.ok(/class="cn-store-ret"/.test(html) && /\.cn-store-ret \{[^}]*white-space: normal/.test(cn), 'retention wraps in its own span');
+  const findings = extractFnFrom(code, 'cnRenderSystemFindings_');
+  assert.ok(/id="cn-sys-sec-automation"><span>Needs attention<\/span>/.test(findings), 'the heading text leads as a span, the pill follows');
 });
 
 test('PR2-4: mock.js carries the Admin all-clear empty shapes; shoot.mjs covers the System pane (wide/dark/mobile/all-clear/error)', () => {

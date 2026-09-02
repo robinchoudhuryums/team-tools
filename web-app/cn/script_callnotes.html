@@ -492,6 +492,10 @@
      The hand-rolled .cn-storage-row/-main/-role/-meta flex rows are retired
      (INV-184 — pinned not to return). */
   .cn-store-sub { font-family: var(--mono); font-size: 10px; color: var(--muted-2); margin-top: 2px; white-space: nowrap; }
+  /* The retention text can run to a sentence (the QA row names its window);
+     .m-table td is nowrap, so it wraps inside its own span or the Link column
+     leaves the canvas — measured at 1440px. */
+  .cn-store-ret { display: block; max-width: 260px; white-space: normal; font-size: 11px; line-height: 1.4; }
   .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .cn-store-detail .fix { color: var(--warning-deep); }
   .cn-store-detail .bad { color: var(--danger-deep); }
@@ -9942,7 +9946,7 @@ function cnRenderStoragePanel_(res) {
         if (s.localeMatch === false) t += ' ' + pill('locale ' + (s.locale || '?') + ' ≠ ADP', 'warn');
         return t;
       } },
-    { key: 'retention', label: 'Retention', cell: function (r) { return '<span style="font-size:11px">' + esc(r.s.retention) + '</span>'; } },
+    { key: 'retention', label: 'Retention', cell: function (r) { return '<span class="cn-store-ret">' + esc(r.s.retention) + '</span>'; } },
     { key: 'open', label: 'Link', cell: function (r) {
         return r.s.url ? '<a href="' + esc(r.s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
       } },
@@ -10325,7 +10329,9 @@ function cnRenderSystemFindings_() {
       '<div class="cn-finding-area">' + esc(areaLabel(f.area)) + '</div>' +
     '</li>';
   };
-  var head = '<h2 class="card-label" id="cn-sys-sec-automation">Needs attention' +
+  // The heading text rides a leading <span> because .card-label gives its
+  // FIRST span child flex:1 — a bare count pill there stretched to a bar.
+  var head = '<h2 class="card-label" id="cn-sys-sec-automation"><span>Needs attention</span>' +
     (needs.length ? ' <span class="cn-pill" data-tone="' + (worst === 'fail' ? 'crit' : 'warn') + '">' + needs.length + '</span>' : '') + '</h2>';
   var pendingHtml = pending.length
     ? '<div style="font-size:12px;color:var(--muted);margin-bottom:10px" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> ' +
