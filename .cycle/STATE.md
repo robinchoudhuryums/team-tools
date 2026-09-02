@@ -21,11 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 722 + DOM 101;
-  visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean, 67/67;
-  Regression Scenarios run to S96)
+Test Command: manual (Node harnesses: `npm test` = pure 727 + DOM 101;
+  visual matrix on demand — 78 scenarios, last full shoot 2026-09-01 clean, 67/67
+  (the 11 design-handoff additions shot individually, all clean);
+  Regression Scenarios run to S98)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 2 of the design handoff landed)
+Updated: 2026-09-02 (PR 3 of the design handoff landed)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -39,9 +40,18 @@ six Admin sub-tabs with a findings-first System tab; `cnHealthFindings_` is the 
 derivation for list + cards + badge (INV-186 amended); storage inventory on
 `mtRenderTable_`; X7 on all four loaders; pure 722 / DOM 101; 11/11 bites;
 visual matrix 72 (5 new System scenarios incl. `?fixture=empty` all-clear and a
-forced-fail error state). Next: PR 3 Manage (Punctuality + Coverage adopt
-`mtDateRange_`/`mtPctTone_`; PTO drift + sheet doctor load on enter), PR 4
-Coaching (five columns, critical-only immediate mail + `sendCoachingRecapDigest`
+forced-fail error state). **PR 3 (Manage) is DONE (`e50ef8b` + the app-bar
+follow-up)** — block: `.cycle/blocks/19pre-design-pr3-broad-implement.md`:
+Manage Time grouped Needs-you / Periodic-collapsed with a summary row fed by the
+lazy cards; Coverage + Punctuality on `mtDateRange_` (forward vs backward
+presets); `getPunctualityReport` gains the 92-day cap, prior-range delta,
+`dayDetail` (FIVE states — `nopunch` added beyond the handoff's four, INV-187),
+weekly buckets, outliers + Coach-on-this via `COACH_PREFILL`; the shared
+`.app-bar` now stacks its control at ≤540px (the one measured defect); pure
+727 / DOM 101; 9/9 bites; matrix 78 (6 new scenarios; `coverage` left the
+gap marker). Doc conflicts resolved in the codebase's favour: the fifth day
+state, and the handoff's Punctuality Export button NOT built (outside M1–M8).
+Next: PR 4 Coaching (five columns, critical-only immediate mail + `sendCoachingRecapDigest`
 19th trigger), PR 5 QA (audit target + `QaExemptions`; QA-14 stays gated), PR 6
 Time Clock. Facts PR 3+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
 `script_core.html` (Metrics is the first consumer; Punctuality + Coverage

@@ -15774,7 +15774,8 @@ test('PR3-1: getPunctualityReport — dayDetail is ADDITIVE beside `days`, cappe
   // Endpoint contract (source): the cap, the previous equivalent range, the
   // best-effort PTO overlay REPORTED, `days` still the count, dayDetail additive.
   const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
-  assert.ok(/numDays > CONFIG\.PUNCT_MAX_RANGE_DAYS/.test(src), 'range capped server-side');
+  // The guard SHAPE, not the constant's presence — `if (false && numDays > …)` survived the presence form (bite-checked).
+  assert.ok(/if \(numDays > CONFIG\.PUNCT_MAX_RANGE_DAYS\) return \{ error:/.test(src), 'range capped server-side (the live guard shape)');
   assert.ok(/prevTo = addDaysIso_\(fromDate, -1\)/.test(src) && /prevFrom = addDaysIso_\(prevTo, -\(numDays - 1\)\)/.test(src), 'the previous EQUIVALENT range');
   assert.ok(/ptoUnavailable = true/.test(src) && /ptoUnavailable: ptoUnavailable/.test(src), 'a failed PTO read is reported (F4 rule)');
   assert.ok(/days: dates\.length,/.test(src) && /dayDetail: dayDetail,/.test(src), '`days` stays the count; the array is `dayDetail`');
@@ -15885,6 +15886,10 @@ test('PR3-4: Coverage + Punctuality render the SHARED range control (forward vs 
   // breakpoint drops Shift start / Avg late / Lunch, stacking the detail.
   assert.ok(/aria-label="' \+ esc\(stripLabel\)/.test(extractFnFrom(code, 'punctDetailHtml_')), 'the day strip has a summarising aria-label');
   assert.ok(/@media \(max-width: 720px\) \{\s*\.pt-detail \{ grid-template-columns: 1fr; \}/.test(mgr), 'the detail stacks at ≤720px');
+  // MEASURED on the first mobile shoot: the app-bar's right-hand control squeezed the
+  // subtitle into a ~150px column at 390px. The shared bar now wraps at the shell breakpoint.
+  const tok = fs.readFileSync(path.join(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  assert.ok(/@media \(max-width: 540px\) \{\s*\.app-bar \{ flex-wrap: wrap; \}\s*\.app-bar-right \{ flex-basis: 100%; \}/.test(tok), 'the shared app-bar stacks its control at ≤540px');
   assert.ok(/\.pt-wrap \.m-table th:nth-child\(2\)[\s\S]{0,300}nth-child\(7\)[^}]*display: none/.test(mgr), 'three columns drop at ≤720px');
 });
 

@@ -455,6 +455,15 @@
   }
   .app-bar-left  { min-width: 0; }
   .app-bar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  /* ≤540px (the shell breakpoint): the right-hand control drops UNDER the
+     title instead of squeezing the subtitle into a ~150px column beside a
+     flex-shrink:0 preset strip — MEASURED on the first Punctuality mobile
+     shoot (design handoff PR 3, 2026-09-02). The A2 rule: a row that must
+     stack needs a real viewport breakpoint. */
+  @media (max-width: 540px) {
+    .app-bar { flex-wrap: wrap; }
+    .app-bar-right { flex-basis: 100%; }
+  }
   .breadcrumb {
     font-family: var(--mono); font-size: 11px;
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;

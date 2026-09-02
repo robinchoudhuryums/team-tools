@@ -3429,6 +3429,30 @@ this section before touching the relevant area.
   (`isoDateTz(empTz())`, the F6 discipline); future-month nav refused.
   Pinned by the two team-calendar pins (behavioural endpoint drive +
   client wiring/prefill/fixture-shape) + the omnibus gate case.
+- **Manage Time is a GROUPED scroll — Needs you, then Periodic collapsed
+  (design handoff PR 3, 2026-09-02).** The tab had grown to eleven cards in
+  historical order, so the two that need a decision today (Pending Time Off,
+  Missed Clock-Outs) sat beside a payroll export and a sheet doctor. It now
+  renders under two `<h2 class="mgr-group-h">` groups: **Needs you** — Pending
+  Time Off (`data-tone="warn"`, with an "oldest N days" line from
+  `mgrOldestPendingDays_`, derived in the manager's ROSTER tz per F6), Missed
+  Clock-Outs (`data-tone="destructive"`, "fix before payroll"), the adjustment
+  queue, Live Status and the team calendar — then **Periodic** behind a real
+  `<button aria-expanded aria-controls>` disclosure (`mgrToggleGroup_`, INV-173/
+  174; `.mgr-group[hidden] { display: none }` is the load-bearing companion —
+  the `[hidden]` gotcha) holding Export, PTO reconciliation, the sheet doctor,
+  Recent Punches and Recent Activity. Three rules: (a) the collapsed group's
+  header carries a SUMMARY ROW fed by the lazy cards themselves —
+  `loadPtoReconciliation_`/`loadSheetDoctor_` call `mgrSetSummary_` on clean
+  ("all clear", ok tone), on drift (crit/warn) and on FAILURE ("check failed",
+  warn — a failed scan must not read as all-clear, INV-187) — so a manager
+  never has to expand it to learn whether something is wrong; (b) the periodic
+  panels are NOT lazy-loaded behind the toggle (plan M5 decision) — they load
+  as before, only their PAINT is folded; (c) collapse state is `MGR_STATE`,
+  SESSION-only, and is deliberately NOT a `mgrSwrRenderBlocked_` reason (the
+  blocker keeps exactly its two `return true;` — an open overlay and a dirty
+  form; a folded group re-renders freely and re-folds). The crumb reads
+  `Manage › Manage Time`. Pinned by PR3-3.
 - **Personal pin is per-rep, capped at 3, stored in `subformData`.**
   Rep toggles the pin via the bookmark icon on a card. State lives in
   `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
@@ -5696,7 +5720,8 @@ this section before touching the relevant area.
   `mtDateRangeSync_(scope, active)` to re-press after a manual edit, and
   `mtDateRangeToggle_(scope, rowId)`, which returns the new open state so the CALLER
   remembers it (the helper owns markup and DOM, never state — Metrics keeps its
-  `M_STATE.customOpen`; Punctuality/Coverage adopt it in PR 3). Metrics is the first
+  `M_STATE.customOpen`; Punctuality (`PUNCT_STATE`) and Coverage (`COV_STATE`)
+  adopted it in PR 3 the same day). Metrics is the first
   consumer (`mMyPresetBtn_`/`mTeamPresetBtn_`/`mCustomChip_` retired, INV-184); the
   `.m-custom-row` + its load-bearing `[hidden]` companion moved to the tokens partial
   with the control. `mtPctTone_(p, hi, lo)` is the ONE tri-tone band rule:
@@ -6327,6 +6352,28 @@ manually for a fresh deploy or environment:
   the day it was written, but every round since PR #176 ships on ONE deploy, so
   the newest figure is the one to check against — read the count from the most
   recent entry, not the one whose feature you happen to be reading about.
+- **Design handoff PR 3 (2026-09-02, the Manage surface) adds ONE CONFIG
+  constant and no other operator state** — `CONFIG.PUNCT_MAX_RANGE_DAYS` (92,
+  code-only; no Script Property, triggers, migrations or new endpoints — every
+  new `getPunctualityReport` field is ADDITIVE and the client guards each one,
+  so deploy skew in either direction renders as before). Behaviour changes to
+  expect post-deploy: (a) **Manage → Manage Time is regrouped** — the cards
+  that need a decision (Pending Time Off, Missed Clock-Outs, the adjustment
+  queue, Live Status, Team Punches) come first under "Needs you", and Export /
+  PTO reconciliation / sheet doctor / Recent Punches / Recent Activity sit
+  under a collapsed "Periodic" heading whose summary line says "all clear" or
+  names the drift without expanding; (b) **Punctuality gains presets** (7d /
+  30d / QTR behind the same chips Metrics uses), a summary strip with a change
+  vs the prior range, an Outliers panel that appears only when someone is
+  under 75% or averaging >15 min late, and a chevron per rep opening a
+  day-by-day strip (late / on time / off / holiday / no punch), a four-week
+  trend and a "Coach on this" button that opens the Coaching composer
+  pre-filled; a custom range longer than 92 days is now refused by name;
+  (c) **Coverage gains forward presets** (This week / Next week / Next 2
+  weeks) on the same chips; (d) **on a phone, every view's app-bar control
+  (the Punctuality/Coverage presets, Intake's EN/ES toggle) now sits UNDER the
+  title** instead of beside it — a shared-component fix the mobile shoot
+  measured. **Post-deploy: run `runAllTests()`** — still **305**.
 - **Design handoff PR 2 (2026-09-02, the Admin surface) adds NO operator
   state** — no properties, triggers, migrations, endpoints or server changes
   (the two health payloads are read as before; everything moved is client-side).
@@ -7282,7 +7329,35 @@ manually for a fresh deploy or environment:
   `CONFIG.PUNCTUALITY_GRACE_MIN` (default 5), plus a lunch-adherence pass;
   least-punctual reps sort first. CONFIG-only (`PUNCTUALITY_GRACE_MIN`; no Script
   Property) — redeploy to change. Reuses the per-tz shift (no per-rep schedule,
-  the INV-127 limitation).
+  the INV-127 limitation). **Design handoff PR 3 (2026-09-02) made it a
+  DIAGNOSTIC surface rather than a ranked list, all ADDITIVE on the payload:**
+  the range is capped at `CONFIG.PUNCT_MAX_RANGE_DAYS` (92 — the QTR preset
+  fits; the endpoint was the one manager range read with no cap), the SAME
+  Timesheet scan also buckets the PRIOR range of equal length (`prevFrom`/
+  `prevTo`; per rep `prevDays`/`prevOnTime`/`prevOnTimePct`) so the summary
+  strip shows a delta the manager did not have to compute, and each rep carries
+  `worstDate`, four `weekly` buckets (oldest-first, clipped to the range —
+  `punctWeeklyBuckets_`, pure) and a per-day `dayDetail` whose `state` comes
+  from the pure `punctDayState_`: `ontime` / `late` / `off` (approved PTO from
+  a best-effort TimeOffRequests read — `ptoUnavailable` when it fails, so a day
+  off can only degrade to `nopunch`, never to `late`) / `holiday` /
+  **`nopunch`** — the FIFTH state, which the handoff's four-state list lacked:
+  a weekday with no ClockIn is DRAWN as an absence rather than left as a gap
+  (INV-187 — a gap reads as "nothing to see"). Weekends are `null` and omitted.
+  `days` stays the graded COUNT it always was, beside the new array. Client
+  (`punctRender_`): a summary strip (team on-time % with the prior-range delta,
+  late starts, worst rep + date), an **Outliers** panel that renders ONLY when
+  `punctOutliers_` finds a rep under 75% on-time OR averaging more than 15
+  minutes late (an empty panel would read as "no outliers" for the wrong reason
+  — nothing renders instead), the shared `mtRenderTable_` with a real sort and
+  an expandable per-rep detail row (the day strip with a summarising
+  `aria-label`, the weekly trend chip from `punctTrend_` — Worsening / Flat /
+  Improving at ±5 points across the first and last bucket — and a **Coach on
+  this** button that parks `window.COACH_PREFILL` with a `what` narrative and
+  `enterTool('develop', 'coaching')`, the C8 hint pattern; the composer's
+  textarea prefills from it). The tri-tone band is `mtPctTone_(p, 90, 75)`.
+  The handoff's Export button in the app-bar was NOT built (not in the plan's
+  M1–M8) — a logged follow-on.
 - **Coverage planner is business-hours/weekday scoped.** `getCoveragePlan` now
   returns a per-day `closed` flag plus `businessStartHour` / `businessEndHour` /
   `weekdaysOnly`, driven by CONFIG `COVERAGE_BUSINESS_START_HOUR` (8) /
@@ -7290,7 +7365,13 @@ manually for a fresh deploy or environment:
   flags fire only inside the business-hours window; weekends (when
   `weekdaysOnly`) render as closed rather than as understaffed. CONFIG-only —
   redeploy to change. Refines INV-127's flagging (the `< COVERAGE_MIN_STAFF`
-  rule still applies, now only within business hours).
+  rule still applies, now only within business hours). **Since design handoff
+  PR 3 (2026-09-02) the range control is the shared `mtDateRange_`** with
+  FORWARD presets (This week / Next week / Next 2 weeks — a planner looks
+  ahead, where Punctuality's presets look back), `COV_STATE` holding
+  `from`/`to`/`customOpen`, the D5 midnight re-anchor of the DEFAULT range only,
+  and the `Manage › Coverage` app-bar; the hand-rolled `cov-controls` row and
+  `toneCol` are retired (INV-184).
 - **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
   scans the **deploying account's** Gmail for threads addressed to the group
@@ -8833,6 +8914,35 @@ The same day's **A4** (the Day Edit N-pair rebuild — the last path that destro
 The same day's **follow-on + Workstream B** added four more → **711** and the DOM harness 98 → **101**. The follow-on is FO-A2, a derived scan banning a STATIC inline `grid-template-columns` across the scanned partials — the A2 tripwire reads stylesheets, so it could not see the manager analytics pair's inline `1fr 1fr`, which beats every stylesheet rule INCLUDING the shell's own media queries and kept a 44px page overflow at 390px. Computed values are exempt by rule (the coverage heatmap and the training matrix compute their column counts, which CSS cannot express, and both sit in scrollers); one reasoned allowlist entry, exempt on construction because the block it guards renders only behind an opt-in scan no visual scenario reaches. **The misdiagnosis is the part worth keeping:** the first measurement blamed the team-punches `.m-table`, because `getBoundingClientRect().right` on a table inside an `overflow-x` scroller reports its full layout width and looks exactly like an overflow — to find a real overflower, walk the elements past the viewport edge and SKIP any with an overflow-x ancestor. Workstream B added B1/B2 (the done-state Adjust prefill; the manager notification that never existed — asserted post-`releaseLock` per M-7) and two B3 pins (the CONVERT-not-delete model with a ban on `deleteRow`, submit- and approval-side validation, a refused resume not marking the request Approved, back-compat on the trailing `Action` column across all four readers; and that every surface — confirm, chip, queue row, decision email — states the EFFECT rather than naming the punch it consumes). DOM: the Resume button's render conditions (including that an UNRELATED pending adjustment must not hide it), the chip's wording, and the confirm stating the unpaid gap before anything is filed — `uiConfirm` is a LEXICAL binding rather than a window property, so the stub reassigns the binding through the vm bridge. 15 mutations / 15 bites, plus 3 for the follow-on. TWO pins were corrected first, both the SAME trap: `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so an ordering check passed silently — the `assertBefore` helper is now hoisted and shared. INV-188 recurred a third time, again in a ban-shaped assertion tripping on the code comment that explains the ban. Editor suite +1 (`punchAdjust_resumeConvertsClockOut`) ≈ **305**; visual matrix 61 → **62** (`manage-light-mobile` — the tab had been wide-only, which is how the overflow survived).
 The same day's **Admin sub-tab follow-on** added one more → **712**: VIS-ADMIN, which DERIVES the Admin pane set from the client's own `tab('key','Label')` call sites and requires a mobile scenario per pane (INV-179 — the VIS-COVER marker works at TAB granularity, and all five Admin panes live inside ONE covered tab, which is how they stayed wide-only). Its first run found a live defect the matrix could not previously see: `.cn-tax-head` shared `.cn-tax-row`'s `1fr` stacking rule at ≤720px, so the tag-taxonomy header rendered as six labels stacked in a column above the first row, aligned with nothing, with the first row's usage bar riding over the word "Usage". The header is hidden when the row stacks and the two bare numerics carry their own labels; the delta label is the LITERAL `Δ`, because CSS consumes the space after a hex escape and `'\0394 wk'` renders as the joined-up "Δwk". A `getAdminSheetView` FIXTURE landed with it — the Sheets pane had none at any viewport, so its scenario rendered a loader and its "0 overflow" meant nothing; it is a FUNCTION of `viewKey` (the INV-185 F14 rule — the key decides label, columns, rows and legend). 7 mutations / 7 bites, incl. the class-closing one (a sixth pane with no scenario). Visual matrix 62 → **67**.
 The 2026-09-02 operator round added one more → **713** (NLBR — the note email keeps the rep's line breaks: the `.ce` fields are `white-space: pre-wrap` so Enter stores a real `\n`, and HTML collapsed it, so a Resolution written as paragraphs arrived as one run-on block while the CRM paste was correct. The pin drives the real `cnFmtEmailHtml_` and asserts the ORDERING property that makes it safe — breaks convert LAST, because the marker regexes are `[^…\n]+` and converting first would make `**a\nb**` start matching. 3 mutations / 3 bites, incl. the breaks-first ordering. Its first write over-reached: a ban on any inline `\n`→`<br>` found THREE pre-existing correct sites outside this fix's scope, so the ban is scoped to `buildCallNoteEmailHtml_` and the other three are a logged follow-on.)
+The design handoff's PR 3 (2026-09-02, the Manage surface) added five more →
+**727** (PR3-1 `punctDayState_` + `punctWeeklyBuckets_` driven behaviourally —
+the five states incl. `nopunch`, weekends null, buckets clipped to the range,
+a bucket with no graded day reading null not 0 — plus the endpoint's cap in its
+LIVE guard shape (a presence check survived `if (false && …)` on the first bite
+and was tightened), the additive contract beside `days`, the fixture's
+`dayDetail` keys DERIVED from the server's own push literal (INV-185) and the
+fixture being a FUNCTION of the range (F14); PR3-2 `punctOutliers_`/
+`punctTrend_` behavioural, the empty-panel rule, the chip words, and the
+Coach-on-this hand-off through `COACH_PREFILL` + the registered `develop` tool
+key; PR3-3 the Manage Time ORDER, the disclosure aria, the `[hidden]` companion,
+`MGR_STATE` session-only, the summary feeds on clean/drift/FAIL, and
+`mgrSwrRenderBlocked_` keeping exactly two `return true;`; PR3-4 the shared
+control on both views — forward vs backward presets, seq guards, D5 — with the
+retired `.punct-*`/`cov-controls`/`toneCol`/dead locals banned and the ≤720px
+breakpoints; PR3-5 the coverage fixture's keys derived from the return block +
+the rep push literal, the six new scenarios, the VIS-COVER marker). 9 mutations
+/ 9 bites. Visual matrix 72 → **78** (Coverage had never been shot — its tab
+left the gap marker). **The first mobile shoot found the one defect of the
+round in a SHARED component:** `.app-bar` had no viewport breakpoint, so its
+`flex-shrink: 0` right-hand control kept its full width at 390px and squeezed
+the Punctuality subtitle into a ~150px, seven-line column beside the preset
+strip. The tokens partial now wraps the bar at ≤540px (the shell breakpoint)
+with `.app-bar-right` taking the full row — Intake's EN/ES toggle drops under
+its title the same way (verified on camera, no regression) — pinned inside
+PR3-4 and bite-checked. **A derivation trap worth keeping: the fixture's return
+anchor `return { from: from, to: addIso(from, n - 1),` CONSUMED `to`, so the
+derived key set lacked it and the pin was red against correct code — an
+anchor must consume the same keys on both sides, or re-add what it ate.**
 The design handoff's PR 2 (2026-09-02, the Admin surface) added four more →
 **722** (PR2-1 `cnHealthFindings_` driven behaviourally — an all-clear payload
 raises nothing, a failed load is a `fail` finding and a `degraded` marker,
@@ -10463,6 +10573,20 @@ S97 | Admin → System is findings-first and reaches all-clear | Subsystem: Clie
     - On a healthy deployment with dozens of off-roster CDR agents and HR/QA stores left unset, read the System tab
     - Narrow to a phone width and open the System tab
   Expected: each Overview card is a BUTTON that lands on the System tab scrolled to its own section (Automation / CDR / Storage), and its aria-label names the destination. The System tab's badge equals the number of items in "Needs attention"; every item carries a Blocking/Warning pill, a title, the detail, a fix line, and — where the server supplied one — an open link. Blocking items sort first. The chevron expands the store's detail row (note / per-rep problems / the exact tz fix naming the CONFIG zone) with `aria-expanded` following. With the health read broken, the Automation and CDR cards read **Unavailable**, the findings list carries a Blocking "Automation health could not be read" item, and the Automation detail slot renders the warn card — never "All OK". On the healthy deployment the list reads **Nothing needs attention** and the off-roster agents, the no-CDR roster names, and the unset no-fallback stores appear ONLY inside "checks passing" with their counts (INV-186 — a tab that can never go green trains the reader to ignore it). At 390px nothing scrolls sideways; the finding cards stack their pill above the title.
+
+S98 | Manage surface — grouped Manage Time, Punctuality diagnostics, Coverage presets | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a manager, open Manage → Manage Time; read the order of the cards and the two group headings
+    - Press the Periodic heading's toggle; press it again; reload the page
+    - Wait for the PTO reconciliation and sheet doctor cards to load (they are inside the collapsed group) and read the Periodic summary line WITHOUT expanding; break one of those reads (e.g. `?failrpc=getPtoReconciliation` on the harness) and read it again
+    - Open Manage → Punctuality; click 7d / 30d / QTR, then Custom… and type a range of 100 days → Load
+    - Read the summary strip (team on-time %, the "vs prior N days" delta, worst rep + date); confirm the Outliers panel appears only when a rep is under 75% or averages >15 min late
+    - Press a rep's chevron → read the day strip (hover a day; tab to it with a screen reader running), the weekly trend chip, and press **Coach on this**
+    - In the Coaching composer that opens, read the pre-filled employee and the "what" text; cancel
+    - Temporarily rename the `TimeOffRequests` tab and reload Punctuality for a range where a rep was on approved PTO
+    - Open Manage → Coverage; click This week / Next week / Next 2 weeks; leave the tab open across midnight (or hand-set the clock) and re-enter
+    - Narrow all three tabs to 390px
+  Expected: Manage Time reads Needs you (Pending Time Off warn-toned with "oldest N days", Missed Clock-Outs destructive-toned, adjustment queue, Live Status, Team Punches) THEN Periodic collapsed; the toggle's `aria-expanded` follows it; a reload re-collapses (session-only, never persisted); the summary line reads "PTO drift: all clear · Sheet doctor: all clear · N recent punches · M activities" when clean, names the drift when not, and reads "check failed" (warn) when a read fails — never "all clear". Punctuality's presets press like Metrics'; the 100-day range is refused by name ("at most 92 days"); the delta compares against the immediately preceding range of equal length; the day strip carries an `aria-label` that summarises it in words; the trend chip reads Worsening / Flat / Improving; Coach on this lands on the Coaching composer in Team mode with the rep selected and the narrative in the "what" field. With the PTO read broken the note names it and a rep's PTO day reads "no punch" rather than "late". Coverage's presets look FORWARD; a default range re-anchors at midnight while a manually chosen one does not. At 390px nothing scrolls sideways; the punctuality table drops Shift start / Avg late / Lunch and the detail stacks.
 
 S95 | A day with more than one break is counted, displayed and repaired correctly | Subsystem: Server, Client (Time Clock views)
   Steps:
