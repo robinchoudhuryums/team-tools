@@ -26521,7 +26521,7 @@ function getCoachingDashboard() {
       c.ageDays = coachAgeDays_(isNaN(createdMs) ? 0 : createdMs, nowMs, biz);
       c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && c.ageDays != null && c.ageDays >= reminderDays);
       c.followUpDue = !!(c.status === 'open' && c.followUpAt && c.followUpAt < biz.todayIso);
-      c.nudgedToday = !!(c.nudgedAt && c.nudgedAt.substring(0, 10) === biz.todayIso);
+      c.nudgedToday = !!(c.nudgedAt && coachStampDayMgr_(c.nudgedAt) === biz.todayIso);
       if (c.status === 'open' && c.severity !== 'praise') counts.open++;
       if (c.status === 'acknowledged') counts.acknowledged++;
       if (c.severity === 'praise') counts.praise++;
@@ -26599,6 +26599,21 @@ function setCoachingFollowUp(coachId, dateOrNull) {
  *  reminder for an UNACKNOWLEDGED item, at most once per item per manager-tz
  *  day (the NudgedAt stamp is the rate limit). Mail post-lock (M-7), audit
  *  CoachingNudge id-only. */
+/** The MANAGER-tz calendar day of a coaching stamp. Stamps are written by
+ *  fmtDate_/fmtTime_ in CONFIG.TIMEZONE (Asia/Kolkata) while "today" for the
+ *  once-per-day nudge rule is the manager's day (America/Chicago) — the two
+ *  frames disagree from 13:30 CDT onward, so a raw `substring(0, 10)` compare
+ *  let a manager nudge twice every afternoon and then blocked the next
+ *  morning against yesterday's stamp (caught by the post-deploy runAllTests,
+ *  2026-09-02). Returns '' for an unparseable stamp — never a day that
+ *  happens to match. */
+function coachStampDayMgr_(ts) {
+  try {
+    const d = Utilities.parseDate(String(ts || '').trim(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    return Utilities.formatDate(d, CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  } catch (_) { return ''; }
+}
+
 function nudgeCoaching(coachId) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -26612,7 +26627,7 @@ function nudgeCoaching(coachId) {
     if (found.item.status !== 'open') return { success: false, error: 'Only an open (unacknowledged) item can be nudged.' };
     if (found.item.severity === 'praise') return { success: false, error: 'Praise needs no acknowledgement.' };
     const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
-    if (found.item.nudgedAt && found.item.nudgedAt.substring(0, 10) === todayIso) {
+    if (found.item.nudgedAt && coachStampDayMgr_(found.item.nudgedAt) === todayIso) {
       return { success: false, error: 'Already nudged today — once per day per item.' };
     }
     const target = lookupEmployeeById_(found.item.empId);

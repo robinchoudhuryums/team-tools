@@ -398,6 +398,17 @@ function setupTestEnvironment() {
       sheet.getRange(at + 1, EMP.EMAIL + 1).setValue(row[EMP.EMAIL]);
       restored++;
     }
+    // Operator 2026-09-02: the ALL-CST roster flip ("every agent row →
+    // America/Chicago") reached the TEST rows too, and the suite hardcodes
+    // the fixture zones (Asia/Kolkata for the India user, Asia/Manila for the
+    // PH user) — the IST/PHT fixtures ARE the multi-timezone coverage, kept by
+    // design. Five tests failed on the frame mismatch. Setup now restores the
+    // fixture TIMEZONE the same way it restores the email: the roster cache is
+    // invalidated below, so the very next lookup sees it.
+    if (String(rows[at][EMP.TIMEZONE] || '').trim() !== String(row[EMP.TIMEZONE])) {
+      sheet.getRange(at + 1, EMP.TIMEZONE + 1).setValue(row[EMP.TIMEZONE]);
+      restored++;
+    }
   });
 
   // Provision a test call-notes Sheet for the India test employee. Creates
@@ -1947,7 +1958,7 @@ function test_punchAdjust_resumeConvertsClockOut() {
   const ts = _asUser(_TEST_MGR_EMAIL, () => getEmployeeTimesheetForManager(_TEST_PH_ID, date, date));
   const day = (ts.days || []).find(d => d.date === date);
   _assertTrue(!!day, 'the day is readable');
-  _assertTrue(day.incomplete === true, 'an open day is INCOMPLETE, never silently zero (INV-176)');
+  _assertTrue(day.isIncomplete === true, 'an open day is INCOMPLETE, never silently zero (INV-176)');
 
   clearRequests();
   _clearPunchesForDay(_TEST_PH_ID, date);
@@ -3247,13 +3258,23 @@ function test_managerSaveDay_multipleBreaks() {
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockOut'), 1);
 
   // A malformed pair is REFUSED, not written half-way (INV-187 direction).
+  // NOTE a TRAILING leave with no return is NOT malformed — it is a rep on
+  // lunch right now, accepted since 2026-09-02 (test_managerSaveDay_mixedChanges
+  // encodes it). The refused shapes are a RETURN with no leave, and a half
+  // followed by further rows.
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
-      { ClockIn: base.ClockIn, ClockOut: base.ClockOut, breaks: [{ out: '12:00', in: '' }] }, 'half a pair');
+      { ClockIn: base.ClockIn, ClockOut: base.ClockOut, breaks: [{ out: '', in: '12:30' }] }, 'return with no leave');
     _assertFailure(r, 'BOTH a leave and a return');
+    const r2 = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+      { ClockIn: base.ClockIn, ClockOut: base.ClockOut,
+        breaks: [{ out: '12:00', in: '' }, { out: '17:00', in: '19:00' }] }, 'half in the middle');
+    _assertFailure(r2, 'BOTH a leave and a return');
   });
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0,
     'a refused save writes nothing');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 0,
+    'neither half of a refused pair lands');
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
 }
 
