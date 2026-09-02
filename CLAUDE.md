@@ -6512,6 +6512,38 @@ manually for a fresh deploy or environment:
   the day it was written, but every round since PR #176 ships on ONE deploy, so
   the newest figure is the one to check against — read the count from the most
   recent entry, not the one whose feature you happen to be reading about.
+- **The Timesheet timezone REPAIR (operator 2026-09-02 — the PH roster flip
+  done mid-shift).** Flipping a roster `Timezone` cell changes how EXISTING
+  Timesheet rows are READ, not what they hold: every punch was stamped as the
+  rep's local date + wall time at the moment it was recorded, so a CST shift
+  worked under `Asia/Manila` sits in the sheet as ClockIn on date D at 21:30
+  and ClockOut on D+1 at 06:00 — read as Chicago digits, BOTH halves are
+  incomplete days (excluded from totals, pay statements, the team calendar and
+  the accrual). `repairTimesheetTimezone(opts)` (editor-run, MANAGER_EMAILS
+  gate, DRY-RUN BY DEFAULT) re-formats each stored instant in the new zone so
+  a split shift collapses onto one date; `flippedAt` (the new-zone wall time
+  the cell was changed) is REQUIRED so post-flip punches are never shifted
+  twice; it reads through `TimesheetArchive`, writes only the DATE + TIME
+  cells in place (COMMENTS' `ADJ-` marker survives), is bounded
+  (`TZ_REPAIR_MAX_ROWS`), locked on apply, re-points the personal-sheet
+  mirror best-effort, and writes one counts-only `TimesheetTzRepair` audit row
+  per employee. **The dry run's collision lines are the review step:** a row
+  landing on a (date, type) another row holds is a hand edit made after the
+  flip or a double punch across the old midnight — the tool REPORTS it and the
+  manager decides which punch is real. Two wrappers,
+  `repairTimesheetTimezone_dryRun()` / `_apply()`, carry the one-time
+  parameters in `TZ_REPAIR_2026_09_02` (Anne Garcia + Margie Ingay,
+  Manila → Chicago) — **delete the constant + both wrappers once the repair
+  is done.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
+  hand-corrected 08:30 would be read as Manila digits and moved to the wrong
+  day); then apply; then fix any reported duplicates in Day Edit. Two knock-ons
+  the repair does NOT do: the August accrual already ran against the split
+  days (top up by hand from the pay statement's corrected hours vs the
+  `PtoAccrualCredit` row's `hoursWorked=` — never backdate column R, credits
+  are deltas), and any ADP export cut while the rows were split is short those
+  shifts (re-export). Call-note `DateLocal` stamps are left alone (cosmetic).
+  Pinned by TZR-1 (planner behavioural) + TZR-2 (gate / dry-run default /
+  bounded / locked / in-place / audited / collisions reported).
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
   state** — no Script Properties, triggers, migrations or CONFIG values; ONE
   new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
@@ -9276,6 +9308,17 @@ after with `test/visual/fold-measure.mjs` rather than reasoned (704 → 367).
 Visual matrix 90 → **92** (`clock-needsyou-empty-light-wide` via
 `?fixture=empty`, `clock-needsyou-error-light-wide` via `?failrpc=`); editor
 suite +1 (`pendingTasks_requiresEmployeeAndShape`) ≈ **308**.
+The Timesheet timezone repair (operator 2026-09-02, the same afternoon) added
+two more → **743**: TZR-1 drives the pure `tzRepairPlanRow_` with INJECTED tz
+functions (a fixed 13h offset — the pre-flip shift collapses onto one date, a
+post-flip row and the boundary itself are left alone, garbage is null, an
+identity conversion is a no-op; compared by JSON value — the vm-realm
+`deepStrictEqual` trap, hit again), and TZR-2 pins the applier's contract
+(gate, `dryRun !== false` default, required flip instant, archive read-through,
+bound, dry-run return BEFORE the lock, finally-release, exactly TWO `setValue`
+per row so COMMENTS is untouched, no append/delete, per-employee counts-only
+audit, collisions reported, mirror re-pointed, ambiguous names refused). 3
+mutations / 3 bites.
 The design handoff's PR 3 (2026-09-02, the Manage surface) added five more →
 **727** (PR3-1 `punctDayState_` + `punctWeeklyBuckets_` driven behaviourally —
 the five states incl. `nopunch`, weekends null, buckets clipped to the range,
