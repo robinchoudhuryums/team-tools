@@ -220,8 +220,8 @@
     display: inline-flex; align-items: center; justify-content: center; }
   .ny-ico svg { width: 15px; height: 15px; }
   .ny-body { min-width: 0; flex: 1; }
-  .ny-title { font-size: 13px; font-weight: 600; color: var(--ink); }
-  .ny-detail { font-size: 11.5px; color: var(--muted-2); margin-top: 2px; }
+  .ny-title { display: block; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .ny-detail { display: block; font-size: 11.5px; color: var(--muted-2); margin-top: 2px; }
   .ny-detail .ny-late { color: var(--danger-deep); font-weight: 600; }
   .ny-go { flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--info-deep);
     display: inline-flex; align-items: center; gap: 2px; }
@@ -1141,7 +1141,7 @@ function clkNeedsYouHtml_(res) {
     ? '<ul class="ny-list" aria-label="Needs you, ' + count + ' item' + (count === 1 ? '' : 's') + '">' +
       items.map(function (it, idx) {
         var past = !!(it.overdue && it.dueIso && todayIso && String(it.dueIso) < todayIso);
-        var late = it.overdue ? '<span class="ny-late">' + (past ? 'Overdue' : 'Past due') + '</span> · ' : '';
+        var late = it.overdue ? '<span class="ny-late">Overdue</span> · ' : '';
         return '<li class="ny-item' + (it.overdue ? ' is-overdue' : '') + (past ? ' is-past' : '') + '" data-kind="' + esc(String(it.kind || '')) + '">' +
           '<a class="ny-link" href="#" onclick="event.preventDefault();clkNeedsYouGo_(' + idx + ')">' +
           '<span class="ny-ico" aria-hidden="true">' + icon(CLK_NEEDS_ICON[it.kind] || 'info', 15) + '</span>' +
@@ -1837,6 +1837,11 @@ function clkBreakScheduleHtml_() {
       '<span class="clk-brk-txt">' + esc(shortLabel(b.label)) + ' · ' + esc(clkFmtMinShort_(start)) + '–' + esc(clkFmtMinShort_(end)) + '</span>' +
       '<span class="clk-brk-when"></span></span>';
   }).join('');
+  // Fresh chips carry NO state yet — reset the minute guard so the next
+  // clkUpdateBreak_ paints them even inside the same minute (a re-render
+  // replaced the elements; the cycle-8 M-7 rotator lesson, on this row —
+  // caught by MEASURING the built page: the second render's chips were bare).
+  _clkLastBreakMin = -1;
   return '<div class="clk-brk-sched" id="clk-brk-sched"><span class="clk-brk-label">' + icon('clock', 12) + ' Breaks</span>' + chips + '</div>';
 }
 /** Compact time: "10:30a" / "1:30p" (single am/pm letter, no space). */

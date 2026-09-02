@@ -2014,7 +2014,7 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   assert.ok(ul && ul.getAttribute('aria-label') === 'Needs you, 3 items', 'a real <ul> with the count announced');
   assert.strictEqual(ul.querySelectorAll('li a.ny-link').length, 3, 'one real link per item');
   assert.ok(/2 overdue/.test(host.querySelector('.ny-head-right').textContent), 'the overdue count is in words');
-  assert.ok(/Past due/.test(ul.children[0].textContent) && /Overdue/.test(ul.children[1].textContent), 'overdue carried in words per row (no due date = past due; a past due date = overdue)');
+  assert.ok(/Overdue/.test(ul.children[0].textContent) && /Overdue/.test(ul.children[1].textContent) && !/Overdue/.test(ul.children[2].textContent), 'overdue carried in words per row');
   assert.ok(ul.children[1].classList.contains('is-past'), 'a past due date takes the stronger tone');
   // null → the error card (never "nothing pending")
   NEEDS.data = null; render();

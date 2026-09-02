@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 738 + DOM 103;
-  visual matrix on demand — 90 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 741 + DOM 104;
+  visual matrix on demand — 92 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 5 of the design handoff landed)
+Updated: 2026-09-02 (PR 6 of the design handoff landed — the handoff is COMPLETE)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -87,7 +87,32 @@ Export not built, transport parity shipped despite decision 13, period
 arithmetic server-only. `runAllTests()` still expects **307** (gate cases grew
 IN PLACE). ONE pre-existing DOM flake noted, not fixed: the resume-request test
 fails for the minute after IST midnight (18:30 UTC) — its `'00:01:00'` fixture.
-Next: PR 6 Time Clock. Facts PR 3+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
+**PR 6 (Time Clock) is DONE — the five-surface handoff is COMPLETE (all six PRs
+on `claude/ums-team-tools-design-r8ar3o`).** Block:
+`.cycle/blocks/19pre-design-pr6-broad-implement.md`: `getMyPendingTasks` (six
+sources — training / coaching / notes / requests / sched / docs — each catching
+into `unavailable[]`, cached 120s per rep on CLEAN rounds only, routes pinned
+against the TOOLS registry, notes item = previous WORKDAY's answered − notes via
+a `CLK_NAV_HINT` hand-off) + the Needs-you block leading `#dash-main`
+(skeleton / error card / clean-empty renders nothing / unavailable line;
+compact-gated BEFORE any RPC); the clock card's state line on a literal-colour
+scrim with hours rendered ONCE; the rail reordered card → actions → strip
+(MEASURED 704 → 367px prime-button top at 1440×900); the rotator HELD on an
+active shift; break chips absorbing the next-break chip (taken/now/next +
+countdown); the world-clock strip, shooting star, greeting pill, next-break
+chip and pending-Training card RETIRED under a derived ban pin. Pure 741 / DOM
+104; 15/15 bites; matrix 92 (empty + error Needs-you scenarios). Doc conflicts
+resolved in the codebase's favour: QA source omitted + Requests = dept requests
++ docs as sixth kind (operator decision 3); hours once on the state line
+(decision 4); `.greet-held` chip not built; `clkNextBreak_` kept for the chips.
+`runAllTests()` now expects **308**. The one defect found on CAMERA: the
+break-chip minute-guard survived a same-minute re-render (fixed + pinned).
+Follow-ons: the §3d undo label with countdown is NOT built; the Needs-you
+list refreshes on the next Dashboard enter after an action (no per-source
+invalidation); the pre-existing IST-midnight DOM flake stands.
+Next: nothing in flight — the operator's single deploy (`clasp push -f` + New
+version, then `runAllTests()` → 308, `installAutomationTriggers()` once) ships
+PRs #176–#220 plus the six handoff PRs together. Facts PR 3+ depended on: `mtDateRange_`/`mtPctTone_` now exist in
 `script_core.html` (Metrics is the first consumer; Punctuality + Coverage
 adopt in PR 3); `?fixture=empty` exists in `mock.js` with an empty
 `EMPTY_FIXTURES` map that each block fills (the PR1-4 pin's `OWED` list grows

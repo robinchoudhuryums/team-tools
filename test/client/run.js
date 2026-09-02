@@ -16602,7 +16602,7 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
   assert.ok(/if \(res === null \|\| res\.error\) return [^\n]*errorStateHtml_\(/.test(html) && !/errorStateHtml_\(esc\(/.test(html), 'null/error → errorStateHtml_ (A12/INV-175), no double escape');
   assert.ok(/if \(!items\.length && !unavailable\.length\) return '';/.test(html), 'a CLEAN empty list renders NOTHING (the design\'s rule)');
   assert.ok(/<ul class="ny-list" aria-label="Needs you, ' \+ count \+ ' item/.test(html), 'a real <ul> with the count announced');
-  assert.ok(/'Overdue'/.test(html) && /'Past due'/.test(html), 'overdue is carried in WORDS, never colour alone');
+  assert.ok(/<span class="ny-late">Overdue<\/span>/.test(html) && /is-overdue/.test(html) && /is-past/.test(html), 'overdue is carried in WORDS (plus the tone), never colour alone');
   assert.ok(/Couldn\\'t check /.test(html) && /CLK_NEEDS_LABEL\[k\]/.test(html), 'an unreadable source is NAMED');
   assert.ok(/esc\(String\(it\.title/.test(html) && /esc\(String\(it\.detail/.test(html) && /esc\(String\(it\.action/.test(html), 'server strings escaped');
   assert.ok(/min-height: 44px/.test(raw.slice(raw.indexOf('.ny-link {'), raw.indexOf('.ny-link:hover'))), '44px targets');
@@ -16630,7 +16630,7 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
     { kind: 'docs', title: '<b>x</b>', detail: 'd', dueIso: '2026-09-01', overdue: true, action: 'Sign' },
     { kind: 'notes', title: '3 calls', detail: 'e', dueIso: '', overdue: false, action: 'File' }], total: 2, unavailable: [], todayIso: '2026-09-02' });
   assert.ok(/aria-label="Needs you, 2 items"/.test(out) && (out.match(/<li /g) || []).length === 2, 'two rows, count announced');
-  assert.ok(/1 overdue/.test(out) && /is-overdue is-past/.test(out) && /Overdue<\/span>/.test(out), 'overdue in words + past-due tone');
+  assert.ok(/1 overdue/.test(out) && /is-overdue is-past/.test(out) && (out.match(/Overdue<\/span>/g) || []).length === 1, 'overdue in words + past-due tone');
   assert.ok(out.indexOf('&lt;b&gt;x&lt;/b&gt;') >= 0 && out.indexOf('<b>x</b>') < 0, 'a hostile title is inert');
   // Fixtures + scenarios (INV-185: keys derived from the server push literals).
   const code = pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
@@ -16684,6 +16684,8 @@ test('PR6-3: the rail — clock card → punch actions → shift strip; the stat
   assert.ok(/getElementById\('clk-brk-sched'\)/.test(upd) && /classList\.remove\('taken', 'now', 'next'\)/.test(upd) && /data-start/.test(upd), 'clkUpdateBreak_ paints the chip ROW\'s taken / now / next states');
   assert.ok(!/showToast\(/.test(upd), 'and never toasts (INV-190 — the shell owns the reminder)');
   assert.ok(/function clkNextBreak_\(/.test(clk) && /clkNextBreak_\(nowMin\)/.test(upd), 'clkNextBreak_ is kept — the outlined-next chip needs it');
+  const sched = pr6nc(extractFunction('tc/script_clock.html', 'clkBreakScheduleHtml_'));
+  assert.ok(/_clkLastBreakMin = -1;/.test(sched), 'a fresh chip row resets the minute guard — otherwise a same-minute re-render leaves the chips stateless (measured)');
   assert.ok(/\.clk-brk-chip\.taken \.clk-brk-txt \{ text-decoration: line-through/.test(raw) && /\.clk-brk-chip\.next \{/.test(raw), 'taken = struck through, next = outlined');
   // Punch primary full-width (3b): base rule, no viewport re-columning left.
   const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
