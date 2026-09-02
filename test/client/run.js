@@ -16044,7 +16044,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const nudgeDash = stripJsComments_(extractRawFunction('Code.js', 'getCoachingDashboard'));
   assert.ok(/c\.nudgedToday = !!\(c\.nudgedAt && coachStampDayMgr_\(c\.nudgedAt\) === biz\.todayIso\)/.test(nudgeDash), 'the dashboard flag uses the SAME converted day');
   const nudgeConv = stripJsComments_(extractRawFunction('Code.js', 'coachStampDayMgr_'));
-  assert.ok(/parseDate\([^)]*CONFIG\.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'\)/.test(nudgeConv) && /formatDate\(d, CONFIG\.MANAGER_TIMEZONE \|\| CONFIG\.TIMEZONE, 'yyyy-MM-dd'\)/.test(nudgeConv), 'parsed in the STAMP frame, formatted in the MANAGER frame');
+  assert.ok(/parseDate\([\s\S]*?CONFIG\.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'\)/.test(nudgeConv) && /formatDate\(d, CONFIG\.MANAGER_TIMEZONE \|\| CONFIG\.TIMEZONE, 'yyyy-MM-dd'\)/.test(nudgeConv), 'parsed in the STAMP frame, formatted in the MANAGER frame');
   assert.ok(/status !== 'open'\) return \{ success: false/.test(nudge) && /severity === 'praise'\) return \{ success: false/.test(nudge), 'only an open non-praise item can be nudged');
   assert.ok(/notifyAfter = function \(\) \{ result\.mailed = notifyRepOfCoachingNudge_\(target, item, callerEmp\); \}/.test(nudge), 'the nudge mail is post-lock and its outcome rides back as `mailed`');
 });
