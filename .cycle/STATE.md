@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 727 + DOM 101;
-  visual matrix on demand — 78 scenarios, last full shoot 2026-09-01 clean, 67/67
-  (the 11 design-handoff additions shot individually, all clean);
-  Regression Scenarios run to S98)
+Test Command: manual (Node harnesses: `npm test` = pure 734 + DOM 102;
+  visual matrix on demand — 87 scenarios, last full shoot 2026-09-01 clean, 67/67
+  (the 20 design-handoff additions shot individually, all clean);
+  Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 3 of the design handoff landed)
+Updated: 2026-09-02 (PR 4 of the design handoff landed)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -51,8 +51,24 @@ weekly buckets, outliers + Coach-on-this via `COACH_PREFILL`; the shared
 727 / DOM 101; 9/9 bites; matrix 78 (6 new scenarios; `coverage` left the
 gap marker). Doc conflicts resolved in the codebase's favour: the fifth day
 state, and the handoff's Punctuality Export button NOT built (outside M1–M8).
-Next: PR 4 Coaching (five columns, critical-only immediate mail + `sendCoachingRecapDigest`
-19th trigger), PR 5 QA (audit target + `QaExemptions`; QA-14 stays gated), PR 6
+**PR 4 (Coaching) is DONE (`29e6870` + the empty-shape/docs follow-up)** — block:
+`.cycle/blocks/19pre-design-pr4-broad-implement.md`: five trailing Coaching
+columns; business-day overdue through `coachBizOpts_`; reply on acknowledge;
+praise out of open counts + the ack-rate denominator; `setCoachingFollowUp` +
+`nudgeCoaching`; critical-only immediate mail + retraction on void;
+`sendCoachingRecapDigest` (trigger #19, Friday 8am, heartbeat `coachingRecap`);
+the tab rebuilt on the app-bar with a signal board (`coachRepSignal_` — a
+FIFTH `nosignal` tier, INFO-toned), filter strip (`umsCoachingFilter`, the
+17th localStorage key), a composer DRAWER (shared `.modal.drawer`), rep
+recognition feed + callout + reply boxes; note/QA drill hand-offs; pure 734 /
+DOM 102; 10/10 bites; matrix 87 (9 coaching scenarios + the `?role=rep` hook).
+Doc conflicts resolved in the codebase's favour: praise EXCLUDED from the
+denominator (the handoff's wording was ambiguous), five columns not three,
+the dead `enterTool('callnotes')` drill replaced by the date-keyed hints, the
+two-level crumb `Training › Coaching`, and `nosignal` taking precedence over
+steady/clear. `runAllTests()` now expects **307**; `installAutomationTriggers()`
+must be re-run once for the 19th trigger.
+Next: PR 5 QA (audit target + `QaExemptions`; QA-14 stays gated), PR 6
 Time Clock. Facts PR 3+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
 `script_core.html` (Metrics is the first consumer; Punctuality + Coverage
 adopt in PR 3); `?fixture=empty` exists in `mock.js` with an empty

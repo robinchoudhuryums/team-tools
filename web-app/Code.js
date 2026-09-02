@@ -26107,7 +26107,13 @@ function getCoachingDashboard() {
     const last = sheet.getLastRow();
     const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
     const biz = coachBizOpts_();
-    if (last < 2) return { items: [], voided: [], counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 }, reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso };
+    if (last < 2) {
+      // The empty shape carries every field the populated one does (INV-185 —
+      // the visual fixture's empty twin mirrors THIS, not a narrower payload).
+      return { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+        reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso,
+        analytics: coachAnalytics_([], Date.now(), reminderDays, biz) };
+    }
     const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
     const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
     const nowMs = Date.now();

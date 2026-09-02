@@ -297,25 +297,48 @@ Apps Script project under its own directory, synced via `clasp`.
      T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
      on-demand. See INV-123. The rep My Training checklist was redesigned
      with completion rings; Team Training's matrix is now a reps×items CSS-grid
-     status matrix. **Coaching (shipped):** ONE merged **Coaching** tab
-     (`enterCoachingView`) for everyone. Reps see **My Coaching** (their received
-     severity-chipped feedback cards with one-click Acknowledge) and never see a
-     mode toggle; managers get a **Mine ⇄ Team** segmented toggle
-     (`coachSwitchMode_`, persisted per-browser to `umsCoachingMode`, managers
-     default to Team) where **My Coaching** is the manager's OWN received items
-     (routine coaching) and **Team Coaching** is the composer + team-scoped
-     dashboard + a metrics panel (ack-rate, median days-to-acknowledge, severity
-     breakdown, overdue, per-rep). The two prior tabs (`coaching` rep +
-     `coachingManage` manager) were merged into this single non-managerOnly tab;
-     the "Coach on this" deep-link now opens `coaching` and forces Team mode via
-     `window.COACH_PREFILL`. Granular, non-routine manager feedback on a SPECIFIC patient/TRX
-     interaction (vs. the org-wide quizzes/assignments), stored in a `Coaching`
-     tab in `HR_DOCS_SS_ID` (keep-forever, team-scoped) — `createCoaching` /
-     `getMyCoaching` / `acknowledgeCoaching` / `getCoachingDashboard` /
-     `voidCoaching`. Tied to the Call Notes training flag via a **"Coach on
-     this"** button on the manager Per-Rep card; un-acked items past
-     `CONFIG.COACHING_UNACK_REMINDER_DAYS` (7) nudge the manager in the existing
-     overdue digest. See INV-134.
+     status matrix. **Coaching (redesigned — design handoff PR 4, 2026-09-02):**
+     ONE merged **Coaching** tab (`enterCoachingView`) for everyone, on the shared
+     `.app-bar` (`Training › Coaching`). Reps see **My Coaching**: KPI strip
+     (received this quarter / waiting on you / recognition), an action callout
+     naming the OLDEST open item with a Jump button, a **Recognition** feed for
+     praise (no acknowledgement), and month-grouped coaching cards each with an
+     OPTIONAL reply box beside Acknowledge (`acknowledgeCoaching(coachId,
+     response)` — the reply is written only on the open→acked transition and
+     mailed to the manager as "replied: yes/no", never its text). Managers get a
+     **Mine ⇄ Team** strip (real `role="tab"` buttons on `.toolbar-tabs`;
+     `coachSwitchMode_`, persisted to `umsCoachingMode`) where Team is a
+     **signal board** ("Who needs a 1-on-1" — per-rep 30-day severity mix bar,
+     total, last, overdue, and a tier from the pure `coachRepSignal_`: priority
+     (any critical, or score ≥6) / watch (≥3) / **no signal** (nothing in 21
+     days — INFO-toned, an absence is not a verdict) / steady / clear), a
+     filter strip with live counts (All / Needs ack / Overdue / Praise /
+     Voided — voided items are EXCLUDED from All, operator decision 9; the
+     choice persists to `umsCoachingFilter`), a search box + employee select
+     over the cached payload, and the feed (recognition block, then cards with
+     Nudge / Revisit / Void). Logging happens in a side **DRAWER**
+     (`ensureOverlay` + the shared `.modal.drawer`): Coaching ⇄ Praise kind,
+     three severity CHIPS (`COACH_SEV_LABELS` — `major` DISPLAYS as
+     **Moderate**, the stored enum is unchanged; a client↔server mirror), an
+     optional revisit date, patient/TRX, narrative + coaching point. **Server
+     (INV-134 amended):** five TRAILING `Coaching` columns (`RepResponse`,
+     `FollowUpAt`, `NudgedAt`, `NoteDate`, `QaFileId`; header self-heals);
+     ages/overdue/median count **business days** through the shared
+     `businessMinutesBetween_` core (`coachAgeDays_` — an UNKNOWN age is never
+     overdue; operator decision 7); praise is excluded from open counts AND the
+     ack-rate denominator (decision 8); `setCoachingFollowUp` + `nudgeCoaching`
+     (once per manager-tz day per item; both manager + team-scoped + locked +
+     content-free audit); **only a CRITICAL item emails the rep immediately**
+     (cc the manager, no narrative/TRX/note id in the mail; a critical VOID
+     sends a retraction), while minor/moderate/praise ride the Friday
+     **`sendCoachingRecapDigest`** (trigger #19, heartbeat `coachingRecap`,
+     never consults the manager brief flag — decision 1). The **"Coach on
+     this"** button on the Team Notes Per-Rep card carries the NOTE DATE into
+     `window.COACH_PREFILL`, so the card's note chip drills back (manager → the
+     Per-Rep drill; rep → their own History at that date) and a QA chip parks
+     `window.QA_OPEN_HINT` for the QA queue (the C8 pattern). Voided items stay
+     hidden from reps (decision 9) and agents do NOT see their own QA reviews
+     (decision 13). See INV-134.
    - **QA** — call-recording review (Phase 1, operator 2026-08-27).
      GATED to managers + `QA_MEMBERS` reps (`canSeeQa_`, the
      `canSeeSpanishInbox_` pattern — a THIRD gate tier returning
@@ -851,7 +874,8 @@ this section before touching the relevant area.
   not the boundary),
   `getEmpDocTemplates`, `saveEmpDocTemplate`, `deleteEmpDocTemplate`
   (org-wide PHI-free form shells — gated but NOT team-scoped, INV-135),
-  `createCoaching`, `getCoachingDashboard`, `voidCoaching`
+  `createCoaching`, `getCoachingDashboard`, `voidCoaching`,
+  `setCoachingFollowUp`, `nudgeCoaching` (design handoff PR 4)
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
@@ -888,7 +912,8 @@ this section before touching the relevant area.
   full suite on the dev instance; INV-162), `creditMonthlyPtoAccruals`
   (the monthly PTO accrual credit, INV-194) and `purgeOldQaReviews` (the QA
   review-record retention purge — QaComments + QaScorecards only, default
-  OFF; INV-196) — are top-level (required: Apps Script
+  OFF; INV-196), and `sendCoachingRecapDigest` (the Friday agent coaching
+  recap — design handoff PR 4) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -2219,7 +2244,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Sixteen client-side localStorage keys total.** All per-browser, all
+- **Seventeen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -2287,6 +2312,10 @@ this section before touching the relevant area.
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
     `coachReadMode_`, written by `coachSwitchMode_`.
+  - `umsCoachingFilter` — the manager Team Coaching feed's filter strip choice
+    (`'all'` | `'ack'` | `'overdue'` | `'praise'` | `'voided'`, default `'all'`;
+    design handoff PR 4). Validated against `COACH_FILTERS` on read — a corrupt
+    value falls back to All. Written by the strip's click handler.
   - `umsWhatsNew` — the "What's new" seen-stamp (`{seenStamp}` — the designated
     KB article's edit timestamp at last panel dismissal, INV-152). Since the
     operator-feedback round (2026-07-09) the panel NO LONGER auto-opens:
@@ -2331,7 +2360,7 @@ this section before touching the relevant area.
     resets it (the in-memory set's own rollover rule), and a
     localStorage-throwing privacy-mode browser degrades to per-window
     dedupe — the pre-fix behavior, never worse.
-  Clearing browser data wipes all sixteen. (`umsMergeMode` — the Time/PTO
+  Clearing browser data wipes all seventeen. (`umsMergeMode` — the Time/PTO
   Time Off ⇄ Timesheet mode — was RETIRED with the 2026-08-18 consolidation:
   the two modes were one page with a swapped 240px rail, so the rail now
   stacks both; a stale stored value is simply ignored.) (`umsCallNotesLastDept` — the
@@ -3264,7 +3293,7 @@ this section before touching the relevant area.
   omits it, so existing pastes are byte-identical; the operator opts in
   by adding a `Direction: {callDirection}` line to the template.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Sixteen client-side localStorage keys total" entry in
+  authoritative "Seventeen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`,
@@ -3286,7 +3315,8 @@ this section before touching the relevant area.
   and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
   `umsDashMetrics`, net 16 — and the 2026-08-17 cross-window reminder dedupe
   added `umsRemindFired`, net 17 — and the 2026-08-18 Time/PTO consolidation
-  RETIRED `umsMergeMode`, net 16.)
+  RETIRED `umsMergeMode`, net 16 — and the design handoff's PR 4
+  (2026-09-02) added `umsCoachingFilter`, net 17.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -6352,6 +6382,34 @@ manually for a fresh deploy or environment:
   the day it was written, but every round since PR #176 ships on ONE deploy, so
   the newest figure is the one to check against — read the count from the most
   recent entry, not the one whose feature you happen to be reading about.
+- **Design handoff PR 4 (2026-09-02, the Coaching surface) adds NO operator
+  state to SET UP — but re-run `installAutomationTriggers()` once** so the
+  NINETEENTH trigger (`sendCoachingRecapDigest`, Friday manager-tz 8am) exists;
+  until it does, minor/moderate/praise coaching reaches reps only in the app
+  (critical items email immediately regardless). ONE CONFIG constant
+  (`CONFIG.COACHING_RECAP_DAYS`, 7, code-only) and FIVE auto-managed TRAILING
+  columns on the HR store's `Coaching` tab (`RepResponse`, `FollowUpAt`,
+  `NudgedAt`, `NoteDate`, `QaFileId` — the header self-heals on first use;
+  existing rows read blank). Behaviour changes to expect post-deploy: (a) **the
+  Coaching tab is rebuilt** — managers land on a "Who needs a 1-on-1" signal
+  board with a filter strip and a side DRAWER for logging (Coaching ⇄ Praise,
+  severity chips where the middle tier now READS "Moderate" — the stored value
+  is still `major`, nothing migrates); reps get KPIs, a callout naming their
+  oldest open item, a Recognition feed for praise and an optional reply box
+  beside each Acknowledge; (b) **ages, the overdue window and the median count
+  BUSINESS days** — an item logged Friday afternoon is not overdue on Monday,
+  and the overdue counts you have been reading will get smaller, with a note
+  under the KPI strip saying what is excluded; (c) **praise no longer counts as
+  open or against the ack rate**, so both figures move; (d) **only a CRITICAL
+  item emails the rep at once** (cc you; a critical void sends a withdrawal) —
+  minor/moderate/praise arrive in a Friday recap per agent that names
+  severity, date and who logged it but never the narrative; (e) managers gain
+  **Nudge** (re-sends the reminder, once per item per day) and **Revisit**
+  (a follow-up date; a past one flags the item) on each card; (f) the Voided
+  filter is the only place a voided item appears — reps never see them.
+  **Post-deploy: run `runAllTests()`** — expect **307** (the recap trigger
+  gate + the critical-only mail test, which drives `createCoaching` through
+  the `_TEST_OVERRIDE_COACH_MAIL` seam so no real email leaves).
 - **Design handoff PR 3 (2026-09-02, the Manage surface) adds ONE CONFIG
   constant and no other operator state** — `CONFIG.PUNCT_MAX_RANGE_DAYS` (92,
   code-only; no Script Property, triggers, migrations or new endpoints — every
@@ -7671,7 +7729,7 @@ manually for a fresh deploy or environment:
   manual sheet-edit path still works; the panel is the recommended one.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires eighteen triggers:
+  installer now wires nineteen triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm — since cycle-8 M-1 the
       automated exports fire the morning AFTER the period completes: biweekly
@@ -7696,7 +7754,8 @@ manually for a fresh deploy or environment:
     - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on a confirmed dev instance (`isDevInstance_()` — BOTH `INSTANCE_LABEL` set and `INSTANCE_IS_PROD` explicitly not 'true'; unset = prod, A5). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
     - `creditMonthlyPtoAccruals` (PTO accrual, daily manager-tz **18:00**, alongside the Timesheet cold-archive — NOT 6am (cycle-18 F10): 6am CT is ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of the month this run holds the ONE project ScriptLock through a full Timesheet read, the exact starvation reasoning that moved `archiveOldTimesheetRows` off 1am (INV-153). The daily-with-idempotence cadence is unchanged, so a missed run still catches up via the col-R stamp — credits each accruing rep the PTO they EARNED from hours actually worked in each completed month (column-Q rate per `CONFIG.PTO_ACCRUAL_BASIS_HOURS` worked, converted to days by `CONFIG.PTO_HOURS_PER_DAY`) into the column-I balance IN ARREARS, idempotent via the column-R stamp; daily-with-idempotence rather than a monthly trigger so a missed 1st catches up instead of silently losing the month. Hours come from ONE range-wide, archive-aware Timesheet index — never a per-rep read inside the lock. No-ops for reps with no rate, so installing it is harmless. Audit row `PtoAccrualCredit` per credited rep (incl. zero-hour months). INV-194)
     - `purgeOldQaReviews` (QA review-record retention, daily manager-tz 2am beside the CN 3rd-tier purge — irreversibly deletes `QaComments` + `QaScorecards` rows older than `QA_REVIEW_RETENTION_DAYS` (Script Property → `CONFIG.QA_REVIEW_RETENTION_DAYS`, default **0 = disabled**); the `QaRecordings` INDEX and the Drive audio files are NEVER touched — the operator manages recordings in Drive. A 0/garbage `CreatedMs` stamp is never deleted (fail-safe), the disabled/unconfigured early-returns precede the lock, and every enabled run writes a counts-only `QaReviewPurge` audit row (the job-liveness heartbeat; its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND `QA_SS_ID` set, INV-186). No-ops entirely while the window is 0 or the QA store is unset, so installing it is harmless. INV-196)
-  The install + remove TARGETS arrays both list all eighteen, so re-running
+    - `sendCoachingRecapDigest` (coaching, **Friday** manager-tz 8am — design handoff PR 4, operator decision 1: ONE branded recap per AGENT listing the non-critical coaching (minor / moderate / praise) logged for them in the trailing `CONFIG.COACHING_RECAP_DAYS` (7) — severity label, date, who logged it, acknowledged-or-not, any revisit date — with NO narrative and NO patient/TRX (the detail lives behind the login). Critical items are emailed immediately at create instead and never appear here. Heartbeat `coachingRecap` (stale > 192h, the `weekly` window) stamped on BOTH exits; the digest is agent-facing so it NEVER consults the `managerDailyBrief` flag (INV-151). Silent for an agent with nothing logged in the window. The cadence is one line away from a change — the `onWeekDay(FRIDAY)` call in `installAutomationTriggers`)
+  The install + remove TARGETS arrays both list all nineteen, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -8164,7 +8223,7 @@ manually for a fresh deploy or environment:
   take effect server-side on the next request and client-side on the next
   config fetch.
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
-  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest:
+  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap:
   "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
   wall time) stamped by each digest run (`stampDigestLastRun_`) — the
   heartbeat behind the Automation Health panel's "Digest heartbeats"
@@ -8914,6 +8973,45 @@ The same day's **A4** (the Day Edit N-pair rebuild — the last path that destro
 The same day's **follow-on + Workstream B** added four more → **711** and the DOM harness 98 → **101**. The follow-on is FO-A2, a derived scan banning a STATIC inline `grid-template-columns` across the scanned partials — the A2 tripwire reads stylesheets, so it could not see the manager analytics pair's inline `1fr 1fr`, which beats every stylesheet rule INCLUDING the shell's own media queries and kept a 44px page overflow at 390px. Computed values are exempt by rule (the coverage heatmap and the training matrix compute their column counts, which CSS cannot express, and both sit in scrollers); one reasoned allowlist entry, exempt on construction because the block it guards renders only behind an opt-in scan no visual scenario reaches. **The misdiagnosis is the part worth keeping:** the first measurement blamed the team-punches `.m-table`, because `getBoundingClientRect().right` on a table inside an `overflow-x` scroller reports its full layout width and looks exactly like an overflow — to find a real overflower, walk the elements past the viewport edge and SKIP any with an overflow-x ancestor. Workstream B added B1/B2 (the done-state Adjust prefill; the manager notification that never existed — asserted post-`releaseLock` per M-7) and two B3 pins (the CONVERT-not-delete model with a ban on `deleteRow`, submit- and approval-side validation, a refused resume not marking the request Approved, back-compat on the trailing `Action` column across all four readers; and that every surface — confirm, chip, queue row, decision email — states the EFFECT rather than naming the punch it consumes). DOM: the Resume button's render conditions (including that an UNRELATED pending adjustment must not hide it), the chip's wording, and the confirm stating the unpaid gap before anything is filed — `uiConfirm` is a LEXICAL binding rather than a window property, so the stub reassigns the binding through the vm bridge. 15 mutations / 15 bites, plus 3 for the follow-on. TWO pins were corrected first, both the SAME trap: `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so an ordering check passed silently — the `assertBefore` helper is now hoisted and shared. INV-188 recurred a third time, again in a ban-shaped assertion tripping on the code comment that explains the ban. Editor suite +1 (`punchAdjust_resumeConvertsClockOut`) ≈ **305**; visual matrix 61 → **62** (`manage-light-mobile` — the tab had been wide-only, which is how the overflow survived).
 The same day's **Admin sub-tab follow-on** added one more → **712**: VIS-ADMIN, which DERIVES the Admin pane set from the client's own `tab('key','Label')` call sites and requires a mobile scenario per pane (INV-179 — the VIS-COVER marker works at TAB granularity, and all five Admin panes live inside ONE covered tab, which is how they stayed wide-only). Its first run found a live defect the matrix could not previously see: `.cn-tax-head` shared `.cn-tax-row`'s `1fr` stacking rule at ≤720px, so the tag-taxonomy header rendered as six labels stacked in a column above the first row, aligned with nothing, with the first row's usage bar riding over the word "Usage". The header is hidden when the row stacks and the two bare numerics carry their own labels; the delta label is the LITERAL `Δ`, because CSS consumes the space after a hex escape and `'\0394 wk'` renders as the joined-up "Δwk". A `getAdminSheetView` FIXTURE landed with it — the Sheets pane had none at any viewport, so its scenario rendered a loader and its "0 overflow" meant nothing; it is a FUNCTION of `viewKey` (the INV-185 F14 rule — the key decides label, columns, rows and legend). 7 mutations / 7 bites, incl. the class-closing one (a sixth pane with no scenario). Visual matrix 62 → **67**.
 The 2026-09-02 operator round added one more → **713** (NLBR — the note email keeps the rep's line breaks: the `.ce` fields are `white-space: pre-wrap` so Enter stores a real `\n`, and HTML collapsed it, so a Resolution written as paragraphs arrived as one run-on block while the CRM paste was correct. The pin drives the real `cnFmtEmailHtml_` and asserts the ORDERING property that makes it safe — breaks convert LAST, because the marker regexes are `[^…\n]+` and converting first would make `**a\nb**` start matching. 3 mutations / 3 bites, incl. the breaks-first ordering. Its first write over-reached: a ban on any inline `\n`→`<br>` found THREE pre-existing correct sites outside this fix's scope, so the ban is scoped to `buildCallNoteEmailHtml_` and the other three are a logged follow-on.)
+The design handoff's PR 4 (2026-09-02, the Coaching surface) added six more →
+**733**, then one more → **734** (PR4-1 the server contract — the 19 trailing
+headers ↔ `CO` indices, the full-width appendRow, validate accepting the three
+new fields, the reply written only after BOTH terminal-state guards, praise
+never open, voided capped + reported, the follow-up/nudge gate-scope-lock-audit
+shape and the nudge's once-per-day guard; PR4-2 K9 driven BEHAVIOURALLY with an
+injected minute counter — a Friday-16:00 → Monday-09:30 item is 0.2 business
+days old where wall clock said 2.7, unknown is never overdue, praise never nags,
+follow-up-due is its own flag, the ack-rate denominator excludes praise, and a
+raw `86400000` is BANNED in the two consumers; PR4-3 the `COACH_SEV_LABELS`
+byte-equal mirror + every label sink routing through it; PR4-4 the critical
+mail builder run in a vm with four NON-content inputs (no parameter through
+which the narrative could pass), the notify gate, the create/void wiring past
+the lock, and the recap's gate / dual heartbeat / brief-flag ban /
+`coachRecapBuckets_` behavioural; PR4-5 `coachRepSignal_` tiers incl. the
+25-day-old critical and the INFO-toned no-signal precedence, the retired
+`.coach-modes`/`.coach-row-overdue`/`coachNarrativeHtml_` banned, the validated
+filter key, voided out of All, praise routed away from the ack card, the
+≤720px board columns, the `[hidden]` companions, the drawer via
+`ensureOverlay`; PR4-6 the fixtures' keys DERIVED from `coachRowToObj_`, the
+seven scenarios, the `?role=rep` hook, the note-date hand-off and the QA hint's
+read→null→act order). 10 mutations / 10 bites. **PR4-5 was WRONG ABOUT THE
+CODE on first write:** it banned `coachSwitchMode_(`, which legitimately
+survives as the handler behind the Mine ⇄ Team strip — only the `.coach-modes`
+CSS vocabulary was retired; the pin now asserts the strip renders as shared
+`role="tab"` buttons dispatching to it. DOM 101 → **102** (the drawer opens
+prefilled from `COACH_PREFILL`, is a NAMED dialog, closes on Escape through
+the shell handler, its close hook is idempotent, and a fresh open carries no
+stale prefill) — **a harness trap worth keeping:** `flushTimers()` also fires
+the onboarding tour's auto-start, whose CAPTURE-phase Escape handler ends the
+tour and `stopImmediatePropagation()`s the key before the shell's overlay
+handler sees it, so the drawer stayed open with `defaultPrevented` true; seed
+`umsTour` as seen before `bootShell` in any DOM test that flushes timers and
+then presses Escape. Visual matrix 78 → **87** (nine coaching scenarios —
+manager light/dark/mobile, the drawer, empty, the rep view light/dark/mobile
+via the new `?role=rep` hook, and a forced-fail error state; all machine-clean
+and eyeballed). Editor suite +2 (`triggerGate_coachingRecap_nonManagerThrows`,
+`coaching_criticalMailOnlyAndMailedFalse` via the `_TEST_OVERRIDE_COACH_MAIL`
+seam) ≈ **307**.
 The design handoff's PR 3 (2026-09-02, the Manage surface) added five more →
 **727** (PR3-1 `punctDayState_` + `punctWeeklyBuckets_` driven behaviourally —
 the five states incl. `nopunch`, weekends null, buckets clipped to the range,
@@ -9245,7 +9343,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send. **AMENDMENT (operator 2026-08-25): the composer's Note Reference is EDITABLE, and Preview COMMITS those edits BEFORE rendering** — so the previewed body, and therefore the hash the send is checked against, is always built from the note as it will be sent (a failed save aborts the chain rather than previewing unsaved text; previewing first would have hashed the STALE stored note and silently emailed the un-corrected text). The editable fields exist on the FORM step ONLY, so editing between Preview and Send remains impossible — that is this guard working, not a gap. See the two-stage-email Key Design Decision; pinned by CMP-1..4 + the two composer DOM tests | Subsystem: Server
 INV-42 | `emailFromCallNote` sends first (via `sendRepEmail_` — the rep-identity wrapper over MailApp/GmailApp since pilot round 1; wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The eighteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, and QA review records past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge) | Subsystem: Server
+INV-44 | The nineteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, and QA review records past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — **but since cycle-17 C17-6 it no longer "skips that rep" silently either (that clause described the defect, the same INV-52 correction cycle-16 F1 made): the skipped set rides the response (`skippedReps`, additive), the audit row (`skippedReps=N (ids) — INCOMPLETE`), and a client warn toast, and an all-skipped run returns a read-failure error instead of "No notes found" — a PHI export can never read as complete when it isn't (INV-187).** Pinned by the C17-6 pin | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -9345,7 +9443,7 @@ INV-132 | `archiveOldCallNotes` is the SAFE (non-destructive) cold-archive tier 
 
 INV-133 | The call-note retention 3rd tier + its controls. (a) `purgeArchivedCallNotes` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44) and locked (INV-01); it irreversibly deletes each rep's `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS`, default **0 = disabled**) — the ONLY deleter of archived notes. READ-ONLY w.r.t. tab existence (`getSheetByName`, never creates `NotesArchive`); date from the preserved `CN.DATE_LOCAL` via `parseRetentionDateMs_`; cross-rep, per-rep failures skipped; PHI-free `CallNotesArchivePurge` audit (in `AUTOMATION_AUDIT_ACTIONS`). Scheduled manager-tz 2am (before the 3am archive); in BOTH TARGETS (trigger-wiring tripwire). Pinned by `test_triggerGate_purgeArchivedCallNotes_nonManagerThrows`. (b) `searchMyCallNotes`/`managerSearchCallNotes` accept a trailing `includeArchive` flag (default off — 4-arg callers unaffected) that ALSO scans the cold tab (read-only) and tags hits `_archived`; the INV-45 field-scope logic is byte-identical (factored into a per-source closure). (c) `getRetentionConfig` (read-only summary + `retentionWarnings_` safety ordering, Node-pinned) + `saveRetentionConfig` (writes the three Script Properties, whole-days validation, `AdminConfigChange` audit) are manager-gated (INV-31/INV-57 family, omnibus-pinned); the client danger-confirms enabling/raising either irreversible purge window | Subsystem: Server + Client (Call Notes views)
 
-INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). **The void REASON is free text that plausibly names a patient/TRX, so it persists ONLY in the Coaching tab's trailing `VoidReason` column (cycle-8 M-6; `COACH_HEADERS` 13→14, `CO.VOID_REASON:13`, header self-heals via `getOrCreateEmpDocSheet_` — the voidDoc pattern); until that fix `voidCoaching` wrote `reason=` into the shared AuditLog, which the compliance panel + admin sheet viewer surface. Never route it back there.** `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern) — its deep-link is `enterTool('develop','coaching')` (the TOOL key is `develop`, NOT `training`; the cycle-9 H-1 wrong-key call was a silent no-op, now pinned by the enterTool TOOL-key tripwire). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab's Team mode; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). **UI note:** the former rep `coaching` + manager `coachingManage` tabs were MERGED into one non-managerOnly `coaching` tab (`enterCoachingView`) with a manager-only Mine ⇄ Team toggle (`coachSwitchMode_`, persisted to `umsCoachingMode`) — a pure client reorganization; every endpoint, gate, scope, and audit row above is unchanged. Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` + (cycle 9) the six-rule `coachCanManagerSee_` Node unit pin and the `test_coaching_createAckVoidFlowAndScoping` editor flow test | Subsystem: Server + Client (Training views)
+INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). **The void REASON is free text that plausibly names a patient/TRX, so it persists ONLY in the Coaching tab's trailing `VoidReason` column (cycle-8 M-6; `COACH_HEADERS` 13→14, `CO.VOID_REASON:13`, header self-heals via `getOrCreateEmpDocSheet_` — the voidDoc pattern); until that fix `voidCoaching` wrote `reason=` into the shared AuditLog, which the compliance panel + admin sheet viewer surface. Never route it back there.** `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern) — its deep-link is `enterTool('develop','coaching')` (the TOOL key is `develop`, NOT `training`; the cycle-9 H-1 wrong-key call was a silent no-op, now pinned by the enterTool TOOL-key tripwire). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab's Team mode; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). **UI note:** the former rep `coaching` + manager `coachingManage` tabs were MERGED into one non-managerOnly `coaching` tab (`enterCoachingView`) with a manager-only Mine ⇄ Team toggle (`coachSwitchMode_`, persisted to `umsCoachingMode`) — a pure client reorganization; every endpoint, gate, scope, and audit row above is unchanged. Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` + (cycle 9) the six-rule `coachCanManagerSee_` Node unit pin and the `test_coaching_createAckVoidFlowAndScoping` editor flow test. **AMENDED (design handoff PR 4, 2026-09-02):** (a) FIVE more TRAILING columns — `RepResponse` (the rep's optional reply, written by `acknowledgeCoaching(coachId, response)` ONLY on the open→acked transition, capped `COACH_RESPONSE_MAX`; the manager's ack mail says only whether a reply exists), `FollowUpAt` (a revisit date — `setCoachingFollowUp`, manager + `coachCanManagerSee_` + locked, audit `CoachingFollowUp`), `NudgedAt` (`nudgeCoaching` — open non-praise only, ONCE per manager-tz day per item, audit `CoachingNudge`, mail post-lock with the outcome returned as `mailed`), `NoteDate` (the linked note's DateLocal, so the drill back to Team Notes is date-keyed) and `QaFileId` — `COACH_HEADERS` 14→19, the row builder reads all five, the create appends a full-width row; (b) **overdue is measured in BUSINESS days** (operator decision 7): `coachAgeDays_(createdMs, nowMs, opts)` takes an injected minute counter from `coachBizOpts_()` (= `businessMinutesBetween_` + the Coverage business window), so a Friday item read on Monday is ~0.2 days old, not 2.7; an UNKNOWN age (a null minute count) is NEVER overdue (INV-187), and `coachUnackedOverdue_`/`coachAnalytics_` carry no raw day arithmetic (pinned); a past `FollowUpAt` surfaces an item as `followUpDue`, a signal distinct from overdue; (c) **praise is neither open nor a denominator**: `counts.open` and the ack-rate denominator exclude praise (decision 8), praise never nags, and the rep view routes praise to a Recognition feed with no Acknowledge button; (d) **email is CRITICAL-ONLY at create** (decision 1): `notifyRepOfCoaching_` returns false for anything else, cc's the manager, and carries no narrative/TRX/note id; a critical VOID sends `notifyRepOfCoachingRetraction_`; minor/moderate/praise arrive via the Friday `sendCoachingRecapDigest` (INV-44 gate, heartbeat `coachingRecap` on both exits, NEVER the brief flag — INV-151; `coachRecapBuckets_` is pure: non-critical, non-void, inside `CONFIG.COACHING_RECAP_DAYS`, grouped by agent); (e) voided items stay hidden from reps (`getMyCoaching` skips them; decision 9) and the manager `voided[]` list is capped `COACH_VOIDED_CAP` with `voidedTotal` reported (INV-169); the EMPTY dashboard return carries the SAME shape as the populated one (`voidedTotal`, `analytics`) so the fixture's empty twin mirrors a real payload (INV-185); (f) `COACH_SEV_LABELS` (`major` → **Moderate**) is a byte-equal client↔server mirror (MIRROR_INDEX) — the stored enum is unchanged, no migration. Pinned by PR4-1..PR4-6 + the PR4 DOM drawer test + `test_triggerGate_coachingRecap_nonManagerThrows` + `test_coaching_criticalMailOnlyAndMailedFalse` + the omnibus `setCoachingFollowUp`/`nudgeCoaching` cases | Subsystem: Server + Client (Training views)
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
@@ -10573,6 +10671,21 @@ S97 | Admin → System is findings-first and reaches all-clear | Subsystem: Clie
     - On a healthy deployment with dozens of off-roster CDR agents and HR/QA stores left unset, read the System tab
     - Narrow to a phone width and open the System tab
   Expected: each Overview card is a BUTTON that lands on the System tab scrolled to its own section (Automation / CDR / Storage), and its aria-label names the destination. The System tab's badge equals the number of items in "Needs attention"; every item carries a Blocking/Warning pill, a title, the detail, a fix line, and — where the server supplied one — an open link. Blocking items sort first. The chevron expands the store's detail row (note / per-rep problems / the exact tz fix naming the CONFIG zone) with `aria-expanded` following. With the health read broken, the Automation and CDR cards read **Unavailable**, the findings list carries a Blocking "Automation health could not be read" item, and the Automation detail slot renders the warn card — never "All OK". On the healthy deployment the list reads **Nothing needs attention** and the off-roster agents, the no-CDR roster names, and the unset no-fallback stores appear ONLY inside "checks passing" with their counts (INV-186 — a tab that can never go green trains the reader to ignore it). At 390px nothing scrolls sideways; the finding cards stack their pill above the title.
+
+S99 | Coaching surface — signal board, drawer, business-day overdue, reply, critical-only mail, weekly recap | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, open Training → Coaching (Team); read the KPI strip and the note beneath it, then the "Who needs a 1-on-1" board
+    - Press **Log coaching** → the drawer slides in from the right; switch Coaching ⇄ Praise and watch the severity chips + coaching point hide; press Escape
+    - From Call Notes → Team Notes → Per-Rep, press **Coach on this** on a note → the drawer opens prefilled (employee, TRX, narrative, a linked-note chip)
+    - Log a MINOR item, then a CRITICAL item with a revisit date, for a rep whose roster row carries a login email; check that rep's inbox and yours
+    - Void the critical item with a reason; check the rep's inbox again; open the Voided filter
+    - Press **Nudge** on an open item twice in one day
+    - As the rep, open Coaching; read the callout, press Jump to it, type a reply, Acknowledge; as the manager, check your inbox and the card
+    - Log a praise item; as the rep, look for an Acknowledge button on it
+    - Hand-set an item's `CreatedAt` to a Friday 16:00 and read its age on Monday morning
+    - From the editor run `sendCoachingRecapDigest` as a manager; check an agent's inbox
+    - Narrow to 390px on both the manager and the rep view
+  Expected: the note reads "Ages, the overdue window and the median count business days only"; the board tiers each rep (a rep with any critical in 30 days is PRIORITY; one with nothing in 21 days reads the INFO-toned "No signal", not Clear). The drawer is a named dialog (Escape closes it through the shell). The prefilled drawer carries the note DATE, and the saved card's note chip drills back to that rep + date. **Only the critical item emails the rep at once** (cc you) — the mail names who logged it, when, the severity and the revisit date, and NOTHING of the narrative or TRX; the minor item sends nothing. Voiding the critical item sends a "Withdrawn" mail; the voided item appears ONLY under the Voided filter (All excludes it) and never in the rep's view. The second Nudge is refused ("once per day per item"). The rep's callout names the oldest open item's age in business days; after Acknowledge the card dims, the reply shows under "Your reply", and your inbox says they replied WITHOUT quoting it. The praise item carries NO Acknowledge button and sits in the Recognition feed on both views; it counts in neither "Awaiting ack" nor the ack rate. The Friday-16:00 item reads well under a day old on Monday. The recap lists the minor + praise items with severity/date/logged-by and no narrative; the critical item is absent from it. At 390px the KPI strips go 2×2, the board drops its Mix and Last columns, and nothing scrolls sideways.
 
 S98 | Manage surface — grouped Manage Time, Punctuality diagnostics, Coverage presets | Subsystem: Server, Client (Time Clock views)
   Steps:
