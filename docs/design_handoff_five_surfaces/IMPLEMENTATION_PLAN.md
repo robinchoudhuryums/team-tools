@@ -6,7 +6,7 @@
 > silent), collects the operator decisions in one list, and sequences the work into per-surface
 > PRs with the pins, fixtures and scenarios each owes.
 >
-> **Status:** planned, not implemented. Revision 2 — 2026-09-02, branch
+> **Status:** decided; implementation in progress from PR 1. Revision 2.1 — 2026-09-02, branch
 > `claude/ums-team-tools-design-r8ar3o`, tree at `cf8f8e5` (main `c9643bc` merged in).
 >
 > **Source material (now complete).** Revision 1 (2026-09-01, commit `2b0dd61`) was written from
@@ -225,23 +225,30 @@ including that No signal renders `info`, never the green Clear (INV-186/187 — 
 reasoning). The manager summary strip (§2b: Awaiting ack / Overdue with surnames capped at two /
 Recognition share) derives from the same payload; keep the `!a.total` fallback.
 
-**K8 — Critical notification email — the doc's premise is wrong.** Doc §5: "Logging a Critical
-item mails the rep. Nothing else does — Minor and Moderate rely on the in-app badge … that
-scarcity is what makes the email land"; the footer "explains that minor and moderate items don't
-email". Code: `notifyRepOfCoaching_` (Code.js:25948) already emails the rep on EVERY create,
-severity-toned, branded, narrative-free, deferred past the lock via `notifyAfter`. Two honest
-resolutions: (a) keep the per-create mail and UPGRADE the critical one to the doc's shape, or
-(b) make the doc's scarcity true by removing non-critical rep mail. (b) removes an existing
-notification — a product change, not a design one. Build under (a) unless told otherwise: on
-`severity === 'critical'` the create mail becomes the doc's email (subject "Action needed:
-coaching logged for you — please acknowledge", the `#c13030`/`#fce5e5`/`#8a1f1f` banner triple,
-the kv column with the 1-on-1 row only when `FollowUpAt` is set, a plain-text twin), still
-post-lock (M-7), still narrative/TRX/noteId-free; `mailed: false` on the response when the send
-threw so the toast can say so; **voiding a critical item sends a short retraction** to the same
-recipient; the "minor and moderate don't email" footer line is DROPPED (it would be false under
-(a)). Recipient = the rep only (the doc names no cc). Editor test: non-critical → the ordinary
-mail; critical → the upgraded subject; a throwing send still returns success + `mailed:false`. ⚠
-(a) or (b).
+**K8 — Critical notification email (DECIDED 2026-09-02, option c).** Doc §5: "Logging a Critical
+item mails the rep. Nothing else does … that scarcity is what makes the email land." Code:
+`notifyRepOfCoaching_` (Code.js:25948) emails the rep on EVERY create. Operator decision: make the
+doc's scarcity TRUE for immediate mail, and give non-critical items a routine RECAP instead of
+silence. Build: (1) the per-create mail fires ONLY for `severity === 'critical'`, in the doc's
+shape (subject "Action needed: coaching logged for you — please acknowledge", the
+`#c13030`/`#fce5e5`/`#8a1f1f` banner triple, the kv column with the 1-on-1 row only when
+`FollowUpAt` is set, a plain-text twin), still post-lock (M-7), still narrative/TRX/noteId-free,
+`mailed: false` on the response when the send threw; voiding a critical item sends a short
+retraction to the same recipient; the footer line now truthfully says minor/moderate items arrive
+in the weekly recap. (2) A new trigger handler **`sendCoachingRecapDigest`** — weekly, manager-tz
+Friday 8am beside the weekly CN digests (one schedule slot, not a new one; the cadence is one
+CONFIG constant away from daily-previous-workday if the operator prefers) — walks the roster and
+emails EACH agent who received ≥1 non-critical item (minor / moderate / praise) in the trailing 7
+days: one branded email, one row per item (severity label, logged-by, date, acknowledged-or-not,
+Revisit date if set), NO narrative/TRX/noteId (the INV-134 posture the create mail already
+keeps), a `safeWebAppUrl_('coaching')` CTA; an agent with nothing new gets nothing. `assertManagerCaller_`
+gate (INV-44), heartbeat `coachingRecap` (`DIGEST_LABELS`/`DIGEST_STALE_HOURS` > 8 d), in BOTH
+`installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the 19th trigger — the wiring +
+gate-type nets auto-cover it), rides `managerBriefSuppressionActive_`? NO — it is agent-facing, so
+it never consults the brief flag (the INV-151 rule: employee-facing mail always sends). The
+manager receives nothing from it. Operator action: re-run `installAutomationTriggers()` once.
+Editor tests: non-critical → no immediate mail; critical → the upgraded subject; a throwing send
+still returns success + `mailed:false`; `test_triggerGate_coachingRecap_nonManagerThrows`.
 
 **K9 — Business-hours overdue (settled by §9 addendum; unit still open).** `coachUnackedOverdue_`
 and `coachAnalytics_` are pure ms arithmetic over 7 calendar days; `businessMinutesBetween_` is
@@ -449,8 +456,8 @@ destination.
 `getMyPendingTasks()` returns a flat sorted `[{kind, title, detail, dueIso, overdue, route}]` from
 five sources; the extras row keeps Spanish + Requests and Training folds in. Conflicts: (1) "QA —
 unacknowledged reviews (the My Reviews ack in the QA handoff)": QA §6 says there is NO ack, and
-none exists in code — an item with no completing action is not a task (INV-187). Build: OMIT the
-QA source; ⚠ or a non-task "review shared with you (14 d)" line. (2) "Requests — pending
+none exists in code — an item with no completing action is not a task (INV-187), and decision 13 keeps the QA tool hidden from agents anyway. Build: the QA source is
+OMITTED (decided). (2) "Requests — pending
 punch-edit / PTO — today's extras card": the extras card shows DEPT requests; a rep's own pending
 punch-edit already renders as the chip above the punch buttons (2026-08-31) and their pending PTO
 is waiting on the MANAGER, not on them. Build: Requests = dept requests open + incoming (what the
@@ -508,39 +515,28 @@ too. Fixture: populated `getMyPendingTasks` + `?fixture=empty` + `?failrpc=`.
 
 ## 3 · Operator decisions (collected)
 
-Ordered by how much they change the build. Everything else proceeds under the stated resolution.
+**All thirteen decided on 2026-09-02.** Recorded here so no session re-litigates them.
 
-1. **K8** Critical email: (a) keep the per-create rep mail and upgrade the critical one (recommend)
-   or (b) remove non-critical rep mail so the doc's "nothing else emails" becomes true.
-2. **K5/K13** Five trailing coaching columns, not three — `NoteDate` (so the note link can open a
-   note) + `QaFileId` (QA §4e's `reviewId`). Recommend yes to both.
-3. **T1** Needs-you sources: OMIT QA (no ack exists — QA §6) or show a non-task "shared with you"
-   line; ADD signable docs as a sixth kind (recommend yes); Requests = dept requests only.
-4. **T4** Hours rendered once — on the clock card's state line, not also in the strip header
-   (recommend state line).
-5. **X6** Tab-strip affordance: two-row wrap (recommend) vs overflow menu — the Admin doc rejects
-   the edge-fade revision 1 proposed.
-6. **Q4** Per-employee audit target: `CONFIG.QA_AUDIT_TARGET_PER_PERIOD = 3` (the mock's number);
-   audit period DERIVED from `DriveCreatedMs` (no `AuditPeriod` column); exemptions as a
-   `QaExemptions` tab with a manager-gated grant.
-7. **K9** `COACHING_UNACK_REMINDER_DAYS = 7` re-read as 7 **business** days (recommend yes).
-8. **K3** Ack-rate denominator excludes praise (recommend yes).
-9. **K6** Voided items stay hidden from reps (recommend yes).
-10. **X2** Two-level breadcrumbs (`Manage › Admin`), matching the three existing instances, vs the
-    docs' `Tools › Manage › Admin` (recommend two).
-11. **T2** Remove the greeting bar's `.dash-onclock` pill once the state line exists (recommend
-    yes).
-12. **M5** Manage Time: PTO drift + sheet doctor keep loading on enter (their collapsed summary
-    has no other source); no collapse persistence (recommend as stated).
-13. **6c-1** Agents see their own QA reviews? Unchanged from revision 1 — one registry line +
-    QA-14 rewrite; it decides whether a Needs-you QA line could ever mean anything.
-
-Settled by the detail docs since revision 1 (no longer asked): K1 drawer + kind split, K2 reply,
-K4 label map, K7 signal tiers, K10/K11 semantics, M2/M3/M4 (incl. Metrics adopting
-`mtDateRange_`), Q1 pin-on-first-input, Q2 Skip + `SkipReason`, Q5/Q6 shapes, A2/A3/A4 shapes,
-T3, T5, the X8 fixture rule.
-
----
+1. **K8** Critical items mail the agent IMMEDIATELY and nothing else does; non-critical items
+   (minor / moderate / praise) go out in a routine RECAP — built as a weekly per-agent digest
+   (`sendCoachingRecapDigest`, Friday 8am manager-tz), cadence adjustable by one constant.
+2. **K5/K13** Five trailing coaching columns: `RepResponse`, `FollowUpAt`, `NudgedAt`, `NoteDate`,
+   `QaFileId`. Approved.
+3. **T1** Needs-you: QA source OMITTED (and decision 13 makes it moot), Requests = dept requests
+   only, signable docs added as a sixth kind. Approved.
+4. **T4** Hours once, on the clock card's state line. Approved.
+5. **X6** Two-row tab-strip wrap below 480 px. Approved.
+6. **Q4** `CONFIG.QA_AUDIT_TARGET_PER_PERIOD = 3`; period derived from `DriveCreatedMs`; a
+   `QaExemptions` tab with a manager-gated grant. Approved.
+7. **K9** 7 business days. Approved.
+8. **K3** Ack-rate denominator excludes praise. Approved.
+9. **K6** Voided items stay hidden from reps. Approved.
+10. **X2** Two-level breadcrumbs. Approved.
+11. **T2** Remove the greeting bar's `.dash-onclock` pill. Approved.
+12. **M5** PTO drift + sheet doctor load on enter; no collapse persistence. Approved.
+13. **6c-1** Agents do NOT see their own QA reviews (yet). The `qaMyReviews` registry line keeps
+    `managerOnly + also:'canSeeQa'`; QA-14 stays as written; the Q3 transport-parity work still
+    ships (it is reachable by QA members and is ready for the day the line is dropped).
 
 ## 4 · Build order and commit sequencing
 
@@ -579,17 +575,21 @@ One PR per surface, each independently deployable, in this order.
 ### PR 4 — Coaching
 - Server: `COACH_HEADERS` 14 → 19, K2 ack reply, K3 praise exclusion, K4 label map, K6 void reason +
   `voided[]`, K8 critical mail + retraction, K9 injected business hours, K10 `setCoachingFollowUp`,
-  K11 `nudgeCoaching`, K13 `QaFileId`.
+  K11 `nudgeCoaching`, K13 `QaFileId`, K8's `sendCoachingRecapDigest` (19th trigger, heartbeat
+  `coachingRecap`, in both TARGETS).
 - Client: K1 drawer, K7 board + summary strip, Recognition feed, K5/K13 chips, K6 filters + search +
   `umsCoachingFilter`, chrome (X2).
 - Editor suite: extend `test_coaching_createAckVoidFlowAndScoping` (reply, follow-up, nudge, voided
-  list, critical mail shape); omnibus gains `setCoachingFollowUp` + `nudgeCoaching`.
+  list, critical-only immediate mail, `mailed:false`); omnibus gains `setCoachingFollowUp` +
+  `nudgeCoaching`; `test_triggerGate_coachingRecap_nonManagerThrows`.
 - Scenarios: K12's set.
 - Pins: `coachUnackedOverdue_`/`coachAnalytics_` rewritten in place; `coachRepSignal_` behavioural;
   label-map MIRROR_INDEX entry; H-1 tripwire extended; `.coach-row-overdue` ban; the first coaching
   DOM test (drawer open/prefill/close idempotent).
-- CLAUDE.md: INV-134 amendment (columns, reply, praise semantics, business-day overdue, critical
-  mail + retraction), localStorage 16 → 17, the Coaching bullet, an S-scenario.
+- CLAUDE.md: INV-134 amendment (columns, reply, praise semantics, business-day overdue,
+  critical-only mail + retraction + the weekly recap), the trigger list (18 → 19), the
+  `AUTOMATION_DIGEST_LAST_RUNS` key set, localStorage 16 → 17, the Coaching bullet, an S-scenario.
+- Operator action: re-run `installAutomationTriggers()` once for the 19th trigger.
 
 ### PR 5 — QA
 - Server: `QA_RECORDINGS_HEADERS` +`DurationSec` +`SkipReason`; `qaSetRecordingDuration`;
@@ -653,7 +653,7 @@ for the operator's post-deploy `runAllTests()` (the expected count rises with ea
 
 | Doc | Claim | Reality | Effect |
 |---|---|---|---|
-| Coaching §5 | "Critical mails the rep. Nothing else does." | `notifyRepOfCoaching_` mails on every create | Decision 1 |
+| Coaching §5 | "Critical mails the rep. Nothing else does." | `notifyRepOfCoaching_` mails on every create | Decision 1: made true + weekly recap |
 | Coaching §2d | Note link `enterTool('callnotes', …)` | Dead key; `enterTool` no-ops silently | K5 via the drill hints |
 | Coaching Part 3 / §7 | Three new columns | Five (note link needs a date; QA §4e wants `reviewId`) | Decision 2 |
 | Coaching §7, Admin §6 | `--accent-deep` undefined on `.tr-complete-btn` | Reads `--success-deep` | X5 |
