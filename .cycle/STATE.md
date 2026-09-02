@@ -21,11 +21,27 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 713 + DOM 101;
+Test Command: manual (Node harnesses: `npm test` = pure 718 + DOM 101;
   visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean, 67/67;
   Regression Scenarios run to S96)
 Subsystem cycles since last Seams audit: 1
 Updated: 2026-09-02
+
+## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
+The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
+Clock) is being implemented from `docs/design_handoff_five_surfaces/IMPLEMENTATION_PLAN.md`
+(revision 2.1 — every conflict resolved, all 13 operator decisions recorded in
+its §3; the detail docs live at `docs/*_HANDOFF.md` + `docs/*.dc.html`). Six PRs
+in the plan's §4 order. **PR 1 (cross-cutting sweep) is DONE and committed
+(`bcba743`)** — block: `.cycle/blocks/19pre-design-pr1-broad-implement.md`.
+Next: PR 2 (Admin — System tab, `cnHealthFindings_`, storage table, the four
+`errorStateHtml_` loaders), then PR 3 Manage, PR 4 Coaching, PR 5 QA, PR 6
+Time Clock. Facts PR 2+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
+`script_core.html` (Metrics is the first consumer; Punctuality + Coverage
+adopt in PR 3); `?fixture=empty` exists in `mock.js` with an empty
+`EMPTY_FIXTURES` map that each block fills (the PR1-4 pin's `OWED` list grows
+with it); the `.toolbar-tabs` strip wraps ≤480px, so the six-tab Admin strip
+needs no further affordance work in PR 2.
 
 ## In progress (facts to carry forward — NOT judgments)
 - Seams F1–F5 implemented, tested (585 pure / 75 DOM, all green), and
