@@ -59,7 +59,9 @@
   .qa-delta-down { color: var(--danger-deep); }
   .qa-skip-why { display: block; color: var(--muted-2); font-size: 11px; max-width: 260px; overflow-wrap: anywhere; }
   .qa-unattributed { color: var(--warning-deep); }
-  .qa-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Row actions stay on ONE line — the table scrolls inside .m-table-wrap,
+     so a wrapped action stack would only make every row three lines tall. */
+  .qa-row-actions { display: flex; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
 
   /* Detail — two panes from 1000px (player + agent left, review right);
      single column below, where the player sits first in reading order. */
@@ -553,8 +555,9 @@ function qaSummaryStripHtml_(sum, label) {
   return '<div class="qa-summary" role="group" aria-label="Coverage summary">' +
     '<div class="qa-sum"' + (sum.pct != null && sum.short > 0 ? ' data-tone="warn"' : '') + '><div class="qa-sum-k">Coverage</div>' +
       '<div class="qa-sum-v">' + cov + '</div>' +
-      '<div class="qa-sum-sub">' + sum.sampled + ' of ' + sum.target + ' target calls · ' +
-        (short ? short + ' employee' + (short === 1 ? '' : 's') + ' short' : 'everyone at target') + '</div>' +
+      '<div class="qa-sum-sub">' + (sum.target
+        ? sum.sampled + ' of ' + sum.target + ' target calls · ' + (short ? short + ' employee' + (short === 1 ? '' : 's') + ' short' : 'everyone at target')
+        : 'no one to cover this period') + '</div>' +
       '<div class="qa-sum-bar" aria-hidden="true"><i style="width:' + (sum.pct == null ? 0 : sum.pct) + '%"></i></div></div>' +
     '<div class="qa-sum"><div class="qa-sum-k">Team avg</div>' +
       '<div class="qa-sum-v">' + avg + '</div>' +
@@ -815,7 +818,7 @@ function qaRenderDetail_() {
       '<h2 class="card-label">Comments</h2>' +
       '<div id="qa-comments"><div class="qa-note">Loading…</div></div>' +
       '<div class="qa-add-row">' +
-        '<textarea id="qa-comment-text" aria-label="Comment text" placeholder="Start typing to pin a comment at the current moment"></textarea>' +
+        '<textarea id="qa-comment-text" aria-label="Comment text" placeholder="Write a comment…"></textarea>' +
         '<div class="qa-pin-row" id="qa-pin-row" aria-live="polite"></div>' +
         '<div class="qa-add-actions" id="qa-add-actions"></div>' +
       '</div>' +
@@ -1078,7 +1081,7 @@ var QA_SPEEDS = [0.75, 1, 1.25, 1.5, 2];
  *  Reviews cards (listener-bound to the audio element it controls, so a
  *  per-card player needs no global ids). `state.speed` is the shared
  *  session speed for the detail; a card passes its own object. */
-function qaRenderTransportFor_(host, audio, state) {
+function qaRenderTransportFor_(host, audio, state, showKbd) {
   if (!host || !audio) return;
   const st = state || { speed: 1 };
   host.innerHTML =
@@ -1088,7 +1091,9 @@ function qaRenderTransportFor_(host, audio, state) {
       return '<button type="button" class="qa-chip qa-speed" data-qa-speed="' + s + '" aria-pressed="' + (st.speed === s ? 'true' : 'false') +
         '">' + s + '×</button>';
     }).join('') +
-    '<span class="qa-kbd-hint">space · ← →</span>';
+    // The key hint belongs ONLY where the keys work — the detail's document
+    // handler is scoped to the open recording, so My Reviews shows none.
+    (showKbd ? '<span class="qa-kbd-hint">space · ← →</span>' : '');
   host.querySelectorAll('[data-qa-seek]').forEach(function (b) {
     b.addEventListener('click', function () {
       if (!isFinite(audio.duration)) return;
@@ -1099,12 +1104,12 @@ function qaRenderTransportFor_(host, audio, state) {
     b.addEventListener('click', function () {
       st.speed = Number(b.getAttribute('data-qa-speed')) || 1;
       audio.playbackRate = st.speed;
-      qaRenderTransportFor_(host, audio, st);   // aria-pressed stays in step (A11)
+      qaRenderTransportFor_(host, audio, st, showKbd);   // aria-pressed stays in step (A11)
     });
   });
 }
 function qaRenderTransport_() {
-  qaRenderTransportFor_(document.getElementById('qa-transport'), document.getElementById('qa-audio'), QA_STATE);
+  qaRenderTransportFor_(document.getElementById('qa-transport'), document.getElementById('qa-audio'), QA_STATE, true);
 }
 function qaSeekBy_(delta) {
   const audio = document.getElementById('qa-audio');

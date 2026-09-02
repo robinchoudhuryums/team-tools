@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 734 + DOM 102;
-  visual matrix on demand — 87 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 738 + DOM 103;
+  visual matrix on demand — 90 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 4 of the design handoff landed)
+Updated: 2026-09-02 (PR 5 of the design handoff landed)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -68,8 +68,26 @@ the dead `enterTool('callnotes')` drill replaced by the date-keyed hints, the
 two-level crumb `Training › Coaching`, and `nosignal` taking precedence over
 steady/clear. `runAllTests()` now expects **307**; `installAutomationTriggers()`
 must be re-run once for the 19th trigger.
-Next: PR 5 QA (audit target + `QaExemptions`; QA-14 stays gated), PR 6
-Time Clock. Facts PR 3+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
+**PR 5 (QA) is DONE (`bb11d85` + the polish/docs follow-up)** — block:
+`.cycle/blocks/19pre-design-pr5-broad-implement.md`: coverage-first queue
+(`getQaQueue(period).coverage[]` via the pure `qaCoverageRows_`; month/quarter
+periods from `DriveCreatedMs`; `CONFIG.QA_AUDIT_TARGET_PER_PERIOD` = 3 with a
+Script Property override; `QaExemptions` tab + manager-gated `qaSetExemption`,
+eligibility = two COVERED periods at ≥4.5 and no criterion <4); target-aware
+sampler ("Sample the gaps for me (N)"); `DurationSec` + `SkipReason` trailing
+columns (self-healing header; write-once duration; Skip asks a reason); the
+recordings list as a sortable `mtRenderTable_`; pause-and-pin comments (the
+post sends the PIN); two-pane detail; shared transport + score-tone helper on
+My Reviews (QA-14 stays gated — decision 13); Coach-on-this-call →
+`COACH_PREFILL`; two-level crumbs; `umsQaPeriod` (18th localStorage key);
+pure 738 / DOM 103; 12/12 bites; matrix 90 (3 new QA scenarios; the fixture
+calls the verbatim `qaCoverageRows_`). Doc conflicts resolved in the
+codebase's favour: eligibility tightened to two COVERED periods, the handoff's
+Export not built, transport parity shipped despite decision 13, period
+arithmetic server-only. `runAllTests()` still expects **307** (gate cases grew
+IN PLACE). ONE pre-existing DOM flake noted, not fixed: the resume-request test
+fails for the minute after IST midnight (18:30 UTC) — its `'00:01:00'` fixture.
+Next: PR 6 Time Clock. Facts PR 3+ depend on: `mtDateRange_`/`mtPctTone_` now exist in
 `script_core.html` (Metrics is the first consumer; Punctuality + Coverage
 adopt in PR 3); `?fixture=empty` exists in `mock.js` with an empty
 `EMPTY_FIXTURES` map that each block fills (the PR1-4 pin's `OWED` list grows

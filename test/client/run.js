@@ -16449,7 +16449,9 @@ test('QA-23: PR 5 client wiring — period control + pref, coverage-derived stri
   assert.ok(/id="qa-pin-row" aria-live="polite"/.test(raw), 'the pinned state is announced');
   // (e) Q3 ONE transport renderer, listener-bound, used by the detail AND My Reviews.
   assert.strictEqual((qa.match(/function qaRenderTransportFor_\(/g) || []).length, 1, 'exactly one transport renderer');
-  assert.ok(/function qaRenderTransport_\(\) \{\s*qaRenderTransportFor_\(document\.getElementById\('qa-transport'\), document\.getElementById\('qa-audio'\), QA_STATE\);/.test(qa), 'the detail delegates');
+  assert.ok(/function qaRenderTransport_\(\) \{\s*qaRenderTransportFor_\(document\.getElementById\('qa-transport'\), document\.getElementById\('qa-audio'\), QA_STATE, true\);/.test(qa), 'the detail delegates (and asks for the key hint — its handler is the only one)');
+  assert.ok(/\(showKbd \? '<span class="qa-kbd-hint">space · ← →<\/span>' : ''\)/.test(qa), 'the key hint renders only where the keys work');
+  assert.ok(/\.qa-row-actions \{ display: flex; gap: 6px; flex-wrap: nowrap; white-space: nowrap; \}/.test(raw), 'row actions never wrap into a stack (measured: three-line rows)');
   const play = nc(extractFnFrom(qa, 'qaMyRevPlay_'));
   assert.ok(/qaRenderTransportFor_\(el\.querySelector\('\.qa-transport'\), el\.querySelector\('audio'\), \{ speed: 1 \}\)/.test(play), 'My Reviews gets the same transport, per-card speed');
   assert.ok(/qa-score-anchors/.test(qa) && /running avg /.test(qa), 'scorecard anchors + running average');
