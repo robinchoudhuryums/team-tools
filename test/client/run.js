@@ -13641,12 +13641,18 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   // everywhere = no tab exists to migrate) — Agent is the trailing column and
   // the enum agrees.
   // (Rewritten in place for Phase 3 — SharedMs joined as the new trailing
-  // column; the honest bookkeeping when a contract changes under a pin.)
-  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'\]/.test(stripped),
-    'Agent + SharedMs are the trailing recordings columns');
-  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped), 'QAR positions match');
+  // column — and AGAIN for design handoff PR 5, which added DurationSec +
+  // SkipReason and, because a live tab may now exist, a header SELF-HEAL;
+  // the honest bookkeeping when a contract changes under a pin.)
+  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason'\]/.test(stripped),
+    'Agent, SharedMs, DurationSec, SkipReason are the trailing recordings columns');
+  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped) && /DURATION_SEC: 12/.test(stripped) && /SKIP_REASON: 13/.test(stripped), 'QAR positions match');
   const sync = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
-  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0,/.test(sync), 'sync rows carry the trailing empty Agent + unshared SharedMs cells');
+  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0, '', '',/.test(sync), 'sync rows carry the trailing empty Agent / SharedMs / DurationSec / SkipReason cells');
+  const mk = nc(extractRawFunction('Code.js', 'getOrCreateQaSheet_'));
+  assert.ok(/sheet\.getLastColumn\(\) < headers\.length/.test(mk) && /headers\.slice\(have\)/.test(mk),
+    'a short header self-heals in place (a QaRecordings tab provisioned before PR 5 gains the two columns)');
+  assert.ok(/QA_RECORDINGS_HEADERS, \['A', 'B', 'K', 'N'\]/.test(stripped), 'SkipReason (col N) is plain-text-pinned like the other free-text columns');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
@@ -13714,6 +13720,20 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
   assert.strictEqual(P(pool(), 10, {}, () => 0).length, 4, 'count clamps to the pool');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(P(pool(), 0, {}, () => 0))), [], 'count 0 → []');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(P(null, 3, {}, () => 0))), [], 'null candidates → []');
+  // PR 5 (Q4) — TARGET-AWARE: an agent whose done+picked load has reached
+  // the period target is skipped, so a covered agent is never sampled ahead
+  // of one still short; the pick STOPS (short) when everyone left is at
+  // target rather than filling the count with covered agents. Agents ABSENT
+  // from the map are uncapped, and a 4-arg call (no map) is byte-identical
+  // to the pre-PR-5 pick.
+  assert.strictEqual(ids(P(pool(), 3, { A: 3 }, () => 0, { A: 3, B: 3 })), 'b1|u1|b2',
+    'targets present but not reached — the coverage-fair pick is unchanged');
+  assert.strictEqual(ids(P(pool(), 3, { A: 3, B: 2 }, () => 0, { A: 3, B: 3 })), 'u1|b1',
+    'u1 (load 0) first; B reaches its target after ONE pick (2 done + 1 picked) and drops out; A (at target) is never picked — the pick stops short of 3');
+  assert.strictEqual(ids(P(pool(), 3, { A: 3, B: 2 }, () => 0, { A: 3 })), 'u1|b1|b2',
+    'an agent ABSENT from the targets map is uncapped (B keeps taking picks past 3; A stays capped)');
+  assert.strictEqual(ids(P(pool(), 2, {}, () => 0, { B: 0, A: 0 })), 'u1',
+    'a target of 0 (an EXEMPT rep) excludes that agent entirely');
   // Endpoint contract: gate before the store; count bounds; candidates are
   // NEW + UNASSIGNED only; the assignment target is the CALLER (`self`) —
   // never a caller-supplied assignee (routing work to others is the queue's
@@ -13728,7 +13748,14 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
     'candidates are status-new AND unassigned only');
   assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(self\); \}\);/.test(src),
     'assignment writes SELF (the caller email) — no third-party target exists on this endpoint');
-  assert.ok(/function qaSampleRecordings\(count\)/.test(src), 'the signature takes ONLY a count — no assignee param');
+  assert.ok(/function qaSampleRecordings\(count, period\)/.test(src), 'the signature takes a count + the audit period — no assignee param');
+  // PR 5 (Q4): load is counted ONLY for done reviews inside the period, the
+  // roster targets (0 for an exempt rep) ride into the pick, and an all-at-
+  // target pool is a NAMED refusal rather than an empty success.
+  assert.ok(/qaPeriodMatches_\(createdYmd, periodKey\)/.test(src), 'done-review load is period-scoped');
+  assert.ok(/targets\[nm\] = exemptions\[nm\.toLowerCase\(\) \+ '\|' \+ periodKey\] \? 0 : target;/.test(src), 'an exempt rep carries target 0');
+  assert.ok(/qaSamplePick_\(candidates, n, reviewedByAgent, null, targets\)/.test(src), 'the pick is target-aware');
+  assert.ok(/already at target this period/.test(src), 'an empty pick is refused by name');
   assert.ok(/writeAuditLog_\(emp, 'QaSample', '', '', false, 0,\s*'requested=' \+ n \+ '; assigned=' \+ picked\.length, emp\.email\);/.test(src),
     'counts-only audit — file names never reach the shared AuditLog (INV-32/196)');
   assert.ok(/waitLock\(15000\)/.test(src) && /finally \{ lock\.releaseLock\(\); \}/.test(src), 'locked (INV-01)');
@@ -13871,8 +13898,8 @@ test('QA-14: Phase 3 client wiring — gated My Reviews tab, review-only render,
   // Share + sample controls on the reviewer surfaces.
   assert.ok(/const shared = Number\(r\.sharedMs\) > 0;/.test(qaSrc) && /qa-shared-pill/.test(qaSrc),
     'the detail derives shared state from sharedMs and renders the pill');
-  assert.ok(/qaSetRecordingShared\(/.test(qaSrc) && /qaSampleRecordings\(3\)/.test(qaSrc),
-    'share toggle + sample-3 wired to the Phase-3 endpoints');
+  assert.ok(/qaSetRecordingShared\(/.test(qaSrc) && /qaSampleRecordings\(n, QA_STATE\.period \|\| ''\)/.test(qaSrc),
+    'share toggle + "sample the gaps" (count from the coverage gaps, in the current period) wired to the endpoints');
   // Calibration renders only when rows exist, and an unset widest-gap key is
   // an em dash (INV-187).
   assert.ok(/const cal = d\.calibration \|\| \[\];\s*if \(cal\.length\) \{/.test(qaSrc),
@@ -16188,6 +16215,282 @@ test('PR4-6: fixtures + scenarios + hand-offs — the coaching fixtures carry ev
   const qa = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
   assert.ok(/const hint = window\.QA_OPEN_HINT \|\| null;\s*window\.QA_OPEN_HINT = null;\s*if \(hint && hint\.fileId\) qaOpenDetail_\(String\(hint\.fileId\)\);/.test(qa), 'read → null → act, after the queue renders');
   assert.ok(qa.indexOf('window.QA_OPEN_HINT = null') > qa.indexOf('qaRenderQueue_()'), 'consumed only once the queue is on screen (a hint for a recording not in this queue is simply dropped)');
+});
+
+
+// ---------------------------------------------------------------------------
+// Design handoff PR 5 (2026-09-02) — the QA surface: coverage-first queue,
+// pause-and-pin comments, scorecard anchors + tones, two-pane detail, the
+// coaching hand-off, and transport parity on My Reviews.
+console.log('\nDesign handoff PR 5 — QA surface');
+
+test('QA-19: qaCoverageRows_ behavioural — one row per roster name, case-insensitive attribution, period split, null-not-0, exempt target 0', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaCoverageRows_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx);
+  });
+  vm.runInContext('const QA_EXEMPT_AVG_MIN = 4.5; const QA_EXEMPT_CRIT_MIN = 4;', ctx);
+  const C = ctx.qaCoverageRows_;
+  const rec = (fileId, agent, status, ymd, statusMs) => ({ fileId, agent, status, createdYmd: ymd, statusMs: statusMs || 0 });
+  const card = (fileId, ratings) => ({ fileId, empId: 'R1', ratings });
+  const recs = [
+    rec('d1', 'David Mishra', 'done', '2026-09-02', 100), rec('d2', 'david mishra', 'done', '2026-09-03', 300),   // case-insensitive
+    rec('d3', 'David Mishra', 'done', '2026-09-04', 200),
+    rec('p1', 'David Mishra', 'done', '2026-08-20', 50), rec('p2', 'David Mishra', 'done', '2026-08-21', 50), rec('p3', 'David Mishra', 'done', '2026-08-22', 50),
+    rec('m1', 'Maria Garcia', 'done', '2026-09-01', 10),
+    rec('a1', 'Ana Reyes', 'in_review', '2026-09-01', 0),           // not done → not sampled
+    rec('x1', 'Nobody Known', 'done', '2026-09-01', 0),             // off-roster → no row
+    rec('o1', 'Maria Garcia', 'done', '2026-06-01', 0),             // two periods back → neither bucket, but lastReviewed counts
+  ];
+  const cards = [
+    card('d1', { a: 5, b: 5, c: 4 }), card('d2', { a: 5, b: 5, c: 5 }), card('d3', { a: 4, b: 5, c: 5 }),
+    card('p1', { a: 5, b: 5 }), card('p2', { a: 5, b: 4 }), card('p3', { a: 5, b: 5 }),
+    card('m1', { a: 3, b: 3, c: 4 }),
+    card('x1', { a: 1 }),
+  ];
+  const rows = JSON.parse(JSON.stringify(C(recs, cards, ['Maria Garcia', 'David Mishra', 'Ana Reyes', 'Sofia Nguyen'], '2026-09', 3, { 'sofia nguyen|2026-09': true }, '2026-08')));
+  assert.strictEqual(rows.map((r) => r.name).join('|'), 'Ana Reyes|David Mishra|Maria Garcia|Sofia Nguyen', 'one row per roster name, sorted; off-roster agents get NO row');
+  const david = rows[1], maria = rows[2], ana = rows[0], sofia = rows[3];
+  assert.strictEqual(david.sampled, 3, 'done recordings in the period count, case-insensitively');
+  assert.strictEqual(david.prevSampled, 3, 'the previous period is bucketed alongside');
+  assert.strictEqual(david.avg, 4.78, 'avg = mean of the latest cards\' own means (rounded to 2dp)');
+  assert.strictEqual(david.minCriterion, 4, 'the lowest single rating across the period');
+  assert.strictEqual(david.prevAvg, 4.83);
+  assert.strictEqual(david.prevMinCriterion, 4);
+  assert.strictEqual(david.eligible, true, 'two COVERED periods at 4.5+ with no criterion under 4 → eligible');
+  assert.strictEqual(david.lastReviewedMs, 300, 'last review = max statusMs of done recordings (any period)');
+  assert.strictEqual(maria.sampled, 1);
+  assert.strictEqual(maria.avg, 3.33);
+  assert.strictEqual(maria.eligible, false, 'short this period → not eligible');
+  assert.strictEqual(maria.prevAvg, null, 'no previous-period cards → null, never 0 (INV-187)');
+  assert.strictEqual(ana.sampled, 0, 'an in-review recording is not sampled');
+  assert.strictEqual(ana.avg, null, 'no cards → null');
+  assert.strictEqual(ana.target, 3);
+  assert.strictEqual(sofia.exempt, true);
+  assert.strictEqual(sofia.target, 0, 'an exempt rep owes nothing this period');
+  assert.strictEqual(sofia.eligible, false, 'an already-exempt rep is not re-offered');
+  // A recording with a card but no valid rating contributes to sampled, not to avg.
+  const rows2 = JSON.parse(JSON.stringify(C([rec('z', 'Zed', 'done', '2026-09-05', 1)], [card('z', { a: 9 })], ['Zed'], '2026-09', 3, {}, '2026-08')));
+  assert.strictEqual(rows2[0].sampled, 1);
+  assert.strictEqual(rows2[0].avg, null, 'an out-of-range rating is not a score');
+  assert.strictEqual(rows2[0].cardCount, 0);
+  // Empty inputs → an honest empty list, never a throw.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(C([], [], [], '2026-09', 3, {}, '2026-08'))), []);
+});
+
+test('QA-21: audit periods, eligibility, exemption + duration + skip contracts', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');   // INV-188
+  const ctx = {};
+  vm.createContext(ctx);
+  ['qaPeriodValid_', 'qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPrevPeriod_', 'qaPeriodLabel_', 'qaPeriodBounds_', 'qaPeriodOptions_', 'qaExemptEligible_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx);
+  });
+  vm.runInContext('const QA_EXEMPT_AVG_MIN = 4.5; const QA_EXEMPT_CRIT_MIN = 4;', ctx);
+  // Periods: month or quarter keys only; the previous period wraps the year;
+  // labels and bounds are exact; matching reads both shapes.
+  assert.ok(ctx.qaPeriodValid_('2026-09') && ctx.qaPeriodValid_('2026-Q3'));
+  assert.ok(!ctx.qaPeriodValid_('2026-13') && !ctx.qaPeriodValid_('2026-Q5') && !ctx.qaPeriodValid_('') && !ctx.qaPeriodValid_('sept'));
+  assert.strictEqual(ctx.qaPrevPeriod_('2026-01'), '2025-12');
+  assert.strictEqual(ctx.qaPrevPeriod_('2026-Q1'), '2025-Q4');
+  assert.strictEqual(ctx.qaPrevPeriod_('junk'), '');
+  assert.strictEqual(ctx.qaPeriodLabel_('2026-09'), 'Sep 2026');
+  assert.strictEqual(ctx.qaPeriodLabel_('2026-Q3'), 'Q3 2026');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaPeriodBounds_('2026-02'))), { start: '2026-02-01', end: '2026-02-28' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaPeriodBounds_('2028-02'))), { start: '2028-02-01', end: '2028-02-29' }, 'leap year');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaPeriodBounds_('2026-Q4'))), { start: '2026-10-01', end: '2026-12-31' });
+  assert.strictEqual(ctx.qaPeriodBounds_('x'), null);
+  assert.ok(ctx.qaPeriodMatches_('2026-09-14', '2026-09') && ctx.qaPeriodMatches_('2026-09-14', '2026-Q3') && !ctx.qaPeriodMatches_('2026-09-14', '2026-08') && !ctx.qaPeriodMatches_('', '2026-09'));
+  assert.strictEqual(JSON.parse(JSON.stringify(ctx.qaPeriodOptions_('2026-09-02'))).map((o) => o.key + '=' + o.label).join('|'),
+    '2026-09=Sep 2026|2026-Q3=Q3 2026|2026-Q2=Q2 2026', 'options: this month, this quarter, the previous quarter');
+  // Eligibility (operator decision 6): two COVERED periods at 4.5+ with no
+  // criterion under 4 — a rep short in either, an unscored one, or an exempt
+  // (target 0) one is never eligible.
+  const E = ctx.qaExemptEligible_;
+  const base = { sampled: 3, target: 3, prevSampled: 3, avg: 4.6, prevAvg: 4.5, minCriterion: 4, prevMinCriterion: 4 };
+  assert.strictEqual(E(base), true);
+  assert.strictEqual(E(Object.assign({}, base, { sampled: 2 })), false, 'short this period');
+  assert.strictEqual(E(Object.assign({}, base, { prevSampled: 0 })), false, 'nothing last period — silence is not merit');
+  assert.strictEqual(E(Object.assign({}, base, { avg: 4.49 })), false, 'avg under 4.5');
+  assert.strictEqual(E(Object.assign({}, base, { prevMinCriterion: 3 })), false, 'a criterion under 4 last period');
+  assert.strictEqual(E(Object.assign({}, base, { avg: null })), false, 'unscored');
+  assert.strictEqual(E(Object.assign({}, base, { target: 0 })), false, 'exempt (target 0) is not re-eligible');
+  assert.strictEqual(E(null), false);
+  // qaSetExemption — MANAGER-gated (not merely QA), locked, append-only, the
+  // audit row carries period + flag ONLY (never the employee name — INV-196).
+  const ex = nc(extractRawFunction('Code.js', 'qaSetExemption'));
+  assert.ok(/'Manager access required\.'/.test(ex) && !/canSeeQa_/.test(ex), 'exemptions are a manager decision');
+  assert.ok(ex.indexOf("'Manager access required.'") < ex.indexOf('getOrCreateQaExemptionsSheet_'), 'gate before the store');
+  assert.ok(/qaPeriodValid_\(per\)/.test(ex), 'the period is validated');
+  assert.ok(/sheet\.appendRow\(\[name, per, String\(emp\.email \|\| ''\), Date\.now\(\), active \? 'TRUE' : 'FALSE'\]\);/.test(ex), 'append-only ledger row');
+  assert.ok(/writeAuditLog_\(emp, 'QaExemption', '', '', false, 0, 'period=' \+ per \+ '; active=' \+ active, emp\.email\);/.test(ex),
+    'the audit row never carries the employee name');
+  assert.ok(/waitLock\(15000\)/.test(ex) && /finally \{ lock\.releaseLock\(\); \}/.test(ex), 'locked (INV-01)');
+  // qaReadExemptions_ — latest row wins, Sheets TRUE coercion handled, never provisions.
+  const rd = nc(extractRawFunction('Code.js', 'qaReadExemptions_'));
+  assert.ok(/getSheetByName\(QA_EXEMPTIONS_TAB\)/.test(rd) && !/getOrCreate/.test(rd), 'read-only — never provisions the tab');
+  assert.ok(/a === true \|\| String\(a \|\| ''\)\.trim\(\)\.toUpperCase\(\) === 'TRUE'/.test(rd), 'a coerced boolean TRUE and the string both read as active');
+  assert.ok(/else delete out\[nm \+ '\|' \+ per\];/.test(rd), 'a later revoke row clears the grant (latest wins)');
+  // qaSetRecordingDuration — QA-gated, bounded, write-ONCE, no audit row.
+  const du = nc(extractRawFunction('Code.js', 'qaSetRecordingDuration'));
+  assert.ok(/'QA access required\.'/.test(du) && du.indexOf("'QA access required.'") < du.indexOf('getOrCreateQaRecordingsSheet_'));
+  assert.ok(/n >= 1 && n <= QA_DURATION_MAX_SEC/.test(du), 'bounded');
+  assert.ok(/if \(have > 0\) return \{ success: true, durationSec: have, written: false \};/.test(du), 'a filled cell is never overwritten');
+  assert.ok(!/writeAuditLog_/.test(du), 'metadata, not a review action — no audit row');
+  // qaSetRecordingStatus — a skip carries a bounded reason; any other status clears it.
+  const st = nc(extractRawFunction('Code.js', 'qaSetRecordingStatus'));
+  assert.ok(/function qaSetRecordingStatus\(fileId, status, reason\)/.test(st));
+  assert.ok(/const why = st === 'skipped' \? String\(reason \|\| ''\)\.trim\(\)\.substring\(0, QA_SKIP_REASON_MAX\) : '';/.test(st), 'reason bounded; cleared off a non-skip');
+  assert.ok(/sheet\.getRange\(found\.rowIdx, QAR\.SKIP_REASON \+ 1\)\.setValue\(why\);/.test(st));
+  assert.ok(/'fileId=' \+ fid \+ '; status=' \+ st, emp\.email\);/.test(st) && !/why, emp\.email/.test(st), 'the reason (free text, may name the caller) never reaches the shared AuditLog');
+  // getQaQueue — the coverage join is best-effort WITH its outcome carried (INV-187).
+  const q = nc(extractRawFunction('Code.js', 'getQaQueue'));
+  assert.ok(/function getQaQueue\(period\)/.test(q));
+  assert.ok(/const periodKey = qaPeriodValid_\(period\) \? String\(period\)\.trim\(\) : periodOptions\[0\]\.key;/.test(q), 'an unknown period lands on the current month');
+  assert.ok(/base\.coverage = qaCoverageRows_\(items, latest, agentOptions, periodKey, target, qaReadExemptions_\(\), qaPrevPeriod_\(periodKey\)\);/.test(q));
+  assert.ok(/catch \(e\) \{ base\.coverage = \[\]; base\.coverageUnavailable = true; \}/.test(q), 'a failed join is NAMED, not an empty table');
+  assert.ok(/agentEmpId: /.test(q) && /rosterIdByName\[/.test(q), 'each recording carries the roster id for the coaching hand-off');
+  // The CONFIG target has a reader and a bounded property override.
+  const tg = nc(extractRawFunction('Code.js', 'qaAuditTarget_'));
+  assert.ok(/CONFIG\.QA_AUDIT_TARGET_PER_PERIOD/.test(tg) && /n >= 1 && n <= 50/.test(tg));
+});
+
+test('QA-22: client pure helpers — qaParseClock_, qaScoreTone_, qaCoverageTier_, qaCoverageSummary_, qaDayDiff_', () => {
+  const parse = loadFunction(sb, 'qa/script_qa.html', 'qaParseClock_');
+  assert.strictEqual(parse('4:05'), 245);
+  assert.strictEqual(parse('1:01:05'), 3665);
+  assert.strictEqual(parse('90'), 90, 'bare seconds');
+  assert.strictEqual(parse('0:00'), 0);
+  assert.strictEqual(parse('4:65'), null, 'seconds ≥ 60 is not a clock');
+  assert.strictEqual(parse('abc'), null);
+  assert.strictEqual(parse(''), null, 'blank is NOT zero — a typo must never post at 0:00');
+  const tone = loadFunction(sb, 'qa/script_qa.html', 'qaScoreTone_');
+  assert.strictEqual(tone(1), 'destructive'); assert.strictEqual(tone(2), 'destructive');
+  assert.strictEqual(tone(3), ''); assert.strictEqual(tone(3.9), '');
+  assert.strictEqual(tone(4), 'accent'); assert.strictEqual(tone(5), 'accent');
+  assert.strictEqual(tone(null), ''); assert.strictEqual(tone('x'), '');
+  const tier = loadFunction(sb, 'qa/script_qa.html', 'qaCoverageTier_');
+  assert.strictEqual(tier({ exempt: true, sampled: 0, target: 0 }).key, 'exempt');
+  assert.strictEqual(tier({ sampled: 3, target: 3 }).key, 'covered');
+  assert.strictEqual(tier({ sampled: 0, target: 3 }).key, 'notstarted');
+  assert.strictEqual(tier({ sampled: 1, target: 3, avg: 4.2 }).key, 'short');
+  assert.strictEqual(tier({ sampled: 1, target: 3, avg: 3.4 }).key, 'shortlow');
+  assert.strictEqual(tier({ sampled: 1, target: 3, avg: null }).key, 'short', 'no score is not a LOW score');
+  const dd = loadFunction(sb, 'qa/script_qa.html', 'qaDayDiff_');
+  assert.strictEqual(dd('2026-09-02', '2026-09-30'), 28);
+  assert.strictEqual(dd('2026-09-30', '2026-09-02'), -28);
+  assert.strictEqual(dd('x', '2026-09-02'), null);
+  vm.runInContext('var qaDayDiff_ = ' + dd.toString(), sb);
+  const sum = loadFunction(sb, 'qa/script_qa.html', 'qaCoverageSummary_');
+  const rows = [
+    { name: 'A', sampled: 3, target: 3, cardCount: 3, avg: 4.5, prevSampled: 3, prevAvg: 4.0 },
+    { name: 'B', sampled: 1, target: 3, cardCount: 1, avg: 3.0, prevSampled: 0, prevAvg: null },
+    { name: 'C', sampled: 5, target: 3, cardCount: 5, avg: 4.0, prevSampled: 2, prevAvg: 3.0 },   // over-sampled: capped at target
+    { name: 'X', sampled: 0, target: 0, cardCount: 0, avg: null, prevSampled: 0, prevAvg: null, exempt: true },
+    { name: 'D', sampled: 0, target: 3, cardCount: 0, avg: null, prevSampled: 0, prevAvg: null },
+  ];
+  const s1 = JSON.parse(JSON.stringify(sum(rows, '2026-09-02', '2026-09-30')));
+  assert.strictEqual(s1.sampled, 7, '3 + 1 + min(5,3) + 0 — an over-sampled rep does not cover for a short one');
+  assert.strictEqual(s1.target, 12, 'the exempt rep owes nothing');
+  assert.strictEqual(s1.pct, 58);
+  assert.strictEqual(s1.short, 2); assert.strictEqual(s1.shortNames.join('|'), 'B|D');
+  assert.strictEqual(s1.gaps, 5, 'the sample-the-gaps count: (3−1) + (3−0)');
+  assert.strictEqual(s1.avg, 4.06, 'call-weighted: (4.5·3 + 3·1 + 4·5) / 9 = 36.5 / 9');
+  assert.strictEqual(s1.prevAvg, 3.6, 'previous period weighted by sampled: (4·3 + 3·2) / 5');
+  assert.strictEqual(s1.delta, 0.46);
+  assert.strictEqual(s1.below.join('|'), 'B');
+  assert.strictEqual(s1.daysLeft, 28);
+  const s2 = JSON.parse(JSON.stringify(sum([], '2026-09-02', 'x')));
+  assert.strictEqual(s2.pct, null, 'no target → no percentage, never 0/0 = NaN');
+  assert.strictEqual(s2.avg, null); assert.strictEqual(s2.delta, null); assert.strictEqual(s2.daysLeft, null);
+});
+
+test('QA-23: PR 5 client wiring — period control + pref, coverage-derived strip, skip reason, pause-and-pin, one transport, hand-off, duration write-back, scenarios', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');   // INV-188
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  const qa = nc(extractScript('qa/script_qa.html'));
+  // (a) The period strip renders the SERVER's options (no client mirror of the
+  // arithmetic); the pick is validated against them, persisted per browser,
+  // and the server's echoed key wins over the stored wish.
+  const strip = nc(extractFnFrom(qa, 'qaPeriodStripHtml_'));
+  assert.ok(/d\.periodOptions/.test(strip) && /toolbar-tab/.test(strip) && /aria-pressed="' \+ on \+ '"/.test(strip), 'the strip is a .toolbar-tabs over periodOptions with aria-pressed');
+  const setP = nc(extractFnFrom(qa, 'qaSetPeriod_'));
+  assert.ok(/\(d\.periodOptions \|\| \[\]\)\.some\(function \(o\) \{ return o\.key === key; \}\)/.test(setP) && /qaWritePeriodPref_\(key\)/.test(setP), 'validated against the shipped options, then persisted');
+  assert.ok(/var QA_PERIOD_KEY = 'umsQaPeriod';/.test(qa), 'the localStorage key is named (CLAUDE.md count 18)');
+  const load = nc(extractFnFrom(qa, 'qaLoadQueue_'));
+  assert.ok(/if \(data\.period\) QA_STATE\.period = String\(data\.period\);/.test(load) && /\.getQaQueue\(QA_STATE\.period \|\| ''\)/.test(load), 'the echoed period is the truth; the RPC carries the wish');
+  // (b) The summary strip is DERIVED from the coverage rows the table renders
+  // (one source), and an unavailable join renders the warn card, never an
+  // empty table (INV-187/175).
+  const cov = nc(extractFnFrom(qa, 'qaCoverageSectionHtml_'));
+  assert.ok(/const sum = qaCoverageSummary_\(rows, d\.todayYmd, d\.periodEnd\);/.test(cov) && /qaSummaryStripHtml_\(sum, label\)/.test(cov), 'strip from the same rows');
+  assert.ok(/if \(d\.coverageUnavailable\) \{[\s\S]{0,400}errorStateHtml_\(/.test(cov), 'coverageUnavailable → errorStateHtml_');
+  assert.ok(/rowClass: function \(r\) \{\s*const k = qaCoverageTier_\(r\)\.key;/.test(cov) && /const tier = qaCoverageTier_\(r\);[\s\S]{0,200}kicker-pill/.test(cov), 'row tint AND status pill come from the ONE tier rule');
+  assert.ok(/if \(d\.isManager\) \{[\s\S]{0,600}qaSetExemption_\(/.test(cov), 'exemption controls are manager-only');
+  assert.ok(/qaSampleRecordings\(n, QA_STATE\.period \|\| ''\)/.test(qa) && /Math\.max\(1, Math\.min\(10, Number\(sum\.gaps\) \|\| 0\)\)/.test(qa), 'sample-the-gaps count = Σ(target − sampled), clamped to the endpoint bound');
+  // (c) Skip asks WHY and posts the reason; the queue renders it; Unattributed is warn-toned; Length is em-dash-when-unknown.
+  const skip = nc(extractFnFrom(qa, 'qaSkip_'));
+  assert.ok(/uiPrompt\(/.test(skip) && /\.qaSetRecordingStatus\(r\.fileId, 'skipped', String\(v\)\.trim\(\)\)/.test(skip));
+  const recs = nc(extractFnFrom(qa, 'qaRecordingsSectionHtml_'));
+  assert.ok(/r\.status === 'skipped' && r\.skipReason \? '<span class="qa-skip-why">' \+ esc\(r\.skipReason\)/.test(recs), 'the skip reason renders on the row, escaped');
+  assert.ok(/class="qa-unattributed">Unattributed</.test(recs) && /Number\(r\.durationSec\) > 0 \? esc\(qaFmtClock_\(r\.durationSec\)\) : '—'/.test(recs));
+  assert.ok(/\['skipped', 'Skipped'\]/.test(recs) && /sort: QA_STATE\.sort, onSort: 'qaSortQueue_'/.test(recs), 'a Skipped chip + sortable headers');
+  assert.ok(!/function qaCardHtml_/.test(qa), 'the card list is retired (INV-184)');
+  // (d) Q1 pause-and-pin: the FIRST input pins + pauses; the submit posts the
+  // PIN (never the live currentTime); the tick no longer relabels a button.
+  const onIn = nc(extractFnFrom(qa, 'qaOnCommentInput_'));
+  assert.ok(/if \(QA_STATE\.pin\) return;/.test(onIn) && /audio\.pause\(\)/.test(onIn) && /QA_STATE\.pin = \{ atSec: /.test(onIn));
+  const sub = nc(extractFnFrom(qa, 'qaSubmitComment_'));
+  assert.ok(/const atSec = qaPinnedAtSec_\(\);/.test(sub) && !/audio\.currentTime/.test(sub), 'the post uses the pin, never the live playhead');
+  assert.ok(/if \(atSec == null\) \{ showToast\(/.test(sub), 'an unparseable pin is refused, never posted at 0');
+  const tick = nc(extractFnFrom(qa, 'qaTickPlayback_'));
+  assert.ok(!/Comment at/.test(tick) && !/qa-comment-btn/.test(tick), 'the tick no longer relabels the composer (the Q1 bug)');
+  assert.ok(/ta\.addEventListener\('input', qaOnCommentInput_\)/.test(qa), 'the pin listener is bound at render');
+  assert.ok(/id="qa-pin-row" aria-live="polite"/.test(raw), 'the pinned state is announced');
+  // (e) Q3 ONE transport renderer, listener-bound, used by the detail AND My Reviews.
+  assert.strictEqual((qa.match(/function qaRenderTransportFor_\(/g) || []).length, 1, 'exactly one transport renderer');
+  assert.ok(/function qaRenderTransport_\(\) \{\s*qaRenderTransportFor_\(document\.getElementById\('qa-transport'\), document\.getElementById\('qa-audio'\), QA_STATE\);/.test(qa), 'the detail delegates');
+  const play = nc(extractFnFrom(qa, 'qaMyRevPlay_'));
+  assert.ok(/qaRenderTransportFor_\(el\.querySelector\('\.qa-transport'\), el\.querySelector\('audio'\), \{ speed: 1 \}\)/.test(play), 'My Reviews gets the same transport, per-card speed');
+  assert.ok(/qa-score-anchors/.test(qa) && /running avg /.test(qa), 'scorecard anchors + running average');
+  const list = nc(extractFnFrom(qa, 'qaScorecardListHtml_'));
+  assert.ok((list.match(/qaScoreTone_\(/g) || []).length >= 2, 'chips + the per-card average are toned by the shared rule');
+  assert.ok(/qa-callout/.test(nc(extractFnFrom(qa, 'qaRenderMyReviews_'))), 'My Reviews leads with the read-only callout');
+  // (f) Q7 hand-off: manager-only, needs a ROSTER id, parks COACH_PREFILL
+  // (empId + qaFileId + the comments as the narrative) then enters coaching.
+  const coach = nc(extractFnFrom(qa, 'qaCoachOnThis_'));
+  assert.ok(/if \(!r \|\| !r\.agentEmpId\) return;/.test(coach) && /window\.COACH_PREFILL = \{ empId: r\.agentEmpId, qaFileId: r\.fileId, what: what \};/.test(coach) && /enterTool\('develop', 'coaching'\)/.test(coach));
+  const panel = nc(extractFnFrom(qa, 'qaRenderCoachPanel_'));
+  assert.ok(/if \(!d\.isManager\) \{ host\.hidden = true;/.test(panel), 'hidden for non-managers');
+  // (g) Q5 duration write-back: once, after loadedmetadata, fire-and-forget.
+  const asm = nc(extractFnFrom(qa, 'qaAssembleAudio_'));
+  assert.ok(/addEventListener\('loadedmetadata'[\s\S]{0,300}qaWriteBackDuration_\(QA_STATE\.det, QA_STATE\.durationSec\)/.test(asm));
+  const wb = nc(extractFnFrom(qa, 'qaWriteBackDuration_'));
+  assert.ok(/if \(!rec \|\| Number\(rec\.durationSec\) > 0\) return;/.test(wb) && /\.qaSetRecordingDuration\(rec\.fileId, n\)/.test(wb));
+  // (h) Two-pane detail with a real breakpoint (A2) and the app-bar on all three tabs.
+  assert.ok(/@media \(min-width: 1000px\) \{\s*\.qa-det-grid \{ grid-template-columns: minmax\(0, 1\.05fr\) minmax\(0, 1fr\); \}/.test(raw));
+  assert.ok(/\.qa-det-grid \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(raw), 'single column below the breakpoint');
+  assert.strictEqual((qa.match(/qaAppBarHtml_\('(Recordings|Stats|My Reviews)'/g) || []).length, 3, 'QA › <tab> app-bar on all three tabs');
+  assert.ok(/class="breadcrumb"><span>QA<\/span>/.test(qa), 'two-level crumbs (operator decision 10)');
+  // (i) Scenarios + fixture: dark parity, the empty twin, the mobile detail;
+  // the fixture's coverage rows come from the VERBATIM join (INV-185).
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  ['qa-queue-dark-wide', 'qa-queue-empty-light-wide', 'qa-detail-light-mobile'].forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, n + ' scenario exists'));
+  assert.ok(/qa-queue-empty-light-wide[^\n]*\?fixture=empty/.test(shoot));
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/var coverage = qaCoverageRows_\(recs, qaLatestScorecards_\(cards\), agentOptions, period, 3, exemptions, prev\);/.test(mock), 'the fixture CALLS the verbatim join');
+  assert.ok(/skipReason: 'Test call/.test(mock) && /exemptions\['sofia nguyen\|' \+ period\] = true/.test(mock), 'fixture: a skipped recording + an exempt rep');
+  const emptyIdx = mock.indexOf('var EMPTY_FIXTURES');
+  assert.ok(mock.indexOf('getQaQueue: (function', emptyIdx) > emptyIdx, 'the empty twin exists');
+  // Recording-item fixture keys mirror the server push literal (INV-185).
+  const qRaw = extractRawFunction('Code.js', 'getQaQueue');
+  const pushBlock = qRaw.slice(qRaw.indexOf('items.push({'), qRaw.indexOf('});', qRaw.indexOf('items.push({')));
+  const keys = [];
+  let km; const keyRe = /^\s+(\w+): /gm;
+  while ((km = keyRe.exec(pushBlock)) !== null) if (keys.indexOf(km[1]) < 0) keys.push(km[1]);
+  assert.ok(keys.indexOf('durationSec') >= 0 && keys.indexOf('agentEmpId') >= 0 && keys.length >= 14, 'sanity: keys extracted');
+  const recFn = mock.slice(mock.indexOf('var rec = function (id, name, ymd'), mock.indexOf('recs.push(r); return r;'));
+  keys.forEach((k) => assert.ok(recFn.indexOf(k + ':') >= 0, 'fixture recording carries server key "' + k + '" (INV-185)'));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -94,6 +94,154 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
   }
   return out;
 }
+// PR 5 (Q4): the QA fixture's audit periods + coverage rows come from the
+// SERVER's own period arithmetic and coverage join, not a paraphrase
+// (INV-185) — the fixture CALLS these over its recordings + cards.
+const QA_EXEMPT_AVG_MIN = 4.5;
+const QA_EXEMPT_CRIT_MIN = 4;
+function qaPeriodValid_(key) {
+  const k = String(key || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) || /^\d{4}-Q[1-4]$/.test(k);
+}
+function qaPeriodKeysForYmd_(ymd) {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const mo = Number(m[2]);
+  if (!(mo >= 1 && mo <= 12)) return null;
+  return { month: m[1] + '-' + m[2], quarter: m[1] + '-Q' + Math.ceil(mo / 3) };
+}
+function qaPeriodMatches_(ymd, key) {
+  const ks = qaPeriodKeysForYmd_(ymd);
+  if (!ks) return false;
+  return ks.month === key || ks.quarter === key;
+}
+function qaPrevPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) - 1;
+    if (mo < 1) { mo = 12; y--; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) - 1;
+    if (q < 1) { q = 4; y--; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+function qaPeriodLabel_(key) {
+  const k = String(key || '').trim();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) return MON[Number(m[2]) - 1] + ' ' + m[1];
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) return 'Q' + m[2] + ' ' + m[1];
+  return k;
+}
+function qaPeriodBounds_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), mo = Number(m[2]);
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    return { start: k + '-01', end: k + '-' + (lastDay < 10 ? '0' : '') + lastDay };
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), q = Number(m[2]);
+    const mo1 = (q - 1) * 3 + 1, mo3 = mo1 + 2;
+    const lastDay = new Date(Date.UTC(y, mo3, 0)).getUTCDate();
+    const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return { start: y + '-' + pad(mo1) + '-01', end: y + '-' + pad(mo3) + '-' + pad(lastDay) };
+  }
+  return null;
+}
+function qaPeriodOptions_(todayYmd) {
+  const ks = qaPeriodKeysForYmd_(todayYmd) || { month: '', quarter: '' };
+  const out = [];
+  if (ks.month) out.push({ key: ks.month, label: qaPeriodLabel_(ks.month) });
+  if (ks.quarter) {
+    out.push({ key: ks.quarter, label: qaPeriodLabel_(ks.quarter) });
+    const prev = qaPrevPeriod_(ks.quarter);
+    if (prev) out.push({ key: prev, label: qaPeriodLabel_(prev) });
+  }
+  return out;
+}
+function qaCardStats_(card) {
+  let sum = 0, n = 0, min = Infinity;
+  Object.keys((card && card.ratings) || {}).forEach(function (k) {
+    const v = Number(card.ratings[k]);
+    if (v >= 1 && v <= 5) { sum += v; n++; if (v < min) min = v; }
+  });
+  return n ? { avg: sum / n, min: min, n: n } : null;
+}
+function qaExemptEligible_(row) {
+  if (!row) return false;
+  const target = Number(row.target) || 0;
+  if (!(target > 0)) return false;   // an exempt (target 0) or targetless row is never re-eligible
+  if (!(row.sampled >= target && row.prevSampled >= target)) return false;
+  if (!(row.avg != null && row.prevAvg != null)) return false;
+  if (!(row.avg >= QA_EXEMPT_AVG_MIN && row.prevAvg >= QA_EXEMPT_AVG_MIN)) return false;
+  if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
+  return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
+}
+function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
+  const cardsByFile = {};
+  (latestCards || []).forEach(function (c) {
+    const f = String((c && c.fileId) || '');
+    if (f) (cardsByFile[f] = cardsByFile[f] || []).push(c);
+  });
+  const byName = {};
+  (rosterNames || []).forEach(function (nm) {
+    const n = String(nm || '').trim();
+    if (!n) return;
+    byName[n.toLowerCase()] = { name: n, cur: { sampled: 0, sum: 0, cards: 0, min: Infinity }, prev: { sampled: 0, sum: 0, cards: 0, min: Infinity }, lastReviewedMs: 0 };
+  });
+  (recs || []).forEach(function (r) {
+    if (!r || r.status !== 'done') return;
+    const row = byName[String(r.agent || '').trim().toLowerCase()];
+    if (!row) return;
+    if (Number(r.statusMs) > row.lastReviewedMs) row.lastReviewedMs = Number(r.statusMs);
+    const bucket = qaPeriodMatches_(r.createdYmd, period) ? row.cur
+      : (prevPeriod && qaPeriodMatches_(r.createdYmd, prevPeriod)) ? row.prev : null;
+    if (!bucket) return;
+    bucket.sampled++;
+    (cardsByFile[r.fileId] || []).forEach(function (c) {
+      const st = qaCardStats_(c);
+      if (!st) return;
+      bucket.sum += st.avg; bucket.cards++;
+      if (st.min < bucket.min) bucket.min = st.min;
+    });
+  });
+  const fin = function (b) {
+    return { avg: b.cards ? Math.round((b.sum / b.cards) * 100) / 100 : null,
+             min: b.cards ? b.min : null };
+  };
+  return Object.keys(byName).sort().map(function (k) {
+    const row = byName[k];
+    const cur = fin(row.cur), prev = fin(row.prev);
+    const exempt = !!(exemptions || {})[k + '|' + period];
+    const out = {
+      name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
+      cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
+      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+    };
+    out.eligible = !exempt && qaExemptEligible_(out);
+    return out;
+  });
+}
+function qaLatestScorecards_(cards) {
+  const latest = {};
+  for (let i = 0; i < (cards || []).length; i++) {
+    const c = cards[i] || {};
+    const k = String(c.fileId || '') + '|' + String(c.empId || '');
+    if (!latest[k] || Number(c.createdMs || 0) >= Number(latest[k].createdMs || 0)) latest[k] = c;
+  }
+  return Object.keys(latest).map(function (k) { return latest[k]; });
+}
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -102,6 +250,7 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
   var todayIso = new Date().toISOString().slice(0, 10);
   function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
   function ts(dIso, hms) { return dIso + 'T' + hms; }
+  function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
   function note(i, over) {
     return Object.assign({
@@ -424,28 +573,67 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
     // {recordings, total, cap}. All three status tones + an assigned-to-you
     // and an assigned-to-other pill are on camera; one card carries a
     // comment count.
-    getQaQueue: {
-      members: ['qa.reviewer@umsupply.com', 'teamtools@umsupply.com'],
-      self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
-      // Phase 2 additive fields: per-item `agent`, plus `agentOptions` (roster
-      // names for the detail's datalist) + `criteria` (the scorecard seed) on
-      // the base — shapes mirror the server's return block (INV-185).
-      agentOptions: ['Ana Reyes', 'David Dhruv Mishra', 'Maria Garcia'],
-      criteria: [
+    getQaQueue: (function () {
+      // PR 5 — the queue is coverage-first: the period arithmetic and the
+      // coverage join are the VERBATIM server copies above (INV-185); the
+      // fixture supplies recordings + cards and lets the join produce rows.
+      // Deliberate variety: a rep at target in two periods at 4.5+ (eligible
+      // for exemption), an EXEMPT rep, a zero-sampled rep (not started), a
+      // short rep whose only card is low (short · low), a SKIPPED recording
+      // with its reason, an UNATTRIBUTED recording, and an in-review one.
+      var opts = qaPeriodOptions_(todayIso);
+      var period = opts[0].key, prev = qaPrevPeriod_(period);
+      var prevYmd = qaPeriodBounds_(prev).end;
+      var ms = function (ymd, h) { return new Date(ymd + 'T' + (h || '15') + ':00:00Z').getTime(); };
+      var criteria = [
         { key: 'greeting',      label: 'Greeting & opening' },
         { key: 'communication', label: 'Communication & tone' },
         { key: 'accuracy',      label: 'Accuracy & process' },
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
-      ],
-      // Phase 3 additive per-item field: `sharedMs` (0 = not shared).
-      recordings: [
-        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', agent: '', comments: 0, sharedMs: 0 },
-        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', agent: 'Ana Reyes', comments: 3, sharedMs: 0 },
-        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', agent: 'Maria Garcia', comments: 5, sharedMs: Date.now() - 86400000 },
-      ],
-      total: 3, cap: 200,
-    },
+      ];
+      var self = 'teamtools@umsupply.com';
+      var recs = [], cards = [];
+      var rec = function (id, name, ymd, status, assignee, agent, agentEmpId, extra) {
+        var r = { fileId: id, name: name, sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: ms(ymd), createdYmd: ymd,
+          status: status, statusMs: status === 'done' ? ms(ymd, '18') : 0, assignee: assignee || '',
+          url: 'https://drive.google.com/file/d/' + id + '/view', agent: agent || '', agentEmpId: agentEmpId || '',
+          sharedMs: 0, durationSec: 0, skipReason: '', comments: 0 };
+        Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
+        recs.push(r); return r;
+      };
+      var card = function (fileId, empId, name, ratings, ymd) {
+        cards.push({ scorecardId: 'sc-' + cards.length, fileId: fileId, empId: empId, name: name, ratings: ratings, notes: '', createdMs: ms(ymd, '19') });
+      };
+      // David — 3 done this period + 3 done last period, all 4.5+ (eligible).
+      for (var i = 0; i < 3; i++) {
+        var a = rec('qaFileDavid' + i + 'now', prefixDate(todayIso) + ' inbound 555-020' + i + '.mp3', todayIso, 'done', 'qa.reviewer@umsupply.com', 'David Dhruv Mishra', 'E-1093', { durationSec: 420 + i * 95 });
+        card(a.fileId, 'E-1002', 'QA Reviewer', { greeting: 5, communication: 5, accuracy: 4, resolution: 5, compliance: 5 }, todayIso);
+        var b = rec('qaFileDavid' + i + 'prev', prefixDate(prevYmd) + ' inbound 555-030' + i + '.mp3', prevYmd, 'done', 'qa.reviewer@umsupply.com', 'David Dhruv Mishra', 'E-1093', { durationSec: 380 + i * 60 });
+        card(b.fileId, 'E-1002', 'QA Reviewer', { greeting: 5, communication: 4, accuracy: 5, resolution: 5, compliance: 5 }, prevYmd);
+      }
+      // Maria — 1 of 3 done this period, and it scored low (short · low).
+      var mc = rec('qaFileCccccccc3', prefixDate(todayIso) + ' close order review.wav', todayIso, 'done', 'qa.reviewer@umsupply.com', 'Maria Garcia', 'E-1091', { mime: 'audio/wav', sizeBytes: 28311552, comments: 5, sharedMs: Date.now() - 86400000, durationSec: 611 });
+      card(mc.fileId, 'E-1002', 'QA Reviewer', { greeting: 3, communication: 3, accuracy: 3, resolution: 4, compliance: 3 }, todayIso);
+      // Ana — in review only (not started this period); the open detail scenario.
+      rec('qaFileBbbbbbbb2', prefixDate(todayIso) + ' resupply follow-up.mp3', todayIso, 'in_review', self, 'Ana Reyes', 'E-1088', { sizeBytes: 11534336, comments: 3, durationSec: 542 });
+      // Unattributed + new (the Unattributed warn cell); skipped with a reason.
+      rec('qaFileAaaaaaaa1', prefixDate(todayIso) + ' inbound 555-0141.mp3', todayIso, 'new', '', '', '');
+      rec('qaFileEeeeeeee5', prefixDate(todayIso) + ' inbound 555-0199.mp3', todayIso, 'skipped', self, '', '', { skipReason: 'Test call from the internal extension — no patient on the line.' });
+      recs.sort(function (x, y) { return y.createdMs - x.createdMs; });
+      var agentOptions = ['Ana Reyes', 'David Dhruv Mishra', 'Maria Garcia', 'Sofia Nguyen'];
+      var exemptions = {}; exemptions['sofia nguyen|' + period] = true;
+      var coverage = qaCoverageRows_(recs, qaLatestScorecards_(cards), agentOptions, period, 3, exemptions, prev);
+      return {
+        members: ['qa.reviewer@umsupply.com', self],
+        self: self, isManager: true, folderConfigured: true,
+        agentOptions: agentOptions, criteria: criteria,
+        period: period, periodOptions: opts, target: 3, todayYmd: todayIso,
+        periodEnd: qaPeriodBounds_(period).end,
+        recordings: recs, total: recs.length, cap: 200,
+        coverage: coverage,
+      };
+    })(),
     // QA Phase 2 — per-agent stats (shape mirrors getQaStats' return block:
     // agents rows from qaStatsAggregate_ incl. the visible '(unassigned)'
     // bucket and a null per-criterion average rendering as an em dash).
@@ -1297,6 +1485,14 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
       analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
     getMyCoaching: { items: [], businessDayMinutes: 540 },
+    // PR 5 (QA): a configured store with nothing indexed and no roster rows —
+    // the coverage block's own empty state + the recordings empty state.
+    getQaQueue: (function () {
+      var opts = qaPeriodOptions_(todayIso);
+      return { members: [], self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
+        agentOptions: [], criteria: [], period: opts[0].key, periodOptions: opts, target: 3, todayYmd: todayIso,
+        periodEnd: qaPeriodBounds_(opts[0].key).end, recordings: [], total: 0, cap: 200, coverage: [] };
+    })(),
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],

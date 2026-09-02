@@ -143,6 +143,12 @@ const SCENARIOS = [
   // uncovered scenario (noted in the Visual Audit Stage).
   ['qa-queue-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', ''],
   ['qa-queue-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', ''],
+  // PR 5 (design handoff): dark parity for the coverage-first queue, the
+  // genuinely-empty store (`?fixture=empty` — coverage + recordings empty
+  // states), and the two-pane detail at a phone width.
+  ['qa-queue-dark-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'dark', ''],
+  ['qa-queue-empty-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', '?fixture=empty'],
+  ['qa-detail-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', '', "qaOpenDetail_('qaFileBbbbbbbb2')"],
   // QA Phase 2 — the per-agent stats table (mtRenderTable_ with dynamic
   // criterion columns; em dashes for null averages, the '(unassigned)' row).
   ['qa-stats-light-wide', { tool: 'qa', tab: 'qaStats' }, WIDE, 'light', ''],

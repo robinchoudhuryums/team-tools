@@ -1849,6 +1849,91 @@ test('a hostile stored time renders as a value, never as markup', () => {
 // hint is read FIRST, nulled, then acted on), prefilled, named, closes on
 // Escape through the shell's topmost-overlay path, and its onClose is
 // idempotent (the ensureOverlay contract).
+// Design handoff PR 5 (Q1) — pause-and-pin comments. The old composer read
+// audio.currentTime at SUBMIT, so a comment landed wherever the player had
+// drifted to while the reviewer typed (and the "Comment at m:ss" label
+// changed under them). Now the FIRST keystroke pauses + pins; the pin is
+// editable; the post uses the pin. A stubbed <audio> stands in for jsdom's
+// unimplemented media element.
+test('QA-20: the first keystroke pauses and PINS; the post sends the pin, not the drifted playhead', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeQa: true });
+  const rec = { fileId: 'qaFileBbbbbbbb2', name: 'resupply follow-up.mp3', sizeBytes: 100, mime: 'audio/mpeg', createdMs: 1, createdYmd: '2026-09-02',
+    status: 'in_review', statusMs: 0, assignee: 'me@umsupply.com', url: '', agent: 'Ana Reyes', agentEmpId: 'E-1088', sharedMs: 0, durationSec: 0, skipReason: '', comments: 0 };
+  h.run.respond('getQaQueue', () => ({ members: ['me@umsupply.com'], self: 'me@umsupply.com', isManager: true, folderConfigured: true,
+    agentOptions: ['Ana Reyes'], criteria: [], period: '2026-09', periodOptions: [{ key: '2026-09', label: 'Sep 2026' }], target: 3,
+    todayYmd: '2026-09-02', periodEnd: '2026-09-30', recordings: [rec], total: 1, cap: 200, coverage: [] }));
+  h.run.respond('qaListComments', () => ({ comments: [], canModerate: false }));
+  h.run.respond('qaListScorecards', () => ({ scorecards: [], criteria: [], selfEmpId: 'E-1' }));
+  h.run.respond('qaGetAudioChunk', () => ({ success: false, error: 'no audio in jsdom' }));
+  const posted = [];
+  h.run.respond('qaAddComment', (...args) => { posted.push(args); return { success: true }; });
+  h.window.enterTool('qa', 'qaQueue');
+  h.flushTimers();
+  h.read('qaOpenDetail_')('qaFileBbbbbbbb2');
+  h.flushTimers();
+  assert.ok(h.$('#qa-comment-text'), 'the composer rendered');
+  assert.ok(/Start typing to pin/.test(h.$('#qa-pin-row').textContent), 'idle: no live time, an instruction instead');
+  // Stand in for the media element the failed chunk load never mounted.
+  const slot = h.$('#qa-audio-slot');
+  slot.innerHTML = '<div id="qa-audio"></div>';
+  const audio = h.$('#qa-audio');
+  const calls = [];
+  audio.paused = false; audio.ended = false; audio.currentTime = 42.7; audio.duration = 600;
+  audio.pause = function () { calls.push('pause'); audio.paused = true; };
+  audio.play = function () { calls.push('play'); audio.paused = false; };
+  const ta = h.$('#qa-comment-text');
+  ta.value = 'S';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.deepStrictEqual(calls, ['pause'], 'the first keystroke PAUSED playback');
+  assert.strictEqual(h.read('QA_STATE').pin.atSec, 42, 'pinned at the floor of the playhead');
+  assert.strictEqual(h.$('#qa-pin-at').value, '0:42', 'the pin is shown, editable');
+  assert.ok(/paused/.test(h.$('#qa-pin-status').textContent));
+  // The player drifts (a colleague nudges it, a seek) — the pin does not.
+  audio.currentTime = 99;
+  ta.value = 'Strong opening';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.read('QA_STATE').pin.atSec, 42, 'a second keystroke never re-pins');
+  h.read('qaSubmitComment_')(true);   // Post & resume (jsdom never compiles inline onclick — call the handler)
+  assert.strictEqual(posted.length, 1, 'one post');
+  assert.deepStrictEqual(posted[0], ['qaFileBbbbbbbb2', 42, 'Strong opening'], 'posted at the PIN (42), not the playhead (99)');
+  assert.deepStrictEqual(calls, ['pause', 'play'], 'Post & resume resumed playback');
+  assert.strictEqual(ta.value, '', 'composer cleared');
+  assert.strictEqual(h.read('QA_STATE').pin, null, 'pin released');
+  assert.ok(/Start typing to pin/.test(h.$('#qa-pin-row').textContent), 'back to idle');
+  // Edit the pin before posting; Post & stay paused does not resume.
+  audio.currentTime = 10;
+  ta.value = 'Recap too fast';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.$('#qa-pin-at').value = '1:05';
+  h.read('qaSubmitComment_')(false);   // Post & stay paused
+  assert.deepStrictEqual(posted[1], ['qaFileBbbbbbbb2', 65, 'Recap too fast'], 'the edited pin wins');
+  assert.deepStrictEqual(calls, ['pause', 'play', 'pause'], 'stay paused did NOT resume');
+  // A typo'd pin is refused — nothing posts, nothing lands at 0:00.
+  ta.value = 'x';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.$('#qa-pin-at').value = '9:99';
+  h.read('qaSubmitComment_')(true);
+  assert.strictEqual(posted.length, 2, 'no post on an unparseable pin');
+  assert.strictEqual(ta.value, 'x', 'the text is kept for the fix');
+  assert.ok(h.$('#qa-comment-btn') && h.$('#qa-comment-stay-btn'), 'Post & resume / Post & stay paused / Discard render as real buttons');
+  // Discard resumes ONLY if the player was playing when the pin was taken:
+  // this pin was taken on a paused player, so discarding leaves it paused…
+  const before = calls.length;
+  h.read('qaDiscardComment_')();
+  assert.strictEqual(ta.value, '', 'discard clears');
+  assert.strictEqual(h.read('QA_STATE').pin, null);
+  assert.strictEqual(calls.length, before, 'discard did not touch a player that was already paused');
+  // …and a pin taken on a PLAYING player resumes on discard.
+  audio.paused = false;
+  ta.value = 'y';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(calls[calls.length - 1], 'pause', 'typing paused the playing player');
+  h.read('qaDiscardComment_')();
+  assert.strictEqual(calls[calls.length - 1], 'play', 'discard resumed (it was playing when pinned)');
+});
+
 test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes on Escape, close hook idempotent', () => {
   const h = boot();
   // flushTimers below would also fire the onboarding tour's auto-start, whose

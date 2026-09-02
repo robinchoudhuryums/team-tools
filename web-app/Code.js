@@ -77,6 +77,7 @@ const CONFIG = {
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
   COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
   // bilingual group MEMBER (SPANISH_INBOX_MEMBERS, comma-separated emails, via
@@ -26568,8 +26569,22 @@ const QA_RECORDINGS_TAB = 'QaRecordings';
 // release-to-agent stamp — 0/blank = not shared). Both extended IN PLACE
 // rather than self-healed: the QA module is merged but NOT deployed and
 // QA_SS_ID is unset everywhere, so no QaRecordings tab exists to migrate.
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11 };
+// Design handoff PR 5 (2026-09-02) added DurationSec (written back once by the
+// client on loadedmetadata — the queue's Length column) and SkipReason (the
+// free-text reason a recording was skipped; plain-text-pinned). These two
+// self-heal: getOrCreateQaSheet_ extends a short header in place.
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11, DURATION_SEC: 12, SKIP_REASON: 13 };
+const QA_SKIP_REASON_MAX = 500;
+const QA_DURATION_MAX_SEC = 86400;
+// Q4 — audit-period exemptions (operator decision 6): a manager grants an
+// employee a pass for ONE period; latest row per (name, period) wins.
+const QA_EXEMPTIONS_TAB = 'QaExemptions';
+const QA_EXEMPTIONS_HEADERS = ['EmpName', 'Period', 'GrantedBy', 'GrantedMs', 'Active'];
+const QAE = { EMP_NAME: 0, PERIOD: 1, GRANTED_BY: 2, GRANTED_MS: 3, ACTIVE: 4 };
+const QA_EXEMPTIONS_SCAN = 2000;
+const QA_EXEMPT_AVG_MIN = 4.5;        // eligibility: avg ≥ 4.5 this period AND last
+const QA_EXEMPT_CRIT_MIN = 4;         // eligibility: no criterion under 4 in either period
 const QA_MY_REVIEWS_CAP = 50;         // agent-facing list cap (newest shared first)
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
@@ -26650,10 +26665,19 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
     // otherwise coerce to a Date on read (the kbImportDataTable lesson:
     // format FIRST, then write).
     (textCols || []).forEach(function (col) { sheet.getRange(col + '2:' + col).setNumberFormat('@'); });
+  } else if (sheet.getLastColumn() < headers.length) {
+    // Header self-heal (the KB/EmpDocs pattern): a tab provisioned before a
+    // trailing column shipped gets the missing headers appended in place.
+    const have = sheet.getLastColumn();
+    sheet.getRange(1, have + 1, 1, headers.length - have).setValues([headers.slice(have)]).setFontWeight('bold');
+    (textCols || []).forEach(function (col) {
+      if (col.charCodeAt(0) - 64 > have) sheet.getRange(col + '2:' + col).setNumberFormat('@');
+    });
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K', 'N']); }
+function getOrCreateQaExemptionsSheet_() { return getOrCreateQaSheet_(QA_EXEMPTIONS_TAB, QA_EXEMPTIONS_HEADERS, ['A', 'B', 'C']); }
 function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
 function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
 
@@ -26673,7 +26697,7 @@ function qaChunkRange_(size, idx, chunkBytes) {
 /** The review queue. Read-only; QA-gated. An unset QA_SS_ID returns a
  *  notConfigured shape (setup instructions beat an error card on a fresh
  *  deploy); a configured-but-unreachable store is a real error. */
-function getQaQueue() {
+function getQaQueue(period) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
@@ -26685,21 +26709,33 @@ function getQaQueue() {
     // the same disclosure getTeammateStatus already makes; free text stays
     // allowed so an ex-agent's recording is still attributable).
     const agentOptions = [];
+    const rosterIdByName = {};   // Q7 — the coaching hand-off needs the rep's id, not their name
     try {
       const rrows = getEmployeeRosterRows_();
       for (let i = 1; i < rrows.length; i++) {
         if (!empRosterEmail_(rrows[i])) continue;   // INV-183: one inclusion predicate
         const nm = String(rrows[i][EMP.NAME] || '').trim();
         if (nm && agentOptions.indexOf(nm) < 0) agentOptions.push(nm);
+        if (nm && !rosterIdByName[nm.toLowerCase()]) rosterIdByName[nm.toLowerCase()] = String(rrows[i][EMP.ID] || '').trim();
       }
       agentOptions.sort();
     } catch (e) { /* best-effort — the queue still renders */ }
+    // Q4 — the audit period (operator decision 6: derived from DriveCreatedMs).
+    // The client sends the key it wants; an absent/invalid one lands on the
+    // current month. Options + target ride the payload so the client never
+    // mirrors the period arithmetic or the CONFIG target.
+    const todayYmd = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const periodOptions = qaPeriodOptions_(todayYmd);
+    const periodKey = qaPeriodValid_(period) ? String(period).trim() : periodOptions[0].key;
+    const target = qaAuditTarget_();
     const base = {
       members: members, self: String(emp.email || '').trim().toLowerCase(),
       isManager: !!emp.isManager, folderConfigured: !!qaFolderId_(),
       agentOptions: agentOptions, criteria: getQaScorecardCriteria_(),
+      period: periodKey, periodOptions: periodOptions, target: target, todayYmd: todayYmd,
+      periodEnd: (qaPeriodBounds_(periodKey) || {}).end || '',
     };
-    if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; return base; }
+    if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; base.coverage = []; return base; }
     const sheet = getOrCreateQaRecordingsSheet_();
     const last = sheet.getLastRow();
     const items = [];
@@ -26715,11 +26751,16 @@ function getQaQueue() {
           sizeBytes: Number(rows[i][QAR.SIZE]) || 0,
           mime: String(rows[i][QAR.MIME] || ''),
           createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
+          createdYmd: qaMsToYmd_(Number(rows[i][QAR.CREATED_MS]) || 0),
           status: qaStatus_(rows[i][QAR.STATUS]),
+          statusMs: Number(rows[i][QAR.STATUS_MS]) || 0,
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
           agent: String(rows[i][QAR.AGENT] || '').trim(),
+          agentEmpId: String(rows[i][QAR.AGENT] || '').trim() ? (rosterIdByName[String(rows[i][QAR.AGENT] || '').trim().toLowerCase()] || '') : '',
           sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
+          durationSec: Number(rows[i][QAR.DURATION_SEC]) || 0,
+          skipReason: String(rows[i][QAR.SKIP_REASON] || ''),
           comments: 0,
         });
       }
@@ -26741,6 +26782,13 @@ function getQaQueue() {
       }
     } catch (e) { /* counts are decoration — the queue still renders */ }
     items.sort(function (a, b) { return b.createdMs - a.createdMs; });
+    // Q4 — the coverage join (one roster row per rep, this period vs the
+    // previous). Best-effort with the OUTCOME carried: a failed scorecard or
+    // exemption read must not read as "nobody sampled" (INV-187).
+    try {
+      const latest = qaLatestScorecards_(qaReadScorecards_(null).cards);
+      base.coverage = qaCoverageRows_(items, latest, agentOptions, periodKey, target, qaReadExemptions_(), qaPrevPeriod_(periodKey));
+    } catch (e) { base.coverage = []; base.coverageUnavailable = true; }
     base.recordings = items.slice(0, QA_LIST_CAP);
     base.total = items.length;
     base.cap = QA_LIST_CAP;
@@ -26787,7 +26835,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''), '', 0,   // Agent + SharedMs set later in the detail
+        'new', '', 0, String(f.getUrl() || ''), '', 0, '', '',   // Agent + SharedMs + DurationSec + SkipReason set later in the detail
       ]);
       added++;
     }
@@ -26820,7 +26868,7 @@ function qaFindRecordingRow_(sheet, fileId) {
 /** Set a recording's review status. QA-gated, locked; status is enum-bounded
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
-function qaSetRecordingStatus(fileId, status) {
+function qaSetRecordingStatus(fileId, status, reason) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -26832,10 +26880,14 @@ function qaSetRecordingStatus(fileId, status) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    // Q2 — a skip carries its reason (free text, bounded, QA-store only —
+    // it may name the caller). Any other status CLEARS a stale reason.
+    const why = st === 'skipped' ? String(reason || '').trim().substring(0, QA_SKIP_REASON_MAX) : '';
     sheet.getRange(found.rowIdx, QAR.STATUS + 1).setValue(st);
     sheet.getRange(found.rowIdx, QAR.STATUS_MS + 1).setValue(Date.now());
+    sheet.getRange(found.rowIdx, QAR.SKIP_REASON + 1).setValue(why);
     writeAuditLog_(emp, 'QaStatusChange', '', '', false, 0, 'fileId=' + fid + '; status=' + st, emp.email);
-    return { success: true, status: st };
+    return { success: true, status: st, skipReason: why };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -27230,7 +27282,9 @@ function qaSetRecordingAgent(fileId, agentName) {
     if (!found) return { success: false, error: 'Recording not found.' };
     sheet.getRange(found.rowIdx, QAR.AGENT + 1).setValue(name);
     writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
-    return { success: true, agent: name };
+    // Q7 — the roster id the coaching hand-off keys off (the name itself
+    // never leaves the QA store's return; the id is what the composer needs).
+    return { success: true, agent: name, agentEmpId: qaRosterIdByName_(name) };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -27557,20 +27611,29 @@ function getMyQaReviews() {
  *  round) load, random tie-break. `rand` is injectable for deterministic
  *  tests; blank agents bucket under '(unassigned)' so unattributed
  *  recordings still get sampled. */
-function qaSamplePick_(candidates, count, reviewedByAgent, rand) {
+function qaSamplePick_(candidates, count, reviewedByAgent, rand, targets) {
   const pool = (candidates || []).slice();
   const r = typeof rand === 'function' ? rand : Math.random;
   const key = function (c) { return String((c && c.agent) || '').trim() || '(unassigned)'; };
   const n = Math.max(0, Math.min(Math.floor(Number(count) || 0), pool.length));
   const picked = [];
   const load = {};
+  // Q4 — target-aware: an agent whose (done + picked) load has reached the
+  // period target is SKIPPED, so a sample never pulls a covered agent ahead
+  // of one still short. Only agents PRESENT in `targets` are capped — an
+  // absent map (the legacy 4-arg call) keeps the pure coverage-fair pick.
+  const capped = function (k, l) {
+    return !!(targets && Object.prototype.hasOwnProperty.call(targets, k)) && l >= (Number(targets[k]) || 0);
+  };
   while (picked.length < n) {
     let bestLoad = Infinity, ties = [];
     for (let i = 0; i < pool.length; i++) {
       const l = (Number((reviewedByAgent || {})[key(pool[i])]) || 0) + (load[key(pool[i])] || 0);
+      if (capped(key(pool[i]), l)) continue;
       if (l < bestLoad) { bestLoad = l; ties = [i]; }
       else if (l === bestLoad) ties.push(i);
     }
+    if (!ties.length) break;   // everyone left is at target
     const idx = ties[Math.floor(r() * ties.length) % ties.length];
     const c = pool.splice(idx, 1)[0];
     load[key(c)] = (load[key(c)] || 0) + 1;
@@ -27584,7 +27647,7 @@ function qaSamplePick_(candidates, count, reviewedByAgent, rand) {
  *  uses Assign on the queue). QA-gated, locked; coverage-fair via
  *  qaSamplePick_ (agents with the fewest DONE reviews first). Counts-only
  *  audit (INV-32/196). */
-function qaSampleRecordings(count) {
+function qaSampleRecordings(count, period) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -27598,13 +27661,37 @@ function qaSampleRecordings(count) {
     if (last < 2) return { success: false, error: 'No recordings indexed yet — Sync first.' };
     const start = Math.max(2, last - QA_LIST_SCAN + 1);
     const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+    // Q4 — period-scoped, target-aware: only DONE reviews whose recording
+    // falls in the period count as load, and a roster agent at the period
+    // target (or exempt this period — target 0) is skipped. Roster names
+    // are matched case-insensitively (the coverage join's rule); an
+    // off-roster agent string is uncapped (no target to reach).
+    const periodKey = qaPeriodValid_(period) ? String(period).trim()
+      : qaPeriodOptions_(Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'))[0].key;
+    const target = qaAuditTarget_();
+    let exemptions = {};
+    try { exemptions = qaReadExemptions_(); } catch (e) { exemptions = {}; }
+    const canon = {};    // lowercase roster name → roster spelling
+    const targets = {};  // roster spelling → target for this period
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (!nm) continue;
+        canon[nm.toLowerCase()] = nm;
+        targets[nm] = exemptions[nm.toLowerCase() + '|' + periodKey] ? 0 : target;
+      }
+    } catch (e) { /* best-effort — an unreadable roster degrades to the uncapped pick */ }
     const candidates = [];
     const reviewedByAgent = {};
     for (let i = 0; i < rows.length; i++) {
       const fid = String(rows[i][QAR.FILE_ID] || '').trim();
       if (!fid) continue;
-      const agent = String(rows[i][QAR.AGENT] || '').trim() || '(unassigned)';
-      if (qaStatus_(rows[i][QAR.STATUS]) === 'done') {
+      const rawAgent = String(rows[i][QAR.AGENT] || '').trim();
+      const agent = (rawAgent && canon[rawAgent.toLowerCase()]) || rawAgent || '(unassigned)';
+      const createdYmd = qaMsToYmd_(Number(rows[i][QAR.CREATED_MS]) || 0);
+      if (qaStatus_(rows[i][QAR.STATUS]) === 'done' && qaPeriodMatches_(createdYmd, periodKey)) {
         reviewedByAgent[agent] = (reviewedByAgent[agent] || 0) + 1;
       }
       if (qaStatus_(rows[i][QAR.STATUS]) !== 'new') continue;
@@ -27612,12 +27699,268 @@ function qaSampleRecordings(count) {
       candidates.push({ fileId: fid, agent: agent, rowIdx: start + i });
     }
     if (!candidates.length) return { success: false, error: 'Nothing to sample — every new recording is already assigned.' };
-    const picked = qaSamplePick_(candidates, n, reviewedByAgent);
+    const picked = qaSamplePick_(candidates, n, reviewedByAgent, null, targets);
+    if (!picked.length) return { success: false, error: 'Nothing to sample — every unassigned recording belongs to an agent already at target this period.' };
     picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(self); });
     writeAuditLog_(emp, 'QaSample', '', '', false, 0,
       'requested=' + n + '; assigned=' + picked.length, emp.email);
     return { success: true, assigned: picked.length,
              fileIds: picked.map(function (c) { return c.fileId; }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Q4 (design handoff PR 5) — audit periods, coverage, exemptions ────────
+/** The per-period sample target: Script Property QA_AUDIT_TARGET_PER_PERIOD
+ *  (1..50) overrides the CONFIG seed; garbage degrades to the seed. */
+function qaAuditTarget_() {
+  const seed = Math.max(1, Math.floor(Number(CONFIG.QA_AUDIT_TARGET_PER_PERIOD) || 3));
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('QA_AUDIT_TARGET_PER_PERIOD');
+    if (raw == null || String(raw).trim() === '') return seed;
+    const n = Math.floor(Number(raw));
+    return (n >= 1 && n <= 50) ? n : seed;
+  } catch (e) { return seed; }
+}
+/** The roster id for an agent NAME (case-insensitive, INV-183 inclusion);
+ *  '' when the name is not on the roster or the roster is unreadable. */
+function qaRosterIdByName_(name) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return '';
+  try {
+    const rrows = getEmployeeRosterRows_();
+    for (let i = 1; i < rrows.length; i++) {
+      if (!empRosterEmail_(rrows[i])) continue;
+      if (String(rrows[i][EMP.NAME] || '').trim().toLowerCase() === key) return String(rrows[i][EMP.ID] || '').trim();
+    }
+  } catch (e) { /* best-effort */ }
+  return '';
+}
+/** PURE — a period key is `yyyy-MM` (a month) or `yyyy-Qn` (a quarter). */
+function qaPeriodValid_(key) {
+  const k = String(key || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) || /^\d{4}-Q[1-4]$/.test(k);
+}
+/** PURE — epoch ms → yyyy-MM-dd in the MANAGER tz (the app's operating
+ *  anchor; DriveCreatedMs is the recording's own stamp). 0/garbage → ''. */
+function qaMsToYmd_(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return '';
+  try { return Utilities.formatDate(new Date(n), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
+  catch (e) { return ''; }
+}
+/** PURE — the month + quarter keys a yyyy-MM-dd date falls in. */
+function qaPeriodKeysForYmd_(ymd) {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const mo = Number(m[2]);
+  if (!(mo >= 1 && mo <= 12)) return null;
+  return { month: m[1] + '-' + m[2], quarter: m[1] + '-Q' + Math.ceil(mo / 3) };
+}
+/** PURE — does a yyyy-MM-dd date fall in the period? Unknown date → false. */
+function qaPeriodMatches_(ymd, key) {
+  const ks = qaPeriodKeysForYmd_(ymd);
+  if (!ks) return false;
+  return ks.month === key || ks.quarter === key;
+}
+/** PURE — the period immediately before `key` (same shape). */
+function qaPrevPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) - 1;
+    if (mo < 1) { mo = 12; y--; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) - 1;
+    if (q < 1) { q = 4; y--; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+/** PURE — a human label: `2026-08` → 'Aug 2026', `2026-Q3` → 'Q3 2026'. */
+function qaPeriodLabel_(key) {
+  const k = String(key || '').trim();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) return MON[Number(m[2]) - 1] + ' ' + m[1];
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) return 'Q' + m[2] + ' ' + m[1];
+  return k;
+}
+/** PURE — inclusive yyyy-MM-dd bounds of a period (null on a bad key). */
+function qaPeriodBounds_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), mo = Number(m[2]);
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    return { start: k + '-01', end: k + '-' + (lastDay < 10 ? '0' : '') + lastDay };
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), q = Number(m[2]);
+    const mo1 = (q - 1) * 3 + 1, mo3 = mo1 + 2;
+    const lastDay = new Date(Date.UTC(y, mo3, 0)).getUTCDate();
+    const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return { start: y + '-' + pad(mo1) + '-01', end: y + '-' + pad(mo3) + '-' + pad(lastDay) };
+  }
+  return null;
+}
+/** PURE — the period options the client offers: this month, this quarter,
+ *  the previous quarter (each {key, label}). */
+function qaPeriodOptions_(todayYmd) {
+  const ks = qaPeriodKeysForYmd_(todayYmd) || { month: '', quarter: '' };
+  const out = [];
+  if (ks.month) out.push({ key: ks.month, label: qaPeriodLabel_(ks.month) });
+  if (ks.quarter) {
+    out.push({ key: ks.quarter, label: qaPeriodLabel_(ks.quarter) });
+    const prev = qaPrevPeriod_(ks.quarter);
+    if (prev) out.push({ key: prev, label: qaPeriodLabel_(prev) });
+  }
+  return out;
+}
+/** PURE — the mean of a scorecard's 1..5 ratings and its lowest rating;
+ *  null when the card carries no valid rating. */
+function qaCardStats_(card) {
+  let sum = 0, n = 0, min = Infinity;
+  Object.keys((card && card.ratings) || {}).forEach(function (k) {
+    const v = Number(card.ratings[k]);
+    if (v >= 1 && v <= 5) { sum += v; n++; if (v < min) min = v; }
+  });
+  return n ? { avg: sum / n, min: min, n: n } : null;
+}
+/** PURE (Node-pinned) — exemption eligibility (operator decision 6): two
+ *  consecutive COVERED periods (sampled ≥ target in both) at avg ≥ 4.5 with
+ *  no criterion under 4. A row short in EITHER period is never eligible —
+ *  silence is not merit. */
+function qaExemptEligible_(row) {
+  if (!row) return false;
+  const target = Number(row.target) || 0;
+  if (!(target > 0)) return false;   // an exempt (target 0) or targetless row is never re-eligible
+  if (!(row.sampled >= target && row.prevSampled >= target)) return false;
+  if (!(row.avg != null && row.prevAvg != null)) return false;
+  if (!(row.avg >= QA_EXEMPT_AVG_MIN && row.prevAvg >= QA_EXEMPT_AVG_MIN)) return false;
+  if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
+  return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
+}
+/** PURE (Node-pinned) — the coverage join: ONE row per roster name.
+ *  `sampled` = DONE recordings attributed to the rep (case-insensitive) whose
+ *  DriveCreatedMs falls in the period; `avg` = the mean of the LATEST
+ *  scorecards' own means over those recordings (null when none — never 0);
+ *  `minCriterion` = the lowest single rating across them. The previous
+ *  period rides alongside so the client can show a delta and the
+ *  eligibility rule can read two periods. An exempt rep's target is 0. */
+function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
+  const cardsByFile = {};
+  (latestCards || []).forEach(function (c) {
+    const f = String((c && c.fileId) || '');
+    if (f) (cardsByFile[f] = cardsByFile[f] || []).push(c);
+  });
+  const byName = {};
+  (rosterNames || []).forEach(function (nm) {
+    const n = String(nm || '').trim();
+    if (!n) return;
+    byName[n.toLowerCase()] = { name: n, cur: { sampled: 0, sum: 0, cards: 0, min: Infinity }, prev: { sampled: 0, sum: 0, cards: 0, min: Infinity }, lastReviewedMs: 0 };
+  });
+  (recs || []).forEach(function (r) {
+    if (!r || r.status !== 'done') return;
+    const row = byName[String(r.agent || '').trim().toLowerCase()];
+    if (!row) return;
+    if (Number(r.statusMs) > row.lastReviewedMs) row.lastReviewedMs = Number(r.statusMs);
+    const bucket = qaPeriodMatches_(r.createdYmd, period) ? row.cur
+      : (prevPeriod && qaPeriodMatches_(r.createdYmd, prevPeriod)) ? row.prev : null;
+    if (!bucket) return;
+    bucket.sampled++;
+    (cardsByFile[r.fileId] || []).forEach(function (c) {
+      const st = qaCardStats_(c);
+      if (!st) return;
+      bucket.sum += st.avg; bucket.cards++;
+      if (st.min < bucket.min) bucket.min = st.min;
+    });
+  });
+  const fin = function (b) {
+    return { avg: b.cards ? Math.round((b.sum / b.cards) * 100) / 100 : null,
+             min: b.cards ? b.min : null };
+  };
+  return Object.keys(byName).sort().map(function (k) {
+    const row = byName[k];
+    const cur = fin(row.cur), prev = fin(row.prev);
+    const exempt = !!(exemptions || {})[k + '|' + period];
+    const out = {
+      name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
+      cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
+      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+    };
+    out.eligible = !exempt && qaExemptEligible_(out);
+    return out;
+  });
+}
+/** Read the exemption ledger into { 'lowercase name|period': true } — latest
+ *  row per key wins; Sheets' TRUE coercion handled. READ-ONLY (never
+ *  provisions the tab); an absent tab reads as no exemptions. */
+function qaReadExemptions_() {
+  const sheet = getQaSS_().getSheetByName(QA_EXEMPTIONS_TAB);
+  const out = {};
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const last = sheet.getLastRow();
+  const start = Math.max(2, last - QA_EXEMPTIONS_SCAN + 1);
+  const rows = sheet.getRange(start, 1, last - start + 1, QA_EXEMPTIONS_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const nm = String(rows[i][QAE.EMP_NAME] || '').trim().toLowerCase();
+    const per = String(rows[i][QAE.PERIOD] || '').trim();
+    if (!nm || !per) continue;
+    const a = rows[i][QAE.ACTIVE];
+    const active = a === true || String(a || '').trim().toUpperCase() === 'TRUE';
+    if (active) out[nm + '|' + per] = true; else delete out[nm + '|' + per];
+  }
+  return out;
+}
+/** Grant / revoke an audit-period exemption. MANAGER-gated (INV-02 — a QA
+ *  member reviews, a manager decides who may skip a period), locked,
+ *  append-only ledger; the audit row carries period + flag only (the name
+ *  stays in the QA store — INV-196's name rule). */
+function qaSetExemption(empName, period, on) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const name = String(empName || '').trim().substring(0, 80);
+    const per = String(period || '').trim();
+    if (!name) return { success: false, error: 'Employee name required.' };
+    if (!qaPeriodValid_(per)) return { success: false, error: 'Unknown audit period.' };
+    const sheet = getOrCreateQaExemptionsSheet_();
+    const active = !!on;
+    sheet.appendRow([name, per, String(emp.email || ''), Date.now(), active ? 'TRUE' : 'FALSE']);
+    writeAuditLog_(emp, 'QaExemption', '', '', false, 0, 'period=' + per + '; active=' + active, emp.email);
+    return { success: true, active: active, period: per };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+/** Write a recording's duration ONCE (the client learns it on
+ *  loadedmetadata; the queue's Length column reads it). QA-gated, locked,
+ *  bounded; a non-blank cell is never overwritten, no audit row (it is
+ *  metadata the file already carries, not a review action). */
+function qaSetRecordingDuration(fileId, sec) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const n = Math.round(Number(sec));
+    if (!(n >= 1 && n <= QA_DURATION_MAX_SEC)) return { success: false, error: 'Invalid duration.' };
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    const have = Number(found.row[QAR.DURATION_SEC]) || 0;
+    if (have > 0) return { success: true, durationSec: have, written: false };
+    sheet.getRange(found.rowIdx, QAR.DURATION_SEC + 1).setValue(n);
+    return { success: true, durationSec: n, written: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }

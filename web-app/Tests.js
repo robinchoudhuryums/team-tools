@@ -5381,6 +5381,9 @@ function test_managerGates_rejectNonManager() {
     // Design handoff PR 4 (K10/K11) — both are manager-gated + team-scoped.
     ['setCoachingFollowUp',            function () { return setCoachingFollowUp('no-such-coach', ''); }],
     ['nudgeCoaching',                  function () { return nudgeCoaching('no-such-coach'); }],
+    // Design handoff PR 5 (Q4) — exemptions are a MANAGER decision (a QA
+    // member reviews; a manager decides who may skip a period).
+    ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],
   ];
   // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
   // non-admin caller — incl. this non-manager — gets 'Admin access required.').
@@ -5470,7 +5473,9 @@ function test_qa_gates_rejectNonMember() {
    ['getQaStats', function () { return getQaStats(); }],
    // Phase 3 — share-to-agent + sampling stay in the canSeeQa_ tier.
    ['qaSetRecordingShared', function () { return qaSetRecordingShared('x', true); }],
-   ['qaSampleRecordings', function () { return qaSampleRecordings(3); }]]
+   ['qaSampleRecordings', function () { return qaSampleRecordings(3); }],
+   // PR 5 — the duration write-back rides the same tier.
+   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');
