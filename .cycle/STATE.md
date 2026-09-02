@@ -21,8 +21,8 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 741 + DOM 104;
-  visual matrix on demand — 92 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 744 + DOM 104;
+  visual matrix on demand — 93 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
@@ -110,6 +110,29 @@ break-chip minute-guard survived a same-minute re-render (fixed + pinned).
 Follow-ons: the §3d undo label with countdown is NOT built; the Needs-you
 list refreshes on the next Dashboard enter after an action (no per-source
 invalidation); the pre-existing IST-midnight DOM flake stands.
+**Post-merge (2026-09-02, same afternoon):** the operator flipped the two PH
+agents' roster Timezone cells to America/Chicago MID-SHIFT (a PH agent saw
+"Clock In" at PHT midnight — the documented split-day state). Landed
+`repairTimesheetTimezone` (+ `_dryRun`/`_apply` wrappers reading the one-time
+`TZ_REPAIR_2026_09_02`: Anne Garcia, Margie Ingay, Manila → Chicago,
+flippedAt '2026-09-02 15:00' — the operator adjusts it) so the Manila-stamped
+punches are re-formatted in Chicago; TZR-1/TZR-2 pins. FOLLOW-ON: delete the
+constant + wrappers once the operator confirms the repair ran; the August
+accrual needs a manual top-up afterwards; any ADP export cut while the rows
+were split needs re-exporting.
+**Post-deploy `runAllTests()` (2026-09-02 4:35 PM CDT): 303/308.** Fixed the
+one real bug (`nudgeCoaching` compared a Kolkata stamp's day to the Chicago
+day — `coachStampDayMgr_`, PR4-1 rewritten + bite-checked) and four test-side
+faults (setup restores the TEST rows' fixture timezone; `isIncomplete`; the
+multi-break refusal case). The operator re-runs after the next push; expect
+308/308.
+**Browser-timezone scenario dimension (2026-09-02, same evening):** the
+operator asked for a "PH CSR view"; the answer is View-as CSR + a DevTools
+timezone override for a live look, and for the harness a 7th scenario tuple
+entry `{ tz, utc }` (Playwright `timezoneId` + frozen instant) plus the mock's
+`?tz=` roster override. `clock-light-wide-pht` (roster Chicago, browser
+Manila, 00:05 PHT) shot clean — no client-side browser-clock read surfaced.
+VIS-TZ pin; matrix 93.
 Next: nothing in flight — the operator's single deploy (`clasp push -f` + New
 version, then `runAllTests()` → 308, `installAutomationTriggers()` once) ships
 PRs #176–#220 plus the six handoff PRs together. Facts PR 3+ depended on: `mtDateRange_`/`mtPctTone_` now exist in

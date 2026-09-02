@@ -2977,6 +2977,206 @@ function reportMultiBreakDays() {
     affected: affected, totalDeltaHours: +totalDelta.toFixed(2) };
 }
 
+/* ── Timesheet timezone repair (operator 2026-09-02) ─────────────────────────
+ * The ALL-CST roster flip (Timezone column → America/Chicago) changes how
+ * EXISTING Timesheet rows are READ, not what they hold: every punch was
+ * stamped as the rep's local DATE + wall TIME at the moment it was recorded,
+ * so a CST shift worked under `Asia/Manila` sits in the sheet as ClockIn on
+ * date D at 21:30 and ClockOut on date D+1 at 06:00. Read as Chicago digits,
+ * both halves are INCOMPLETE days — excluded from timesheet totals, pay
+ * statements, the team calendar and the hours-driven accrual (INV-176/194).
+ *
+ * This ONE-TIME repair rewrites those rows: each (date, time) is parsed as an
+ * instant in the OLD tz and re-formatted in the NEW tz, so a split shift
+ * collapses back onto one CST date and every reader recomputes on its own.
+ * Design rules, each load-bearing:
+ *  - `flippedAt` is REQUIRED (a wall time in the NEW tz): rows stamped at or
+ *    after that instant were already written under the new tz and are left
+ *    alone. Without it a post-flip punch would be shifted a second time.
+ *  - DRY RUN BY DEFAULT — a bare call writes nothing; the plan (every row's
+ *    before → after) is logged, and the collision report NAMES rows that
+ *    would land on a (date, type) another row already occupies, which is
+ *    what a hand-edited or double-punched day looks like after the move.
+ *  - It reads THROUGH `TimesheetArchive` (INV-153/F1) and writes only the
+ *    DATE and TIME cells in place — never appends or deletes a punch, so a
+ *    row's COMMENTS (the `ADJ-` marker, INV-09) and its position survive.
+ *  - Bounded (`TZ_REPAIR_MAX_ROWS`), locked while applying (INV-01), one
+ *    counts-only `TimesheetTzRepair` audit row per employee (INV-08), and the
+ *    personal-sheet mirror is re-pointed best-effort (INV-59).
+ *  - It is a repair for the TIMESHEET only. Time-off dates were chosen by the
+ *    rep and need nothing; call-note DateLocal stamps are cosmetic (which day
+ *    History lists a note under) and are deliberately not touched.
+ * Run from the editor: `repairTimesheetTimezone_dryRun()` first, read the
+ * execution log, then `repairTimesheetTimezone_apply()`. Both read
+ * TZ_REPAIR_2026_09_02 below — delete all three once the repair is done. */
+const TZ_REPAIR_MAX_ROWS = 2000;
+
+/* Pure planner for one row: returns null (unparseable / no change), a
+ * {skip} marker, or {newDate, newTime}. `toMs` parses a (date, time) pair in
+ * the OLD tz to epoch ms; `fmtDate`/`fmtTime` format ms in the NEW tz —
+ * injected so the rule is Node-testable off-platform. */
+function tzRepairPlanRow_(dateStr, timeStr, flipMs, toMs, fmtDate, fmtTime) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) return null;
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(timeStr || '')) return null;
+  const ms = toMs(dateStr, timeStr);
+  if (!isFinite(ms)) return null;
+  if (ms >= flipMs) return { skip: 'after-flip' };
+  const newDate = fmtDate(ms), newTime = fmtTime(ms);
+  if (newDate === dateStr && newTime === timeStr) return { skip: 'unchanged' };
+  return { newDate: newDate, newTime: newTime };
+}
+
+function repairTimesheetTimezone(opts) {
+  assertManagerCaller_('repairTimesheetTimezone');
+  opts = opts || {};
+  const dryRun = opts.dryRun !== false;                       // a bare call NEVER writes
+  const fromTz = String(opts.fromTz || '').trim();
+  const toTz   = String(opts.toTz || '').trim();
+  if (!fromTz || safeTimezone_(fromTz) !== fromTz) throw new Error('fromTz must be a valid IANA zone, got "' + fromTz + '"');
+  if (!toTz || safeTimezone_(toTz) !== toTz)       throw new Error('toTz must be a valid IANA zone, got "' + toTz + '"');
+  if (fromTz === toTz) throw new Error('fromTz and toTz are the same zone — nothing to repair');
+  const flippedAt = String(opts.flippedAt || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(flippedAt)) {
+    throw new Error('flippedAt is required as "yyyy-MM-dd HH:mm" in the NEW zone (' + toTz + ') — the moment the roster cell was changed');
+  }
+  const flipMs = Utilities.parseDate(flippedAt + ':00', toTz, 'yyyy-MM-dd HH:mm:ss').getTime();
+  const fromDate = String(opts.fromDate || '').trim();
+  if (fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) throw new Error('fromDate must be yyyy-MM-dd');
+  const skipDates = (Array.isArray(opts.skipDates) ? opts.skipDates : []).map(String);
+  const wanted = (Array.isArray(opts.employees) ? opts.employees : []).map(x => String(x || '').trim()).filter(Boolean);
+  if (!wanted.length) throw new Error('employees is required — roster ids or exact names');
+
+  // Resolve ids/names against the roster. A name must match EXACTLY ONE row
+  // (a name-only offboarded row still counts as a match — its punches are
+  // the point). Ambiguity refuses rather than guessing a payroll row.
+  const roster = getAdpSS_().getSheetByName(CONFIG.EMPLOYEES_TAB).getDataRange().getValues();
+  const targets = {};                                          // id → emp object
+  wanted.forEach((w) => {
+    const wl = w.toLowerCase();
+    const hits = [];
+    for (let i = 1; i < roster.length; i++) {
+      const id = String(roster[i][EMP.ID] || '').trim();
+      const nm = String(roster[i][EMP.NAME] || '').trim();
+      if (!id) continue;
+      if (id === w || nm.toLowerCase() === wl) hits.push({ id: id, name: nm });
+    }
+    if (hits.length !== 1) throw new Error('"' + w + '" matched ' + hits.length + ' roster rows — pass the employee ID instead');
+    const emp = lookupEmployeeById_(hits[0].id) || { id: hits[0].id, name: hits[0].name, email: '' };
+    targets[hits[0].id] = emp;
+  });
+  const ids = Object.keys(targets);
+
+  const toMs    = (d, t) => Utilities.parseDate(d + ' ' + t, fromTz, 'yyyy-MM-dd HH:mm:ss').getTime();
+  const fmtDate = (ms) => Utilities.formatDate(new Date(ms), toTz, 'yyyy-MM-dd');
+  const fmtTime = (ms) => Utilities.formatDate(new Date(ms), toTz, 'HH:mm:ss');
+
+  const ss = getAdpSS_();
+  const tabs = [CONFIG.ADP_TAB, TIMESHEET_ARCHIVE_TAB].filter(n => !!ss.getSheetByName(n));
+  const changes = [];                                          // {tab, row, empId, type, dir, oldDate, oldTime, newDate, newTime}
+  const occupied = {};                                         // 'id|date|type' → count of rows NOT moving
+  const skipped = { afterFlip: 0, beforeFrom: 0, skipDate: 0, unparseable: 0, unchanged: 0 };
+  tabs.forEach((tabName) => {
+    const rows = ss.getSheetByName(tabName).getDataRange().getValues();
+    for (let i = 2; i < rows.length; i++) {                    // two header rows
+      const id = String(rows[i][ADP.EMP_ID] || '').trim();
+      if (!targets[id]) continue;
+      const date = normalizeDate_(rows[i][ADP.DATE]);
+      const time = normalizeTime_(rows[i][ADP.TIME]);
+      const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+      const key  = id + '|' + date + '|' + type;
+      const plan = tzRepairPlanRow_(date, time, flipMs, toMs, fmtDate, fmtTime);
+      let reason = '';
+      if (!plan) reason = 'unparseable';
+      else if (plan.skip === 'after-flip') reason = 'afterFlip';
+      else if (plan.skip === 'unchanged') reason = 'unchanged';
+      else if (fromDate && date < fromDate) reason = 'beforeFrom';
+      else if (skipDates.indexOf(date) >= 0) reason = 'skipDate';
+      if (reason) { skipped[reason]++; occupied[key] = (occupied[key] || 0) + 1; continue; }
+      changes.push({ tab: tabName, row: i + 1, empId: id, type: type, dir: String(rows[i][ADP.DIR] || ''),
+        oldDate: date, oldTime: time, newDate: plan.newDate, newTime: plan.newTime });
+    }
+  });
+  if (changes.length > TZ_REPAIR_MAX_ROWS) {
+    throw new Error('Refusing: ' + changes.length + ' rows exceed TZ_REPAIR_MAX_ROWS (' + TZ_REPAIR_MAX_ROWS + ') — narrow fromDate or the employee list');
+  }
+
+  // Collision report: a moved row landing on a (date, type) that another row
+  // already holds — either an unmoved row (a hand edit made after the flip)
+  // or another moved row (a double punch across the old midnight). Reported,
+  // never resolved: which of the two is the real punch is the manager's call.
+  const landing = {};
+  changes.forEach((c) => { const k = c.empId + '|' + c.newDate + '|' + c.type; landing[k] = (landing[k] || 0) + 1; });
+  const warnings = [];
+  changes.forEach((c) => {
+    const k = c.empId + '|' + c.newDate + '|' + c.type;
+    if ((occupied[k] || 0) > 0 || landing[k] > 1) {
+      warnings.push(targets[c.empId].name + ' ' + c.type + ' → ' + c.newDate + ' ' + c.newTime +
+        ' (from ' + c.oldDate + ' ' + c.oldTime + ') would DUPLICATE an existing ' + c.type + ' on that date — fix by hand after the run');
+    }
+  });
+
+  const byEmp = {};
+  changes.forEach((c) => {
+    const e = byEmp[c.empId] || (byEmp[c.empId] = { name: targets[c.empId].name, rows: 0, dates: {} });
+    e.rows++; e.dates[c.newDate] = true;
+  });
+  Logger.log('%s: %s row(s) to move for %s employee(s); skipped %s',
+    dryRun ? 'DRY RUN' : 'APPLY', changes.length, ids.length, JSON.stringify(skipped));
+  changes.forEach((c) => Logger.log('  %s | %s | %s %s | %s %s → %s %s', c.tab, targets[c.empId].name, c.type,
+    c.dir, c.oldDate, c.oldTime, c.newDate, c.newTime));
+  warnings.forEach((w) => Logger.log('  WARNING: ' + w));
+  if (dryRun) {
+    return { dryRun: true, planned: changes.length, skipped: skipped, warnings: warnings,
+      byEmp: Object.keys(byEmp).map(id => ({ id: id, name: byEmp[id].name, rows: byEmp[id].rows, days: Object.keys(byEmp[id].dates).length })) };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  let moved = 0;
+  try {
+    changes.forEach((c) => {
+      const sh = ss.getSheetByName(c.tab);
+      sh.getRange(c.row, ADP.DATE + 1).setValue(c.newDate);
+      sh.getRange(c.row, ADP.TIME + 1).setValue(c.newTime);
+      moved++;
+      const emp = targets[c.empId];
+      if (emp && emp.sheetId && c.tab === CONFIG.ADP_TAB && PUNCH_LABELS_.indexOf(c.type) >= 0) {
+        clearFromEmployeeSheet_(emp, c.oldDate, c.type);           // best-effort mirror (INV-59)
+        writeToEmployeeSheet_(emp, c.newDate, c.newTime, c.dir, c.type);
+      }
+    });
+    SpreadsheetApp.flush();
+    ids.forEach((id) => {
+      const e = byEmp[id]; if (!e) return;
+      writeAuditLog_(targets[id], 'TimesheetTzRepair', '', '', false, 0,
+        'fromTz=' + fromTz + '; toTz=' + toTz + '; flippedAt=' + flippedAt + '; rowsMoved=' + e.rows +
+        '; days=' + Object.keys(e.dates).length + '; warnings=' + warnings.length);
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  return { dryRun: false, moved: moved, skipped: skipped, warnings: warnings,
+    byEmp: Object.keys(byEmp).map(id => ({ id: id, name: byEmp[id].name, rows: byEmp[id].rows, days: Object.keys(byEmp[id].dates).length })) };
+}
+
+/* ONE-TIME parameters for the 2026-09-02 PH roster flip. `flippedAt` is the
+ * Chicago wall time the Timezone cells were changed — adjust it before
+ * running. Delete this constant and both wrappers once the repair is done. */
+const TZ_REPAIR_2026_09_02 = {
+  employees: ['Anne Garcia', 'Margie Ingay'],
+  fromTz: 'Asia/Manila',
+  toTz: 'America/Chicago',
+  flippedAt: '2026-09-02 15:00',
+  fromDate: '',                 // '' = every row; or 'yyyy-MM-dd' (OLD-tz date) to bound the walk
+  skipDates: [],                // OLD-tz dates to leave alone (rows already fixed by hand)
+};
+function repairTimesheetTimezone_dryRun() {
+  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: true }));
+}
+function repairTimesheetTimezone_apply() {
+  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: false }));
+}
+
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -26321,7 +26521,7 @@ function getCoachingDashboard() {
       c.ageDays = coachAgeDays_(isNaN(createdMs) ? 0 : createdMs, nowMs, biz);
       c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && c.ageDays != null && c.ageDays >= reminderDays);
       c.followUpDue = !!(c.status === 'open' && c.followUpAt && c.followUpAt < biz.todayIso);
-      c.nudgedToday = !!(c.nudgedAt && c.nudgedAt.substring(0, 10) === biz.todayIso);
+      c.nudgedToday = !!(c.nudgedAt && coachStampDayMgr_(c.nudgedAt) === biz.todayIso);
       if (c.status === 'open' && c.severity !== 'praise') counts.open++;
       if (c.status === 'acknowledged') counts.acknowledged++;
       if (c.severity === 'praise') counts.praise++;
@@ -26399,6 +26599,21 @@ function setCoachingFollowUp(coachId, dateOrNull) {
  *  reminder for an UNACKNOWLEDGED item, at most once per item per manager-tz
  *  day (the NudgedAt stamp is the rate limit). Mail post-lock (M-7), audit
  *  CoachingNudge id-only. */
+/** The MANAGER-tz calendar day of a coaching stamp. Stamps are written by
+ *  fmtDate_/fmtTime_ in CONFIG.TIMEZONE (Asia/Kolkata) while "today" for the
+ *  once-per-day nudge rule is the manager's day (America/Chicago) — the two
+ *  frames disagree from 13:30 CDT onward, so a raw `substring(0, 10)` compare
+ *  let a manager nudge twice every afternoon and then blocked the next
+ *  morning against yesterday's stamp (caught by the post-deploy runAllTests,
+ *  2026-09-02). Returns '' for an unparseable stamp — never a day that
+ *  happens to match. */
+function coachStampDayMgr_(ts) {
+  try {
+    const d = Utilities.parseDate(String(ts || '').trim(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    return Utilities.formatDate(d, CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  } catch (_) { return ''; }
+}
+
 function nudgeCoaching(coachId) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -26412,7 +26627,7 @@ function nudgeCoaching(coachId) {
     if (found.item.status !== 'open') return { success: false, error: 'Only an open (unacknowledged) item can be nudged.' };
     if (found.item.severity === 'praise') return { success: false, error: 'Praise needs no acknowledgement.' };
     const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
-    if (found.item.nudgedAt && found.item.nudgedAt.substring(0, 10) === todayIso) {
+    if (found.item.nudgedAt && coachStampDayMgr_(found.item.nudgedAt) === todayIso) {
       return { success: false, error: 'Already nudged today — once per day per item.' };
     }
     const target = lookupEmployeeById_(found.item.empId);

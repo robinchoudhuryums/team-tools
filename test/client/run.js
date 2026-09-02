@@ -11665,7 +11665,7 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
 
   test('R2-FU: shoot.mjs consumes the post hook and the sched-modal scenario uses it', () => {
     const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
-    assert.ok(/query, post\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element');
+    assert.ok(/query, post, opts\] of SCENARIOS/.test(shoot), 'the loop destructures the 6th element (and, since VIS-TZ, the 7th)');
     assert.ok(/if \(post\) \{/.test(shoot), 'the hook is consumed after nav');
     assert.ok(/\['cn-sched-modal-light-wide',[^\]]*'cnOpenSchedModal_\(\)'\]/.test(shoot),
       'the sched-modal scenario opens the modal via the hook');
@@ -16039,7 +16039,12 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
     assert.ok(/writeAuditLog_\(callerEmp, 'Coaching(FollowUp|Nudge)'/.test(src) && !/whatHappened|patientTRX/.test(src.slice(src.indexOf('writeAuditLog_'))), fn + ': content-free audit row');
   });
   const nudge = stripJsComments_(extractRawFunction('Code.js', 'nudgeCoaching'));
-  assert.ok(/found\.item\.nudgedAt\.substring\(0, 10\) === todayIso\) \{\s*return \{ success: false/.test(nudge), 'once per manager-tz day per item');
+  assert.ok(/coachStampDayMgr_\(found\.item\.nudgedAt\) === todayIso\) \{\s*return \{ success: false/.test(nudge), 'once per manager-tz day per item — the stamp is CONVERTED to the manager day, never a raw substring compare (a Kolkata stamp vs a Chicago day disagree from 13:30 CDT)');
+  assert.ok(!/nudgedAt\.substring\(0, 10\)/.test(nudge), 'no raw-frame compare survives in nudgeCoaching');
+  const nudgeDash = stripJsComments_(extractRawFunction('Code.js', 'getCoachingDashboard'));
+  assert.ok(/c\.nudgedToday = !!\(c\.nudgedAt && coachStampDayMgr_\(c\.nudgedAt\) === biz\.todayIso\)/.test(nudgeDash), 'the dashboard flag uses the SAME converted day');
+  const nudgeConv = stripJsComments_(extractRawFunction('Code.js', 'coachStampDayMgr_'));
+  assert.ok(/parseDate\([\s\S]*?CONFIG\.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'\)/.test(nudgeConv) && /formatDate\(d, CONFIG\.MANAGER_TIMEZONE \|\| CONFIG\.TIMEZONE, 'yyyy-MM-dd'\)/.test(nudgeConv), 'parsed in the STAMP frame, formatted in the MANAGER frame');
   assert.ok(/status !== 'open'\) return \{ success: false/.test(nudge) && /severity === 'praise'\) return \{ success: false/.test(nudge), 'only an open non-praise item can be nudged');
   assert.ok(/notifyAfter = function \(\) \{ result\.mailed = notifyRepOfCoachingNudge_\(target, item, callerEmp\); \}/.test(nudge), 'the nudge mail is post-lock and its outcome rides back as `mailed`');
 });
@@ -16694,6 +16699,96 @@ test('PR6-3: the rail — clock card → punch actions → shift strip; the stat
   const m540 = styles.slice(styles.indexOf('@media (max-width: 540px)'));
   assert.ok(!/\.actions \{ grid-template-columns/.test(m540.slice(0, m540.indexOf('\n  }\n'))), 'the 540px block no longer re-columns .actions (its base IS that shape)');
   assert.ok(/\.clk-actions-block \.actions \{ margin: 12px 0 0; \}/.test(raw), 'the actions block owns its spacing');
+});
+
+
+/* ── TZR: the one-time Timesheet timezone repair (operator 2026-09-02) ──────
+ * The PH roster rows were flipped to America/Chicago mid-shift; every punch
+ * recorded under Asia/Manila is stored as Manila digits and now reads as a
+ * split, incomplete day. The repair re-formats each stored instant in the
+ * new zone. The planner is pure (tz functions injected) and the applier is
+ * pinned on the properties that make it safe to point at payroll rows. */
+test('TZR-1: tzRepairPlanRow_ moves a pre-flip row, leaves a post-flip row, and refuses garbage', () => {
+  const tctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'tzRepairPlanRow_'), tctx);
+  const plan = tctx.tzRepairPlanRow_;
+  // Inject a fixed 13h offset (Manila → CDT) so the test needs no tz library:
+  // toMs treats the pair as UTC and fmt* subtract 13h.
+  const toMs = (d, t) => Date.parse(d + 'T' + t + 'Z');
+  const shift = (ms) => new Date(ms - 13 * 3600 * 1000);
+  const fmtDate = (ms) => shift(ms).toISOString().slice(0, 10);
+  const fmtTime = (ms) => shift(ms).toISOString().slice(11, 19);
+  const flipMs = toMs('2026-09-03', '04:00:00');            // 15:00 CDT expressed in Manila digits
+  // The motivating shift: ClockIn D 21:30 + ClockOut D+1 06:00 collapse onto ONE Chicago date.
+  assert.strictEqual(JSON.stringify(plan('2026-09-01', '21:30:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ newDate: '2026-09-01', newTime: '08:30:00' }));
+  assert.strictEqual(JSON.stringify(plan('2026-09-02', '06:00:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ newDate: '2026-09-01', newTime: '17:00:00' }));
+  // A punch stamped AFTER the flip was already written in the new zone — left alone.
+  assert.strictEqual(JSON.stringify(plan('2026-09-03', '04:30:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ skip: 'after-flip' }));
+  assert.strictEqual(JSON.stringify(plan('2026-09-03', '04:00:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ skip: 'after-flip' }), 'the boundary itself is post-flip');
+  // Unparseable cells are reported, never guessed.
+  assert.strictEqual(plan('', '21:30:00', flipMs, toMs, fmtDate, fmtTime), null);
+  assert.strictEqual(plan('2026-09-01', 'Sat Dec 30 1899', flipMs, toMs, fmtDate, fmtTime), null);
+  assert.strictEqual(plan('2026-09-01', '21:30:00', flipMs, () => NaN, fmtDate, fmtTime), null);
+  // An identity conversion is a no-op, not a rewrite.
+  const same = (ms) => new Date(ms);
+  assert.strictEqual(JSON.stringify(plan('2026-09-01', '21:30:00', flipMs, toMs, (ms) => same(ms).toISOString().slice(0, 10), (ms) => same(ms).toISOString().slice(11, 19))), JSON.stringify({ skip: 'unchanged' }));
+});
+
+test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, locked, in-place, audited', () => {
+  const body = extractRawFunction('Code.js', 'repairTimesheetTimezone');
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/assertManagerCaller_\('repairTimesheetTimezone'\)/.test(stripped), 'MANAGER_EMAILS gate (INV-44 — editor-run, google.script.run-reachable)');
+  assert.ok(/const dryRun = opts\.dryRun !== false;/.test(stripped), 'a bare call NEVER writes — dryRun defaults TRUE');
+  assert.ok(/flippedAt is required/.test(stripped), 'flippedAt is required — without it post-flip punches would be shifted twice');
+  assert.ok(/ms >= flipMs/.test(extractRawFunction('Code.js', 'tzRepairPlanRow_')), 'the planner skips rows at/after the flip instant');
+  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(stripped), 'reads THROUGH the archive (INV-153/F1)');
+  assert.ok(/changes\.length > TZ_REPAIR_MAX_ROWS/.test(stripped), 'bounded per run');
+  assert.ok(/if \(dryRun\) \{[\s\S]*return \{ dryRun: true/.test(stripped), 'the dry run returns BEFORE the lock');
+  const dryIdx = stripped.indexOf('if (dryRun) {'), lockIdx = stripped.indexOf('waitLock(15000)');
+  assert.ok(dryIdx > 0 && lockIdx > dryIdx, 'lock acquired only on apply, after the dry-run return');
+  assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
+  // In place: ONLY the DATE and TIME cells are written; a punch is never appended or deleted.
+  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(c\.newDate\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(c\.newTime\)/.test(stripped), 'writes DATE + TIME in place');
+  assert.strictEqual((stripped.match(/\.setValue\(/g) || []).length, 2, 'exactly two cell writes per row — COMMENTS (the ADJ- marker) untouched');
+  ['appendRow', 'deleteRow', 'insertSheet', 'getOrCreate'].forEach((w) => assert.ok(!stripped.includes(w), 'never ' + w));
+  assert.ok(/writeAuditLog_\(targets\[id\], 'TimesheetTzRepair'/.test(stripped), 'one counts-only audit row per employee (INV-08)');
+  assert.ok(/rowsMoved=/.test(stripped) && !/oldTime|newTime' \+/.test(stripped.slice(stripped.indexOf("'TimesheetTzRepair'"))), 'the audit note carries counts, not punch times');
+  assert.ok(/would DUPLICATE an existing/.test(stripped), 'collisions are REPORTED, never resolved silently');
+  assert.ok(/clearFromEmployeeSheet_\(emp, c\.oldDate, c\.type\)/.test(stripped) && /writeToEmployeeSheet_\(emp, c\.newDate, c\.newTime, c\.dir, c\.type\)/.test(stripped), 'the personal-sheet mirror follows the move (INV-59, best-effort)');
+  assert.ok(/hits\.length !== 1/.test(stripped), 'an ambiguous name refuses rather than guessing a payroll row');
+  // The wrappers are the operator's ▶ targets and must never flip the default.
+  const dry = extractRawFunction('Code.js', 'repairTimesheetTimezone_dryRun');
+  const app = extractRawFunction('Code.js', 'repairTimesheetTimezone_apply');
+  assert.ok(/dryRun: true/.test(dry) && /dryRun: false/.test(app), 'wrappers pass the mode explicitly');
+});
+
+
+/* ── VIS-TZ: the browser-vs-roster timezone dimension (operator 2026-09-02) ──
+ * A PH agent's browser and roster row disagree by design under the ALL-CST
+ * policy. The harness can now hold the two apart: `timezoneId` on the
+ * Playwright context (browser), `?tz=` on the mock (roster), and a frozen
+ * instant chosen to sit just past the BROWSER's midnight. Pinned so the
+ * dimension cannot silently collapse back to "browser == roster". */
+test('VIS-TZ: shoot.mjs carries a browser-timezone tuple entry, the mock honours ?tz=, and the PHT scenario holds them apart', () => {
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/for \(const \[name, nav, vp, mode, query, post, opts\] of SCENARIOS\)/.test(shoot), 'the 7th tuple entry is destructured');
+  assert.ok(/if \(opts && opts\.tz\) ctxOpts\.timezoneId = opts\.tz;/.test(shoot), 'the BROWSER timezone rides the Playwright context');
+  assert.ok(/if \(opts && opts\.utc\) fake\.setUTCHours\(opts\.utc\[0\], opts\.utc\[1\] \|\| 0, 0, 0\);/.test(shoot), 'the frozen instant is per scenario');
+  const m = /\['clock-light-wide-pht', \{ tool: 'timeClock', tab: 'clock' \}, WIDE, 'light', '([^']*)', '', \{ tz: '([^']*)', utc: \[(\d+), (\d+)\] \}\]/.exec(shoot);
+  assert.ok(m, 'the PHT scenario exists with a query, a browser tz and a frozen instant');
+  assert.ok(/[?&]tz=America%2FChicago|[?&]tz=America\/Chicago/.test(m[1]) && /role=rep/.test(m[1]), 'roster = America/Chicago, viewed as a CSR');
+  assert.strictEqual(m[2], 'Asia/Manila', 'browser = Asia/Manila — the two MUST differ or the scenario tests nothing');
+  // 16:05 UTC = 00:05 PHT (UTC+8) = 11:05 CDT: just past the BROWSER midnight, mid-shift in the roster frame.
+  assert.strictEqual(Number(m[3]), 16); assert.strictEqual(Number(m[4]), 5);
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\/\[\?&\]tz=\(\[\^&\]\+\)\/\.exec\(window\.location\.search\)/.test(mock), 'the mock parses ?tz=');
+  assert.ok(/FIXTURES\.getEmployeeState\.timezone = tzId;/.test(mock) && /FIXTURES\.getEmployeeState\.timezoneAbbr = TZ_ABBR_FIX\[tzId\] \|\| tzId;/.test(mock), 'the hook overrides the ROSTER timezone + its abbreviation');
+  // The abbreviations the hook can emit are the server's own (INV-185).
+  const tzAbbr = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(/const TZ_ABBR = \{([^}]*)\}/);
+  assert.ok(tzAbbr, 'TZ_ABBR found');
+  [['America/Chicago', 'CST'], ['Asia/Kolkata', 'IST'], ['Asia/Manila', 'PHT']].forEach(([z, a]) => {
+    assert.ok(new RegExp("'" + z.replace('/', '\\/') + "':\\s*'" + a + "'").test(tzAbbr[1]), z + ' → ' + a + ' matches the server map');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

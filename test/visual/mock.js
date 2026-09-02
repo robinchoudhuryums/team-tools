@@ -1451,6 +1451,21 @@ function qaLatestScorecards_(cards) {
       FIXTURES.getEmployeeState.punches = [];
       FIXTURES.getEmployeeState.nextActions = ['ClockIn', 'Adjust'];
     }
+    // `?tz=<IANA>` (operator 2026-09-02) — override the ROSTER timezone the
+    // fixture rep carries, independent of the BROWSER timezone the harness
+    // gives the page (Playwright `timezoneId`). The two differ for every
+    // offshore agent under the ALL-CST policy (roster America/Chicago, browser
+    // Asia/Manila), and a client site that reads the browser clock instead of
+    // `isoDateTz(empTz())` shows up only when they disagree — the class behind
+    // the PHT-midnight report. The abbreviation mirrors the server's TZ_ABBR
+    // for the zones the scenarios use (INV-185: a fixture never invents one).
+    var tzm = /[?&]tz=([^&]+)/.exec(window.location.search);
+    if (tzm) {
+      var tzId = decodeURIComponent(tzm[1]);
+      var TZ_ABBR_FIX = { 'America/Chicago': 'CST', 'Asia/Kolkata': 'IST', 'Asia/Manila': 'PHT' };
+      FIXTURES.getEmployeeState.timezone = tzId;
+      FIXTURES.getEmployeeState.timezoneAbbr = TZ_ABBR_FIX[tzId] || tzId;
+    }
     // `?role=rep` (design handoff PR 4) — shoot a view AS A REP: every role
     // flag off, so rep-only chrome (the Coaching search field, the rep My
     // Coaching view with its reply boxes) renders instead of the manager's.

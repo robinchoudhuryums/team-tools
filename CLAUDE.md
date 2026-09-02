@@ -1504,6 +1504,30 @@ this section before touching the relevant area.
   same breakpoint restores 390/390. Re-measure `scrollWidth` vs `clientWidth`
   after any stacking change; a squeezed layout and an overflowing one look
   identical in a screenshot.
+- **A "same day" compare between a CONFIG.TIMEZONE stamp and a MANAGER-tz
+  "today" must CONVERT the stamp first (post-deploy `runAllTests`, 2026-09-02).**
+  `nudgeCoaching` wrote `NudgedAt` via `fmtDate_`/`fmtTime_` (Asia/Kolkata) and
+  guarded "once per day" with `nudgedAt.substring(0, 10) === todayIso` where
+  `todayIso` is the Chicago day. Kolkata is 10.5 hours ahead, so from 13:30 CDT
+  every afternoon the stamp reads TOMORROW's date and a second nudge is
+  allowed; the next Chicago morning the stale stamp matches and a fresh nudge
+  is refused. `coachStampDayMgr_(ts)` parses the stamp in `CONFIG.TIMEZONE` and
+  formats it in `CONFIG.MANAGER_TIMEZONE`; both the guard and the dashboard's
+  `nudgedToday` flag use it. The suite caught it only because the run happened
+  after 13:30 CDT (the same frame class as the editor-test hazards). Any new
+  "did this happen today" check over a `fmtDate_` stamp owes the same
+  conversion. Pinned in PR4-1.
+- **The TEST roster rows keep their FIXTURE timezones, and setup restores them
+  (operator 2026-09-02).** The ALL-CST runbook says "every agent row →
+  America/Chicago", and the operator applied it to `TEST_IN_001` /
+  `TEST_PH_001` too — but the suite hardcodes `Asia/Kolkata` / `Asia/Manila`
+  for them (the IST/PHT fixtures ARE the multi-timezone coverage, kept by
+  design). Four tests failed on the frame mismatch (a fixture ClockOut written
+  on the Kolkata date while `recordPunch` read today in Chicago; the note-hour
+  bucket expected in Kolkata). `setupTestEnvironment` now restores column H on
+  re-onboard exactly as it restores the email, so a flipped test row heals on
+  the next run. Do not flip the TEST rows by hand; if you do, nothing breaks
+  beyond one red run.
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself
   (F4, cycle-16 — FIXED).** `getCoveragePlan`'s PTO read was wrapped in
   `catch (e) { /* best-effort — coverage still renders */ }`. Best-effort was
@@ -6512,6 +6536,38 @@ manually for a fresh deploy or environment:
   the day it was written, but every round since PR #176 ships on ONE deploy, so
   the newest figure is the one to check against — read the count from the most
   recent entry, not the one whose feature you happen to be reading about.
+- **The Timesheet timezone REPAIR (operator 2026-09-02 — the PH roster flip
+  done mid-shift).** Flipping a roster `Timezone` cell changes how EXISTING
+  Timesheet rows are READ, not what they hold: every punch was stamped as the
+  rep's local date + wall time at the moment it was recorded, so a CST shift
+  worked under `Asia/Manila` sits in the sheet as ClockIn on date D at 21:30
+  and ClockOut on D+1 at 06:00 — read as Chicago digits, BOTH halves are
+  incomplete days (excluded from totals, pay statements, the team calendar and
+  the accrual). `repairTimesheetTimezone(opts)` (editor-run, MANAGER_EMAILS
+  gate, DRY-RUN BY DEFAULT) re-formats each stored instant in the new zone so
+  a split shift collapses onto one date; `flippedAt` (the new-zone wall time
+  the cell was changed) is REQUIRED so post-flip punches are never shifted
+  twice; it reads through `TimesheetArchive`, writes only the DATE + TIME
+  cells in place (COMMENTS' `ADJ-` marker survives), is bounded
+  (`TZ_REPAIR_MAX_ROWS`), locked on apply, re-points the personal-sheet
+  mirror best-effort, and writes one counts-only `TimesheetTzRepair` audit row
+  per employee. **The dry run's collision lines are the review step:** a row
+  landing on a (date, type) another row holds is a hand edit made after the
+  flip or a double punch across the old midnight — the tool REPORTS it and the
+  manager decides which punch is real. Two wrappers,
+  `repairTimesheetTimezone_dryRun()` / `_apply()`, carry the one-time
+  parameters in `TZ_REPAIR_2026_09_02` (Anne Garcia + Margie Ingay,
+  Manila → Chicago) — **delete the constant + both wrappers once the repair
+  is done.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
+  hand-corrected 08:30 would be read as Manila digits and moved to the wrong
+  day); then apply; then fix any reported duplicates in Day Edit. Two knock-ons
+  the repair does NOT do: the August accrual already ran against the split
+  days (top up by hand from the pay statement's corrected hours vs the
+  `PtoAccrualCredit` row's `hoursWorked=` — never backdate column R, credits
+  are deltas), and any ADP export cut while the rows were split is short those
+  shifts (re-export). Call-note `DateLocal` stamps are left alone (cosmetic).
+  Pinned by TZR-1 (planner behavioural) + TZR-2 (gate / dry-run default /
+  bounded / locked / in-place / audited / collisions reported).
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
   state** — no Script Properties, triggers, migrations or CONFIG values; ONE
   new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
@@ -6536,7 +6592,15 @@ manually for a fresh deploy or environment:
   chip; (f) **the greeting no longer rotates What's-new slides while a rep is
   on the clock.** The pinned pop-out is unchanged: it hides the block and
   makes no extra call. **Post-deploy: run `runAllTests()`** — expect **308**
-  (the new `pendingTasks_requiresEmployeeAndShape` case). **THIS IS THE
+  (the new `pendingTasks_requiresEmployeeAndShape` case). **The operator's
+  2026-09-02 4:35 PM run read 303/308:** one REAL bug (the coaching nudge's
+  once-per-day guard compared frames — fixed, `coachStampDayMgr_`) and four
+  test-side faults (the TEST rows' timezones had been flipped with the real
+  agents' — setup now restores them; the resume test read `day.incomplete`
+  where the builder returns `isIncomplete`; the multi-break test still refused
+  a trailing open break the 2026-09-02 fix accepts by design). The run took
+  25 minutes mid-shift — the documented lock-contention window, though no
+  lock timeout fired. Re-run after the next `clasp push -f`; expect 308/308. **THIS IS THE
   FIGURE FOR THE WHOLE BACKLOG** (the six design-handoff PRs ship on one
   deploy).
 - **Design handoff PR 5 (2026-09-02, the QA surface) adds ONE optional Script
@@ -9276,6 +9340,25 @@ after with `test/visual/fold-measure.mjs` rather than reasoned (704 → 367).
 Visual matrix 90 → **92** (`clock-needsyou-empty-light-wide` via
 `?fixture=empty`, `clock-needsyou-error-light-wide` via `?failrpc=`); editor
 suite +1 (`pendingTasks_requiresEmployeeAndShape`) ≈ **308**.
+The browser-timezone dimension (operator 2026-09-02, "can I see what the PH
+reps see?") added one more → **744** (VIS-TZ — the 7th tuple entry reaches the
+Playwright context as `timezoneId`, the frozen instant is per scenario, the
+mock honours `?tz=` for the ROSTER zone with abbreviations checked against the
+server's own `TZ_ABBR`, and the PHT scenario's two zones are asserted DIFFERENT
+— a scenario where they agree tests nothing). The R2-FU pin was rewritten in
+place for the seven-entry destructuring. Visual matrix 92 → **93**
+(`clock-light-wide-pht`, clean on its first shoot).
+The Timesheet timezone repair (operator 2026-09-02, the same afternoon) added
+two more → **743**: TZR-1 drives the pure `tzRepairPlanRow_` with INJECTED tz
+functions (a fixed 13h offset — the pre-flip shift collapses onto one date, a
+post-flip row and the boundary itself are left alone, garbage is null, an
+identity conversion is a no-op; compared by JSON value — the vm-realm
+`deepStrictEqual` trap, hit again), and TZR-2 pins the applier's contract
+(gate, `dryRun !== false` default, required flip instant, archive read-through,
+bound, dry-run return BEFORE the lock, finally-release, exactly TWO `setValue`
+per row so COMMENTS is untouched, no append/delete, per-employee counts-only
+audit, collisions reported, mirror re-pointed, ambiguous names refused). 3
+mutations / 3 bites.
 The design handoff's PR 3 (2026-09-02, the Manage surface) added five more →
 **727** (PR3-1 `punctDayState_` + `punctWeeklyBuckets_` driven behaviourally —
 the five states incl. `nopunch`, weekends null, buckets clipped to the range,
@@ -9864,6 +9947,20 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    The blocks that owe an entry are listed by name in the PR1-4 pin as they land
    (a fully derived "every fixture has an empty twin" scan is not expressible —
    fixtures are objects, not call sites).
+   **The BROWSER timezone is a scenario dimension since 2026-09-02 (VIS-TZ).**
+   A PH agent saw "Clock In" at midnight PHT; the server half was roster data,
+   but the CLIENT half — any site reading the browser clock instead of the
+   roster frame via `isoDateTz(empTz())` — only shows when browser and roster
+   DISAGREE, which no scenario had ever arranged with the clock frozen across
+   the browser's midnight. A scenario tuple's optional 7th entry
+   `{ tz, utc: [h, m] }` sets Playwright's `timezoneId` (the browser) and the
+   frozen instant; the mock's `?tz=<IANA>` sets the ROSTER zone the fixture rep
+   carries. `clock-light-wide-pht` holds them apart (roster America/Chicago
+   viewed from Asia/Manila at 16:05 UTC = 00:05 PHT = 11:05 CDT mid-shift) and
+   must read entirely as the Chicago day. Its first shoot was clean. Pair any
+   new browser-clock read in a rep-facing partial with a scenario in this
+   dimension; the VIS-TZ pin keeps the two zones from silently collapsing
+   back to equal.
    **The uncovered-tab list is DERIVED, not prose — the marker line below is
    machine-checked against the matrix (VIS-COVER), because the hand-kept
    sentence that used to sit here named 3 of 11 real gaps and a /sync-docs
