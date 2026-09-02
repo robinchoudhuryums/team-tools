@@ -1060,7 +1060,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'briefConfig', label: 'Manager-brief config coherence', ok: true, detail: '' },
         { key: 'managerSource', label: 'MANAGER_EMAILS ↔ roster drift', ok: true, detail: '' },
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
-      clientErrors: { count: 0, recent: [], windowDays: 7, url: '' },
+      clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
@@ -1149,8 +1149,46 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     } catch (e) { return ''; }
   })();
   var EMPTY_FIXTURES = {
-    // getCoachingDashboard / getMyCoaching / getMyPendingTasks / the Admin
-    // health+storage all-clear shapes join here with their blocks.
+    // getCoachingDashboard / getMyCoaching / getMyPendingTasks join here with
+    // their blocks (PRs 3-4). PR 2 (Admin): the two health payloads in their
+    // ALL-CLEAR shape — every count zero, every store configured + reachable +
+    // tz-matched, no likely name mismatches — so the System tab's "Nothing
+    // needs attention" state is shootable. The populated fixtures above carry
+    // one warning per area on purpose (a likely mismatch, an unset FORMS_SS_ID).
+    getAutomationHealth: {
+      syncFails: { count: 0, recent: [], windowDays: 30 },
+      automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],
+      automationErrors: {},
+      digests: [
+        { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
+        { key: 'urgent', last: daysAgo(0) + ' 08:00:11', stale: false },
+        { key: 'weekly', last: daysAgo(3) + ' 08:00:09', stale: false },
+        { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
+        { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
+        { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false }],
+      cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
+        unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
+        queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,
+          agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] }, truncated: false, error: null } },
+      detectors: [{ key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' }],
+      clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
+      witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
+      intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
+      auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+    },
+    getStorageHealth: {
+      configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
+      stores: [
+        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID',
+          source: 'Script Property', note: '', configured: true, reachable: true, name: 'ADP (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
+        { label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs', cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID',
+          source: 'Script Property', note: '', configured: true, reachable: true, name: 'KB (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
+        { label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge', prop: 'Employees col L (CallNotesSheetId)',
+          source: 'roster', note: '', configured: true, reachable: true, name: '', tz: '', tzMatch: null, url: '', perRep: { enrolled: 2, reachable: 2, tzMismatch: 0, problems: [] } }],
+      kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
+    },
   };
   function makeChain(succ, fail) {
     return new Proxy(function () {}, {

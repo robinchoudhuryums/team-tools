@@ -6551,19 +6551,31 @@ test('CDR: likely name mismatches pair the two directions, not either alone', ()
 });
 
 test('CDR: the health card tones off likelyMismatches, never the raw lists', () => {
+  // Design handoff A3 (PR 2): the card is DERIVED from cnHealthFindings_, so
+  // the rule is asserted on the findings function — the raw lists may appear
+  // there ONLY as an `ok` item (INV-186: reference detail, never a verdict).
+  // Comments are stripped first: the function EXPLAINS why the raw lists are
+  // unusable, so an un-stripped scan trips on its own rationale (INV-188).
   const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-  const src = stripComments(extractRawFunction('cn/script_callnotes.html', 'cnSetSysFromHealth_'));
-  // The tone/value/sub expressions must key off the paired set. Comments are
-  // stripped first: this very function EXPLAINS why the raw lists are unusable,
-  // so an un-stripped scan trips on its own rationale.
-  assert.ok(/likelyMismatches/.test(src), 'the card reads likelyMismatches');
-  const toneLine = (src.match(/var cdrTone\s*=.*/) || [''])[0];
-  assert.ok(/likely/.test(toneLine), 'cdrTone keys off the paired count');
-  assert.ok(!/unmatchedAgents|rosterWithNoCdr/.test(toneLine),
-    'cdrTone must NOT key off either raw direction (both are permanently non-empty)');
-  // The raw counts must not drive the card's value/sub text either.
-  assert.ok(!/unmatchedAgents|rosterWithNoCdr/.test(src),
-    'the status card derives from likelyMismatches alone');
+  const src = stripComments(extractRawFunction('cn/script_callnotes.html', 'cnHealthFindings_'));
+  assert.ok(/likelyMismatches/.test(src), 'the findings read likelyMismatches');
+  // Every statement that mentions a raw list must be the ok-with-detail add.
+  const rawStmts = src.split(';').filter((st) => /unmatchedAgents|rosterWithNoCdr/.test(st));
+  assert.ok(rawStmts.length >= 1, 'the raw lists are surfaced as detail');
+  rawStmts.forEach((st) => {
+    assert.ok(!/'(warn|fail)'/.test(st), 'a raw-list statement never carries a non-ok severity: ' + st.trim().slice(0, 80));
+  });
+  // …and driven behaviourally through the REAL function.
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || {};
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const r = fn({ cdr: { ok: true, unmatchedAgents: Array(78).fill('x'), rosterWithNoCdr: Array(12).fill('y'), likelyMismatches: [] } }, null);
+  const cdrBad = r.items.filter((f) => f.area === 'cdr' && f.severity !== 'ok');
+  assert.strictEqual(cdrBad.length, 0, '78 off-roster agents raise NO finding (permanently non-empty on a shared feed)');
+  const raw = r.items.find((f) => f.id === 'cdrRawLists');
+  assert.ok(raw && raw.severity === 'ok' && /78 off-roster/.test(raw.detail), 'the counts ride the ok item’s detail');
+  const r2 = fn({ cdr: { ok: true, likelyMismatches: [{ cdr: 'Smith, Bob', roster: 'Bob Smith' }] } }, null);
+  const nm = r2.items.find((f) => f.id === 'cdrNames');
+  assert.ok(nm && nm.severity === 'warn' && /Smith, Bob/.test(nm.detail), 'the PAIRED set is the warning');
 });
 
 test('CDR: both name-list renders cap and SAY what was cut', () => {
@@ -15568,6 +15580,158 @@ test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; 
   const banner = /\.coach-banner \{([^}]*)\}/.exec(co);
   assert.ok(banner && /background:var\(--warn-soft\)/.test(banner[1]) && /border:1px solid var\(--warn\)/.test(banner[1]),
     'the banner border and background are different tokens (they were both --warn-soft)');
+});
+
+
+/* ── Design handoff PR 2 — Admin surface ─────────────────────────────────
+ * The System tab is findings-first: ONE pure derivation (cnHealthFindings_)
+ * feeds the list, the three Overview cards, and the tab badge, so they cannot
+ * disagree. Failed loads are FINDINGS (INV-187), no-fallback stores left unset
+ * are facts (INV-186), and the storage inventory renders through the shared
+ * table (V-11). NOTE the placement: ABOVE process.exit.
+ */
+
+test('PR2-1: cnHealthFindings_ — an all-clear payload yields zero non-ok items; a failed load is a fail finding, never silence', () => {
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD unresolved-flag digest' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const worstFn = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindingsWorst_');
+  assert.strictEqual(typeof fn, 'function');
+  const clean = {
+    syncFails: { count: 0, windowDays: 30 }, witnessFails: { count: 0, recent: false }, automationErrors: {},
+    digests: [{ key: 'eod', last: 'x', stale: false }, { key: 'managerBrief', last: null, stale: false }],
+    detectors: [{ key: 'a', label: 'A', ok: true }], clientErrors: { count: 3, last24h: 2, windowDays: 7 },
+    selfTest: { date: 'd', mode: 'smoke', pass: 70, fail: 0, skip: 0, running: false, stuck: false },
+    intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
+    cdr: { ok: true, rowsMatched: 96, unmatchedAgents: ['a', 'b'], rosterWithNoCdr: ['c'], likelyMismatches: [],
+      queueInventory: { ok: true, rowsInWindow: 10, agentDateRows: { max: 1 } } },
+  };
+  const cleanStorage = { configTimezone: 'Asia/Kolkata', stores: [
+    { label: 'Time Clock / ADP', cls: 'Payroll', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true },
+    { label: 'CDR Report', cls: 'External', prop: 'CDR_SS_ID', configured: false },              // no-fallback → ok
+    { label: 'Employee Docs (HR)', cls: 'HR', prop: 'HR_DOCS_SS_ID', configured: false },        // no-fallback → ok
+    { label: 'QA (recordings)', cls: 'QA', prop: 'QA_SS_ID', configured: false },                // no-fallback → ok
+    { label: 'Call Notes (per-rep)', cls: 'PHI', prop: 'col L', configured: true, reachable: true, tzMatch: null, perRep: { problems: [] } }],
+    kbEmbeds: { total: 3, broken: [] } };
+  const r = fn(clean, cleanStorage);
+  assert.strictEqual(r.items.filter((f) => f.severity !== 'ok').length, 0, 'a healthy deployment raises NOTHING (INV-186)');
+  assert.ok(r.items.length >= 12, 'the ok checks are still listed (got ' + r.items.length + ')');
+  assert.strictEqual(Object.keys(r.degraded).sort().join('|'), 'automation|cdr|storage');
+  assert.ok(!r.degraded.automation && !r.degraded.storage, 'nothing degraded');
+  // Every id lands in exactly one bucket.
+  const ids = r.items.map((f) => f.id);
+  assert.strictEqual(new Set(ids).size, ids.length, 'ids are unique');
+  r.items.forEach((f) => assert.ok(['automation', 'cdr', 'storage'].indexOf(f.area) >= 0, 'area is one of three: ' + f.id));
+
+  // The fallback-prone store left unset WARNS; the unreachable one FAILS.
+  const r2 = fn(clean, { configTimezone: 'Asia/Kolkata', stores: [
+    { label: 'Forms (PHI)', cls: 'PHI', prop: 'FORMS_SS_ID', configured: false, note: 'falls back' },
+    { label: 'Intake (PHI)', cls: 'PHI', prop: 'INTAKE_SS_ID', configured: true, reachable: false },
+    { label: 'KB', cls: 'PHI-free', prop: 'KB_SS_ID', configured: true, reachable: true, tzMatch: false, tz: 'America/Chicago', url: 'https://x' }] });
+  const sev = (id) => (r2.items.find((f) => f.id === id) || {}).severity;
+  assert.strictEqual(sev('store:FORMS_SS_ID'), 'warn'); assert.strictEqual(sev('store:INTAKE_SS_ID'), 'fail'); assert.strictEqual(sev('store:KB_SS_ID'), 'warn');
+  assert.ok(/Asia\/Kolkata/.test(r2.items.find((f) => f.id === 'store:KB_SS_ID').fix), 'the tz fix names the target zone');
+
+  // A failed load is a FINDING and marks the area degraded — never an all-clear.
+  const r3 = fn({ error: 'boom' }, { error: 'bang' });
+  assert.strictEqual(r3.degraded.automation, 'boom'); assert.strictEqual(r3.degraded.cdr, 'boom'); assert.strictEqual(r3.degraded.storage, 'bang');
+  assert.strictEqual(r3.items.map((f) => f.severity).join('|'), ['fail', 'fail'].join('|'));
+  // Not-loaded-yet is DISTINCT from failed: no items, nothing degraded.
+  const r4 = fn(null, null);
+  assert.strictEqual(r4.items.length, 0); assert.ok(!r4.degraded.automation && !r4.degraded.storage);
+
+  // The per-signal rules, each against the count that is zero when healthy.
+  const one = (h) => fn(Object.assign({}, clean, h), cleanStorage).items.filter((f) => f.severity !== 'ok');
+  assert.strictEqual(one({ syncFails: { count: 2 } }).map((f) => f.id).join('|'), ['syncFails'].join('|'));
+  assert.strictEqual(one({ automationErrors: { PtoAccrualCredit: { at: 't', error: 'e' } } }).map((f) => f.severity).join('|'), ['fail'].join('|'));
+  assert.strictEqual(one({ digests: [{ key: 'eod', last: 'x', stale: true }] }).map((f) => f.id).join('|'), ['digest:eod'].join('|'));
+  assert.strictEqual(one({ detectors: [{ key: 'k', label: 'K', ok: false, detail: 'd' }] }).map((f) => f.severity).join('|'), ['fail'].join('|'));
+  assert.strictEqual(one({ clientErrors: { count: 40, last24h: 10 } }).map((f) => f.id).join('|'), ['clientErrors'].join('|'));
+  assert.strictEqual(one({ clientErrors: { count: 40, last24h: 9 } }).length, 0, 'below the threshold stays ok');
+  assert.strictEqual(one({ selfTest: { fail: 1, pass: 1, skip: 0, mode: 'smoke', date: 'd' } }).map((f) => f.severity).join('|'), ['fail'].join('|'));
+  assert.strictEqual(one({ selfTest: { running: true, stuck: true, date: 'd', mode: 'full' } }).map((f) => f.severity).join('|'), ['fail'].join('|'));
+  assert.strictEqual(one({ cdr: { ok: false, error: 'nope' } }).map((f) => f.id).join('|'), ['cdrUnreachable'].join('|'));
+  assert.strictEqual(one({ intakeCatalog: { ok: true, totalRows: 2, errors: [{ row: 4, hcpcs: 'K0821', field: 'capacity' }], warnings: [] } }).map((f) => f.severity).join('|'), ['fail'].join('|'));
+  assert.strictEqual(worstFn([{ severity: 'ok' }, { severity: 'warn' }, { severity: 'fail' }]), 'fail');
+  assert.strictEqual(worstFn([{ severity: 'ok' }, { severity: 'warn' }]), 'warn');
+  assert.strictEqual(worstFn([]), 'ok');
+});
+
+test('PR2-2: the Overview cards, the System badge and the findings list all derive from cnHealthFindings_ (one source)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const code = stripJsComments_(cn);
+  const render = extractFnFrom(code, 'cnRenderSystemFindings_');
+  assert.ok(/cnHealthFindings_\(health, storage\)/.test(render), 'the renderer calls the derivation once');
+  assert.ok((render.match(/cnSetSysCard_\(/g) || []).length >= 2, 'the cards are set FROM the list');
+  assert.ok(/cnSetSysBadge_\(needs\.length, worst\)/.test(render), 'the badge is the non-ok count');
+  // No other site may compute a card tone from the payload — the retired
+  // derivations must not return (INV-184 in the JS: a second derivation drifts).
+  ['cnSetSysFromHealth_(', 'cnToggleSysDetails_(', "getElementById('cn-sys-details')"].forEach((n) =>
+    assert.ok(code.indexOf(n) < 0, n + ' is retired'));
+  const cardSites = [...code.matchAll(/cnSetSysCard_\(/g)].length;
+  const inRender = (render.match(/cnSetSysCard_\(/g) || []).length;
+  assert.strictEqual(cardSites, inRender + 1, 'cnSetSysCard_ is called ONLY from the findings renderer (+ its definition)');
+  // Both loaders route success AND failure through the renderer, and X7:
+  // a failed load renders errorStateHtml_ in its slot.
+  ['cnLoadHealthPanel_', 'cnLoadStoragePanel_'].forEach((fn) => {
+    const src = extractFnFrom(code, fn);
+    assert.ok((src.match(/cnRenderSystemFindings_\(\)/g) || []).length >= 2, fn + ' re-derives on success and failure');
+    assert.ok(/errorStateHtml_\(/.test(src), fn + ' renders the error card on failure (X7)');
+    assert.ok(/CN_STATE\.admin(Health|Storage) = \{ error: msg \}/.test(src), fn + ' records the failure in state');
+  });
+  ['cnLoadDeployReadiness_', 'cnLoadSheetView_'].forEach((fn) =>
+    assert.ok(/errorStateHtml_\(/.test(extractFnFrom(code, fn)), fn + ' renders errorStateHtml_ on failure (X7)'));
+  // The cards are real buttons into the System tab (A2/INV-173), and the
+  // sections they target exist.
+  assert.ok(/<button type="button" class="panel cn-sys-card"/.test(extractFnFrom(code, 'cnSysCardShell_')), 'card shell is a <button>');
+  ['cn-sys-sec-automation', 'cn-sys-sec-cdr', 'cn-sys-sec-storage'].forEach((id) =>
+    assert.ok(code.indexOf(id) >= 0, 'section anchor ' + id + ' is rendered'));
+  // Six sub-tabs, System among them.
+  const panes = [...cn.matchAll(/tab\('(\w+)',\s*'[^']+'\)/g)].map((m) => m[1]);
+  assert.deepStrictEqual(panes, ['overview', 'system', 'tags', 'compliance', 'config', 'sheets']);
+});
+
+test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail row; the hand-rolled rows are retired', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const code = stripJsComments_(cn);
+  const src = extractFnFrom(code, 'cnRenderStoragePanel_');
+  assert.ok(/mtRenderTable_\(\{/.test(src), 'V-11: the shared table');
+  assert.ok(/rowId: function \(r\) \{ return 'cn-store-' \+ r\.i; \}/.test(src) && /detailRow: function \(r\) \{ return r\.detail; \}/.test(src),
+    'the detail row rides the INV-182 hooks');
+  assert.ok(/aria-controls="cn-store-' \+ r\.i \+ '"/.test(src) && /onclick="cnToggleDetailRow_\(this\)"/.test(src),
+    'the disclosure button targets its row');
+  const tg = extractFnFrom(code, 'cnToggleDetailRow_');
+  assert.ok(/aria-expanded/.test(tg) && /hasAttribute\('hidden'\)/.test(tg), 'the toggle keeps aria-expanded + hidden in step (INV-174)');
+  // INV-184: the retired classes must not come back anywhere in the file (JS or CSS).
+  ['cn-storage-row', 'cn-storage-main', 'cn-storage-role', 'cn-storage-meta', 'cn-sys-details-btn'].forEach((c) =>
+    assert.ok(!new RegExp('\\.' + c + '\\b|class="' + c + '"').test(code), c + ' is retired'));
+  // Driven: a fixture with one unreachable + one tz-drifted store renders the
+  // toned rows, the pills, and exactly the detail rows that have content.
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
+  const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
+  const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
+    { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
+    { label: 'Intake <b>x</b>', role: 'r', cls: 'PHI', retention: 'x', prop: 'INTAKE_SS_ID', source: 'Script Property', configured: true, reachable: false, note: 'n' },
+    { label: 'KB', role: 'r', cls: 'PHI-free', retention: 'x', prop: 'KB_SS_ID', source: 'Script Property', configured: true, reachable: true, tzMatch: false, tz: 'America/Chicago', url: 'https://x' }] });
+  assert.ok(/class="sv-row-danger"/.test(html) && /class="sv-row-warn"/.test(html), 'row tones');
+  assert.ok((html.match(/<tr class="mt-detail"/g) || []).length === 2, 'detail rows only where there is detail (note; tz fix)');
+  assert.ok(/Intake &lt;b&gt;x&lt;\/b&gt;/.test(html), 'labels are escaped');
+  assert.ok(/data-tone="crit">unreachable</.test(html) && /≠ CONFIG/.test(html), 'status + tz pills');
+  assert.ok(/id="cn-sys-sec-storage"/.test(html), 'the section anchor');
+});
+
+test('PR2-4: mock.js carries the Admin all-clear empty shapes; shoot.mjs covers the System pane (wide/dark/mobile/all-clear/error)', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const body = /var EMPTY_FIXTURES = \{([\s\S]*?)\n  \};/.exec(mock)[1];
+  ['getAutomationHealth', 'getStorageHealth'].forEach((n) => assert.ok(new RegExp('\\b' + n + '\\s*:').test(body), n + ' has an all-clear shape'));
+  // The all-clear shape must ACTUALLY be all-clear: no likely mismatch, no
+  // unset/unreachable/drifted store, no stale digest, nothing failing.
+  assert.ok(/likelyMismatches: \[\]/.test(body) && !/configured: false|reachable: false|tzMatch: false|stale: true|fail: [1-9]/.test(body),
+    'the empty shapes carry no finding');
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  ['admin-system-light-wide', 'admin-system-dark-wide', 'admin-system-light-mobile', 'admin-system-allclear-light-wide', 'admin-system-error-light-wide']
+    .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
+  assert.ok(/admin-system-allclear-light-wide'[^\]]*\?fixture=empty/.test(shoot), 'the all-clear scenario rides ?fixture=empty');
+  assert.ok(/admin-system-error-light-wide'[^\]]*failrpc=getAutomationHealth/.test(shoot), 'the error scenario forces the health RPC to fail');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -195,6 +195,14 @@ const SCENARIOS = [
   ['admin-compliance-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('compliance')"],
   ['admin-config-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('config')"],
   ['admin-sheets-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('sheets')"],
+  // Design handoff PR 2 — the findings-first System pane: populated (one
+  // warning per area on purpose), dark parity, mobile, the ALL-CLEAR state via
+  // ?fixture=empty, and the X7 error state via a forced health-RPC failure.
+  ['admin-system-light-mobile',      { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('system')"],
+  ['admin-system-light-wide',        { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('system')"],
+  ['admin-system-dark-wide',         { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'dark', '', "cnAdminTab_('system')"],
+  ['admin-system-allclear-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?fixture=empty', "cnAdminTab_('system')"],
+  ['admin-system-error-light-wide',  { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?failrpc=getAutomationHealth', "cnAdminTab_('system')"],
 
   // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
   // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every

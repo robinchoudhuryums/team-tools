@@ -486,19 +486,39 @@
   }
 
   /* ─── ADMIN STORAGE HEALTH PANEL (#1) ────────────────────────────── */
-  .cn-storage-row {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
-    padding: 9px 0; border-bottom: 1px dashed var(--line);
-  }
-  .cn-storage-row:last-child { border-bottom: none; }
-  .cn-storage-main { min-width: 0; flex: 1; }
-  .cn-storage-label { font-weight: 600; color: var(--ink); font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .cn-storage-role { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .cn-storage-meta { text-align: right; flex-shrink: 0; white-space: nowrap; }
-  @media (max-width: 720px) {
-    .cn-storage-row { flex-direction: column; gap: 4px; }
-    .cn-storage-meta { text-align: left; white-space: normal; }
-  }
+  /* Design handoff A4 (2026-09-02): the inventory renders through the shared
+     mtRenderTable_ (Store · Class · Status · Timezone · Retention · link) with
+     an expandable detail row per store (note / per-rep problems / the tz fix).
+     The hand-rolled .cn-storage-row/-main/-role/-meta flex rows are retired
+     (INV-184 — pinned not to return). */
+  .cn-store-sub { font-family: var(--mono); font-size: 10px; color: var(--muted-2); margin-top: 2px; white-space: nowrap; }
+  .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .cn-store-detail .fix { color: var(--warning-deep); }
+  .cn-store-detail .bad { color: var(--danger-deep); }
+  .cn-pill { font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
+  .cn-pill[data-tone="ok"]    { color: var(--success-deep); background: var(--accent-soft); }
+  .cn-pill[data-tone="warn"]  { color: var(--warning-deep); background: var(--warn-soft); }
+  .cn-pill[data-tone="crit"]  { color: var(--danger-deep); background: var(--destructive-soft); }
+  .cn-pill[data-tone="muted"] { color: var(--muted); background: var(--paper-2); }
+  /* System tab — findings list (design handoff A3). Severity is carried in
+     WORDS (the pill) as well as the rail colour (A6). */
+  .cn-findings { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .cn-finding { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: start; padding: 10px 14px; }
+  .cn-finding .cn-finding-t { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .cn-finding .cn-finding-d { grid-column: 2; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .cn-finding .cn-finding-f { grid-column: 2; font-size: 12px; color: var(--ink); line-height: 1.5; }
+  .cn-finding .cn-finding-f a { margin-left: 6px; }
+  .cn-finding .cn-finding-area { grid-column: 2; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-3); }
+  .cn-ok-list { margin: 0 0 18px; font-size: 12px; color: var(--muted); }
+  .cn-ok-list summary { cursor: pointer; color: var(--success-deep); font-weight: 600; }
+  .cn-ok-list ul { margin: 6px 0 0; padding-left: 18px; }
+  .cn-ok-list li { margin: 2px 0; }
+  .cn-ok-list li .why { color: var(--muted-3); }
+  @media (max-width: 560px) { .cn-finding { grid-template-columns: 1fr; } .cn-finding .cn-finding-d, .cn-finding .cn-finding-f, .cn-finding .cn-finding-area { grid-column: 1; } }
+  /* The System tab's count badge — a text equivalent rides aria-label (A6). */
+  .cn-admin-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 700; letter-spacing: 0; background: var(--warn); color: var(--paper); }
+  .cn-admin-tab-badge[data-tone="fail"] { background: var(--destructive); }
+  .toolbar-tab[aria-current="page"] .cn-admin-tab-badge { background: var(--paper); color: var(--ink); }
 
   /* ─── ADMIN TAG TRENDS PANEL (#5) ────────────────────────────────── */
   .cn-trend-head,
@@ -1665,7 +1685,12 @@
   }
   /* §7c/#4 — Admin Overview "System status" cards */
   .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
-  .cn-sys-card { padding: 12px 14px; }
+  /* A2 (design handoff): the cards are real BUTTONS that open the System tab
+     scrolled to their area — "the obvious gesture on a warning card is 'show
+     me why'". Reset the button chrome so the panel look is unchanged. */
+  .cn-sys-card { padding: 12px 14px; appearance: none; font: inherit; text-align: left; cursor: pointer; width: 100%; color: inherit; }
+  .cn-sys-card:hover { border-color: var(--border-strong); }
+  .cn-sys-card:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--ring-focus); }
   .cn-sys-card .cn-sys-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -1734,18 +1759,9 @@
     .cn-usage-row { grid-template-columns: minmax(0, 1fr) 44px 62px; }
     .cn-usage-bar, .cn-usage-sub:last-child { display: none; }
   }
-  /* 2nd-pass — System-details disclosure toggle (folds the full health panels) */
-  .cn-sys-details-btn {
-    appearance: none; cursor: pointer; margin: 4px 0 16px;
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-    background: none; border: none; padding: 4px 0;
-    transition: color var(--t) var(--ease);
-  }
-  .cn-sys-details-btn:hover { color: var(--ink); }
-  .cn-sys-details-btn .acc-chev { display: inline-flex; }
-  .cn-sys-details-btn.open .acc-chev { transform: rotate(90deg); }
+  /* (The 2nd-pass "System details" disclosure is retired — design handoff A2:
+     the panels it folded now live on the System sub-tab. INV-184: the
+     .cn-sys-details-btn selector is banned from returning.) */
 
   /* §7a — search results in the real note-card vocabulary (read-only) */
   .cn-result-count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 10px; }
@@ -8808,15 +8824,29 @@ function enterCallNotesAdminView(area) {
   };
   if (!CN_STATE.adminTab) CN_STATE.adminTab = 'overview';
   var paneStyle = function (key) { return CN_STATE.adminTab === key ? '' : 'display:none'; };
+  // Design handoff A3 (2026-09-02): the two health payloads are held here so
+  // the findings list + the status cards can be derived from BOTH once either
+  // lands (null = not loaded yet; {error} = that load failed).
+  CN_STATE.adminHealth = null; CN_STATE.adminStorage = null;
   area.innerHTML =
     compactHeader +
-    (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
-    '<div class="toolbar-tabs cn-admin-tabs" role="group" aria-label="Admin section" style="margin-bottom:16px">' +
-      tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') + tab('sheets', 'Sheets') +
+    // Design handoff A1: the shared app-bar (two-level crumb — the sidebar IS
+    // the tools level; see the plan's X2) replaces the bare title row.
+    (COMPACT_MODE ? '' :
+      '<div class="app-bar"><div class="app-bar-left">' +
+        '<div class="breadcrumb"><span>Manage</span><span class="crumb-sep">›</span><span class="crumb-current">Admin</span></div>' +
+        '<h1 class="display-title">Admin</h1>' +
+        '<div class="view-subtitle" style="margin-bottom:0">System health, storage, tag taxonomy, retention and department config. Changes take effect immediately — no redeploy.</div>' +
+      '</div></div>') +
+    '<div class="toolbar-tabs cn-admin-tabs" role="group" aria-label="Admin section" style="margin:16px 0">' +
+      tab('overview', 'Overview') + tab('system', 'System') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') + tab('sheets', 'Sheets') +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
       '<div id="cn-admin-deploy"></div>' +
       '<div class="day-section-label" style="margin-bottom:8px">System status</div>' +
+      // A2: the three cards are LINKS into the System tab (real buttons —
+      // INV-173), each scrolled to its own area. Their tone derives from the
+      // findings list (A3), not from a separate subset of the payload.
       '<div class="cn-sys-status">' +
         cnSysCardShell_('automation', 'Automation') +
         cnSysCardShell_('cdr', 'CDR') +
@@ -8826,17 +8856,18 @@ function enterCallNotesAdminView(area) {
       // Pre-pilot observability (operator 2026-08-13): which tabs reps
       // actually use — the priorities question needs data, not guesses.
       '<div id="cn-admin-usage"></div>' +
-      // 2nd-pass Admin consolidation: the 3 status cards above ARE the folded
-      // summary of the Automation / CDR / Storage health panels; the full detail
-      // panels move behind a disclosure so Overview lands on the summary, not a
-      // long scroll. Detail is preserved (progressive disclosure), not removed.
-      '<button id="cn-sys-details-toggle" class="cn-sys-details-btn" aria-expanded="false" onclick="cnToggleSysDetails_()">' +
-        '<span class="acc-chev">' + icon('chevronRight', 13) + '</span> System details' +
-      '</button>' +
-      '<div id="cn-sys-details" style="display:none">' +
-        '<div id="cn-admin-health"></div>' +
-        '<div id="cn-admin-storage"></div>' +
-      '</div>' +
+    '</div>' +
+    // Design handoff A2: System is its own sub-tab. Order: Needs attention
+    // (every non-ok finding, stated once with its fix and link) → the passing
+    // count → the storage inventory → the automation detail (last-seen,
+    // heartbeats, detector liveness, the CDR reference lists + queue
+    // inventory, catalog, self-test). Both payloads load EAGERLY on enter —
+    // the Overview cards need them anyway, and an eager load has no M-8
+    // re-enter hole to open.
+    '<div class="cn-admin-pane" data-pane="system" style="' + paneStyle('system') + '">' +
+      '<div id="cn-sys-findings">' + loSweep() + '</div>' +
+      '<div id="cn-admin-storage"></div>' +
+      '<div id="cn-admin-health"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
       '<div id="cn-admin-augment"></div>' +
@@ -9089,14 +9120,14 @@ function cnLoadDeployReadiness_() {
     .withSuccessHandler(function (res) {
       if (currentView !== 'callNotesAdmin') return;
       if (!res || res.error) {
-        slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Could not load deploy readiness') + '</div>';
+        slot.innerHTML = errorStateHtml_((res && res.error) || 'Could not load deploy readiness');   // A12/INV-175
         return;
       }
       slot.innerHTML = cnRenderDeployReadinessHtml_(res);
     })
     .withFailureHandler(function (err) {
       if (currentView !== 'callNotesAdmin') return;
-      slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Could not load deploy readiness') + '</div>';
+      slot.innerHTML = errorStateHtml_((err && err.message) || 'Could not load deploy readiness');   // A12/INV-175
     })
     .getDeployReadiness();
 }
@@ -9132,7 +9163,7 @@ function cnRenderDeployReadinessHtml_(res) {
 /** §7c — switch the Admin sub-tab (Overview / Tags / Compliance / Config).
  *  Pure show/hide over the already-loaded panes; the panels keep their data
  *  (no reload). Persists the active tab in CN_STATE so a re-enter restores it. */
-function cnAdminTab_(key) {
+function cnAdminTab_(key, anchorId) {
   CN_STATE.adminTab = key;
   document.querySelectorAll('.cn-admin-tabs .toolbar-tab').forEach(function (b) {
     const on = b.getAttribute('data-admin-tab') === key;
@@ -9142,6 +9173,13 @@ function cnAdminTab_(key) {
   document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
     p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
   });
+  // A2 — an Overview status card opens System scrolled to its own area.
+  if (anchorId) {
+    var target = document.getElementById(anchorId);
+    if (target && typeof target.scrollIntoView === 'function') {
+      try { target.scrollIntoView({ block: 'start' }); } catch (e) {}
+    }
+  }
   // Tier 2 — lazy-load the Sheets viewer when its pane is EMPTY (avoids an
   // AuditLog scan on every Admin landing; re-clicks on a populated pane stay
   // free). F(M-7): the old session-scoped _sheetsLoaded flag outlived the
@@ -9154,19 +9192,24 @@ function cnAdminTab_(key) {
   }
 }
 
-/** 2nd-pass Admin consolidation — toggle the folded System-details disclosure
- *  (the full Automation/CDR + Storage health panels). The 3 status cards are
- *  the always-visible summary; the detail is progressive-disclosure so Overview
- *  lands on the summary, not a long scroll. Plain show/hide (the panels are tall
- *  + variable — a fixed-height accordion would clip them). */
-function cnToggleSysDetails_() {
-  var box = document.getElementById('cn-sys-details');
-  var btn = document.getElementById('cn-sys-details-toggle');
-  if (!box || !btn) return;
-  var open = box.style.display === 'none';
-  box.style.display = open ? '' : 'none';
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  btn.classList.toggle('open', open);
+/** Design handoff A2 — the System tab's count badge. `n` = non-ok findings
+ *  (derived client-side from cnHealthFindings_, so the server payload is
+ *  unchanged and the badge cannot disagree with the list). A text equivalent
+ *  rides the tab's aria-label (A6). Zero removes the badge. */
+function cnSetSysBadge_(n, worst) {
+  var tabBtn = document.querySelector('.cn-admin-tabs .toolbar-tab[data-admin-tab="system"]');
+  if (!tabBtn) return;
+  var old = tabBtn.querySelector('.cn-admin-tab-badge');
+  if (old) old.remove();
+  if (!n) { tabBtn.setAttribute('aria-label', 'System, all clear'); return; }
+  var b = document.createElement('span');
+  b.className = 'cn-admin-tab-badge';
+  b.setAttribute('data-tone', worst === 'fail' ? 'fail' : 'warn');
+  b.setAttribute('aria-hidden', 'true');
+  b.textContent = String(n);
+  tabBtn.appendChild(document.createTextNode(' '));
+  tabBtn.appendChild(b);
+  tabBtn.setAttribute('aria-label', 'System, ' + n + ' finding' + (n === 1 ? '' : 's'));
 }
 
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
@@ -9682,18 +9725,17 @@ var CN_HEALTH_RUN_LABELS = {
   QaReviewPurge:        { label: 'QA review-record purge',     expect: 'daily 2am — writes a row only when QA_REVIEW_RETENTION_DAYS is set' },
 };
 
-/** #1 — Storage Health panel. Independent load (contained failure), mirrors
- *  cnLoadHealthPanel_. Renders one row per spreadsheet the app uses with a
- *  configured/reachable/tz badge — the tz-mismatch row is the headline (it's
- *  the exact misconfig the runAllTests S1.1 tripwire flags). */
 // §7c/#4 — compact "System status" cards atop the Admin Overview, summarizing
 // Automation / CDR / Storage as OK / warn / error. Derived from the SAME
-// getAutomationHealth + getStorageHealth fetches the detail panels below use (no
-// extra RPCs). The full panels remain below as the drill-down.
+// getAutomationHealth + getStorageHealth fetches the System tab uses (no extra
+// RPCs) through the one findings list (cnHealthFindings_); each card is a
+// link into the System tab's matching section (design handoff A2/A3).
 function cnSysCardShell_(key, label) {
-  return '<div class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage">' +
+  // A real button (INV-173) that opens the System tab at this area's section.
+  return '<button type="button" class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage"' +
+    ' onclick="cnAdminTab_(\'system\', \'cn-sys-sec-' + key + '\')" aria-label="' + esc(label) + ': checking — open System">' +
     '<div class="cn-sys-h">' + esc(label) + '</div>' +
-    '<div class="cn-sys-v" style="color:var(--muted)"><span class="lo-dots"><span></span><span></span><span></span></span></div></div>';
+    '<div class="cn-sys-v" style="color:var(--muted)"><span class="lo-dots"><span></span><span></span><span></span></span></div></button>';
 }
 function cnSetSysCard_(key, label, tone, value, sub) {
   var el = document.getElementById('cn-sys-' + key);
@@ -9702,10 +9744,13 @@ function cnSetSysCard_(key, label, tone, value, sub) {
   var ic = tone === 'ok' ? 'checkCircle' : tone === 'warn' ? 'warning' : 'xCircle';
   var col = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : 'var(--danger-deep)';
   el.setAttribute('data-tone', toneAttr);
+  // A6: the link text names the destination ("Automation: 2 sync failures — open System").
+  el.setAttribute('aria-label', label + ': ' + value + (sub ? ' (' + sub + ')' : '') + ' — open System');
   el.innerHTML =
     '<div class="cn-sys-h">' + esc(label) + ' <span style="color:' + col + '">' + icon(ic, 13) + '</span></div>' +
     '<div class="cn-sys-v">' + esc(value) + '</div>' +
-    (sub ? '<div class="cn-sys-s">' + esc(sub) + '</div>' : '');
+    (sub ? '<div class="cn-sys-s">' + esc(sub) + '</div>' : '') +
+    '<div class="cn-sys-s" aria-hidden="true">open System ›</div>';
 }
 
 // ── Tier 2 — read-only highlighted sheet viewer (allowlisted, PHI-free) ──────
@@ -9729,8 +9774,8 @@ function cnLoadSheetView_(viewKey) {
       var live = document.getElementById('cn-admin-sheets');
       if (!live) return;
       if (!res || res.error) {
-        live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((res && res.error) || 'load failed') +
-          ' <button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
+        live.innerHTML = errorStateHtml_('Sheet view unavailable: ' + ((res && res.error) || 'load failed')) +   // A12/INV-175
+          '<div style="margin-top:8px"><button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
         return;
       }
       live.innerHTML = cnRenderSheetView_(res);
@@ -9738,8 +9783,8 @@ function cnLoadSheetView_(viewKey) {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-sheets');
-      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((err && err.message) || 'load failed') +
-        ' <button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
+      if (live) live.innerHTML = errorStateHtml_('Sheet view unavailable: ' + ((err && err.message) || 'load failed')) +   // A12/INV-175
+        '<div style="margin-top:8px"><button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
     })
     .getAdminSheetView(viewKey);
 }
@@ -9797,107 +9842,140 @@ function cnLoadStoragePanel_() {
   if (!slot) return;
   slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
+  // X7 (design handoff): a failed read renders the warn card (INV-175), the
+  // state slot records the failure, and the findings list re-derives — the
+  // Storage card reads "Unavailable", never "All OK".
+  var fail = function (msg) {
+    CN_STATE.adminStorage = { error: msg };
+    var live = document.getElementById('cn-admin-storage');
+    if (live) live.innerHTML = errorStateHtml_('Storage health unavailable: ' + msg);
+    cnRenderSystemFindings_();
+  };
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      if (!res || res.error) { fail((res && res.error) || 'load failed'); return; }
+      CN_STATE.adminStorage = res;
       var live = document.getElementById('cn-admin-storage');
-      if (!live) return;
-      if (!res || res.error) {
-        live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
-        cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
-        return;
-      }
-      live.innerHTML = cnRenderStoragePanel_(res);
-      var stores = res.stores || [];
-      var unreachable = stores.filter(function (s) { return s.configured && s.reachable === false; }).length;
-      var tzDrift = stores.filter(function (s) { return s.tzMatch === false; }).length;
-      var brokenEmbeds = (res.kbEmbeds && res.kbEmbeds.broken && res.kbEmbeds.broken.length) || 0;  // #3
-      var tone = unreachable > 0 ? 'crit' : (tzDrift > 0 || brokenEmbeds > 0 ? 'warn' : 'ok');
-      var val = unreachable > 0 ? (unreachable + ' unreachable')
-        : (tzDrift > 0 ? (tzDrift + ' tz mismatch')
-          : (brokenEmbeds > 0 ? (brokenEmbeds + ' broken embed' + (brokenEmbeds === 1 ? '' : 's')) : 'All OK'));
-      var sub = unreachable > 0 ? 'check sharing / access'
-        : (tzDrift > 0 ? 'review config →'
-          : (brokenEmbeds > 0 ? 'fix Drive links →' : 'reachable · tz matches'));
-      cnSetSysCard_('storage', 'Storage', tone, val, sub);
+      if (live) live.innerHTML = cnRenderStoragePanel_(res);
+      cnRenderSystemFindings_();
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      var live = document.getElementById('cn-admin-storage');
-      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
-      cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
+      fail((err && err.message) || 'load failed');
     })
     .getStorageHealth();
 }
 
+/** Design handoff A4 — the store inventory as a real table. One row per
+ *  spreadsheet the app uses (Store · Class · Status · Timezone · Retention ·
+ *  link) through the shared mtRenderTable_ (V-11: manager tables share ONE
+ *  renderer), with an expandable detail row carrying the note / per-rep
+ *  problems / the exact tz fix. The VERDICTS (what needs attention) live in
+ *  the findings list above the table — this is the reference detail behind
+ *  them, so it states facts per row and never repeats the judgement. */
 function cnRenderStoragePanel_(res) {
   var stores = (res && res.stores) || [];
-  if (!stores.length) return '';
   var cfgTz = (res && res.configTimezone) || '';
   var pill = function (txt, tone) {
-    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
-    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warn-soft)' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
-    return '<span style="font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;color:' + color + ';background:' + bg + '">' + esc(txt) + '</span>';
+    return '<span class="cn-pill" data-tone="' + tone + '">' + esc(txt) + '</span>';
   };
-  var rows = stores.map(function (s) {
-    // Status pill
-    var statusPill;
-    // No-fallback-by-design stores (External read-only, HR, QA — INV-122/196)
-    // read 'not set' as a fact, not a warning; the fallback-prone ones warn.
-    if (!s.configured) statusPill = pill('not set', s.cls === 'External' || /Employee Docs|^QA /.test(s.label) ? 'muted' : 'warn');
-    else if (s.reachable === false) statusPill = pill('unreachable', 'crit');
-    else statusPill = pill('ok', 'ok');
-    // tz pill
-    var tzPill;
-    if (s.tzMatch === true) tzPill = pill(s.tz || 'tz ✓', 'ok');   // E8 (cycle 10) — pill() escapes; the outer esc double-encoded entities
-    else if (s.tzMatch === false) tzPill = pill('tz ' + (s.tz || '?') + ' ≠ CONFIG', 'crit');   // E8
-    else tzPill = pill('—', 'muted');
-    // Cycle 7 (M-14 class) — locale drift pill: a locale that differs from the
-    // ADP sheet's changes WHICH string shapes Sheets coerces to Dates on read
-    // (the formTokenCellMs_ bug class). Warn-level.
-    var localePill = (s.localeMatch === false)
-      ? ' ' + pill('locale ' + esc(s.locale || '?') + ' ≠ ADP', 'warn') : '';
-    var openLink = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
-    var perRep = '';
-    if (s.perRep && s.perRep.problems && s.perRep.problems.length) {
+  // No-fallback-by-design stores (External read-only, HR, QA — INV-122/196)
+  // read 'not set' as a fact, not a warning; the fallback-prone ones warn.
+  var noFallback = function (s) { return s.cls === 'External' || /Employee Docs|^QA /.test(s.label); };
+  var perRepProblems = function (s) { return (s.perRep && s.perRep.problems) || []; };
+  var detailFor = function (s) {
+    var parts = [];
+    if (s.note) parts.push('<div>' + esc(s.note) + '</div>');
+    // Cycle 7 (M-14 class) — locale drift: a locale that differs from the ADP
+    // sheet's changes WHICH string shapes Sheets coerces to Dates on read.
+    if (s.localeMatch === false) {
+      parts.push('<div class="fix">Locale <strong>' + esc(s.locale || '?') + '</strong> differs from the ADP sheet’s — ' +
+        'Sheets may coerce different string shapes to Dates on read (the formTokenCellMs_ class).</div>');
+    }
+    if (perRepProblems(s).length) {
       // Each drifted/unreachable rep Sheet links straight to its source (the
       // ones we could open carry a url; unreachable ones don't).
-      perRep = '<div style="font-size:11px;color:var(--danger-deep);margin-top:3px">' +
-        s.perRep.problems.map(function (p) {
-          var t = esc(p.name) + ' (' + esc(p.issue) + ')';
-          return p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">' + t + '</a>' : t;
-        }).join(', ') + '</div>';
+      parts.push('<div class="bad">' + perRepProblems(s).map(function (p) {
+        var t = esc(p.name) + ' (' + esc(p.issue) + ')';
+        return p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">' + t + '</a>' : t;
+      }).join(', ') + '</div>');
     }
     // tz drift is the most common, most actionable issue — and its fix is a
     // spreadsheet-level setting (not a cell), so surface the exact steps + link.
-    var fixHtml = '';
     if (s.tzMatch === false && cfgTz) {
-      fixHtml = '<div style="font-size:11px;color:var(--warning-deep);margin-top:3px">' +
-        'Fix: set this sheet’s time zone to <strong>' + esc(cfgTz) + '</strong> (File → Settings → Time zone)' +
-        (s.url ? ' · <a href="' + esc(s.url) + '" target="_blank" rel="noopener">open ↗</a>' : '') + '</div>';
+      parts.push('<div class="fix">Fix: set this sheet’s time zone to <strong>' + esc(cfgTz) + '</strong> (File → Settings → Time zone)' +
+        (s.url ? ' · <a href="' + esc(s.url) + '" target="_blank" rel="noopener">open ↗</a>' : '') + '</div>');
     }
-    var noteHtml = s.note ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + esc(s.note) + '</div>' : '';
-    return '<div class="cn-storage-row">' +
-      '<div class="cn-storage-main">' +
-        '<div class="cn-storage-label">' + esc(s.label) + ' ' + pill(s.cls, 'muted') + '</div>' +
-        '<div class="cn-storage-role">' + esc(s.role) + (s.name ? ' · ' + esc(s.name) : '') + '</div>' +
-        noteHtml + perRep + fixHtml +
-      '</div>' +
-      '<div class="cn-storage-meta">' +
-        '<div>' + statusPill + ' ' + tzPill + localePill + '</div>' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:3px">' + esc(s.prop) + ' · ' + esc(s.source) + ' · ' + esc(s.retention) + '</div>' +
-        (openLink ? '<div style="margin-top:3px">' + openLink + '</div>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
+    return parts.length ? '<div class="cn-store-detail">' + parts.join('') + '</div>' : '';
+  };
+  var rows = stores.map(function (s, i) {
+    var tone = (s.configured && s.reachable === false) ? 'danger'
+      : (s.tzMatch === false || s.localeMatch === false || perRepProblems(s).length || (!s.configured && !noFallback(s))) ? 'warn' : '';
+    return { s: s, i: i, detail: detailFor(s), tone: tone };
+  });
+  var cols = [
+    { key: 'store', label: 'Store', name: true, cell: function (r) {
+        var s = r.s;
+        // The disclosure is a real button (INV-173) pointing at the detail
+        // row's id (the mtRenderTable_ detailRow contract, INV-182).
+        var toggle = r.detail
+          ? ' <button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="cn-store-' + r.i + '"' +
+            ' aria-label="Details for ' + esc(s.label) + '" onclick="cnToggleDetailRow_(this)">' + icon('chevronDown', 12) + '</button>'
+          : '';
+        return '<div style="font-weight:600">' + esc(s.label) + toggle + '</div>' +
+          '<div class="cn-store-sub">' + esc(s.prop) + ' · ' + esc(s.source) + '</div>' +
+          '<div style="font-size:11px;color:var(--muted)">' + esc(s.role) + (s.name ? ' · ' + esc(s.name) : '') + '</div>';
+      } },
+    { key: 'cls', label: 'Class', cell: function (r) { return pill(r.s.cls, 'muted'); } },
+    { key: 'status', label: 'Status', cell: function (r) {
+        var s = r.s;
+        if (!s.configured) return pill('not set', noFallback(s) ? 'muted' : 'warn');
+        if (s.reachable === false) return pill('unreachable', 'crit');
+        return pill('ok', 'ok');
+      } },
+    { key: 'tz', label: 'Timezone', cell: function (r) {
+        var s = r.s, t;
+        if (s.tzMatch === true) t = pill(s.tz || 'tz ✓', 'ok');   // E8 (cycle 10) — pill() escapes; the outer esc double-encoded entities
+        else if (s.tzMatch === false) t = pill('tz ' + (s.tz || '?') + ' ≠ CONFIG', 'crit');   // E8
+        else t = pill('—', 'muted');
+        if (s.localeMatch === false) t += ' ' + pill('locale ' + (s.locale || '?') + ' ≠ ADP', 'warn');
+        return t;
+      } },
+    { key: 'retention', label: 'Retention', cell: function (r) { return '<span style="font-size:11px">' + esc(r.s.retention) + '</span>'; } },
+    { key: 'open', label: 'Link', cell: function (r) {
+        return r.s.url ? '<a href="' + esc(r.s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
+      } },
+  ];
+  var table = mtRenderTable_({
+    columns: cols,
+    rows: rows,
+    rowClass: function (r) { return r.tone ? ('sv-row-' + r.tone) : ''; },
+    rowId: function (r) { return 'cn-store-' + r.i; },
+    detailRow: function (r) { return r.detail; },
+    empty: '<div class="m-empty">No stores reported.</div>',
+  });
   var anyTzDrift = stores.some(function (s) { return s.tzMatch === false; });
   var hdr = anyTzDrift
-    ? '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:10px">' + icon('warning', 12) + ' A store’s timezone differs from CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ') — coerced date/time reads will drift. Set the sheet’s File → Settings → Time zone to match.</div>'
-    : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ').</div>';
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
-    '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Storage Health</div>' +
-    hdr + rows + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
+    ? '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:10px">' + icon('warning', 12) + ' A store’s timezone differs from CONFIG.TIMEZONE (' + esc(cfgTz) + ') — coerced date/time reads will drift. Set the sheet’s File → Settings → Time zone to match.</div>'
+    : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(cfgTz) + '). Open a row’s chevron for its note, per-rep problems, or the tz fix.</div>';
+  return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
+    '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
+    hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
+}
+
+/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
+ *  (the metrics mToggleQueueRow_ shape — aria-expanded + the hidden attribute,
+ *  INV-174). */
+function cnToggleDetailRow_(btn) {
+  var id = btn.getAttribute('aria-controls');
+  var row = document.getElementById(id);
+  if (!row) return;
+  var open = row.hasAttribute('hidden');
+  if (open) row.removeAttribute('hidden'); else row.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('open', open);
 }
 
 // #3 — broken-embed / lost-access section: KB embeds whose Drive file is
@@ -9938,61 +10016,331 @@ function cnLoadHealthPanel_() {
   if (!slot) return;
   slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
+  // X7 (design handoff): a failed read renders the warn card (INV-175), the
+  // state slot records the failure, and the findings list re-derives — the
+  // Automation + CDR cards read "Unavailable", never "All OK".
+  var fail = function (msg) {
+    CN_STATE.adminHealth = { error: msg };
+    var live = document.getElementById('cn-admin-health');
+    if (live) live.innerHTML = errorStateHtml_('Automation health unavailable: ' + msg);
+    cnRenderSystemFindings_();
+  };
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      if (!res || res.error) { fail((res && res.error) || 'load failed'); return; }
+      CN_STATE.adminHealth = res;
       var live = document.getElementById('cn-admin-health');
-      if (!live) return;
-      if (!res || res.error) {
-        live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
-        cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
-        cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
-        return;
-      }
-      live.innerHTML = cnRenderHealthPanel_(res);
-      cnSetSysFromHealth_(res);
+      if (live) live.innerHTML = cnRenderHealthPanel_(res);
+      cnRenderSystemFindings_();
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      var live = document.getElementById('cn-admin-health');
-      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
-      cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
-      cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
+      fail((err && err.message) || 'load failed');
     })
     .getAutomationHealth();
 }
 
-/** Derive the Automation + CDR Overview status cards (#4) from a successful
- *  getAutomationHealth payload. */
-function cnSetSysFromHealth_(res) {
-  var sfCount = (res.syncFails && res.syncFails.count) || 0;
-  var staleDigests = (res.digests || []).filter(function (d) { return d.stale; }).length;
-  var autoTone = (sfCount > 0 || staleDigests > 0) ? 'warn' : 'ok';
-  var autoVal = sfCount > 0 ? (sfCount + ' sync fail' + (sfCount === 1 ? '' : 's'))
-    : (staleDigests > 0 ? (staleDigests + ' digest' + (staleDigests === 1 ? '' : 's') + ' stale') : 'OK');
-  var autoSub = sfCount > 0 ? 'personal-sheet drift'
-    : (staleDigests > 0 ? 'a trigger may be dead' : 'no failures · digests fresh');
-  cnSetSysCard_('automation', 'Automation', autoTone, autoVal, autoSub);
+/** Design handoff A3 — ONE derivation of "what needs attention" from the two
+ *  health payloads. Pure (no DOM, no globals) so it is Node-testable; the
+ *  findings list, the three Overview cards and the System tab badge all
+ *  render from THIS list, so they cannot disagree.
+ *
+ *  `health` / `storage` are each: null (not loaded yet), `{error}` (the load
+ *  failed — X7), or the server payload. Returns `{ items, degraded }` where
+ *  every item is `{ id, area: 'automation'|'cdr'|'storage', severity:
+ *  'ok'|'warn'|'fail', title, detail, fix, link }` and `degraded[area]` is
+ *  the load-failure message or null.
+ *
+ *  Severity rule (INV-186): a check carries a non-ok severity ONLY when its
+ *  count reads zero on a healthy deployment. The two raw CDR name lists
+ *  (unmatchedAgents / rosterWithNoCdr) are permanently non-empty on a shared
+ *  feed, so they are reported as an `ok` item WITH their counts in the
+ *  detail — reference, never a verdict. The paired likelyMismatches set is
+ *  the signal. A no-fallback store (External / HR / QA) left unset is a fact
+ *  (`ok`), not a warning — there is nothing to fall back to.
+ *  Failed loads are FINDINGS (`fail`), not silence: a health check that
+ *  could not run must not render as "All OK" (INV-187). */
+function cnHealthFindings_(health, storage) {
+  var items = [];
+  var degraded = { automation: null, cdr: null, storage: null };
+  var add = function (id, area, severity, title, detail, fix, link) {
+    items.push({ id: id, area: area, severity: severity, title: String(title || ''),
+      detail: String(detail || ''), fix: String(fix || ''), link: String(link || '') });
+  };
+  var plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); };
 
-  var cdr = res.cdr || { ok: false };
-  // The card tones off the PAIRED mismatches, never the raw unmatchedAgents
-  // count. The CDR Report covers the whole phone system while our roster is
-  // one team, so `unmatchedAgents` is permanently non-zero on a shared feed —
-  // a status card that can never go green trains the reader to ignore it.
-  // `rosterWithNoCdr` fails the same way (managers/admin staff/PTO weeks), so
-  // it is not a substitute. See cdrLikelyNameMismatches_ in Code.js.
-  var likely = (cdr.likelyMismatches && cdr.likelyMismatches.length) || 0;
-  // L-2 (cycle 11): the Transfer tab's layout drift warns the same way DQE's does.
-  var anyColWarn = cdr.columnWarning || cdr.transferColumnWarning;
-  var cdrTone = !cdr.ok ? 'warn' : (anyColWarn || likely > 0) ? 'warn' : 'ok';
-  var cdrVal = !cdr.ok ? 'Unreachable'
-    : (anyColWarn ? 'Column drift'
-      : (likely > 0 ? (likely + ' name mismatch' + (likely === 1 ? '' : 'es')) : 'In sync'));
-  var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
-    : (cdr.columnWarning ? 'DQE layout changed'
-      : (cdr.transferColumnWarning ? 'Transfer-tab layout changed'
-        : (likely > 0 ? 'a rep’s calls may be missing' : 'reachable · names resolve')));
-  cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
+  if (health && health.error) {
+    degraded.automation = String(health.error);
+    degraded.cdr = degraded.automation;
+    add('load:automation', 'automation', 'fail', 'Automation health could not be read',
+      degraded.automation, 'Reload the Admin tab; if it persists, run getAutomationHealth from the editor.');
+  } else if (health) {
+    // (a) Personal-sheet sync
+    var sf = health.syncFails || { count: 0 };
+    if (sf.count > 0) {
+      add('syncFails', 'automation', 'warn', plural(sf.count, 'personal-sheet sync failure'),
+        'those reps’ personal Sheets are drifting from the ADP source of truth (last ' + (sf.windowDays || 30) + ' days)',
+        'Re-share the personal Sheet with the deploying account — the next punch re-syncs.', health.auditLogUrl);
+    } else {
+      add('syncFails', 'automation', 'ok', 'Personal-sheet sync', 'no failures in the last ' + (sf.windowDays || 30) + ' days');
+    }
+    // (C4) Lost tamper-witness rows — RECENT loss warns; an old blip is reference.
+    var wf = health.witnessFails || { count: 0 };
+    if (wf.count > 0 && wf.recent) {
+      add('witnessFails', 'automation', 'warn', plural(wf.count, 'lost tamper-witness audit row'),
+        (wf.lastAction ? 'last: ' + wf.lastAction + ' — ' : '') + 'a signed/submitted record has no independent audit witness (INV-113/122)',
+        'Check the AuditLog tab is reachable; delete WITNESS_AUDIT_FAILS to reset the counter once resolved.', health.auditLogUrl);
+    } else {
+      add('witnessFails', 'automation', 'ok', 'Tamper-witness audit rows',
+        wf.count > 0 ? (wf.count + ' lost historically, none in the last 48h') : 'none lost');
+    }
+    // (F4) Jobs that caught their own failure — reaches nobody unless stamped.
+    var ae = health.automationErrors || {};
+    var aeJobs = Object.keys(ae);
+    aeJobs.forEach(function (job) {
+      var e = ae[job] || {};
+      add('automationError:' + job, 'automation', 'fail', job + ' failed on its last run',
+        (e.at ? 'at ' + e.at + ' — ' : '') + (e.error || 'unknown error'),
+        'Run the job from the editor to reproduce; a clean run clears this flag.');
+    });
+    if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
+    // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy posture.
+    var digests = health.digests || [];
+    var stale = digests.filter(function (d) { return d.stale; });
+    var never = digests.filter(function (d) { return !d.last; });
+    stale.forEach(function (d) {
+      add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + ' is stale',
+        'last ran ' + (d.last || '?') + ' — past its expected cadence',
+        'The trigger may be dead — re-run installAutomationTriggers().');
+    });
+    if (!stale.length) {
+      add('digests', 'automation', 'ok', 'Digest heartbeats',
+        (digests.length - never.length) + ' fresh' + (never.length ? ' · ' + never.length + ' with no heartbeat yet (check the trigger is installed)' : ''));
+    }
+    // (e) Detector liveness — a dead detector is a monitoring loop that cannot see.
+    var dets = health.detectors || [];
+    var dead = dets.filter(function (c) { return !c.ok; });
+    dead.forEach(function (c) {
+      add('detector:' + c.key, 'automation', 'fail', 'Detector dead: ' + c.label, c.detail || '',
+        'The check its writer↔parser round-trip guards is silently blind — see Automation detail.');
+    });
+    if (!dead.length && dets.length) add('detectors', 'automation', 'ok', 'Detector liveness', plural(dets.length, 'check') + ' ok');
+    // (INV-150) Client errors — thresholded like the digest (≥10 in 24h).
+    var ce = health.clientErrors || { count: 0 };
+    if ((ce.last24h || 0) >= 10) {
+      add('clientErrors', 'automation', 'warn', ce.last24h + ' client-side errors in the last 24h',
+        ce.count + ' in the last ' + (ce.windowDays || 7) + ' days — reps are hitting JS failures the server never sees',
+        'Open the ClientErrors tab for the messages.', ce.url);
+    } else {
+      add('clientErrors', 'automation', 'ok', 'Client errors', (ce.count || 0) + ' in the last ' + (ce.windowDays || 7) + ' days');
+    }
+    // (INV-162/172) Nightly self-test
+    var st = health.selfTest;
+    if (st && st.stuck) {
+      add('selfTest', 'automation', 'fail', 'Nightly self-test never finished',
+        'a run started ' + (st.date || '?') + ' (' + (st.mode || '?') + ' mode) and never recorded an outcome',
+        'Run it manually from the editor to see where it stalls.');
+    } else if (st && st.fail > 0) {
+      add('selfTest', 'automation', 'fail', 'Nightly self-test: ' + plural(st.fail, 'test') + ' failing',
+        st.pass + ' passed / ' + st.skip + ' skipped · ' + st.mode + ' mode · ' + st.date + (st.error ? ' · ' + st.error : ''),
+        'The failing test names were emailed to MANAGER_EMAILS; re-run from the editor.');
+    } else {
+      add('selfTest', 'automation', 'ok', 'Nightly self-test',
+        !st ? 'no result recorded yet' : (st.running ? 'running now' : st.pass + ' passed · ' + st.mode + ' mode · ' + st.date) +
+        (st && st.note ? ' · ' + st.note : ''));
+    }
+    // (F9) Offerings catalog — null = not scanned on this path.
+    var cat = health.intakeCatalog;
+    if (cat) {
+      var errs = cat.errors || [], warns = cat.warnings || [];
+      if (!cat.ok) {
+        add('intakeCatalog', 'automation', 'warn', 'Offerings catalog could not be read', cat.error || 'unknown error',
+          'The PPD recommendation engine reads this sheet — fix before the next intake.');
+      } else if (errs.length) {
+        add('intakeCatalog', 'automation', 'fail', plural(errs.length, 'Offerings row') + ' the engine cannot recommend',
+          errs.map(function (x) { return 'row ' + x.row + ' ' + x.hcpcs + ': ' + x.field; }).join(' · '),
+          'Fix these cells in the Offerings sheet (a blank capacity EXCLUDES the chair).');
+      } else if (warns.length) {
+        add('intakeCatalog', 'automation', 'warn', plural(warns.length, 'Offerings row') + ' probably unintended',
+          warns.map(function (x) { return 'row ' + x.row + ' ' + x.hcpcs + ': ' + x.field; }).join(' · '),
+          'Still works — see Automation detail for each cell.');
+      } else {
+        add('intakeCatalog', 'automation', 'ok', 'Offerings catalog', cat.totalRows + ' rows, all well-formed');
+      }
+    }
+    // (b) CDR data feed
+    var cdr = health.cdr || { ok: false };
+    if (!cdr.ok) {
+      add('cdrUnreachable', 'cdr', 'warn', 'CDR data unreachable', cdr.error || 'unknown error',
+        'Check the CDR_SS_ID Script Property and the deployer’s access — Metrics and shift stats are degraded meanwhile.');
+    } else {
+      if (cdr.columnWarning) {
+        add('cdrColumns', 'cdr', 'warn', 'Column drift in DQE Historical Data', cdr.columnWarning,
+          'The call-data-reporting sheet changed layout — update CDR_EXPECTED_HEADERS.');
+      }
+      if (cdr.transferColumnWarning) {
+        add('cdrTransferColumns', 'cdr', 'warn', 'Column drift in CSR Transfer Historical Data', cdr.transferColumnWarning,
+          'The Transfer KPI may be reading the wrong cells.');
+      }
+      if (!cdr.columnWarning && !cdr.transferColumnWarning) {
+        add('cdrColumns', 'cdr', 'ok', 'CDR feed', 'reachable · column layout OK · ' + (cdr.rowsMatched || 0) + ' rows ' + (cdr.from || '') + ' → ' + (cdr.to || ''));
+      }
+      // The ONE actionable name finding: a roster rep with no call data whose
+      // name resembles an unmatched CDR agent — one person spelled two ways.
+      var likely = cdr.likelyMismatches || [];
+      if (likely.length) {
+        add('cdrNames', 'cdr', 'warn', plural(likely.length, 'likely name mismatch', 'likely name mismatches'),
+          likely.map(function (m) { return m.cdr + ' (CDR) → ' + m.roster + ' (roster)'; }).join(' · ') + ' — these reps’ calls are probably missing from Metrics',
+          'Add an Agent Alias Overrides row in the CDR Report (col A = CDR name, col B = roster name, exact).');
+      } else {
+        add('cdrNames', 'cdr', 'ok', 'Roster ↔ CDR names', 'no likely mismatches');
+      }
+      // INV-186: both raw directions are permanently non-empty on a shared
+      // feed — reference detail, never a verdict.
+      var rawA = (cdr.unmatchedAgents || []).length, rawR = (cdr.rosterWithNoCdr || []).length;
+      add('cdrRawLists', 'cdr', 'ok', 'Off-roster agents · roster names without call data',
+        rawA + ' off-roster · ' + rawR + ' without CDR rows this week — expected when the CDR Report covers other departments');
+      var q = cdr.queueInventory;
+      if (q) {
+        var ad = q.agentDateRows || {};
+        add('queueInventory', 'cdr', q.ok ? 'ok' : 'warn', q.ok ? 'Queue inventory' : 'Queue inventory unavailable',
+          !q.ok ? (q.error || 'unknown error')
+            : !q.rowsInWindow ? 'no CDR rows in the window — row shape undetermined'
+            : (ad.max > 1 ? 'per-queue rep attribution IS available' : 'one DQE row per agent-day — per-queue rep attribution is not in this data'));
+      }
+    }
+  }
+
+  if (storage && storage.error) {
+    degraded.storage = String(storage.error);
+    add('load:storage', 'storage', 'fail', 'Storage health could not be read', degraded.storage,
+      'Reload the Admin tab; if it persists, run getStorageHealth from the editor.');
+  } else if (storage) {
+    var cfgTz = storage.configTimezone || '';
+    (storage.stores || []).forEach(function (s, i) {
+      var id = 'store:' + (s.prop || i);
+      var noFallback = s.cls === 'External' || /Employee Docs|^QA /.test(String(s.label || ''));
+      var problems = (s.perRep && s.perRep.problems) || [];
+      if (!s.configured) {
+        if (noFallback) add(id, 'storage', 'ok', s.label + ' not set', 'no fallback store — by design');
+        else add(id, 'storage', 'warn', s.label + ' not set', s.note || 'the app is using its fallback location', 'Set ' + s.prop + ' in Script Properties.');
+      } else if (s.reachable === false) {
+        add(id, 'storage', 'fail', s.label + ' unreachable', s.note || 'the deploying account cannot open it',
+          'Check sharing and the ' + s.prop + ' value.', s.url);
+      } else if (s.tzMatch === false) {
+        add(id, 'storage', 'warn', s.label + ' timezone ≠ CONFIG', 'sheet tz ' + (s.tz || '?') + ' — coerced date/time reads drift',
+          'Set File → Settings → Time zone to ' + cfgTz + '.', s.url);
+      } else if (s.localeMatch === false) {
+        add(id, 'storage', 'warn', s.label + ' locale ≠ ADP', 'locale ' + (s.locale || '?') + ' coerces different string shapes to Dates',
+          'Set File → Settings → Locale to match the ADP sheet.', s.url);
+      } else if (problems.length) {
+        add(id, 'storage', 'warn', plural(problems.length, 'per-rep Notes Sheet') + ' with problems',
+          problems.map(function (p) { return p.name + ' (' + p.issue + ')'; }).join(', '),
+          'Re-share or re-pin the Sheet — see the Storage inventory row.');
+      } else {
+        add(id, 'storage', 'ok', s.label, 'reachable' + (s.tzMatch === true ? ' · tz matches' : ''));
+      }
+    });
+    var ke = storage.kbEmbeds;
+    if (ke && ke.total) {
+      var broken = (ke.broken || []).length;
+      if (broken) {
+        add('kbEmbeds', 'storage', 'warn', plural(broken, 'broken Reference embed'),
+          (ke.broken || []).map(function (b) { return b.title; }).join(' · ') + ' — the Drive file is deleted/moved or the deployer lost access',
+          'Re-share the file, fix the link, or convert to a native article.');
+      } else {
+        add('kbEmbeds', 'storage', 'ok', 'Reference embeds', ke.total + ' Drive file' + (ke.total === 1 ? '' : 's') + ' reachable' + (ke.truncated ? ' (scan capped)' : ''));
+      }
+    }
+  }
+  return { items: items, degraded: degraded };
+}
+
+/** Worst severity across a findings list — 'fail' > 'warn' > 'ok'. */
+function cnFindingsWorst_(items) {
+  var w = 'ok';
+  (items || []).forEach(function (f) {
+    if (f.severity === 'fail') w = 'fail';
+    else if (f.severity === 'warn' && w !== 'fail') w = 'warn';
+  });
+  return w;
+}
+
+// Human labels for the digest heartbeat keys (the findings list names a stale
+// digest by label; the detail panel's DIGEST_LABELS carries the cadence too).
+var CN_DIGEST_LABELS_ = {
+  eod: 'EOD unresolved-flag digest', urgent: 'Urgent-flag digest', weekly: 'Weekly training/review digests',
+  trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
+  managerBrief: 'Manager daily brief', selfTest: 'Nightly self-test',
+};
+var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
+
+/** Design handoff A3 — render the System tab's findings-first head, then
+ *  derive the three Overview status cards and the System tab badge from the
+ *  SAME list. Called after EACH of the two loads lands (success or failure),
+ *  so a half-loaded state shows "checking…" for the other half rather than a
+ *  premature all-clear. */
+function cnRenderSystemFindings_() {
+  var health = CN_STATE.adminHealth, storage = CN_STATE.adminStorage;
+  var r = cnHealthFindings_(health, storage);
+  var items = r.items, degraded = r.degraded;
+  var areaIdx = { automation: 0, cdr: 1, storage: 2 };
+  var needs = items.filter(function (f) { return f.severity !== 'ok'; }).sort(function (a, b) {
+    var sa = a.severity === 'fail' ? 0 : 1, sb = b.severity === 'fail' ? 0 : 1;
+    return (sa - sb) || (areaIdx[a.area] - areaIdx[b.area]);
+  });
+  var oks = items.filter(function (f) { return f.severity === 'ok'; });
+  var worst = cnFindingsWorst_(needs);
+  var pending = [];
+  if (health === null) pending.push('Automation & CDR');
+  if (storage === null) pending.push('Storage');
+
+  // Overview cards — derived, never computed a second way.
+  CN_SYS_AREAS_.forEach(function (a) {
+    var key = a[0], label = a[1];
+    if (degraded[key]) { cnSetSysCard_(key, label, 'warn', 'Unavailable', 'health check failed'); return; }
+    if ((key === 'storage' ? storage : health) === null) return;   // still checking — the shell stays
+    var mine = items.filter(function (f) { return f.area === key; });
+    var bad = mine.filter(function (f) { return f.severity !== 'ok'; });
+    var w = cnFindingsWorst_(mine);
+    var tone = w === 'fail' ? 'crit' : w;
+    var val = bad.length ? bad[0].title : 'All OK';
+    var sub = bad.length > 1 ? '+' + (bad.length - 1) + ' more' : (bad.length ? '' : mine.length + ' check' + (mine.length === 1 ? '' : 's') + ' passing');
+    cnSetSysCard_(key, label, tone, val, sub);
+  });
+  cnSetSysBadge_(needs.length, worst);
+
+  var slot = document.getElementById('cn-sys-findings');
+  if (!slot) return;
+  var areaLabel = function (k) { return k === 'cdr' ? 'CDR' : k.charAt(0).toUpperCase() + k.slice(1); };
+  var li = function (f) {
+    var t = f.severity === 'fail' ? 'destructive' : 'warn';
+    return '<li class="panel cn-finding" data-tone="' + t + '" data-area="' + esc(f.area) + '" data-finding="' + esc(f.id) + '">' +
+      '<span class="kicker-pill" data-tone="' + t + '">' + (f.severity === 'fail' ? 'Blocking' : 'Warning') + '</span>' +
+      '<div class="cn-finding-t">' + esc(f.title) + '</div>' +
+      (f.detail ? '<div class="cn-finding-d">' + esc(f.detail) + '</div>' : '') +
+      (f.fix || f.link ? '<div class="cn-finding-f">' + esc(f.fix) +
+        (f.link ? '<a href="' + esc(f.link) + '" target="_blank" rel="noopener">open ↗</a>' : '') + '</div>' : '') +
+      '<div class="cn-finding-area">' + esc(areaLabel(f.area)) + '</div>' +
+    '</li>';
+  };
+  var head = '<h2 class="card-label" id="cn-sys-sec-automation">Needs attention' +
+    (needs.length ? ' <span class="cn-pill" data-tone="' + (worst === 'fail' ? 'crit' : 'warn') + '">' + needs.length + '</span>' : '') + '</h2>';
+  var pendingHtml = pending.length
+    ? '<div style="font-size:12px;color:var(--muted);margin-bottom:10px" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> ' +
+      esc(pending.join(' · ')) + ': checking…</div>' : '';
+  var listHtml = needs.length
+    ? '<ul class="cn-findings">' + needs.map(li).join('') + '</ul>'
+    : (pending.length ? '' : '<div style="font-size:13px;color:var(--success-deep);font-weight:600;margin-bottom:14px">' +
+        icon('checkCircle', 14) + ' Nothing needs attention.</div>');
+  var okHtml = oks.length
+    ? '<details class="cn-ok-list"><summary>' + oks.length + ' check' + (oks.length === 1 ? '' : 's') + ' passing</summary><ul>' +
+      oks.map(function (f) { return '<li>' + esc(f.title) + (f.detail ? ' <span class="why">— ' + esc(f.detail) + '</span>' : '') + '</li>'; }).join('') +
+      '</ul></details>' : '';
+  slot.innerHTML = '<div class="panel" style="margin-bottom:20px">' + head + pendingHtml + listHtml + okHtml +
+    '<div style="font-size:11px;color:var(--muted-3)">Reference detail for every check is in the Storage inventory and Automation detail panels below.</div>' +
+  '</div>';
 }
 
 /** PHASE 0 (sub-queue work) — renders the READ-ONLY queue inventory inside the
@@ -10097,8 +10445,8 @@ function cnRenderHealthPanel_(res) {
   var warnBox = function (html) {
     return '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:6px;padding:6px 10px">' + html + '</div>';
   };
-  var secLabel = function (txt) {
-    return '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">' + txt + '</div>';
+  var secLabel = function (txt, id) {
+    return '<div' + (id ? ' id="' + id + '"' : '') + ' style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">' + txt + '</div>';
   };
   // On a shared CDR feed the unmatched-agent list runs to dozens of names —
   // a wall of text in a hint box. Show a readable head and SAY what was cut
@@ -10189,7 +10537,7 @@ function cnRenderHealthPanel_(res) {
         lmRows + lmMore));
     }
     // Both raw directions are expected to be non-empty on a shared feed, so
-    // they are reference detail, not warnings (see cnSetSysFromHealth_).
+    // they are reference detail, not warnings (see cnHealthFindings_ — INV-186).
     if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
       cdrParts.push('<div style="font-size:12px;color:var(--muted)">' + icon('info', 11) + ' ' + cdr.unmatchedAgents.length +
         ' CDR agent(s) not on this roster — expected when the CDR Report covers other departments: ' +
@@ -10265,13 +10613,13 @@ function cnRenderHealthPanel_(res) {
   }).join('');
 
   return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
-    '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation Health' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation detail' +
       (res.auditLogUrl ? '<a href="' + esc(res.auditLogUrl) + '" target="_blank" rel="noopener" style="float:right;font-size:11px;font-weight:400">Open AuditLog ↗</a>' : '') +
     '</div>' +
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Silent-failure signals in one place: personal-sheet sync, the CDR data feed, and when each automation job last left an audit trail. The source rows live in the AuditLog tab (link above).</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Reference detail behind the findings above: personal-sheet sync, the CDR data feed, and when each automation job last left an audit trail. The source rows live in the AuditLog tab (link above).</div>' +
     secLabel('Personal-sheet sync') + sfHtml +
     secLabel('Client errors · last 7 days') + ceHtml +
-    secLabel('CDR data feed · last 7 days') + cdrHtml +
+    secLabel('CDR data feed · last 7 days', 'cn-sys-sec-cdr') + cdrHtml +
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
     (detHtml ? secLabel('Detector liveness') + detHtml : '') +
