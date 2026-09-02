@@ -725,11 +725,16 @@
      primary button (Clock In if not in / Clock Out if in / Lunch Return
      if on lunch) takes the wide slot; remaining valid actions fill
      secondary slots; Adjust always appears at the end as a secondary. */
+  /* PR 6 (design handoff, Time Clock 3b): the primary punch is FULL-WIDTH
+     and the secondaries + Adjust sit 2-up beneath it — a 44px+ target on the
+     360px rail and on the phone alike, so the 540px override this grid used
+     to need is now the base rule (no viewport re-columning left to owe). */
   .actions {
     display: grid;
-    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 10px; margin-bottom: 14px;
   }
+  .actions .prime { grid-column: 1 / -1; }
   .actions .prime,
   .actions .sec {
     appearance: none; border: 1px solid var(--line);
@@ -1895,6 +1900,22 @@
     box-shadow: var(--shadow-md);
     animation: modalin .22s var(--ease);
   }
+  /* Side-anchored DRAWER variant (design handoff PR 4 — the Coaching composer;
+     reusable by any surface that wants a right-anchored form instead of a
+     centred card). The host overlay pins the modal to the right edge at full
+     height; the modal itself keeps the .modal card vocabulary and slides in
+     (the #kb-drawer motion). */
+  .overlay.drawer-host { align-items: stretch; justify-content: flex-end; padding: 0; }
+  .modal.drawer {
+    max-width: 520px; width: 100%; height: 100%; max-height: 100vh;
+    border-radius: 0; border-width: 0 0 0 1px;
+    display: flex; flex-direction: column;
+    animation: drawerin .22s var(--ease);
+  }
+  @keyframes drawerin {
+    from { transform: translateX(24px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+  }
   @keyframes modalin {
     from { transform: translateY(10px) scale(.98); opacity: 0; }
     to   { transform: translateY(0) scale(1); opacity: 1; }
@@ -2247,7 +2268,7 @@
     appearance: none; flex-shrink: 0; align-self: center;
     padding: 4px 10px; border: 0; border-radius: 6px;
     background: var(--accent); color: #fff; cursor: pointer;
-    font: inherit; font-size: var(--text-sm, 12px); font-weight: 600;
+    font: inherit; font-size: var(--text-sm); font-weight: 600;
     transition: filter .15s ease;
   }
   .toast-act:hover { filter: brightness(1.08); }
@@ -2503,10 +2524,11 @@
   :root[data-compact="1"] .hero .clk-time .ampm { font-size: 16px; }
   :root[data-compact="1"] .hero .clk-meta { justify-content: flex-start; }
   :root[data-compact="1"] .hero .greet-name { font-size: 18px; }
-  :root[data-compact="1"] .actions {
-    grid-template-columns: 1fr 1fr; gap: 8px;
-  }
-  :root[data-compact="1"] .actions .prime { grid-column: span 2; }
+  /* PR 6: the pop-out's 2×2-with-spanning-prime punch grid became the BASE
+     .actions rule, so this override keeps only its tighter gap — restating
+     identical tracks here would read as a re-columning (the .preset-grid
+     precedent, C17-1). */
+  :root[data-compact="1"] .actions { gap: 8px; }
   /* C17-1 removed the dead .ledger compact overrides; batch-6 removed the
      bases (and this block's last straggler) with the rest of the cluster. */
   :root[data-compact="1"] .telemetry {
@@ -2584,14 +2606,11 @@
        is unchanged and still wins inside the pop-out. */
     .telemetry { grid-template-columns: repeat(2, 1fr); }
     /* C17-1 (cycle 17): the fixed A2 scan finally reached styles.html (its
-       `[data-compact="1"]` form was invisible to the old regex) and these two
-       LIVE grids had only pop-out overrides. .actions kept four fixed tracks
-       at every real viewport — an empty 4th track + wrapping labels once the
-       dash stacks (~358px column); 2×2 with the prime spanning mirrors the
-       compact treatment. .field-row stacks modal field pairs (~170px each at
-       390px) the same way the pop-out always has. */
-    .actions { grid-template-columns: 1fr 1fr; }
-    .actions .prime { grid-column: span 2; }
+       `[data-compact="1"]` form was invisible to the old regex) and these
+       LIVE grids had only pop-out overrides. .field-row stacks modal field
+       pairs (~170px each at 390px) the same way the pop-out always has.
+       (.actions used to re-column here too; since the design handoff's PR 6
+       the 2×2-with-spanning-prime shape IS its base rule.) */
     .field-row { grid-template-columns: 1fr; }
     .telemetry .tel-cell:nth-child(2) { border-right: none; }
     .telemetry .tel-cell:nth-child(1),

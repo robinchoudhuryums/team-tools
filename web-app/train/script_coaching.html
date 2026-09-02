@@ -1,26 +1,43 @@
 <script>
 // ════════════════════════════════════════════════════════════════════════════
 //  COACHING (Training module) — granular, non-routine manager coaching on a
-//  specific interaction (patient/TRX). Rep acknowledges; manager dashboard +
-//  composer. Backed by createCoaching / getMyCoaching / acknowledgeCoaching /
-//  getCoachingDashboard / voidCoaching (HR store, team-scoped). PHI-adjacent
-//  narrative renders only behind the authenticated views; every server string
-//  is esc()'d before innerHTML.
+//  specific interaction (patient/TRX). Rep acknowledges (optionally with a
+//  reply); manager gets a signal board, a filterable feed and a composer
+//  DRAWER. Backed by createCoaching / getMyCoaching / acknowledgeCoaching /
+//  getCoachingDashboard / voidCoaching / setCoachingFollowUp / nudgeCoaching
+//  (HR store, team-scoped). PHI-adjacent narrative renders only behind the
+//  authenticated views; every server string is esc()'d before innerHTML.
+//  Design handoff PR 4 (2026-09-02) — docs/COACHING_HANDOFF.md, resolved per
+//  docs/design_handoff_five_surfaces/IMPLEMENTATION_PLAN.md §2.K.
 // ════════════════════════════════════════════════════════════════════════════
-var COACH_STATE = { my: null, dash: null, emps: null };
+var COACH_STATE = { my: null, dash: null, emps: null, filter: 'all', search: '', empFilter: '',
+  myFilter: 'all', mySearch: '', boardSort: { key: 'score', dir: 'desc' } };
+var COACH_DRAWER = null;   // the open composer's state (kind / severity / prefill) — null when closed
 
 // Merged Coaching tab: one tab for everyone. Reps always see "Mine" (their
 // received coaching) and never see the toggle; managers get a Mine ⇄ Team
-// toggle — Team is the composer + team dashboard + metrics, Mine is the
-// manager's OWN received coaching/routine items. Mode persists per browser
-// (managers only) under umsCoachingMode; managers default to Team (primary).
+// toggle — Team is the board + feed + composer drawer, Mine is the manager's
+// OWN received coaching/routine items. Mode persists per browser (managers
+// only) under umsCoachingMode; managers default to Team (primary).
 var COACH_MODE = 'mine';
 function coachReadMode_() {
   try { var v = localStorage.getItem('umsCoachingMode'); if (v === 'mine' || v === 'team') return v; } catch (e) {}
   return 'team';
 }
 function coachWriteMode_(m) { try { localStorage.setItem('umsCoachingMode', m); } catch (e) {} }
+// K6 — the Team feed's active filter persists per browser (the umsCoachingMode
+// pattern; localStorage key #17). An unknown stored value degrades to 'all'.
+var COACH_FILTERS = ['all', 'ack', 'overdue', 'praise', 'voided'];
+function coachReadFilter_() {
+  try { var v = localStorage.getItem('umsCoachingFilter'); if (COACH_FILTERS.indexOf(v) >= 0) return v; } catch (e) {}
+  return 'all';
+}
+function coachWriteFilter_(f) { try { localStorage.setItem('umsCoachingFilter', f); } catch (e) {} }
 
+// K4 — DISPLAY labels for the stored severity enum. MIRRORS the server's
+// COACH_SEV_LABELS byte-for-byte (a MIRROR_INDEX entry): the stored value stays
+// `major`; the word every surface shows is "Moderate".
+var COACH_SEV_LABELS = { praise: 'Praise', minor: 'Minor', major: 'Moderate', critical: 'Critical' };
 // severity → kicker-pill tone (reuses the shared .kicker-pill[data-tone] styles)
 function coachSevTone_(sev) {
   return sev === 'praise' ? 'accent'
@@ -28,17 +45,66 @@ function coachSevTone_(sev) {
     : sev === 'major' ? 'warn'
     : sev === 'critical' ? 'destructive' : 'info';
 }
+function coachSevLabel_(sev) { return COACH_SEV_LABELS[sev] || ((sev || '').charAt(0).toUpperCase() + (sev || '').slice(1)); }
 function coachSevChip_(sev) {
-  var label = (sev || '').charAt(0).toUpperCase() + (sev || '').slice(1);
-  return '<span class="kicker-pill" data-tone="' + coachSevTone_(sev) + '">' + esc(label) + '</span>';
+  return '<span class="kicker-pill" data-tone="' + coachSevTone_(sev) + '">' + esc(coachSevLabel_(sev)) + '</span>';
 }
-function coachNarrativeHtml_(label, text) {
+/** Client twin of the server's coachParseTs_ — both stamp forms, UTC, NaN on
+ *  garbage. Used only for DIFFERENCES (windows, relative days). */
+function coachTsMs_(s) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+var COACH_MONTHS_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var COACH_MONTHS_LONG_ = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** '2026-08-23…' → '23 Aug' (a display date; never parsed back). */
+function coachFmtDate_(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  if (!m) return '';
+  return String(+m[3]) + ' ' + COACH_MONTHS_[+m[2] - 1];
+}
+function coachRelDays_(ms, nowMs) {
+  if (!(ms > 0)) return '—';
+  var d = Math.floor((nowMs - ms) / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? '1d ago' : d + 'd ago';
+}
+/** The business-day age the server shipped (K9), or "unknown" — never 0 for
+ *  a missing figure (INV-187). */
+function coachAgeLabel_(it) {
+  if (it.ageDays == null) return 'age unknown';
+  var d = Math.round(it.ageDays);
+  return d + ' business day' + (d === 1 ? '' : 's');
+}
+function coachNarrative_(label, text, cls) {
   if (!text) return '';
-  return '<div style="margin-top:8px;"><div style="font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;">' +
-    esc(label) + '</div><div style="white-space:pre-wrap;color:var(--ink);font-size:.9rem;">' + esc(text) + '</div></div>';
+  return '<div class="coach-nar ' + (cls || '') + '"><div class="coach-nar-lbl">' + esc(label) + '</div><div class="coach-nar-body">' + esc(text) + '</div></div>';
+}
+/** K2 — the rep's reply, rendered on BOTH views as a quoted block. */
+function coachReplyHtml_(it, mine) {
+  if (!it.repResponse) return '';
+  return '<div class="coach-reply"><div class="coach-nar-lbl">' + (mine ? 'Your reply' : esc(String(it.empName || '').split(' ')[0] || 'Rep') + ' replied') + '</div>' +
+    '<div class="coach-reply-body">' + esc(it.repResponse) + '</div></div>';
+}
+/** K5/K13 — the linked-record chips. The note chip needs the note's DATE to
+ *  open anything (both drill-throughs are date-keyed); a legacy row with an
+ *  id but no date renders the id as inert text. */
+function coachLinkChips_(it, mine) {
+  var h = '';
+  if (it.noteId) {
+    if (it.noteDate) {
+      h += '<button type="button" class="coach-chip coach-chip-link" data-coach-note="' + esc(it.noteId) + '" data-emp="' + esc(it.empId) + '" data-date="' + esc(it.noteDate) + '" title="Open the linked call note">' +
+        icon('phone', 11) + ' Call note · ' + esc(coachFmtDate_(it.noteDate)) + '</button>';
+    } else {
+      h += '<span class="coach-chip" title="Linked call note (no date on record — open Call Notes history to find it)">' + icon('phone', 11) + ' note ' + esc(it.noteId.substring(0, 8)) + '</span>';
+    }
+  }
+  if (it.qaFileId && !mine) {
+    h += '<button type="button" class="coach-chip coach-chip-link" data-coach-qa="' + esc(it.qaFileId) + '" title="Open the QA review">' + icon('headset', 11) + ' QA review</button>';
+  }
+  return h;
 }
 
-// ── REP: My Coaching ────────────────────────────────────────────────────────
 // ── Merged tab entry: builds chrome + (manager) mode toggle, then dispatches ──
 function enterCoachingView() {
   if (typeof stopClock === 'function') stopClock();
@@ -49,20 +115,30 @@ function enterCoachingView() {
   // A Call Notes "Coach on this" prefill forces Team mode (the composer is there).
   if (isMgr && window.COACH_PREFILL) COACH_MODE = 'team';
   else COACH_MODE = isMgr ? coachReadMode_() : 'mine';
+  COACH_STATE.filter = coachReadFilter_();
+  COACH_STATE.search = ''; COACH_STATE.empFilter = ''; COACH_STATE.mySearch = ''; COACH_STATE.myFilter = 'all';
 
   // A11 (cycle 13): the wrapper already declared role="tablist" but the tabs
   // carried no role and no selected state, so the `.on` class was the only
   // signal. Complete the pattern: role="tab" + aria-selected + aria-controls
-  // pointing at the panel below (which now declares role="tabpanel").
+  // pointing at the panel below (which declares role="tabpanel"). PR 4 moves
+  // the strip onto the shared .toolbar-tabs vocabulary (the .coach-modes
+  // rules are retired, INV-184) and into the app-bar.
   var toggle = isMgr
-    ? '<div class="coach-modes" role="tablist" aria-label="Coaching view">' +
-        '<button class="coach-mode' + (COACH_MODE === 'mine' ? ' on' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'mine') + '" data-coach-mode="mine">' + icon('bulb', 13) + ' My Coaching</button>' +
-        '<button class="coach-mode' + (COACH_MODE === 'team' ? ' on' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'team') + '" data-coach-mode="team">' + icon('manage', 13) + ' Team Coaching</button>' +
-      '</div>'
-    : '';
+    ? '<div class="toolbar-tabs" role="tablist" aria-label="Coaching view">' +
+        '<button type="button" class="toolbar-tab' + (COACH_MODE === 'mine' ? ' active' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'mine') + '" data-coach-mode="mine">Mine</button>' +
+        '<button type="button" class="toolbar-tab' + (COACH_MODE === 'team' ? ' active' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'team') + '" data-coach-mode="team">Team</button>' +
+      '</div>' +
+      '<button type="button" class="coach-primary" id="coach-open-drawer" data-coach-open="1">' + icon('plus', 13) + ' Log coaching</button>'
+    : '<input type="search" id="coach-my-search" class="coach-search" aria-label="Search your coaching" placeholder="Search your coaching" autocomplete="off">';
   area.innerHTML =
-        '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Coaching</h1></div>' +
-    toggle +
+    (COMPACT_MODE
+      ? '<div class="coach-compact-row">' + toggle + '</div>'
+      : '<div class="app-bar"><div class="app-bar-left">' +
+          '<div class="breadcrumb"><span>Training</span><span class="crumb-sep">›</span><span class="crumb-current">Coaching</span></div>' +
+          '<h1 class="display-title">Coaching</h1>' +
+          '<p class="view-subtitle">' + (isMgr ? 'Specific, non-routine feedback on a call. Praise needs no acknowledgement; coaching does.' : 'Feedback your manager leaves on specific calls. Acknowledge each item — a reply is optional.') + '</p>' +
+        '</div><div class="app-bar-right">' + toggle + '</div></div>') +
     '<div id="coach-content"' + (isMgr ? ' role="tabpanel"' : '') + '></div>';
   coachDispatchMode_();
 }
@@ -76,14 +152,15 @@ function coachSwitchMode_(mode) {
   if ((mode !== 'mine' && mode !== 'team') || COACH_MODE === mode) return;
   COACH_MODE = mode;
   coachWriteMode_(mode);
-  document.querySelectorAll('.coach-mode').forEach(function (b) {
+  document.querySelectorAll('[data-coach-mode]').forEach(function (b) {
     var on = b.getAttribute('data-coach-mode') === mode;
-    b.classList.toggle('on', on);
+    b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');   // A11
   });
   coachDispatchMode_();
 }
 
+// ── REP: My Coaching ────────────────────────────────────────────────────────
 function coachLoadMy_() {
   var el = document.getElementById('coach-content');
   if (el) el.innerHTML = '<div class="m-loading"><span class="lo-glyph">' + icon('bulb', 26) + '</span> Loading coaching&hellip;</div>';
@@ -100,37 +177,115 @@ function coachLoadMy_() {
     .getMyCoaching();
 }
 
+function coachMatches_(it, q) {
+  if (!q) return true;
+  var hay = ((it.whatHappened || '') + ' ' + (it.whatShould || '') + ' ' + (it.patientTRX || '') + ' ' + (it.repResponse || '') + ' ' + (it.empName || '')).toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+
 function coachRenderMy_() {
   var el = document.getElementById('coach-content');
   if (!el) return;
   var data = COACH_STATE.my || {};
   if (data.error) { el.innerHTML = errorStateHtml_(data.error); return; }   // A12
-  var items = data.items || [];
-  if (!items.length) {
+  var all = data.items || [];
+  if (!all.length) {
     el.innerHTML = '<div class="tr-empty">No coaching yet. Feedback your manager leaves on specific calls shows up here.</div>';
     return;
   }
-  var openCount = items.filter(function (i) { return i.status === 'open'; }).length;
-  var h = openCount
-    ? '<div class="coach-banner">' + icon('flag', 14) + ' You have <strong>' + openCount + '</strong> item' + (openCount === 1 ? '' : 's') + ' to acknowledge.</div>'
-    : '';
-  h += '<div class="coach-list">';
-  items.forEach(function (it) { h += coachCardMy_(it); });
-  h += '</div>';
+  var q = (COACH_STATE.mySearch || '').toLowerCase().trim();
+  var items = all.filter(function (it) { return coachMatches_(it, q); });
+  var nowMs = Date.now();
+  var open = all.filter(function (i) { return i.status === 'open' && i.severity !== 'praise'; });
+  // 4a — glance strip: received this quarter · waiting on you · recognition.
+  var qStart = new Date(); qStart.setUTCMonth(Math.floor(qStart.getUTCMonth() / 3) * 3, 1);
+  var qMs = Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth(), 1);
+  var quarter = all.filter(function (i) { return coachTsMs_(i.createdAt) >= qMs; }).length;
+  var praiseAll = all.filter(function (i) { return i.severity === 'praise'; });
+  var h = '<div class="coach-kpis">' +
+    coachKpi_('Received this quarter', quarter, '', '') +
+    coachKpi_('Waiting on you', open.length, open.length ? 'warn' : '', open.length ? 'acknowledge below' : 'all caught up') +
+    coachKpi_('Recognition', praiseAll.length, praiseAll.length ? 'good' : '', praiseAll.length ? 'no acknowledgement needed' : '') +
+    '</div>';
+  // 4a — action callout naming the OLDEST open item's age, with a Jump.
+  if (open.length) {
+    var oldest = open.slice().sort(function (a, b) { return (b.ageDays || 0) - (a.ageDays || 0); })[0];
+    h += '<div class="coach-callout" role="status">' + icon('flag', 14) +
+      '<span>You have <strong>' + open.length + '</strong> item' + (open.length === 1 ? '' : 's') + ' to acknowledge — the oldest is ' + esc(coachAgeLabel_(oldest)) + ' old.</span>' +
+      '<button type="button" class="tr-complete-btn" data-coach-jump="' + esc(oldest.coachId) + '">Jump to it</button></div>';
+  }
+  // 4b — Recognition feed, separate and above the coaching feed.
+  var praise = items.filter(function (i) { return i.severity === 'praise'; });
+  if (praise.length) h += coachRecognitionHtml_(praise, true);
+  // 4c — the coaching feed, filtered, grouped by month.
+  var coaching = items.filter(function (i) { return i.severity !== 'praise'; });
+  var toAck = coaching.filter(function (i) { return i.status === 'open'; });
+  var shown = COACH_STATE.myFilter === 'ack' ? toAck : coaching;
+  h += '<div class="coach-feed-head"><h2 class="card-label"><span>Coaching</span></h2>' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter coaching">' +
+      '<button type="button" class="toolbar-tab' + (COACH_STATE.myFilter === 'all' ? ' active' : '') + '" aria-pressed="' + (COACH_STATE.myFilter === 'all') + '" data-coach-myfilter="all">All ' + coaching.length + '</button>' +
+      '<button type="button" class="toolbar-tab' + (COACH_STATE.myFilter === 'ack' ? ' active' : '') + '" aria-pressed="' + (COACH_STATE.myFilter === 'ack') + '" data-coach-myfilter="ack">To acknowledge ' + toAck.length + '</button>' +
+    '</div></div>';
+  if (!shown.length) {
+    h += '<div class="tr-empty">' + (q ? 'Nothing matches your search.' : (COACH_STATE.myFilter === 'ack' ? 'Nothing waiting on you.' : 'No coaching items.')) + '</div>';
+  } else {
+    h += coachMonthGroups_(shown, function (it) { return coachCardMy_(it, nowMs); });
+  }
   el.innerHTML = h;
 }
 
-function coachCardMy_(it) {
+/** Newest-first cards grouped under a mono-uppercase MONTH divider. */
+function coachMonthGroups_(items, cardFn) {
+  var h = '', lastKey = '';
+  items.forEach(function (it) {
+    var key = String(it.createdAt || '').substring(0, 7);
+    if (key !== lastKey) {
+      var m = /^(\d{4})-(\d{2})/.exec(key);
+      h += '<div class="coach-month">' + (m ? esc(COACH_MONTHS_LONG_[+m[2] - 1] + ' ' + m[1]) : 'Undated') + '</div>';
+      lastKey = key;
+    }
+    h += cardFn(it);
+  });
+  return h;
+}
+
+/** 4b / K3 — compact praise cards: accent-soft, no pill, no action row. */
+function coachRecognitionHtml_(praise, mine) {
+  var h = '<div class="coach-feed-head"><h2 class="card-label"><span>' + icon('thumbsUp', 14) + ' Recognition</span></h2><span class="coach-feed-note">no acknowledgement needed</span></div>' +
+    '<div class="coach-recog">';
+  praise.forEach(function (it) {
+    h += '<div class="coach-recog-card">' +
+      '<div class="coach-recog-meta">' + (mine ? esc(it.createdByName || '') : '<strong>' + esc(it.empName || '') + '</strong>') +
+        (it.patientTRX ? ' <span class="coach-chip">' + esc(it.patientTRX) + '</span>' : '') +
+        '<span class="coach-meta">' + esc(coachFmtDate_(it.createdAt)) + '</span></div>' +
+      '<div class="coach-recog-body">' + esc(it.whatHappened || '') + '</div>' +
+      '</div>';
+  });
+  return h + '</div>';
+}
+
+function coachCardMy_(it, nowMs) {
   var acked = it.status === 'acknowledged';
-  var foot = acked
-    ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt || '').substring(0, 16).replace('T', ' ')) + '</div>'
-    : '<button class="tr-complete-btn" data-coach-ack="' + esc(it.coachId) + '">' + icon('check', 13) + ' Acknowledge</button>';
-  return '<div class="coach-card' + (acked ? ' is-acked' : '') + '">' +
+  var foot;
+  if (acked) {
+    foot = '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt || '').substring(0, 16).replace('T', ' ')) + '</div>';
+  } else {
+    // 4d — acknowledge with an OPTIONAL reply (a real <label for>).
+    var rid = 'coach-reply-' + it.coachId;
+    foot = '<div class="coach-replybox"><label for="' + esc(rid) + '" class="coach-nar-lbl">Reply · optional</label>' +
+      '<textarea id="' + esc(rid) + '" maxlength="2000" rows="2" placeholder="What you’ll do differently, or a question for your manager."></textarea>' +
+      '<div class="coach-replybox-foot"><span class="coach-feed-note">Acknowledging confirms you’ve read it — a reply is optional.</span>' +
+      '<button type="button" class="tr-complete-btn" data-coach-ack="' + esc(it.coachId) + '">' + icon('check', 13) + ' Acknowledge</button></div></div>';
+  }
+  return '<div class="coach-card' + (acked ? ' is-acked' : '') + '" id="coach-item-' + esc(it.coachId) + '">' +
     '<div class="coach-card-head">' + coachSevChip_(it.severity) +
-      (it.patientTRX ? '<span class="coach-trx">' + esc(it.patientTRX) + '</span>' : '') +
-      '<span class="coach-meta">' + esc(String(it.createdAt || '').substring(0, 10)) + '</span></div>' +
-    coachNarrativeHtml_('What happened', it.whatHappened) +
-    coachNarrativeHtml_('What should have happened', it.whatShould) +
+      (it.patientTRX ? '<span class="coach-chip">' + esc(it.patientTRX) + '</span>' : '') +
+      coachLinkChips_(it, true) +
+      '<span class="coach-meta">' + esc(coachFmtDate_(it.createdAt)) + (it.createdByName ? ' · ' + esc(it.createdByName) : '') + '</span></div>' +
+    coachNarrative_('What happened', it.whatHappened, 'coach-nar-ctx') +
+    coachNarrative_('The coaching point', it.whatShould, 'coach-nar-point') +
+    coachReplyHtml_(it, true) +
+    (it.followUpAt ? '<div class="coach-meta-line">' + icon('timeoff', 12) + ' Revisit ' + esc(coachFmtDate_(it.followUpAt)) + '</div>' : '') +
     '<div class="coach-card-foot">' + foot + '</div>' +
     '</div>';
 }
@@ -144,6 +299,8 @@ function coachAck_(coachId) {
   _coachAckInFlight[coachId] = true;
   var btn = document.querySelector('[data-coach-ack="' + coachId + '"]');
   if (btn) btn.disabled = true;
+  var replyEl = document.getElementById('coach-reply-' + coachId);
+  var reply = replyEl ? String(replyEl.value || '').trim() : '';
   var settle = function () {
     delete _coachAckInFlight[coachId];
     if (btn) btn.disabled = false;
@@ -159,10 +316,10 @@ function coachAck_(coachId) {
       }
     })
     .withFailureHandler(function (err) { settle(); if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
-    .acknowledgeCoaching(coachId);
+    .acknowledgeCoaching(coachId, reply);
 }
 
-// ── MANAGER (Team mode): Coaching dashboard + composer ──────────────────────
+// ── MANAGER (Team mode): signal board + feed + composer drawer ──────────────
 function coachLoadMgr_() {
   var c = document.getElementById('coach-content');
   if (c) c.innerHTML = '<div class="m-loading"><span class="lo-glyph">' + icon('manage', 26) + '</span> Loading&hellip;</div>';
@@ -187,6 +344,93 @@ function coachLoadMgr_() {
   google.script.run.withSuccessHandler(function (d) { if (seq !== COACH_STATE.mgrSeq) return; COACH_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
 }
 
+/** Pure (Node-pinned) — K7 signal board rows, derived CLIENT-side from the
+ *  team-scoped items + the roster (nothing stored). 30-day weighted score:
+ *  critical ×4 + moderate ×2 + minor ×1 − praise ×1 + overdue ×2. Tiers:
+ *  priority (score ≥ 6 OR any critical in the window), watch (3–5), steady
+ *  (1–2), clear (≤ 0), nosignal (nothing logged in 21 days). Priority/watch
+ *  are evaluated FIRST — a critical 25 days old is still a priority, not a
+ *  coverage gap. `nosignal` carries the INFO tone, never the green clear
+ *  (INV-186/187 — three weeks of silence is a coverage question, not a clean
+ *  bill of health). Every rep on the roster gets a row. */
+function coachRepSignal_(items, emps, nowMs) {
+  var W30 = 30 * 86400000, W21 = 21 * 86400000;
+  var byRep = {};
+  (emps || []).forEach(function (e) { byRep[e.id] = { empId: e.id, empName: e.name, mix: { critical: 0, major: 0, minor: 0, praise: 0 }, total: 0, lastMs: 0, overdue: 0 }; });
+  (items || []).forEach(function (it) {
+    if (!it || it.status === 'void') return;
+    var r = byRep[it.empId] || (byRep[it.empId] = { empId: it.empId, empName: it.empName, mix: { critical: 0, major: 0, minor: 0, praise: 0 }, total: 0, lastMs: 0, overdue: 0 });
+    var ms = coachTsMs_(it.createdAt);
+    if (!isNaN(ms) && ms > r.lastMs) r.lastMs = ms;
+    if (it.overdueUnacked) r.overdue++;
+    if (isNaN(ms) || ms < nowMs - W30) return;
+    if (r.mix[it.severity] != null) r.mix[it.severity]++;
+    r.total++;
+  });
+  return Object.keys(byRep).map(function (id) {
+    var r = byRep[id];
+    r.score = r.mix.critical * 4 + r.mix.major * 2 + r.mix.minor * 1 - r.mix.praise * 1 + r.overdue * 2;
+    if (r.mix.critical > 0 || r.score >= 6) r.tier = 'priority';
+    else if (r.score >= 3) r.tier = 'watch';
+    else if (!r.lastMs || r.lastMs < nowMs - W21) r.tier = 'nosignal';
+    else if (r.score >= 1) r.tier = 'steady';
+    else r.tier = 'clear';
+    r.lastDays = r.lastMs ? Math.floor((nowMs - r.lastMs) / 86400000) : null;
+    return r;
+  });
+}
+var COACH_TIER_META = {
+  priority: { label: 'Priority', tone: 'destructive' },
+  watch:    { label: 'Watch',    tone: 'warn' },
+  steady:   { label: 'Steady',   tone: '' },
+  clear:    { label: 'Clear',    tone: 'accent' },
+  nosignal: { label: 'No signal', tone: 'info' },
+};
+var COACH_TIER_RANK = { priority: 4, watch: 3, steady: 2, clear: 1, nosignal: 0 };
+
+function coachBoardSort_(key) {
+  var s = COACH_STATE.boardSort;
+  if (s.key === key) s.dir = (s.dir === 'asc' ? 'desc' : 'asc');
+  else { s.key = key; s.dir = (key === 'empName') ? 'asc' : 'desc'; }
+  coachRenderMgr_();
+}
+
+function coachMixBar_(mix) {
+  var total = mix.critical + mix.major + mix.minor + mix.praise;
+  var parts = [['critical', 'var(--destructive)'], ['major', 'var(--warn)'], ['minor', 'var(--info)'], ['praise', 'var(--accent)']];
+  var label = total ? parts.filter(function (p) { return mix[p[0]]; }).map(function (p) { return mix[p[0]] + ' ' + coachSevLabel_(p[0]).toLowerCase(); }).join(', ') : 'nothing in 30 days';
+  var segs = total ? parts.map(function (p) { return mix[p[0]] ? '<span style="flex:' + mix[p[0]] + ';background:' + p[1] + '"></span>' : ''; }).join('') : '';
+  return '<div class="coach-mix" role="img" aria-label="' + esc(label) + '">' + segs + '</div>';
+}
+
+function coachBoardHtml_(dash, emps, nowMs) {
+  var rows = coachRepSignal_(dash.items || [], emps, nowMs);
+  var s = COACH_STATE.boardSort;
+  rows.sort(function (a, b) {
+    var av, bv;
+    if (s.key === 'empName') { av = a.empName || ''; bv = b.empName || ''; return s.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av); }
+    if (s.key === 'tier') { av = COACH_TIER_RANK[a.tier]; bv = COACH_TIER_RANK[b.tier]; }
+    else if (s.key === 'last') { av = a.lastMs || 0; bv = b.lastMs || 0; }
+    else { av = a[s.key] || 0; bv = b[s.key] || 0; }
+    if (av === bv) return (b.score - a.score) || String(a.empName).localeCompare(String(b.empName));
+    return s.dir === 'asc' ? av - bv : bv - av;
+  });
+  var legend = '<div class="coach-legend"><span><i style="background:var(--destructive)"></i>Critical</span><span><i style="background:var(--warn)"></i>Moderate</span><span><i style="background:var(--info)"></i>Minor</span><span><i style="background:var(--accent)"></i>Praise</span></div>';
+  return '<div class="panel coach-board-panel"><div class="coach-feed-head"><h2 class="card-label"><span>Who needs a 1-on-1</span></h2>' + legend + '</div>' +
+    '<div class="coach-board">' + mtRenderTable_({
+      columns: [
+        { key: 'empName', label: 'Employee', name: true, sortable: true, cell: function (r) { return esc(String(r.empName || r.empId || '')); } },
+        { key: 'mix', label: 'Mix 30d', cell: function (r) { return coachMixBar_(r.mix); } },
+        { key: 'total', label: 'Total', numeric: true, sortable: true, cell: function (r) { return String(r.total); } },
+        { key: 'last', label: 'Last', sortable: true, cell: function (r) { return '<span class="coach-muted2">' + esc(coachRelDays_(r.lastMs, nowMs)) + '</span>'; } },
+        { key: 'overdue', label: 'Overdue', numeric: true, sortable: true, cell: function (r) { return r.overdue ? '<span class="tr-cell-overdue">' + r.overdue + '</span>' : '<span class="coach-muted2">0</span>'; } },
+        { key: 'tier', label: 'Signal', sortable: true, cell: function (r) { var m = COACH_TIER_META[r.tier]; return '<span class="kicker-pill"' + (m.tone ? ' data-tone="' + m.tone + '"' : '') + '>' + esc(m.label) + '</span>'; } },
+      ],
+      rows: rows, sort: s, onSort: 'coachBoardSort_',
+      rowClass: function (r) { return r.tier === 'priority' ? 'coach-row-priority' : r.tier === 'watch' ? 'coach-row-watch' : ''; },
+    }) + '</div></div>';
+}
+
 function coachRenderMgr_() {
   var el = document.getElementById('coach-content');
   if (!el) return;
@@ -194,240 +438,516 @@ function coachRenderMgr_() {
   if (dash.error) { el.innerHTML = errorStateHtml_(dash.error); return; }   // A12
   var emps = (COACH_STATE.emps && COACH_STATE.emps.employees) || [];
   var counts = dash.counts || { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
+  var items = dash.items || [];
+  var voided = dash.voided || [];
+  var nowMs = Date.now();
 
-  // Optional prefill from a Call Notes "Coach on this" click.
+  // A Call Notes "Coach on this" prefill opens the DRAWER prefilled (C8 — read
+  // first, null, then act).
   var pre = window.COACH_PREFILL || null;
   window.COACH_PREFILL = null;
 
-  var empSel = '<select id="coach-emp" aria-label="Employee"><option value="">Pick an employee…</option>';
-  emps.forEach(function (e) {
-    var seld = (pre && pre.empId === e.id) ? ' selected' : '';
-    empSel += '<option value="' + esc(e.id) + '"' + seld + '>' + esc(e.name) + '</option>';
-  });
-  empSel += '</select>';
+  var h = coachAnalyticsHtml_(dash.analytics, counts, items, nowMs, dash);
+  h += coachBoardHtml_(dash, emps, nowMs);
 
-  var sevSel = '<select id="coach-sev" aria-label="Severity">' +
-    '<option value="praise">Praise — went above and beyond</option>' +
-    '<option value="minor" selected>Minor — small correction</option>' +
-    '<option value="major">Major — notable issue</option>' +
-    '<option value="critical">Critical — serious, needs a meeting</option>' +
-    '</select>';
-
-  var h = '<div class="coach-compose ed-issue"><h3>' + icon('bulb', 15) + ' Log coaching</h3>' +
-    '<div class="row">' +
-      '<div><label>Employee</label>' + empSel + '</div>' +
-      '<div><label>Severity</label>' + sevSel + '</div>' +
-      '<div style="flex:1;min-width:200px;"><label for="coach-trx">Patient / TRX (optional)</label>' +
-        '<input type="text" id="coach-trx" maxlength="200" placeholder="e.g. TRX-12345" value="' + (pre && pre.patientTRX ? esc(pre.patientTRX) : '') + '"></div>' +
-    '</div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label for="coach-what">What happened</label>' +
-      '<textarea id="coach-what" maxlength="4000" placeholder="Describe the interaction."></textarea></div></div>' +
-    '<div class="row"><div style="flex:1;width:100%;"><label for="coach-should">What should have happened (optional)</label>' +
-      '<textarea id="coach-should" maxlength="4000" placeholder="The coaching point — how to handle it next time."></textarea></div></div>' +
-    '<input type="hidden" id="coach-noteid" value="' + (pre && pre.noteId ? esc(pre.noteId) : '') + '">' +
-    '<div class="row"><button class="tr-complete-btn" id="coach-go">' + icon('send', 13) + ' Log coaching</button></div>' +
-    '<div class="hint">This is HR-class feedback (kept indefinitely, team-scoped). The patient/TRX and narrative are stored only in the HR record — the audit log stays content-free.</div>' +
+  // K6 — filter strip with live counts + search + employee select; all of it
+  // filters the cached payload (no refetch). Voided are EXCLUDED from All.
+  var q = (COACH_STATE.search || '').toLowerCase().trim();
+  var cnt = {
+    all: items.length,
+    ack: items.filter(function (i) { return i.status === 'open' && i.severity !== 'praise'; }).length,
+    overdue: items.filter(function (i) { return i.overdueUnacked; }).length,
+    praise: items.filter(function (i) { return i.severity === 'praise'; }).length,
+    voided: dash.voidedTotal != null ? dash.voidedTotal : voided.length,
+  };
+  var f = COACH_STATE.filter;
+  function tab(key, label, cls) {
+    return '<button type="button" class="toolbar-tab' + (f === key ? ' active' : '') + (cls ? ' ' + cls : '') + '" aria-pressed="' + (f === key) + '" data-coach-filter="' + key + '">' + label + ' ' + cnt[key] + '</button>';
+  }
+  var empOpts = '<option value="">All employees</option>';
+  emps.forEach(function (e) { empOpts += '<option value="' + esc(e.id) + '"' + (COACH_STATE.empFilter === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>'; });
+  h += '<div class="coach-filterbar">' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter coaching">' + tab('all', 'All') + tab('ack', 'Needs ack') + tab('overdue', 'Overdue', 'coach-tab-overdue') + tab('praise', 'Praise', 'coach-tab-praise') + tab('voided', 'Voided') + '</div>' +
+    '<input type="search" id="coach-search" class="coach-search" aria-label="Search coaching" placeholder="Search narrative or TRX" autocomplete="off" value="' + esc(COACH_STATE.search || '') + '">' +
+    '<select id="coach-emp-filter" aria-label="Employee">' + empOpts + '</select>' +
     '</div>';
 
-  // metrics panel (analytics from the server) + operational counts
-  h += coachAnalyticsHtml_(dash.analytics, counts);
+  var list;
+  if (f === 'voided') list = voided;
+  else list = items.filter(function (i) {
+    if (f === 'ack') return i.status === 'open' && i.severity !== 'praise';
+    if (f === 'overdue') return !!i.overdueUnacked;
+    if (f === 'praise') return i.severity === 'praise';
+    return true;
+  });
+  list = list.filter(function (i) { return (!COACH_STATE.empFilter || i.empId === COACH_STATE.empFilter) && coachMatches_(i, q); });
 
-  var items = dash.items || [];
-  if (!items.length) {
+  if (f === 'voided') {
+    h += list.length ? '<div class="coach-list">' + list.map(coachCardVoided_).join('') + '</div>'
+      : '<div class="tr-empty">No voided items.</div>';
+  } else if (!items.length) {
     h += '<div class="tr-empty">No coaching logged yet for your team.</div>';
   } else {
-    h += '<div class="coach-list">';
-    items.forEach(function (it) { h += coachCardMgr_(it); });
-    h += '</div>';
+    var praise = f === 'all' ? list.filter(function (i) { return i.severity === 'praise'; }) : [];
+    if (praise.length) h += coachRecognitionHtml_(praise, false);
+    var coaching = f === 'all' ? list.filter(function (i) { return i.severity !== 'praise'; }) : list;
+    if (f === 'all' || f === 'praise') h += '<div class="coach-feed-head"><h2 class="card-label"><span>' + (f === 'praise' ? 'Praise' : 'Coaching') + '</span></h2></div>';
+    if (!coaching.length) h += '<div class="tr-empty">' + (q || COACH_STATE.empFilter ? 'Nothing matches.' : 'Nothing here.') + '</div>';
+    else h += '<div class="coach-list">' + coaching.map(function (it) { return coachCardMgr_(it, nowMs); }).join('') + '</div>';
   }
   el.innerHTML = h;
-
-  var goBtn = document.getElementById('coach-go');
-  if (goBtn) goBtn.addEventListener('click', coachCreate_);
-  if (pre) { var w = document.getElementById('coach-what'); if (w) w.focus(); }
+  if (pre) coachOpenDrawer_(pre);
 }
 
-function coachKpi_(label, val, tone) {
-  return '<div class="coach-kpi"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + esc(String(val == null ? 0 : val)) + '</div>' +
-    '<div class="coach-kpi-lbl">' + esc(label) + '</div></div>';
+function coachKpi_(label, val, tone, sub) {
+  return '<div class="coach-kpi' + (tone === 'crit' ? ' is-crit' : '') + '"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + esc(String(val == null ? 0 : val)) + '</div>' +
+    '<div class="coach-kpi-lbl">' + esc(label) + '</div>' + (sub ? '<div class="coach-kpi-sub">' + sub + '</div>' : '') + '</div>';
 }
 /** Null-guard for analytics numbers concatenated into markup — a partial or
     legacy server shape must render 0, never the literal "undefined". */
 function coachNum_(v) { return (v == null || isNaN(v)) ? 0 : v; }
 
-/** Coaching metrics panel — headline KPIs, severity breakdown, per-rep table. */
-function coachAnalyticsHtml_(a, counts) {
+/** Surnames of the reps with overdue items, capped at two + "+N" (2b). */
+function coachOverdueNames_(items) {
+  var seen = {}, names = [];
+  items.forEach(function (i) {
+    if (!i.overdueUnacked) return;
+    var n = String(i.empName || '').trim().split(' ').pop();
+    if (n && !seen[n]) { seen[n] = 1; names.push(n); }
+  });
+  if (!names.length) return '';
+  return esc(names.slice(0, 2).join(', ')) + (names.length > 2 ? ' +' + (names.length - 2) : '');
+}
+
+/** 2b — the KPI strip: each cell carries a second mono line that makes the
+ *  number actionable. Keeps the `!a.total` fallback (counts only). */
+function coachAnalyticsHtml_(a, counts, items, nowMs, dash) {
   a = a || {};
+  var note = (dash && dash.businessDayMinutes)
+    ? '<div class="coach-biz-note">Ages, the overdue window and the median count business days only — weekends and US holidays excluded.</div>' : '';
   if (!a.total) {
     // Nothing logged yet — show the lightweight operational counts only.
     return '<div class="coach-kpis">' +
-      coachKpi_('Open', counts.open, '') + coachKpi_('Acknowledged', counts.acknowledged, '') +
-      coachKpi_('Overdue', counts.overdueUnacked, counts.overdueUnacked ? 'crit' : '') +
-      coachKpi_('Praise', counts.praise, '') + '</div>';
+      coachKpi_('Awaiting ack', counts.open, '', '') + coachKpi_('Acknowledged', counts.acknowledged, '', '') +
+      coachKpi_('Overdue', counts.overdueUnacked, counts.overdueUnacked ? 'crit' : '', '') +
+      coachKpi_('Recognition', counts.praise, '', '') + '</div>' + note;
   }
-  var h = '<div class="coach-kpis">' +
-    coachKpi_('Total', coachNum_(a.total), '') +
-    coachKpi_('Ack rate', coachNum_(a.ackRatePct) + '%', '') +
-    coachKpi_('Median days to ack', coachNum_(a.medianDaysToAck), '') +
-    coachKpi_('Overdue', coachNum_(a.overdueUnacked), a.overdueUnacked ? 'crit' : '') +
-    '</div>';
-  // severity breakdown chips
-  var sev = a.bySeverity || {};
-  h += '<div class="coach-sevbar">' +
-    coachSevStat_('praise', sev.praise) + coachSevStat_('minor', sev.minor) +
-    coachSevStat_('major', sev.major) + coachSevStat_('critical', sev.critical) +
-    '</div>';
-  // per-rep table
-  var reps = a.perRep || [];
-  if (reps.length) {
-    // V-11 (cycle-12 visual audit): this was hand-rolled `<table class="tr-table
-    // coach-rep-table">` — no header treatment, no hover, no sticky header —
-    // sitting beside the Punctuality and Metrics tables that ARE built with the
-    // shared component, and contradicting CLAUDE.md's explicit decision ("New
-    // manager tables should reuse it rather than hand-rolling <table> markup").
-    // Routed onto mtRenderTable_: same columns, same numbers, and the overdue
-    // cell keeps its danger tone via a per-row class (opts.rowClass) plus the
-    // existing .tr-cell-overdue span.
-    h += '<h2 class="tr-section-h">By employee</h2>' +
-      mtRenderTable_({
-        columns: [
-          { key: 'empName', label: 'Employee', name: true,
-            cell: function (r) { return esc(String(r.empName || r.empId || '')); } },
-          { key: 'total',       label: 'Total',       numeric: true, cell: function (r) { return coachNum_(r.total); } },
-          { key: 'acknowledged',label: 'Acked',       numeric: true, cell: function (r) { return coachNum_(r.acknowledged); } },
-          { key: 'ackRatePct',  label: 'Ack %',       numeric: true, cell: function (r) { return coachNum_(r.ackRatePct) + '%'; } },
-          { key: 'medianDaysToAck', label: 'Median days', numeric: true, cell: function (r) { return coachNum_(r.medianDaysToAck); } },
-          { key: 'overdue',     label: 'Overdue',     numeric: true,
-            cell: function (r) { return r.overdue
-              ? '<span class="tr-cell-overdue">' + coachNum_(r.overdue) + '</span>' : '0'; } },
-        ],
-        rows: reps,
-        rowClass: function (r) { return r.overdue ? 'coach-row-overdue' : ''; },
-      });
-  }
-  return h;
-}
-function coachSevStat_(sev, n) {
-  return '<span class="coach-sevstat">' + coachSevChip_(sev) + '<b>' + (n || 0) + '</b></span>';
+  var W30 = 30 * 86400000;
+  var last30 = 0, prev30 = 0, bars = [0, 0, 0, 0, 0, 0];
+  items.forEach(function (i) {
+    var ms = coachTsMs_(i.createdAt);
+    if (isNaN(ms)) return;
+    if (ms >= nowMs - W30) { last30++; var b = Math.min(5, Math.floor((ms - (nowMs - W30)) / (5 * 86400000))); bars[b]++; }
+    else if (ms >= nowMs - 2 * W30) prev30++;
+  });
+  var max = Math.max.apply(null, bars.concat([1]));
+  var spark = '<span class="coach-spark" aria-hidden="true">' + bars.map(function (v, i) { return '<i style="height:' + Math.max(2, Math.round(v / max * 14)) + 'px"' + (i === 5 ? ' class="on"' : '') + '></i>'; }).join('') + '</span>';
+  var delta = last30 - prev30;
+  var deltaTxt = (delta > 0 ? '+' : '') + delta + ' vs prior 30d';
+  var overdueNames = coachOverdueNames_(items);
+  var praiseShare = a.total ? Math.round((coachNum_(a.bySeverity && a.bySeverity.praise) / a.total) * 100) : 0;
+  return '<div class="coach-kpis">' +
+    coachKpi_('Logged · 30d', last30, '', spark + ' ' + esc(deltaTxt)) +
+    coachKpi_('Awaiting ack', coachNum_(counts.open), '', 'median ' + coachNum_(a.medianDaysToAck) + ' business day' + (coachNum_(a.medianDaysToAck) === 1 ? '' : 's') + ' to ack') +
+    coachKpi_('Overdue > ' + coachNum_(dash && dash.reminderDays || 7) + 'd', coachNum_(counts.overdueUnacked), counts.overdueUnacked ? 'crit' : '', overdueNames || 'nobody') +
+    coachKpi_('Recognition', coachNum_(a.bySeverity && a.bySeverity.praise), '', praiseShare + '% of items') +
+    '</div>' + note;
 }
 
-function coachCardMgr_(it) {
+function coachCardMgr_(it, nowMs) {
+  var overdue = !!it.overdueUnacked;
   var statusPill = it.status === 'acknowledged'
     ? '<span class="kicker-pill" data-tone="accent">' + icon('check', 11) + ' Acknowledged</span>'
-    : it.overdueUnacked
-      ? '<span class="kicker-pill" data-tone="destructive">' + icon('flag', 11) + ' Overdue</span>'
-      : '<span class="kicker-pill" data-tone="warn">Awaiting ack</span>';
-  return '<div class="coach-card">' +
+    : overdue
+      ? '<span class="kicker-pill" data-tone="destructive">' + icon('flag', 11) + ' Overdue ' + (it.ageDays != null ? Math.round(it.ageDays) + 'd' : '') + '</span>'
+      : (it.severity === 'praise' ? '' : '<span class="kicker-pill" data-tone="warn">Awaiting ack</span>');
+  var meta = [];
+  if (it.status === 'open' && it.severity !== 'praise') meta.push(esc(coachAgeLabel_(it)) + ' open');
+  if (it.followUpAt) meta.push(icon('timeoff', 12) + ' Revisit ' + esc(coachFmtDate_(it.followUpAt)) + (it.followUpDue ? ' <span class="coach-due">due</span>' : ''));
+  if (it.acknowledgedAt) meta.push(icon('check', 12) + ' Acknowledged ' + esc(String(it.acknowledgedAt).substring(0, 16).replace('T', ' ')));
+  if (it.nudgedAt) meta.push('nudged ' + esc(coachFmtDate_(it.nudgedAt)));
+  var actions = '';
+  if (it.status === 'open' && it.severity !== 'praise') {
+    actions += '<button type="button" class="tr-complete-btn coach-sec" data-coach-nudge="' + esc(it.coachId) + '"' +
+      (it.nudgedToday ? ' disabled title="Already nudged today — once per item per day"' : ' title="Re-send the reminder email"') + '>' + icon('bell', 12) + ' Nudge</button>';
+  }
+  if (it.status !== 'void') {
+    actions += '<button type="button" class="tr-complete-btn coach-sec" data-coach-revisit="' + esc(it.coachId) + '" data-current="' + esc(it.followUpAt || '') + '" title="Set or clear the revisit date">' + icon('timeoff', 12) + ' Revisit</button>';
+  }
+  actions += '<button type="button" class="tr-link coach-void" data-coach-void="' + esc(it.coachId) + '">Void</button>';
+  return '<div class="coach-card' + (overdue ? ' is-overdue' : '') + (it.status === 'acknowledged' ? ' is-acked' : '') + '" id="coach-item-' + esc(it.coachId) + '">' +
     '<div class="coach-card-head">' + coachSevChip_(it.severity) +
       '<strong class="coach-emp">' + esc(it.empName) + '</strong>' +
-      (it.patientTRX ? '<span class="coach-trx">' + esc(it.patientTRX) + '</span>' : '') +
+      (it.patientTRX ? '<span class="coach-chip">' + esc(it.patientTRX) + '</span>' : '') +
+      coachLinkChips_(it, false) +
       statusPill +
-      '<span class="coach-meta">' + esc(String(it.createdAt || '').substring(0, 10)) + '</span></div>' +
-    coachNarrativeHtml_('What happened', it.whatHappened) +
-    coachNarrativeHtml_('What should have happened', it.whatShould) +
-    (it.acknowledgedAt ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt).substring(0, 16).replace('T', ' ')) + '</div>' : '') +
-    '<div class="coach-card-foot"><button class="tr-link coach-void" data-coach-void="' + esc(it.coachId) + '">Void</button></div>' +
+      '<span class="coach-meta">' + esc(coachFmtDate_(it.createdAt)) + '</span></div>' +
+    coachNarrative_(it.severity === 'praise' ? 'What they did' : 'What happened', it.whatHappened, 'coach-nar-ctx') +
+    coachNarrative_('The coaching point', it.whatShould, 'coach-nar-point') +
+    coachReplyHtml_(it, false) +
+    '<div class="coach-card-foot"><div class="coach-meta-line">' + meta.join(' · ') + '</div><div class="coach-actions">' + actions + '</div></div>' +
     '</div>';
+}
+
+/** K6 — a voided item: dashed, no narrative, one line naming the reason. */
+function coachCardVoided_(it) {
+  return '<div class="coach-card is-void"><div class="coach-card-head">' + coachSevChip_(it.severity) +
+    '<strong class="coach-emp">' + esc(it.empName) + '</strong>' +
+    '<span class="coach-meta">' + esc(coachFmtDate_(it.createdAt)) + '</span></div>' +
+    '<div class="coach-nar-lbl">Void reason</div><div class="coach-void-reason">' + (it.voidReason ? esc(it.voidReason) : '<span class="coach-muted2">no reason recorded</span>') + '</div></div>';
+}
+
+// ── Composer DRAWER (K1) ─────────────────────────────────────────────────────
+var COACH_SEV_HELP = { minor: 'Minor · a small correction', major: 'Moderate · a notable issue', critical: 'Critical · serious — schedule a 1-on-1; the rep is emailed immediately' };
+
+function coachOpenDrawer_(pre) {
+  var emps = (COACH_STATE.emps && COACH_STATE.emps.employees) || [];
+  COACH_DRAWER = { kind: 'coaching', sev: 'minor', pre: pre || null,
+    noteId: (pre && pre.noteId) || '', noteDate: (pre && pre.noteDate) || '', qaFileId: (pre && pre.qaFileId) || '' };
+  var ov = ensureOverlay('coach-compose-overlay', { labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_ });
+  var empSel = '<select id="coach-emp"><option value="">Pick an employee…</option>';
+  emps.forEach(function (e) {
+    var seld = (pre && pre.empId === e.id) ? ' selected' : '';
+    empSel += '<option value="' + esc(e.id) + '"' + seld + '>' + esc(e.name) + '</option>';
+  });
+  empSel += '</select>';
+  ov.innerHTML = '<div class="modal drawer coach-drawer">' +
+    '<div class="coach-drawer-head"><h2 id="coach-drawer-title" class="card-label"><span>' + icon('bulb', 15) + ' Log coaching</span></h2>' +
+      '<button type="button" class="coach-x" id="coach-cancel" aria-label="Close">' + icon('x', 14) + '</button></div>' +
+    '<div class="coach-kind" role="group" aria-label="Kind">' +
+      '<button type="button" class="coach-kind-btn active" aria-pressed="true" data-coach-kind="coaching">' + icon('adjust', 13) + ' Coaching</button>' +
+      '<button type="button" class="coach-kind-btn" aria-pressed="false" data-coach-kind="praise">' + icon('thumbsUp', 13) + ' Praise</button></div>' +
+    '<div id="coach-sev-wrap"><div class="coach-nar-lbl">Severity</div>' +
+      '<div class="coach-sevchips" role="radiogroup" aria-label="Severity">' +
+        ['minor', 'major', 'critical'].map(function (s) {
+          return '<button type="button" role="radio" class="coach-sevchip" data-tone="' + coachSevTone_(s) + '" data-coach-sevchip="' + s + '" data-sev="' + s + '" aria-checked="' + (s === 'minor') + '">' + esc(coachSevLabel_(s)) + '</button>';
+        }).join('') + '</div>' +
+      '<div class="coach-sev-help" id="coach-sev-help">' + esc(COACH_SEV_HELP.minor) + '</div></div>' +
+    '<div class="coach-praise-note" id="coach-praise-note" hidden>Praise has no severity and needs no acknowledgement.</div>' +
+    '<div class="coach-row"><div><label for="coach-emp">Employee</label>' + empSel + '</div>' +
+      '<div><label for="coach-trx">Patient / TRX (optional)</label><input type="text" id="coach-trx" class="coach-mono" maxlength="200" placeholder="e.g. TRX-12345" value="' + (pre && pre.patientTRX ? esc(pre.patientTRX) : '') + '"></div></div>' +
+    '<div class="coach-row"><div><label for="coach-followup">Revisit on (optional)</label><input type="date" id="coach-followup"></div></div>' +
+    (COACH_DRAWER.noteId
+      ? '<div class="coach-linked" id="coach-note-chip">' + icon('phone', 12) + ' Linked to call note' + (COACH_DRAWER.noteDate ? ' · ' + esc(coachFmtDate_(COACH_DRAWER.noteDate)) : '') +
+        '<button type="button" class="coach-x" data-coach-unlink="1" aria-label="Unlink the call note">' + icon('x', 12) + '</button></div>'
+      : '') +
+    '<div class="coach-row"><div style="flex:1"><label for="coach-what" id="coach-what-label">What happened</label>' +
+      '<textarea id="coach-what" maxlength="4000" rows="4" placeholder="Describe the interaction.">' + (pre && pre.what ? esc(pre.what) : '') + '</textarea></div></div>' +
+    '<div class="coach-row" id="coach-should-wrap"><div style="flex:1" class="coach-point-wrap"><label for="coach-should">The coaching point (optional)</label>' +
+      '<textarea id="coach-should" maxlength="4000" rows="3" placeholder="How to handle it next time."></textarea></div></div>' +
+    '<div class="coach-drawer-foot">' +
+      '<div class="hint">This is HR-class feedback (kept indefinitely, team-scoped). The patient/TRX and narrative are stored only in the HR record — the audit log stays content-free.</div>' +
+      '<div class="coach-drawer-btns"><button type="button" class="tr-complete-btn coach-sec" data-coach-cancel="1">Cancel</button>' +
+        '<button type="button" class="coach-primary" id="coach-go">' + icon('send', 13) + ' <span id="coach-go-lbl">Log coaching</span></button></div>' +
+    '</div></div>';
+  // Focus the first EMPTY field (the doc's rule; a prefilled drawer lands on
+  // the narrative, the pre-existing behaviour).
+  var first = ['coach-emp', 'coach-what'].map(function (id) { return document.getElementById(id); })
+    .filter(function (e) { return e && !e.value; })[0] || document.getElementById('coach-what');
+  if (first) first.focus();
+}
+/** Idempotent (the ensureOverlay onClose contract) — safe to call when closed. */
+function coachCloseDrawer_() {
+  var ov = document.getElementById('coach-compose-overlay');
+  if (ov) ov.classList.remove('open');
+  COACH_DRAWER = null;
+}
+function coachSetKind_(kind) {
+  if (!COACH_DRAWER) return;
+  COACH_DRAWER.kind = kind === 'praise' ? 'praise' : 'coaching';
+  var praise = COACH_DRAWER.kind === 'praise';
+  document.querySelectorAll('[data-coach-kind]').forEach(function (b) {
+    var on = b.getAttribute('data-coach-kind') === COACH_DRAWER.kind;
+    b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  var sev = document.getElementById('coach-sev-wrap'), note = document.getElementById('coach-praise-note'),
+      should = document.getElementById('coach-should-wrap'), lbl = document.getElementById('coach-what-label'),
+      go = document.getElementById('coach-go-lbl');
+  if (sev) sev.hidden = praise;
+  if (note) note.hidden = !praise;
+  if (should) should.hidden = praise;
+  if (lbl) lbl.textContent = praise ? 'What they did' : 'What happened';
+  if (go) go.textContent = praise ? 'Log praise' : 'Log coaching';
+}
+function coachSetSev_(sev) {
+  if (!COACH_DRAWER || ['minor', 'major', 'critical'].indexOf(sev) < 0) return;
+  COACH_DRAWER.sev = sev;
+  document.querySelectorAll('[data-coach-sevchip]').forEach(function (b) {
+    var on = b.getAttribute('data-coach-sevchip') === sev;
+    b.classList.toggle('active', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  var help = document.getElementById('coach-sev-help');
+  if (help) help.textContent = COACH_SEV_HELP[sev] || '';
 }
 
 function coachCreate_() {
+  if (!COACH_DRAWER) return;
   var empId = (document.getElementById('coach-emp') || {}).value || '';
-  var severity = (document.getElementById('coach-sev') || {}).value || '';
+  var severity = COACH_DRAWER.kind === 'praise' ? 'praise' : COACH_DRAWER.sev;
   var patientTRX = (document.getElementById('coach-trx') || {}).value || '';
   var whatHappened = (document.getElementById('coach-what') || {}).value || '';
-  var whatShould = (document.getElementById('coach-should') || {}).value || '';
-  var noteId = (document.getElementById('coach-noteid') || {}).value || '';
+  var whatShould = COACH_DRAWER.kind === 'praise' ? '' : ((document.getElementById('coach-should') || {}).value || '');
+  var followUpAt = (document.getElementById('coach-followup') || {}).value || '';
   if (!empId) { if (typeof showToast === 'function') showToast('Pick an employee', 'toast-warn'); return; }
-  if (!whatHappened.trim()) { if (typeof showToast === 'function') showToast('Describe what happened', 'toast-warn'); return; }
+  if (!whatHappened.trim()) { if (typeof showToast === 'function') showToast(severity === 'praise' ? 'Describe what they did' : 'Describe what happened', 'toast-warn'); return; }
   var btn = document.getElementById('coach-go');
+  var restore = function () { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' <span id="coach-go-lbl">' + (severity === 'praise' ? 'Log praise' : 'Log coaching') + '</span>'; } };
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   google.script.run
     .withSuccessHandler(function (r) {
       if (r && r.success) {
-        if (typeof showToast === 'function') showToast('Coaching logged', 'toast-success');
+        if (typeof showToast === 'function') {
+          if (severity === 'critical' && r.mailed === false) showToast('Coaching logged — the email didn’t send', 'toast-warn');
+          else showToast(severity === 'praise' ? 'Praise logged' : 'Coaching logged', 'toast-success');
+        }
+        coachCloseDrawer_();
         coachLoadMgr_();
       } else {
-        if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
+        restore();
         if (typeof showToast === 'function') showToast((r && r.error) || 'Could not save', 'toast-error');
       }
     })
     .withFailureHandler(function (err) {
-      if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
+      restore();
       if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error');
     })
-    .createCoaching({ empId: empId, severity: severity, patientTRX: patientTRX, whatHappened: whatHappened, whatShould: whatShould, noteId: noteId });
+    .createCoaching({ empId: empId, severity: severity, patientTRX: patientTRX, whatHappened: whatHappened, whatShould: whatShould,
+      noteId: COACH_DRAWER.noteId || '', noteDate: COACH_DRAWER.noteDate || '', qaFileId: COACH_DRAWER.qaFileId || '', followUpAt: followUpAt });
 }
 
+// ── Card actions (manager) ───────────────────────────────────────────────────
 function coachVoid_(coachId) {
-  if (typeof uiConfirm !== 'function') return;
-  uiConfirm({ title: 'Void this coaching?', message: 'It will be hidden from the employee and the dashboard. This cannot be undone.', confirmLabel: 'Void', tone: 'danger' })
-    .then(function (ok) {
-      if (!ok) return;
+  if (typeof uiPrompt !== 'function') return;
+  // K6 — the reason is captured in the confirm (the EmpDocs voidDoc pattern);
+  // Cancel resolves null, an empty string still voids.
+  uiPrompt({ title: 'Void this coaching?', message: 'It will be hidden from the employee and the dashboard. This cannot be undone. Add a reason (optional) — it stays in the HR record only.',
+    placeholder: 'Reason (optional)', confirmLabel: 'Void', cancelLabel: 'Keep' })
+    .then(function (reason) {
+      if (reason === null || reason === undefined) return;
       google.script.run
         .withSuccessHandler(function (r) {
           if (r && r.success) { if (typeof showToast === 'function') showToast('Voided', 'toast-success'); coachLoadMgr_(); }
           else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not void', 'toast-error');
         })
         .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
-        .voidCoaching(coachId, '');
+        .voidCoaching(coachId, String(reason || ''));
     });
 }
+function coachRevisit_(coachId, current) {
+  if (typeof uiPrompt !== 'function') return;
+  uiPrompt({ title: 'Revisit on', message: 'The date of the 1-on-1 (yyyy-MM-dd). Leave blank to clear it.', initialValue: current || '',
+    placeholder: 'yyyy-MM-dd', confirmLabel: 'Save',
+    validator: function (v) { return (v && !/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) ? 'Use yyyy-MM-dd' : ''; } })
+    .then(function (v) {
+      if (v === null || v === undefined) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (r && r.success) { if (typeof showToast === 'function') showToast(r.followUpAt ? 'Revisit set' : 'Revisit cleared', 'toast-success'); coachLoadMgr_(); }
+          else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not save', 'toast-error');
+        })
+        .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
+        .setCoachingFollowUp(coachId, String(v || '').trim());
+    });
+}
+var _coachNudgeInFlight = {};
+function coachNudge_(coachId, btn) {
+  if (_coachNudgeInFlight[coachId]) return;
+  _coachNudgeInFlight[coachId] = true;
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      delete _coachNudgeInFlight[coachId];
+      if (r && r.success) { if (typeof showToast === 'function') showToast(r.mailed === false ? 'Nudge recorded — the email didn’t send' : 'Reminder sent', r.mailed === false ? 'toast-warn' : 'toast-success'); coachLoadMgr_(); }
+      else { if (btn) btn.disabled = false; if (typeof showToast === 'function') showToast((r && r.error) || 'Could not nudge', 'toast-error'); }
+    })
+    .withFailureHandler(function (err) { delete _coachNudgeInFlight[coachId]; if (btn) btn.disabled = false; if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
+    .nudgeCoaching(coachId);
+}
+/** K5 — the note link. Manager: the Team Notes Per-Rep drill (the
+ *  cnAuditDrillToNote_ pattern). Rep: their own History at that date. Both
+ *  are DATE-keyed, which is why NoteDate exists. */
+function coachOpenNote_(empId, noteDate, noteId) {
+  var isMgr = !!(empState && empState.isManager) && COACH_MODE === 'team';
+  if (isMgr && typeof cnAuditDrillToNote_ === 'function') { cnAuditDrillToNote_(empId, noteDate, noteId); return; }
+  if (typeof CN_STATE === 'object' && CN_STATE) { CN_STATE.historyDate = noteDate; CN_STATE.historyEndDate = noteDate; }
+  if (typeof enterTool === 'function') enterTool('callNotes', 'callNotesHistory');
+}
+/** K13 — the QA chip parks a {fileId} hint and opens the queue (C8 pattern;
+ *  the QA partial consumes it after the queue loads). */
+function coachOpenQa_(fileId) {
+  window.QA_OPEN_HINT = { fileId: fileId };
+  if (typeof enterTool === 'function') enterTool('qa', 'qaQueue');
+}
 
-// Delegated click dispatch for both modes (mode toggle / ack / void buttons).
+// Delegated click dispatch for both modes.
 document.addEventListener('click', function (e) {
-  var modeBtn = e.target.closest && e.target.closest('[data-coach-mode]');
-  if (modeBtn) { coachSwitchMode_(modeBtn.getAttribute('data-coach-mode')); return; }
-  var ack = e.target.closest && e.target.closest('[data-coach-ack]');
-  if (ack) { coachAck_(ack.getAttribute('data-coach-ack')); return; }
-  var voidBtn = e.target.closest && e.target.closest('[data-coach-void]');
-  if (voidBtn) { coachVoid_(voidBtn.getAttribute('data-coach-void')); return; }
+  var t = e.target;
+  if (!t || !t.closest) return;
+  var hit;
+  if ((hit = t.closest('[data-coach-mode]'))) { coachSwitchMode_(hit.getAttribute('data-coach-mode')); return; }
+  if ((hit = t.closest('[data-coach-ack]'))) { coachAck_(hit.getAttribute('data-coach-ack')); return; }
+  if ((hit = t.closest('[data-coach-void]'))) { coachVoid_(hit.getAttribute('data-coach-void')); return; }
+  if ((hit = t.closest('[data-coach-nudge]'))) { coachNudge_(hit.getAttribute('data-coach-nudge'), hit); return; }
+  if ((hit = t.closest('[data-coach-revisit]'))) { coachRevisit_(hit.getAttribute('data-coach-revisit'), hit.getAttribute('data-current')); return; }
+  if ((hit = t.closest('[data-coach-note]'))) { coachOpenNote_(hit.getAttribute('data-emp'), hit.getAttribute('data-date'), hit.getAttribute('data-coach-note')); return; }
+  if ((hit = t.closest('[data-coach-qa]'))) { coachOpenQa_(hit.getAttribute('data-coach-qa')); return; }
+  if ((hit = t.closest('[data-coach-filter]'))) { COACH_STATE.filter = hit.getAttribute('data-coach-filter'); coachWriteFilter_(COACH_STATE.filter); coachRenderMgr_(); return; }
+  if ((hit = t.closest('[data-coach-myfilter]'))) { COACH_STATE.myFilter = hit.getAttribute('data-coach-myfilter'); coachRenderMy_(); return; }
+  if ((hit = t.closest('[data-coach-jump]'))) {
+    var card = document.getElementById('coach-item-' + hit.getAttribute('data-coach-jump'));
+    if (card) { var r = card.getBoundingClientRect(); window.scrollTo({ top: r.top + (window.pageYOffset || 0) - 80, behavior: 'smooth' }); var ta = card.querySelector('textarea'); if (ta) ta.focus(); }
+    return;
+  }
+  if ((hit = t.closest('[data-coach-open]'))) { coachOpenDrawer_(null); return; }
+  if ((hit = t.closest('[data-coach-kind]'))) { coachSetKind_(hit.getAttribute('data-coach-kind')); return; }
+  if ((hit = t.closest('[data-coach-sevchip]'))) { coachSetSev_(hit.getAttribute('data-coach-sevchip')); return; }
+  if ((hit = t.closest('[data-coach-unlink]'))) { if (COACH_DRAWER) { COACH_DRAWER.noteId = ''; COACH_DRAWER.noteDate = ''; } var chip = document.getElementById('coach-note-chip'); if (chip) chip.remove(); return; }
+  if ((hit = t.closest('[data-coach-cancel]')) || (hit = t.closest('#coach-cancel'))) { if (typeof closeOverlay === 'function') closeOverlay(document.getElementById('coach-compose-overlay')); else coachCloseDrawer_(); return; }
+  if ((hit = t.closest('#coach-go'))) { coachCreate_(); return; }
 });
+// Search / employee filters re-render from the cached payload (no refetch).
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!t || !t.id) return;
+  if (t.id === 'coach-search') { COACH_STATE.search = t.value; coachRenderMgrKeepFocus_(); }
+  else if (t.id === 'coach-my-search') { COACH_STATE.mySearch = t.value; coachRenderMy_(); }
+});
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t && t.id === 'coach-emp-filter') { COACH_STATE.empFilter = t.value; coachRenderMgrKeepFocus_(); }
+});
+/** A re-render replaces the search input; put the caret back where it was. */
+function coachRenderMgrKeepFocus_() {
+  var active = document.activeElement, id = active && active.id, pos = active && active.selectionStart;
+  coachRenderMgr_();
+  if (id) { var el = document.getElementById(id); if (el) { el.focus(); try { if (pos != null && el.setSelectionRange) el.setSelectionRange(pos, pos); } catch (err) {} } }
+}
 </script>
 
 <style>
-/* Mine ⇄ Team mode toggle (managers only) — segmented-pill vocabulary,
-   matching the Time/PTO + composer-tab controls. */
-.coach-modes { display:inline-flex; gap:2px; background:var(--paper-2); border:1px solid var(--line);
-  border-radius:999px; padding:3px; margin:0 0 16px; }
-.coach-mode { appearance:none; border:none; background:transparent; cursor:pointer;
-  display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
-  font-family:var(--ui); font-size:13px; font-weight:600; color:var(--muted); transition:background var(--t) var(--ease), color var(--t) var(--ease); }
-.coach-mode:hover { color:var(--ink); }
-.coach-mode.on { background:var(--paper-card); color:var(--ink); box-shadow:var(--shadow-sm); }
-.coach-banner { display:flex; align-items:center; gap:8px; background:var(--warn-soft); color:var(--warning-deep);
-  border:1px solid var(--warn-soft); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
+/* ── Coaching (design handoff PR 4). The .coach-modes / .coach-mode segmented
+   toggle and the full-row .coach-row-overdue tint are RETIRED (INV-184): the
+   mode strip is the shared .toolbar-tabs, and the board's tier rule is an
+   inset on the first cell (an inset shadow on a <tr> does not paint under
+   border-collapse). */
+.coach-primary { appearance:none; border:1px solid transparent; background:var(--accent); color:#fff; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px;
+  font-family:var(--ui); font-size:13px; font-weight:600; transition:filter var(--t) var(--ease); }
+.coach-primary:hover { filter:brightness(.95); }
+.coach-primary:focus-visible { box-shadow:var(--ring-focus); outline:none; }
+.coach-primary[disabled] { opacity:.6; cursor:default; }
+.coach-compact-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px; }
+.coach-search { font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--paper-card); color:var(--ink); min-width:200px; }
+.coach-search::placeholder { color:var(--muted-3); }
+.coach-filterbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:18px 0 10px; }
+.coach-filterbar select { font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--paper-card); color:var(--ink); }
+.coach-tab-overdue[aria-pressed="false"] { color:var(--danger-deep); }
+.coach-tab-praise[aria-pressed="false"]  { color:var(--success-deep); }
+.coach-callout { display:flex; align-items:center; gap:10px; background:var(--warn-soft); color:var(--warning-deep);
+  border:1px solid var(--warn); box-shadow:inset 3px 0 0 var(--warn); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
+.coach-callout > span { flex:1; }
+.coach-feed-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:18px 0 8px; }
+.coach-feed-head .card-label { margin:0; }
+.coach-feed-note { font:500 11px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted-2); }
+.coach-month { font:600 10px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-2); margin:14px 0 6px; }
 .coach-list { display:flex; flex-direction:column; gap:10px; }
 .coach-card { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:12px 14px; }
-.coach-card.is-acked { opacity:.78; }
+.coach-card.is-acked { opacity:.86; }
+.coach-card.is-overdue { box-shadow:inset 3px 0 0 var(--destructive); }
+.coach-card.is-void { border-style:dashed; border-color:var(--line-2); background:var(--paper-2); }
 .coach-card-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .coach-card-head .coach-emp { color:var(--ink); font-size:.95rem; }
-.coach-trx { font:600 11px/1.2 var(--mono); color:var(--muted); background:var(--paper-2);
-  border:1px solid var(--line); border-radius:6px; padding:2px 7px; }
-.coach-meta { margin-left:auto; font:500 11px/1 var(--mono); color:var(--muted); }
-.coach-card-foot { margin-top:10px; display:flex; justify-content:flex-end; gap:8px; }
-.coach-acked { margin-top:8px; display:flex; align-items:center; gap:6px; color:var(--success-deep); font-size:.84rem; }
+.coach-chip { font:600 11px/1.2 var(--mono); color:var(--muted); background:var(--paper-2);
+  border:1px solid var(--line); border-radius:6px; padding:2px 7px; display:inline-flex; align-items:center; gap:4px; }
+.coach-chip-link { cursor:pointer; color:var(--success-deep); background:var(--accent-soft); border-color:transparent; }
+.coach-chip-link:hover { text-decoration:underline; }
+.coach-meta { margin-left:auto; font:500 11px/1 var(--mono); color:var(--muted-2); }
+.coach-nar { margin-top:8px; }
+.coach-nar-lbl { font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
+.coach-nar-body { white-space:pre-wrap; font-size:14px; line-height:1.55; text-wrap:pretty; }
+.coach-nar-ctx .coach-nar-body { color:var(--muted); }
+.coach-nar-point { background:var(--paper-2); border-left:2px solid var(--accent); border-radius:0 6px 6px 0; padding:8px 10px; }
+.coach-nar-point .coach-nar-lbl { color:var(--success-deep); }
+.coach-nar-point .coach-nar-body { color:var(--ink); }
+.coach-reply { margin-top:10px; border-top:2px solid var(--line); padding-top:8px; }
+.coach-reply-body { white-space:pre-wrap; color:var(--muted); font-size:14px; line-height:1.55; }
+.coach-card-foot { margin-top:10px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; }
+.coach-meta-line { font:500 11px/1.4 var(--mono); color:var(--muted-2); display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.coach-due { color:var(--danger-deep); font-weight:700; }
+.coach-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.coach-acked { display:flex; align-items:center; gap:6px; color:var(--success-deep); font-size:.84rem; }
 .coach-void { color:var(--danger-deep); }
-.coach-compose { margin-bottom:6px; }
-.coach-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:14px 0; }
-/* V-11: this strip is visually the twin of the Manager Dashboard's `.telemetry`
-   (4 equal cells, big number over a mono uppercase micro-label) but was
-   CENTRE-aligned while its twin is LEFT-aligned, so two identical-looking
-   components on adjacent manager surfaces read differently. Matched to
-   `.telemetry .tel-cell`: left-aligned, same 14px/18px padding. */
+.coach-void-reason { font-size:.9rem; color:var(--ink); }
+.coach-muted2 { color:var(--muted-2); }
+.coach-sec { background:var(--paper-card); color:var(--ink); }
+.coach-replybox { width:100%; }
+.coach-replybox textarea { width:100%; font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--paper-card); color:var(--ink); resize:vertical; }
+.coach-replybox-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; }
+/* Recognition feed — compact accent-soft cards, two per row. */
+.coach-recog { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.coach-recog-card { background:var(--accent-soft); border:1px solid transparent; border-radius:var(--radius); padding:10px 12px; }
+.coach-recog-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:.86rem; color:var(--ink); }
+.coach-recog-body { margin-top:6px; font-size:14px; line-height:1.5; color:var(--ink); white-space:pre-wrap; }
+@media (max-width: 540px) { .coach-recog { grid-template-columns:1fr; } }
+/* KPI strip — V-11: the twin of the Manager Dashboard's .telemetry (left-aligned). */
+.coach-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:0 0 14px; }
 .coach-kpi { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:14px 18px; text-align:left; }
-.coach-kpi-num { font:700 1.5rem/1 var(--display, inherit); color:var(--ink); }
+.coach-kpi.is-crit { box-shadow:inset 3px 0 0 var(--destructive); }
+.coach-kpi-num { font:700 1.5rem/1 var(--display); color:var(--ink); }
 .coach-kpi-num.crit { color:var(--danger-deep); }
+.coach-kpi-num.warn { color:var(--warning-deep); }
+.coach-kpi-num.good { color:var(--success-deep); }
 .coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.coach-kpi-sub { margin-top:6px; font:500 11px/1.3 var(--mono); color:var(--muted-2); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.coach-spark { display:inline-flex; align-items:flex-end; gap:2px; height:14px; }
+.coach-spark i { display:block; width:5px; background:var(--paper-3); border-radius:1px; }
+.coach-spark i.on { background:var(--accent); }
+.coach-biz-note { font-size:12px; color:var(--muted-2); margin:-6px 0 14px; }
 :root[data-compact] .coach-kpis { grid-template-columns:repeat(2, 1fr); }
 /* A2 (cycle 13): the compact rule above is the POP-OUT, not a viewport
-   breakpoint — four KPI cells stayed four cells on a phone. Matches the
-   2×2 the shared .telemetry twin now takes at the same width. */
+   breakpoint — four KPI cells stayed four cells on a phone. */
 @media (max-width: 540px) { .coach-kpis { grid-template-columns:repeat(2, 1fr); } }
-.coach-sevbar { display:flex; flex-wrap:wrap; gap:14px; margin:0 0 14px; }
-.coach-sevstat { display:inline-flex; align-items:center; gap:6px; font-size:.9rem; }
-.coach-sevstat b { font-variant-numeric:tabular-nums; color:var(--ink); }
-/* V-11: the bespoke `.coach-rep-table` rules are gone — the shared `.m-table`
-   carries width, header treatment, hover, sticky header and tabular numerals.
-   Only the per-row overdue tint is Coaching-specific. */
-.coach-row-overdue td { background: var(--destructive-soft); }
+/* Signal board (K7) — the shared .m-table inside a .panel; the tier rule is an
+   inset on td:first-child (replaces the retired full-row tint). */
+.coach-board-panel { margin-bottom:8px; }
+.coach-legend { display:flex; flex-wrap:wrap; gap:12px; font:600 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-2); margin-left:auto; }
+.coach-legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+.coach-mix { display:flex; height:8px; border-radius:999px; overflow:hidden; background:var(--paper-3); min-width:90px; }
+.coach-mix span { display:block; min-width:2px; }
+.coach-row-priority td:first-child { box-shadow:inset 3px 0 0 var(--destructive); }
+.coach-row-watch td:first-child    { box-shadow:inset 3px 0 0 var(--warn); }
+@media (max-width: 720px) {
+  .coach-board .m-table th:nth-child(2), .coach-board .m-table td:nth-child(2),
+  .coach-board .m-table th:nth-child(4), .coach-board .m-table td:nth-child(4) { display:none; }
+  .coach-legend { margin-left:0; }
+}
+/* Composer drawer (K1) — the shared .modal.drawer geometry lives in styles.html. */
+.coach-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.coach-drawer-head .card-label { margin:0; }
+.coach-x { appearance:none; border:none; background:transparent; color:var(--muted); cursor:pointer; padding:4px; border-radius:6px; display:inline-flex; }
+.coach-x:hover { color:var(--ink); background:var(--paper-2); }
+.coach-kind { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:14px; }
+.coach-kind-btn { appearance:none; cursor:pointer; border:1px solid var(--line); background:var(--paper-2); color:var(--muted);
+  border-radius:8px; padding:9px 10px; font:600 13px var(--ui); display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.coach-kind-btn.active { border-color:var(--accent); background:var(--accent-soft); color:var(--success-deep); }
+.coach-sevchips { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+.coach-sevchip { appearance:none; cursor:pointer; border:1px solid var(--line); background:var(--paper-2); color:var(--muted);
+  border-radius:8px; padding:8px 6px; font:600 12px var(--ui); }
+.coach-sevchip.active[data-tone="info"]        { background:var(--info); color:#fff; border-color:transparent; }
+.coach-sevchip.active[data-tone="warn"]        { background:var(--warn); color:#fff; border-color:transparent; }
+.coach-sevchip.active[data-tone="destructive"] { background:var(--destructive); color:#fff; border-color:transparent; }
+:root[data-mode="dark"] .coach-sevchip.active { color:var(--paper); }
+.coach-sev-help, .coach-praise-note { margin:6px 0 12px; font:500 11px/1.4 var(--mono); color:var(--muted-2); }
+.coach-praise-note[hidden], #coach-sev-wrap[hidden], #coach-should-wrap[hidden] { display:none; }
+.coach-row { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px; }
+.coach-row > div { flex:1; min-width:180px; }
+.coach-row label { display:block; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+.coach-row input, .coach-row select, .coach-row textarea { width:100%; font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--paper-card); color:var(--ink); }
+.coach-row textarea { resize:vertical; }
+.coach-mono { font-family:var(--mono) !important; }
+.coach-point-wrap { border-left:2px solid var(--accent); padding-left:10px; }
+.coach-linked { display:inline-flex; align-items:center; gap:6px; background:var(--accent-soft); color:var(--success-deep); border-radius:999px; padding:4px 10px; font:600 11px/1 var(--mono); margin:-4px 0 12px; }
+.coach-drawer-foot { margin-top:auto; padding-top:12px; border-top:1px solid var(--line); }
+.coach-drawer-foot .hint { font-size:12px; color:var(--muted-2); margin-bottom:10px; }
+.coach-drawer-btns { display:flex; justify-content:flex-end; gap:8px; }
 </style>

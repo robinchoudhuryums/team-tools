@@ -1,58 +1,89 @@
 <style>
-  /* ── QA module (Phase 1) — call-recording review queue + player ──────────
+  /* ── QA module — coverage-first review queue + player ─────────────────────
+     (design handoff PR 5, 2026-09-02, on top of Phases 1–3)
      Tokens only; breakpoints per the A2 rule (a fixed grid owes a viewport
      breakpoint). Empty states use .qa-empty (the derived A12 convention);
      failures render errorStateHtml_. */
-  .qa-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .qa-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 14px; }
   .qa-toolbar .spacer { flex: 1; }
-  .qa-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .qa-chip {
-    appearance: none; background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius-pill, 999px); padding: 4px 12px; font: inherit;
-    font-size: var(--text-sm, 12px); color: var(--muted-2); cursor: pointer;
-  }
-  .qa-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
   .qa-btn {
     appearance: none; background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: var(--text-sm, 12px);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: var(--text-sm);
     color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
   }
   .qa-btn:hover { border-color: var(--border-strong); }
   .qa-btn:disabled { opacity: .55; cursor: default; }
   .qa-btn.prime { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .qa-list { display: grid; gap: 10px; }
-  .qa-card {
-    background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px;
-    align-items: center;
+  .qa-btn.danger { color: var(--danger-deep); }
+  .qa-chip {
+    appearance: none; background: var(--paper-card); border: 1px solid var(--line);
+    border-radius: var(--radius-pill); padding: 4px 12px; font: inherit;
+    font-size: var(--text-sm); color: var(--muted-2); cursor: pointer;
   }
-  .qa-card-name { font-weight: 600; overflow-wrap: anywhere; }
-  .qa-card-meta { color: var(--muted-2); font-size: var(--text-sm, 12px); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .qa-card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  .qa-status { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
+  .qa-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .qa-status { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
   .qa-status.st-new       { background: var(--info-soft);    border-color: var(--info);    color: var(--info-deep); }
   .qa-status.st-in_review { background: var(--warn-soft);    border-color: var(--warn);    color: var(--warning-deep); }
   .qa-status.st-done      { background: var(--accent-soft);  border-color: var(--accent);  color: var(--success-deep); }
   .qa-status.st-skipped   { background: var(--paper-2); }
-  .qa-assignee { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
+  .qa-assignee { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
   .qa-assignee.mine { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
   .qa-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 24px; text-align: center; color: var(--muted-2); }
-  .qa-note { color: var(--muted-2); font-size: var(--text-sm, 12px); margin: 8px 0 0; }
+  .qa-note { color: var(--muted-2); font-size: var(--text-sm); margin: 8px 0 0; }
+  .qa-section { margin-bottom: 22px; }
+  .qa-section > .card-label { margin-bottom: 8px; }
+  .qa-section-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .qa-section-head .qa-note { margin: 0; }
 
-  /* Detail */
+  /* Q4 — summary strip derived from the coverage table (never a second read) */
+  .qa-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+  .qa-sum { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .qa-sum[data-tone="destructive"] { box-shadow: inset 3px 0 0 var(--destructive); }
+  .qa-sum[data-tone="warn"]        { box-shadow: inset 3px 0 0 var(--warn); }
+  .qa-sum-k { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .qa-sum-v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; margin-top: 2px; }
+  .qa-sum-v small { font-size: 13px; font-weight: 500; color: var(--muted-2); }
+  .qa-sum-sub { color: var(--muted-2); font-size: var(--text-sm); margin-top: 2px; overflow-wrap: anywhere; }
+  .qa-sum-bar { height: 6px; background: var(--paper-2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .qa-sum-bar > i { display: block; height: 100%; background: var(--accent); }
+  .qa-cov-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .qa-cov-track { width: 64px; height: 6px; background: var(--paper-2); border-radius: 3px; overflow: hidden; display: inline-block; }
+  .qa-cov-track > i { display: block; height: 100%; background: var(--accent); }
+  .qa-cov-track[data-tier="short"] > i    { background: var(--warn); }
+  .qa-cov-track[data-tier="shortlow"] > i { background: var(--destructive); }
+  .qa-cov-track[data-tier="exempt"]       { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 8px); }
+  .m-table tr.qa-row-shortlow td { background: var(--destructive-soft); }
+  .m-table tr.qa-row-short td    { background: var(--warn-soft); }
+  .m-table tr.qa-row-exempt td   { color: var(--muted-2); }
+  .qa-delta-up   { color: var(--success-deep); }
+  .qa-delta-down { color: var(--danger-deep); }
+  .qa-skip-why { display: block; color: var(--muted-2); font-size: 11px; max-width: 260px; overflow-wrap: anywhere; }
+  .qa-unattributed { color: var(--warning-deep); }
+  /* Row actions stay on ONE line — the table scrolls inside .m-table-wrap,
+     so a wrapped action stack would only make every row three lines tall. */
+  .qa-row-actions { display: flex; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
+
+  /* Detail — two panes from 1000px (player + agent left, review right);
+     single column below, where the player sits first in reading order. */
   .qa-det-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-  .qa-det-title { font-weight: 700; font-size: var(--text-lg, 16px); overflow-wrap: anywhere; min-width: 0; }
-  .qa-player-card, .qa-comments-card {
+  .qa-det-title { font-weight: 700; font-size: var(--text-lg); overflow-wrap: anywhere; min-width: 0; }
+  .qa-det-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .qa-det-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (min-width: 1000px) {
+    .qa-det-grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+    .qa-det-left { position: sticky; top: 12px; }
+  }
+  .qa-player-card, .qa-comments-card, .qa-score-card, .qa-agent-card, .qa-coach-card {
     background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
     padding: 14px; margin-bottom: 14px;
   }
   .qa-player-card audio { width: 100%; }
   .qa-transport { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .qa-speed[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
-  .qa-kbd-hint { color: var(--muted-3); font-size: 11px; margin-left: auto; }
+  .qa-kbd-hint { color: var(--muted-2); font-size: 11px; margin-left: auto; }
   .qa-timeline {
     position: relative; height: 26px; background: var(--paper-2);
-    border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); margin-top: 12px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill); margin-top: 12px;
   }
   .qa-tl-mark {
     appearance: none; position: absolute; top: 2px; bottom: 2px; width: 8px; padding: 0;
@@ -64,30 +95,40 @@
   .qa-comment-row:last-child { border-bottom: none; }
   .qa-time-chip {
     appearance: none; background: var(--info-soft); border: 1px solid var(--info);
-    color: var(--info-deep); border-radius: var(--radius-pill, 999px); padding: 2px 10px;
+    color: var(--info-deep); border-radius: var(--radius-pill); padding: 2px 10px;
     font: inherit; font-family: var(--mono); font-size: 11px; cursor: pointer; white-space: nowrap;
   }
   .qa-comment-text { overflow-wrap: anywhere; }
   .qa-comment-by { color: var(--muted-2); font-size: 11px; }
   .qa-del-btn { appearance: none; background: none; border: none; color: var(--muted-2); cursor: pointer; font: inherit; padding: 2px 6px; }
   .qa-del-btn:hover { color: var(--danger-deep); }
-  .qa-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 10px; align-items: end; }
+  /* Q1 — pause-and-pin composer: the textarea pins the moment on first input */
+  .qa-add-row { margin-top: 10px; }
   .qa-add-row textarea {
-    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm);
     background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
   }
+  .qa-pin-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: var(--text-sm); color: var(--muted-2); }
+  .qa-pin-input {
+    width: 72px; font: inherit; font-family: var(--mono); font-size: 12px; padding: 4px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink);
+  }
+  .qa-add-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 
-  /* Phase 2 — agent attribution, waveform, scorecards, per-agent stats */
-  .qa-agent-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  /* Agent attribution + roster match line (Q7 feeds the coaching hand-off) */
+  .qa-agent-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .qa-agent-row input {
-    font: inherit; font-size: var(--text-sm, 12px); padding: 6px 9px; border: 1px solid var(--line);
+    font: inherit; font-size: var(--text-sm); padding: 6px 9px; border: 1px solid var(--line);
     border-radius: 8px; background: var(--paper); color: var(--ink); min-width: 200px;
   }
+  .qa-match-line { color: var(--muted-2); font-size: var(--text-sm); margin-top: 8px; }
+  .qa-match-line.warn { color: var(--warning-deep); }
   /* display:block would BEAT the UA's [hidden]{display:none} (the documented
      [hidden] specificity gotcha) — the companion rule below is load-bearing. */
   .qa-wave { display: block; width: 100%; height: 64px; margin-top: 10px; cursor: pointer; border-radius: 6px; background: var(--paper-2); }
   .qa-wave[hidden] { display: none; }
-  .qa-score-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  /* Q3 — scorecard anchors, running average, tone chips */
+  .qa-score-anchors { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
   .qa-score-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .qa-rate-btns { display: flex; gap: 4px; }
   .qa-rate-btn {
@@ -95,36 +136,48 @@
     background: var(--paper); color: var(--muted-2); font: inherit; font-size: 12px; cursor: pointer;
   }
   .qa-rate-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 700; }
+  .qa-score-running { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: var(--text-sm); color: var(--muted-2); }
   .qa-score-notes {
-    width: 100%; min-height: 46px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    width: 100%; min-height: 46px; resize: vertical; font: inherit; font-size: var(--text-sm);
     background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
   }
-  .qa-sc-item { border-top: 1px solid var(--line); padding: 8px 0; font-size: var(--text-sm, 12px); }
+  .qa-sc-item { border-top: 1px solid var(--line); padding: 8px 0; font-size: var(--text-sm); }
   .qa-sc-meta { color: var(--muted-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
-  .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm, 12px); }
+  .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
+  .qa-sc-chip[data-tone="accent"]      { background: var(--accent-soft);      color: var(--success-deep); border-color: transparent; }
+  .qa-sc-chip[data-tone="destructive"] { background: var(--destructive-soft); color: var(--danger-deep);  border-color: transparent; }
+  .qa-avg-big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .qa-avg-big small { font-size: 12px; font-weight: 500; color: var(--muted-2); }
+  .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm); }
   .qa-stats-strip strong { color: var(--ink); font-size: 16px; }
   /* Phase 3 — share pill + agent-facing My Reviews */
-  .qa-shared-pill { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--success-deep); white-space: nowrap; }
+  .qa-shared-pill { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--success-deep); white-space: nowrap; }
+  .qa-callout { background: var(--info-soft); border: 1px solid var(--info); border-radius: 10px; padding: 12px 14px; color: var(--ink); font-size: var(--text-sm); margin-bottom: 14px; }
   .qa-myrev-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
   .qa-myrev-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
-  .qa-myrev-name { font-weight: 600; overflow-wrap: anywhere; }
+  .qa-myrev-name { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+  .qa-myrev-head .qa-avg-big { margin-left: auto; }
   @media (max-width: 700px) {
-    .qa-card { grid-template-columns: minmax(0, 1fr); }
-    .qa-card-actions { justify-content: flex-start; }
-    .qa-add-row { grid-template-columns: minmax(0, 1fr); }
+    .qa-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .qa-det-actions { margin-left: 0; }
+  }
+  @media (max-width: 420px) {
+    .qa-summary { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
 
 <script>
-// ── QA module client (Phase 1) ──────────────────────────────────────────────
-// One tab (qaQueue) with two in-tab modes: the queue list and a recording
-// detail (player + timestamped comments). Audio arrives as base64 chunks
-// (qaGetAudioChunk) assembled into a Blob URL — seq-guarded (INV-156) so
-// opening another recording drops stale chunk appends.
+// ── QA module client ─────────────────────────────────────────────────────────
+// Three tabs: the coverage-first Recordings queue (with an in-tab recording
+// detail: player + scorecard + timestamped comments + the coaching hand-off),
+// per-agent Stats, and the agent-facing read-only My Reviews. Audio arrives
+// as base64 chunks (qaGetAudioChunk) assembled into a Blob URL — seq-guarded
+// (INV-156) so opening another recording drops stale chunk appends.
 var QA_STATE = {
   queue: null,          // last getQaQueue payload
-  filter: 'all',        // all | new | in_review | done | mine
+  filter: 'all',        // all | new | in_review | done | skipped | mine
+  sort: { key: 'createdMs', dir: 'desc' },   // recordings table sort
+  period: '',           // the audit period key in force ('' = let the server pick)
   seq: 0,               // queue-load seq guard
   det: null,            // the open recording (queue item) or null
   audioSeq: 0,          // chunk-assembly seq guard
@@ -133,6 +186,7 @@ var QA_STATE = {
   comments: [],
   canModerate: false,
   speed: 1,             // session-only playback speed
+  pin: null,            // Q1 — {atSec, wasPlaying} once the composer has pinned a moment
   // Phase 2
   peaks: null,          // normalized waveform buckets (null = no waveform — flat timeline only)
   criteria: [],         // live scorecard criteria (from qaListScorecards)
@@ -145,15 +199,24 @@ var QA_STATE = {
   myRevAudioSeq: 0,     // follow-on — shared-review playback seq guard (one active load)
   myRevObjectUrl: null, // follow-on — the shared-review Blob URL (revoked on replace)
 };
+var QA_PERIOD_KEY = 'umsQaPeriod';   // per-browser: the last audit period picked (validated against what the server ships)
 
 function enterQaQueueView() {
   if (typeof stopClock === 'function') stopClock();
   if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
   QA_STATE.det = null;
   qaReleaseAudio_();
+  if (!QA_STATE.period) QA_STATE.period = qaReadPeriodPref_();
   const area = document.getElementById('view-area');
   renderLoading(area, 'Loading QA queue…', 'headset');
   qaLoadQueue_();
+}
+
+function qaReadPeriodPref_() {
+  try { return String(localStorage.getItem(QA_PERIOD_KEY) || '').trim(); } catch (e) { return ''; }
+}
+function qaWritePeriodPref_(key) {
+  try { if (key) localStorage.setItem(QA_PERIOD_KEY, key); else localStorage.removeItem(QA_PERIOD_KEY); } catch (e) {}
 }
 
 function qaLoadQueue_() {
@@ -167,14 +230,23 @@ function qaLoadQueue_() {
         return;
       }
       QA_STATE.queue = data;
+      // The server VALIDATED the period (an unknown key lands on the current
+      // month) — the shipped key is the truth, the stored pref only a wish.
+      if (data.period) QA_STATE.period = String(data.period);
       if (QA_STATE.det) return;   // a detail opened while the refresh ran — leave it
       qaRenderQueue_();
+      // K13 (design handoff PR 4) — a Coaching card's "QA review" chip parks a
+      // {fileId} hint (the C8 park-and-consume pattern): read it FIRST, null
+      // it, then open the detail if the recording is in this queue.
+      const hint = window.QA_OPEN_HINT || null;
+      window.QA_OPEN_HINT = null;
+      if (hint && hint.fileId) qaOpenDetail_(String(hint.fileId));
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || QA_STATE.seq !== mySeq) return;
       document.getElementById('view-area').innerHTML = errorStateHtml_('Could not load the QA queue: ' + (err && err.message));
     })
-    .getQaQueue();
+    .getQaQueue(QA_STATE.period || '');
 }
 
 function qaFmtSize_(bytes) {
@@ -197,11 +269,34 @@ function qaFmtClock_(sec) {
   const mm = h ? String(m).padStart(2, '0') : String(m);
   return (h ? h + ':' : '') + mm + ':' + String(s).padStart(2, '0');
 }
+/** The inverse — "m:ss" / "h:mm:ss" / bare seconds → seconds, or null when
+ *  the text is not a clock (a typo in the pin field must never post at 0).
+ *  PURE — Node-pinned. */
+function qaParseClock_(str) {
+  const s = String(str == null ? '' : str).trim();
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.floor(Number(s));
+  const m = /^(?:(\d{1,2}):)?(\d{1,3}):(\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = Number(m[1] || 0), mi = Number(m[2]), se = Number(m[3]);
+  if (se >= 60 || (m[1] != null && mi >= 60)) return null;
+  return h * 3600 + mi * 60 + se;
+}
 /** Timeline marker position as a 0..100 percent, clamped. PURE — Node-pinned. */
 function qaMarkerPct_(atSec, durSec) {
   const at = Number(atSec), dur = Number(durSec);
   if (!isFinite(at) || !isFinite(dur) || dur <= 0) return 0;
   return Math.max(0, Math.min(100, (at / dur) * 100));
+}
+/** Q3 — ONE score-tone rule for every 1..5 figure the module renders (rating
+ *  chips, running average, per-card average): ≤2 destructive, 3 neutral, ≥4
+ *  accent. null/NaN → no tone. PURE — Node-pinned. */
+function qaScoreTone_(v) {
+  const n = Number(v);
+  if (v == null || !isFinite(n)) return '';
+  if (n <= 2) return 'destructive';
+  if (n >= 4) return 'accent';
+  return '';
 }
 var QA_STATUS_LABELS = { new: 'New', in_review: 'In review', done: 'Done', skipped: 'Skipped' };
 function qaStatusPillHtml_(status) {
@@ -215,6 +310,76 @@ function qaAssigneePillHtml_(item, self) {
     (mine ? 'you' : esc(item.assignee.split('@')[0])) + '</span>';
 }
 
+// ── Q4: coverage — pure helpers (Node-pinned) ──────────────────────────────
+
+/** Whole days from ymd `a` to ymd `b` (UTC arithmetic — the keys are calendar
+ *  dates, not instants). null on a bad input. */
+function qaDayDiff_(a, b) {
+  const pa = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(a || ''));
+  const pb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(b || ''));
+  if (!pa || !pb) return null;
+  const ma = Date.UTC(+pa[1], +pa[2] - 1, +pa[3]), mb = Date.UTC(+pb[1], +pb[2] - 1, +pb[3]);
+  return Math.round((mb - ma) / 86400000);
+}
+/** ONE tier rule for a coverage row — feeds BOTH the row tint and the status
+ *  pill, so the two cannot disagree. exempt › covered › not started › short
+ *  (low when the period average is under 3.5). */
+function qaCoverageTier_(row) {
+  const r = row || {};
+  if (r.exempt) return { key: 'exempt', label: 'Exempt', tone: '' };
+  const sampled = Number(r.sampled) || 0, target = Number(r.target) || 0;
+  if (sampled >= target) return { key: 'covered', label: 'Covered', tone: 'accent' };
+  if (sampled === 0) return { key: 'notstarted', label: 'Not started', tone: 'info' };
+  if (r.avg != null && Number(r.avg) < 3.5) return { key: 'shortlow', label: 'Short · low', tone: 'destructive' };
+  return { key: 'short', label: 'Short', tone: 'warn' };
+}
+/** The summary strip is DERIVED from the coverage rows the table renders —
+ *  never a second read, so the strip and the table cannot disagree.
+ *  Coverage counts each rep at most to target (an over-sampled rep does not
+ *  cover for a short one); the team average is CALL-weighted (Σ avg·cards /
+ *  Σ cards) so one rep's single card cannot swing it; an absent average is
+ *  null, never 0 (INV-187). */
+function qaCoverageSummary_(rows, todayYmd, periodEnd) {
+  const list = Array.isArray(rows) ? rows : [];
+  let sampled = 0, target = 0, short = 0, gaps = 0;
+  const shortNames = [], below = [];
+  let wSum = 0, wN = 0, pSum = 0, pN = 0;
+  list.forEach(function (r) {
+    const s = Number(r.sampled) || 0, t = Number(r.target) || 0;
+    if (!r.exempt) {
+      sampled += Math.min(s, t); target += t;
+      if (s < t) { short++; shortNames.push(String(r.name || '')); gaps += (t - s); }
+    }
+    const cards = Number(r.cardCount) || 0;
+    if (r.avg != null && cards > 0) { wSum += Number(r.avg) * cards; wN += cards; }
+    if (r.avg != null && Number(r.avg) < 3.5) below.push(String(r.name || ''));
+    // The previous period has no card count on the row — weight by its
+    // sampled count instead (the closest proxy the join carries).
+    const ps = Number(r.prevSampled) || 0;
+    if (r.prevAvg != null && ps > 0) { pSum += Number(r.prevAvg) * ps; pN += ps; }
+  });
+  const avg = wN ? Math.round((wSum / wN) * 100) / 100 : null;
+  const prevAvg = pN ? Math.round((pSum / pN) * 100) / 100 : null;
+  const dl = qaDayDiff_(todayYmd, periodEnd);
+  return {
+    sampled: sampled, target: target,
+    pct: target ? Math.round((sampled / target) * 100) : null,
+    short: short, shortNames: shortNames, gaps: gaps,
+    avg: avg, prevAvg: prevAvg,
+    delta: (avg != null && prevAvg != null) ? Math.round((avg - prevAvg) * 100) / 100 : null,
+    below: below,
+    daysLeft: dl == null ? null : Math.max(0, dl),
+  };
+}
+
+function qaPeriodLabelOf_(key) {
+  const d = QA_STATE.queue || {};
+  const opt = (d.periodOptions || []).filter(function (o) { return o.key === key; })[0];
+  return opt ? opt.label : String(key || '');
+}
+
+// ── Queue ──────────────────────────────────────────────────────────────────
+
 function qaVisibleItems_() {
   const d = QA_STATE.queue;
   if (!d || !d.recordings) return [];
@@ -224,15 +389,65 @@ function qaVisibleItems_() {
     return r.status === QA_STATE.filter;
   });
 }
+function qaSortedItems_(items) {
+  const s = QA_STATE.sort || { key: 'createdMs', dir: 'desc' };
+  const dir = s.dir === 'asc' ? 1 : -1;
+  const val = function (r) {
+    if (s.key === 'name' || s.key === 'agent' || s.key === 'status' || s.key === 'assignee') return String(r[s.key] || '').toLowerCase();
+    return Number(r[s.key]) || 0;
+  };
+  return items.slice().sort(function (a, b) {
+    const va = val(a), vb = val(b);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return (Number(b.createdMs) || 0) - (Number(a.createdMs) || 0);
+  });
+}
+function qaSortQueue_(key) {
+  const s = QA_STATE.sort || {};
+  if (s.key === key) QA_STATE.sort = { key: key, dir: s.dir === 'asc' ? 'desc' : 'asc' };
+  else QA_STATE.sort = { key: key, dir: (key === 'name' || key === 'agent' || key === 'status' || key === 'assignee') ? 'asc' : 'desc' };
+  qaRenderQueue_();
+}
+
+function qaAppBarHtml_(crumb, title, subtitle, rightHtml) {
+  if (COMPACT_MODE) return rightHtml ? '<div class="qa-toolbar">' + rightHtml + '</div>' : '';
+  return '<div class="app-bar"><div class="app-bar-left">' +
+      '<div class="breadcrumb"><span>QA</span><span class="crumb-sep">›</span><span class="crumb-current">' + esc(crumb) + '</span></div>' +
+      '<h1 class="display-title">' + esc(title) + '</h1>' +
+      (subtitle ? '<p class="view-subtitle">' + esc(subtitle) + '</p>' : '') +
+    '</div>' + (rightHtml ? '<div class="app-bar-right">' + rightHtml + '</div>' : '') + '</div>';
+}
+
+/** The audit-period control — a .toolbar-tabs strip over the server-shipped
+ *  options (the client never mirrors the period arithmetic). */
+function qaPeriodStripHtml_(d) {
+  const opts = (d && d.periodOptions) || [];
+  if (!opts.length) return '';
+  return '<div class="toolbar-tabs" role="group" aria-label="Audit period">' +
+    opts.map(function (o) {
+      const on = o.key === d.period;
+      return '<button type="button" class="toolbar-tab' + (on ? ' active' : '') + '" aria-pressed="' + on + '" data-qa-period="' + esc(o.key) +
+        '" onclick="qaSetPeriod_(\'' + esc(o.key) + '\')">' + esc(o.label) + '</button>';
+    }).join('') + '</div>';
+}
+function qaSetPeriod_(key) {
+  const d = QA_STATE.queue || {};
+  const ok = (d.periodOptions || []).some(function (o) { return o.key === key; });
+  if (!ok || key === QA_STATE.period) return;
+  QA_STATE.period = key;
+  qaWritePeriodPref_(key);
+  renderLoading(document.getElementById('view-area'), 'Loading ' + qaPeriodLabelOf_(key) + '…', 'headset');
+  qaLoadQueue_();
+}
 
 function qaRenderQueue_() {
   const area = document.getElementById('view-area');
   const d = QA_STATE.queue;
   if (!d) return;
-  let html = '';
-  if (!COMPACT_MODE) {
-    html += '<div class="view-title-row"><h1>QA · Recordings</h1></div>';
-  }
+  let html = qaAppBarHtml_('Recordings', 'Recordings',
+    'Coverage first: who still needs a sampled call this period, then the recordings themselves.',
+    qaPeriodStripHtml_(d));
   if (d.notConfigured) {
     area.innerHTML = html +
       '<div class="qa-empty">QA is not set up yet. An admin sets Script Property <strong>QA_SS_ID</strong> to a fresh dedicated spreadsheet' +
@@ -240,42 +455,169 @@ function qaRenderQueue_() {
       ', then presses Sync here.</div>';
     return;
   }
-  const chips = [
-    ['all', 'All'], ['new', 'New'], ['in_review', 'In review'], ['done', 'Done'], ['mine', 'Mine'],
-  ];
-  html += '<div class="qa-toolbar">' +
-    '<div class="qa-chips" role="group" aria-label="Filter recordings">' +
-    chips.map(function (c) {
-      return '<button type="button" class="qa-chip" aria-pressed="' +
-        (QA_STATE.filter === c[0] ? 'true' : 'false') + '" onclick="qaSetFilter_(\'' + c[0] + '\')">' + c[1] + '</button>';
-    }).join('') +
-    '</div><div class="spacer"></div>' +
-    // Phase 3 — coverage-fair sampling: assigns up to 3 un-reviewed,
-    // un-assigned recordings to ME (agents with the fewest done reviews
-    // first). Routing work to someone ELSE stays the manager Assign… flow.
-    '<button type="button" class="qa-btn" id="qa-sample-btn" onclick="qaSample_()">' +
-    (typeof icon === 'function' ? icon('check', 14) : '') + ' Sample 3 for me</button>' +
-    '<button type="button" class="qa-btn" id="qa-sync-btn" onclick="qaSync_()">' +
-    (typeof icon === 'function' ? icon('refresh', 14) : '') + ' Sync from Drive</button>' +
-    '</div>';
   if (!d.folderConfigured) {
     html += '<div class="qa-note">The recordings Drive folder is not configured (Script Property <strong>QA_RECORDINGS_FOLDER_ID</strong>) — Sync and playback need it.</div>';
   }
-  const items = qaVisibleItems_();
-  if (!items.length) {
-    html += '<div class="qa-empty">' + (d.recordings.length
-      ? 'No recordings match this filter.'
-      : 'No recordings indexed yet — drop audio files into the QA Drive folder, then press Sync.') + '</div>';
-  } else {
-    html += '<div class="qa-list">' + items.map(function (r) { return qaCardHtml_(r, d); }).join('') + '</div>';
-  }
-  if (d.total > (d.recordings || []).length) {
-    html += '<div class="qa-note">Showing ' + d.recordings.length + ' of ' + d.total + ' (list capped).</div>';
-  }
+  html += qaCoverageSectionHtml_(d);
+  html += qaRecordingsSectionHtml_(d);
   area.innerHTML = html;
 }
 
-function qaCardHtml_(r, d) {
+/** Q4 — the coverage block: summary strip (derived), the sample-the-gaps
+ *  action, and the per-employee table. */
+function qaCoverageSectionHtml_(d) {
+  const rows = Array.isArray(d.coverage) ? d.coverage : [];
+  const label = qaPeriodLabelOf_(d.period);
+  let html = '<section class="qa-section" aria-labelledby="qa-cov-h">' +
+    '<div class="qa-section-head"><h2 class="card-label" id="qa-cov-h">Coverage · ' + esc(label) + '</h2>' +
+    '<span class="qa-note">target ' + (Number(d.target) || 0) + ' sampled call' + (Number(d.target) === 1 ? '' : 's') + ' per employee</span></div>';
+  if (d.coverageUnavailable) {
+    // A failed scorecard/exemption read must not read as "nobody sampled"
+    // (INV-187) — the recordings below are unaffected, the coverage is unknown.
+    html += errorStateHtml_('Coverage could not be computed for ' + label + ' (the scorecard or exemption tab could not be read). The recordings below are unaffected.');
+    html += '</section>';
+    return html;
+  }
+  const sum = qaCoverageSummary_(rows, d.todayYmd, d.periodEnd);
+  html += qaSummaryStripHtml_(sum, label);
+  const gapBtn = sum.gaps > 0
+    ? '<button type="button" class="qa-btn prime" id="qa-sample-btn" onclick="qaSample_()">' +
+        (typeof icon === 'function' ? icon('check', 14) : '') + ' Sample the gaps for me (' + Math.min(10, sum.gaps) + ')</button>'
+    : '<button type="button" class="qa-btn" id="qa-sample-btn" disabled title="Everyone is at target this period">' +
+        (typeof icon === 'function' ? icon('check', 14) : '') + ' Sample the gaps for me</button>';
+  html += '<div class="qa-toolbar">' + gapBtn +
+    '<span class="qa-note" style="margin:0">assigns un-reviewed recordings to YOU, shortest-covered agents first</span>' +
+    '<div class="spacer"></div>' +
+    '<button type="button" class="qa-btn" id="qa-sync-btn" onclick="qaSync_()">' +
+    (typeof icon === 'function' ? icon('refresh', 14) : '') + ' Sync from Drive</button>' +
+    '</div>';
+  if (!rows.length) {
+    html += '<div class="qa-empty">No roster employees to cover yet.</div></section>';
+    return html;
+  }
+  const cols = [
+    { key: 'name', label: 'Employee', name: true, cell: function (r) { return esc(r.name); } },
+    { key: 'sampled', label: 'Sampled', cell: function (r) {
+        const tier = qaCoverageTier_(r);
+        const t = Number(r.target) || 0, s = Number(r.sampled) || 0;
+        const pct = t ? Math.min(100, Math.round((s / t) * 100)) : (r.exempt ? 0 : 100);
+        return '<span class="qa-cov-cell" role="img" aria-label="' + s + ' of ' + t + ' sampled">' +
+          '<span class="qa-cov-track" data-tier="' + tier.key + '"><i style="width:' + pct + '%"></i></span>' +
+          '<span>' + s + ' / ' + t + '</span></span>';
+      } },
+    { key: 'avg', label: 'Avg /5', numeric: true, cell: function (r) {
+        if (r.avg == null) return '—';
+        const tone = qaScoreTone_(r.avg);
+        return '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(String(r.avg)) + '</span>';
+      } },
+    { key: 'delta', label: 'vs prev', numeric: true, cell: function (r) {
+        if (r.avg == null || r.prevAvg == null) return '—';
+        const dlt = Math.round((Number(r.avg) - Number(r.prevAvg)) * 100) / 100;
+        if (dlt === 0) return '±0';
+        return '<span class="' + (dlt > 0 ? 'qa-delta-up' : 'qa-delta-down') + '">' + (dlt > 0 ? '▲ +' : '▼ ') + esc(String(dlt)) + '</span>';
+      } },
+    { key: 'lastReviewedMs', label: 'Last review', cell: function (r) { return r.lastReviewedMs ? esc(qaFmtDate_(r.lastReviewedMs)) : '—'; } },
+    { key: 'tier', label: 'Status', cell: function (r) {
+        const tier = qaCoverageTier_(r);
+        return '<span class="kicker-pill"' + (tier.tone ? ' data-tone="' + tier.tone + '"' : '') + '>' + esc(tier.label) + '</span>';
+      } },
+  ];
+  if (d.isManager) {
+    cols.push({ key: 'actions', label: '', cell: function (r) {
+      if (r.exempt) return '<button type="button" class="qa-btn" onclick="qaSetExemption_(\'' + esc(r.name).replace(/'/g, '\\\'') + '\', false)">Revoke exemption</button>';
+      if (r.eligible) return '<button type="button" class="qa-btn" onclick="qaSetExemption_(\'' + esc(r.name).replace(/'/g, '\\\'') + '\', true)">Grant exemption</button>';
+      return '';
+    } });
+  }
+  html += mtRenderTable_({
+    columns: cols, rows: rows,
+    rowClass: function (r) {
+      const k = qaCoverageTier_(r).key;
+      return (k === 'shortlow' || k === 'short' || k === 'exempt') ? 'qa-row-' + k : '';
+    },
+  });
+  html += '<div class="qa-note">Exemption = two covered periods in a row at 4.5+ with no criterion under 4 (managers grant it for ONE period). Sampled counts reviews marked done on calls dropped in the period; the average is the mean of their scorecards.</div>';
+  html += '</section>';
+  return html;
+}
+
+function qaSummaryStripHtml_(sum, label) {
+  const cov = sum.pct == null ? '—' : sum.pct + '<small>%</small>';
+  const short = sum.short;
+  const avg = sum.avg == null ? '—' : String(sum.avg) + '<small> /5</small>';
+  let deltaTxt = 'no previous period to compare';
+  if (sum.delta != null) {
+    deltaTxt = (sum.delta > 0 ? '▲ +' : sum.delta < 0 ? '▼ ' : '±') + (sum.delta === 0 ? '0' : String(sum.delta)) + ' vs previous period';
+  } else if (sum.avg != null) {
+    deltaTxt = 'no scored calls in the previous period';
+  }
+  const days = sum.daysLeft == null ? '—' : String(sum.daysLeft);
+  return '<div class="qa-summary" role="group" aria-label="Coverage summary">' +
+    '<div class="qa-sum"' + (sum.pct != null && sum.short > 0 ? ' data-tone="warn"' : '') + '><div class="qa-sum-k">Coverage</div>' +
+      '<div class="qa-sum-v">' + cov + '</div>' +
+      '<div class="qa-sum-sub">' + (sum.target
+        ? sum.sampled + ' of ' + sum.target + ' target calls · ' + (short ? short + ' employee' + (short === 1 ? '' : 's') + ' short' : 'everyone at target')
+        : 'no one to cover this period') + '</div>' +
+      '<div class="qa-sum-bar" aria-hidden="true"><i style="width:' + (sum.pct == null ? 0 : sum.pct) + '%"></i></div></div>' +
+    '<div class="qa-sum"><div class="qa-sum-k">Team avg</div>' +
+      '<div class="qa-sum-v">' + avg + '</div>' +
+      '<div class="qa-sum-sub">' + esc(deltaTxt) + '</div></div>' +
+    '<div class="qa-sum"' + (sum.below.length ? ' data-tone="destructive"' : '') + '><div class="qa-sum-k">Below 3.5</div>' +
+      '<div class="qa-sum-v">' + sum.below.length + '</div>' +
+      '<div class="qa-sum-sub">' + (sum.below.length ? esc(sum.below.join(', ')) : 'nobody this period') + '</div></div>' +
+    '<div class="qa-sum"><div class="qa-sum-k">Days left</div>' +
+      '<div class="qa-sum-v">' + esc(days) + '</div>' +
+      '<div class="qa-sum-sub">in ' + esc(label) + '</div></div>' +
+    '</div>';
+}
+
+/** The recordings table (Q5) — sortable, status chips with counts, skip
+ *  reasons inline, an Unattributed agent in the warn tone. */
+function qaRecordingsSectionHtml_(d) {
+  const all = d.recordings || [];
+  const cnt = { all: all.length, new: 0, in_review: 0, done: 0, skipped: 0, mine: 0 };
+  all.forEach(function (r) { if (cnt[r.status] != null) cnt[r.status]++; if (r.assignee === d.self) cnt.mine++; });
+  const chips = [['all', 'All'], ['new', 'New'], ['in_review', 'In review'], ['done', 'Done'], ['skipped', 'Skipped'], ['mine', 'Mine']];
+  let html = '<section class="qa-section" aria-labelledby="qa-rec-h">' +
+    '<div class="qa-section-head"><h2 class="card-label" id="qa-rec-h">Recordings</h2>' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter recordings">' +
+    chips.map(function (c) {
+      const on = QA_STATE.filter === c[0];
+      return '<button type="button" class="toolbar-tab' + (on ? ' active' : '') + '" aria-pressed="' + on + '" onclick="qaSetFilter_(\'' + c[0] + '\')">' + c[1] + ' ' + cnt[c[0]] + '</button>';
+    }).join('') + '</div></div>';
+  const items = qaSortedItems_(qaVisibleItems_());
+  if (!items.length) {
+    html += '<div class="qa-empty">' + (all.length
+      ? 'No recordings match this filter.'
+      : 'No recordings indexed yet — drop audio files into the QA Drive folder, then press Sync.') + '</div>';
+  } else {
+    html += '<div class="qa-rec-table">' + mtRenderTable_({
+      columns: [
+        { key: 'name', label: 'Recording', name: true, sortable: true, cell: function (r) { return '<span style="overflow-wrap:anywhere">' + esc(r.name || '(unnamed)') + '</span>'; } },
+        { key: 'agent', label: 'Agent', sortable: true, cell: function (r) { return r.agent ? esc(r.agent) : '<span class="qa-unattributed">Unattributed</span>'; } },
+        { key: 'durationSec', label: 'Length', numeric: true, sortable: true, cell: function (r) { return Number(r.durationSec) > 0 ? esc(qaFmtClock_(r.durationSec)) : '—'; } },
+        { key: 'createdMs', label: 'Dropped', sortable: true, cell: function (r) { return esc(qaFmtDate_(r.createdMs)); } },
+        { key: 'status', label: 'Status', sortable: true, cell: function (r) {
+            return qaStatusPillHtml_(r.status) + (r.status === 'skipped' && r.skipReason ? '<span class="qa-skip-why">' + esc(r.skipReason) + '</span>' : '');
+          } },
+        { key: 'assignee', label: 'Reviewer', sortable: true, cell: function (r) {
+            return (qaAssigneePillHtml_(r, d.self) || '<span class="qa-note" style="margin:0">—</span>') +
+              (r.comments ? ' <span class="qa-note" style="margin:0">' + r.comments + ' comment' + (r.comments === 1 ? '' : 's') + '</span>' : '');
+          } },
+        { key: 'actions', label: '', cell: function (r) { return '<div class="qa-row-actions">' + qaRowActionsHtml_(r, d) + '</div>'; } },
+      ],
+      rows: items,
+      sort: QA_STATE.sort, onSort: 'qaSortQueue_',
+    }) + '</div>';
+  }
+  if (d.total > all.length) {
+    html += '<div class="qa-note">Showing ' + all.length + ' of ' + d.total + ' (list capped).</div>';
+  }
+  html += '</section>';
+  return html;
+}
+
+function qaRowActionsHtml_(r, d) {
   const canRelease = r.assignee && (r.assignee === d.self || d.isManager);
   let actions = '<button type="button" class="qa-btn prime" onclick="qaOpenDetail_(\'' + esc(r.fileId) + '\')">Open</button>';
   if (!r.assignee) {
@@ -286,26 +628,14 @@ function qaCardHtml_(r, d) {
   if (d.isManager) {
     actions += '<button type="button" class="qa-btn" onclick="qaAssign_(\'' + esc(r.fileId) + '\', \'other\')">Assign…</button>';
   }
-  return '<div class="qa-card">' +
-    '<div style="min-width:0">' +
-      '<div class="qa-card-name">' + esc(r.name || '(unnamed)') + '</div>' +
-      '<div class="qa-card-meta">' +
-        qaStatusPillHtml_(r.status) +
-        qaAssigneePillHtml_(r, d.self) +
-        '<span>' + esc(qaFmtDate_(r.createdMs)) + '</span>' +
-        '<span>' + esc(qaFmtSize_(r.sizeBytes)) + '</span>' +
-        (r.comments ? '<span>' + r.comments + ' comment' + (r.comments === 1 ? '' : 's') + '</span>' : '') +
-      '</div>' +
-    '</div>' +
-    '<div class="qa-card-actions">' + actions + '</div>' +
-    '</div>';
+  return actions;
 }
 
 function qaSetFilter_(f) {
   QA_STATE.filter = f;
   qaRenderQueue_();
-  const list = document.querySelector('.qa-list');
-  if (list && typeof animateListSwap_ === 'function') { try { animateListSwap_(list, '.qa-card'); } catch (e) {} }
+  const body = document.querySelector('.qa-rec-table tbody');
+  if (body && typeof animateListSwap_ === 'function') { try { animateListSwap_(body, 'tr'); } catch (e) {} }
 }
 
 function qaSync_() {
@@ -334,14 +664,22 @@ function qaSync_() {
     .qaSyncRecordings();
 }
 
+/** Q4 — "Sample the gaps for me": the count is Σ (target − sampled) over
+ *  non-exempt reps, clamped to the endpoint's 1–10; the server is
+ *  target-aware in the SAME period, so a covered agent is never pulled ahead
+ *  of one still short. */
 function qaSample_() {
+  const d = QA_STATE.queue || {};
+  const sum = qaCoverageSummary_(d.coverage || [], d.todayYmd, d.periodEnd);
+  const n = Math.max(1, Math.min(10, Number(sum.gaps) || 0));
+  if (!(sum.gaps > 0)) { showToast('Everyone is at target this period — nothing to sample.', 'toast-info'); return; }
   const btn = document.getElementById('qa-sample-btn');
   if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function (r) {
       if (btn) btn.disabled = false;
       if (!r || !r.success) { showToast((r && r.error) || 'Sampling failed.', 'toast-warn'); return; }
-      showToast(r.assigned + ' recording(s) assigned to you — least-reviewed agents first', 'toast-success');
+      showToast(r.assigned + ' recording(s) assigned to you — shortest-covered agents first', 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
         renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
         qaLoadQueue_();
@@ -351,7 +689,34 @@ function qaSample_() {
       if (btn) btn.disabled = false;
       showToast('Sampling failed: ' + (err && err.message), 'toast-error');
     })
-    .qaSampleRecordings(3);
+    .qaSampleRecordings(n, QA_STATE.period || '');
+}
+
+/** Q4 — grant/revoke an audit-period exemption (manager-only server-side;
+ *  the button renders only for managers on eligible rows). */
+function qaSetExemption_(name, on) {
+  const d = QA_STATE.queue || {};
+  const label = qaPeriodLabelOf_(d.period);
+  uiConfirm({
+    title: on ? 'Grant exemption' : 'Revoke exemption',
+    message: on
+      ? name + ' has two covered periods in a row at 4.5+ with no criterion under 4. Exempt them from sampling for ' + label + '? Their target this period becomes 0.'
+      : 'Put ' + name + ' back on the sampling target for ' + label + '?',
+    confirmLabel: on ? 'Grant' : 'Revoke',
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r || !r.success) { showToast((r && r.error) || 'Exemption change failed.', 'toast-error'); return; }
+        showToast(on ? 'Exempt for ' + label : 'Exemption revoked', 'toast-success');
+        if (currentView === 'qaQueue' && !QA_STATE.det) {
+          renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+          qaLoadQueue_();
+        }
+      })
+      .withFailureHandler(function (err) { showToast('Exemption change failed: ' + (err && err.message), 'toast-error'); })
+      .qaSetExemption(name, d.period || '', !!on);
+  });
 }
 
 function qaAssign_(fileId, who) {
@@ -385,7 +750,7 @@ function qaAssign_(fileId, who) {
   }).then(function (v) { if (v != null) send(String(v).trim().toLowerCase()); });
 }
 
-// ── Detail: player + timestamped comments ──────────────────────────────────
+// ── Detail: player + scorecard + timestamped comments ──────────────────────
 
 function qaOpenDetail_(fileId) {
   const d = QA_STATE.queue;
@@ -397,6 +762,7 @@ function qaOpenDetail_(fileId) {
   QA_STATE.scorecards = [];
   QA_STATE.ratings = {};
   QA_STATE.scoreNotes = '';
+  QA_STATE.pin = null;
   qaRenderDetail_();
   qaLoadAudio_(rec);
   qaLoadComments_(rec.fileId);
@@ -406,6 +772,7 @@ function qaOpenDetail_(fileId) {
 
 function qaBackToQueue_() {
   QA_STATE.det = null;
+  QA_STATE.pin = null;
   qaReleaseAudio_();
   if (currentView !== 'qaQueue') return;
   qaRenderQueue_();
@@ -419,11 +786,17 @@ function qaReleaseAudio_() {
   if (QA_STATE.objectUrl) { try { URL.revokeObjectURL(QA_STATE.objectUrl); } catch (e) {} QA_STATE.objectUrl = null; }
 }
 
+/** Q6 — two panes from 1000px: the LEFT pane is the call (agent attribution
+ *  + player, sticky so the transport stays reachable while the review
+ *  scrolls), the RIGHT pane is the review (scorecard, comments, the coaching
+ *  hand-off). Below 1000px they stack in that order. */
 function qaRenderDetail_() {
   const area = document.getElementById('view-area');
   area.innerHTML =
     '<div class="qa-det-head" id="qa-det-head"></div>' +
-    '<div class="qa-agent-row" id="qa-agent-row"></div>' +
+    '<div class="qa-det-grid">' +
+    '<div class="qa-det-left">' +
+    '<div class="qa-agent-card"><h2 class="card-label">Agent on this call</h2><div id="qa-agent-row"></div></div>' +
     '<div class="qa-player-card">' +
       '<div id="qa-audio-slot"><div class="qa-note" id="qa-load-note">Loading audio…</div></div>' +
       // The waveform is DECORATION over the flat timeline: it appears only if
@@ -434,6 +807,8 @@ function qaRenderDetail_() {
       '<div class="qa-transport" id="qa-transport"></div>' +
       '<div class="qa-timeline" id="qa-timeline" aria-hidden="true"></div>' +
     '</div>' +
+    '</div>' +
+    '<div class="qa-det-right">' +
     '<div class="qa-score-card">' +
       '<h2 class="card-label">Scorecard</h2>' +
       '<div id="qa-score-form"><div class="qa-note">Loading…</div></div>' +
@@ -443,18 +818,26 @@ function qaRenderDetail_() {
       '<h2 class="card-label">Comments</h2>' +
       '<div id="qa-comments"><div class="qa-note">Loading…</div></div>' +
       '<div class="qa-add-row">' +
-        '<textarea id="qa-comment-text" aria-label="Comment text"></textarea>' +
-        '<button type="button" class="qa-btn prime" id="qa-comment-btn" onclick="qaSubmitComment_()">Comment at 0:00</button>' +
+        '<textarea id="qa-comment-text" aria-label="Comment text" placeholder="Write a comment…"></textarea>' +
+        '<div class="qa-pin-row" id="qa-pin-row" aria-live="polite"></div>' +
+        '<div class="qa-add-actions" id="qa-add-actions"></div>' +
       '</div>' +
-      '<div class="qa-note">Comments anchor to the playback position — click a timestamp to jump there. Space plays/pauses, ←/→ seek 5s.</div>' +
+      '<div class="qa-note">Typing pauses playback and pins the moment (edit the time if needed). Click a timestamp to jump there. Space plays/pauses, ←/→ seek 5s.</div>' +
+    '</div>' +
+    '<div class="qa-coach-card" id="qa-coach-panel" hidden></div>' +
+    '</div>' +
     '</div>';
   qaRenderDetailHead_();
   qaRenderAgentRow_();
+  qaRenderPinRow_();
+  qaRenderCoachPanel_();
+  const ta = document.getElementById('qa-comment-text');
+  if (ta) ta.addEventListener('input', qaOnCommentInput_);
 }
 
-/** Phase 2 — which AGENT the call belongs to (feeds the Stats tab). Roster
- *  names ride a datalist; free text stays allowed (an ex-agent's recording is
- *  still attributable). */
+/** Phase 2 — which AGENT the call belongs to (feeds the Stats tab + the Q4
+ *  coverage join). Roster names ride a datalist; free text stays allowed (an
+ *  ex-agent's recording is still attributable). */
 function qaRenderAgentRow_() {
   const host = document.getElementById('qa-agent-row');
   const r = QA_STATE.det, d = QA_STATE.queue || {};
@@ -462,16 +845,28 @@ function qaRenderAgentRow_() {
   const opts = (d.agentOptions || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('');
   const shared = Number(r.sharedMs) > 0;
   host.innerHTML =
-    '<label for="qa-agent-input" style="font-size:12px;color:var(--muted-2)">Agent on this call</label>' +
+    '<div class="qa-agent-row">' +
+    '<label for="qa-agent-input" style="font-size:12px;color:var(--muted-2)">Agent</label>' +
     '<input type="text" id="qa-agent-input" list="qa-agent-opts" maxlength="80" value="' + esc(r.agent || '') + '" placeholder="unassigned">' +
     '<datalist id="qa-agent-opts">' + opts + '</datalist>' +
     '<button type="button" class="qa-btn" id="qa-agent-save" onclick="qaSaveAgent_()">Save</button>' +
-    '<span class="qa-note" style="margin:0">feeds the per-agent Stats tab</span>' +
     // Phase 3 — the RELEASE action: sharing is deliberate, never a side
     // effect of a status flip (the EmpDocs draft→release posture).
     (shared ? '<span class="qa-shared-pill">shared with agent</span>' : '') +
     '<button type="button" class="qa-btn" id="qa-share-btn" onclick="qaToggleShared_()">' +
-      (shared ? 'Unshare' : 'Share with agent') + '</button>';
+      (shared ? 'Unshare' : 'Share with agent') + '</button>' +
+    '</div>' +
+    qaMatchLineHtml_(r, d);
+}
+/** Q7 — the roster-match line: whether the typed name is a roster employee
+ *  (coverage + coaching key off it) and how covered they are this period. */
+function qaMatchLineHtml_(r, d) {
+  const agent = String(r.agent || '').trim();
+  if (!agent) return '<div class="qa-match-line warn">Unattributed — set the agent so this review counts toward coverage.</div>';
+  const row = (d.coverage || []).filter(function (c) { return String(c.name || '').toLowerCase() === agent.toLowerCase(); })[0];
+  if (!row) return '<div class="qa-match-line warn">Not on the roster — check the spelling; coverage, Stats and coaching key off the exact roster name.</div>';
+  if (row.exempt) return '<div class="qa-match-line">On the roster · exempt from sampling for ' + esc(qaPeriodLabelOf_(d.period)) + '</div>';
+  return '<div class="qa-match-line">On the roster · ' + (Number(row.sampled) || 0) + ' of ' + (Number(row.target) || 0) + ' sampled in ' + esc(qaPeriodLabelOf_(d.period)) + '</div>';
 }
 function qaToggleShared_() {
   const r = QA_STATE.det;
@@ -505,7 +900,10 @@ function qaSaveAgent_() {
       if (btn) btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'toast-error'); return; }
       r.agent = res.agent;
+      r.agentEmpId = String(res.agentEmpId || '');   // Q7 — the server re-joins the roster id
       showToast(res.agent ? 'Agent set' : 'Agent cleared', 'toast-success');
+      qaRenderAgentRow_();
+      qaRenderCoachPanel_();
     })
     .withFailureHandler(function (err) {
       if (btn) btn.disabled = false;
@@ -513,7 +911,8 @@ function qaSaveAgent_() {
     })
     .qaSetRecordingAgent(r.fileId, name);
 }
-
+/** Q6 — status actions live in the header: Skip (with a reason), Start
+ *  review / Reopen, Mark done. */
 function qaRenderDetailHead_() {
   const host = document.getElementById('qa-det-head');
   const r = QA_STATE.det, d = QA_STATE.queue || {};
@@ -526,6 +925,9 @@ function qaRenderDetailHead_() {
   if (r.status === 'new' || r.status === 'skipped') {
     statusBtns += '<button type="button" class="qa-btn" onclick="qaChangeStatus_(\'in_review\')">Start review</button>';
   }
+  if (r.status === 'new' || r.status === 'in_review') {
+    statusBtns += '<button type="button" class="qa-btn" onclick="qaSkip_()">Skip…</button>';
+  }
   if (r.status !== 'done') {
     statusBtns += '<button type="button" class="qa-btn prime" onclick="qaChangeStatus_(\'done\')">Mark done</button>';
   } else {
@@ -536,9 +938,9 @@ function qaRenderDetailHead_() {
       (typeof icon === 'function' ? icon('chevronLeft', 14) : '') + ' Queue</button>' +
     '<div class="qa-det-title">' + esc(r.name || '(unnamed)') + '</div>' +
     qaStatusPillHtml_(r.status) +
+    (r.status === 'skipped' && r.skipReason ? '<span class="qa-note" style="margin:0">' + esc(r.skipReason) + '</span>' : '') +
     qaAssigneePillHtml_(r, d.self) +
-    '<div class="spacer" style="flex:1"></div>' +
-    statusBtns;
+    '<div class="qa-det-actions">' + statusBtns + '</div>';
 }
 
 function qaChangeStatus_(st) {
@@ -548,10 +950,42 @@ function qaChangeStatus_(st) {
     .withSuccessHandler(function (res) {
       if (!res || !res.success) { showToast((res && res.error) || 'Status change failed.', 'toast-error'); return; }
       r.status = res.status;
+      r.skipReason = res.skipReason || '';
       qaRenderDetailHead_();
     })
     .withFailureHandler(function (err) { showToast('Status change failed: ' + (err && err.message), 'toast-error'); })
     .qaSetRecordingStatus(r.fileId, st);
+}
+/** Q2 — skipping asks WHY (test call, wrong queue, a duplicate) so the
+ *  reason shows on the queue row and a skipped call is never mistaken for
+ *  an un-reviewed one. */
+function qaSkip_() {
+  const r = QA_STATE.det;
+  if (!r) return;
+  uiPrompt({
+    title: 'Skip this recording',
+    message: 'Why is it not being reviewed? The reason shows on the queue row.',
+    placeholder: 'e.g. test call · wrong queue · duplicate upload',
+    confirmLabel: 'Skip',
+    validator: function (v) {
+      const s = String(v || '').trim();
+      if (!s) return 'Give a short reason (or Cancel).';
+      if (s.length > 500) return 'Keep it under 500 characters.';
+      return '';
+    },
+  }).then(function (v) {
+    if (v == null) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Skip failed.', 'toast-error'); return; }
+        r.status = res.status;
+        r.skipReason = res.skipReason || '';
+        showToast('Skipped', 'toast-success');
+        qaRenderDetailHead_();
+      })
+      .withFailureHandler(function (err) { showToast('Skip failed: ' + (err && err.message), 'toast-error'); })
+      .qaSetRecordingStatus(r.fileId, 'skipped', String(v).trim());
+  });
 }
 
 function qaSetLoadNote_(msg) {
@@ -610,6 +1044,9 @@ function qaAssembleAudio_(parts, mime, mySeq) {
     audio.addEventListener('loadedmetadata', function () {
       QA_STATE.durationSec = isFinite(audio.duration) ? audio.duration : 0;
       qaRenderTimeline_();
+      // Q5 — write the duration back ONCE (the queue's Length column);
+      // fire-and-forget, the server refuses to overwrite a filled cell.
+      try { qaWriteBackDuration_(QA_STATE.det, QA_STATE.durationSec); } catch (e) { /* metadata only */ }
     });
     audio.addEventListener('timeupdate', function () { qaTickPlayback_(audio); });
     qaRenderTransport_();
@@ -629,25 +1066,50 @@ function qaAssembleAudio_(parts, mime, mySeq) {
     if (slot && QA_STATE.audioSeq === mySeq) slot.innerHTML = errorStateHtml_('Could not decode the audio: ' + e.message);
   }
 }
+function qaWriteBackDuration_(rec, sec) {
+  if (!rec || Number(rec.durationSec) > 0) return;
+  const n = Math.round(Number(sec) || 0);
+  if (!(n >= 1)) return;
+  google.script.run
+    .withSuccessHandler(function (res) { if (res && res.success && rec) rec.durationSec = Number(res.durationSec) || n; })
+    .withFailureHandler(function () { /* metadata only — the queue shows an em dash until it lands */ })
+    .qaSetRecordingDuration(rec.fileId, n);
+}
 
 var QA_SPEEDS = [0.75, 1, 1.25, 1.5, 2];
-function qaRenderTransport_() {
-  const host = document.getElementById('qa-transport');
-  if (!host) return;
+/** Q3 — ONE transport renderer for the reviewer detail AND the agent's My
+ *  Reviews cards (listener-bound to the audio element it controls, so a
+ *  per-card player needs no global ids). `state.speed` is the shared
+ *  session speed for the detail; a card passes its own object. */
+function qaRenderTransportFor_(host, audio, state, showKbd) {
+  if (!host || !audio) return;
+  const st = state || { speed: 1 };
   host.innerHTML =
-    '<button type="button" class="qa-btn" onclick="qaSeekBy_(-5)" aria-label="Back 5 seconds">↺ 5s</button>' +
-    '<button type="button" class="qa-btn" onclick="qaSeekBy_(5)" aria-label="Forward 5 seconds">5s ↻</button>' +
+    '<button type="button" class="qa-btn" data-qa-seek="-5" aria-label="Back 5 seconds">↺ 5s</button>' +
+    '<button type="button" class="qa-btn" data-qa-seek="5" aria-label="Forward 5 seconds">5s ↻</button>' +
     QA_SPEEDS.map(function (s) {
-      return '<button type="button" class="qa-chip qa-speed" aria-pressed="' + (QA_STATE.speed === s ? 'true' : 'false') +
-        '" onclick="qaSetSpeed_(' + s + ')">' + s + '×</button>';
+      return '<button type="button" class="qa-chip qa-speed" data-qa-speed="' + s + '" aria-pressed="' + (st.speed === s ? 'true' : 'false') +
+        '">' + s + '×</button>';
     }).join('') +
-    '<span class="qa-kbd-hint">space · ← →</span>';
+    // The key hint belongs ONLY where the keys work — the detail's document
+    // handler is scoped to the open recording, so My Reviews shows none.
+    (showKbd ? '<span class="qa-kbd-hint">space · ← →</span>' : '');
+  host.querySelectorAll('[data-qa-seek]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (!isFinite(audio.duration)) return;
+      audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + Number(b.getAttribute('data-qa-seek'))));
+    });
+  });
+  host.querySelectorAll('[data-qa-speed]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      st.speed = Number(b.getAttribute('data-qa-speed')) || 1;
+      audio.playbackRate = st.speed;
+      qaRenderTransportFor_(host, audio, st, showKbd);   // aria-pressed stays in step (A11)
+    });
+  });
 }
-function qaSetSpeed_(s) {
-  QA_STATE.speed = s;
-  const audio = document.getElementById('qa-audio');
-  if (audio) audio.playbackRate = s;
-  qaRenderTransport_();   // aria-pressed stays in step (A11)
+function qaRenderTransport_() {
+  qaRenderTransportFor_(document.getElementById('qa-transport'), document.getElementById('qa-audio'), QA_STATE, true);
 }
 function qaSeekBy_(delta) {
   const audio = document.getElementById('qa-audio');
@@ -662,8 +1124,8 @@ function qaSeekTo_(sec) {
 }
 
 function qaTickPlayback_(audio) {
-  const btn = document.getElementById('qa-comment-btn');
-  if (btn) btn.textContent = 'Comment at ' + qaFmtClock_(audio.currentTime);
+  // Q1: the composer's time is a PIN (set when typing starts), never this
+  // live figure — the old "Comment at m:ss" label changed under the reviewer.
   const cur = document.getElementById('qa-tl-cursor');
   if (cur && QA_STATE.durationSec > 0) cur.style.left = qaMarkerPct_(audio.currentTime, QA_STATE.durationSec) + '%';
   if (QA_STATE.peaks && QA_STATE.durationSec > 0) {
@@ -793,6 +1255,7 @@ function qaLoadComments_(fileId) {
       QA_STATE.canModerate = !!r.canModerate;
       qaRenderComments_();
       qaRenderTimeline_();
+      qaRenderCoachPanel_();
     })
     .withFailureHandler(function (err) {
       if (!QA_STATE.det || QA_STATE.det.fileId !== fileId) return;
@@ -816,34 +1279,88 @@ function qaRenderComments_() {
       '<div><div class="qa-comment-text">' + esc(c.text) + '</div>' +
         '<div class="qa-comment-by">' + esc(c.name) + '</div></div>' +
       (canDelete
-        ? '<button type="button" class="qa-del-btn" aria-label="Remove comment" onclick="qaDeleteComment_(\'' + esc(c.commentId) + '\')">×</button>'
+        ? '<button type="button" class="qa-del-btn" aria-label="Remove comment" onclick="qaDeleteComment_(\'' + esc(c.commentId) + '\')">×</button>' 
         : '<span></span>') +
       '</div>';
   }).join('');
 }
 
-function qaSubmitComment_() {
+// ── Q1: pause-and-pin comment composer ─────────────────────────────────────
+// The first keystroke PAUSES playback and PINS the moment; the pinned time is
+// editable; the comment posts at the PIN (never at whatever the player has
+// drifted to), and the reviewer chooses whether playback resumes.
+function qaOnCommentInput_() {
+  if (QA_STATE.pin) return;
+  const audio = document.getElementById('qa-audio');
+  const wasPlaying = !!(audio && !audio.paused && !audio.ended);
+  if (audio && wasPlaying) { try { audio.pause(); } catch (e) {} }
+  QA_STATE.pin = { atSec: audio ? Math.floor(Number(audio.currentTime) || 0) : 0, wasPlaying: wasPlaying };
+  qaRenderPinRow_();
+}
+function qaRenderPinRow_() {
+  const row = document.getElementById('qa-pin-row');
+  const acts = document.getElementById('qa-add-actions');
+  if (!row || !acts) return;
+  const pin = QA_STATE.pin;
+  if (!pin) {
+    row.innerHTML = '<span>Start typing to pin a comment at the current moment.</span>';
+    acts.innerHTML = '';
+    return;
+  }
+  row.innerHTML =
+    '<label for="qa-pin-at">Pinned at</label>' +
+    '<input type="text" id="qa-pin-at" class="qa-pin-input" value="' + esc(qaFmtClock_(pin.atSec)) + '" inputmode="numeric" aria-label="Pinned time (m:ss)">' +
+    '<span id="qa-pin-status">· ' + (pin.wasPlaying ? 'playback paused' : 'player is paused') + '</span>';
+  acts.innerHTML =
+    '<button type="button" class="qa-btn prime" id="qa-comment-btn" onclick="qaSubmitComment_(true)">Post &amp; resume</button>' +
+    '<button type="button" class="qa-btn" id="qa-comment-stay-btn" onclick="qaSubmitComment_(false)">Post &amp; stay paused</button>' +
+    '<button type="button" class="qa-btn" onclick="qaDiscardComment_()">Discard</button>';
+}
+/** The pin the composer will post at: the editable field wins (a typo is
+ *  refused by name, never posted at 0); null = no pin yet. */
+function qaPinnedAtSec_() {
+  const inp = document.getElementById('qa-pin-at');
+  if (inp) return qaParseClock_(inp.value);
+  return QA_STATE.pin ? QA_STATE.pin.atSec : null;
+}
+function qaSubmitComment_(resume) {
   const r = QA_STATE.det;
   const ta = document.getElementById('qa-comment-text');
   if (!r || !ta) return;
   const text = String(ta.value || '').trim();
   if (!text) { showToast('Write a comment first.', 'toast-warn'); return; }
-  const audio = document.getElementById('qa-audio');
-  const atSec = audio ? (audio.currentTime || 0) : 0;
+  if (!QA_STATE.pin) qaOnCommentInput_();   // a paste with no input event — pin now
+  const atSec = qaPinnedAtSec_();
+  if (atSec == null) { showToast('The pinned time must read m:ss (e.g. 4:05).', 'toast-warn'); return; }
   const btn = document.getElementById('qa-comment-btn');
+  const stay = document.getElementById('qa-comment-stay-btn');
   if (btn) btn.disabled = true;
+  if (stay) stay.disabled = true;
   google.script.run
     .withSuccessHandler(function (res) {
       if (btn) btn.disabled = false;
+      if (stay) stay.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Comment failed.', 'toast-error'); return; }
       ta.value = '';
+      QA_STATE.pin = null;
+      qaRenderPinRow_();
+      if (resume) { const audio = document.getElementById('qa-audio'); if (audio) { try { audio.play(); } catch (e) {} } }
       if (QA_STATE.det && QA_STATE.det.fileId === r.fileId) qaLoadComments_(r.fileId);
     })
     .withFailureHandler(function (err) {
       if (btn) btn.disabled = false;
+      if (stay) stay.disabled = false;
       showToast('Comment failed: ' + (err && err.message), 'toast-error');
     })
     .qaAddComment(r.fileId, atSec, text);
+}
+function qaDiscardComment_() {
+  const ta = document.getElementById('qa-comment-text');
+  const pin = QA_STATE.pin;
+  if (ta) ta.value = '';
+  QA_STATE.pin = null;
+  qaRenderPinRow_();
+  if (pin && pin.wasPlaying) { const audio = document.getElementById('qa-audio'); if (audio) { try { audio.play(); } catch (e) {} } }
 }
 
 function qaDeleteComment_(commentId) {
@@ -860,6 +1377,38 @@ function qaDeleteComment_(commentId) {
         .withFailureHandler(function (err) { showToast('Remove failed: ' + (err && err.message), 'toast-error'); })
         .qaDeleteComment(commentId);
     });
+}
+
+// ── Q7: coaching hand-off ──────────────────────────────────────────────────
+// Managers only; needs the call attributed to a ROSTER agent (the coaching
+// record keys off the employee id, not a free-text name). The narrative is
+// seeded from the timestamped comments; the composer keeps the qaFileId so
+// the coaching card links back (K13 — the COACH_PREFILL park-and-consume hint).
+function qaRenderCoachPanel_() {
+  const host = document.getElementById('qa-coach-panel');
+  const r = QA_STATE.det, d = QA_STATE.queue || {};
+  if (!host || !r) return;
+  if (!d.isManager) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  const n = (QA_STATE.comments || []).length;
+  if (r.agentEmpId) {
+    host.innerHTML = '<h2 class="card-label">Coach on this call</h2>' +
+      '<div class="qa-note" style="margin:0 0 10px">Opens the Coaching composer for <strong>' + esc(r.agent || '') + '</strong> with ' +
+        (n ? n + ' timestamped comment' + (n === 1 ? '' : 's') + ' as the narrative.' : 'this recording linked.') + '</div>' +
+      '<button type="button" class="qa-btn prime" onclick="qaCoachOnThis_()">' + (typeof icon === 'function' ? icon('bulb', 14) : '') + ' Coach on this call</button>';
+  } else {
+    host.innerHTML = '<h2 class="card-label">Coach on this call</h2>' +
+      '<div class="qa-note" style="margin:0">' + (String(r.agent || '').trim()
+        ? 'The agent name is not on the roster — save the exact roster spelling to coach on it.'
+        : 'Attribute the call to a roster agent to coach on it.') + '</div>';
+  }
+}
+function qaCoachOnThis_() {
+  const r = QA_STATE.det;
+  if (!r || !r.agentEmpId) return;
+  const what = (QA_STATE.comments || []).map(function (c) { return qaFmtClock_(c.atSec) + ' — ' + String(c.text || ''); }).join('\n');
+  window.COACH_PREFILL = { empId: r.agentEmpId, qaFileId: r.fileId, what: what };
+  enterTool('develop', 'coaching');
 }
 
 // ── Phase 2: scorecards ────────────────────────────────────────────────────
@@ -899,12 +1448,19 @@ function qaLoadScorecards_(fileId) {
     .qaListScorecards(fileId);
 }
 
+/** Q3 — the form carries its anchors (what 1 / 3 / 5 mean) and a running
+ *  average + completeness line, toned by the shared qaScoreTone_. */
 function qaRenderScoreForm_() {
   const host = document.getElementById('qa-score-form');
   if (!host) return;
   const crit = QA_STATE.criteria || [];
   if (!crit.length) { host.innerHTML = ''; return; }
-  host.innerHTML = crit.map(function (c) {
+  const avg = qaCardAvg_(QA_STATE.ratings);
+  const rated = Object.keys(QA_STATE.ratings).length;
+  const tone = qaScoreTone_(avg);
+  host.innerHTML =
+  '<div class="qa-score-anchors" aria-hidden="true"><span>1 · missed</span><span>3 · met</span><span>5 · exemplary</span></div>' +
+  crit.map(function (c) {
     const cur = QA_STATE.ratings[c.key];
     return '<div class="qa-score-row"><span>' + esc(c.label) + '</span>' +
       '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + ' rating">' +
@@ -913,6 +1469,12 @@ function qaRenderScoreForm_() {
           '" aria-label="' + esc(c.label) + ': ' + v + ' of 5" onclick="qaSetRating_(\'' + esc(c.key) + '\', ' + v + ')">' + v + '</button>';
       }).join('') + '</div></div>';
   }).join('') +
+  '<div class="qa-score-running" aria-live="polite">' +
+    (avg == null
+      ? '<span>No criteria rated yet</span>'
+      : '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>running avg ' + esc(String(avg)) + ' /5</span>') +
+    '<span>' + rated + ' of ' + crit.length + ' rated</span>' +
+  '</div>' +
   '<textarea class="qa-score-notes" id="qa-score-notes" aria-label="Scorecard notes" placeholder="Notes (optional)">' + esc(QA_STATE.scoreNotes || '') + '</textarea>' +
   '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
     '<button type="button" class="qa-btn prime" id="qa-score-save" onclick="qaSubmitScorecard_()">Save scorecard</button>' +
@@ -960,22 +1522,31 @@ function qaCardAvg_(ratings) {
   });
   return n ? Math.round((sum / n) * 10) / 10 : null;
 }
+/** The mean of several cards' own averages (a recording's overall) — null
+ *  when no card carries a rating. */
+function qaCardsAvg_(cards) {
+  let sum = 0, n = 0;
+  (cards || []).forEach(function (c) { const a = qaCardAvg_(c && c.ratings); if (a != null) { sum += a; n++; } });
+  return n ? Math.round((sum / n) * 10) / 10 : null;
+}
 
 /** Shared scorecard-list markup — the detail's list AND the agent-facing My
  *  Reviews render through this ONE builder, so the two surfaces cannot drift
- *  (every string esc()'d). */
+ *  (every string esc()'d; every 1..5 figure toned by qaScoreTone_). */
 function qaScorecardListHtml_(cards, criteria) {
   const critLabel = {};
   (criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
   return (cards || []).map(function (c) {
     const avg = qaCardAvg_(c.ratings);
+    const avgTone = qaScoreTone_(avg);
     return '<div class="qa-sc-item">' +
       '<div class="qa-sc-meta"><strong>' + esc(c.name || '') + '</strong>' +
-        (avg != null ? '<span>avg ' + esc(String(avg)) + '/5</span>' : '') +
+        (avg != null ? '<span class="qa-sc-chip"' + (avgTone ? ' data-tone="' + avgTone + '"' : '') + '>avg ' + esc(String(avg)) + '/5</span>' : '') +
         '<span>' + esc(qaFmtDate_(c.createdMs)) + '</span></div>' +
       '<div class="qa-sc-meta" style="margin-top:4px">' +
         Object.keys(c.ratings || {}).map(function (k) {
-          return '<span class="qa-sc-chip">' + esc(critLabel[k] || k) + ' ' + esc(String(c.ratings[k])) + '</span>';
+          const tone = qaScoreTone_(c.ratings[k]);
+          return '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(critLabel[k] || k) + ' ' + esc(String(c.ratings[k])) + '</span>';
         }).join('') + '</div>' +
       (c.notes ? '<div style="margin-top:4px">' + esc(c.notes) + '</div>' : '') +
       '</div>';
@@ -1017,8 +1588,7 @@ function enterQaStatsView() {
 
 function qaRenderStats_(d) {
   const area = document.getElementById('view-area');
-  let html = '';
-  if (!COMPACT_MODE) html += '<div class="view-title-row"><h1>QA · Stats</h1></div>';
+  let html = qaAppBarHtml_('Stats', 'Stats', 'Per-agent review counts and scorecard averages, plus reviewer calibration.', '');
   if (d.notConfigured) {
     area.innerHTML = html + '<div class="qa-empty">QA is not set up yet — see the Recordings tab.</div>';
     return;
@@ -1080,8 +1650,8 @@ function qaRenderStats_(d) {
 
 // ===== My Reviews (Phase 3 — the agent-facing, read-only tab) =====
 // Employee-gated server-side (getMyQaReviews); scoped to recordings
-// attributed to the caller's name AND explicitly shared. No audio here —
-// playback stays behind the canSeeQa_ Drive boundary (a follow-on).
+// attributed to the caller's name AND explicitly shared. Playback stays
+// behind the scoped getMyQaReviewAudioChunk (never the reviewer endpoint).
 
 function enterQaMyReviewsView() {
   if (typeof stopClock === 'function') stopClock();
@@ -1110,10 +1680,14 @@ function enterQaMyReviewsView() {
     .getMyQaReviews();
 }
 
+/** Q3 — the read-only note leads (an info callout, not a footer), each card
+ *  carries its overall average prominently, and playback gets the SAME
+ *  transport as the reviewer detail (qaRenderTransportFor_). Still no
+ *  reviewer controls — the ONLY onclick is Play. */
 function qaRenderMyReviews_(d) {
   const area = document.getElementById('view-area');
-  let html = '';
-  if (!COMPACT_MODE) html += '<div class="view-title-row"><h1>My Reviews</h1></div>';
+  let html = qaAppBarHtml_('My Reviews', 'My Reviews', 'Call reviews your reviewer chose to share with you.', '');
+  html += '<div class="qa-callout" role="note">Read-only. These are reviews a reviewer shared with you — scores, notes and timestamped comments. Timestamps are positions in the call recording. Talk to your manager about anything here.</div>';
   const recs = d.recordings || [];
   if (!recs.length) {
     area.innerHTML = html + '<div class="qa-empty">No reviews have been shared with you yet. When a reviewer shares a call review, it appears here.</div>';
@@ -1122,10 +1696,15 @@ function qaRenderMyReviews_(d) {
   recs.forEach(function (r) {
     const when = r.createdMs ? new Date(r.createdMs).toLocaleDateString() : '';
     const shared = r.sharedMs ? new Date(r.sharedMs).toLocaleDateString() : '';
+    const overall = qaCardsAvg_(r.scorecards);
+    const tone = qaScoreTone_(overall);
     html += '<div class="qa-myrev-card">' +
       '<div class="qa-myrev-head">' +
         '<span class="qa-myrev-name">' + esc(r.name || r.fileId) + '</span>' +
         '<span class="qa-note" style="margin:0">' + (when ? 'call ' + esc(when) + ' · ' : '') + 'shared ' + esc(shared) + '</span>' +
+        (overall != null
+          ? '<span class="qa-avg-big"><span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(String(overall)) + ' <small>/5</small></span></span>'
+          : '') +
       '</div>' +
       // Follow-on (2026-08-28): playback of the SHARED recording through the
       // SCOPED endpoint (getMyQaReviewAudioChunk — never the reviewer-gated
@@ -1149,7 +1728,6 @@ function qaRenderMyReviews_(d) {
     }
     html += '</div>';
   });
-  html += '<div class="qa-note">Read-only — talk to your manager about anything here. Timestamps refer to positions in the call recording.</div>';
   area.innerHTML = html;
 }
 
@@ -1194,8 +1772,12 @@ function qaMyRevPlay_(fileId) {
           QA_STATE.myRevObjectUrl = URL.createObjectURL(blob);
           const el = document.getElementById('qa-mra-' + fileId);
           if (!el) return;
-          el.innerHTML = '<audio controls preload="metadata" aria-label="Shared call recording player" style="width:100%;max-width:520px"></audio>';
+          el.innerHTML = '<audio controls preload="metadata" aria-label="Shared call recording player" style="width:100%;max-width:520px"></audio>' +
+            '<div class="qa-transport"></div>';
           el.querySelector('audio').src = QA_STATE.myRevObjectUrl;
+          // Q3 — transport parity with the reviewer detail (the SAME renderer,
+          // bound to this card's own audio element; per-card speed state).
+          try { qaRenderTransportFor_(el.querySelector('.qa-transport'), el.querySelector('audio'), { speed: 1 }); } catch (e) { /* decoration only */ }
           // Follow-on (2026-08-28): the detail's Phase-2 waveform chrome on
           // the agent player — strictly DECORATION (size gate; every failure
           // leaves the plain audio element), with click-to-seek and a

@@ -21,11 +21,103 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 713 + DOM 101;
-  visual matrix on demand — 67 scenarios, last full shoot 2026-09-01 clean, 67/67;
-  Regression Scenarios run to S96)
+Test Command: manual (Node harnesses: `npm test` = pure 741 + DOM 104;
+  visual matrix on demand — 92 scenarios, last full shoot 2026-09-01 clean, 67/67
+  (the 20 design-handoff additions shot individually, all clean);
+  Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02
+Updated: 2026-09-02 (PR 6 of the design handoff landed — the handoff is COMPLETE)
+
+## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
+The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
+Clock) is being implemented from `docs/design_handoff_five_surfaces/IMPLEMENTATION_PLAN.md`
+(revision 2.1 — every conflict resolved, all 13 operator decisions recorded in
+its §3; the detail docs live at `docs/*_HANDOFF.md` + `docs/*.dc.html`). Six PRs
+in the plan's §4 order. **PR 1 (cross-cutting sweep) is DONE (`bcba743`;
+shoot 67/67 clean)** — block: `.cycle/blocks/19pre-design-pr1-broad-implement.md`.
+**PR 2 (Admin) is DONE** — block: `.cycle/blocks/19pre-design-pr2-broad-implement.md`:
+six Admin sub-tabs with a findings-first System tab; `cnHealthFindings_` is the ONE
+derivation for list + cards + badge (INV-186 amended); storage inventory on
+`mtRenderTable_`; X7 on all four loaders; pure 722 / DOM 101; 11/11 bites;
+visual matrix 72 (5 new System scenarios incl. `?fixture=empty` all-clear and a
+forced-fail error state). **PR 3 (Manage) is DONE (`e50ef8b` + the app-bar
+follow-up)** — block: `.cycle/blocks/19pre-design-pr3-broad-implement.md`:
+Manage Time grouped Needs-you / Periodic-collapsed with a summary row fed by the
+lazy cards; Coverage + Punctuality on `mtDateRange_` (forward vs backward
+presets); `getPunctualityReport` gains the 92-day cap, prior-range delta,
+`dayDetail` (FIVE states — `nopunch` added beyond the handoff's four, INV-187),
+weekly buckets, outliers + Coach-on-this via `COACH_PREFILL`; the shared
+`.app-bar` now stacks its control at ≤540px (the one measured defect); pure
+727 / DOM 101; 9/9 bites; matrix 78 (6 new scenarios; `coverage` left the
+gap marker). Doc conflicts resolved in the codebase's favour: the fifth day
+state, and the handoff's Punctuality Export button NOT built (outside M1–M8).
+**PR 4 (Coaching) is DONE (`29e6870` + the empty-shape/docs follow-up)** — block:
+`.cycle/blocks/19pre-design-pr4-broad-implement.md`: five trailing Coaching
+columns; business-day overdue through `coachBizOpts_`; reply on acknowledge;
+praise out of open counts + the ack-rate denominator; `setCoachingFollowUp` +
+`nudgeCoaching`; critical-only immediate mail + retraction on void;
+`sendCoachingRecapDigest` (trigger #19, Friday 8am, heartbeat `coachingRecap`);
+the tab rebuilt on the app-bar with a signal board (`coachRepSignal_` — a
+FIFTH `nosignal` tier, INFO-toned), filter strip (`umsCoachingFilter`, the
+17th localStorage key), a composer DRAWER (shared `.modal.drawer`), rep
+recognition feed + callout + reply boxes; note/QA drill hand-offs; pure 734 /
+DOM 102; 10/10 bites; matrix 87 (9 coaching scenarios + the `?role=rep` hook).
+Doc conflicts resolved in the codebase's favour: praise EXCLUDED from the
+denominator (the handoff's wording was ambiguous), five columns not three,
+the dead `enterTool('callnotes')` drill replaced by the date-keyed hints, the
+two-level crumb `Training › Coaching`, and `nosignal` taking precedence over
+steady/clear. `runAllTests()` now expects **307**; `installAutomationTriggers()`
+must be re-run once for the 19th trigger.
+**PR 5 (QA) is DONE (`bb11d85` + the polish/docs follow-up)** — block:
+`.cycle/blocks/19pre-design-pr5-broad-implement.md`: coverage-first queue
+(`getQaQueue(period).coverage[]` via the pure `qaCoverageRows_`; month/quarter
+periods from `DriveCreatedMs`; `CONFIG.QA_AUDIT_TARGET_PER_PERIOD` = 3 with a
+Script Property override; `QaExemptions` tab + manager-gated `qaSetExemption`,
+eligibility = two COVERED periods at ≥4.5 and no criterion <4); target-aware
+sampler ("Sample the gaps for me (N)"); `DurationSec` + `SkipReason` trailing
+columns (self-healing header; write-once duration; Skip asks a reason); the
+recordings list as a sortable `mtRenderTable_`; pause-and-pin comments (the
+post sends the PIN); two-pane detail; shared transport + score-tone helper on
+My Reviews (QA-14 stays gated — decision 13); Coach-on-this-call →
+`COACH_PREFILL`; two-level crumbs; `umsQaPeriod` (18th localStorage key);
+pure 738 / DOM 103; 12/12 bites; matrix 90 (3 new QA scenarios; the fixture
+calls the verbatim `qaCoverageRows_`). Doc conflicts resolved in the
+codebase's favour: eligibility tightened to two COVERED periods, the handoff's
+Export not built, transport parity shipped despite decision 13, period
+arithmetic server-only. `runAllTests()` still expects **307** (gate cases grew
+IN PLACE). ONE pre-existing DOM flake noted, not fixed: the resume-request test
+fails for the minute after IST midnight (18:30 UTC) — its `'00:01:00'` fixture.
+**PR 6 (Time Clock) is DONE — the five-surface handoff is COMPLETE (all six PRs
+on `claude/ums-team-tools-design-r8ar3o`).** Block:
+`.cycle/blocks/19pre-design-pr6-broad-implement.md`: `getMyPendingTasks` (six
+sources — training / coaching / notes / requests / sched / docs — each catching
+into `unavailable[]`, cached 120s per rep on CLEAN rounds only, routes pinned
+against the TOOLS registry, notes item = previous WORKDAY's answered − notes via
+a `CLK_NAV_HINT` hand-off) + the Needs-you block leading `#dash-main`
+(skeleton / error card / clean-empty renders nothing / unavailable line;
+compact-gated BEFORE any RPC); the clock card's state line on a literal-colour
+scrim with hours rendered ONCE; the rail reordered card → actions → strip
+(MEASURED 704 → 367px prime-button top at 1440×900); the rotator HELD on an
+active shift; break chips absorbing the next-break chip (taken/now/next +
+countdown); the world-clock strip, shooting star, greeting pill, next-break
+chip and pending-Training card RETIRED under a derived ban pin. Pure 741 / DOM
+104; 15/15 bites; matrix 92 (empty + error Needs-you scenarios). Doc conflicts
+resolved in the codebase's favour: QA source omitted + Requests = dept requests
++ docs as sixth kind (operator decision 3); hours once on the state line
+(decision 4); `.greet-held` chip not built; `clkNextBreak_` kept for the chips.
+`runAllTests()` now expects **308**. The one defect found on CAMERA: the
+break-chip minute-guard survived a same-minute re-render (fixed + pinned).
+Follow-ons: the §3d undo label with countdown is NOT built; the Needs-you
+list refreshes on the next Dashboard enter after an action (no per-source
+invalidation); the pre-existing IST-midnight DOM flake stands.
+Next: nothing in flight — the operator's single deploy (`clasp push -f` + New
+version, then `runAllTests()` → 308, `installAutomationTriggers()` once) ships
+PRs #176–#220 plus the six handoff PRs together. Facts PR 3+ depended on: `mtDateRange_`/`mtPctTone_` now exist in
+`script_core.html` (Metrics is the first consumer; Punctuality + Coverage
+adopt in PR 3); `?fixture=empty` exists in `mock.js` with an empty
+`EMPTY_FIXTURES` map that each block fills (the PR1-4 pin's `OWED` list grows
+with it); the `.toolbar-tabs` strip wraps ≤480px, so the six-tab Admin strip
+needs no further affordance work in PR 2.
 
 ## In progress (facts to carry forward — NOT judgments)
 - Seams F1–F5 implemented, tested (585 pure / 75 DOM, all green), and

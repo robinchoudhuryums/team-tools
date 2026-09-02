@@ -1628,6 +1628,84 @@ function esc(s) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ── Shared percent-band tone (Metrics + Punctuality) ─────────────────────
+// One tri-tone banding rule with the thresholds passed IN. Metrics' legacy
+// mPctClass_(p, thr) delegates here with (thr, 50); Punctuality passes its own
+// 90/75 (the design handoff's "reuse the mechanism, not the numbers"). A null
+// value stays UNCLASSED — absence is not a low score (INV-187).
+function mtPctTone_(p, hi, lo) {
+  return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= lo ? 'm-pct-mid' : 'm-pct-low');
+}
+
+// ── Shared date-range control (.mt-range) ─────────────────────────────────
+// The Metrics vocabulary — pressed-state preset chips + a "Custom…" disclosure
+// chip that reveals the raw date inputs — extracted so Punctuality (backward
+// presets) and Coverage (forward presets) render the SAME control instead of
+// three drifting ones (design handoff, Manage §1). The helper renders markup
+// only; the caller owns the state (which preset is active, whether Custom is
+// remembered open) and the input row's contents.
+//   opts.scope      — identifies the strip for sync/toggle ('my' | 'team' | …)
+//   opts.presets    — [{ key, label }] in display order
+//   opts.active     — the key the current selection matches, or '' (none)
+//   opts.onPreset   — GLOBAL fn name, called as onPreset('<key>')
+//   opts.rowId      — id of the custom row (see mtDateRangeRow_)
+//   opts.customOpen — whether the row renders open
+//   opts.onToggle   — global fn name for the Custom chip (default
+//                     'mtDateRangeToggle_'); called as onToggle(scope, rowId)
+//   opts.className  — extra class(es) on the strip; opts.ariaLabel — group label
+// The Custom chip is a state chip AND a disclosure (INV-174): pressed when the
+// selection matches no preset, expanded when the row is visible.
+function mtDateRange_(opts) {
+  opts = opts || {};
+  var scope = String(opts.scope || 'range');
+  var active = opts.active || '';
+  var onPreset = String(opts.onPreset || '');
+  var onToggle = String(opts.onToggle || 'mtDateRangeToggle_');
+  var rowId = String(opts.rowId || '');
+  var h = '<div class="toolbar-tabs mt-range' + (opts.className ? ' ' + esc(opts.className) : '') + '"' +
+    ' data-range-scope="' + esc(scope) + '" role="group" aria-label="' + esc(opts.ariaLabel || 'Range preset') + '">';
+  (opts.presets || []).forEach(function (p) {
+    var key = String(p.key);
+    h += '<button type="button" class="toolbar-tab" data-preset="' + esc(key) + '"' +
+      ' aria-pressed="' + (active === key ? 'true' : 'false') + '"' +
+      (onPreset ? ' onclick="' + esc(onPreset) + '(\'' + esc(key) + '\')"' : '') + '>' + esc(p.label) + '</button>';
+  });
+  if (rowId) {
+    h += '<button type="button" class="toolbar-tab mt-range-custom" data-custom="' + esc(scope) + '"' +
+      ' aria-pressed="' + (active === '' ? 'true' : 'false') + '"' +
+      ' aria-expanded="' + (opts.customOpen ? 'true' : 'false') + '" aria-controls="' + esc(rowId) + '"' +
+      ' onclick="' + esc(onToggle) + '(\'' + esc(scope) + '\', \'' + esc(rowId) + '\')">Custom&hellip;</button>';
+  }
+  return h + '</div>';
+}
+/** The custom-inputs row the chip discloses. `.m-custom-row[hidden]` carries
+ *  its own display:none (the [hidden]-vs-display-class trap — see CLAUDE.md). */
+function mtDateRangeRow_(rowId, open, innerHtml) {
+  return '<div class="m-controls m-custom-row" id="' + esc(rowId) + '"' + (open ? '' : ' hidden') + '>' +
+    (innerHtml || '') + '</div>';
+}
+/** Re-press the chips after the selection changed (a manual date edit
+ *  un-presses every preset and presses Custom). */
+function mtDateRangeSync_(scope, active) {
+  active = active || '';
+  document.querySelectorAll('.mt-range[data-range-scope="' + scope + '"] .toolbar-tab[data-preset]').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.getAttribute('data-preset') === active ? 'true' : 'false');
+  });
+  var c = document.querySelector('.mt-range-custom[data-custom="' + scope + '"]');
+  if (c) c.setAttribute('aria-pressed', active === '' ? 'true' : 'false');
+}
+/** Toggle the row; returns the new open state (true/false) so the caller can
+ *  remember it across re-renders, or null when the row is not in the DOM. */
+function mtDateRangeToggle_(scope, rowId) {
+  var row = document.getElementById(rowId);
+  if (!row) return null;
+  var next = !!row.hidden;   // hidden → open it
+  row.hidden = !next;
+  var chip = document.querySelector('.mt-range-custom[data-custom="' + scope + '"]');
+  if (chip) chip.setAttribute('aria-expanded', String(next));
+  return next;
+}
+
 // ── Shared sortable data table (.m-table) ──────────────────────────────────
 // One config-driven renderer for the Metrics team table AND the Call Notes
 // manager Stats table (deferred #1 — they were two near-identical hand-rolled

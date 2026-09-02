@@ -236,13 +236,8 @@
    shared .toolbar-tab pressed-state chips; INV-184: no dead selectors.) */
 
 /* ── #2/#3 — Custom… + Match-diagnostics disclosures ─────────────── */
-.m-custom-row { margin-top: calc(-1 * var(--space-xs)); }
-/* The class rule `.m-controls { display:flex }` out-specifies the UA's
-   `[hidden] { display:none }`, so the attribute alone never hides the row —
-   the classic hidden-vs-display override. MEASURED (the first shoot rendered
-   both custom rows visible with a preset active); this rule restores the
-   attribute's meaning at higher specificity. */
-.m-custom-row[hidden] { display: none; }
+/* .m-custom-row (+ its [hidden] companion) moved to styles_design_tokens.html
+   when the range control became the shared mtDateRange_ (design handoff). */
 .m-diag { margin-top: var(--space-md); }
 .m-diag-toggle {
   appearance: none; -webkit-appearance: none; font: inherit; font-size: 0.78rem;
@@ -555,20 +550,18 @@ function enterMetricsMyStatsView() {
       // 7D/30D = server-AGGREGATED ranges (#1). A specific past day / custom
       // span lives behind the shared Custom… disclosure (operator #2 — the
       // three overlapping pickers were clutter, worst on mobile).
-      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
-        mMyPresetBtn_('Yesterday', 'yesterday') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
-        mCustomChip_('my', 'm-my-custom') +
-      '</div>' +
+      mtDateRange_({ scope: 'my', className: 'm-preset-tabs', ariaLabel: 'Range preset',
+        presets: [{ key: 'yesterday', label: 'Yesterday' }, { key: '7d', label: '7D' }, { key: '30d', label: '30D' }],
+        active: mMyActivePreset_(), onPreset: 'mMyPreset_',
+        rowId: 'm-my-custom', customOpen: mCustomRowOpen_('my', mMyActivePreset_()), onToggle: 'mToggleCustom_' }) +
       '<button class="refresh-btn" onclick="mLoadMyStats_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
-    '<div class="m-controls m-custom-row" id="m-my-custom"' +
-      (mCustomRowOpen_('my', mMyActivePreset_()) ? '' : ' hidden') + '>' +
+    mtDateRangeRow_('m-my-custom', mCustomRowOpen_('my', mMyActivePreset_()),
       '<label style="font-size:0.85rem;color:var(--muted)" for="m-my-date">Day</label>' +
       '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px" for="m-my-from">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
-      '<input type="date" id="m-my-to" aria-label="Range end" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
-    '</div>' +
+      '<input type="date" id="m-my-to" aria-label="Range end" value="' + esc(M_STATE.myTo) + '" title="Range end">') +
     '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-my-date').addEventListener('change', function () {
@@ -587,9 +580,7 @@ function enterMetricsMyStatsView() {
   mLoadMyStats_();
 }
 
-function mMyPresetBtn_(label, key) {
-  return '<button class="toolbar-tab" data-my-preset="' + key + '" aria-pressed="' + (mMyActivePreset_() === key) + '" onclick="mMyPreset_(\'' + key + '\')">' + label + '</button>';
-}
+// (mMyPresetBtn_ retired — the shared mtDateRange_ renders the preset chips.)
 /** Which preset (if any) the current selection matches — for the pressed state. */
 function mMyActivePreset_() {
   var today = mTodayIso_();
@@ -602,42 +593,26 @@ function mMyActivePreset_() {
 }
 function mMyStatsSyncPresets_() {
   var active = mMyActivePreset_();
-  document.querySelectorAll('.m-preset-tabs .toolbar-tab[data-my-preset]').forEach(function (b) {
-    b.setAttribute('aria-pressed', b.getAttribute('data-my-preset') === active ? 'true' : 'false');
-  });
-  // #2 — the Custom chip is "pressed" when the selection matches no preset.
-  var cEl = document.querySelector('.m-custom-chip[data-custom="my"]');
-  if (cEl) cEl.setAttribute('aria-pressed', active === '' ? 'true' : 'false');
+  // #2 — shared control: presses the matching chip, and Custom when none match.
+  mtDateRangeSync_('my', active);
   var dEl = document.getElementById('m-my-date'); if (dEl && M_STATE.myMode === 'single') dEl.value = M_STATE.myDate;
   var fEl = document.getElementById('m-my-from'); if (fEl) fEl.value = M_STATE.myFrom || '';
   var tEl = document.getElementById('m-my-to'); if (tEl) tEl.value = M_STATE.myTo || '';
 }
 
-// ── #2 — shared "Custom…" disclosure chip (both Metrics tabs) ─────────
-/** Pressed = the current selection matches no preset; expanded mirrors the
- *  input row's visibility (aria-expanded + aria-controls — INV-174). */
-function mCustomChip_(which, rowId) {
-  var active = (which === 'my') ? mMyActivePreset_() : mTeamActivePreset_();
-  var open = mCustomRowOpen_(which, active);
-  return '<button type="button" class="toolbar-tab m-custom-chip" data-custom="' + which + '"' +
-    ' aria-pressed="' + (active === '' ? 'true' : 'false') + '"' +
-    ' aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + rowId + '"' +
-    ' onclick="mToggleCustom_(\'' + which + '\', \'' + rowId + '\')">Custom&hellip;</button>';
-}
+// ── #2 — "Custom…" disclosure (both Metrics tabs) ──────────────────────
+// The chip itself is rendered by the shared mtDateRange_ (script_core); these
+// two keep the Metrics-specific STATE — which row is remembered open.
 /** Render-time visibility: a remembered open state OR a selection no preset
  *  describes (the inputs ARE the description of the current view then). */
 function mCustomRowOpen_(which, activePreset) {
   return !!(M_STATE.customOpen && M_STATE.customOpen[which]) || activePreset === '';
 }
 function mToggleCustom_(which, rowId) {
-  var row = document.getElementById(rowId);
-  if (!row) return;
-  var next = row.hidden;   // hidden → open it
-  row.hidden = !next;
+  var next = mtDateRangeToggle_(which, rowId);
+  if (next === null) return;
   M_STATE.customOpen = M_STATE.customOpen || {};
   M_STATE.customOpen[which] = next;
-  var chip = document.querySelector('.m-custom-chip[data-custom="' + which + '"]');
-  if (chip) chip.setAttribute('aria-expanded', String(next));
 }
 /** Yesterday = the previous workday, single (rich); 7D/30D = aggregated
  *  ranges ending today (#1 — today contributes nothing to the aggregate since
@@ -1135,8 +1110,7 @@ function mRailRow_(label, value, toneOrSub, sub, spark) {
  *  a rep green while they sit below the line the sidebar alert fires on);
  *  absent (older cached payload) → the legacy 80 band. Mid stays ≥50. */
 function mPctClass_(p, thr) {
-  var hi = (thr != null) ? thr : 80;
-  return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low');
+  return mtPctTone_(p, (thr != null) ? thr : 80, 50);   // the shared band rule (script_core)
 }
 
 // §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
@@ -1297,20 +1271,18 @@ function enterMetricsTeamView() {
     // the Custom… disclosure hiding the raw date inputs until wanted.
     // (A1 still holds: every chip is a <button>, keyboard-reachable.)
     '<div class="m-controls">' +
-      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
-        mTeamPresetBtn_('Today', 'today') + mTeamPresetBtn_('Yesterday', 'yesterday') +
-        mTeamPresetBtn_('7D', 'week') + mTeamPresetBtn_('30D', 'month') +
-        mCustomChip_('team', 'm-team-custom') +
-      '</div>' +
+      mtDateRange_({ scope: 'team', className: 'm-preset-tabs', ariaLabel: 'Range preset',
+        presets: [{ key: 'today', label: 'Today' }, { key: 'yesterday', label: 'Yesterday' },
+                  { key: 'week', label: '7D' }, { key: 'month', label: '30D' }],
+        active: mTeamActivePreset_(), onPreset: 'mTeamPreset_',
+        rowId: 'm-team-custom', customOpen: mCustomRowOpen_('team', mTeamActivePreset_()), onToggle: 'mToggleCustom_' }) +
       '<button class="refresh-btn" onclick="mLoadTeamMetrics_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
-    '<div class="m-controls m-custom-row" id="m-team-custom"' +
-      (mCustomRowOpen_('team', mTeamActivePreset_()) ? '' : ' hidden') + '>' +
+    mtDateRangeRow_('m-team-custom', mCustomRowOpen_('team', mTeamActivePreset_()),
       '<label style="font-size:0.85rem;color:var(--muted)" for="m-team-from">From</label>' +
       '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
       '<label style="font-size:0.85rem;color:var(--muted)" for="m-team-to">To</label>' +
-      '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
-    '</div>' +
+      '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">') +
     '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-team-from').addEventListener('change', function () {
@@ -1337,11 +1309,7 @@ function enterMetricsTeamView() {
 
 // #2 — pressed-state preset chips (the My Stats pattern; Team never had an
 // active state at all — the chips were fire-and-forget buttons).
-function mTeamPresetBtn_(label, key) {
-  return '<button class="toolbar-tab" data-team-preset="' + key + '"' +
-    ' aria-pressed="' + (mTeamActivePreset_() === key ? 'true' : 'false') + '"' +
-    ' onclick="mTeamPreset_(\'' + key + '\')">' + label + '</button>';
-}
+// (mTeamPresetBtn_ retired — the shared mtDateRange_ renders the preset chips.)
 /** Which preset (if any) the current from/to matches — for the pressed state. */
 function mTeamActivePreset_() {
   var today = mTodayIso_();
@@ -1353,12 +1321,7 @@ function mTeamActivePreset_() {
   return '';
 }
 function mTeamSyncPresets_() {
-  var active = mTeamActivePreset_();
-  document.querySelectorAll('.m-preset-tabs .toolbar-tab[data-team-preset]').forEach(function (b) {
-    b.setAttribute('aria-pressed', b.getAttribute('data-team-preset') === active ? 'true' : 'false');
-  });
-  var cEl = document.querySelector('.m-custom-chip[data-custom="team"]');
-  if (cEl) cEl.setAttribute('aria-pressed', active === '' ? 'true' : 'false');
+  mtDateRangeSync_('team', mTeamActivePreset_());
 }
 
 function mTeamPreset_(key) {

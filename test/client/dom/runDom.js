@@ -1843,3 +1843,207 @@ test('a hostile stored time renders as a value, never as markup', () => {
   assert.strictEqual(h.document.querySelector('#de-brk-out-0').getAttribute('value'),
     '"><img src=x onerror=alert(1)>', 'the whole payload stayed inside the attribute');
 });
+
+// ── Design handoff PR 4 — the Coaching composer DRAWER (K1). The first DOM
+// test the coaching partial has had: open from a parked COACH_PREFILL (the C8
+// hint is read FIRST, nulled, then acted on), prefilled, named, closes on
+// Escape through the shell's topmost-overlay path, and its onClose is
+// idempotent (the ensureOverlay contract).
+// Design handoff PR 5 (Q1) — pause-and-pin comments. The old composer read
+// audio.currentTime at SUBMIT, so a comment landed wherever the player had
+// drifted to while the reviewer typed (and the "Comment at m:ss" label
+// changed under them). Now the FIRST keystroke pauses + pins; the pin is
+// editable; the post uses the pin. A stubbed <audio> stands in for jsdom's
+// unimplemented media element.
+test('QA-20: the first keystroke pauses and PINS; the post sends the pin, not the drifted playhead', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeQa: true });
+  const rec = { fileId: 'qaFileBbbbbbbb2', name: 'resupply follow-up.mp3', sizeBytes: 100, mime: 'audio/mpeg', createdMs: 1, createdYmd: '2026-09-02',
+    status: 'in_review', statusMs: 0, assignee: 'me@umsupply.com', url: '', agent: 'Ana Reyes', agentEmpId: 'E-1088', sharedMs: 0, durationSec: 0, skipReason: '', comments: 0 };
+  h.run.respond('getQaQueue', () => ({ members: ['me@umsupply.com'], self: 'me@umsupply.com', isManager: true, folderConfigured: true,
+    agentOptions: ['Ana Reyes'], criteria: [], period: '2026-09', periodOptions: [{ key: '2026-09', label: 'Sep 2026' }], target: 3,
+    todayYmd: '2026-09-02', periodEnd: '2026-09-30', recordings: [rec], total: 1, cap: 200, coverage: [] }));
+  h.run.respond('qaListComments', () => ({ comments: [], canModerate: false }));
+  h.run.respond('qaListScorecards', () => ({ scorecards: [], criteria: [], selfEmpId: 'E-1' }));
+  h.run.respond('qaGetAudioChunk', () => ({ success: false, error: 'no audio in jsdom' }));
+  const posted = [];
+  h.run.respond('qaAddComment', (...args) => { posted.push(args); return { success: true }; });
+  h.window.enterTool('qa', 'qaQueue');
+  h.flushTimers();
+  h.read('qaOpenDetail_')('qaFileBbbbbbbb2');
+  h.flushTimers();
+  assert.ok(h.$('#qa-comment-text'), 'the composer rendered');
+  assert.ok(/Start typing to pin/.test(h.$('#qa-pin-row').textContent), 'idle: no live time, an instruction instead');
+  // Stand in for the media element the failed chunk load never mounted.
+  const slot = h.$('#qa-audio-slot');
+  slot.innerHTML = '<div id="qa-audio"></div>';
+  const audio = h.$('#qa-audio');
+  const calls = [];
+  audio.paused = false; audio.ended = false; audio.currentTime = 42.7; audio.duration = 600;
+  audio.pause = function () { calls.push('pause'); audio.paused = true; };
+  audio.play = function () { calls.push('play'); audio.paused = false; };
+  const ta = h.$('#qa-comment-text');
+  ta.value = 'S';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.deepStrictEqual(calls, ['pause'], 'the first keystroke PAUSED playback');
+  assert.strictEqual(h.read('QA_STATE').pin.atSec, 42, 'pinned at the floor of the playhead');
+  assert.strictEqual(h.$('#qa-pin-at').value, '0:42', 'the pin is shown, editable');
+  assert.ok(/paused/.test(h.$('#qa-pin-status').textContent));
+  // The player drifts (a colleague nudges it, a seek) — the pin does not.
+  audio.currentTime = 99;
+  ta.value = 'Strong opening';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.read('QA_STATE').pin.atSec, 42, 'a second keystroke never re-pins');
+  h.read('qaSubmitComment_')(true);   // Post & resume (jsdom never compiles inline onclick — call the handler)
+  assert.strictEqual(posted.length, 1, 'one post');
+  assert.deepStrictEqual(posted[0], ['qaFileBbbbbbbb2', 42, 'Strong opening'], 'posted at the PIN (42), not the playhead (99)');
+  assert.deepStrictEqual(calls, ['pause', 'play'], 'Post & resume resumed playback');
+  assert.strictEqual(ta.value, '', 'composer cleared');
+  assert.strictEqual(h.read('QA_STATE').pin, null, 'pin released');
+  assert.ok(/Start typing to pin/.test(h.$('#qa-pin-row').textContent), 'back to idle');
+  // Edit the pin before posting; Post & stay paused does not resume.
+  audio.currentTime = 10;
+  ta.value = 'Recap too fast';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.$('#qa-pin-at').value = '1:05';
+  h.read('qaSubmitComment_')(false);   // Post & stay paused
+  assert.deepStrictEqual(posted[1], ['qaFileBbbbbbbb2', 65, 'Recap too fast'], 'the edited pin wins');
+  assert.deepStrictEqual(calls, ['pause', 'play', 'pause'], 'stay paused did NOT resume');
+  // A typo'd pin is refused — nothing posts, nothing lands at 0:00.
+  ta.value = 'x';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.$('#qa-pin-at').value = '9:99';
+  h.read('qaSubmitComment_')(true);
+  assert.strictEqual(posted.length, 2, 'no post on an unparseable pin');
+  assert.strictEqual(ta.value, 'x', 'the text is kept for the fix');
+  assert.ok(h.$('#qa-comment-btn') && h.$('#qa-comment-stay-btn'), 'Post & resume / Post & stay paused / Discard render as real buttons');
+  // Discard resumes ONLY if the player was playing when the pin was taken:
+  // this pin was taken on a paused player, so discarding leaves it paused…
+  const before = calls.length;
+  h.read('qaDiscardComment_')();
+  assert.strictEqual(ta.value, '', 'discard clears');
+  assert.strictEqual(h.read('QA_STATE').pin, null);
+  assert.strictEqual(calls.length, before, 'discard did not touch a player that was already paused');
+  // …and a pin taken on a PLAYING player resumes on discard.
+  audio.paused = false;
+  ta.value = 'y';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(calls[calls.length - 1], 'pause', 'typing paused the playing player');
+  h.read('qaDiscardComment_')();
+  assert.strictEqual(calls[calls.length - 1], 'play', 'discard resumed (it was playing when pinned)');
+});
+
+test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes on Escape, close hook idempotent', () => {
+  const h = boot();
+  // flushTimers below would also fire the onboarding tour's auto-start, whose
+  // CAPTURE-phase Escape handler ends the tour and stopImmediatePropagation()s
+  // the key before the shell's overlay handler sees it — mark the tour seen.
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getCoachingDashboard', () => ({ items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+    reminderDays: 7, businessDayMinutes: 540, todayIso: '2026-09-02', analytics: { total: 0, perRep: [], bySeverity: {} } }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] }));
+  h.window.COACH_PREFILL = { empId: 'E-1090', patientTRX: 'TRX-9', noteId: 'n-1', noteDate: '2026-08-30', what: 'prefilled narrative' };
+  h.window.enterTool('develop', 'coaching');
+  h.flushTimers();
+  const ov = h.$('#coach-compose-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'the drawer opened from the prefill');
+  assert.strictEqual(h.window.COACH_PREFILL, null, 'the hint was consumed (nulled) — it cannot fire on a later plain navigation');
+  assert.strictEqual(ov.getAttribute('aria-labelledby'), 'coach-drawer-title', 'named by its visible heading (A14)');
+  assert.ok(h.$('#coach-drawer-title'), 'the heading the name points at exists');
+  assert.strictEqual(h.$('#coach-emp').value, 'E-1090', 'employee preselected');
+  assert.strictEqual(h.$('#coach-trx').value, 'TRX-9', 'TRX prefilled');
+  assert.strictEqual(h.$('#coach-what').value, 'prefilled narrative', 'narrative prefilled');
+  assert.ok(h.$('#coach-note-chip'), 'the linked-note chip renders when a note is prefilled');
+  assert.ok(ov.querySelector('.modal.drawer'), 'the shared side-anchored drawer variant');
+  // Praise mode hides severity + the coaching point and relabels the narrative.
+  h.click('[data-coach-kind="praise"]');
+  assert.strictEqual(h.$('#coach-sev-wrap').hidden, true, 'praise hides the severity chips');
+  assert.strictEqual(h.$('#coach-should-wrap').hidden, true, 'praise hides the coaching point');
+  assert.strictEqual(h.$('#coach-what-label').textContent, 'What they did', 'praise relabels the narrative');
+  h.click('[data-coach-kind="coaching"]');
+  assert.strictEqual(h.$('#coach-sev-wrap').hidden, false, 'back to coaching restores the chips');
+  h.click('[data-coach-sevchip="critical"]');
+  assert.strictEqual(h.$('[data-coach-sevchip="critical"]').getAttribute('aria-checked'), 'true', 'the chip is a radio with aria-checked');
+  // Escape closes through the shell handler → the registered close hook.
+  h.dispatchKey('Escape');
+  assert.ok(!ov.classList.contains('open'), 'Escape closed the drawer');
+  assert.strictEqual(h.read('COACH_DRAWER'), null, 'drawer state cleared');
+  // Idempotent close: calling the hook on an already-closed drawer is a no-op.
+  h.read('coachCloseDrawer_')();
+  h.read('coachCloseDrawer_')();
+  assert.ok(!ov.classList.contains('open'), 'still closed, no throw');
+  // Reopen from the app-bar button with NO prefill: a fresh, empty drawer.
+  h.click('#coach-open-drawer');
+  assert.ok(ov.classList.contains('open'), 'reopened from the button');
+  assert.strictEqual(h.$('#coach-what').value, '', 'no stale prefill leaks into a fresh drawer');
+  assert.ok(!h.$('#coach-note-chip'), 'no linked-note chip without a prefill');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Design handoff PR 6 (T1/T6) — "Needs you". Pending ≠ empty ≠ error, driven
+// through the real renderer into a live DOM, plus the loader's freshness rule
+// and the notes row's CLK_NAV_HINT hand-off.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Time Clock — Needs you (design handoff PR 6)');
+
+test('PR6: Needs you renders skeleton → list → error; clean-empty renders nothing; degraded rounds are never fresh; the notes row hands off through CLK_NAV_HINT', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  // bootShell lands on the Dashboard, whose render already emitted the slot
+  // (and whose loader is in flight — reset it so the assertions below own it).
+  const host = h.$('#dash-needsyou');
+  assert.ok(host, 'the Dashboard rendered the Needs-you slot ABOVE the carousels');
+  assert.ok(host.compareDocumentPosition(h.$('#dash-cards')) & 4, 'and it precedes #dash-cards in the DOM');
+  const NEEDS = h.read('CLK_NEEDS');
+  NEEDS.busy = false;
+  const render = h.read('clkRenderNeedsYou_');
+  // undefined → skeleton (pending is NOT empty)
+  NEEDS.data = undefined; render();
+  assert.ok(host.querySelector('[role="status"] .skel'), 'undefined renders the card-shaped skeleton');
+  // populated → a real list, count announced, overdue in words
+  NEEDS.data = { items: [
+    { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Moderate · logged 2026-08-23', dueIso: '', overdue: true, action: 'Open', route: { tool: 'develop', tab: 'coaching' } },
+    { kind: 'docs', title: 'Annual review', detail: 'review · due 2026-09-01', dueIso: '2026-09-01', overdue: true, action: 'Sign', route: { tool: 'develop', tab: 'myDocs' } },
+    { kind: 'notes', title: '3 calls without a note', detail: 'Answered 2026-09-01', dueIso: '2026-09-01', overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: '2026-09-01', missingCount: 3 } } },
+  ], total: 3, unavailable: [], todayIso: '2026-09-02' };
+  render();
+  const ul = host.querySelector('ul.ny-list');
+  assert.ok(ul && ul.getAttribute('aria-label') === 'Needs you, 3 items', 'a real <ul> with the count announced');
+  assert.strictEqual(ul.querySelectorAll('li a.ny-link').length, 3, 'one real link per item');
+  assert.ok(/2 overdue/.test(host.querySelector('.ny-head-right').textContent), 'the overdue count is in words');
+  assert.ok(/Overdue/.test(ul.children[0].textContent) && /Overdue/.test(ul.children[1].textContent) && !/Overdue/.test(ul.children[2].textContent), 'overdue carried in words per row');
+  assert.ok(ul.children[1].classList.contains('is-past'), 'a past due date takes the stronger tone');
+  // null → the error card (never "nothing pending")
+  NEEDS.data = null; render();
+  assert.ok(host.querySelector('[role="alert"]'), 'null renders the error card');
+  // clean-empty → nothing at all
+  NEEDS.data = { items: [], total: 0, unavailable: [], todayIso: '2026-09-02' }; render();
+  assert.strictEqual(host.innerHTML, '', 'a clean empty round renders nothing');
+  // empty + an unreadable source → the named couldn't-check line
+  NEEDS.data = { items: [], total: 0, unavailable: ['docs'], todayIso: '2026-09-02' }; render();
+  assert.ok(/Couldn't check employee docs/.test(host.textContent), 'an unreadable source is named, never rendered as nothing pending');
+  // Loader freshness: a degraded round never stamps fresh; a clean one does.
+  NEEDS.data = undefined; NEEDS.day = ''; NEEDS.at = 0; NEEDS.busy = false;
+  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: ['sched'], todayIso: '2026-09-02' }));
+  h.read('clkLoadNeedsYou_')();
+  h.flushTimers();
+  assert.strictEqual(NEEDS.at, 0, 'a degraded round is painted but never stamped fresh (INV-129)');
+  assert.ok(NEEDS.data && NEEDS.data.unavailable.length === 1, 'and its payload is kept for the render');
+  NEEDS.busy = false; NEEDS.day = '';
+  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: [], todayIso: '2026-09-02' }));
+  h.read('clkLoadNeedsYou_')();
+  h.flushTimers();
+  assert.ok(NEEDS.at > 0, 'a clean round stamps freshness');
+  // LAST, because it navigates away: the notes row → the coverage strip's
+  // CLK_NAV_HINT hand-off (C8), not a bare enterTool.
+  NEEDS.data = { items: [
+    { kind: 'notes', title: '3 calls without a note', detail: 'Answered 2026-09-01', dueIso: '2026-09-01', overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: '2026-09-01', missingCount: 3 } } },
+  ], total: 1, unavailable: [], todayIso: '2026-09-02' };
+  h.window.CLK_NAV_HINT = null;
+  h.read('clkNeedsYouGo_')(0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.window.CLK_NAV_HINT)), { source: 'coverageStrip', date: '2026-09-01', missingCount: 3 }, 'CLK_NAV_HINT parked for the Call Notes Log');
+  assert.strictEqual(h.read('currentView'), 'callNotes', 'and the Log view is entered');
+});

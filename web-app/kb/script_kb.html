@@ -34,7 +34,7 @@
   /* #4 — review-due row: the kb-item button + a small Mark-reviewed action. */
   .kb-reviewdue-row { display: flex; align-items: center; gap: 2px; }
   .kb-reviewdue-row .kb-item { flex: 1; min-width: 0; }
-  .kb-review-btn { flex-shrink: 0; appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--paper-card); color: var(--success-deep, var(--accent)); border-radius: 7px; padding: 5px 7px; display: inline-flex; align-items: center; transition: background var(--t) var(--ease), border-color var(--t) var(--ease); }
+  .kb-review-btn { flex-shrink: 0; appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--paper-card); color: var(--success-deep); border-radius: 7px; padding: 5px 7px; display: inline-flex; align-items: center; transition: background var(--t) var(--ease), border-color var(--t) var(--ease); }
   .kb-review-btn:hover { background: var(--paper-2); border-color: var(--border-strong); }
   .kb-review-btn svg { width: 13px; height: 13px; }
   .kb-main { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; }
@@ -62,7 +62,7 @@
   .kb-article ul, .kb-article ol { margin: .5em 0; padding-left: 1.5em; }
   .kb-article li { margin: .25em 0; }
   .kb-article a { color: var(--accent); text-underline-offset: 2px; }
-  .kb-article code { background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono, monospace); font-size: .88em; }
+  .kb-article code { background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: .88em; }
   .kb-article pre { background: var(--paper-2); padding: 12px 14px; border-radius: var(--radius); overflow-x: auto; }
   .kb-article pre code { background: none; padding: 0; }
   .kb-article blockquote { border-left: 3px solid var(--accent); background: var(--accent-soft); margin: .8em 0; padding: 8px 14px; border-radius: 0 var(--radius) var(--radius) 0; }
@@ -75,7 +75,7 @@
   .kb-article a.kb-img-lnk { display: inline-block; max-width: 100%; }
   .kb-article .kb-img-pending { display: inline-block; padding: 6px 10px; margin: 4px 0;
     border: 1px dashed var(--muted-3); border-radius: 6px; color: var(--muted-2);
-    font-size: var(--text-sm, 12px); background: var(--paper-2); }
+    font-size: var(--text-sm); background: var(--paper-2); }
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -135,7 +135,7 @@
   .kb-land-rd-open:hover .kb-land-t { color: var(--accent); }
   /* #2 — stale-flag marker (rep "out of date") sits red vs the neutral age dot. */
   .kb-land-dot.stale { background: var(--danger); }
-  .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft, var(--warn-soft)); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
   /* C17 batch-4: the note is a flex CHILD of the .kb-land-rd-open row, so its
      display:block never gave it its own line — at 390px the quote overlapped
      the Reviewed button (screenshot-verified in the cycle-17 scan). Wrap the
@@ -188,7 +188,7 @@
   .kb-ed .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
   .kb-ed label { font-size: .76rem; font-weight: 600; color: var(--muted); }
   .kb-ed input, .kb-ed textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
-  .kb-ed textarea { min-height: 200px; font-family: var(--mono, monospace); font-size: .85rem; resize: vertical; }
+  .kb-ed textarea { min-height: 200px; font-family: var(--mono); font-size: .85rem; resize: vertical; }
   .kb-typetog { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .kb-typetog button { background: var(--paper-2); border: none; padding: 6px 14px; cursor: pointer; font: inherit; color: var(--muted); }
   .kb-typetog button.on { background: var(--accent); color: #fff; }

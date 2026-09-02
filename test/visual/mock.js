@@ -69,6 +69,179 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
   return { start: first.toISOString().substring(0, 10), end: last.toISOString().substring(0, 10), offset: off };
 }
 
+// PR 3 (M2): the punctuality fixture's per-day states and weekly buckets are
+// the SERVER's own rules, not a paraphrase (INV-185).
+function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
+  if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
+  if (holidayName) return 'holiday';
+  if (ptoType) return 'off';
+  return isWeekend ? null : 'nopunch';
+}
+function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
+  const out = [];
+  for (let w = 3; w >= 0; w--) {
+    const bTo = addDays(toIso, -(w * 7));
+    let bFrom = addDays(bTo, -6);
+    if (bFrom < fromIso) bFrom = fromIso;
+    let days = 0, onTime = 0;
+    (dayDetail || []).forEach(function (d) {
+      if (d.date < bFrom || d.date > bTo) return;
+      if (d.state === 'ontime') { days++; onTime++; }
+      else if (d.state === 'late') { days++; }
+    });
+    out.push({ from: bFrom, to: bTo, days: days, onTime: onTime,
+      onTimePct: days ? Math.round((onTime / days) * 100) : null });
+  }
+  return out;
+}
+// PR 5 (Q4): the QA fixture's audit periods + coverage rows come from the
+// SERVER's own period arithmetic and coverage join, not a paraphrase
+// (INV-185) — the fixture CALLS these over its recordings + cards.
+const QA_EXEMPT_AVG_MIN = 4.5;
+const QA_EXEMPT_CRIT_MIN = 4;
+function qaPeriodValid_(key) {
+  const k = String(key || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) || /^\d{4}-Q[1-4]$/.test(k);
+}
+function qaPeriodKeysForYmd_(ymd) {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const mo = Number(m[2]);
+  if (!(mo >= 1 && mo <= 12)) return null;
+  return { month: m[1] + '-' + m[2], quarter: m[1] + '-Q' + Math.ceil(mo / 3) };
+}
+function qaPeriodMatches_(ymd, key) {
+  const ks = qaPeriodKeysForYmd_(ymd);
+  if (!ks) return false;
+  return ks.month === key || ks.quarter === key;
+}
+function qaPrevPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) - 1;
+    if (mo < 1) { mo = 12; y--; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) - 1;
+    if (q < 1) { q = 4; y--; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+function qaPeriodLabel_(key) {
+  const k = String(key || '').trim();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) return MON[Number(m[2]) - 1] + ' ' + m[1];
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) return 'Q' + m[2] + ' ' + m[1];
+  return k;
+}
+function qaPeriodBounds_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), mo = Number(m[2]);
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    return { start: k + '-01', end: k + '-' + (lastDay < 10 ? '0' : '') + lastDay };
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), q = Number(m[2]);
+    const mo1 = (q - 1) * 3 + 1, mo3 = mo1 + 2;
+    const lastDay = new Date(Date.UTC(y, mo3, 0)).getUTCDate();
+    const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return { start: y + '-' + pad(mo1) + '-01', end: y + '-' + pad(mo3) + '-' + pad(lastDay) };
+  }
+  return null;
+}
+function qaPeriodOptions_(todayYmd) {
+  const ks = qaPeriodKeysForYmd_(todayYmd) || { month: '', quarter: '' };
+  const out = [];
+  if (ks.month) out.push({ key: ks.month, label: qaPeriodLabel_(ks.month) });
+  if (ks.quarter) {
+    out.push({ key: ks.quarter, label: qaPeriodLabel_(ks.quarter) });
+    const prev = qaPrevPeriod_(ks.quarter);
+    if (prev) out.push({ key: prev, label: qaPeriodLabel_(prev) });
+  }
+  return out;
+}
+function qaCardStats_(card) {
+  let sum = 0, n = 0, min = Infinity;
+  Object.keys((card && card.ratings) || {}).forEach(function (k) {
+    const v = Number(card.ratings[k]);
+    if (v >= 1 && v <= 5) { sum += v; n++; if (v < min) min = v; }
+  });
+  return n ? { avg: sum / n, min: min, n: n } : null;
+}
+function qaExemptEligible_(row) {
+  if (!row) return false;
+  const target = Number(row.target) || 0;
+  if (!(target > 0)) return false;   // an exempt (target 0) or targetless row is never re-eligible
+  if (!(row.sampled >= target && row.prevSampled >= target)) return false;
+  if (!(row.avg != null && row.prevAvg != null)) return false;
+  if (!(row.avg >= QA_EXEMPT_AVG_MIN && row.prevAvg >= QA_EXEMPT_AVG_MIN)) return false;
+  if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
+  return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
+}
+function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
+  const cardsByFile = {};
+  (latestCards || []).forEach(function (c) {
+    const f = String((c && c.fileId) || '');
+    if (f) (cardsByFile[f] = cardsByFile[f] || []).push(c);
+  });
+  const byName = {};
+  (rosterNames || []).forEach(function (nm) {
+    const n = String(nm || '').trim();
+    if (!n) return;
+    byName[n.toLowerCase()] = { name: n, cur: { sampled: 0, sum: 0, cards: 0, min: Infinity }, prev: { sampled: 0, sum: 0, cards: 0, min: Infinity }, lastReviewedMs: 0 };
+  });
+  (recs || []).forEach(function (r) {
+    if (!r || r.status !== 'done') return;
+    const row = byName[String(r.agent || '').trim().toLowerCase()];
+    if (!row) return;
+    if (Number(r.statusMs) > row.lastReviewedMs) row.lastReviewedMs = Number(r.statusMs);
+    const bucket = qaPeriodMatches_(r.createdYmd, period) ? row.cur
+      : (prevPeriod && qaPeriodMatches_(r.createdYmd, prevPeriod)) ? row.prev : null;
+    if (!bucket) return;
+    bucket.sampled++;
+    (cardsByFile[r.fileId] || []).forEach(function (c) {
+      const st = qaCardStats_(c);
+      if (!st) return;
+      bucket.sum += st.avg; bucket.cards++;
+      if (st.min < bucket.min) bucket.min = st.min;
+    });
+  });
+  const fin = function (b) {
+    return { avg: b.cards ? Math.round((b.sum / b.cards) * 100) / 100 : null,
+             min: b.cards ? b.min : null };
+  };
+  return Object.keys(byName).sort().map(function (k) {
+    const row = byName[k];
+    const cur = fin(row.cur), prev = fin(row.prev);
+    const exempt = !!(exemptions || {})[k + '|' + period];
+    const out = {
+      name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
+      cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
+      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+    };
+    out.eligible = !exempt && qaExemptEligible_(out);
+    return out;
+  });
+}
+function qaLatestScorecards_(cards) {
+  const latest = {};
+  for (let i = 0; i < (cards || []).length; i++) {
+    const c = cards[i] || {};
+    const k = String(c.fileId || '') + '|' + String(c.empId || '');
+    if (!latest[k] || Number(c.createdMs || 0) >= Number(latest[k].createdMs || 0)) latest[k] = c;
+  }
+  return Object.keys(latest).map(function (k) { return latest[k]; });
+}
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -77,6 +250,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
   var todayIso = new Date().toISOString().slice(0, 10);
   function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
   function ts(dIso, hms) { return dIso + 'T' + hms; }
+  function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
   function note(i, over) {
     return Object.assign({
@@ -126,6 +300,23 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       instanceLabel: '',
     },
     getWhatsNew: { none: true },
+    // Design handoff PR 6 — "Needs you". Shape mirrors getMyPendingTasks'
+    // return block (INV-185): {items[], total, cap, overdue, unavailable[],
+    // todayIso, prevWorkday}; item keys mirror the server's push literals
+    // (kind/title/detail/dueIso/overdue/action/route). All six kinds + one
+    // overdue-in-words row + one PAST-due row are on camera; `unavailable`
+    // carries one source so the "couldn't check" line renders too.
+    getMyPendingTasks: {
+      items: [
+        { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Moderate · logged ' + daysAgo(9) + ' by Robin Choudhury', dueIso: '', overdue: true, action: 'Open', route: { tool: 'develop', tab: 'coaching' } },
+        { kind: 'docs', title: 'Annual Performance Review', detail: 'review · needs your signature · due ' + daysAgo(1), dueIso: daysAgo(1), overdue: true, action: 'Sign', route: { tool: 'develop', tab: 'myDocs' } },
+        { kind: 'sched', title: 'Call back — J. Rivera · insurance question', detail: 'Call-back at 9:30 AM', dueIso: todayIso, overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'callNotes' } },
+        { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
+        { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
+        { kind: 'requests', title: 'Request to Shipping · Verified Shipping', detail: 'Sent ' + daysAgo(0), dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+      ],
+      total: 6, cap: 30, overdue: 3, unavailable: ['sched'], todayIso: todayIso, prevWorkday: daysAgo(1),
+    },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
     getAutomationHealthBadge: { failing: false, count: 0 },
@@ -399,28 +590,67 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // {recordings, total, cap}. All three status tones + an assigned-to-you
     // and an assigned-to-other pill are on camera; one card carries a
     // comment count.
-    getQaQueue: {
-      members: ['qa.reviewer@umsupply.com', 'teamtools@umsupply.com'],
-      self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
-      // Phase 2 additive fields: per-item `agent`, plus `agentOptions` (roster
-      // names for the detail's datalist) + `criteria` (the scorecard seed) on
-      // the base — shapes mirror the server's return block (INV-185).
-      agentOptions: ['Ana Reyes', 'David Dhruv Mishra', 'Maria Garcia'],
-      criteria: [
+    getQaQueue: (function () {
+      // PR 5 — the queue is coverage-first: the period arithmetic and the
+      // coverage join are the VERBATIM server copies above (INV-185); the
+      // fixture supplies recordings + cards and lets the join produce rows.
+      // Deliberate variety: a rep at target in two periods at 4.5+ (eligible
+      // for exemption), an EXEMPT rep, a zero-sampled rep (not started), a
+      // short rep whose only card is low (short · low), a SKIPPED recording
+      // with its reason, an UNATTRIBUTED recording, and an in-review one.
+      var opts = qaPeriodOptions_(todayIso);
+      var period = opts[0].key, prev = qaPrevPeriod_(period);
+      var prevYmd = qaPeriodBounds_(prev).end;
+      var ms = function (ymd, h) { return new Date(ymd + 'T' + (h || '15') + ':00:00Z').getTime(); };
+      var criteria = [
         { key: 'greeting',      label: 'Greeting & opening' },
         { key: 'communication', label: 'Communication & tone' },
         { key: 'accuracy',      label: 'Accuracy & process' },
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
-      ],
-      // Phase 3 additive per-item field: `sharedMs` (0 = not shared).
-      recordings: [
-        { fileId: 'qaFileAaaaaaaa1', name: '2026-08-26 inbound 555-0141.mp3', sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: Date.now() - 86400000, status: 'new', assignee: '', url: 'https://drive.google.com/file/d/qaFileAaaaaaaa1/view', agent: '', comments: 0, sharedMs: 0 },
-        { fileId: 'qaFileBbbbbbbb2', name: '2026-08-25 resupply follow-up.mp3', sizeBytes: 11534336, mime: 'audio/mpeg', createdMs: Date.now() - 172800000, status: 'in_review', assignee: 'teamtools@umsupply.com', url: 'https://drive.google.com/file/d/qaFileBbbbbbbb2/view', agent: 'Ana Reyes', comments: 3, sharedMs: 0 },
-        { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav', sizeBytes: 28311552, mime: 'audio/wav', createdMs: Date.now() - 432000000, status: 'done', assignee: 'qa.reviewer@umsupply.com', url: 'https://drive.google.com/file/d/qaFileCccccccc3/view', agent: 'Maria Garcia', comments: 5, sharedMs: Date.now() - 86400000 },
-      ],
-      total: 3, cap: 200,
-    },
+      ];
+      var self = 'teamtools@umsupply.com';
+      var recs = [], cards = [];
+      var rec = function (id, name, ymd, status, assignee, agent, agentEmpId, extra) {
+        var r = { fileId: id, name: name, sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: ms(ymd), createdYmd: ymd,
+          status: status, statusMs: status === 'done' ? ms(ymd, '18') : 0, assignee: assignee || '',
+          url: 'https://drive.google.com/file/d/' + id + '/view', agent: agent || '', agentEmpId: agentEmpId || '',
+          sharedMs: 0, durationSec: 0, skipReason: '', comments: 0 };
+        Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
+        recs.push(r); return r;
+      };
+      var card = function (fileId, empId, name, ratings, ymd) {
+        cards.push({ scorecardId: 'sc-' + cards.length, fileId: fileId, empId: empId, name: name, ratings: ratings, notes: '', createdMs: ms(ymd, '19') });
+      };
+      // David — 3 done this period + 3 done last period, all 4.5+ (eligible).
+      for (var i = 0; i < 3; i++) {
+        var a = rec('qaFileDavid' + i + 'now', prefixDate(todayIso) + ' inbound 555-020' + i + '.mp3', todayIso, 'done', 'qa.reviewer@umsupply.com', 'David Dhruv Mishra', 'E-1093', { durationSec: 420 + i * 95 });
+        card(a.fileId, 'E-1002', 'QA Reviewer', { greeting: 5, communication: 5, accuracy: 4, resolution: 5, compliance: 5 }, todayIso);
+        var b = rec('qaFileDavid' + i + 'prev', prefixDate(prevYmd) + ' inbound 555-030' + i + '.mp3', prevYmd, 'done', 'qa.reviewer@umsupply.com', 'David Dhruv Mishra', 'E-1093', { durationSec: 380 + i * 60 });
+        card(b.fileId, 'E-1002', 'QA Reviewer', { greeting: 5, communication: 4, accuracy: 5, resolution: 5, compliance: 5 }, prevYmd);
+      }
+      // Maria — 1 of 3 done this period, and it scored low (short · low).
+      var mc = rec('qaFileCccccccc3', prefixDate(todayIso) + ' close order review.wav', todayIso, 'done', 'qa.reviewer@umsupply.com', 'Maria Garcia', 'E-1091', { mime: 'audio/wav', sizeBytes: 28311552, comments: 5, sharedMs: Date.now() - 86400000, durationSec: 611 });
+      card(mc.fileId, 'E-1002', 'QA Reviewer', { greeting: 3, communication: 3, accuracy: 3, resolution: 4, compliance: 3 }, todayIso);
+      // Ana — in review only (not started this period); the open detail scenario.
+      rec('qaFileBbbbbbbb2', prefixDate(todayIso) + ' resupply follow-up.mp3', todayIso, 'in_review', self, 'Ana Reyes', 'E-1088', { sizeBytes: 11534336, comments: 3, durationSec: 542 });
+      // Unattributed + new (the Unattributed warn cell); skipped with a reason.
+      rec('qaFileAaaaaaaa1', prefixDate(todayIso) + ' inbound 555-0141.mp3', todayIso, 'new', '', '', '');
+      rec('qaFileEeeeeeee5', prefixDate(todayIso) + ' inbound 555-0199.mp3', todayIso, 'skipped', self, '', '', { skipReason: 'Test call from the internal extension — no patient on the line.' });
+      recs.sort(function (x, y) { return y.createdMs - x.createdMs; });
+      var agentOptions = ['Ana Reyes', 'David Dhruv Mishra', 'Maria Garcia', 'Sofia Nguyen'];
+      var exemptions = {}; exemptions['sofia nguyen|' + period] = true;
+      var coverage = qaCoverageRows_(recs, qaLatestScorecards_(cards), agentOptions, period, 3, exemptions, prev);
+      return {
+        members: ['qa.reviewer@umsupply.com', self],
+        self: self, isManager: true, folderConfigured: true,
+        agentOptions: agentOptions, criteria: criteria,
+        period: period, periodOptions: opts, target: 3, todayYmd: todayIso,
+        periodEnd: qaPeriodBounds_(period).end,
+        recordings: recs, total: recs.length, cap: 200,
+        coverage: coverage,
+      };
+    })(),
     // QA Phase 2 — per-agent stats (shape mirrors getQaStats' return block:
     // agents rows from qaStatsAggregate_ incl. the visible '(unassigned)'
     // bucket and a null per-criterion average rendering as an em dash).
@@ -681,14 +911,76 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
     // shot). Shape mirrors getPunctualityReport's return block: {from, to,
     // grace, reps[{id,name,tz,startMin,days,onTime,late,onTimePct,avgLate,
     // worst,lunchOnTimePct}]}, least punctual first.
-    getPunctualityReport: {
-      from: daysAgo(29), to: todayIso, grace: 5,
-      reps: [
-        { id: 'E-1090', name: 'Leo Kim',     tz: 'America/Chicago', startMin: 480, days: 18, onTime: 12, late: 6, onTimePct: 67, avgLate: 14, worst: 41, lunchOnTimePct: 88 },
-        { id: 'E-1088', name: 'Sam Ortiz',   tz: 'Asia/Manila',     startMin: 510, days: 20, onTime: 17, late: 3, onTimePct: 85, avgLate: 6,  worst: 12, lunchOnTimePct: 95 },
-        { id: 'E-1042', name: 'Avery Blake', tz: 'Asia/Kolkata',    startMin: 480, days: 21, onTime: 20, late: 1, onTimePct: 95, avgLate: 4,  worst: 4,  lunchOnTimePct: null },
-        { id: 'E-1077', name: 'Nina Patel',  tz: 'America/Chicago', startMin: 480, days: 19, onTime: 19, late: 0, onTimePct: 100, avgLate: 0, worst: 0,  lunchOnTimePct: 100 },
-      ],
+    // Punctuality (operator 2026-08-18 width round — the tab had never been
+    // shot; design handoff PR 3 made it a FUNCTION of the range, the F14 rule).
+    // Shape mirrors getPunctualityReport's return block: {from, to, grace,
+    // reps[{…, dayDetail[], weekly[], prevOnTimePct}], prevFrom, prevTo,
+    // ptoUnavailable}, least punctual first. dayDetail rows are classified by
+    // the SERVER's punctDayState_ / punctWeeklyBuckets_ (verbatim above), and
+    // Leo Kim carries a holiday AND an approved-PTO day in range — the two
+    // states easiest to get wrong, so they are always on camera.
+    getPunctualityReport: function (from, to) {
+      var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      var span = Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1;
+      var grace = 5;
+      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn) {
+        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null;
+        for (var k = 0; k < span; k++) {
+          var iso = addIso(from, k), dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+          var isHol = holOn != null && k === holOn, pto = (offOn != null && k === offOn) ? 'Full Day' : null;
+          var hasIn = !(dow === 0 || dow === 6) && !isHol && !pto;
+          var lateMin = hasIn ? ((k % lateEvery === 0) ? lateMins[(k / lateEvery) % lateMins.length] : 2) : null;
+          var st = punctDayState_(hasIn, lateMin, grace, isHol ? 'Labor Day' : null, pto, dow === 0 || dow === 6);
+          if (!st) continue;
+          if (hasIn) { days++; if (lateMin > grace) { late++; tot += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = iso; } } else on++; }
+          dd.push({ date: iso, schedStartMin: startMin, actualMin: hasIn ? startMin + lateMin : null,
+            lateMin: hasIn ? (lateMin > grace ? lateMin : 0) : null, state: st, ptoType: pto, holidayName: isHol ? 'Labor Day' : null });
+        }
+        var pct = days ? Math.round((on / days) * 100) : 0;
+        return { id: id, name: name, tz: tz, startMin: startMin, days: days, onTime: on, late: late, onTimePct: pct,
+          avgLate: late ? Math.round(tot / late) : 0, worst: worst, lunchOnTimePct: lunch, worstDate: worstDate,
+          prevDays: days, prevOnTime: Math.max(0, on - 2), prevOnTimePct: days ? Math.round((Math.max(0, on - 2) / days) * 100) : null,
+          weekly: punctWeeklyBuckets_(dd, from, to, addIso), dayDetail: dd };
+      };
+      var reps = [
+        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6),
+        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6),
+        mk('E-1042', 'Avery Blake', 'Asia/Kolkata',    480, 15, [4],        null, null, 6),
+        mk('E-1077', 'Nina Patel',  'America/Chicago', 480, 99, [0],        100, null, 6),
+      ].sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });
+      return { from: from, to: to, grace: grace, reps: reps, prevFrom: addIso(from, -span), prevTo: addIso(from, -1), ptoUnavailable: false };
+    },
+    // Coverage (design handoff PR 3, M6 — the tab had NO fixture and no
+    // scenario). A FUNCTION of the range (F14); keys mirror getCoveragePlan's
+    // return block + its days[].reps[] push literal (INV-185, pinned). One
+    // weekend, one holiday, one rep off, one tentative, one cross-tz shift.
+    getCoveragePlan: function (from, to) {
+      var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      var n = Math.min(14, Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1);
+      var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var days = [];
+      for (var d = 0; d < n; d++) {
+        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6;
+        var reps = [
+          { name: 'Avery Blake', tz: 'America/Chicago', status: (d === 2) ? 'off' : 'working', ptoType: (d === 2) ? 'Full Day' : null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'tentative' : 'working', ptoType: (d === 3) ? 'Half Day' : null, startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Nina Patel', tz: 'America/Chicago', status: 'working', ptoType: null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Leo Kim', tz: 'Asia/Kolkata', status: 'working', ptoType: null, startMgr: '9:30 PM', endMgr: '6:30 AM', startsPrevDay: true },
+        ];
+        var hours = [];
+        for (var h = 0; h < 24; h++) {
+          var c = 0, t = 0;
+          if (!closed) {
+            if (h >= 8 && h < 17) c += reps.filter(function (r, i) { return i < 3 && r.status === 'working' && !(i === 1 && h < 9); }).length;
+            if (h >= 8 && h < 17 && reps[1].status === 'tentative' && h >= 9) t++;
+            if (h < 7 || h >= 21) c++;   // Leo's cross-tz shift
+          }
+          hours.push({ hour: h, confirmed: c, tentative: t });
+        }
+        days.push({ date: iso, weekday: DOW[dow], holidayName: (d === 5) ? 'Labor Day' : null, closed: closed, reps: reps, hours: hours });
+      }
+      return { from: from, to: addIso(from, n - 1), managerTz: 'America/Chicago', minStaff: 2, goodStaff: 3, days: days,
+        businessStartHour: 8, businessEndHour: 17, weekdaysOnly: true, ptoUnavailable: false };
     },
     // Day Edit's prefill read (A4, 2026-09-01). It had NO fixture, so the
     // modal was unshootable and the four-slot → N-pair rebuild would have gone
@@ -773,20 +1065,60 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       ],
       totals: { n7: 125, n30: 506, reps7: 8, reps30: 8 },
     } },
+    // Design handoff PR 4 (K12): the manager fixture carries a critical, an
+    // overdue (business-day age past the window), a praise, a replied item and
+    // a voided-with-reason row; the rep fixture is POPULATED for the first time
+    // (the view had never been shot). Field names mirror coachRowToObj_ +
+    // getCoachingDashboard's additive fields (INV-185).
     getCoachingDashboard: { items: [
       { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',
-        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '' },
-      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'acknowledged',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: 'n-4471', noteDate: daysAgo(3), qaFileId: '',
+        ageDays: 2.4, overdueUnacked: false, followUpDue: false, nudgedToday: false },
+      { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'open',
         whatHappened: 'Great de-escalation on a billing dispute.', whatShould: '', createdBy: 'avery@umsupply.com',
-        createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: daysAgo(5) + ' 09:00:00', ackBy: 'leo@umsupply.com' }],
-      counts: { open: 1, acknowledged: 1, overdueUnacked: 0, praise: 1 },
-      analytics: { total: 2, acknowledged: 1, ackRatePct: 50, medianDaysToAck: 1, overdueUnacked: 0,
-        bySeverity: { praise: 1, minor: 1, major: 0, critical: 0 },
+        createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        ageDays: 4.1, overdueUnacked: false, followUpDue: false, nudgedToday: false },
+      { coachId: 'c3', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-190', severity: 'critical', status: 'open',
+        whatHappened: 'Released a shipment without insurance verification; the claim was denied.', whatShould: 'Verification is a hard gate — never release before the auth is on file.',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(12) + ' 09:10:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-2), nudgedAt: daysAgo(1) + ' 08:30:00', noteId: 'n-4402', noteDate: daysAgo(12), qaFileId: 'qa-file-1',
+        ageDays: 8.0, overdueUnacked: true, followUpDue: false, nudgedToday: false },
+      { coachId: 'c4', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'major', status: 'acknowledged',
+        whatHappened: 'Put a caller on hold for nine minutes without a check-in.', whatShould: 'Check back every two minutes; offer a call-back past five.',
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(9) + ' 13:45:00', acknowledgedAt: daysAgo(7) + ' 09:00:00', ackBy: 'avery@umsupply.com',
+        voidReason: '', repResponse: 'Understood — I will set a two-minute timer on holds.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        ageDays: 6.3, overdueUnacked: false, followUpDue: false, nudgedToday: false }],
+      voided: [
+      { coachId: 'c5', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-300', severity: 'minor', status: 'void',
+        whatHappened: 'Logged against the wrong patient.', whatShould: '', createdBy: 'avery@umsupply.com',
+        createdAt: daysAgo(14) + ' 11:00:00', acknowledgedAt: '', ackBy: '',
+        voidReason: 'Wrong patient — re-logged as a separate item.', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '' }],
+      voidedTotal: 1,
+      counts: { open: 2, acknowledged: 1, overdueUnacked: 1, praise: 1 },
+      reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      analytics: { total: 4, acknowledged: 1, ackRatePct: 33, medianDaysToAck: 1.6, overdueUnacked: 1,
+        bySeverity: { praise: 1, minor: 1, major: 1, critical: 1 },
         perRep: [
-          { empId: 'E-1088', empName: 'Sam Ortiz', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 },
-          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1 }] } },
-    getMyCoaching: { items: [] },
+          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: 0 },
+          { empId: 'E-1042', empName: 'Avery Blake', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1.6 },
+          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 }] } },
+    getMyCoaching: { items: [
+      { coachId: 'm1', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-508', severity: 'major', status: 'open',
+        whatHappened: 'Quoted a delivery date the warehouse could not meet.', whatShould: 'Check the carrier ETA in the CRM before committing to a date.',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(2) + ' 14:05:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-5), nudgedAt: '', noteId: 'n-4510', noteDate: daysAgo(2), qaFileId: '', ageDays: 1.2 },
+      { coachId: 'm2', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-471', severity: 'praise', status: 'open',
+        whatHappened: 'Walked a nervous first-time CPAP user through mask fitting with real patience — the follow-up survey called you out by name.', whatShould: '',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(5) + ' 16:40:00', acknowledgedAt: '', ackBy: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 3.5 },
+      { coachId: 'm3', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'minor', status: 'acknowledged',
+        whatHappened: 'Missed the callback-number field on two notes in a row.', whatShould: 'The callback number is the first field for a reason — fill it before the narrative.',
+        createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(40) + ' 09:12:00', acknowledgedAt: daysAgo(39) + ' 10:00:00', ackBy: 'avery@umsupply.com',
+        voidReason: '', repResponse: 'Got it — I moved the number to the top of my template.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 28 }],
+      businessDayMinutes: 540 },
     // ── Batch-7 (cycle 17): the Admin panel scenario. Field names mirror the
     // server return sites (INV-185): getAdminConfig's config bag, the
     // computeAutomationHealth_ report (syncFails/automationLastRuns/digests/
@@ -1034,7 +1366,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
         { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
         { key: 'managerBrief', last: null, stale: false },
-        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false }],
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
       cdr: {
         ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
         transferColumnWarning: null,
@@ -1060,7 +1393,7 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
         { key: 'briefConfig', label: 'Manager-brief config coherence', ok: true, detail: '' },
         { key: 'managerSource', label: 'MANAGER_EMAILS ↔ roster drift', ok: true, detail: '' },
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
-      clientErrors: { count: 0, recent: [], windowDays: 7, url: '' },
+      clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
@@ -1118,6 +1451,15 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       FIXTURES.getEmployeeState.punches = [];
       FIXTURES.getEmployeeState.nextActions = ['ClockIn', 'Adjust'];
     }
+    // `?role=rep` (design handoff PR 4) — shoot a view AS A REP: every role
+    // flag off, so rep-only chrome (the Coaching search field, the rep My
+    // Coaching view with its reply boxes) renders instead of the manager's.
+    if (/[?&]role=rep\b/.test(window.location.search)) {
+      FIXTURES.getEmployeeState.isManager = false;
+      FIXTURES.getEmployeeState.isAdmin = false;
+      FIXTURES.getEmployeeState.canSeeSpanish = false;
+      FIXTURES.getEmployeeState.canSeeQa = false;
+    }
   } catch (e) {}
 
   window.__MISSING__ = [];
@@ -1132,6 +1474,82 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       return m ? decodeURIComponent(m[1]).split(',') : [];
     } catch (e) { return []; }
   })();
+  // Design handoff C7 (2026-09-02) — the populated-AND-empty fixture rule:
+  // `?fixture=empty` makes every RPC that has an entry in EMPTY_FIXTURES
+  // return that (its genuinely-empty shape) instead of the populated fixture,
+  // so a block's empty state is shootable without a second fixture object per
+  // RPC. An RPC with NO empty entry keeps its populated fixture — so the mode
+  // is additive and a scenario never turns into a loader. Entries land with
+  // the block that owns them (Coaching / Needs-you / Admin all-clear …); a
+  // Node pin lists the blocks that owe one. The rule exists because the same
+  // gap surfaced three times (getMyCoaching `{items:[]}`, the Admin all-clear
+  // path, the Needs-you empty state) — see CLAUDE.md's Visual Audit Stage.
+  var FIXTURE_MODE = (function () {
+    try {
+      var m = /[?&]fixture=([^&]+)/.exec(window.location.search);
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (e) { return ''; }
+  })();
+  var EMPTY_FIXTURES = {
+    // getCoachingDashboard / getMyCoaching / getMyPendingTasks join here with
+    // their blocks (PRs 3-4). PR 2 (Admin): the two health payloads in their
+    // ALL-CLEAR shape — every count zero, every store configured + reachable +
+    // tz-matched, no likely name mismatches — so the System tab's "Nothing
+    // needs attention" state is shootable. The populated fixtures above carry
+    // one warning per area on purpose (a likely mismatch, an unset FORMS_SS_ID).
+    // PR 4 (Coaching): both coaching payloads in their genuinely-empty shape.
+    getCoachingDashboard: { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+      reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
+    getMyCoaching: { items: [], businessDayMinutes: 540 },
+    // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING
+    // (the design's "render nothing when the list is empty"), which is what
+    // changes most under this design and a populated fixture never shows.
+    getMyPendingTasks: { items: [], total: 0, cap: 30, overdue: 0, unavailable: [], todayIso: todayIso, prevWorkday: daysAgo(1) },
+    // PR 5 (QA): a configured store with nothing indexed and no roster rows —
+    // the coverage block's own empty state + the recordings empty state.
+    getQaQueue: (function () {
+      var opts = qaPeriodOptions_(todayIso);
+      return { members: [], self: 'teamtools@umsupply.com', isManager: true, folderConfigured: true,
+        agentOptions: [], criteria: [], period: opts[0].key, periodOptions: opts, target: 3, todayYmd: todayIso,
+        periodEnd: qaPeriodBounds_(opts[0].key).end, recordings: [], total: 0, cap: 200, coverage: [] };
+    })(),
+    getAutomationHealth: {
+      syncFails: { count: 0, recent: [], windowDays: 30 },
+      automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],
+      automationErrors: {},
+      digests: [
+        { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
+        { key: 'urgent', last: daysAgo(0) + ' 08:00:11', stale: false },
+        { key: 'weekly', last: daysAgo(3) + ' 08:00:09', stale: false },
+        { key: 'trainingOverdue', last: daysAgo(0) + ' 07:00:08', stale: false },
+        { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
+        { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
+        { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
+      cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
+        unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
+        queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,
+          agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] }, truncated: false, error: null } },
+      detectors: [{ key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' }],
+      clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
+      witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
+      intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
+      auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+    },
+    getStorageHealth: {
+      configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
+      stores: [
+        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID',
+          source: 'Script Property', note: '', configured: true, reachable: true, name: 'ADP (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
+        { label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs', cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID',
+          source: 'Script Property', note: '', configured: true, reachable: true, name: 'KB (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
+        { label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge', prop: 'Employees col L (CallNotesSheetId)',
+          source: 'roster', note: '', configured: true, reachable: true, name: '', tz: '', tzMatch: null, url: '', perRep: { enrolled: 2, reachable: 2, tzMismatch: 0, problems: [] } }],
+      kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
+    },
+  };
   function makeChain(succ, fail) {
     return new Proxy(function () {}, {
       get: function (_t, prop) {
@@ -1147,7 +1565,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
               if (fail) { try { fail(new Error('[visual-mock] forced failure: ' + name)); } catch (e) {} }
               return;
             }
-            var fx = FIXTURES[name];
+            var fx = (FIXTURE_MODE === 'empty' && Object.prototype.hasOwnProperty.call(EMPTY_FIXTURES, name))
+              ? EMPTY_FIXTURES[name] : FIXTURES[name];
             if (fx === undefined) {
               window.__MISSING__.push(name);
               if (fail) { try { fail(new Error('[visual-mock] no fixture: ' + name)); } catch (e) {} }

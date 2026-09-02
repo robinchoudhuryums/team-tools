@@ -45,6 +45,13 @@ const SCENARIOS = [
   // AWAITING approval: the chip must be visible above the punch buttons, which
   // is the whole point (it is what stops them punching again "to be safe").
   ['clock-pendingadj-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?pendingadj=1'],
+  // Design handoff PR 6 — "Needs you" leads the dashboard's main column. The
+  // populated fixture rides every clock scenario; these two shoot the states a
+  // populated fixture can never show: a CLEAN empty round (the block renders
+  // nothing — the design's own rule) and a failed fetch (the warn card, never
+  // "nothing pending" — INV-175/187).
+  ['clock-needsyou-empty-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?fixture=empty'],
+  ['clock-needsyou-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyPendingTasks'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],
@@ -102,6 +109,17 @@ const SCENARIOS = [
   ['reference-dark-wide',     { tool: 'reference', tab: null },              WIDE, 'dark',  ''],
   ['training-dark-wide',      { tool: 'develop',   tab: null },              WIDE, 'dark',  ''],
   ['coaching-dark-wide',      { tool: 'develop',   tab: 'coaching' },        WIDE, 'dark',  ''],
+  // Design handoff PR 4 (K12) — the composer DRAWER (post hook), the empty
+  // team state (`?fixture=empty`), the REP view (never shot before — the
+  // fixture returned {items:[]}; `?role=rep` flips the role flags), a phone
+  // width, and a forced-fail error state (INV-175 — failed ≠ empty).
+  ['coaching-drawer-light-wide', { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', 'coachOpenDrawer_(null)'],
+  ['coaching-empty-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?fixture=empty'],
+  ['coaching-mine-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?role=rep'],
+  ['coaching-mine-dark-wide',    { tool: 'develop', tab: 'coaching' }, WIDE, 'dark',  '?role=rep'],
+  ['coaching-light-mobile',      { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', ''],
+  ['coaching-mine-light-mobile', { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', '?role=rep'],
+  ['coaching-error-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?failrpc=getCoachingDashboard'],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'metrics',   tab: null },          WIDE,   'light', '?failrpc=getMyMetrics'],
@@ -118,11 +136,26 @@ const SCENARIOS = [
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
+  // Design handoff PR 3 (Manage): Punctuality dark parity + mobile + the
+  // EXPANDED row (the detailRow is the whole point of the redesign), and
+  // Coverage — which had never been shot at all — in light/dark/mobile.
+  ['punctuality-dark-wide',   { tool: 'manage', tab: 'punctuality' }, WIDE, 'dark', ''],
+  ['punctuality-light-mobile', { tool: 'manage', tab: 'punctuality' }, MOBILE, 'light', ''],
+  ['punctuality-expanded-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', '', "(function(){var b=document.querySelector('.pt-wrap .m-qtoggle'); if (b) b.click();})()"],
+  ['coverage-light-wide',  { tool: 'manage', tab: 'coverage' }, WIDE, 'light', ''],
+  ['coverage-dark-wide',   { tool: 'manage', tab: 'coverage' }, WIDE, 'dark', ''],
+  ['coverage-light-mobile', { tool: 'manage', tab: 'coverage' }, MOBILE, 'light', ''],
   // QA module Phase 1 (2026-08-27): the queue list — status tones, assignee
   // pills, filter chips. The detail/player needs chunked audio and stays an
   // uncovered scenario (noted in the Visual Audit Stage).
   ['qa-queue-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', ''],
   ['qa-queue-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', ''],
+  // PR 5 (design handoff): dark parity for the coverage-first queue, the
+  // genuinely-empty store (`?fixture=empty` — coverage + recordings empty
+  // states), and the two-pane detail at a phone width.
+  ['qa-queue-dark-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'dark', ''],
+  ['qa-queue-empty-light-wide', { tool: 'qa', tab: 'qaQueue' }, WIDE, 'light', '?fixture=empty'],
+  ['qa-detail-light-mobile', { tool: 'qa', tab: 'qaQueue' }, MOBILE, 'light', '', "qaOpenDetail_('qaFileBbbbbbbb2')"],
   // QA Phase 2 — the per-agent stats table (mtRenderTable_ with dynamic
   // criterion columns; em dashes for null averages, the '(unassigned)' row).
   ['qa-stats-light-wide', { tool: 'qa', tab: 'qaStats' }, WIDE, 'light', ''],
@@ -195,6 +228,14 @@ const SCENARIOS = [
   ['admin-compliance-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('compliance')"],
   ['admin-config-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('config')"],
   ['admin-sheets-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('sheets')"],
+  // Design handoff PR 2 — the findings-first System pane: populated (one
+  // warning per area on purpose), dark parity, mobile, the ALL-CLEAR state via
+  // ?fixture=empty, and the X7 error state via a forced health-RPC failure.
+  ['admin-system-light-mobile',      { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('system')"],
+  ['admin-system-light-wide',        { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('system')"],
+  ['admin-system-dark-wide',         { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'dark', '', "cnAdminTab_('system')"],
+  ['admin-system-allclear-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?fixture=empty', "cnAdminTab_('system')"],
+  ['admin-system-error-light-wide',  { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?failrpc=getAutomationHealth', "cnAdminTab_('system')"],
 
   // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
   // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every

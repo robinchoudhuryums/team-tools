@@ -69,10 +69,15 @@ const CONFIG = {
   // start counts as on-time (grace). Lunch-out within this of scheduled lunch
   // counts as on-time too.
   PUNCTUALITY_GRACE_MIN:        5,
+  // PR 3 (M2): the punctuality report is per-rep PER-DAY, so its range is
+  // capped server-side (the QTR preset is 90 days).
+  PUNCT_MAX_RANGE_DAYS: 92,
   // Coaching (Training module): un-acknowledged coaching items older than this
   // many days are nudged to the issuing/team manager in the daily overdue
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
+  COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
   // bilingual group MEMBER (SPANISH_INBOX_MEMBERS, comma-separated emails, via
@@ -6957,14 +6962,14 @@ function computeAutomationHealth_(opts) {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest', 'coachingRecap'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -11492,6 +11497,7 @@ function installAutomationTriggers() {
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
+    'sendCoachingRecapDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -11518,6 +11524,12 @@ function installAutomationTriggers() {
   // nowhere — editing them was a silent no-op — so they were removed (F1).
   // To move the digest, change the day here and re-run installAutomationTriggers().
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // K8 (design handoff, operator decision 1) — the weekly per-AGENT recap of
+  // non-critical coaching, in the same Friday-8am slot as the weekly manager
+  // digests. Agent-facing: never consults the manager-brief flag (INV-151).
+  ScriptApp.newTrigger('sendCoachingRecapDigest')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
@@ -11674,6 +11686,7 @@ function removeAutomationTriggers() {
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
+    'sendCoachingRecapDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -14142,6 +14155,44 @@ function getCoveragePlan(fromDate, toDate) {
  *  CONFIG.SHIFT_SCHEDULE), with a grace window. Also a secondary lunch-adherence
  *  stat (first LunchOut vs scheduled lunch). PHI-free (names + minute deltas).
  *  Only days the rep actually clocked in are counted (PTO/off days excluded). */
+/** Design handoff PR 3 (M2) — the per-day STATE of one attendance-record
+ *  cell. Pure so the client's day strip and the manager's read of it are
+ *  pinned to one rule. A day with a clock-in is graded (on time within the
+ *  grace window, else late) EVEN on a holiday or a PTO day — the punch is the
+ *  fact. With no clock-in: a holiday reads `holiday`, approved PTO reads
+ *  `off`, a weekday reads `nopunch` (an absent weekday drawn as a GAP would
+ *  read as an untracked absence — the doc's own rule, INV-187), and a weekend
+ *  is not a day in the record at all (`null` — the roster works no Sat/Sun). */
+function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
+  if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
+  if (holidayName) return 'holiday';
+  if (ptoType) return 'off';
+  return isWeekend ? null : 'nopunch';
+}
+
+/** Design handoff PR 3 (M2) — four consecutive 7-day buckets ending at
+ *  `toIso` (oldest first), clipped to `fromIso`. Only graded days (ontime /
+ *  late) count; a bucket with none reads `onTimePct: null`, never 0, and a
+ *  bucket wholly before the range still appears (with 0 days) so the client's
+ *  four bars keep their positions. Pure — `addDays(iso, n)` is injected. */
+function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
+  const out = [];
+  for (let w = 3; w >= 0; w--) {
+    const bTo = addDays(toIso, -(w * 7));
+    let bFrom = addDays(bTo, -6);
+    if (bFrom < fromIso) bFrom = fromIso;
+    let days = 0, onTime = 0;
+    (dayDetail || []).forEach(function (d) {
+      if (d.date < bFrom || d.date > bTo) return;
+      if (d.state === 'ontime') { days++; onTime++; }
+      else if (d.state === 'late') { days++; }
+    });
+    out.push({ from: bFrom, to: bTo, days: days, onTime: onTime,
+      onTimePct: days ? Math.round((onTime / days) * 100) : null });
+  }
+  return out;
+}
+
 function getPunctualityReport(fromDate, toDate) {
   try {
     const emp = getEmployeeInfo_();
@@ -14149,7 +14200,17 @@ function getPunctualityReport(fromDate, toDate) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate)))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
     if (toDate < fromDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+    // PR 3 (M2): the payload is now per-rep PER-DAY, so the range is bounded
+    // server-side — the QTR preset is 90 days × roster size, and an unbounded
+    // hand-typed range would also double the Timesheet scan for the
+    // previous-range comparison below.
+    const numDays = daysBetween_(fromDate, toDate) + 1;
+    if (numDays > CONFIG.PUNCT_MAX_RANGE_DAYS) return { error: 'Range must be at most ' + CONFIG.PUNCT_MAX_RANGE_DAYS + ' days.' };
     const grace = (CONFIG.PUNCTUALITY_GRACE_MIN != null) ? CONFIG.PUNCTUALITY_GRACE_MIN : 5;
+    // The previous EQUIVALENT range (same length, immediately before) — the
+    // summary strip's delta and each rep's prevOnTimePct read from it.
+    const prevTo = addDaysIso_(fromDate, -1);
+    const prevFrom = addDaysIso_(prevTo, -(numDays - 1));
 
     const roster = getEmployeeRosterRows_();
     const repMap = {};
@@ -14170,7 +14231,7 @@ function getPunctualityReport(fromDate, toDate) {
         let longest = -1;
         (sched.breaks || []).forEach(function (b) { if (b.lenMin > longest) { longest = b.lenMin; lunchMin = b.startMin; } });
       }
-      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {} };
+      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {}, prevDays: {} };
     }
 
     const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
@@ -14178,7 +14239,8 @@ function getPunctualityReport(fromDate, toDate) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
       const r = repMap[id]; if (!r) continue;
       const d = normalizeDate_(rows[i][ADP.DATE]);
-      if (!d || d < fromDate || d > toDate) continue;
+      if (!d || d < prevFrom || d > toDate) continue;
+      const bucket = (d < fromDate) ? r.prevDays : r.days;
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
@@ -14188,26 +14250,76 @@ function getPunctualityReport(fromDate, toDate) {
       // valid ClockIn existed on it, and (b) fell through the `lateMin > grace`
       // test into the else, scoring the day ON TIME.
       if (mins === null) continue;
-      if (!r.days[d]) r.days[d] = {};
-      if (type === 'ClockIn') { if (r.days[d].in == null || mins < r.days[d].in) r.days[d].in = mins; }
-      else { if (r.days[d].lunch == null || mins < r.days[d].lunch) r.days[d].lunch = mins; }
+      if (!bucket[d]) bucket[d] = {};
+      if (type === 'ClockIn') { if (bucket[d].in == null || mins < bucket[d].in) bucket[d].in = mins; }
+      else { if (bucket[d].lunch == null || mins < bucket[d].lunch) bucket[d].lunch = mins; }
     }
+
+    // Approved PTO in range (the `off` state) — BEST-EFFORT, and the outcome
+    // is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
+    // day would read `nopunch`, which is the less reassuring direction, but
+    // the client still needs to say the record is incomplete.
+    const ptoMap = {};
+    let ptoUnavailable = false;
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        if (!eid || !dt || dt < fromDate || dt > toDate) continue;
+        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
+      }
+    } catch (e) {
+      ptoUnavailable = true;
+      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
+    }
+    // Holidays from the SAME source the Coverage grid reads.
+    const holMap = {};
+    const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
+    Object.keys(yrs).forEach(function (y) {
+      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      catch (e) { /* ignore */ }
+    });
 
     const reps = [];
     Object.keys(repMap).forEach(function (id) {
       const r = repMap[id];
       const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
       if (!dates.length) return;
-      let onTime = 0, late = 0, totLate = 0, worst = 0, lunchDays = 0, lunchOnTime = 0;
+      let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
       dates.forEach(function (d) {
         const lateMin = r.days[d].in - r.startMin;
-        if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) worst = lateMin; }
+        if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = d; } }
         else onTime++;
         if (r.lunchMin != null && r.days[d].lunch != null) {
           lunchDays++;
           if (r.days[d].lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
         }
       });
+      // The previous equivalent range — same grading, no day detail.
+      let prevOn = 0, prevN = 0;
+      Object.keys(r.prevDays).forEach(function (d) {
+        if (r.prevDays[d].in == null) return;
+        prevN++;
+        if ((r.prevDays[d].in - r.startMin) <= grace) prevOn++;
+      });
+      // M2 — the attendance record, one entry per day in range (the client's
+      // day strip, late-day chips, timeline and weekly bars all draw from it).
+      const dayDetail = [];
+      for (let k = 0; k < numDays; k++) {
+        const dIso = addDaysIso_(fromDate, k);
+        const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
+        const hasIn = !!(r.days[dIso] && r.days[dIso].in != null);
+        const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
+        const ptoType = (ptoMap[id] && ptoMap[id][dIso]) || null;
+        const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
+        if (!state) continue;
+        dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
+          lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
+          ptoType: ptoType, holidayName: holMap[dIso] || null });
+      }
       reps.push({
         id: r.id, name: r.name, tz: r.tz, startMin: r.startMin,
         days: dates.length, onTime: onTime, late: late,
@@ -14215,10 +14327,18 @@ function getPunctualityReport(fromDate, toDate) {
         avgLate: late ? Math.round(totLate / late) : 0,
         worst: worst,
         lunchOnTimePct: lunchDays ? Math.round((lunchOnTime / lunchDays) * 100) : null,
+        // PR 3 (M2) — ADDITIVE. `days` stays the day COUNT the client + fixture
+        // consume; the per-day array is `dayDetail` (never rename `days`).
+        worstDate: worstDate,
+        prevDays: prevN, prevOnTime: prevOn,
+        prevOnTimePct: prevN ? Math.round((prevOn / prevN) * 100) : null,
+        weekly: punctWeeklyBuckets_(dayDetail, fromDate, toDate, addDaysIso_),
+        dayDetail: dayDetail,
       });
     });
     reps.sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });   // least punctual first
-    return { from: fromDate, to: toDate, grace: grace, reps: reps };
+    return { from: fromDate, to: toDate, grace: grace, reps: reps,
+             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -18632,6 +18752,194 @@ function getMyMetrics(date) {
     // outlive the transient failure that caused it (the L-3 rule).
     if (useMetricsCache && !noteRes.unavailable) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
+// (design handoff PR 6, T1). The dashboard already pays ~3 RPCs for the
+// carousels + 2 for the extras on every focus wake past the SWR window; five
+// more per-source fetches would be felt on the Apps Script webview, so the
+// client asks ONE question. Six sources, each try/catch'd INDIVIDUALLY: a
+// source that could not be read is NAMED in `unavailable` so the client
+// renders "couldn't check", never a confident zero (INV-187) — and a degraded
+// round is never cached (INV-129). Operator decisions (2026-09-02, #3): the QA
+// source is OMITTED (there is no ack on a QA review, and agents do not see the
+// tool), Requests = dept requests open + incoming (what the extras card
+// shows; a rep's own pending punch-edit already renders as the chip above the
+// punch buttons and their pending PTO waits on the MANAGER), and signable docs
+// are the sixth kind. Every route below names a REGISTERED TOOLS tab (pinned
+// like safeWebAppUrl_'s keys); the notes route carries the CLK_NAV_HINT
+// payload fileMissingCalls_ already speaks.
+var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
+var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
+
+/** Previous WORKDAY (Mon–Fri) before an ISO date — the server twin of the
+ *  client's mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never
+ *  populated same-day, so "calls without a note" is a previous-workday
+ *  question). Pure; a bad input yields ''. */
+function prevWorkdayIso_(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return '';
+  var d = new Date(iso + 'T12:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+
+/** Pure sort: overdue first, then by due date (blank due LAST), then title. */
+function pendingTasksSort_(items) {
+  return (items || []).slice().sort(function (a, b) {
+    var ao = a.overdue ? 0 : 1, bo = b.overdue ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    var ad = a.dueIso || '9999-99-99', bd = b.dueIso || '9999-99-99';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  });
+}
+
+function getMyPendingTasks() {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    var cache = CacheService.getScriptCache();
+    var key = PENDING_TASKS_CACHE_PREFIX + emp.id;
+    try {
+      var hit = cache.get(key);
+      if (hit) { var c = JSON.parse(hit); c.cached = true; return c; }
+    } catch (_) {}
+    var tz = safeTimezone_(emp.timezone);
+    var todayIso = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    var prev = prevWorkdayIso_(todayIso);
+    var nowMs = Date.now();
+    var items = [];
+    var unavailable = [];
+    var pushDate = function (iso) { return String(iso || '').slice(0, 10); };
+
+    // training — getMyTraining's own status rule (trainDeriveStatus_) decides
+    // overdue; a done item is not a task.
+    try {
+      var tr = getMyTraining();
+      if (!tr || tr.error) throw new Error((tr && tr.error) || 'unreadable');
+      (tr.items || []).forEach(function (it) {
+        if (it.status === 'done') return;
+        var due = pushDate(it.dueDate);
+        items.push({
+          kind: 'training', title: String(it.title || 'Training item'),
+          detail: (it.itemType === 'quiz' ? 'Quiz' : 'Training module') + (due ? ' · due ' + due : ''),
+          dueIso: due, overdue: it.status === 'overdue', action: 'Start',
+          route: { tool: 'develop', tab: 'trainingHome' },
+        });
+      });
+    } catch (e) { unavailable.push('training'); }
+
+    // coaching — open, NON-praise (praise needs no acknowledgement — PR 4,
+    // decision 8). Overdue = ageDays (BUSINESS days, server-computed; null =
+    // unknown and never overdue) at or past the reminder window.
+    try {
+      var co = getMyCoaching();
+      if (!co || co.error) throw new Error((co && co.error) || 'unreadable');
+      var remind = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
+      (co.items || []).forEach(function (it) {
+        if (it.status !== 'open' || it.severity === 'praise') return;
+        var sev = COACH_SEV_LABELS[it.severity] || String(it.severity || '');
+        items.push({
+          kind: 'coaching', title: 'Coaching note to acknowledge',
+          detail: sev + ' · logged ' + pushDate(it.createdAt) + (it.createdByName ? ' by ' + it.createdByName : ''),
+          dueIso: '', overdue: (it.ageDays != null) && Number(it.ageDays) >= remind, action: 'Open',
+          route: { tool: 'develop', tab: 'coaching' },
+        });
+      });
+    } catch (e) { unavailable.push('coaching'); }
+
+    // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
+    // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
+    // "couldn't check", never "0 missing" (F5 / INV-187).
+    try {
+      var m = prev ? getMyMetrics(prev) : null;
+      if (!m || m.error || m.noteCountUnavailable) throw new Error('unreadable');
+      var answered = (m.cdr && m.cdr.totalAnswered) ? Number(m.cdr.totalAnswered) : 0;
+      var logged = Number(m.noteCount) || 0;
+      var missing = answered - logged;
+      if (missing > 0) {
+        items.push({
+          kind: 'notes', title: missing + ' call' + (missing === 1 ? '' : 's') + ' without a note',
+          detail: 'Answered ' + prev + (m.noteCoverage != null ? ' · notes at ' + m.noteCoverage + '%' : ''),
+          dueIso: prev, overdue: false, action: 'File',
+          route: { tool: 'callNotes', tab: 'callNotes', hint: { date: prev, missingCount: missing } },
+        });
+      }
+    } catch (e) { unavailable.push('notes'); }
+
+    // requests — the rep's own OPEN dept requests + the incoming ones their
+    // desk owes (getDeptRequests already scopes both). Overdue = the SLA band.
+    try {
+      var dr = getDeptRequests();
+      if (!dr || dr.error) throw new Error((dr && dr.error) || 'unreadable');
+      var reqRoute = { tool: 'metrics', tab: 'metricsDeptReq' };
+      (dr.mine || []).forEach(function (r) {
+        if (r.status === 'resolved') return;
+        items.push({
+          kind: 'requests', title: 'Request to ' + String(r.toDept || '—') + (r.label ? ' · ' + r.label : ''),
+          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
+        });
+      });
+      (dr.incoming || []).forEach(function (r) {
+        items.push({
+          kind: 'requests', title: 'Incoming from ' + String(r.byName || 'a teammate') + (r.label ? ' · ' + r.label : ''),
+          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
+        });
+      });
+    } catch (e) { unavailable.push('requests'); }
+
+    // sched — the rep's own scheduled call-backs due TODAY (rep tz); a past
+    // due time today is overdue.
+    try {
+      var sc = getMyScheduledCalls();
+      if (!sc || sc.error) throw new Error((sc && sc.error) || 'unreadable');
+      (sc.calls || []).forEach(function (c) {
+        if (!(c.whenMs > 0)) return;
+        if (Utilities.formatDate(new Date(c.whenMs), tz, 'yyyy-MM-dd') !== todayIso) return;
+        items.push({
+          kind: 'sched', title: String(c.label || 'Scheduled call'),
+          detail: 'Call-back at ' + Utilities.formatDate(new Date(c.whenMs), tz, 'h:mm a'),
+          dueIso: todayIso, overdue: c.whenMs < nowMs, action: 'Open',
+          route: { tool: 'callNotes', tab: 'callNotes' },
+        });
+      });
+    } catch (e) { unavailable.push('sched'); }
+
+    // docs — signable / fillable employee docs (getMyDocs' needsAction);
+    // overdue = past dueAt (date compare in the rep's own frame).
+    try {
+      var dc = getMyDocs();
+      if (!dc || dc.error) throw new Error((dc && dc.error) || 'unreadable');
+      (dc.docs || []).forEach(function (d) {
+        if (!d.needsAction) return;
+        var due = pushDate(d.dueAt);
+        items.push({
+          kind: 'docs', title: String(d.title || 'Document'),
+          detail: String(d.docType || 'Document') + (d.requiresSignature ? ' · needs your signature' : ' · needs your answers') + (due ? ' · due ' + due : ''),
+          dueIso: due, overdue: !!(due && due < todayIso), action: 'Sign',
+          route: { tool: 'develop', tab: 'myDocs' },
+        });
+      });
+    } catch (e) { unavailable.push('docs'); }
+
+    var sorted = pendingTasksSort_(items);
+    var result = {
+      items: sorted.slice(0, PENDING_TASKS_CAP), total: sorted.length, cap: PENDING_TASKS_CAP,
+      overdue: sorted.filter(function (i) { return i.overdue; }).length,
+      unavailable: unavailable, todayIso: todayIso, prevWorkday: prev,
+    };
+    // INV-129: cache only a round where EVERY source was readable — a pinned
+    // degraded round would hide a task for the full TTL.
+    if (!unavailable.length) {
+      try { cache.put(key, JSON.stringify(result), PENDING_TASKS_CACHE_TTL); } catch (_) {}
     }
     return result;
   } catch (err) { return { error: err.message }; }
@@ -25607,16 +25915,39 @@ const COACH_TAB = 'Coaching';
 // interaction, so it belongs ONLY in this team-scoped HR store — the shared
 // AuditLog row must stay content-free (INV-134/INV-32), exactly like voidDoc's
 // VoidReason column.
-const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason'];
-const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13 };
+// Design handoff PR 4 (2026-09-02): FIVE more trailing columns, same
+// self-healing back-compat — RepResponse (the rep's optional reply on ack,
+// K2), FollowUpAt (a calendar DATE for the 1-on-1 — "Revisit on", K10),
+// NudgedAt (the once-per-day reminder stamp, K11), NoteDate (the linked call
+// note's DateLocal — the drill-through is date-keyed, so the id alone could
+// never open it, K5) and QaFileId (the QA recording's Drive id, K13). All of
+// them stay in the HR store; none reaches the shared AuditLog.
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18 };
 const COACH_SEVERITIES = ['praise','minor','major','critical'];
+// K4 — DISPLAY labels only. The stored enum is untouched (`major` stays
+// `major` in every row, every audit line, `coachSevTone_` and the analytics
+// keys); the word the UI shows is "Moderate". Mirrored byte-for-byte by the
+// client's COACH_SEV_LABELS (a MIRROR_INDEX entry) so the emails and the cards
+// cannot name one severity two ways.
+const COACH_SEV_LABELS = { praise: 'Praise', minor: 'Minor', major: 'Moderate', critical: 'Critical' };
 const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
+const COACH_RESPONSE_MAX = 2000;
+const COACH_VOIDED_CAP = 50;
+/** Test seam (the _TEST_OVERRIDE_EMAIL pattern): when a function is assigned
+ *  here, every coaching mail send is handed to it INSTEAD of MailApp so the
+ *  editor suite can assert "critical mails, minor does not" and "a throwing
+ *  send still returns success + mailed:false" without a real send. */
+var _TEST_OVERRIDE_COACH_MAIL = null;
 
 /** Pure (Node-pinned) — createCoaching payload validation. Whitelist-built;
  *  references COACH_SEVERITIES / COACH_TEXT_MAX (injected in the Node harness,
  *  the isValidTimeOffType_ pattern). 'whatShould' is optional (praise rarely
- *  needs it); 'whatHappened' is always required. */
+ *  needs it); 'whatHappened' is always required. PR 4: the optional
+ *  followUpAt / noteDate (yyyy-MM-dd or blank — anything else is dropped, not
+ *  rejected, so a stale client cannot be blocked by a field it never sends)
+ *  and qaFileId (trimmed, capped) ride the same whitelist. */
 function coachValidate_(payload) {
   payload = payload || {};
   var empId = String(payload.empId || '').trim();
@@ -25631,18 +25962,53 @@ function coachValidate_(payload) {
   var patientTRX = String(payload.patientTRX || '').trim();
   if (patientTRX.length > COACH_TRX_MAX) return { ok: false, error: 'Patient/TRX reference is too long.' };
   var noteId = String(payload.noteId || '').trim();
-  return { ok: true, item: { empId: empId, severity: severity, whatHappened: whatHappened, whatShould: whatShould, patientTRX: patientTRX, noteId: noteId } };
+  var followUpAt = coachIsoDateOrBlank_(payload.followUpAt);
+  var noteDate = coachIsoDateOrBlank_(payload.noteDate);
+  var qaFileId = String(payload.qaFileId || '').trim().slice(0, 200);
+  return { ok: true, item: { empId: empId, severity: severity, whatHappened: whatHappened, whatShould: whatShould, patientTRX: patientTRX, noteId: noteId,
+    followUpAt: followUpAt, noteDate: noteDate, qaFileId: qaFileId } };
+}
+/** Pure — a yyyy-MM-dd string or ''. Anything else reads as blank. */
+function coachIsoDateOrBlank_(v) {
+  var s = String(v || '').trim().substring(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
-/** Pure (Node-pinned) — the open, non-praise coaching items older than `days`
- *  that should nudge the manager. Items carry a precomputed `createdAtMs`. */
-function coachUnackedOverdue_(items, nowMs, days) {
-  var cutoff = nowMs - (days || 0) * 86400000;
+/** Pure (Node-pinned) — business-day age of an item, or NULL when unknown.
+ *  `opts.bizMinutes(startMs, endMs)` is the injected business-hours helper
+ *  (production: businessMinutesBetween_ — Apps-Script-bound, so it is passed
+ *  in rather than called); `opts.dayMinutes` is the length of one business
+ *  day. With no injection the age is wall-clock days (the Node pins' default,
+ *  and byte-identical to the pre-PR-4 arithmetic). A null from the helper
+ *  means UNKNOWN and is never coerced to 0 (INV-187). */
+function coachAgeDays_(createdAtMs, nowMs, opts) {
+  if (!(createdAtMs > 0) || !(nowMs > 0)) return null;
+  if (opts && typeof opts.bizMinutes === 'function') {
+    var min = opts.bizMinutes(createdAtMs, nowMs);
+    if (min == null || !isFinite(min)) return null;
+    var dm = Number(opts.dayMinutes) || 540;
+    return Math.round((min / dm) * 10) / 10;
+  }
+  return Math.round(((nowMs - createdAtMs) / 86400000) * 10) / 10;
+}
+
+/** Pure (Node-pinned) — the open, non-praise coaching items that should nudge
+ *  the manager: older than `days` (BUSINESS days when `opts.bizMinutes` is
+ *  injected — K9, operator decision 7; wall-clock without it), OR — when
+ *  `opts.todayIso` is given — an open item whose FollowUpAt has passed (K10:
+ *  the 1-on-1 the manager scheduled is now due). Items carry a precomputed
+ *  `createdAtMs`. An item whose age is UNKNOWN (a null from the helper) is
+ *  never reported overdue — unknown is not late (INV-187). */
+function coachUnackedOverdue_(items, nowMs, days, opts) {
+  opts = opts || {};
   var out = [];
   (items || []).forEach(function (it) {
     if (!it || it.status !== 'open') return;
-    if (it.severity === 'praise') return;            // praise never nags
-    if (it.createdAtMs && it.createdAtMs <= cutoff) out.push(it);
+    if (it.severity === 'praise') return;            // praise never nags (K3)
+    var age = coachAgeDays_(it.createdAtMs, nowMs, opts);
+    var overdue = age != null && age >= (days || 0);
+    var followDue = !!(opts.todayIso && it.followUpAt && it.followUpAt < opts.todayIso);
+    if (overdue || followDue) { it.followUpDue = followDue; out.push(it); }
   });
   return out;
 }
@@ -25667,30 +26033,39 @@ function coachMedian_(arr) {
 /** Pure (Node-pinned) — manager coaching analytics over the team-scoped items.
  *  Aggregates: totals, by-severity, acknowledged + ack-rate, overdue-unacked,
  *  median days-to-acknowledge, and a per-rep breakdown (most-overdue first).
- *  No PHI — counts + the empName already in the items. */
-function coachAnalytics_(items, nowMs, reminderDays) {
+ *  No PHI — counts + the empName already in the items.
+ *  PR 4: (K3, operator decision 8) the ack-rate denominator EXCLUDES praise —
+ *  it is a rate over items that require an answer; (K9) overdue + the median
+ *  are BUSINESS days when `opts.bizMinutes` is injected. */
+function coachAnalytics_(items, nowMs, reminderDays, opts) {
   items = items || [];
-  const cutoff = nowMs - (reminderDays || 0) * 86400000;
+  opts = opts || {};
   const sev = { praise: 0, minor: 0, major: 0, critical: 0 };
   const ackDays = [];
   const perRep = {};
-  let acknowledged = 0, overdue = 0;
+  let acknowledged = 0, overdue = 0, needsAck = 0;
   items.forEach(function (it) {
     if (sev[it.severity] != null) sev[it.severity]++;
+    const isPraise = it.severity === 'praise';
     const isAck = it.status === 'acknowledged';
-    if (isAck) acknowledged++;
-    const isOverdue = it.status === 'open' && it.severity !== 'praise' && (function () {
-      const c = coachParseTs_(it.createdAt); return !isNaN(c) && c <= cutoff;
-    })();
+    if (!isPraise) needsAck++;
+    if (isAck && !isPraise) acknowledged++;
+    const c = coachParseTs_(it.createdAt);
+    const age = coachAgeDays_(isNaN(c) ? 0 : c, nowMs, opts);
+    const isOverdue = it.status === 'open' && !isPraise && age != null && age >= (reminderDays || 0);
     if (isOverdue) overdue++;
     let d = NaN;
-    if (isAck && it.acknowledgedAt) {
-      const c = coachParseTs_(it.createdAt), a = coachParseTs_(it.acknowledgedAt);
-      if (!isNaN(c) && !isNaN(a) && a >= c) { d = (a - c) / 86400000; ackDays.push(d); }
+    if (isAck && !isPraise && it.acknowledgedAt) {
+      const a = coachParseTs_(it.acknowledgedAt);
+      if (!isNaN(c) && !isNaN(a) && a >= c) {
+        const dd = coachAgeDays_(c, a, opts);
+        if (dd != null) { d = dd; ackDays.push(d); }
+      }
     }
-    const r = perRep[it.empId] || (perRep[it.empId] = { empId: it.empId, empName: it.empName, total: 0, acknowledged: 0, overdue: 0, _ackDays: [] });
+    const r = perRep[it.empId] || (perRep[it.empId] = { empId: it.empId, empName: it.empName, total: 0, needsAck: 0, acknowledged: 0, overdue: 0, _ackDays: [] });
     r.total++;
-    if (isAck) r.acknowledged++;
+    if (!isPraise) r.needsAck++;
+    if (isAck && !isPraise) r.acknowledged++;
     if (isOverdue) r.overdue++;
     if (!isNaN(d)) r._ackDays.push(d);
   });
@@ -25699,7 +26074,7 @@ function coachAnalytics_(items, nowMs, reminderDays) {
     return {
       empId: r.empId, empName: r.empName, total: r.total, acknowledged: r.acknowledged,
       overdue: r.overdue,
-      ackRatePct: r.total ? Math.round((r.acknowledged / r.total) * 100) : 0,
+      ackRatePct: r.needsAck ? Math.round((r.acknowledged / r.needsAck) * 100) : 0,
       medianDaysToAck: coachMedian_(r._ackDays),
     };
   }).sort(function (a, b) {
@@ -25709,9 +26084,21 @@ function coachAnalytics_(items, nowMs, reminderDays) {
   return {
     total: items.length, bySeverity: sev,
     acknowledged: acknowledged, overdueUnacked: overdue,
-    ackRatePct: items.length ? Math.round((acknowledged / items.length) * 100) : 0,
+    ackRatePct: needsAck ? Math.round((acknowledged / needsAck) * 100) : 0,
     medianDaysToAck: coachMedian_(ackDays),
     perRep: reps,
+  };
+}
+
+/** The injected business-hours contract every coaching consumer passes to the
+ *  pure helpers (K9): ONE definition of a business day, shared with the
+ *  Coverage planner and every other elapsed-time figure in the app. */
+function coachBizOpts_() {
+  const win = businessHours_();
+  return {
+    bizMinutes: businessMinutesBetween_,
+    dayMinutes: Math.max(60, win.endMin - win.startMin),
+    todayIso: Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'),
   };
 }
 
@@ -25730,6 +26117,12 @@ function coachRowToObj_(row, ssTz) {
     createdAt: trainCellTs_(row[CO.CREATED_AT], ssTz),
     acknowledgedAt: trainCellTs_(row[CO.ACK_AT], ssTz),
     ackBy: String(row[CO.ACK_BY] || '').toLowerCase().trim(),
+    voidReason: String(row[CO.VOID_REASON] || ''),
+    repResponse: String(row[CO.REP_RESPONSE] || ''),
+    followUpAt: trainCellDate_(row[CO.FOLLOW_UP_AT], ssTz),
+    nudgedAt: trainCellTs_(row[CO.NUDGED_AT], ssTz),
+    noteDate: trainCellDate_(row[CO.NOTE_DATE], ssTz),
+    qaFileId: String(row[CO.QA_FILE_ID] || '').trim(),
   };
 }
 
@@ -25764,11 +26157,16 @@ function coachCanManagerSee_(callerEmp, item) {
  *  employee. Any manager may issue (issuing reveals nothing); READING stays
  *  team-scoped. The patient/TRX + free text are HR-class PHI-adjacent and live
  *  ONLY in the HR store; the audit row is content-free (coachId/empId/severity
- *  — never the patient/TRX or the narrative). */
+ *  — never the patient/TRX or the narrative).
+ *  K8 (operator decision 1): ONLY a CRITICAL item mails the rep immediately —
+ *  minor / moderate / praise arrive in the weekly recap instead. The send is
+ *  post-lock (M-7) and best-effort; `mailed` on the response is TRUE only when
+ *  the send actually went (false when it threw, absent when none was owed). */
 function createCoaching(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
+  let result = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -25782,22 +26180,30 @@ function createCoaching(payload) {
     getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow([
       coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
       v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
-      callerEmp.email, ts, '', '',
+      callerEmp.email, ts, '', '', '', '', v.item.followUpAt, '', v.item.noteDate, v.item.qaFileId,
     ]);
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
       'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
-    notifyAfter = function () { notifyRepOfCoaching_(target, v.item, callerEmp); };   // M-7: post-lock
-    return { success: true, coachId: coachId };
+    result = { success: true, coachId: coachId };
+    if (v.item.severity === 'critical') {
+      result.mailed = false;
+      notifyAfter = function () { result.mailed = notifyRepOfCoaching_(target, v.item, callerEmp, ts); };   // M-7: post-lock
+    }
+    return result;
   } catch (err) { return { success: false, error: err.message }; }
   finally {
     lock.releaseLock();
-    // M-7: best-effort mail fires only after the global lock is released.
+    // M-7: best-effort mail fires only after the global lock is released. The
+    // result object is already the caller's return value; mutating `mailed`
+    // here is visible to them because JS returns the REFERENCE.
     if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
   }
 }
 
 /** Rep-callable, caller-scoped, read-only — the caller's OWN coaching items
- *  (full content; it's their own record). Newest first; excludes voided. */
+ *  (full content; it's their own record). Newest first; excludes voided.
+ *  PR 4: each item carries `ageDays` (BUSINESS days since logged — null when
+ *  unknown) so the rep view can name the age of the oldest open item. */
 function getMyCoaching() {
   try {
     const emp = getEmployeeInfo_();
@@ -25807,22 +26213,44 @@ function getMyCoaching() {
     if (last < 2) return { items: [] };
     const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
     const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const biz = coachBizOpts_();
+    const nowMs = Date.now();
     const items = [];
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][CO.EMP_ID]).trim() !== emp.id) continue;
       const c = coachRowToObj_(rows[i], ssTz);
       if (c.status === 'void') continue;
+      const createdMs = coachParseTs_(c.createdAt);
+      c.ageDays = coachAgeDays_(isNaN(createdMs) ? 0 : createdMs, nowMs, biz);
+      c.createdByName = coachActorName_(c.createdBy);
       items.push(c);
     }
     items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
-    return { items: items };
+    return { items: items, businessDayMinutes: biz.dayMinutes };
   } catch (err) { return { error: err.message }; }
+}
+
+/** The display name for a coaching actor email (roster lookup, best-effort;
+ *  falls back to the email's local part). Reps could not see WHO logged an
+ *  item before PR 4. */
+function coachActorName_(email) {
+  email = String(email || '').toLowerCase().trim();
+  if (!email) return '';
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (empRosterEmail_(rows[i]).toLowerCase() === email) return String(rows[i][EMP.NAME] || '').trim() || email;
+    }
+  } catch (e) { /* best-effort */ }
+  return email.split('@')[0];
 }
 
 /** Rep-callable, locked (INV-01), OWNER-only — the employee acknowledges they
  *  have read the coaching. Idempotent (already-acked → friendly no-op). Audit
- *  CoachingAck (content-free). */
-function acknowledgeCoaching(coachId) {
+ *  CoachingAck (content-free). K2: the optional `response` (≤ 2000 chars) is
+ *  written to RepResponse ONLY on the open→acknowledged transition — a second
+ *  ack never overwrites the reply; the reply itself stays in the HR store. */
+function acknowledgeCoaching(coachId, response) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
@@ -25833,15 +26261,18 @@ function acknowledgeCoaching(coachId) {
     if (!found || found.item.empId !== emp.id) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
     if (found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true, acknowledgedAt: found.item.acknowledgedAt };
+    const reply = String(response || '').trim();
+    if (reply.length > COACH_RESPONSE_MAX) return { success: false, error: 'Reply is too long (max ' + COACH_RESPONSE_MAX + ' chars).' };
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
     sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('acknowledged');
     sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(ts);
     sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(emp.email);
+    if (reply) sheet.getRange(found.rowIdx, CO.REP_RESPONSE + 1).setValue(reply);
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
-    notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp); };   // M-7: post-lock
+    notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp, !!reply); };   // M-7: post-lock
     return { success: true, acknowledgedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -25853,46 +26284,66 @@ function acknowledgeCoaching(coachId) {
 
 /** Manager-gated (INV-02), read-only, TEAM-SCOPED (coachCanManagerSee_).
  *  Returns the coaching items the manager may see + summary counts (open /
- *  acknowledged / overdue-unacked / praise). */
+ *  acknowledged / overdue-unacked / praise). PR 4: praise is EXCLUDED from
+ *  `counts.open` and from overdue (K3 — it needs no acknowledgement); ages
+ *  are BUSINESS days (K9); `voided[]` (team-scoped, newest first, capped) so
+ *  the void reason is finally visible somewhere other than the sheet (K6). */
 function getCoachingDashboard() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
     const last = sheet.getLastRow();
-    if (last < 2) return { items: [], counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 } };
+    const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
+    const biz = coachBizOpts_();
+    if (last < 2) {
+      // The empty shape carries every field the populated one does (INV-185 —
+      // the visual fixture's empty twin mirrors THIS, not a narrower payload).
+      return { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+        reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso,
+        analytics: coachAnalytics_([], Date.now(), reminderDays, biz) };
+    }
     const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
     const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
     const nowMs = Date.now();
-    const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
     const items = [];
+    const voided = [];
     const counts = { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
     for (let i = 0; i < rows.length; i++) {
       const c = coachRowToObj_(rows[i], ssTz);
-      if (!c.coachId || c.status === 'void') continue;
+      if (!c.coachId) continue;
       if (!coachCanManagerSee_(callerEmp, c)) continue;
+      if (c.status === 'void') { voided.push(c); continue; }
       // F(H-1): CreatedAt is stamped in SPACE form ('yyyy-MM-dd HH:mm:ss');
       // parseTimestampMs_ expects the 'T' form and returned null for every row,
       // so overdueUnacked was permanently false. coachParseTs_ accepts both.
       const createdMs = coachParseTs_(c.createdAt);
-      c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && createdMs && createdMs <= (nowMs - reminderDays * 86400000));
-      if (c.status === 'open') counts.open++;
+      c.ageDays = coachAgeDays_(isNaN(createdMs) ? 0 : createdMs, nowMs, biz);
+      c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && c.ageDays != null && c.ageDays >= reminderDays);
+      c.followUpDue = !!(c.status === 'open' && c.followUpAt && c.followUpAt < biz.todayIso);
+      c.nudgedToday = !!(c.nudgedAt && c.nudgedAt.substring(0, 10) === biz.todayIso);
+      if (c.status === 'open' && c.severity !== 'praise') counts.open++;
       if (c.status === 'acknowledged') counts.acknowledged++;
       if (c.severity === 'praise') counts.praise++;
       if (c.overdueUnacked) counts.overdueUnacked++;
       items.push(c);
     }
     items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
-    return { items: items, counts: counts, reminderDays: reminderDays,
-      analytics: coachAnalytics_(items, nowMs, reminderDays) };
+    voided.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return { items: items, voided: voided.slice(0, COACH_VOIDED_CAP), voidedTotal: voided.length,
+      counts: counts, reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso,
+      analytics: coachAnalytics_(items, nowMs, reminderDays, biz) };
   } catch (err) { return { error: err.message }; }
 }
 
 /** Manager-gated (INV-02), locked (INV-01). Soft-voids a coaching item (a
- *  mistaken/duplicate entry) — never deletes. Audit CoachingVoid. */
+ *  mistaken/duplicate entry) — never deletes. Audit CoachingVoid. K8: voiding
+ *  a CRITICAL item sends a short retraction to the same recipient (post-lock)
+ *  — an unretracted "critical" notice in a rep's inbox is worse than none. */
 function voidCoaching(coachId, reason) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -25909,14 +26360,84 @@ function voidCoaching(coachId, reason) {
     if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(String(reason).slice(0, 500));
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
+    if (found.item.severity === 'critical' && found.item.status !== 'void') {
+      const item = found.item;
+      notifyAfter = function () { notifyRepOfCoachingRetraction_(item, callerEmp); };   // M-7: post-lock
+    }
     return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally {
+    lock.releaseLock();
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
+}
+
+/** K10 — manager-gated (INV-02), TEAM-SCOPED, locked (INV-01). Sets or clears
+ *  the item's FollowUpAt (a calendar DATE — "Revisit on"). Audit
+ *  CoachingFollowUp, id-only (the date is HR-record detail). */
+function setCoachingFollowUp(coachId, dateOrNull) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const iso = coachIsoDateOrBlank_(dateOrNull);
+    if (dateOrNull && !iso) return { success: false, error: 'Pick a date (yyyy-MM-dd) or clear it.' };
+    const found = findCoachingRow_(coachId);
+    if (!found || !coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.FOLLOW_UP_AT + 1).setValue(iso);
+    writeAuditLog_(callerEmp, 'CoachingFollowUp', '', '', false, 0,
+      'coachId=' + found.item.coachId + '; set=' + (iso ? 'yes' : 'cleared'), callerEmp.email);
+    return { success: true, followUpAt: iso };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
 
-/** All open, non-praise coaching items older than the reminder window, as
- *  [{ item, empName }] for per-manager scoping in the digest. Returns []
- *  (never throws) when the HR store is unavailable. */
+/** K11 — manager-gated (INV-02), TEAM-SCOPED, locked (INV-01). Re-sends the
+ *  reminder for an UNACKNOWLEDGED item, at most once per item per manager-tz
+ *  day (the NudgedAt stamp is the rate limit). Mail post-lock (M-7), audit
+ *  CoachingNudge id-only. */
+function nudgeCoaching(coachId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  let notifyAfter = null;
+  let result = null;
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findCoachingRow_(coachId);
+    if (!found || !coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    if (found.item.status !== 'open') return { success: false, error: 'Only an open (unacknowledged) item can be nudged.' };
+    if (found.item.severity === 'praise') return { success: false, error: 'Praise needs no acknowledgement.' };
+    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    if (found.item.nudgedAt && found.item.nudgedAt.substring(0, 10) === todayIso) {
+      return { success: false, error: 'Already nudged today — once per day per item.' };
+    }
+    const target = lookupEmployeeById_(found.item.empId);
+    if (!target || !target.email) return { success: false, error: 'The employee has no login email on the roster.' };
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.NUDGED_AT + 1).setValue(ts);
+    writeAuditLog_(callerEmp, 'CoachingNudge', fmtDate_(now), '', false, 0,
+      'coachId=' + found.item.coachId, callerEmp.email);
+    result = { success: true, nudgedAt: ts, mailed: false };
+    const item = found.item;
+    notifyAfter = function () { result.mailed = notifyRepOfCoachingNudge_(target, item, callerEmp); };   // M-7: post-lock
+    return result;
+  } catch (err) { return { success: false, error: err.message }; }
+  finally {
+    lock.releaseLock();
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
+}
+
+/** All open, non-praise coaching items past the reminder window (BUSINESS
+ *  days, K9) or past their FollowUpAt (K10), as [{ item, empName }] for
+ *  per-manager scoping in the digest. Returns [] (never throws) when the HR
+ *  store is unavailable. */
 function coachUnackedAll_(nowMs) {
   try {
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
@@ -25933,7 +26454,7 @@ function coachUnackedAll_(nowMs) {
       c.createdAtMs = coachParseTs_(c.createdAt);
       items.push(c);
     }
-    return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7)
+    return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7, coachBizOpts_())
       .map(function (c) { return { item: c, empName: c.empName }; });
   } catch (e) {
     Logger.log('coachUnackedAll_ skipped (HR docs store unavailable): ' + e.message);
@@ -25941,37 +26462,188 @@ function coachUnackedAll_(nowMs) {
   }
 }
 
-/** Best-effort (INV-14) — notify the rep of new coaching. PHI-adjacent content
- *  (patient/TRX + narrative) stays OUT of the email; it names only the severity
- *  + a link to open the app. The detail lives behind their authenticated
- *  "My Coaching" view. */
-function notifyRepOfCoaching_(target, item, manager) {
+// ── K8 — the coaching mail family. EVERY builder here is NARRATIVE-FREE BY
+// CONSTRUCTION: none of them receives whatHappened / whatShould / patientTRX /
+// noteId as a parameter, so a future edit cannot leak them without changing a
+// signature (the pure Node pin feeds the builders and asserts the output holds
+// none of the four). An inbox is not behind authentication (INV-134).
+
+/** One send path for every coaching mail — the test seam lives here. Returns
+ *  true when the send went, false when it threw (best-effort, INV-14). */
+function coachSendMail_(msg) {
   try {
-    if (!target.email) return;
-    const sev = item.severity === 'praise' ? 'praise' : (item.severity + ' coaching');
-    const body = manager.name + ' left you ' + sev + '. Open the web app → Training & Employee Docs → My Coaching to read and acknowledge it.';
-    const htmlBody = buildBrandedEmailHtml_(item.severity === 'praise' ? 'You received praise' : 'New coaching feedback',
-      brandedKvRows_([['From', manager.name], ['Type', item.severity]]) +
-      '',
-      { accent: item.severity === 'critical' ? CN_EMAIL_PALETTE.danger : (item.severity === 'praise' ? CN_EMAIL_PALETTE.brand : CN_EMAIL_PALETTE.warnDeep),
-        subLabel: 'Coaching', statusLabel: item.severity === 'praise' ? 'Praise' : 'Please acknowledge',
-        ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open My Coaching' });
-    MailApp.sendEmail({ to: target.email, subject: (item.severity === 'praise' ? '⭐ Praise from ' : '📋 Coaching from ') + manager.name, body: body, htmlBody: htmlBody });
-  } catch (e) { console.warn('notifyRepOfCoaching_ failed: ' + e.message); }
+    if (typeof _TEST_OVERRIDE_COACH_MAIL === 'function') { _TEST_OVERRIDE_COACH_MAIL(msg); return true; }
+    MailApp.sendEmail(msg);
+    return true;
+  } catch (e) { console.warn('coaching mail failed: ' + e.message); return false; }
 }
 
-/** Best-effort — tell the issuing manager their coaching was acknowledged. */
-function notifyManagerOfCoachingAck_(item, rep) {
+/** Pure (Node-pinned) — the CRITICAL notice body (doc §5). Takes only what
+ *  the email may carry: who logged it, when, the follow-up date (row omitted
+ *  when unset), and the CTA. */
+function coachCriticalMailHtml_(mgrName, loggedAt, followUpAt, ctaUrl) {
+  const P = CN_EMAIL_PALETTE;
+  const rows = [
+    ['Logged by', mgrName],
+    ['Logged', loggedAt],
+    ['Severity', COACH_SEV_LABELS.critical],
+    ['Acknowledgement', 'Required — overdue after ' + (CONFIG.COACHING_UNACK_REMINDER_DAYS || 7) + ' business days'],
+  ];
+  if (followUpAt) rows.push(['1-on-1', 'Scheduled for ' + followUpAt]);
+  const body =
+    '<p style="margin:0 0 10px;">' + esc_(mgrName) + ' logged a <strong>critical</strong> coaching item for you. Please open Team Tools to read it and acknowledge it — you can reply in the same place.</p>' +
+    brandedKvRows_(rows) +
+    '<div style="margin:14px 0 0;padding:10px 12px;background:' + P.paper + ';border:1px solid ' + P.line + ';border-radius:8px;font-size:12px;color:' + P.muted + ';">' +
+      'This notice contains no patient information and no narrative — the detail is only visible inside the app, behind your login.</div>' +
+    '<p style="margin:12px 0 0;font-size:12px;color:' + P.muted + ';">Minor and moderate items are not emailed individually; they arrive in your weekly coaching recap.</p>';
+  return buildBrandedEmailHtml_(mgrName + ' logged a critical coaching item for you', body,
+    { tone: 'danger', subLabel: 'Training · Coaching', statusLabel: 'Needs your acknowledgement',
+      ctaUrl: ctaUrl, ctaLabel: 'Open Coaching' });
+}
+
+/** Pure (Node-pinned) — the retraction sent when a critical item is voided. */
+function coachRetractionMailHtml_(mgrName, loggedAt, ctaUrl) {
+  return buildBrandedEmailHtml_('A critical coaching item was withdrawn',
+    '<p style="margin:0 0 10px;">The critical coaching item ' + esc_(mgrName) + ' logged for you on ' + esc_(loggedAt) + ' has been voided. No action is needed on it.</p>' +
+    brandedKvRows_([['Logged by', mgrName], ['Logged', loggedAt], ['Status', 'Withdrawn']]),
+    { tone: 'info', subLabel: 'Training · Coaching', statusLabel: 'Withdrawn', ctaUrl: ctaUrl, ctaLabel: 'Open Coaching' });
+}
+
+/** Pure (Node-pinned) — the Nudge reminder (K11). */
+function coachNudgeMailHtml_(mgrName, loggedAt, severity, ctaUrl) {
+  return buildBrandedEmailHtml_('Reminder: coaching awaiting your acknowledgement',
+    '<p style="margin:0 0 10px;">' + esc_(mgrName) + ' is asking you to read and acknowledge a coaching item logged on ' + esc_(loggedAt) + '.</p>' +
+    brandedKvRows_([['Logged by', mgrName], ['Logged', loggedAt], ['Severity', COACH_SEV_LABELS[severity] || severity]]),
+    { tone: 'warn', subLabel: 'Training · Coaching', statusLabel: 'Reminder', ctaUrl: ctaUrl, ctaLabel: 'Open Coaching' });
+}
+
+/** Best-effort (INV-14) — the CRITICAL notice to the rep, cc the logging
+ *  manager (their record that it went). Returns true/false (mailed). Called
+ *  ONLY for severity === 'critical' (K8). */
+function notifyRepOfCoaching_(target, item, manager, loggedAt) {
+  if (!target.email) return false;
+  if (item.severity !== 'critical') return false;
+  const htmlBody = coachCriticalMailHtml_(manager.name, loggedAt, item.followUpAt || '', safeWebAppUrl_('coaching'));
+  const body = manager.name + ' logged a critical coaching item for you on ' + loggedAt + '. Please open Team Tools → Training & Employee Docs → Coaching to read and acknowledge it.' +
+    (item.followUpAt ? ' A 1-on-1 is scheduled for ' + item.followUpAt + '.' : '') +
+    '\n\nThis notice contains no patient information and no narrative. Minor and moderate items arrive in your weekly coaching recap.';
+  return coachSendMail_({ to: target.email, cc: manager.email || '', subject: 'Action needed: coaching logged for you — please acknowledge', body: body, htmlBody: htmlBody });
+}
+
+/** Best-effort — the retraction when a critical item is voided (K8). */
+function notifyRepOfCoachingRetraction_(item, manager) {
+  const target = lookupEmployeeById_(item.empId);
+  if (!target || !target.email) return false;
+  const loggedAt = String(item.createdAt || '').substring(0, 16);
+  return coachSendMail_({ to: target.email, cc: manager.email || '', subject: 'Withdrawn: the critical coaching item logged for you',
+    body: 'The critical coaching item ' + manager.name + ' logged for you on ' + loggedAt + ' has been voided. No action is needed.',
+    htmlBody: coachRetractionMailHtml_(manager.name, loggedAt, safeWebAppUrl_('coaching')) });
+}
+
+/** Best-effort — the Nudge reminder (K11). */
+function notifyRepOfCoachingNudge_(target, item, manager) {
+  const loggedAt = String(item.createdAt || '').substring(0, 16);
+  return coachSendMail_({ to: target.email, subject: 'Reminder: coaching awaiting your acknowledgement',
+    body: manager.name + ' is asking you to read and acknowledge the coaching item logged on ' + loggedAt + '. Open Team Tools → Training & Employee Docs → Coaching.',
+    htmlBody: coachNudgeMailHtml_(manager.name, loggedAt, item.severity, safeWebAppUrl_('coaching')) });
+}
+
+/** Best-effort — tell the issuing manager their coaching was acknowledged
+ *  (and whether the rep replied — the reply itself stays in the app). */
+function notifyManagerOfCoachingAck_(item, rep, replied) {
   try {
     if (!item.createdBy) return;
-    const body = rep.name + ' acknowledged your coaching (' + item.severity + ').';
-    MailApp.sendEmail({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
+    const sevLabel = COACH_SEV_LABELS[item.severity] || item.severity;
+    const body = rep.name + ' acknowledged your coaching (' + sevLabel + ').' + (replied ? ' They left a reply — open Coaching to read it.' : '');
+    coachSendMail_({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
       body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
-        brandedKvRows_([['Employee', rep.name], ['Type', item.severity]]),
-        { tone: 'success', subLabel: 'Coaching' }) });
+        brandedKvRows_([['Employee', rep.name], ['Type', sevLabel], ['Reply', replied ? 'Yes — in the app' : 'None']]),
+        { tone: 'success', subLabel: 'Training · Coaching', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
   } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
 
+/** Pure (Node-pinned) — bucket the trailing-window NON-critical items by rep.
+ *  Returns { empId: [items] }; critical items are excluded (they mailed at
+ *  create), voided rows are excluded, older rows are excluded. */
+function coachRecapBuckets_(items, nowMs, windowDays) {
+  const cutoff = nowMs - (windowDays || 7) * 86400000;
+  const by = {};
+  (items || []).forEach(function (c) {
+    if (!c || !c.coachId || c.status === 'void' || c.severity === 'critical') return;
+    const ms = coachParseTs_(c.createdAt);
+    if (isNaN(ms) || ms < cutoff) return;
+    (by[c.empId] = by[c.empId] || []).push(c);
+  });
+  return by;
+}
+
+/** K8 (operator decision 1) — WEEKLY per-agent recap of the NON-critical
+ *  coaching (minor / moderate / praise) logged for them in the trailing
+ *  CONFIG.COACHING_RECAP_DAYS. Top-level trigger handler (Friday 8am
+ *  manager-tz, beside the weekly CN digests), so it carries the MANAGER_EMAILS
+ *  assertManagerCaller_ gate (INV-44). AGENT-facing, so it NEVER consults the
+ *  manager-brief flag (INV-151: employee-facing mail always sends) and the
+ *  manager receives nothing from it. One branded email per agent with ≥1
+ *  item; an agent with nothing new gets nothing. NO narrative / TRX / noteId
+ *  (INV-134). Heartbeat `coachingRecap`. */
+function sendCoachingRecapDigest() {
+  assertManagerCaller_('sendCoachingRecapDigest');  // see sendDailyMissedPunchAlerts note
+  try {
+    const windowDays = CONFIG.COACHING_RECAP_DAYS || 7;
+    const nowMs = Date.now();
+    let items = [];
+    try {
+      const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+      const last = sheet.getLastRow();
+      if (last >= 2) {
+        const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+        const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+        for (let i = 0; i < rows.length; i++) items.push(coachRowToObj_(rows[i], ssTz));
+      }
+    } catch (e) {
+      Logger.log('sendCoachingRecapDigest: HR store unavailable — ' + e.message);
+      stampDigestLastRun_('coachingRecap');
+      return;
+    }
+    const buckets = coachRecapBuckets_(items, nowMs, windowDays);
+    const roster = getEmployeeRosterRows_();
+    const byId = {}, nameByEmail = {};
+    for (let r = 1; r < roster.length; r++) {
+      const email = empRosterEmail_(roster[r]);
+      if (!email) continue;
+      byId[String(roster[r][EMP.ID]).trim()] = { email: email, name: String(roster[r][EMP.NAME] || '').trim() };
+      nameByEmail[email.toLowerCase()] = String(roster[r][EMP.NAME] || '').trim();
+    }
+    let sent = 0, skipped = 0;
+    Object.keys(buckets).forEach(function (empId) {
+      const who = byId[empId];
+      if (!who || !who.email) { skipped++; return; }
+      const list = buckets[empId].slice().sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+      const rowsHtml = list.map(function (c) {
+        return [COACH_SEV_LABELS[c.severity] || c.severity,
+          String(c.createdAt || '').substring(0, 10) + ' · by ' + (nameByEmail[c.createdBy] || c.createdBy) +
+          (c.severity === 'praise' ? '' : (c.status === 'acknowledged' ? ' · acknowledged' : ' · not yet acknowledged')) +
+          (c.followUpAt ? ' · revisit ' + c.followUpAt : '')];
+      });
+      const html = '<p style="margin:0 0 6px;">Hi ' + esc_(who.name || 'there') + ', here is the coaching logged for you in the last ' + windowDays + ' days. Open the app to read each item' +
+        (list.some(function (c) { return c.severity !== 'praise' && c.status !== 'acknowledged'; }) ? ' and acknowledge the ones still waiting on you' : '') + '.</p>' +
+        brandedKvRows_(rowsHtml);
+      const text = 'Coaching logged for you in the last ' + windowDays + ' days:\n' +
+        rowsHtml.map(function (r) { return '  ' + r[0] + ' — ' + r[1]; }).join('\n') +
+        '\n\nOpen Team Tools → Training & Employee Docs → Coaching to read them.';
+      try {
+        coachSendMail_({ to: who.email, subject: 'Your weekly coaching recap', body: text,
+          htmlBody: buildBrandedEmailHtml_('Your weekly coaching recap', html,
+            { tone: 'info', subLabel: 'Training · Coaching', statusLabel: 'Weekly recap', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
+        sent++;
+      } catch (e) { console.warn('coaching recap to ' + who.email + ' failed: ' + e.message); }
+    });
+    stampDigestLastRun_('coachingRecap');
+    Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' noEmail=' + skipped);
+  } catch (err) {
+    Logger.log('sendCoachingRecapDigest failed: ' + err.message);
+  }
+}
 
 // ── T2 extension: import a quiz from a Google Forms quiz ──────────────────
 // Operator feedback (2026-06-15): managers have existing quizzes in Google
@@ -26085,8 +26757,22 @@ const QA_RECORDINGS_TAB = 'QaRecordings';
 // release-to-agent stamp — 0/blank = not shared). Both extended IN PLACE
 // rather than self-healed: the QA module is merged but NOT deployed and
 // QA_SS_ID is unset everywhere, so no QaRecordings tab exists to migrate.
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11 };
+// Design handoff PR 5 (2026-09-02) added DurationSec (written back once by the
+// client on loadedmetadata — the queue's Length column) and SkipReason (the
+// free-text reason a recording was skipped; plain-text-pinned). These two
+// self-heal: getOrCreateQaSheet_ extends a short header in place.
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11, DURATION_SEC: 12, SKIP_REASON: 13 };
+const QA_SKIP_REASON_MAX = 500;
+const QA_DURATION_MAX_SEC = 86400;
+// Q4 — audit-period exemptions (operator decision 6): a manager grants an
+// employee a pass for ONE period; latest row per (name, period) wins.
+const QA_EXEMPTIONS_TAB = 'QaExemptions';
+const QA_EXEMPTIONS_HEADERS = ['EmpName', 'Period', 'GrantedBy', 'GrantedMs', 'Active'];
+const QAE = { EMP_NAME: 0, PERIOD: 1, GRANTED_BY: 2, GRANTED_MS: 3, ACTIVE: 4 };
+const QA_EXEMPTIONS_SCAN = 2000;
+const QA_EXEMPT_AVG_MIN = 4.5;        // eligibility: avg ≥ 4.5 this period AND last
+const QA_EXEMPT_CRIT_MIN = 4;         // eligibility: no criterion under 4 in either period
 const QA_MY_REVIEWS_CAP = 50;         // agent-facing list cap (newest shared first)
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
@@ -26167,10 +26853,19 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
     // otherwise coerce to a Date on read (the kbImportDataTable lesson:
     // format FIRST, then write).
     (textCols || []).forEach(function (col) { sheet.getRange(col + '2:' + col).setNumberFormat('@'); });
+  } else if (sheet.getLastColumn() < headers.length) {
+    // Header self-heal (the KB/EmpDocs pattern): a tab provisioned before a
+    // trailing column shipped gets the missing headers appended in place.
+    const have = sheet.getLastColumn();
+    sheet.getRange(1, have + 1, 1, headers.length - have).setValues([headers.slice(have)]).setFontWeight('bold');
+    (textCols || []).forEach(function (col) {
+      if (col.charCodeAt(0) - 64 > have) sheet.getRange(col + '2:' + col).setNumberFormat('@');
+    });
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K', 'N']); }
+function getOrCreateQaExemptionsSheet_() { return getOrCreateQaSheet_(QA_EXEMPTIONS_TAB, QA_EXEMPTIONS_HEADERS, ['A', 'B', 'C']); }
 function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
 function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
 
@@ -26190,7 +26885,7 @@ function qaChunkRange_(size, idx, chunkBytes) {
 /** The review queue. Read-only; QA-gated. An unset QA_SS_ID returns a
  *  notConfigured shape (setup instructions beat an error card on a fresh
  *  deploy); a configured-but-unreachable store is a real error. */
-function getQaQueue() {
+function getQaQueue(period) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
@@ -26202,21 +26897,33 @@ function getQaQueue() {
     // the same disclosure getTeammateStatus already makes; free text stays
     // allowed so an ex-agent's recording is still attributable).
     const agentOptions = [];
+    const rosterIdByName = {};   // Q7 — the coaching hand-off needs the rep's id, not their name
     try {
       const rrows = getEmployeeRosterRows_();
       for (let i = 1; i < rrows.length; i++) {
         if (!empRosterEmail_(rrows[i])) continue;   // INV-183: one inclusion predicate
         const nm = String(rrows[i][EMP.NAME] || '').trim();
         if (nm && agentOptions.indexOf(nm) < 0) agentOptions.push(nm);
+        if (nm && !rosterIdByName[nm.toLowerCase()]) rosterIdByName[nm.toLowerCase()] = String(rrows[i][EMP.ID] || '').trim();
       }
       agentOptions.sort();
     } catch (e) { /* best-effort — the queue still renders */ }
+    // Q4 — the audit period (operator decision 6: derived from DriveCreatedMs).
+    // The client sends the key it wants; an absent/invalid one lands on the
+    // current month. Options + target ride the payload so the client never
+    // mirrors the period arithmetic or the CONFIG target.
+    const todayYmd = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const periodOptions = qaPeriodOptions_(todayYmd);
+    const periodKey = qaPeriodValid_(period) ? String(period).trim() : periodOptions[0].key;
+    const target = qaAuditTarget_();
     const base = {
       members: members, self: String(emp.email || '').trim().toLowerCase(),
       isManager: !!emp.isManager, folderConfigured: !!qaFolderId_(),
       agentOptions: agentOptions, criteria: getQaScorecardCriteria_(),
+      period: periodKey, periodOptions: periodOptions, target: target, todayYmd: todayYmd,
+      periodEnd: (qaPeriodBounds_(periodKey) || {}).end || '',
     };
-    if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; return base; }
+    if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; base.coverage = []; return base; }
     const sheet = getOrCreateQaRecordingsSheet_();
     const last = sheet.getLastRow();
     const items = [];
@@ -26232,11 +26939,16 @@ function getQaQueue() {
           sizeBytes: Number(rows[i][QAR.SIZE]) || 0,
           mime: String(rows[i][QAR.MIME] || ''),
           createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
+          createdYmd: qaMsToYmd_(Number(rows[i][QAR.CREATED_MS]) || 0),
           status: qaStatus_(rows[i][QAR.STATUS]),
+          statusMs: Number(rows[i][QAR.STATUS_MS]) || 0,
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
           agent: String(rows[i][QAR.AGENT] || '').trim(),
+          agentEmpId: String(rows[i][QAR.AGENT] || '').trim() ? (rosterIdByName[String(rows[i][QAR.AGENT] || '').trim().toLowerCase()] || '') : '',
           sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
+          durationSec: Number(rows[i][QAR.DURATION_SEC]) || 0,
+          skipReason: String(rows[i][QAR.SKIP_REASON] || ''),
           comments: 0,
         });
       }
@@ -26258,6 +26970,13 @@ function getQaQueue() {
       }
     } catch (e) { /* counts are decoration — the queue still renders */ }
     items.sort(function (a, b) { return b.createdMs - a.createdMs; });
+    // Q4 — the coverage join (one roster row per rep, this period vs the
+    // previous). Best-effort with the OUTCOME carried: a failed scorecard or
+    // exemption read must not read as "nobody sampled" (INV-187).
+    try {
+      const latest = qaLatestScorecards_(qaReadScorecards_(null).cards);
+      base.coverage = qaCoverageRows_(items, latest, agentOptions, periodKey, target, qaReadExemptions_(), qaPrevPeriod_(periodKey));
+    } catch (e) { base.coverage = []; base.coverageUnavailable = true; }
     base.recordings = items.slice(0, QA_LIST_CAP);
     base.total = items.length;
     base.cap = QA_LIST_CAP;
@@ -26304,7 +27023,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''), '', 0,   // Agent + SharedMs set later in the detail
+        'new', '', 0, String(f.getUrl() || ''), '', 0, '', '',   // Agent + SharedMs + DurationSec + SkipReason set later in the detail
       ]);
       added++;
     }
@@ -26337,7 +27056,7 @@ function qaFindRecordingRow_(sheet, fileId) {
 /** Set a recording's review status. QA-gated, locked; status is enum-bounded
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
-function qaSetRecordingStatus(fileId, status) {
+function qaSetRecordingStatus(fileId, status, reason) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -26349,10 +27068,14 @@ function qaSetRecordingStatus(fileId, status) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    // Q2 — a skip carries its reason (free text, bounded, QA-store only —
+    // it may name the caller). Any other status CLEARS a stale reason.
+    const why = st === 'skipped' ? String(reason || '').trim().substring(0, QA_SKIP_REASON_MAX) : '';
     sheet.getRange(found.rowIdx, QAR.STATUS + 1).setValue(st);
     sheet.getRange(found.rowIdx, QAR.STATUS_MS + 1).setValue(Date.now());
+    sheet.getRange(found.rowIdx, QAR.SKIP_REASON + 1).setValue(why);
     writeAuditLog_(emp, 'QaStatusChange', '', '', false, 0, 'fileId=' + fid + '; status=' + st, emp.email);
-    return { success: true, status: st };
+    return { success: true, status: st, skipReason: why };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -26747,7 +27470,9 @@ function qaSetRecordingAgent(fileId, agentName) {
     if (!found) return { success: false, error: 'Recording not found.' };
     sheet.getRange(found.rowIdx, QAR.AGENT + 1).setValue(name);
     writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
-    return { success: true, agent: name };
+    // Q7 — the roster id the coaching hand-off keys off (the name itself
+    // never leaves the QA store's return; the id is what the composer needs).
+    return { success: true, agent: name, agentEmpId: qaRosterIdByName_(name) };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -27074,20 +27799,29 @@ function getMyQaReviews() {
  *  round) load, random tie-break. `rand` is injectable for deterministic
  *  tests; blank agents bucket under '(unassigned)' so unattributed
  *  recordings still get sampled. */
-function qaSamplePick_(candidates, count, reviewedByAgent, rand) {
+function qaSamplePick_(candidates, count, reviewedByAgent, rand, targets) {
   const pool = (candidates || []).slice();
   const r = typeof rand === 'function' ? rand : Math.random;
   const key = function (c) { return String((c && c.agent) || '').trim() || '(unassigned)'; };
   const n = Math.max(0, Math.min(Math.floor(Number(count) || 0), pool.length));
   const picked = [];
   const load = {};
+  // Q4 — target-aware: an agent whose (done + picked) load has reached the
+  // period target is SKIPPED, so a sample never pulls a covered agent ahead
+  // of one still short. Only agents PRESENT in `targets` are capped — an
+  // absent map (the legacy 4-arg call) keeps the pure coverage-fair pick.
+  const capped = function (k, l) {
+    return !!(targets && Object.prototype.hasOwnProperty.call(targets, k)) && l >= (Number(targets[k]) || 0);
+  };
   while (picked.length < n) {
     let bestLoad = Infinity, ties = [];
     for (let i = 0; i < pool.length; i++) {
       const l = (Number((reviewedByAgent || {})[key(pool[i])]) || 0) + (load[key(pool[i])] || 0);
+      if (capped(key(pool[i]), l)) continue;
       if (l < bestLoad) { bestLoad = l; ties = [i]; }
       else if (l === bestLoad) ties.push(i);
     }
+    if (!ties.length) break;   // everyone left is at target
     const idx = ties[Math.floor(r() * ties.length) % ties.length];
     const c = pool.splice(idx, 1)[0];
     load[key(c)] = (load[key(c)] || 0) + 1;
@@ -27101,7 +27835,7 @@ function qaSamplePick_(candidates, count, reviewedByAgent, rand) {
  *  uses Assign on the queue). QA-gated, locked; coverage-fair via
  *  qaSamplePick_ (agents with the fewest DONE reviews first). Counts-only
  *  audit (INV-32/196). */
-function qaSampleRecordings(count) {
+function qaSampleRecordings(count, period) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -27115,13 +27849,37 @@ function qaSampleRecordings(count) {
     if (last < 2) return { success: false, error: 'No recordings indexed yet — Sync first.' };
     const start = Math.max(2, last - QA_LIST_SCAN + 1);
     const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+    // Q4 — period-scoped, target-aware: only DONE reviews whose recording
+    // falls in the period count as load, and a roster agent at the period
+    // target (or exempt this period — target 0) is skipped. Roster names
+    // are matched case-insensitively (the coverage join's rule); an
+    // off-roster agent string is uncapped (no target to reach).
+    const periodKey = qaPeriodValid_(period) ? String(period).trim()
+      : qaPeriodOptions_(Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'))[0].key;
+    const target = qaAuditTarget_();
+    let exemptions = {};
+    try { exemptions = qaReadExemptions_(); } catch (e) { exemptions = {}; }
+    const canon = {};    // lowercase roster name → roster spelling
+    const targets = {};  // roster spelling → target for this period
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (!nm) continue;
+        canon[nm.toLowerCase()] = nm;
+        targets[nm] = exemptions[nm.toLowerCase() + '|' + periodKey] ? 0 : target;
+      }
+    } catch (e) { /* best-effort — an unreadable roster degrades to the uncapped pick */ }
     const candidates = [];
     const reviewedByAgent = {};
     for (let i = 0; i < rows.length; i++) {
       const fid = String(rows[i][QAR.FILE_ID] || '').trim();
       if (!fid) continue;
-      const agent = String(rows[i][QAR.AGENT] || '').trim() || '(unassigned)';
-      if (qaStatus_(rows[i][QAR.STATUS]) === 'done') {
+      const rawAgent = String(rows[i][QAR.AGENT] || '').trim();
+      const agent = (rawAgent && canon[rawAgent.toLowerCase()]) || rawAgent || '(unassigned)';
+      const createdYmd = qaMsToYmd_(Number(rows[i][QAR.CREATED_MS]) || 0);
+      if (qaStatus_(rows[i][QAR.STATUS]) === 'done' && qaPeriodMatches_(createdYmd, periodKey)) {
         reviewedByAgent[agent] = (reviewedByAgent[agent] || 0) + 1;
       }
       if (qaStatus_(rows[i][QAR.STATUS]) !== 'new') continue;
@@ -27129,12 +27887,268 @@ function qaSampleRecordings(count) {
       candidates.push({ fileId: fid, agent: agent, rowIdx: start + i });
     }
     if (!candidates.length) return { success: false, error: 'Nothing to sample — every new recording is already assigned.' };
-    const picked = qaSamplePick_(candidates, n, reviewedByAgent);
+    const picked = qaSamplePick_(candidates, n, reviewedByAgent, null, targets);
+    if (!picked.length) return { success: false, error: 'Nothing to sample — every unassigned recording belongs to an agent already at target this period.' };
     picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(self); });
     writeAuditLog_(emp, 'QaSample', '', '', false, 0,
       'requested=' + n + '; assigned=' + picked.length, emp.email);
     return { success: true, assigned: picked.length,
              fileIds: picked.map(function (c) { return c.fileId; }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Q4 (design handoff PR 5) — audit periods, coverage, exemptions ────────
+/** The per-period sample target: Script Property QA_AUDIT_TARGET_PER_PERIOD
+ *  (1..50) overrides the CONFIG seed; garbage degrades to the seed. */
+function qaAuditTarget_() {
+  const seed = Math.max(1, Math.floor(Number(CONFIG.QA_AUDIT_TARGET_PER_PERIOD) || 3));
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('QA_AUDIT_TARGET_PER_PERIOD');
+    if (raw == null || String(raw).trim() === '') return seed;
+    const n = Math.floor(Number(raw));
+    return (n >= 1 && n <= 50) ? n : seed;
+  } catch (e) { return seed; }
+}
+/** The roster id for an agent NAME (case-insensitive, INV-183 inclusion);
+ *  '' when the name is not on the roster or the roster is unreadable. */
+function qaRosterIdByName_(name) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return '';
+  try {
+    const rrows = getEmployeeRosterRows_();
+    for (let i = 1; i < rrows.length; i++) {
+      if (!empRosterEmail_(rrows[i])) continue;
+      if (String(rrows[i][EMP.NAME] || '').trim().toLowerCase() === key) return String(rrows[i][EMP.ID] || '').trim();
+    }
+  } catch (e) { /* best-effort */ }
+  return '';
+}
+/** PURE — a period key is `yyyy-MM` (a month) or `yyyy-Qn` (a quarter). */
+function qaPeriodValid_(key) {
+  const k = String(key || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) || /^\d{4}-Q[1-4]$/.test(k);
+}
+/** PURE — epoch ms → yyyy-MM-dd in the MANAGER tz (the app's operating
+ *  anchor; DriveCreatedMs is the recording's own stamp). 0/garbage → ''. */
+function qaMsToYmd_(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return '';
+  try { return Utilities.formatDate(new Date(n), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
+  catch (e) { return ''; }
+}
+/** PURE — the month + quarter keys a yyyy-MM-dd date falls in. */
+function qaPeriodKeysForYmd_(ymd) {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const mo = Number(m[2]);
+  if (!(mo >= 1 && mo <= 12)) return null;
+  return { month: m[1] + '-' + m[2], quarter: m[1] + '-Q' + Math.ceil(mo / 3) };
+}
+/** PURE — does a yyyy-MM-dd date fall in the period? Unknown date → false. */
+function qaPeriodMatches_(ymd, key) {
+  const ks = qaPeriodKeysForYmd_(ymd);
+  if (!ks) return false;
+  return ks.month === key || ks.quarter === key;
+}
+/** PURE — the period immediately before `key` (same shape). */
+function qaPrevPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) - 1;
+    if (mo < 1) { mo = 12; y--; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) - 1;
+    if (q < 1) { q = 4; y--; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+/** PURE — a human label: `2026-08` → 'Aug 2026', `2026-Q3` → 'Q3 2026'. */
+function qaPeriodLabel_(key) {
+  const k = String(key || '').trim();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) return MON[Number(m[2]) - 1] + ' ' + m[1];
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) return 'Q' + m[2] + ' ' + m[1];
+  return k;
+}
+/** PURE — inclusive yyyy-MM-dd bounds of a period (null on a bad key). */
+function qaPeriodBounds_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), mo = Number(m[2]);
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    return { start: k + '-01', end: k + '-' + (lastDay < 10 ? '0' : '') + lastDay };
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    const y = Number(m[1]), q = Number(m[2]);
+    const mo1 = (q - 1) * 3 + 1, mo3 = mo1 + 2;
+    const lastDay = new Date(Date.UTC(y, mo3, 0)).getUTCDate();
+    const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return { start: y + '-' + pad(mo1) + '-01', end: y + '-' + pad(mo3) + '-' + pad(lastDay) };
+  }
+  return null;
+}
+/** PURE — the period options the client offers: this month, this quarter,
+ *  the previous quarter (each {key, label}). */
+function qaPeriodOptions_(todayYmd) {
+  const ks = qaPeriodKeysForYmd_(todayYmd) || { month: '', quarter: '' };
+  const out = [];
+  if (ks.month) out.push({ key: ks.month, label: qaPeriodLabel_(ks.month) });
+  if (ks.quarter) {
+    out.push({ key: ks.quarter, label: qaPeriodLabel_(ks.quarter) });
+    const prev = qaPrevPeriod_(ks.quarter);
+    if (prev) out.push({ key: prev, label: qaPeriodLabel_(prev) });
+  }
+  return out;
+}
+/** PURE — the mean of a scorecard's 1..5 ratings and its lowest rating;
+ *  null when the card carries no valid rating. */
+function qaCardStats_(card) {
+  let sum = 0, n = 0, min = Infinity;
+  Object.keys((card && card.ratings) || {}).forEach(function (k) {
+    const v = Number(card.ratings[k]);
+    if (v >= 1 && v <= 5) { sum += v; n++; if (v < min) min = v; }
+  });
+  return n ? { avg: sum / n, min: min, n: n } : null;
+}
+/** PURE (Node-pinned) — exemption eligibility (operator decision 6): two
+ *  consecutive COVERED periods (sampled ≥ target in both) at avg ≥ 4.5 with
+ *  no criterion under 4. A row short in EITHER period is never eligible —
+ *  silence is not merit. */
+function qaExemptEligible_(row) {
+  if (!row) return false;
+  const target = Number(row.target) || 0;
+  if (!(target > 0)) return false;   // an exempt (target 0) or targetless row is never re-eligible
+  if (!(row.sampled >= target && row.prevSampled >= target)) return false;
+  if (!(row.avg != null && row.prevAvg != null)) return false;
+  if (!(row.avg >= QA_EXEMPT_AVG_MIN && row.prevAvg >= QA_EXEMPT_AVG_MIN)) return false;
+  if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
+  return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
+}
+/** PURE (Node-pinned) — the coverage join: ONE row per roster name.
+ *  `sampled` = DONE recordings attributed to the rep (case-insensitive) whose
+ *  DriveCreatedMs falls in the period; `avg` = the mean of the LATEST
+ *  scorecards' own means over those recordings (null when none — never 0);
+ *  `minCriterion` = the lowest single rating across them. The previous
+ *  period rides alongside so the client can show a delta and the
+ *  eligibility rule can read two periods. An exempt rep's target is 0. */
+function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
+  const cardsByFile = {};
+  (latestCards || []).forEach(function (c) {
+    const f = String((c && c.fileId) || '');
+    if (f) (cardsByFile[f] = cardsByFile[f] || []).push(c);
+  });
+  const byName = {};
+  (rosterNames || []).forEach(function (nm) {
+    const n = String(nm || '').trim();
+    if (!n) return;
+    byName[n.toLowerCase()] = { name: n, cur: { sampled: 0, sum: 0, cards: 0, min: Infinity }, prev: { sampled: 0, sum: 0, cards: 0, min: Infinity }, lastReviewedMs: 0 };
+  });
+  (recs || []).forEach(function (r) {
+    if (!r || r.status !== 'done') return;
+    const row = byName[String(r.agent || '').trim().toLowerCase()];
+    if (!row) return;
+    if (Number(r.statusMs) > row.lastReviewedMs) row.lastReviewedMs = Number(r.statusMs);
+    const bucket = qaPeriodMatches_(r.createdYmd, period) ? row.cur
+      : (prevPeriod && qaPeriodMatches_(r.createdYmd, prevPeriod)) ? row.prev : null;
+    if (!bucket) return;
+    bucket.sampled++;
+    (cardsByFile[r.fileId] || []).forEach(function (c) {
+      const st = qaCardStats_(c);
+      if (!st) return;
+      bucket.sum += st.avg; bucket.cards++;
+      if (st.min < bucket.min) bucket.min = st.min;
+    });
+  });
+  const fin = function (b) {
+    return { avg: b.cards ? Math.round((b.sum / b.cards) * 100) / 100 : null,
+             min: b.cards ? b.min : null };
+  };
+  return Object.keys(byName).sort().map(function (k) {
+    const row = byName[k];
+    const cur = fin(row.cur), prev = fin(row.prev);
+    const exempt = !!(exemptions || {})[k + '|' + period];
+    const out = {
+      name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
+      cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
+      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+    };
+    out.eligible = !exempt && qaExemptEligible_(out);
+    return out;
+  });
+}
+/** Read the exemption ledger into { 'lowercase name|period': true } — latest
+ *  row per key wins; Sheets' TRUE coercion handled. READ-ONLY (never
+ *  provisions the tab); an absent tab reads as no exemptions. */
+function qaReadExemptions_() {
+  const sheet = getQaSS_().getSheetByName(QA_EXEMPTIONS_TAB);
+  const out = {};
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const last = sheet.getLastRow();
+  const start = Math.max(2, last - QA_EXEMPTIONS_SCAN + 1);
+  const rows = sheet.getRange(start, 1, last - start + 1, QA_EXEMPTIONS_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const nm = String(rows[i][QAE.EMP_NAME] || '').trim().toLowerCase();
+    const per = String(rows[i][QAE.PERIOD] || '').trim();
+    if (!nm || !per) continue;
+    const a = rows[i][QAE.ACTIVE];
+    const active = a === true || String(a || '').trim().toUpperCase() === 'TRUE';
+    if (active) out[nm + '|' + per] = true; else delete out[nm + '|' + per];
+  }
+  return out;
+}
+/** Grant / revoke an audit-period exemption. MANAGER-gated (INV-02 — a QA
+ *  member reviews, a manager decides who may skip a period), locked,
+ *  append-only ledger; the audit row carries period + flag only (the name
+ *  stays in the QA store — INV-196's name rule). */
+function qaSetExemption(empName, period, on) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const name = String(empName || '').trim().substring(0, 80);
+    const per = String(period || '').trim();
+    if (!name) return { success: false, error: 'Employee name required.' };
+    if (!qaPeriodValid_(per)) return { success: false, error: 'Unknown audit period.' };
+    const sheet = getOrCreateQaExemptionsSheet_();
+    const active = !!on;
+    sheet.appendRow([name, per, String(emp.email || ''), Date.now(), active ? 'TRUE' : 'FALSE']);
+    writeAuditLog_(emp, 'QaExemption', '', '', false, 0, 'period=' + per + '; active=' + active, emp.email);
+    return { success: true, active: active, period: per };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+/** Write a recording's duration ONCE (the client learns it on
+ *  loadedmetadata; the queue's Length column reads it). QA-gated, locked,
+ *  bounded; a non-blank cell is never overwritten, no audit row (it is
+ *  metadata the file already carries, not a review action). */
+function qaSetRecordingDuration(fileId, sec) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const fid = String(fileId || '').trim();
+    const n = Math.round(Number(sec));
+    if (!(n >= 1 && n <= QA_DURATION_MAX_SEC)) return { success: false, error: 'Invalid duration.' };
+    const sheet = getOrCreateQaRecordingsSheet_();
+    const found = qaFindRecordingRow_(sheet, fid);
+    if (!found) return { success: false, error: 'Recording not found.' };
+    const have = Number(found.row[QAR.DURATION_SEC]) || 0;
+    if (have > 0) return { success: true, durationSec: have, written: false };
+    sheet.getRange(found.rowIdx, QAR.DURATION_SEC + 1).setValue(n);
+    return { success: true, durationSec: n, written: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }

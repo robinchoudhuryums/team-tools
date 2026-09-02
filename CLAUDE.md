@@ -297,25 +297,48 @@ Apps Script project under its own directory, synced via `clasp`.
      T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
      on-demand. See INV-123. The rep My Training checklist was redesigned
      with completion rings; Team Training's matrix is now a reps×items CSS-grid
-     status matrix. **Coaching (shipped):** ONE merged **Coaching** tab
-     (`enterCoachingView`) for everyone. Reps see **My Coaching** (their received
-     severity-chipped feedback cards with one-click Acknowledge) and never see a
-     mode toggle; managers get a **Mine ⇄ Team** segmented toggle
-     (`coachSwitchMode_`, persisted per-browser to `umsCoachingMode`, managers
-     default to Team) where **My Coaching** is the manager's OWN received items
-     (routine coaching) and **Team Coaching** is the composer + team-scoped
-     dashboard + a metrics panel (ack-rate, median days-to-acknowledge, severity
-     breakdown, overdue, per-rep). The two prior tabs (`coaching` rep +
-     `coachingManage` manager) were merged into this single non-managerOnly tab;
-     the "Coach on this" deep-link now opens `coaching` and forces Team mode via
-     `window.COACH_PREFILL`. Granular, non-routine manager feedback on a SPECIFIC patient/TRX
-     interaction (vs. the org-wide quizzes/assignments), stored in a `Coaching`
-     tab in `HR_DOCS_SS_ID` (keep-forever, team-scoped) — `createCoaching` /
-     `getMyCoaching` / `acknowledgeCoaching` / `getCoachingDashboard` /
-     `voidCoaching`. Tied to the Call Notes training flag via a **"Coach on
-     this"** button on the manager Per-Rep card; un-acked items past
-     `CONFIG.COACHING_UNACK_REMINDER_DAYS` (7) nudge the manager in the existing
-     overdue digest. See INV-134.
+     status matrix. **Coaching (redesigned — design handoff PR 4, 2026-09-02):**
+     ONE merged **Coaching** tab (`enterCoachingView`) for everyone, on the shared
+     `.app-bar` (`Training › Coaching`). Reps see **My Coaching**: KPI strip
+     (received this quarter / waiting on you / recognition), an action callout
+     naming the OLDEST open item with a Jump button, a **Recognition** feed for
+     praise (no acknowledgement), and month-grouped coaching cards each with an
+     OPTIONAL reply box beside Acknowledge (`acknowledgeCoaching(coachId,
+     response)` — the reply is written only on the open→acked transition and
+     mailed to the manager as "replied: yes/no", never its text). Managers get a
+     **Mine ⇄ Team** strip (real `role="tab"` buttons on `.toolbar-tabs`;
+     `coachSwitchMode_`, persisted to `umsCoachingMode`) where Team is a
+     **signal board** ("Who needs a 1-on-1" — per-rep 30-day severity mix bar,
+     total, last, overdue, and a tier from the pure `coachRepSignal_`: priority
+     (any critical, or score ≥6) / watch (≥3) / **no signal** (nothing in 21
+     days — INFO-toned, an absence is not a verdict) / steady / clear), a
+     filter strip with live counts (All / Needs ack / Overdue / Praise /
+     Voided — voided items are EXCLUDED from All, operator decision 9; the
+     choice persists to `umsCoachingFilter`), a search box + employee select
+     over the cached payload, and the feed (recognition block, then cards with
+     Nudge / Revisit / Void). Logging happens in a side **DRAWER**
+     (`ensureOverlay` + the shared `.modal.drawer`): Coaching ⇄ Praise kind,
+     three severity CHIPS (`COACH_SEV_LABELS` — `major` DISPLAYS as
+     **Moderate**, the stored enum is unchanged; a client↔server mirror), an
+     optional revisit date, patient/TRX, narrative + coaching point. **Server
+     (INV-134 amended):** five TRAILING `Coaching` columns (`RepResponse`,
+     `FollowUpAt`, `NudgedAt`, `NoteDate`, `QaFileId`; header self-heals);
+     ages/overdue/median count **business days** through the shared
+     `businessMinutesBetween_` core (`coachAgeDays_` — an UNKNOWN age is never
+     overdue; operator decision 7); praise is excluded from open counts AND the
+     ack-rate denominator (decision 8); `setCoachingFollowUp` + `nudgeCoaching`
+     (once per manager-tz day per item; both manager + team-scoped + locked +
+     content-free audit); **only a CRITICAL item emails the rep immediately**
+     (cc the manager, no narrative/TRX/note id in the mail; a critical VOID
+     sends a retraction), while minor/moderate/praise ride the Friday
+     **`sendCoachingRecapDigest`** (trigger #19, heartbeat `coachingRecap`,
+     never consults the manager brief flag — decision 1). The **"Coach on
+     this"** button on the Team Notes Per-Rep card carries the NOTE DATE into
+     `window.COACH_PREFILL`, so the card's note chip drills back (manager → the
+     Per-Rep drill; rep → their own History at that date) and a QA chip parks
+     `window.QA_OPEN_HINT` for the QA queue (the C8 pattern). Voided items stay
+     hidden from reps (decision 9) and agents do NOT see their own QA reviews
+     (decision 13). See INV-134.
    - **QA** — call-recording review (Phase 1, operator 2026-08-27).
      GATED to managers + `QA_MEMBERS` reps (`canSeeQa_`, the
      `canSeeSpanishInbox_` pattern — a THIRD gate tier returning
@@ -399,6 +422,47 @@ Apps Script project under its own directory, synced via `clasp`.
      recordings index + Drive files never touched); and Storage Health
      carries the QA store row with the LIVE retention window in its
      retention field. See INV-196.
+     **Design handoff PR 5 (2026-09-02) — the QA surface is COVERAGE-FIRST.**
+     The Recordings tab opens with an audit-period control (`.toolbar-tabs`
+     over the SERVER-shipped `periodOptions` — this month / this quarter /
+     the previous quarter; the pick persists per browser as `umsQaPeriod` and
+     the server's echoed `period` is the truth), a summary strip DERIVED from
+     the coverage table (coverage Σmin(sampled,target)/Σtarget, a CALL-weighted
+     team average with a delta vs the previous period, a Below-3.5 list, days
+     left), a per-employee coverage table (`getQaQueue.coverage[]` from the
+     pure `qaCoverageRows_` — one row per roster name, case-insensitive
+     attribution, `avg` null-never-0; ONE tier rule `qaCoverageTier_` feeds
+     both the row tint and the status pill: covered / short / short·low /
+     not started / exempt), "Sample the gaps for me (N)" (N = Σ(target −
+     sampled) over non-exempt reps → `qaSampleRecordings(n, period)`, whose
+     `qaSamplePick_` is TARGET-aware and period-scoped), manager-only
+     Grant/Revoke exemption on eligible rows (`qaSetExemption` — MANAGER-
+     gated, a `QaExemptions` ledger; eligibility = two COVERED periods at
+     4.5+ with no criterion under 4), and the recordings as a sortable
+     `mtRenderTable_` (Recording · Agent (warn-toned Unattributed) · Length
+     (`DurationSec`, written back ONCE by the client on loadedmetadata via
+     `qaSetRecordingDuration`) · Dropped · Status (+ the SKIP REASON — Skip
+     now asks why, `qaSetRecordingStatus(id,'skipped',reason)`; free text,
+     QA-store only) · Reviewer · actions). The detail is TWO PANES from
+     1000px (call left: agent block + roster-match line + player, sticky;
+     review right: scorecard with 1/3/5 anchors + running average, comments,
+     the coaching hand-off) with the status actions (Skip… / Start review /
+     Mark done / Reopen) in the header. **Comments PAUSE-AND-PIN (Q1):** the
+     first keystroke pauses playback and pins the moment; the pin is an
+     editable `m:ss` field (`qaParseClock_` — a typo is refused, never posted
+     at 0:00); the post uses the PIN, and the reviewer chooses Post & resume /
+     Post & stay paused / Discard. The old composer read `audio.currentTime`
+     at SUBMIT, so a comment landed wherever the player had drifted to while
+     the reviewer typed. **Q3:** every 1–5 figure is toned by the ONE
+     `qaScoreTone_` (≤2 destructive, 3 neutral, ≥4 accent) and ONE transport
+     renderer (`qaRenderTransportFor_`, listener-bound to the audio element it
+     controls) serves the detail AND My Reviews, whose page now leads with a
+     read-only info callout and a prominent per-card average. **Q7:** a
+     manager's "Coach on this call" parks `COACH_PREFILL {empId, qaFileId,
+     what}` (the comments as the narrative) and enters `develop/coaching`;
+     it needs the call attributed to a ROSTER agent (`agentEmpId`, joined
+     server-side). Operator decision 13 holds: agents still do not see the
+     tool (QA-14 stays gated). See the INV-196 amendment.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -851,7 +915,11 @@ this section before touching the relevant area.
   not the boundary),
   `getEmpDocTemplates`, `saveEmpDocTemplate`, `deleteEmpDocTemplate`
   (org-wide PHI-free form shells — gated but NOT team-scoped, INV-135),
-  `createCoaching`, `getCoachingDashboard`, `voidCoaching`
+  `createCoaching`, `getCoachingDashboard`, `voidCoaching`,
+  `setCoachingFollowUp`, `nudgeCoaching` (design handoff PR 4),
+  `qaSetExemption` (design handoff PR 5 — the ONE QA endpoint on the MANAGER
+  tier rather than `canSeeQa_`: a QA member reviews, a manager decides who may
+  skip a period)
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
@@ -888,7 +956,8 @@ this section before touching the relevant area.
   full suite on the dev instance; INV-162), `creditMonthlyPtoAccruals`
   (the monthly PTO accrual credit, INV-194) and `purgeOldQaReviews` (the QA
   review-record retention purge — QaComments + QaScorecards only, default
-  OFF; INV-196) — are top-level (required: Apps Script
+  OFF; INV-196), and `sendCoachingRecapDigest` (the Friday agent coaching
+  recap — design handoff PR 4) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -1518,6 +1587,18 @@ this section before touching the relevant area.
   which a pure hue rotation leaves untouched. Now pinned by the V-1 tripwire
   (source-level `in oklab` + a computed ≤20° hue-drift bound, both modes) —
   don't add a `-deep` alias, or "correct" a fallback hex, without re-running it.
+- **A `var(--x, fallback)` on a token the tokens partial DEFINES is banned (design
+  handoff C4, PR 1 — 2026-09-02).** A redundant fallback is a second source of truth
+  for the value: `var(--success-deep, var(--accent))` meant "green" in one file and
+  the deep alias everywhere else, and `var(--warning-deep, #b86e00)` froze a hex the
+  palette round had already moved. Thirty-odd were swept (train ×3, tc, styles, tour,
+  qa ×17, kb ×5, cn ×9). The ONLY exempt names are the inline animation parameters
+  (`--d`, `--len`, `--circ`, `--target`) — set per element via `style="--d:…"`, defined
+  in no tokens file, and their defaults ARE the value (the INV-128 note). Pinned by
+  PR1-1, a DERIVED comment-stripped scan over every shared partial (INV-179/188):
+  add a fallback to a defined token and CI names the file. NOTE the index's own
+  examples were wrong (`--accent-deep` on `.tr-complete-btn`, a `--danger-soft`
+  literal) — neither existed; the sweep list came from the tree, not the doc.
 - **Text on a FIXED-palette surface must use a fixed colour, not a theme token
   (V-2, cycle-12 visual audit — FIXED).** The clock card's sky gradient does not
   flip with the theme, but `styles.html`'s
@@ -2207,7 +2288,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Sixteen client-side localStorage keys total.** All per-browser, all
+- **Eighteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -2275,6 +2356,10 @@ this section before touching the relevant area.
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
     `coachReadMode_`, written by `coachSwitchMode_`.
+  - `umsCoachingFilter` — the manager Team Coaching feed's filter strip choice
+    (`'all'` | `'ack'` | `'overdue'` | `'praise'` | `'voided'`, default `'all'`;
+    design handoff PR 4). Validated against `COACH_FILTERS` on read — a corrupt
+    value falls back to All. Written by the strip's click handler.
   - `umsWhatsNew` — the "What's new" seen-stamp (`{seenStamp}` — the designated
     KB article's edit timestamp at last panel dismissal, INV-152). Since the
     operator-feedback round (2026-07-09) the panel NO LONGER auto-opens:
@@ -2319,7 +2404,13 @@ this section before touching the relevant area.
     resets it (the in-memory set's own rollover rule), and a
     localStorage-throwing privacy-mode browser degrades to per-window
     dedupe — the pre-fix behavior, never worse.
-  Clearing browser data wipes all sixteen. (`umsMergeMode` — the Time/PTO
+  - `umsQaPeriod` — the QA Recordings tab's audit-period pick (design
+    handoff PR 5, 2026-09-02): a `yyyy-MM` or `yyyy-Qn` key VALIDATED against
+    the options the server shipped before it is stored; the server's echoed
+    `period` always wins on load (an unknown key lands on the current
+    month), so a stale pref can never pin a period the server would not
+    compute. Absent = the current month.
+  Clearing browser data wipes all eighteen. (`umsMergeMode` — the Time/PTO
   Time Off ⇄ Timesheet mode — was RETIRED with the 2026-08-18 consolidation:
   the two modes were one page with a swapped 240px rail, so the rail now
   stacks both; a stale stored value is simply ignored.) (`umsCallNotesLastDept` — the
@@ -3252,7 +3343,7 @@ this section before touching the relevant area.
   omits it, so existing pastes are byte-identical; the operator opts in
   by adding a `Direction: {callDirection}` line to the template.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Sixteen client-side localStorage keys total" entry in
+  authoritative "Eighteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`,
@@ -3274,7 +3365,9 @@ this section before touching the relevant area.
   and the 2026-08-13 settings/speed round added `umsTzWarnedDay` +
   `umsDashMetrics`, net 16 — and the 2026-08-17 cross-window reminder dedupe
   added `umsRemindFired`, net 17 — and the 2026-08-18 Time/PTO consolidation
-  RETIRED `umsMergeMode`, net 16.)
+  RETIRED `umsMergeMode`, net 16 — and the design handoff's PR 4
+  (2026-09-02) added `umsCoachingFilter`, net 17 — and its PR 5 (same day)
+  added `umsQaPeriod`, net 18.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -3417,6 +3510,30 @@ this section before touching the relevant area.
   (`isoDateTz(empTz())`, the F6 discipline); future-month nav refused.
   Pinned by the two team-calendar pins (behavioural endpoint drive +
   client wiring/prefill/fixture-shape) + the omnibus gate case.
+- **Manage Time is a GROUPED scroll — Needs you, then Periodic collapsed
+  (design handoff PR 3, 2026-09-02).** The tab had grown to eleven cards in
+  historical order, so the two that need a decision today (Pending Time Off,
+  Missed Clock-Outs) sat beside a payroll export and a sheet doctor. It now
+  renders under two `<h2 class="mgr-group-h">` groups: **Needs you** — Pending
+  Time Off (`data-tone="warn"`, with an "oldest N days" line from
+  `mgrOldestPendingDays_`, derived in the manager's ROSTER tz per F6), Missed
+  Clock-Outs (`data-tone="destructive"`, "fix before payroll"), the adjustment
+  queue, Live Status and the team calendar — then **Periodic** behind a real
+  `<button aria-expanded aria-controls>` disclosure (`mgrToggleGroup_`, INV-173/
+  174; `.mgr-group[hidden] { display: none }` is the load-bearing companion —
+  the `[hidden]` gotcha) holding Export, PTO reconciliation, the sheet doctor,
+  Recent Punches and Recent Activity. Three rules: (a) the collapsed group's
+  header carries a SUMMARY ROW fed by the lazy cards themselves —
+  `loadPtoReconciliation_`/`loadSheetDoctor_` call `mgrSetSummary_` on clean
+  ("all clear", ok tone), on drift (crit/warn) and on FAILURE ("check failed",
+  warn — a failed scan must not read as all-clear, INV-187) — so a manager
+  never has to expand it to learn whether something is wrong; (b) the periodic
+  panels are NOT lazy-loaded behind the toggle (plan M5 decision) — they load
+  as before, only their PAINT is folded; (c) collapse state is `MGR_STATE`,
+  SESSION-only, and is deliberately NOT a `mgrSwrRenderBlocked_` reason (the
+  blocker keeps exactly its two `return true;` — an open overlay and a dirty
+  form; a folded group re-renders freely and re-folds). The crumb reads
+  `Manage › Manage Time`. Pinned by PR3-3.
 - **Personal pin is per-rep, capped at 3, stored in `subformData`.**
   Rep toggles the pin via the bookmark icon on a card. State lives in
   `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
@@ -4012,9 +4129,12 @@ this section before touching the relevant area.
   above (the My Stats anonymized series keeps INV-124's). **Follow-ons
   (shipped):** (a) the **2-up extras row** (`clkRenderDashboardExtras_`) — a left
   card + a **Requests** card side by side. The left card is **Spanish Inbox** for
-  Spanish-capable users (`canSeeSpanish`) or a pending-**Training** card
-  (`clkDashTrainingCard_`, `getMyTraining` — to-do / overdue / next-due) for
-  everyone else. The **Requests** card shows the manager team aggregate
+  Spanish-capable users (`canSeeSpanish`); **since design handoff PR 6
+  (2026-09-02) everyone else gets the Requests card ALONE** (`.dash-pair
+  .dash-pair-single`) — the pending-**Training** card (`clkDashTrainingCard_`)
+  was RETIRED because its content is one of the six kinds the **Needs you**
+  block above the carousels now lists (INV-184: the helper, its RPC branch and
+  its skeleton twin are banned from returning). The **Requests** card shows the manager team aggregate
   (`deptStats`) or, for a rep, their own open/resolved (`getDeptRequests().mine`)
   — every agent now gets the extras row (previously only managers, via a
   Spanish↔Requests slider that was replaced). The Spanish card **surfaces
@@ -4031,8 +4151,83 @@ this section before touching the relevant area.
   for ~N answered by <EOM/EOY>" line on the own + team cards. (The full daily
   "cone" chart would need a per-day series in `getDashboardMetrics` — deferred.)
   The pre-dashboard layout decision (hero + shift-strip + ledger; coverage in the
-  shift header; world-clock strip) is below — those pieces still render INSIDE
+  shift header) is below — those pieces still render INSIDE
   the rail.
+  **Design handoff PR 6 (2026-09-02) — the Time Clock surface is TASK-FIRST.**
+  (a) **`#dash-main` LEADS with a Needs-you block** (`#dash-needsyou`, rendered
+  BEFORE `#dash-cards`) fed by `getMyPendingTasks()` — rep-callable
+  (`getEmployeeInfo_`, a bare `{error}` READ gate), read-only, cached per rep
+  for `PENDING_TASKS_CACHE_TTL` (120s) and **cached ONLY on a clean round**
+  (INV-129). It folds SIX sources, each in its own try/catch that pushes its
+  kind to `unavailable[]` rather than dropping it (INV-187): training
+  (`getMyTraining`, pending/overdue), coaching (`getMyCoaching`, open
+  non-praise; overdue = `ageDays ≥ CONFIG.COACHING_UNACK_REMINDER_DAYS`), notes
+  (`getMyMetrics(prevWorkdayIso_(today))` — the PREVIOUS workday, since CDR
+  never lands same-day; the item exists only when `answered − noteCount > 0`,
+  and a `noteCountUnavailable` round throws into `unavailable` rather than
+  rendering "0 missing"), requests (`getDeptRequests` mine open + incoming;
+  overdue = `slaStatus === 'overdue'`), sched (`getMyScheduledCalls` due TODAY
+  in the rep's tz) and docs (`getMyDocs` `needsAction`). **Operator decisions:
+  the QA source is OMITTED; Requests means dept requests only** (own pending
+  punch-edit stays the punch-area chip; pending PTO waits on the MANAGER, so it
+  is not the rep's task); signable docs are the sixth kind. Items sort via the
+  pure `pendingTasksSort_` (overdue first, due date asc with blank last, title)
+  and are capped `PENDING_TASKS_CAP` (30) with the pre-slice `total` reported
+  (INV-169). Every item carries a `{tool, tab}` ROUTE (pinned against the
+  TOOLS registry) and the notes item a `hint` that the client hands to
+  `fileMissingCalls_` — the C8 `CLK_NAV_HINT` park-and-consume, so "3 calls
+  without a note" lands on the Call Notes Log with the same toast the coverage
+  strip's CTA raises. Client (`clkNeedsYouHtml_`): a skeleton while unknown
+  (`data === undefined`), `errorStateHtml_` on a cold failure (INV-175), a
+  clean-empty round renders NOTHING (the block disappears rather than saying
+  "all clear" — a degraded round is never that), an `Overdue` word on overdue
+  rows (a stronger `is-past` tone when the due date has PASSED), real `<a>`
+  rows at 44px (INV-173), and a warn line naming every kind that could not be
+  checked ("Couldn't check scheduled calls — those may have items too"). SWR:
+  `CLK_NEEDS` keeps last-good and stamps freshness ONLY on a clean round
+  (`at = 0` on degraded/failed — INV-156); **the loader is gated on
+  `!COMPACT_MODE` BEFORE any RPC** (the cycle-8 M-12 rule — the pinned pop-out
+  never pays six reads for a block it hides), and `:root[data-compact]
+  #dash-needsyou { display: none }` hides it there. Deploy skew is safe: an
+  older server returns nothing the client reads as a list, so it renders the
+  error card, never a fake all-clear. (b) **The clock card is DENSER and
+  carries the shift STATE LINE**: the world-clock region strip
+  (`#clk-regions`, `CLK_REGION_ZONES`, its rotation + `clkUpdateRegions_`), the
+  shooting star (`clkShootMaybe_`) and the greeting "On the clock" pill are
+  RETIRED (INV-184 — a derived ban pin holds every selector + helper out; the
+  static star field and the tz `<select>` fed by the renamed `CLK_TZ_ZONES`
+  survive), and a `.clk-state` row (state dot + "On the clock / On lunch /
+  Shift complete / Not in" + the hours readout) sits INSIDE the gradient card
+  on a LITERAL-colour scrim (`rgba(10,13,20,.72)` under white — the V-2/INV-166
+  rule for a fixed-palette surface, and the amber bottom-right corner the
+  cycle-12 audit flagged as a card-level contrast question). **Hours render
+  ONCE** (operator decision 4): the state line carries `Nh Mm worked`; the
+  shift-strip header keeps only `% logged` + `Nm lunch`, and the status
+  SENTENCE no longer repeats them ("You're clocked in since 1:02 PM · 2h 33m
+  until end of shift."). (c) **The greeting rotator is HELD while a shift is
+  active** (`CLK_GREET_ROT.held = onClock`; the tick returns before rotating)
+  — an active shift is not the moment to slide the status sentence away under
+  a What's-new item; the plan's `.greet-held` indicator chip was NOT built (a
+  held rotator needs no badge). (d) **The rail order is clock card → punch
+  actions (`.clk-actions-block`, pending chip + `renderActions`) →
+  shift-strip** — the operator's "buttons above the fold" ask, MEASURED at
+  1440×900: the prime button's top moved from **704px to 367px** (the reorder
+  did it; the card itself is 18px shorter), and `.actions` is now a 2-column
+  base grid with `.prime` spanning both (the 540px re-columning and the
+  compact override's grid lines are gone — only a compact `gap` remains, so
+  the A2 scan owes nothing). (e) **The break chips ABSORB the next-break chip**
+  (`#clk-next-break` retired): each chip carries `data-start`/`data-end` and
+  `clkUpdateBreak_` (still called from the 1Hz tick, still PAINT-only per
+  INV-190) marks them `taken` (struck), `now`, or `next` with an "· in Nm"
+  countdown inside 90 minutes. **A minute-guard on a repainter must RESET when
+  the DOM it paints is re-rendered:** `_clkLastBreakMin` skipped the second
+  render of the same minute (`clkRefreshState_` re-renders on focus), so the
+  fresh chips shipped with NO state until `clkBreakScheduleHtml_` began
+  resetting the guard — found on camera, pinned in PR6-3. Verify: PR6-1..3
+  (pure), the Needs-you DOM test, the seven clock scenarios incl.
+  `clock-needsyou-empty-light-wide` (`?fixture=empty`) and
+  `clock-needsyou-error-light-wide` (`?failrpc=`), `fold-measure.mjs`, and
+  `test_pendingTasks_requiresEmployeeAndShape`.
 - **Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
@@ -4065,18 +4260,19 @@ this section before touching the relevant area.
   were removed. Pay-period info moved to the Time /
   PTO tab's Timesheet-mode side rail in Round 2 · 8b — the Clock
   view no longer loads timesheet data. Today's Punches and teammate
-  status render below the shift strip as the existing cards. A world-clock
-  strip (`#clk-regions`, item 5) sits under the hero clock: the rep's own
-  offshore tz (IST/PHT) when it isn't a US zone, plus the US customer
-  regions ET / CT / PT / HST. Pure client-side `Intl.DateTimeFormat` with
-  formatters cached once per render (`clkBuildRegionFmts_`) and refreshed
-  in the existing 1Hz `startClock` tick (`clkUpdateRegions_`) — no server
-  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`. **The
-  strip ROTATES (declutter): it shows ONE zone at a time and slides to the
-  next every `CLK_REGION_ROTATE_MS` (4.5s)** — `clkRotationZones_` excludes the
-  tz currently in the big clock (it's already the headline); the displayed
-  zone's minute stays live each tick, the slide-in (`.clk-region-rot`) fires
-  only on a rotation step and is neutralized by `prefers-reduced-motion`.
+  status render below the shift strip as the existing cards. **The
+  world-clock region strip (`#clk-regions`, item 5 — the rep's offshore tz +
+  ET / CT / PT / HST, rotating one zone at a time every 4.5s) was RETIRED by
+  design handoff PR 6 (2026-09-02)** along with the shooting star: under the
+  ALL-CST policy every agent works one frame, and the strip cost ~40px at the
+  top of the rail where the punch buttons needed to be. `CLK_REGION_ZONES`
+  became `CLK_TZ_ZONES`, whose ONLY consumer is the clock card's tz `<select>`
+  (`tzSelectHtml_`); `clkBuildRegionFmts_` / `clkRotationZones_` /
+  `clkUpdateRegions_` / `clkShootMaybe_` / `.clk-region*` / `.clk-shoot` are
+  banned from returning (the PR6 T2 pin, INV-184). `@keyframes clkRegSlide`
+  survives because the greeting rotator reuses it. See the PR 6 amendment on
+  the Dashboard KDD above for what replaced the strip (the state line + the
+  actions-first rail order).
 - **The DONE state NAMES the punch it was derived from (operator 2026-09-01).**
   `getNextActions_` returns `['Adjust']` when the day's punches end with a
   ClockOut, and `renderActions` rendered that as a bare "Shift complete for
@@ -4512,16 +4708,30 @@ this section before touching the relevant area.
   visible to the manager (previously the card showed only the legacy
   single `trainingReply`).
 - **Admin tab augmented with KPIs + tag taxonomy (Round 2 · 8h; 2nd-pass
-  consolidation).** The Call Notes Admin tab is split into **Overview / Tags /
-  Compliance / Config** sub-tabs (`cnAdminTab_`, persisted in
-  `CN_STATE.adminTab`). **Overview** = a 3-card **System status** summary
-  (Automation / CDR / Storage, derived from the same `getAutomationHealth` +
-  `getStorageHealth` fetches the detail panels use — no extra RPCs) + a 4-cell
-  `.telemetry` KPI strip (Week notes / Unresolved / Tags / Reps). The full
-  Automation/Storage Health detail panels are folded behind a **"System
-  details" disclosure** (`cnToggleSysDetails_`, plain show/hide — the panels are
-  tall/variable so a fixed-height accordion would clip) so Overview lands on the
-  summary, not a long scroll. **Tags** = ONE merged **taxonomy + trends** table
+  consolidation; design handoff PR 2, 2026-09-02).** The Admin tab is split into
+  **Overview / System / Tags / Compliance / Config / Sheets** sub-tabs
+  (`cnAdminTab_(key, anchorId?)`, persisted in `CN_STATE.adminTab`; the optional
+  anchor scrolls to a section — the Overview cards use it). **Overview** = the
+  deploy-readiness checklist → a 3-card **System status** summary (Automation /
+  CDR / Storage) → a 4-cell `.telemetry` KPI strip (Week notes / Unresolved /
+  Tags / Reps) → the Feature-usage panel. **System (PR 2) is FINDINGS-FIRST:**
+  a "Needs attention" list at the top, then the Storage inventory table, then
+  the Automation detail panel. ONE pure derivation, `cnHealthFindings_(health,
+  storage)` → `{items: [{id, area, severity: ok|warn|fail, title, detail, fix,
+  link}], degraded}`, feeds the list, the three Overview cards (each a real
+  `<button>` linking into the System tab's matching section — `cn-sys-sec-
+  automation|cdr|storage`), AND the System tab's count badge (`cnSetSysBadge_`,
+  with an aria-label text equivalent), so the three surfaces cannot disagree
+  and the server payload is UNCHANGED (the fixture-key derivation pin still
+  holds). Its severity rule is INV-186 in code: a check carries a non-ok
+  severity ONLY when its count reads zero on a healthy deployment — the two raw
+  CDR name lists ride an `ok` item's detail, a no-fallback store (External / HR /
+  QA) left unset is an `ok` fact, and a FAILED load is a `fail` FINDING plus a
+  `degraded[area]` marker (INV-187 — "could not check" must never render as
+  "All OK"; the cards read "Unavailable"). The retired "System details"
+  disclosure (`cnToggleSysDetails_`, `.cn-sys-details-btn`) and the second
+  card derivation (`cnSetSysFromHealth_`) are banned from returning (INV-184,
+  PR2-2/PR2-3). **Tags** = ONE merged **taxonomy + trends** table
   (`cnRenderAdminAugmentHtml_` joins `getCallNotesTagTaxonomy` rows with
   `getCallNotesTagTrends` `series[]` by tag): columns Tag / Usage bar / Notes /
   **Trend** (inline sparkline `cnTrendSparkSvg_`) / **Δ wk** / Actions
@@ -5278,10 +5488,15 @@ this section before touching the relevant area.
   `managerSearchCallNotes` is the follow-on if needed).
 - **Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
-  rendered by `cnLoadStoragePanel_`). Since the 2nd-pass consolidation it +
-  Automation Health live behind the Overview **"System details" disclosure**
-  (the always-visible 3-card System-status summary is the folded view of both;
-  the full panels are the drill-down). For each of the
+  rendered by `cnLoadStoragePanel_`). Since design handoff PR 2 (2026-09-02) it
+  is the **Storage inventory** on the Admin **System** sub-tab — a real table
+  through the shared `mtRenderTable_` (V-11: Store · Class · Status · Timezone
+  · Retention · link, row-toned `sv-row-danger/warn`) with an expandable detail
+  row per store (INV-182 `detailRow`/`rowId`; the disclosure is a real button
+  driven by `cnToggleDetailRow_`, INV-174) carrying the note / per-rep problems
+  / the exact tz fix; the VERDICTS live in the findings list above it (see the
+  Admin KDD) and the Overview Storage card links here. The hand-rolled
+  `.cn-storage-row/-main/-role/-meta` rows are retired (INV-184). For each of the
   eight stores (see the Operator State Checklist's storage map — the QA store joined 2026-08-28 #3, its retention field reflecting the LIVE `QA_REVIEW_RETENTION_DAYS` window so an enabled review-record purge is visible where every other store's policy is; its not-set pill is muted, the no-fallback-by-design tone) it reports which
   Script Property resolves it, whether it's configured + reachable
   (`SpreadsheetApp.openById` in try/catch), and — the headline — whether the
@@ -5316,9 +5531,10 @@ this section before touching the relevant area.
   so the Admin Overview doesn't double-scan Drive.
 - **Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
-  rendered by `cnLoadHealthPanel_`; since the 2nd-pass consolidation it sits
-  behind the Overview "System details" disclosure, with the Automation + CDR
-  System-status cards as its always-visible summary). One
+  rendered by `cnLoadHealthPanel_`; since design handoff PR 2 (2026-09-02) it
+  is the **Automation detail** panel at the foot of the Admin **System**
+  sub-tab — REFERENCE behind the findings list, which is where the verdicts
+  live; the Automation + CDR Overview cards link into it). One
   bounded AuditLog tail scan (`CN_AUDIT_MAX_SCAN` rows) yields (a) the
   `PersonalSheetSyncFail` count + 5 most recent entries over a 30-day
   window and (b) the last-seen audit row per automation job
@@ -5653,6 +5869,26 @@ this section before touching the relevant area.
   the component for the same reason the sort handler is (cycle-11 L-15 —
   entity-escaping is the wrong neutralizer in an attribute the browser decodes
   before use).
+- **Shared date-range control `mtDateRange_` + percent band `mtPctTone_`
+  (`script_core.html`, design handoff PR 1 — 2026-09-02).** Three range controls had
+  drifted (Metrics: pressed presets + a `Custom…` disclosure; Punctuality:
+  `.punct-preset` with no pressed state; Coverage: no presets at all). The Metrics
+  vocabulary is now the shared `mtDateRange_(opts)` — the STRIP only (real
+  `type="button"` chips, `data-preset` + `aria-pressed`, a Custom chip that is BOTH a
+  state chip and a disclosure with `aria-expanded`/`aria-controls`, INV-173/174) —
+  plus `mtDateRangeRow_(rowId, open, innerHtml)` for the inputs row,
+  `mtDateRangeSync_(scope, active)` to re-press after a manual edit, and
+  `mtDateRangeToggle_(scope, rowId)`, which returns the new open state so the CALLER
+  remembers it (the helper owns markup and DOM, never state — Metrics keeps its
+  `M_STATE.customOpen`; Punctuality (`PUNCT_STATE`) and Coverage (`COV_STATE`)
+  adopted it in PR 3 the same day). Metrics is the first
+  consumer (`mMyPresetBtn_`/`mTeamPresetBtn_`/`mCustomChip_` retired, INV-184); the
+  `.m-custom-row` + its load-bearing `[hidden]` companion moved to the tokens partial
+  with the control. `mtPctTone_(p, hi, lo)` is the ONE tri-tone band rule:
+  `mPctClass_(p, thr)` delegates as `(thr|80, 50)` byte-identically (pinned across the
+  grid), and Punctuality passes its own 90/75 — the doc's "reuse the mechanism, not
+  the numbers", which the old `mPctClass_` could not do because its lower band was a
+  hardcoded 50. Pinned by PR1-2/PR1-3 + the rewritten `#2` metrics pin.
 - **Admin sheet viewer (Tier 2 — `getAdminSheetView`).** A manager-gated
   (INV-02/31), read-only, PHI-free in-app table view of a SAFE, **allowlisted**
   tab, surfaced as the Call Notes → Admin **"Sheets"** sub-tab
@@ -5811,6 +6047,22 @@ this section before touching the relevant area.
   ships. A companion pin fails CI on `errorStateHtml_(esc(…))`, which is the
   mistake converting FROM the escaped empty-state form invites — 28 times over.
 
+- **Cross-view hints are PARKED on `window`, consumed-and-nulled on the target's
+  enter, never persisted (design handoff C8 — named 2026-09-02).** The pattern the
+  app already used four times without a name: `COACH_PREFILL` (Call Notes "Coach on
+  this" → the Coaching composer; `cnMgrCoachOnNote_`), `CLK_NAV_HINT` (the Clock
+  coverage strip's "File N missing" → the Call Notes Log; `fileMissingCalls_` →
+  `cnConsumeNavHint_`), `CN_STATE.mgrPendingRepDrill` (the audit panel → Team Notes
+  Per-Rep), and `TO_PENDING_DAY_OPEN` (the Time/PTO quick-actions card → another
+  month's day modal via `calNavTo_`). Rules: the SOURCE sets the hint then calls
+  `enterTool`/`showView`; the TARGET's enter reads it FIRST, nulls it, then acts (so a
+  stale hint can never fire on a later plain navigation); nothing is written to
+  localStorage (a hint is one gesture, not a preference — the `umsLastView` boot
+  restore must not replay it); the hint carries ids and prefill only, never a
+  server-owned decision. The QA→Coaching and Punctuality→Coaching hand-offs (PRs 3/5)
+  reuse `COACH_PREFILL`; a NEW hand-off adds a hint to this list rather than a fifth
+  shape. The URL is NOT an alternative here — INV-78 (the HtmlService iframe
+  sandboxes `window.location`) is why the in-memory hint exists.
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
@@ -5846,7 +6098,7 @@ one-pane-of-glass for this table. Keep all eight in one Drive folder for sanity.
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, InsurancePayors (OPERATOR-IMPORTED payor-acceptance table — read-only, the insurance lookup, 2026-08-25) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
-| QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
+| QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared; design handoff PR 5 added DurationSec + SkipReason, header self-heals), QaExemptions (PR 5 — the audit-period exemption ledger: EmpName/Period/GrantedBy/GrantedMs/Active, append-only, latest row per (name, period) wins; written only by the manager-gated `qaSetExemption`), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
 | Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (one plain-text-pinned cell — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
 
 **Every store's timezone MUST equal `CONFIG.TIMEZONE`** (coerced date/time reads
@@ -6260,6 +6512,134 @@ manually for a fresh deploy or environment:
   the day it was written, but every round since PR #176 ships on ONE deploy, so
   the newest figure is the one to check against — read the count from the most
   recent entry, not the one whose feature you happen to be reading about.
+- **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
+  state** — no Script Properties, triggers, migrations or CONFIG values; ONE
+  new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
+  cached 2 min on clean rounds only) that composes six EXISTING reads, so
+  nothing new must be shared or granted. Behaviour changes to expect
+  post-deploy, all on the Dashboard: (a) **a "Needs you" block leads the main
+  column** — overdue coaching, unsigned docs, due call-backs, yesterday's
+  calls without a note, pending training and open/incoming department
+  requests, overdue first, each row a link into the right tab; it disappears
+  entirely when a rep has nothing outstanding, and a source that could not be
+  read is NAMED at the bottom rather than silently omitted; (b) **the punch
+  buttons sit directly under the clock card** (measured: their top moved from
+  704px to 367px at 1440×900), above the shift strip; (c) **the clock card
+  carries a state line** ("On the clock · 5h 54m worked") on a dark scrim, and
+  the hours figure appears ONLY there — the greeting sentence and the shift
+  strip no longer repeat it; (d) **the world-clock strip, the shooting star,
+  the greeting's "On the clock" pill and the pending-Training card are gone**
+  — training now lives in Needs you, and the extras row shows Spanish Inbox
+  beside Requests for bilingual reps or Requests alone for everyone else;
+  (e) **break chips show their state** (taken struck through, the next one
+  outlined with "· in Nm" inside 90 minutes) instead of a separate next-break
+  chip; (f) **the greeting no longer rotates What's-new slides while a rep is
+  on the clock.** The pinned pop-out is unchanged: it hides the block and
+  makes no extra call. **Post-deploy: run `runAllTests()`** — expect **308**
+  (the new `pendingTasks_requiresEmployeeAndShape` case). **THIS IS THE
+  FIGURE FOR THE WHOLE BACKLOG** (the six design-handoff PRs ship on one
+  deploy).
+- **Design handoff PR 5 (2026-09-02, the QA surface) adds ONE optional Script
+  Property and no other operator state.** `QA_AUDIT_TARGET_PER_PERIOD` (1..50)
+  overrides the CONFIG seed of **3** sampled calls per employee per audit
+  period without a redeploy; unset is fine. No triggers, no migrations: the
+  `QaRecordings` header SELF-HEALS its two new trailing columns
+  (`DurationSec`, `SkipReason`) on first use, and a `QaExemptions` tab
+  auto-provisions the first time a manager grants an exemption. Behaviour
+  changes to expect post-deploy: (a) **the Recordings tab opens on
+  COVERAGE** — a period control (this month / this quarter / last quarter),
+  a summary strip, and a per-employee table saying who still owes a sampled
+  call; the recordings themselves sit below it as a sortable table with a
+  Skipped chip, a Length column (filled in as recordings are opened — the
+  first open of each writes its duration back), and an amber
+  "Unattributed" where no agent is set; (b) **"Sample 3 for me" became
+  "Sample the gaps for me (N)"** — N is the team's shortfall this period,
+  and the sampler no longer pulls a covered agent ahead of one still short;
+  (c) **managers can Grant an exemption** to a rep with two covered periods
+  at 4.5+ and no criterion under 4 (a `QaExemptions` ledger; one period at a
+  time; Revoke on the same row) — a QA member who is not a manager sees the
+  eligibility but no button; (d) **Skip asks for a reason**, which shows on
+  the queue row; (e) **typing a comment PAUSES playback and pins the
+  moment** — the time is editable, and Post & resume / Post & stay paused /
+  Discard replace the single button; a comment now lands where you started
+  typing, not where the player drifted to; (f) the detail is two panes on a
+  wide screen with Skip / Start review / Mark done in the header, the
+  scorecard carries 1/3/5 anchors + a running average, and every score chip
+  is toned (≤2 red, 3 neutral, ≥4 green); (g) a manager gets **Coach on this
+  call** on an attributed recording, which opens the Coaching composer with
+  the timestamped comments as the narrative; (h) My Reviews (still hidden
+  from agents per operator decision 13) leads with a read-only callout and
+  carries the same ±5s / speed transport as the detail. **Post-deploy: run
+  `runAllTests()`** — still **307** (the QA gate case grew IN PLACE to 15
+  endpoints with `qaSetRecordingDuration`, and the omnibus gained
+  `qaSetExemption` on the manager tier).
+- **Design handoff PR 4 (2026-09-02, the Coaching surface) adds NO operator
+  state to SET UP — but re-run `installAutomationTriggers()` once** so the
+  NINETEENTH trigger (`sendCoachingRecapDigest`, Friday manager-tz 8am) exists;
+  until it does, minor/moderate/praise coaching reaches reps only in the app
+  (critical items email immediately regardless). ONE CONFIG constant
+  (`CONFIG.COACHING_RECAP_DAYS`, 7, code-only) and FIVE auto-managed TRAILING
+  columns on the HR store's `Coaching` tab (`RepResponse`, `FollowUpAt`,
+  `NudgedAt`, `NoteDate`, `QaFileId` — the header self-heals on first use;
+  existing rows read blank). Behaviour changes to expect post-deploy: (a) **the
+  Coaching tab is rebuilt** — managers land on a "Who needs a 1-on-1" signal
+  board with a filter strip and a side DRAWER for logging (Coaching ⇄ Praise,
+  severity chips where the middle tier now READS "Moderate" — the stored value
+  is still `major`, nothing migrates); reps get KPIs, a callout naming their
+  oldest open item, a Recognition feed for praise and an optional reply box
+  beside each Acknowledge; (b) **ages, the overdue window and the median count
+  BUSINESS days** — an item logged Friday afternoon is not overdue on Monday,
+  and the overdue counts you have been reading will get smaller, with a note
+  under the KPI strip saying what is excluded; (c) **praise no longer counts as
+  open or against the ack rate**, so both figures move; (d) **only a CRITICAL
+  item emails the rep at once** (cc you; a critical void sends a withdrawal) —
+  minor/moderate/praise arrive in a Friday recap per agent that names
+  severity, date and who logged it but never the narrative; (e) managers gain
+  **Nudge** (re-sends the reminder, once per item per day) and **Revisit**
+  (a follow-up date; a past one flags the item) on each card; (f) the Voided
+  filter is the only place a voided item appears — reps never see them.
+  **Post-deploy: run `runAllTests()`** — expect **307** (the recap trigger
+  gate + the critical-only mail test, which drives `createCoaching` through
+  the `_TEST_OVERRIDE_COACH_MAIL` seam so no real email leaves).
+- **Design handoff PR 3 (2026-09-02, the Manage surface) adds ONE CONFIG
+  constant and no other operator state** — `CONFIG.PUNCT_MAX_RANGE_DAYS` (92,
+  code-only; no Script Property, triggers, migrations or new endpoints — every
+  new `getPunctualityReport` field is ADDITIVE and the client guards each one,
+  so deploy skew in either direction renders as before). Behaviour changes to
+  expect post-deploy: (a) **Manage → Manage Time is regrouped** — the cards
+  that need a decision (Pending Time Off, Missed Clock-Outs, the adjustment
+  queue, Live Status, Team Punches) come first under "Needs you", and Export /
+  PTO reconciliation / sheet doctor / Recent Punches / Recent Activity sit
+  under a collapsed "Periodic" heading whose summary line says "all clear" or
+  names the drift without expanding; (b) **Punctuality gains presets** (7d /
+  30d / QTR behind the same chips Metrics uses), a summary strip with a change
+  vs the prior range, an Outliers panel that appears only when someone is
+  under 75% or averaging >15 min late, and a chevron per rep opening a
+  day-by-day strip (late / on time / off / holiday / no punch), a four-week
+  trend and a "Coach on this" button that opens the Coaching composer
+  pre-filled; a custom range longer than 92 days is now refused by name;
+  (c) **Coverage gains forward presets** (This week / Next week / Next 2
+  weeks) on the same chips; (d) **on a phone, every view's app-bar control
+  (the Punctuality/Coverage presets, Intake's EN/ES toggle) now sits UNDER the
+  title** instead of beside it — a shared-component fix the mobile shoot
+  measured. **Post-deploy: run `runAllTests()`** — still **305**.
+- **Design handoff PR 2 (2026-09-02, the Admin surface) adds NO operator
+  state** — no properties, triggers, migrations, endpoints or server changes
+  (the two health payloads are read as before; everything moved is client-side).
+  Behaviour changes to expect post-deploy: (a) **Manage → Admin gains a
+  System sub-tab** between Overview and Tags — a "Needs attention" list at the
+  top (each item names the fix and links to the sheet or tab it concerns),
+  the Storage inventory as a table with a chevron per row for its detail, and
+  the Automation detail panel below; the tab carries a count badge while
+  anything is open; (b) **the three Overview status cards are now buttons**
+  that land on the matching System section — the old "System details"
+  disclosure on Overview is gone; (c) **a failed health read now renders a
+  warn card and a "could not be read" finding** instead of a muted line, and
+  the card reads "Unavailable" rather than a stale tone. Expect the System tab
+  to reach "Nothing needs attention" on a healthy deployment — the raw CDR
+  name lists and the by-design-unset HR/QA/External stores are listed under
+  "checks passing" with their counts, never as warnings. **Post-deploy: run
+  `runAllTests()`** — still **305**.
 - **The 2026-09-02 operator round (note line breaks + the Day Edit in-progress
   break) adds NO operator state** — no properties, triggers, migrations or
   CONFIG values. TWO behaviour changes, both visible immediately on deploy:
@@ -7198,7 +7578,35 @@ manually for a fresh deploy or environment:
   `CONFIG.PUNCTUALITY_GRACE_MIN` (default 5), plus a lunch-adherence pass;
   least-punctual reps sort first. CONFIG-only (`PUNCTUALITY_GRACE_MIN`; no Script
   Property) — redeploy to change. Reuses the per-tz shift (no per-rep schedule,
-  the INV-127 limitation).
+  the INV-127 limitation). **Design handoff PR 3 (2026-09-02) made it a
+  DIAGNOSTIC surface rather than a ranked list, all ADDITIVE on the payload:**
+  the range is capped at `CONFIG.PUNCT_MAX_RANGE_DAYS` (92 — the QTR preset
+  fits; the endpoint was the one manager range read with no cap), the SAME
+  Timesheet scan also buckets the PRIOR range of equal length (`prevFrom`/
+  `prevTo`; per rep `prevDays`/`prevOnTime`/`prevOnTimePct`) so the summary
+  strip shows a delta the manager did not have to compute, and each rep carries
+  `worstDate`, four `weekly` buckets (oldest-first, clipped to the range —
+  `punctWeeklyBuckets_`, pure) and a per-day `dayDetail` whose `state` comes
+  from the pure `punctDayState_`: `ontime` / `late` / `off` (approved PTO from
+  a best-effort TimeOffRequests read — `ptoUnavailable` when it fails, so a day
+  off can only degrade to `nopunch`, never to `late`) / `holiday` /
+  **`nopunch`** — the FIFTH state, which the handoff's four-state list lacked:
+  a weekday with no ClockIn is DRAWN as an absence rather than left as a gap
+  (INV-187 — a gap reads as "nothing to see"). Weekends are `null` and omitted.
+  `days` stays the graded COUNT it always was, beside the new array. Client
+  (`punctRender_`): a summary strip (team on-time % with the prior-range delta,
+  late starts, worst rep + date), an **Outliers** panel that renders ONLY when
+  `punctOutliers_` finds a rep under 75% on-time OR averaging more than 15
+  minutes late (an empty panel would read as "no outliers" for the wrong reason
+  — nothing renders instead), the shared `mtRenderTable_` with a real sort and
+  an expandable per-rep detail row (the day strip with a summarising
+  `aria-label`, the weekly trend chip from `punctTrend_` — Worsening / Flat /
+  Improving at ±5 points across the first and last bucket — and a **Coach on
+  this** button that parks `window.COACH_PREFILL` with a `what` narrative and
+  `enterTool('develop', 'coaching')`, the C8 hint pattern; the composer's
+  textarea prefills from it). The tri-tone band is `mtPctTone_(p, 90, 75)`.
+  The handoff's Export button in the app-bar was NOT built (not in the plan's
+  M1–M8) — a logged follow-on.
 - **Coverage planner is business-hours/weekday scoped.** `getCoveragePlan` now
   returns a per-day `closed` flag plus `businessStartHour` / `businessEndHour` /
   `weekdaysOnly`, driven by CONFIG `COVERAGE_BUSINESS_START_HOUR` (8) /
@@ -7206,7 +7614,13 @@ manually for a fresh deploy or environment:
   flags fire only inside the business-hours window; weekends (when
   `weekdaysOnly`) render as closed rather than as understaffed. CONFIG-only —
   redeploy to change. Refines INV-127's flagging (the `< COVERAGE_MIN_STAFF`
-  rule still applies, now only within business hours).
+  rule still applies, now only within business hours). **Since design handoff
+  PR 3 (2026-09-02) the range control is the shared `mtDateRange_`** with
+  FORWARD presets (This week / Next week / Next 2 weeks — a planner looks
+  ahead, where Punctuality's presets look back), `COV_STATE` holding
+  `from`/`to`/`customOpen`, the D5 midnight re-anchor of the DEFAULT range only,
+  and the `Manage › Coverage` app-bar; the hand-rolled `cov-controls` row and
+  `toneCol` are retired (INV-184).
 - **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
   scans the **deploying account's** Gmail for threads addressed to the group
@@ -7506,7 +7920,7 @@ manually for a fresh deploy or environment:
   manual sheet-edit path still works; the panel is the recommended one.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires eighteen triggers:
+  installer now wires nineteen triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm — since cycle-8 M-1 the
       automated exports fire the morning AFTER the period completes: biweekly
@@ -7531,7 +7945,8 @@ manually for a fresh deploy or environment:
     - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on a confirmed dev instance (`isDevInstance_()` — BOTH `INSTANCE_LABEL` set and `INSTANCE_IS_PROD` explicitly not 'true'; unset = prod, A5). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
     - `creditMonthlyPtoAccruals` (PTO accrual, daily manager-tz **18:00**, alongside the Timesheet cold-archive — NOT 6am (cycle-18 F10): 6am CT is ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of the month this run holds the ONE project ScriptLock through a full Timesheet read, the exact starvation reasoning that moved `archiveOldTimesheetRows` off 1am (INV-153). The daily-with-idempotence cadence is unchanged, so a missed run still catches up via the col-R stamp — credits each accruing rep the PTO they EARNED from hours actually worked in each completed month (column-Q rate per `CONFIG.PTO_ACCRUAL_BASIS_HOURS` worked, converted to days by `CONFIG.PTO_HOURS_PER_DAY`) into the column-I balance IN ARREARS, idempotent via the column-R stamp; daily-with-idempotence rather than a monthly trigger so a missed 1st catches up instead of silently losing the month. Hours come from ONE range-wide, archive-aware Timesheet index — never a per-rep read inside the lock. No-ops for reps with no rate, so installing it is harmless. Audit row `PtoAccrualCredit` per credited rep (incl. zero-hour months). INV-194)
     - `purgeOldQaReviews` (QA review-record retention, daily manager-tz 2am beside the CN 3rd-tier purge — irreversibly deletes `QaComments` + `QaScorecards` rows older than `QA_REVIEW_RETENTION_DAYS` (Script Property → `CONFIG.QA_REVIEW_RETENTION_DAYS`, default **0 = disabled**); the `QaRecordings` INDEX and the Drive audio files are NEVER touched — the operator manages recordings in Drive. A 0/garbage `CreatedMs` stamp is never deleted (fail-safe), the disabled/unconfigured early-returns precede the lock, and every enabled run writes a counts-only `QaReviewPurge` audit row (the job-liveness heartbeat; its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND `QA_SS_ID` set, INV-186). No-ops entirely while the window is 0 or the QA store is unset, so installing it is harmless. INV-196)
-  The install + remove TARGETS arrays both list all eighteen, so re-running
+    - `sendCoachingRecapDigest` (coaching, **Friday** manager-tz 8am — design handoff PR 4, operator decision 1: ONE branded recap per AGENT listing the non-critical coaching (minor / moderate / praise) logged for them in the trailing `CONFIG.COACHING_RECAP_DAYS` (7) — severity label, date, who logged it, acknowledged-or-not, any revisit date — with NO narrative and NO patient/TRX (the detail lives behind the login). Critical items are emailed immediately at create instead and never appear here. Heartbeat `coachingRecap` (stale > 192h, the `weekly` window) stamped on BOTH exits; the digest is agent-facing so it NEVER consults the `managerDailyBrief` flag (INV-151). Silent for an agent with nothing logged in the window. The cadence is one line away from a change — the `onWeekDay(FRIDAY)` call in `installAutomationTriggers`)
+  The install + remove TARGETS arrays both list all nineteen, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -7999,7 +8414,7 @@ manually for a fresh deploy or environment:
   take effect server-side on the next request and client-side on the next
   config fetch.
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
-  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest:
+  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap:
   "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
   wall time) stamped by each digest run (`stampDigestLastRun_`) — the
   heartbeat behind the Automation Health panel's "Digest heartbeats"
@@ -8749,6 +9164,171 @@ The same day's **A4** (the Day Edit N-pair rebuild — the last path that destro
 The same day's **follow-on + Workstream B** added four more → **711** and the DOM harness 98 → **101**. The follow-on is FO-A2, a derived scan banning a STATIC inline `grid-template-columns` across the scanned partials — the A2 tripwire reads stylesheets, so it could not see the manager analytics pair's inline `1fr 1fr`, which beats every stylesheet rule INCLUDING the shell's own media queries and kept a 44px page overflow at 390px. Computed values are exempt by rule (the coverage heatmap and the training matrix compute their column counts, which CSS cannot express, and both sit in scrollers); one reasoned allowlist entry, exempt on construction because the block it guards renders only behind an opt-in scan no visual scenario reaches. **The misdiagnosis is the part worth keeping:** the first measurement blamed the team-punches `.m-table`, because `getBoundingClientRect().right` on a table inside an `overflow-x` scroller reports its full layout width and looks exactly like an overflow — to find a real overflower, walk the elements past the viewport edge and SKIP any with an overflow-x ancestor. Workstream B added B1/B2 (the done-state Adjust prefill; the manager notification that never existed — asserted post-`releaseLock` per M-7) and two B3 pins (the CONVERT-not-delete model with a ban on `deleteRow`, submit- and approval-side validation, a refused resume not marking the request Approved, back-compat on the trailing `Action` column across all four readers; and that every surface — confirm, chip, queue row, decision email — states the EFFECT rather than naming the punch it consumes). DOM: the Resume button's render conditions (including that an UNRELATED pending adjustment must not hide it), the chip's wording, and the confirm stating the unpaid gap before anything is filed — `uiConfirm` is a LEXICAL binding rather than a window property, so the stub reassigns the binding through the vm bridge. 15 mutations / 15 bites, plus 3 for the follow-on. TWO pins were corrected first, both the SAME trap: `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so an ordering check passed silently — the `assertBefore` helper is now hoisted and shared. INV-188 recurred a third time, again in a ban-shaped assertion tripping on the code comment that explains the ban. Editor suite +1 (`punchAdjust_resumeConvertsClockOut`) ≈ **305**; visual matrix 61 → **62** (`manage-light-mobile` — the tab had been wide-only, which is how the overflow survived).
 The same day's **Admin sub-tab follow-on** added one more → **712**: VIS-ADMIN, which DERIVES the Admin pane set from the client's own `tab('key','Label')` call sites and requires a mobile scenario per pane (INV-179 — the VIS-COVER marker works at TAB granularity, and all five Admin panes live inside ONE covered tab, which is how they stayed wide-only). Its first run found a live defect the matrix could not previously see: `.cn-tax-head` shared `.cn-tax-row`'s `1fr` stacking rule at ≤720px, so the tag-taxonomy header rendered as six labels stacked in a column above the first row, aligned with nothing, with the first row's usage bar riding over the word "Usage". The header is hidden when the row stacks and the two bare numerics carry their own labels; the delta label is the LITERAL `Δ`, because CSS consumes the space after a hex escape and `'\0394 wk'` renders as the joined-up "Δwk". A `getAdminSheetView` FIXTURE landed with it — the Sheets pane had none at any viewport, so its scenario rendered a loader and its "0 overflow" meant nothing; it is a FUNCTION of `viewKey` (the INV-185 F14 rule — the key decides label, columns, rows and legend). 7 mutations / 7 bites, incl. the class-closing one (a sixth pane with no scenario). Visual matrix 62 → **67**.
 The 2026-09-02 operator round added one more → **713** (NLBR — the note email keeps the rep's line breaks: the `.ce` fields are `white-space: pre-wrap` so Enter stores a real `\n`, and HTML collapsed it, so a Resolution written as paragraphs arrived as one run-on block while the CRM paste was correct. The pin drives the real `cnFmtEmailHtml_` and asserts the ORDERING property that makes it safe — breaks convert LAST, because the marker regexes are `[^…\n]+` and converting first would make `**a\nb**` start matching. 3 mutations / 3 bites, incl. the breaks-first ordering. Its first write over-reached: a ban on any inline `\n`→`<br>` found THREE pre-existing correct sites outside this fix's scope, so the ban is scoped to `buildCallNoteEmailHtml_` and the other three are a logged follow-on.)
+The design handoff's PR 4 (2026-09-02, the Coaching surface) added six more →
+**733**, then one more → **734** (PR4-1 the server contract — the 19 trailing
+headers ↔ `CO` indices, the full-width appendRow, validate accepting the three
+new fields, the reply written only after BOTH terminal-state guards, praise
+never open, voided capped + reported, the follow-up/nudge gate-scope-lock-audit
+shape and the nudge's once-per-day guard; PR4-2 K9 driven BEHAVIOURALLY with an
+injected minute counter — a Friday-16:00 → Monday-09:30 item is 0.2 business
+days old where wall clock said 2.7, unknown is never overdue, praise never nags,
+follow-up-due is its own flag, the ack-rate denominator excludes praise, and a
+raw `86400000` is BANNED in the two consumers; PR4-3 the `COACH_SEV_LABELS`
+byte-equal mirror + every label sink routing through it; PR4-4 the critical
+mail builder run in a vm with four NON-content inputs (no parameter through
+which the narrative could pass), the notify gate, the create/void wiring past
+the lock, and the recap's gate / dual heartbeat / brief-flag ban /
+`coachRecapBuckets_` behavioural; PR4-5 `coachRepSignal_` tiers incl. the
+25-day-old critical and the INFO-toned no-signal precedence, the retired
+`.coach-modes`/`.coach-row-overdue`/`coachNarrativeHtml_` banned, the validated
+filter key, voided out of All, praise routed away from the ack card, the
+≤720px board columns, the `[hidden]` companions, the drawer via
+`ensureOverlay`; PR4-6 the fixtures' keys DERIVED from `coachRowToObj_`, the
+seven scenarios, the `?role=rep` hook, the note-date hand-off and the QA hint's
+read→null→act order). 10 mutations / 10 bites. **PR4-5 was WRONG ABOUT THE
+CODE on first write:** it banned `coachSwitchMode_(`, which legitimately
+survives as the handler behind the Mine ⇄ Team strip — only the `.coach-modes`
+CSS vocabulary was retired; the pin now asserts the strip renders as shared
+`role="tab"` buttons dispatching to it. DOM 101 → **102** (the drawer opens
+prefilled from `COACH_PREFILL`, is a NAMED dialog, closes on Escape through
+the shell handler, its close hook is idempotent, and a fresh open carries no
+stale prefill) — **a harness trap worth keeping:** `flushTimers()` also fires
+the onboarding tour's auto-start, whose CAPTURE-phase Escape handler ends the
+tour and `stopImmediatePropagation()`s the key before the shell's overlay
+handler sees it, so the drawer stayed open with `defaultPrevented` true; seed
+`umsTour` as seen before `bootShell` in any DOM test that flushes timers and
+then presses Escape. Visual matrix 78 → **87** (nine coaching scenarios —
+manager light/dark/mobile, the drawer, empty, the rep view light/dark/mobile
+via the new `?role=rep` hook, and a forced-fail error state; all machine-clean
+and eyeballed). Editor suite +2 (`triggerGate_coachingRecap_nonManagerThrows`,
+`coaching_criticalMailOnlyAndMailedFalse` via the `_TEST_OVERRIDE_COACH_MAIL`
+seam) ≈ **307**.
+The design handoff's PR 5 (2026-09-02, the QA surface) added four more →
+**738** and REWROTE three in place (QA-10 for the 14-column header + the
+self-heal, QA-11 for the target-aware pick + the period-scoped endpoint,
+QA-14 for the gaps-count sampler — the honest bookkeeping): QA-19
+`qaCoverageRows_` driven behaviourally (one row per roster name, a case-
+insensitive attribution, the period split, `avg` null-never-0, the exempt
+target 0, an out-of-range rating counting as sampled but not scored); QA-21
+the period arithmetic (year wrap, leap February, the three options),
+eligibility as the operator stated it, and the exemption / duration / skip
+contracts (manager tier, name never in the audit row, write-once, reason
+cleared off a non-skip, the coverage join's outcome carried); QA-22 the
+client pure helpers (`qaParseClock_` — a blank is NOT zero; the tone rule;
+the tier rule; the summary's capped-at-target coverage and call-weighted
+average); QA-23 the wiring (period strip + pref, strip-from-the-same-rows,
+skip reason on the row, the pin-not-playhead post, ONE transport renderer,
+the hand-off shape, the write-back, the two-pane breakpoint, the three
+scenarios, the fixture calling the VERBATIM join, and the recording keys
+DERIVED from the server push literal). DOM 102 → **103** — QA-20 drives the
+pause-and-pin composer against a stubbed media element (jsdom implements
+none): the first keystroke pauses + pins, a drift of the playhead to 99s
+still posts at 42, the edited pin wins, stay-paused stays paused, a typo is
+refused, discard resumes only a player that was playing. 12 mutations / 12
+bites. **Two pins were wrong about the code on first write and were
+corrected rather than the code:** the target-aware pick's expected order
+(the uncapped `(unassigned)` bucket at load 0 legitimately goes FIRST), and
+a hand-summed weighted average (36.5/9 is 4.06, not 4.11) — arithmetic in an
+assertion deserves the same check as arithmetic in code. And the DOM test's
+first `h.click` on `#qa-comment-btn` posted NOTHING, because jsdom's outside-
+only mode never compiles an inline `onclick` — the documented trap, hit
+again; the handlers are called directly. `mock.js` gained eleven VERBATIM
+copies (the period helpers, `qaCardStats_`, `qaExemptEligible_`,
+`qaCoverageRows_`, `qaLatestScorecards_`) so the QA fixture's coverage rows
+come from the server's own join over its recordings + cards (INV-185) — the
+F4 mirror pin picked them up unasked. Visual matrix 87 → **90**
+(`qa-queue-dark-wide`, `qa-queue-empty-light-wide`,
+`qa-detail-light-mobile`); the first wide shoot found the row-actions
+column wrapping every row to three lines, a duplicated composer
+placeholder, and a keyboard hint on a page with no key handler — fixed and
+pinned. Editor suite unchanged ≈ **307** (the QA gate case and the omnibus
+grew IN PLACE).
+The design handoff's PR 6 (2026-09-02, the Time Clock surface) added three
+more → **741** and REWROTE five in place (the honest bookkeeping when a
+contract changes under a test — the L-35 shooting-star pin became the `PR6
+(T2)` DERIVED ban over every retired selector and helper; the INV-184
+photo/moon pin gained the shooting star; V-4 now asserts the lunch readout +
+the state line's `nowrap`; the skeleton pin counts `<div class="dash-pair` and
+the CONDITIONAL extras pair; ADJ-2 re-anchored on `.clk-actions-block`):
+PR6-1 the `getMyPendingTasks` contract (bare read gate, six sources each
+catching into `unavailable`, the notes source THROWING on
+`noteCountUnavailable`, the clean-round-only `cache.put`, every route checked
+against the live TOOLS registry, `prevWorkdayIso_` + `pendingTasksSort_`
+driven behaviourally); PR6-2 the client (compact gate BEFORE any RPC,
+degraded rounds never fresh, clean-empty renders nothing, the notes hand-off
+through `fileMissingCalls_`, the render driven in a vm across
+skeleton/error/list/unavailable, and the fixture keys DERIVED from the
+server's `items.push({` + `var result = {` literals — INV-185); PR6-3 the
+surface (rail order, the literal-colour scrim, hours ONCE, the trimmed
+sentence, the rotator hold ORDERED after the hover check, the break-chip
+states + the `_clkLastBreakMin = -1` reset, the `.actions` base grid + no
+540px re-columning). The `clkSkyFor_` edge pin now walks sixteen hours. DOM
+103 → **104** (the Needs-you lifecycle on the booted Dashboard: precedes
+`#dash-cards`, skeleton → list with `aria-label` + "2 overdue" + `is-past` →
+error card → clean-empty '' → unavailable line → freshness stamps → the
+hand-off LAST, because it navigates away). 15 mutations / 15 bites. **The one
+defect the round found was found ON CAMERA, not by a pin:** the break chips
+rendered with no state because a minute-guard survived a same-minute
+re-render — reading `clkUpdateBreak_` in isolation it was correct, and only
+the screenshot showed every chip plain. The fix (reset the guard when the
+chips are rebuilt) is pinned, and the fold claim was MEASURED before and
+after with `test/visual/fold-measure.mjs` rather than reasoned (704 → 367).
+Visual matrix 90 → **92** (`clock-needsyou-empty-light-wide` via
+`?fixture=empty`, `clock-needsyou-error-light-wide` via `?failrpc=`); editor
+suite +1 (`pendingTasks_requiresEmployeeAndShape`) ≈ **308**.
+The design handoff's PR 3 (2026-09-02, the Manage surface) added five more →
+**727** (PR3-1 `punctDayState_` + `punctWeeklyBuckets_` driven behaviourally —
+the five states incl. `nopunch`, weekends null, buckets clipped to the range,
+a bucket with no graded day reading null not 0 — plus the endpoint's cap in its
+LIVE guard shape (a presence check survived `if (false && …)` on the first bite
+and was tightened), the additive contract beside `days`, the fixture's
+`dayDetail` keys DERIVED from the server's own push literal (INV-185) and the
+fixture being a FUNCTION of the range (F14); PR3-2 `punctOutliers_`/
+`punctTrend_` behavioural, the empty-panel rule, the chip words, and the
+Coach-on-this hand-off through `COACH_PREFILL` + the registered `develop` tool
+key; PR3-3 the Manage Time ORDER, the disclosure aria, the `[hidden]` companion,
+`MGR_STATE` session-only, the summary feeds on clean/drift/FAIL, and
+`mgrSwrRenderBlocked_` keeping exactly two `return true;`; PR3-4 the shared
+control on both views — forward vs backward presets, seq guards, D5 — with the
+retired `.punct-*`/`cov-controls`/`toneCol`/dead locals banned and the ≤720px
+breakpoints; PR3-5 the coverage fixture's keys derived from the return block +
+the rep push literal, the six new scenarios, the VIS-COVER marker). 9 mutations
+/ 9 bites. Visual matrix 72 → **78** (Coverage had never been shot — its tab
+left the gap marker). **The first mobile shoot found the one defect of the
+round in a SHARED component:** `.app-bar` had no viewport breakpoint, so its
+`flex-shrink: 0` right-hand control kept its full width at 390px and squeezed
+the Punctuality subtitle into a ~150px, seven-line column beside the preset
+strip. The tokens partial now wraps the bar at ≤540px (the shell breakpoint)
+with `.app-bar-right` taking the full row — Intake's EN/ES toggle drops under
+its title the same way (verified on camera, no regression) — pinned inside
+PR3-4 and bite-checked. **A derivation trap worth keeping: the fixture's return
+anchor `return { from: from, to: addIso(from, n - 1),` CONSUMED `to`, so the
+derived key set lacked it and the pin was red against correct code — an
+anchor must consume the same keys on both sides, or re-add what it ate.**
+The design handoff's PR 2 (2026-09-02, the Admin surface) added four more →
+**722** (PR2-1 `cnHealthFindings_` driven behaviourally — an all-clear payload
+raises nothing, a failed load is a `fail` finding and a `degraded` marker,
+not-loaded is distinct from failed, and each per-signal rule fires on exactly the
+count that is zero when healthy; PR2-2 the cards, badge and list derive from the
+ONE function, both loaders re-derive on success AND failure, X7 `errorStateHtml_`
+on all four Admin loaders, the retired derivation/disclosure banned; PR2-3 the
+storage inventory through `mtRenderTable_` with the INV-182 detail row, the
+retired row classes banned, and a hostile label escaped; PR2-4 the two all-clear
+empty fixtures and the five System scenarios) and REWROTE the INV-186 card pin
+in place onto the findings function (the honest bookkeeping when a contract moves).
+9 mutations / 9 bites. Visual matrix 67 → **72**. **A vm-realm reminder, hit
+again here: `assert.deepStrictEqual` compares prototypes, so an array `.map`'d
+inside the sandbox fails against a plain literal — compare by `.join('|')`.**
+The design handoff's PR 1 (2026-09-02, the cross-cutting sweep) added five more →
+**718** (PR1-1 the derived no-redundant-fallback scan; PR1-2 `mtPctTone_` +
+`mPctClass_` byte-identical across the grid; PR1-3 `mtDateRange_` driven
+behaviourally — real buttons, pressed/expanded/controls, escaped labels, the row's
+hidden attribute; PR1-4 the `?fixture=empty` hook consulted BEFORE `FIXTURES`;
+PR1-5 the three CSS fixes), and REWROTE three in place for the deliberate contract
+change (the `#2` metrics-control pin now asserts the shared control and bans the
+retired builders; the previous-workday pin reads the preset LIST; the batch-7 mock
+pin re-anchors on the `FIXTURES[name]` read) plus widened the `.toolbar-tabs`
+overflow pin with the ≤480px wrap.
 **The operator's post-push `runAllTests` then reported 302/305, and one of the three was a REAL REGRESSION the suite caught (2026-09-01).** `managerSaveDay_mixedChanges` — a test predating A4 — submits a break with a leave and a blank return, which A4's `managerParseBreakSlots_` refused as a malformed pair. The refusal was wrong: a TRAILING leave with no return is an **in-progress break**, the state the punch clock creates every day at lunch, so Day Edit became unsavable for any rep who was out at that moment. Fixed at both layers (the parser accepts a trailing open break; `managerPlanDay_` matches each half at its own index so the blank REMOVES the return row instead of writing an empty time into it, and an existing lone leave is never deleted-and-re-added), and the A4-1 pin — which had encoded the wrong rule — was rewritten to assert the accepted shape plus the two that stay refused (a leading return, a half followed by more rows). 3 mutations / 3 bites. The other two were test-side: a helper I invented (`_clearAdjustRequests`) that never existed, and the calendar-dependent accrual fixture (see the editor-test hazards). **The lesson is the one the template already states and I did not follow: scan for a module's test doubles BEFORE editing it. `managerSaveDay_mixedChanges` encoded the old contract in plain sight, and reading it first would have surfaced the in-progress-lunch case during design rather than after a push.**
 The 2026-09-01 operator round added two more → **699** (CLK-DONE — the shift-complete verdict names the ClockOut it was derived from: call-site wiring, the conditional clause, and the hint class being DEFINED in a stylesheet; and BCN-3 — `reloadApp_` escapes the HtmlService iframe rather than reloading its session-bound URL, with the fallback ORDER pinned by COUNTING reloads rather than checking that one appears last, because the first version of that assertion passed against a reload-first mutation). The same round grew three existing blocks IN PLACE: the accrual pin gained the forward-stamp no-op + the caller's conditional write (PR #211), BCN-2 now requires the action to delegate to `reloadApp_` and BANS a bare `location.reload()` in the tick, and the behavioural `getNextActions_` block gained the operator's own question as a test — a stray earlier ClockOut plus an approved `ADJ-ClockIn` (INV-09 strips the prefix, so it IS a state) yields `LunchOut / ClockOut / Adjust`, which is the property the backward scan provides and a forward-scan mutation breaks. DOM stays **91** — the done-state assertions (the named clock-out, the way-out line, and both degradation paths) grew inside the existing punch-state block rather than adding one. 11 mutations / 11 bites across the round; two exposed a pin weaker than its property and were rewritten before they bit.
 The 2026-08-31 team-punches-calendar round added two more → **690**: the behavioural `getTeamCalendar` pin (the REAL endpoint driven in a vm with the real EMP/ADP/TO enums + `empRosterEmail_`/`normalizeType_`/`calcHours_` — gate + bare-{error} read shape, last-punch-per-type wins, garbage COMMENTS types are not punches, a corrupt time cell reads INCOMPLETE never 0, padded `" Approved "` overlays count, offboarded rows excluded from rows AND rosterCount, archiveNote on a pre-live-tab month) and the client wiring pin (loader beside the lazy cards, key-exact clean-round cache write BEFORE the seq check, the C17-5 painted/cold failure split, role/tabindex/aria-pressed day cells, manager-tz date derivation, future-nav refusal, the bounds-checked Day Edit prefill, the honest no-punches merge, `mtRenderTable_` per V-11, and the fixture's rep-row keys DERIVED from the server's own `repRows.push` literal per INV-185) — 6 mutations / 6 bites, TWO of which exposed the pin as weaker than its property on the first run (the null-hours mutation was UNOBSERVABLE until a corrupt-time fixture row exercised the `calcHours_`-null path — mutate against the property, not its neighbourhood — and the fixture-key drop had to remove the key from EVERY row before the presence check could see it). The omnibus gate test gained the `getTeamCalendar` case IN PLACE.
@@ -9027,7 +9607,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send. **AMENDMENT (operator 2026-08-25): the composer's Note Reference is EDITABLE, and Preview COMMITS those edits BEFORE rendering** — so the previewed body, and therefore the hash the send is checked against, is always built from the note as it will be sent (a failed save aborts the chain rather than previewing unsaved text; previewing first would have hashed the STALE stored note and silently emailed the un-corrected text). The editable fields exist on the FORM step ONLY, so editing between Preview and Send remains impossible — that is this guard working, not a gap. See the two-stage-email Key Design Decision; pinned by CMP-1..4 + the two composer DOM tests | Subsystem: Server
 INV-42 | `emailFromCallNote` sends first (via `sendRepEmail_` — the rep-identity wrapper over MailApp/GmailApp since pilot round 1; wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The eighteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, and QA review records past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge) | Subsystem: Server
+INV-44 | The nineteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, and QA review records past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — **but since cycle-17 C17-6 it no longer "skips that rep" silently either (that clause described the defect, the same INV-52 correction cycle-16 F1 made): the skipped set rides the response (`skippedReps`, additive), the audit row (`skippedReps=N (ids) — INCOMPLETE`), and a client warn toast, and an all-skipped run returns a read-failure error instead of "No notes found" — a PHI export can never read as complete when it isn't (INV-187).** Pinned by the C17-6 pin | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -9127,7 +9707,7 @@ INV-132 | `archiveOldCallNotes` is the SAFE (non-destructive) cold-archive tier 
 
 INV-133 | The call-note retention 3rd tier + its controls. (a) `purgeArchivedCallNotes` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44) and locked (INV-01); it irreversibly deletes each rep's `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS`, default **0 = disabled**) — the ONLY deleter of archived notes. READ-ONLY w.r.t. tab existence (`getSheetByName`, never creates `NotesArchive`); date from the preserved `CN.DATE_LOCAL` via `parseRetentionDateMs_`; cross-rep, per-rep failures skipped; PHI-free `CallNotesArchivePurge` audit (in `AUTOMATION_AUDIT_ACTIONS`). Scheduled manager-tz 2am (before the 3am archive); in BOTH TARGETS (trigger-wiring tripwire). Pinned by `test_triggerGate_purgeArchivedCallNotes_nonManagerThrows`. (b) `searchMyCallNotes`/`managerSearchCallNotes` accept a trailing `includeArchive` flag (default off — 4-arg callers unaffected) that ALSO scans the cold tab (read-only) and tags hits `_archived`; the INV-45 field-scope logic is byte-identical (factored into a per-source closure). (c) `getRetentionConfig` (read-only summary + `retentionWarnings_` safety ordering, Node-pinned) + `saveRetentionConfig` (writes the three Script Properties, whole-days validation, `AdminConfigChange` audit) are manager-gated (INV-31/INV-57 family, omnibus-pinned); the client danger-confirms enabling/raising either irreversible purge window | Subsystem: Server + Client (Call Notes views)
 
-INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). **The void REASON is free text that plausibly names a patient/TRX, so it persists ONLY in the Coaching tab's trailing `VoidReason` column (cycle-8 M-6; `COACH_HEADERS` 13→14, `CO.VOID_REASON:13`, header self-heals via `getOrCreateEmpDocSheet_` — the voidDoc pattern); until that fix `voidCoaching` wrote `reason=` into the shared AuditLog, which the compliance panel + admin sheet viewer surface. Never route it back there.** `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern) — its deep-link is `enterTool('develop','coaching')` (the TOOL key is `develop`, NOT `training`; the cycle-9 H-1 wrong-key call was a silent no-op, now pinned by the enterTool TOOL-key tripwire). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab's Team mode; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). **UI note:** the former rep `coaching` + manager `coachingManage` tabs were MERGED into one non-managerOnly `coaching` tab (`enterCoachingView`) with a manager-only Mine ⇄ Team toggle (`coachSwitchMode_`, persisted to `umsCoachingMode`) — a pure client reorganization; every endpoint, gate, scope, and audit row above is unchanged. Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` + (cycle 9) the six-rule `coachCanManagerSee_` Node unit pin and the `test_coaching_createAckVoidFlowAndScoping` editor flow test | Subsystem: Server + Client (Training views)
+INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). **The void REASON is free text that plausibly names a patient/TRX, so it persists ONLY in the Coaching tab's trailing `VoidReason` column (cycle-8 M-6; `COACH_HEADERS` 13→14, `CO.VOID_REASON:13`, header self-heals via `getOrCreateEmpDocSheet_` — the voidDoc pattern); until that fix `voidCoaching` wrote `reason=` into the shared AuditLog, which the compliance panel + admin sheet viewer surface. Never route it back there.** `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern) — its deep-link is `enterTool('develop','coaching')` (the TOOL key is `develop`, NOT `training`; the cycle-9 H-1 wrong-key call was a silent no-op, now pinned by the enterTool TOOL-key tripwire). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab's Team mode; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). **UI note:** the former rep `coaching` + manager `coachingManage` tabs were MERGED into one non-managerOnly `coaching` tab (`enterCoachingView`) with a manager-only Mine ⇄ Team toggle (`coachSwitchMode_`, persisted to `umsCoachingMode`) — a pure client reorganization; every endpoint, gate, scope, and audit row above is unchanged. Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` + (cycle 9) the six-rule `coachCanManagerSee_` Node unit pin and the `test_coaching_createAckVoidFlowAndScoping` editor flow test. **AMENDED (design handoff PR 4, 2026-09-02):** (a) FIVE more TRAILING columns — `RepResponse` (the rep's optional reply, written by `acknowledgeCoaching(coachId, response)` ONLY on the open→acked transition, capped `COACH_RESPONSE_MAX`; the manager's ack mail says only whether a reply exists), `FollowUpAt` (a revisit date — `setCoachingFollowUp`, manager + `coachCanManagerSee_` + locked, audit `CoachingFollowUp`), `NudgedAt` (`nudgeCoaching` — open non-praise only, ONCE per manager-tz day per item, audit `CoachingNudge`, mail post-lock with the outcome returned as `mailed`), `NoteDate` (the linked note's DateLocal, so the drill back to Team Notes is date-keyed) and `QaFileId` — `COACH_HEADERS` 14→19, the row builder reads all five, the create appends a full-width row; (b) **overdue is measured in BUSINESS days** (operator decision 7): `coachAgeDays_(createdMs, nowMs, opts)` takes an injected minute counter from `coachBizOpts_()` (= `businessMinutesBetween_` + the Coverage business window), so a Friday item read on Monday is ~0.2 days old, not 2.7; an UNKNOWN age (a null minute count) is NEVER overdue (INV-187), and `coachUnackedOverdue_`/`coachAnalytics_` carry no raw day arithmetic (pinned); a past `FollowUpAt` surfaces an item as `followUpDue`, a signal distinct from overdue; (c) **praise is neither open nor a denominator**: `counts.open` and the ack-rate denominator exclude praise (decision 8), praise never nags, and the rep view routes praise to a Recognition feed with no Acknowledge button; (d) **email is CRITICAL-ONLY at create** (decision 1): `notifyRepOfCoaching_` returns false for anything else, cc's the manager, and carries no narrative/TRX/note id; a critical VOID sends `notifyRepOfCoachingRetraction_`; minor/moderate/praise arrive via the Friday `sendCoachingRecapDigest` (INV-44 gate, heartbeat `coachingRecap` on both exits, NEVER the brief flag — INV-151; `coachRecapBuckets_` is pure: non-critical, non-void, inside `CONFIG.COACHING_RECAP_DAYS`, grouped by agent); (e) voided items stay hidden from reps (`getMyCoaching` skips them; decision 9) and the manager `voided[]` list is capped `COACH_VOIDED_CAP` with `voidedTotal` reported (INV-169); the EMPTY dashboard return carries the SAME shape as the populated one (`voidedTotal`, `analytics`) so the fixture's empty twin mirrors a real payload (INV-185); (f) `COACH_SEV_LABELS` (`major` → **Moderate**) is a byte-equal client↔server mirror (MIRROR_INDEX) — the stored enum is unchanged, no migration. Pinned by PR4-1..PR4-6 + the PR4 DOM drawer test + `test_triggerGate_coachingRecap_nonManagerThrows` + `test_coaching_criticalMailOnlyAndMailedFalse` + the omnibus `setCoachingFollowUp`/`nudgeCoaching` cases | Subsystem: Server + Client (Training views)
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted` — since cycle 9 carrying `hash=`; since cycle 11 (L-6) the issuer notification says "Completed:", not "Signed:" — `notifyEmpDocSigned_` takes a `completedOnly` flag, an HR paper-trail wording fix); the responses are persisted BEFORE the status flip. **Fields-only completions are hashed too (cycle-9 M-8):** completion appends a `DocSignatures` row with an EMPTY signature cell (the completion-row marker — don't "fix" it to a placeholder) whose hash is `empDocSignatureHash_` with an empty signature segment (no new hash function; recompute stays byte-stable via the stored `responsesRaw` cell), cert `kind:'completion'`. `verifyDocSignature` detects the empty-sig row → `{completed:true, signed:false, match, tampered}`, so an out-of-band `ResponsesJson` rewrite is detectable on BOTH paths; docs completed BEFORE this shipped have no row and still report unsigned/legacy (never tampered). Pinned by `test_empdocs_fieldsOnlyCompletionHash`. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 
@@ -9194,14 +9774,14 @@ INV-182 | **A shared component gains capability through OPTIONAL, GUARDED hooks 
 INV-183 | **Roster INCLUSION goes through `empRosterEmail_(row)` — the ONE predicate.** It returns the TRIMMED email or `''`, so a caller writes `if (!empRosterEmail_(row)) continue;` and also has the value. Offboarding here means clearing the email while KEEPING the name (so history still reads), and a name-only row is not a person to count — but FOURTEEN walks each decided that for themselves and did not agree: NINE tested raw truthiness (`if (!rows[i][EMP.EMAIL]) continue;`), THREE tested trimmed, and TWO tested nothing at all. A WHITESPACE-ONLY email cell therefore made the first two groups DISAGREE, the identical shape column L had before `cnEnrolledSheetId_` (INV-167), on a second column. The un-guarded pair mattered unequally: `getTeamMetrics` ACTS on it — its gate is `if (cdr || noteCount > 0 || …)`, which an offboarded name still matching DQE history satisfies, so a departed employee got a full row in the manager's team table AND their volume flowed into `teamTotals` — while `getPunctualityReport` was harmless only by coincidence downstream (`if (!dates.length) return`). Trimming can only NARROW the nine raw sites, which is the correct direction and matches INV-167's resolution. **NOT an authorization check** — `getEmployeeInfo_` still identifies the caller; this governs only whether a roster ROW is counted in a team-wide walk. **COROLLARY (operator report 2026-08-08): an EXCLUDED row is invisible, but its UNIQUENESS still binds.** The predicate hides a row from every in-app list, yet the employee-ID namespace spans the whole sheet — so a hand-stubbed row (ID + name typed into the sheet, no email) blocked an add with an "already in use" error pointing at nothing the admin could see, and no in-app panel could disprove it (only column B can). Any uniqueness check whose namespace includes excluded rows must NAME the owning row and say that it is excluded — see the onboarding KDD for the shape (`addEmployee`'s conflict labels + the panel's offboarded-vs-incomplete split). **THE FAMILY'S THIRD COLUMN, `DR.STATUS`, IS NOW CLOSED (cycle-16 F8 opened it; cycle-18 F5 finished it).** `getDeptRequests` compared the RAW cell on one line (`r[DR.STATUS] === 'resolved'`) and the normalized form on every other, so a padded or mixed-case cell made them disagree — the item's `status` excluded the row from `incoming` and `allOpen` while `deptStats` counted it OPEN. F8 normalized that one site into a local and NAMED the remaining three as an open gap — `drFindOpenRequest_`, `markDeptRequestResolved_` and `deptRequestsOverdueOpen_` — with the consequences: a re-send that fails to dedupe and opens a DUPLICATE request (INV-131 silently void), a second resolve click that OVERWRITES `ResolvedAt`/`ResolvedBy` and re-audits, and a resolved request that nags in the daily SLA digest forever. **Cycle-18 F5 closed it in the shape that entry prescribed:** `drStatus_(row)` is now THE one reader (trimmed + lowercased, keeping the `'open'` default a blank legacy cell relies on), all four readers delegate to it, and a pin asserts exactly ONE bracketed `[DR.STATUS]` read survives in the file — inside the predicate. **A FOURTH site went with it:** `buildCalendarForEmployee_` lowercased `TO.STATUS` without trimming, so a padded cell fell through the teammate filter AND rode to the client raw, where the calendar's `st === 'approved'` cell-class test missed it and painted a rep's own APPROVED day as pending; it now trims at the single read, so the value the server filters on and the value it ships are the same string. **A FOURTH column joined the family and is CLOSED: `TO.STATUS` (cycle-17 C17-2).** `updateTimeOffStatus` — the ONE function that mutates PTO balances — compared the raw trimmed cell against `'Approved'`/`'Reconciled'` exactly while every sibling STATUS reader lowercased, so a hand-edited `approved`/`APPROVED` row read as approved everywhere else yet NOT-approved here (re-deduct on approve, skipped restore on deny — the H1 signature), and a lowercased `reconciled` defeated the S1.3 terminal guard, letting the row re-approve and re-deduct the exact over-charge `fixPtoReconciliation` credited. Fixed with the F8 normalize-once shape: `oldStatusRaw` survives ONLY for the compensating revert + the audit note; every comparison lowercases, including the notify no-op check (`oldStatus !== newStatus.toLowerCase()` — lowercasing one side alone would have emailed on a no-op re-approve). `newStatus` needs no normalizing (server-whitelisted to canonical case). **Cycle-17 batch ② closed the FIFTEENTH walk and a THIRD guard shape:** `getMetricsAmbient` had NO inclusion guard at all (a shape the banned-pattern scan cannot see — it now routes through the predicate and is in the by-name list), and `saveTrainingAssignment` validated targets with raw POSITIVE truthiness (`if (rows[i][EMP.EMAIL])`) — the F3 tripwire now also bans that bare-truthiness form (comparison/identification reads deliberately don't match). A walk with no guard at all remains review-caught. Verify: the F3 tripwire bans the raw roster-guard shape ANYWHERE in `Code.js` (derived, not a hand list — INV-179) plus the positive bare-truthiness form, plus named assertions on the guarded walks (now incl. `getMetricsAmbient` + `saveTrainingAssignment`) and skip-before-collect in the cohort pair; the F8 pin asserts `getDeptRequests` reads `DR.STATUS` exactly once; the C17-2 pin asserts `updateTimeOffStatus` reads `TO.STATUS` exactly once, compares lowercase, and reverts with the raw cell | Subsystem: Server
 INV-184 | **A declared-but-unread CONFIG key or enum member is a DEFECT, not clutter — the next reader assumes it is wired.** Four were removed in cycle 15: `CDR_DEPARTMENT` (whose `getCdrAgentMetrics_` doc comment CLAIMED it filtered the read — it never did, which is why the CDR name-match diagnostic is permanently non-empty), `TRAINING_DIGEST_WEEKDAY` / `REVIEW_DIGEST_WEEKDAY` (the weekly-digest trigger hardcodes `ScriptApp.WeekDay.FRIDAY`, so an operator editing them to move the digest got a SILENT no-op), and `CALL_NOTES.SUBFORM_COL_JSON` (a toggle that never existed). **Deliberate retention is allowed but must SELF-DECLARE:** `EOD_WARNING_WINDOW_MINUTES` is marked `DEAD` at its declaration, and the tripwire's allowlist REQUIRES that marker — so "retained on purpose" and "forgotten" stay distinguishable in the file itself, not only in this document. The same class exists in the enums: `CDR.QUEUE_EXT` was read by cycle-14 Phase 0 yet stayed dead because the read used bare positional offsets (now derived from the enum). Verify: the F1 tripwire (every CONFIG key has a reader; the allowlist must self-declare) | Subsystem: Server
 INV-185 | **A test fixture must never REIMPLEMENT server logic — copy it VERBATIM and pin it byte-identical.** The Team Metrics visual fixture hand-rolled the queue→department fold and had ALREADY drifted: it omitted the per-group `queues.sort()`, so every By-department screenshot showed an ordering the server cannot produce. A paraphrase drifts silently and the harness then lies with total confidence — the failure mode its own README already documents twice (a wrong `coachAnalytics_` shape, a pre-formatted `lastPunchTimeMgr`). `test/visual/mock.js` now carries verbatim copies of `groupQueueRows_`, `CDR_QUEUE_UNGROUPED`, the `CDR_QUEUE_GROUPS` seed and — since cycle-16 — `cnNoteCoverage_`, all under a DO-NOT-EDIT banner. This makes the FIXTURE a mirror in the INV-72 sense, so it belongs in `MIRROR_INDEX` like any other parallel source. **The `cnNoteCoverage_` addition shows the class is not confined to elaborate logic:** the fixture computed `Math.round((noteCount / answered) * 100)` inline — three tokens' worth of paraphrase — and had already diverged where it matters, returning a number for `answered === 0` where the server returns `null` (the INV-129 contract cycle-16 F5 had just hardened). **The pin now DERIVES the copied set from the DO-NOT-EDIT region rather than naming one function** (INV-179), so the next verbatim copy is pinned the moment it lands. **Cycle-17 batch ③ extended the class from copied LOGIC to payload FIELD NAMES:** three fixture shapes had drifted — coaching rows carried `patientTrx` where the server ships `patientTRX` (the TRX chip was unrenderable in every screenshot), `kbGetReviewDue` used `usage30` where the server ships `views` (and omitted `total`/`cap`, so the F18 cap-note path was unshootable), and `kbGetContentRequests` returned a `{requests: []}` shape the client never reads. All three fixed + pinned by a fixture-shape pin. **Batch ⑦ made the first DERIVED shape pin:** the new Admin-scenario `getAutomationHealth` fixture's top-level keys are asserted against the key set extracted from `computeAutomationHealth_`'s OWN return block (INV-179 — a hand-copied key list here would drift exactly like the fixtures it checks); FULL derivation of fixture skeletons from server return sites remains the next promotion. **Cycle-18 batch 8 is the SIXTH instance, and it shows the class hiding where a screenshot cannot reach:** the visual `liveStatus` fixture shipped `empId` where `getManagerDashboard` ships `id`, so every Day-Edit button in every manager screenshot ever taken rendered `data-emp-id="undefined"`. A `data-*` attribute is invisible in a PNG, so the matrix reported those shots clean for as long as they had existed; it surfaced only when a NEW button beside it was CLICKED in a real browser. Pinned against the server's own return block. **Ask of a fixture not only whether it renders right, but whether anything the client reads back out of the DOM would still work.** **Cycle-18 F14 is the fifth instance and adds a rule of its own: a fixture whose response shape depends on its ARGUMENTS must be a FUNCTION of them, not a static object.** `getMyMetrics` was a frozen object carrying today's date, so the My Stats screenshot rendered "TODAY" as its hero label underneath a pressed "YESTERDAY" preset chip — the 2026-08-17 previous-workday default (the operator's own request) was UNSHOOTABLE, and the matrix had been reporting the contradiction as a clean render for months. The shape was correct; the fixture simply ignored the argument that decides it. Ask of every fixture: does the real endpoint's answer vary with what the client passes? If yes, the fixture is a function. Verify: the F4 mirror pin (every function in the region byte-identical to its `Code.js` original, plus the sentinel and group mapping, and the fixture actually CALLING the shared fold) + its MIRROR_INDEX entry + the batch-3 fixture-shape pin + the F14 argument-dependence pin | Subsystem: Test Suite
-INV-186 | **Before toning a health indicator off a count, ask what that count reads on a HEALTHY production system — if the answer is not zero, it is reference detail, not a signal.** The Automation Health CDR card toned off `unmatchedAgents`, which is PERMANENTLY non-empty here: the CDR Report covers the whole phone system (it is owned by `call-data-reporting`) while our roster is one team, and there is no department filter. It read "78 unmatched" indefinitely, and a card that can never go green trains the reader to ignore it — strictly worse than having no card. The obvious swap is also wrong: `rosterWithNoCdr` is every NAMED employee with no calls, so managers, admin staff and full-window PTO pin it amber just as permanently. The signal is the INTERSECTION (`cdrLikelyNameMismatches_`): a roster rep with no call data whose name resembles an unmatched CDR agent is one person spelled two ways, so their calls are silently missing from every metric. That set is normally EMPTY — the card reaches green — and it names the exact `Agent Alias Overrides` row to add. **Known limit:** the pairing requires normalized-equality or ≥2 shared name tokens, so a nickname sharing only a surname is a deliberate false NEGATIVE (under-reporting is the safe direction for something that raises a warning), and the capped raw lists render beneath it for the human. **The same rule now has a CODE form: `AUTOMATION_JOB_CHECKS`'s per-job `enabled()` predicate (INV-161) — a job that legitimately writes no audit row on a healthy deployment is never checked, rather than being checked and permanently amber.** Verify: `CDR: the health card tones off likelyMismatches, never the raw lists` (which strips comments first — the function explains why the raw lists are unusable and would otherwise trip on its own rationale) | Subsystem: Server + Client (shell)
+INV-186 | **Before toning a health indicator off a count, ask what that count reads on a HEALTHY production system — if the answer is not zero, it is reference detail, not a signal.** The Automation Health CDR card toned off `unmatchedAgents`, which is PERMANENTLY non-empty here: the CDR Report covers the whole phone system (it is owned by `call-data-reporting`) while our roster is one team, and there is no department filter. It read "78 unmatched" indefinitely, and a card that can never go green trains the reader to ignore it — strictly worse than having no card. The obvious swap is also wrong: `rosterWithNoCdr` is every NAMED employee with no calls, so managers, admin staff and full-window PTO pin it amber just as permanently. The signal is the INTERSECTION (`cdrLikelyNameMismatches_`): a roster rep with no call data whose name resembles an unmatched CDR agent is one person spelled two ways, so their calls are silently missing from every metric. That set is normally EMPTY — the card reaches green — and it names the exact `Agent Alias Overrides` row to add. **Known limit:** the pairing requires normalized-equality or ≥2 shared name tokens, so a nickname sharing only a surname is a deliberate false NEGATIVE (under-reporting is the safe direction for something that raises a warning), and the capped raw lists render beneath it for the human. **The same rule now has a CODE form: `AUTOMATION_JOB_CHECKS`'s per-job `enabled()` predicate (INV-161) — a job that legitimately writes no audit row on a healthy deployment is never checked, rather than being checked and permanently amber.** **AMENDED (design handoff PR 2, 2026-09-02): the client half is `cnHealthFindings_`'s severity rule — a check may be `warn`/`fail` ONLY when its count is zero when healthy; everything else is reported as an `ok` item WITH its count in the detail (the "ok-with-detail" set: the two raw CDR name lists, the queue-inventory verdict, a no-fallback store left unset, a historical-but-not-recent witness loss, digests with no heartbeat yet). That is how the System tab's "Nothing needs attention" state is REACHABLE on a real deployment — the standard this entry sets for any indicator that carries a tone.** Verify: `CDR: the health card tones off likelyMismatches, never the raw lists` (now asserted on `cnHealthFindings_` — comment-stripped, and driven behaviourally with 78 off-roster agents raising no finding) + PR2-1 | Subsystem: Server + Client (shell)
 INV-187 | **A surface that aggregates or draws a JUDGEMENT from a best-effort read must carry the read OUTCOME, and every judgement derived from it must be suppressed when that outcome is degraded.** Three cycles fixed instances of this one at a time before it was named: cycle-12 F5 (a swallowed per-rep read rendered as a confident 0%, telling reps to re-file work they had already filed), cycle-16 F1 (`managerGetShiftStats` pushed a rep with an unreadable Sheet onto the manager's END-OF-SHIFT PERFORMANCE table with `totalNotes:0` and a CRIT-toned 0% badge), F5 (`getTeamMetrics` nulled the per-rep coverage but computed the TEAM total anyway, so the rail said "partial" while the hint below drew a confident below-80% judgement from the same contaminated numerator) and F4 (`getCoveragePlan` swallowed a failed PTO read, and with the overlay empty EVERY REP COUNTS AS WORKING — so an understaffing planner returned a green all-clear on a day half the team is off). **The test that generalizes them: if the DEGRADED output is MORE reassuring than the healthy one, silence is not an option.** A number can be nulled; a judgement (a percentage, a staffing band, an all-clear, a threshold hint) must be actively suppressed and the degradation named to the user, because a missing judgement reads as "fine" rather than "unknown". Note the reason this class keeps escaping sweeps: an aggregate is a coverage surface even when it never calls the shared helper — `managerGetShiftStats` counts INLINE (it needs flags, emails and a median off the same read) and so appeared in no search for `cnCountNotesResult_`. **Ask what a function DERIVES from a best-effort read, not which helper it calls.** **Cycle-17 completed the class:** the export (C17-6 `skippedReps` + INCOMPLETE audit marker), the CN loaders (C17-5 preserve-last-good + failed-round-never-fresh), the three manager lazy cards (C17-7), and batch ② — the flagged/urgent digest aggregates, manager search, tag taxonomy/trends (`skippedReps`, partial-rounds-uncached), the unresolved-action count (`{count, partial}`, undercount never cached, `≥ N` badge), the extras SWR whole-round stamp, the no-CDR Notes-Filed branch, and the timesheet side rail. Verify: for each of `managerGetShiftStats`, `getCoveragePlan`, `getTeamMetrics`, `getMyMetrics` — and the batch-2 pin for the five walks — assert the response carries an outcome flag AND that the derived judgement is gated on it — not merely that the number is nulled | Subsystem: Server + Client (all manager aggregates)
 INV-188 | **A source-scanning tripwire must STRIP COMMENTS before matching.** The fix comment that explains what was removed quotes the removed code, so a naive scan trips on its own rationale — and the failure mode is a pin that looks like it caught a regression on the very commit that fixed one. It has now bitten twice in two cycles: cycle-15's F1 tripwire failed on its own allowlist because it searched a comment-stripped body for a marker that lives in a comment, and cycle-16's F8 pin reported `3 !== 1` raw `DR.STATUS` reads when two of the three were inside the comment explaining the fix. The related trap in the same family: slice from the RIGHT occurrence — cycle-16's F6 pin anchored on the first `ui-dialog-err`, which is the id CONSTANT, not the div it was checking. **Cycle-18 batch 5 added the MARKUP half:** an accessible-name census over the partials counted `<input>`/`<textarea>` elements inside `<!-- -->` blocks and reported ~30 controls that do not exist, which would have set a ratchet baseline no real fix could ever reach. A scan over HTML must strip `<!-- -->` for the same reason a scan over JS strips `//` — the rule is about COMMENTS, not about JavaScript. **The cycle-18 seams round added the INVERSE bound (F3): strip for BANS, but extract SHAPES from RAW source.** The naive `//`-stripper deletes from any `//` to end of line, and fixture STRING VALUES contain `https://…` — so a comment-stripped view of mock.js lost every URL-bearing row's closing brace and a `[^}]*` first-row capture silently spanned five rows. One test, two views: the ban regex scans the stripped text, the field-name extraction scans the raw text, and the pin says why inline. Sibling extractor trap from the same round: a line-anchored `/^\s*(\w+):/gm` key matcher captures only each line's FIRST key on a packed return block (`days: …, totalHours: …, daysWorked: …`), and a `(\w+):` matcher without a trailing `\s` also matches the `https:` inside URL values — both were caught only because every mutation is bite-checked. Verify: any pin asserting "N occurrences of X" strips `//`, `/* */` and `<!-- -->` before counting, and fails on a file whose comment mentions X | Subsystem: Test Suite
 INV-189 | **A best-effort read that BLOCKS a cheap one belongs in its own endpoint.** `getOnboardingPanel` computed CDR readiness inline, so the whole Admin → Team Members panel — everything else in it coming off the 5-min-cached roster — waited on a 7-day read of a foreign spreadsheet (operator: "takes some time to load"). The split is `getOnboardingCdrReadiness` (same admin gate, same INV-67 posture): the client paints the roster panel, then patches each rep's chip via `data-cdr-name`. THREE properties make the split safe rather than merely faster: (a) the panel's `cdr: {deferred:true}` is DISTINCT from `ok:false` — "not read yet" renders "checking…", "read and failed" renders "unknown", and neither is ever "no calls in 7d", because an unread name is not an absent one (INV-187); (b) first render and the patch share ONE chip builder, so the states cannot drift; (c) the patch is DOM surgery keyed off an attribute, not a whole-panel re-render, so it cannot clobber a form the admin has begun filling in. The general rule: when one part of a response is an order of magnitude slower than the rest AND is decoration on top of it, splitting is not premature optimization — it is the difference between a panel that appears and one that hangs. Verify: the operator-2026-08-11 split pins (no CDR call in the panel; deferred marker; gate + best-effort on the split; paint-before-patch ordering; shared chip builder) | Subsystem: Server + Client (Call Notes views)
-INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only paints its chip (firing in both places would double-toast). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. **A DAY OFF suppresses two of the three reminder kinds (cycle-18 F2).** A shift SHAPE exists every day of the week, so without a gate the break reminders and the not-clocked-in nudge fired on Saturdays, Sundays and approved-PTO days for anyone with the app open — a chimed, STICKY 'clock in so today counts on your timesheet' on a rep's day off, i.e. precisely the false positive that same nudge's own comment says 'teaches reps to ignore the channel', arriving weekly. `remindIsDayOff_(tz)` = rep-tz weekday (via `isoDateTz`, never browser-local — the F6 discipline) OR the server-computed `offToday` (approved PTO only; `empIsOffToday_`, a BOUNDED three-column read on the app's hottest endpoint, failing toward 'working' so a failed read costs a reminder rather than silencing one). **The gate is applied PER BRANCH, never as an early return: the still-clocked-in nudge is DELIBERATELY exempt**, because a rep who genuinely clocked in on a Saturday and forgot to clock out is exactly who that reminder exists for — an early `return` before `nowMin` would take it with them, and a pin asserts that shape cannot come back. KNOWN LIMIT: the roster carries no working-days column, so weekends are INFERRED; a rep on a genuine Sat/Sun shift gets no break reminders that day. Each reminder fires at most once per key per REP-LOCAL day — **across EVERY open window, not once per window (operator 2026-08-17):** the main window and a pinned pop-out each run the ticker, so before the fix every reminder toasted + chimed twice. `remindOnce_` now consults + writes a shared localStorage fired-set (`umsRemindFired`, `{day, keys}` — the same origin-wide-sharing property that lets `umsNotify` govern the pop-out); a different day resets it (the in-memory set's rollover rule, so it cannot grow in a long-lived pop-out), and a localStorage-throwing privacy-mode browser degrades to per-window dedupe — the pre-fix behavior, never worse. The sub-second race where two windows tick simultaneously before either writes is accepted: its worst case IS the pre-fix behavior. Apps Script has no background push: a closed browser still gets nothing. **AMENDMENT (operator 2026-08-12): the reminder toast is STICKY** — `notifyRemind_` passes `{sticky:true}` to `showToast`, which then skips the 3.5s auto-dismiss and renders a real, `aria-label`led × button (INV-173). The chime does its job from another window, and by the time the rep gets back to the one that fired it a 3.5s toast is long gone — a reminder is the one toast class that must wait for its reader. Two consequences the pins hold: the stack cap evicts the oldest NON-sticky toast first (a reminder the rep has not read must not be pushed off by routine toasts) while staying a real bound, and every existing 2-arg `showToast` caller is untouched. **Section (d) — SCHEDULED-CALL reminders (pilot round 2, 2026-08-24):** `schedTick_` joined `remindersTick_` as a fourth branch, DELIBERATELY OUTSIDE the dayOff gate (a self-scheduled Saturday call-back is deliberate — the per-branch rule above, same reasoning as the still-clocked-in exemption). The pure `schedDue_` fires from `whenMs − leadMin` to 30 min past due (`SCHED_FIRE_LATE_MS`); non-active/junk items never fire. Delivery rides `remindOnce_('sched:'+id, …)`, so the chime + sticky toast dedupe across every open window incl. the pinned pop-out. RPC discipline (the cost rule above, pinned): ONE boot fetch (+7s, off the critical path), a refetch after every create/status mutation, and a 10-min-throttled refetch ONLY while a non-empty active list exists — an empty list never polls. Known v1 limits, both stated in the modal copy: a reminder created in ANOTHER window appears after that window's next boot/mutation fetch, and a CLOSED browser gets nothing (no background push). Storage is the `ScheduledCalls` tab on the FORMS PHI store (INV-114 — the label plausibly names a patient) with epoch-ms NUMBER cells (immune to the Sheets date/locale-coercion class); `createScheduledCall` is caller-scoped + locked, parses wall time in the REP's OWN tz server-side (`Utilities.parseDate` — no client tz arithmetic), rejects past times + a >60-day horizon, caps 20 active per rep, and its audit row carries the id ONLY (the label never reaches the shared AuditLog, INV-32 — pinned); `setScheduledCallStatus` (done/cancelled) acts on OWN rows only (a foreign id reads as not-found); the status compare is normalized in the ONE reader `schedReadMine_` from birth (the DR.STATUS/INV-183 lesson). CN surfaces: the Log-header bell + the note-card More-menu "schedule call-back" (prefills the label from caller/TRX), an A14-named `ensureOverlay` modal. Verify: the reminder-channel + shell-ticker pins, the sticky-toast source pin, the DOM lifecycle pair (survives the auto-dismiss window; × dismisses; cap evicts routine first), and the round-2 sched pins (schedValidateShape_/schedDue_ behavioural, endpoint contract incl. the id-only audit, ticker/fetch/hook wiring) | Subsystem: Client (shell) + Client (Time Clock views) + Client (Call Notes views) + Server
+INV-190 | **Reminders are a SHELL capability with three independently-degradable channels.** Break reminders fired only while the Clock tab was open, so the pinned Call Notes pop-out — the window a rep spends the shift in — never showed one; `remindersTick_` (60s, started at shell boot) owns them now, and `clkUpdateBreak_` only PAINTS — since design handoff PR 6 (2026-09-02) it paints the break-chip ROW (`taken` / `now` / `next` + the "· in Nm" countdown; the separate `#clk-next-break` chip is retired) and it still fires no toast (firing in both places would double-toast; pinned in PR6-3). The channels are **toast** (always — never gated on a preference), **chime** (`notifyChime_`: a synthesized Web Audio oscillator, because a fetched asset would be blocked by the iframe CSP, whose context only unlocks on a real user gesture) and **desktop** (gated on BOTH the stored preference and an actually-granted permission). Desktop is expected to be REFUSED — the app renders inside HtmlService's cross-origin iframe, where Permissions Policy blocks `notifications` — so the toggle distinguishes 'denied' from 'unavailable' and names what still works instead of failing silently. Cost discipline: the break half is pure arithmetic off `empState.schedule` (zero RPCs); the still-clocked-in nudge needs punch state and therefore refreshes `getEmployeeState` at most once per 10 minutes, ONLY within the shift-end+5..+120min window. An UNKNOWN punch state never nags — a false clock-out reminder to a rep who already clocked out is worse than a missed one, and the daily missed-punch EMAIL is the real backstop. **A DAY OFF suppresses two of the three reminder kinds (cycle-18 F2).** A shift SHAPE exists every day of the week, so without a gate the break reminders and the not-clocked-in nudge fired on Saturdays, Sundays and approved-PTO days for anyone with the app open — a chimed, STICKY 'clock in so today counts on your timesheet' on a rep's day off, i.e. precisely the false positive that same nudge's own comment says 'teaches reps to ignore the channel', arriving weekly. `remindIsDayOff_(tz)` = rep-tz weekday (via `isoDateTz`, never browser-local — the F6 discipline) OR the server-computed `offToday` (approved PTO only; `empIsOffToday_`, a BOUNDED three-column read on the app's hottest endpoint, failing toward 'working' so a failed read costs a reminder rather than silencing one). **The gate is applied PER BRANCH, never as an early return: the still-clocked-in nudge is DELIBERATELY exempt**, because a rep who genuinely clocked in on a Saturday and forgot to clock out is exactly who that reminder exists for — an early `return` before `nowMin` would take it with them, and a pin asserts that shape cannot come back. KNOWN LIMIT: the roster carries no working-days column, so weekends are INFERRED; a rep on a genuine Sat/Sun shift gets no break reminders that day. Each reminder fires at most once per key per REP-LOCAL day — **across EVERY open window, not once per window (operator 2026-08-17):** the main window and a pinned pop-out each run the ticker, so before the fix every reminder toasted + chimed twice. `remindOnce_` now consults + writes a shared localStorage fired-set (`umsRemindFired`, `{day, keys}` — the same origin-wide-sharing property that lets `umsNotify` govern the pop-out); a different day resets it (the in-memory set's rollover rule, so it cannot grow in a long-lived pop-out), and a localStorage-throwing privacy-mode browser degrades to per-window dedupe — the pre-fix behavior, never worse. The sub-second race where two windows tick simultaneously before either writes is accepted: its worst case IS the pre-fix behavior. Apps Script has no background push: a closed browser still gets nothing. **AMENDMENT (operator 2026-08-12): the reminder toast is STICKY** — `notifyRemind_` passes `{sticky:true}` to `showToast`, which then skips the 3.5s auto-dismiss and renders a real, `aria-label`led × button (INV-173). The chime does its job from another window, and by the time the rep gets back to the one that fired it a 3.5s toast is long gone — a reminder is the one toast class that must wait for its reader. Two consequences the pins hold: the stack cap evicts the oldest NON-sticky toast first (a reminder the rep has not read must not be pushed off by routine toasts) while staying a real bound, and every existing 2-arg `showToast` caller is untouched. **Section (d) — SCHEDULED-CALL reminders (pilot round 2, 2026-08-24):** `schedTick_` joined `remindersTick_` as a fourth branch, DELIBERATELY OUTSIDE the dayOff gate (a self-scheduled Saturday call-back is deliberate — the per-branch rule above, same reasoning as the still-clocked-in exemption). The pure `schedDue_` fires from `whenMs − leadMin` to 30 min past due (`SCHED_FIRE_LATE_MS`); non-active/junk items never fire. Delivery rides `remindOnce_('sched:'+id, …)`, so the chime + sticky toast dedupe across every open window incl. the pinned pop-out. RPC discipline (the cost rule above, pinned): ONE boot fetch (+7s, off the critical path), a refetch after every create/status mutation, and a 10-min-throttled refetch ONLY while a non-empty active list exists — an empty list never polls. Known v1 limits, both stated in the modal copy: a reminder created in ANOTHER window appears after that window's next boot/mutation fetch, and a CLOSED browser gets nothing (no background push). Storage is the `ScheduledCalls` tab on the FORMS PHI store (INV-114 — the label plausibly names a patient) with epoch-ms NUMBER cells (immune to the Sheets date/locale-coercion class); `createScheduledCall` is caller-scoped + locked, parses wall time in the REP's OWN tz server-side (`Utilities.parseDate` — no client tz arithmetic), rejects past times + a >60-day horizon, caps 20 active per rep, and its audit row carries the id ONLY (the label never reaches the shared AuditLog, INV-32 — pinned); `setScheduledCallStatus` (done/cancelled) acts on OWN rows only (a foreign id reads as not-found); the status compare is normalized in the ONE reader `schedReadMine_` from birth (the DR.STATUS/INV-183 lesson). CN surfaces: the Log-header bell + the note-card More-menu "schedule call-back" (prefills the label from caller/TRX), an A14-named `ensureOverlay` modal. Verify: the reminder-channel + shell-ticker pins, the sticky-toast source pin, the DOM lifecycle pair (survives the auto-dismiss window; × dismisses; cap evicts routine first), and the round-2 sched pins (schedValidateShape_/schedDue_ behavioural, endpoint contract incl. the id-only audit, ticker/fetch/hook wiring) | Subsystem: Client (shell) + Client (Time Clock views) + Client (Call Notes views) + Server
 INV-191 | **A writer keyed on a CLASS silently clobbers anything else that borrows the class for its looks.** `index.html`'s boot theme reflector wrote `aria-pressed` across every `.sb-theme-btn`; the moment the reminder-alert toggles reused that class for its appearance, they rendered `aria-pressed="true"` in markup and read `false` in the live DOM on every load — the sound toggle silently reset itself each session. The selector is now `.sb-theme-btn[data-theme-target]`: the attribute that actually MEANS "this is a theme button". Reusing a class for appearance is normal and cheap; what is not safe is a writer that treats class membership as identity. This is invisible to source review — the markup is correct — and was caught only by reading the attribute back in a real browser, which is the general lesson: **for any state an element renders AND some other code writes, verify by measuring the live attribute, not by reading the template.** Sibling shape: two rendered copies of one control cannot share an `id`, so `notifySyncToggles_` selects by `data-remind`. Verify: the theme-reflector scope pin + the no-duplicate-ids pin | Subsystem: Client (shell)
 INV-195 | **A form control needs an accessible NAME, and a `placeholder` is not one.** A placeholder is not reliably announced, is not exposed as the name by every AT/browser pair, and VANISHES on the first keystroke — so a rep who tabs back to a half-filled field hears "edit, 555" with no idea what it is (the reason INV-83's `uiPrompt` fix rejected it in cycle 16; this generalizes that one dialog to the whole app). **Visual adjacency is not a name either**: a `<div>` reading "Callback" beside an input names nothing. The sanctioned forms are a `<label for>`, an `aria-labelledby` pointing at a node that will still exist after the next re-render, or an `aria-label`; prefer `for=` where the control has a STATIC unique id (a real label is clickable), and `aria-label` where the id is INTERPOLATED, because a repeated row would otherwise mint duplicate DOM ids and break the very anchors they exist for (the `kbMd_` heading-dedup lesson). **SWEPT 2026-08-21 (cycle-18 batch 5B): the baseline is 0/0/0 and the target is met, not merely ratcheted.** 210 of the fixes were mechanical (123 label-`for` wirings, 29 placeholder promotions, 17 money-table rows on the public form) and 30 were read from surrounding UI; ONE was a real association bug rather than a missing name — the PPD `num` and free-text branches build an input WITH an id but never set `hasInputId`, so the label beside them never got its `for=`, and the fix belongs at the flag, not on an `aria-label`. **THE CENSUS THIS ENTRY ORIGINALLY RECORDED WAS WRONG IN THREE WAYS, and every one of them was found by doing the work rather than by re-reading it — treat that as the lesson, not the numbers.** (1) It said 252 controls; the true figure was **168**, because `form_public.html` is already in `PARSE_GUARD_PARTIALS` and the `.concat(['form_public.html'])` added when the ratchet shipped made the scan read it TWICE. (2) It said 116 needed an author to DECIDE the name; about **30** needed a human eye and every one was nameable from on-screen text — the census only recognised a `<label>` containing PLAIN text, so the public form's house style (`<label>First Name <span class="required">*</span></label>`) pushed 52 already-labelled controls into that bucket and 34 more were table rows the row header already named. (3) It attributed 92 of those to `cn/script_callnotes.html`; that was Call Notes' TOTAL across all buckets, and the biggest none-bucket file was the public form with 68. Two scan corrections shipped with the sweep: the dedupe above, and `forIds` now collecting every `for="…"` in a file rather than only ones textually inside a `<label>` tag — these partials build the attribute in a separate variable (`'<label class="q"' + labelFor + '>'`), so five real associations were invisible to a contiguous-match regex; that recognises associations rather than excusing missing ones, and all five were verified NAMED in Chromium first. A markup census must strip `<!-- -->` (INV-188) and derive its file set from `A11Y_SCAN_PARTIALS` (INV-179). **A static scan can only see whether a name SOURCE exists in the text — it cannot resolve a `for=`/id association, so the ratchet is a floor and not the verification.** Verify: the three A14 pins (`ensureOverlay` dialogs are named, no nested `role="dialog"`, and the two-sided ratchet — bite-checked AT ZERO on a broken `for=`, a removed static `aria-label`, a removed dynamic `aria-label`, and a new unnamed control), plus `test/visual/a11y-names.mjs`, which reads back the name Chromium actually computes across nine landed views and all three public-form templates and fails on a DUPLICATE name, since two fields announcing alike is its own defect | Subsystem: Client (all view partials)
-INV-196 | **The QA module is a THIRD gate tier, a dedicated store, and a Drive byte boundary.** (a) GATE: every QA reviewer endpoint (`getQaQueue`, `qaSyncRecordings`, `qaSetRecordingStatus`, `qaAssignRecording`, `qaGetAudioChunk`, `qaListComments`, `qaAddComment`, `qaDeleteComment`, Phase 2's `qaSetRecordingAgent`, `qaSaveScorecard`, `qaListScorecards`, `getQaStats`, and Phase 3's `qaSetRecordingShared`, `qaSampleRecordings`) checks `canSeeQa_(emp)` — isManager OR `QA_MEMBERS` membership, returning `'QA access required.'` — BEFORE any store or Drive access (the `canSeeSpanishInbox_`/INV-31 pattern; the omnibus GATE-TIER tripwire deliberately does not govern this tier — the Tests.js `qa_gates_rejectNonMember` case set does). Agents were OUTSIDE the gate entirely in v1 (they did not see their reviews); **Phase 3 revisited that decision with ONE deliberate exception: `getMyQaReviews` is EMPLOYEE-gated (bare `{error: 'Not authorized.'}` — the GATE-SHAPE read rule, never `success:false`), deliberately NOT `canSeeQa_`** — it is the agent-facing read, and it is safe outside the tier because it is doubly scoped (a row returns ONLY when `SharedMs` is set AND the `Agent` attribution matches the CALLER's roster name, trimmed case-insensitive), strictly read-only (`getSheetByName`, never provisions; an unset `QA_SS_ID` reads as an empty list), and returns only ACTIVE comments (soft-deletes stay hidden). **The 2026-08-28 follow-on added its audio sibling `getMyQaReviewAudioChunk`** — the same employee gate + the same two scope filters resolved READ-ONLY from the store BEFORE any Drive access (generic 'Recording not found.' on every scope refusal, so existence never leaks; unsharing revokes playback on the next chunk); the Drive byte boundary itself is the SHARED `qaAudioChunkFor_` (see (c)), so the reviewer and agent playback paths cannot drift. **Operator 2026-08-28: ALL THREE tabs — `qaMyReviews` included — now carry `managerOnly + also:'canSeeQa'`, so the QA tool is hidden from non-admin/non-QA reps FOR NOW** (Phase 3 had shipped `qaMyReviews` ungated, which made the tool visible to every rep; re-opening agent visibility is dropping the two flags from that one registry line — the employee-gated server reads are unchanged either way, so nothing dormant needs rebuilding). The view-as personas carry `canSeeQa`, so a CSR preview renders no QA tool. (b) STORE: `getQaSS_` resolves `QA_SS_ID` with NO fallback (the `getHrDocsSS_` posture) — recordings and review comments plausibly reference agents AND patients, so an unset property errors rather than silently writing into the ADP/KB sheets. Free-text columns are plain-text-pinned at provisioning (the `kbImportDataTable` lesson); ms stamps are NUMBER cells (coercion-immune). `QaComments` is append-only + soft-delete (author-or-manager), over-cap REFUSES, and a comment's target recording must EXIST before any row is written (the IntakeFeedback posture). **Review RECORDS gained an optional retention tier (2026-08-28 follow-ons): `purgeOldQaReviews` (trigger #18 — INV-44 gate, INV-01 locked, default `QA_REVIEW_RETENTION_DAYS`=0 disabled) deletes QaComments + QaScorecards rows older than the window; the QaRecordings INDEX and the Drive audio files are NEVER touched, a 0/garbage ms stamp is never deleted (fail-safe), the disabled/unconfigured returns precede the lock, and the counts-only `QaReviewPurge` audit row is the liveness heartbeat — its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND store configured (INV-186); Storage Health carries the QA store row with the LIVE window in its retention field (2026-08-28 #3).** (c) DRIVE BOUNDARY: `qaAudioChunkFor_` — the ONE shared byte boundary behind both `qaGetAudioChunk` (canSeeQa_-gated wrapper) and `getMyQaReviewAudioChunk` (the agent path; neither caller touches Drive directly) — re-applies the `kbGetImageData` rule — the file's parents must include `QA_RECORDINGS_FOLDER_ID` BEFORE any bytes leave (the app runs as the deployer, so without it any QA member could read ANY Drive file the deployer can open, by id), the size cap reads METADATA before the blob, non-audio is refused, and slicing goes through the pure `qaChunkRange_` (out-of-range/empty → null, never a zero-byte serve). `qaSyncRecordings` is idempotent by FileId BEFORE any write, bounded per run with truncation REPORTED (INV-169), and its audit row carries COUNTS only — a recording file name can carry a patient/agent name, so names never enter the shared AuditLog (INV-32); status/assign/comment audit rows are id-only for the same reason — **and so are Phase 2's:** `qaSetRecordingAgent`'s audit row NEVER carries the agent name, and `qaSaveScorecard`'s carries ids only (ratings + reviewer notes stay in the QA store). (d) PHASE 2 CONTRACTS: `QaScorecards` is append-only — the LATEST card per (recording, reviewer) wins everywhere it is read (`qaLatestScorecards_`; a mis-entry is corrected by re-scoring, never by editing a review row); `qaSaveScorecard` validates against the LIVE criteria (`getQaScorecardCriteria_` — the `QA_SCORECARD_CRITERIA` CONFIG seed, Script-Property-overridable with sanitize-on-read; since 2026-08-28 the property is edited in-app via `saveQaScorecardCriteria`, INV-136's 48th — strict named-error save, delete-on-reset, with the client warning that a RENAMED key orphans every stored rating from that column) and REJECTS an unknown key by name rather than whitelist-dropping it (a review record must not silently lose ratings — the INV-96 posture); `qaStatsAggregate_` keeps the `(unassigned)` bucket VISIBLE, never invents an agent for a card whose recording is not indexed, and reads a criterion with no ratings as null, never 0 (INV-187); the client waveform is DECORATION (low-rate OfflineAudioContext decode, size-gated, seq-guarded BEFORE the peaks write — every failure leaves the Phase-1 flat timeline; since 2026-08-28 #2 ONE shared painter `qaDrawWaveOn_` serves the detail AND My Reviews — `qaDrawWave_` is a thin delegate — so the two waveform surfaces cannot drift). (e) PHASE 3 CONTRACTS: **sharing is an explicit RELEASE, never a side effect** — `qaSetRecordingShared` REFUSES until the recording is attributed to its agent (a share with no attribution would release to nobody while the queue pill claims otherwise), a status flip to `done` never auto-shares, and unsharing (SharedMs → 0) withdraws the review from the agent view; the share audit row carries `fileId` + the flag only. `qaSampleRecordings` assigns to the CALLER exclusively (the signature takes only a count — routing work to others stays the queue's manager Assign), candidates are new+unassigned only, and `qaSamplePick_` is coverage-fair (lowest done-reviews + picked-this-round load per agent, random tie-break, injectable rand); its audit row is counts-only. `qaCalibration_` includes ONLY recordings whose latest-folded cards span 2+ reviewers with computable means (a lone card has nothing to compare against; a criterion rated once never sets the widest-gap), and the table is FACTS ONLY — no verdict tone on a spread. (f) CLIENT: chunk assembly is seq-guarded (INV-156 — the guard sits BEFORE the chunk append, which a bare occurrence count cannot see; bite-caught), replaced Blob URLs are revoked, and every `onclick` handler name in the qa partial must RESOLVE to a defined function — Phase 1 shipped the detail's status buttons pointing at the SERVER helper name `qaStatus_` (dead references jsdom's outside-only mode cannot catch), fixed in Phase 2 and held by the QA-7 derived scan. My Reviews renders READ-ONLY — since the 2026-08-28 follow-ons its per-card **Play recording** button is the view's ONLY control (playback of the SHARED recording through the scoped `getMyQaReviewAudioChunk`, seq-guarded, Blob URLs revoked, NO Drive-fallback link — agents have no folder access — with the shared-painter waveform as decoration); no scorecard form, no status/share/assign controls — and both the reviewer detail and My Reviews render scorecards through ONE builder (`qaScorecardListHtml_`) so the two surfaces cannot drift. Verify: QA-1..QA-18 + `test_qa_gates_rejectNonMember` + `test_triggerGate_qaReviewPurge_nonManagerThrows` (14 endpoints + the getMyQaReviews/getMyQaReviewAudioChunk read-shape cases) + the `saveQaScorecardCriteria` omnibus admin case | Subsystem: Server + Client (QA views)
+INV-196 | **The QA module is a THIRD gate tier, a dedicated store, and a Drive byte boundary.** (a) GATE: every QA reviewer endpoint (`getQaQueue`, `qaSyncRecordings`, `qaSetRecordingStatus`, `qaAssignRecording`, `qaGetAudioChunk`, `qaListComments`, `qaAddComment`, `qaDeleteComment`, Phase 2's `qaSetRecordingAgent`, `qaSaveScorecard`, `qaListScorecards`, `getQaStats`, and Phase 3's `qaSetRecordingShared`, `qaSampleRecordings`) checks `canSeeQa_(emp)` — isManager OR `QA_MEMBERS` membership, returning `'QA access required.'` — BEFORE any store or Drive access (the `canSeeSpanishInbox_`/INV-31 pattern; the omnibus GATE-TIER tripwire deliberately does not govern this tier — the Tests.js `qa_gates_rejectNonMember` case set does). Agents were OUTSIDE the gate entirely in v1 (they did not see their reviews); **Phase 3 revisited that decision with ONE deliberate exception: `getMyQaReviews` is EMPLOYEE-gated (bare `{error: 'Not authorized.'}` — the GATE-SHAPE read rule, never `success:false`), deliberately NOT `canSeeQa_`** — it is the agent-facing read, and it is safe outside the tier because it is doubly scoped (a row returns ONLY when `SharedMs` is set AND the `Agent` attribution matches the CALLER's roster name, trimmed case-insensitive), strictly read-only (`getSheetByName`, never provisions; an unset `QA_SS_ID` reads as an empty list), and returns only ACTIVE comments (soft-deletes stay hidden). **The 2026-08-28 follow-on added its audio sibling `getMyQaReviewAudioChunk`** — the same employee gate + the same two scope filters resolved READ-ONLY from the store BEFORE any Drive access (generic 'Recording not found.' on every scope refusal, so existence never leaks; unsharing revokes playback on the next chunk); the Drive byte boundary itself is the SHARED `qaAudioChunkFor_` (see (c)), so the reviewer and agent playback paths cannot drift. **Operator 2026-08-28: ALL THREE tabs — `qaMyReviews` included — now carry `managerOnly + also:'canSeeQa'`, so the QA tool is hidden from non-admin/non-QA reps FOR NOW** (Phase 3 had shipped `qaMyReviews` ungated, which made the tool visible to every rep; re-opening agent visibility is dropping the two flags from that one registry line — the employee-gated server reads are unchanged either way, so nothing dormant needs rebuilding). The view-as personas carry `canSeeQa`, so a CSR preview renders no QA tool. (b) STORE: `getQaSS_` resolves `QA_SS_ID` with NO fallback (the `getHrDocsSS_` posture) — recordings and review comments plausibly reference agents AND patients, so an unset property errors rather than silently writing into the ADP/KB sheets. Free-text columns are plain-text-pinned at provisioning (the `kbImportDataTable` lesson); ms stamps are NUMBER cells (coercion-immune). `QaComments` is append-only + soft-delete (author-or-manager), over-cap REFUSES, and a comment's target recording must EXIST before any row is written (the IntakeFeedback posture). **Review RECORDS gained an optional retention tier (2026-08-28 follow-ons): `purgeOldQaReviews` (trigger #18 — INV-44 gate, INV-01 locked, default `QA_REVIEW_RETENTION_DAYS`=0 disabled) deletes QaComments + QaScorecards rows older than the window; the QaRecordings INDEX and the Drive audio files are NEVER touched, a 0/garbage ms stamp is never deleted (fail-safe), the disabled/unconfigured returns precede the lock, and the counts-only `QaReviewPurge` audit row is the liveness heartbeat — its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND store configured (INV-186); Storage Health carries the QA store row with the LIVE window in its retention field (2026-08-28 #3).** (c) DRIVE BOUNDARY: `qaAudioChunkFor_` — the ONE shared byte boundary behind both `qaGetAudioChunk` (canSeeQa_-gated wrapper) and `getMyQaReviewAudioChunk` (the agent path; neither caller touches Drive directly) — re-applies the `kbGetImageData` rule — the file's parents must include `QA_RECORDINGS_FOLDER_ID` BEFORE any bytes leave (the app runs as the deployer, so without it any QA member could read ANY Drive file the deployer can open, by id), the size cap reads METADATA before the blob, non-audio is refused, and slicing goes through the pure `qaChunkRange_` (out-of-range/empty → null, never a zero-byte serve). `qaSyncRecordings` is idempotent by FileId BEFORE any write, bounded per run with truncation REPORTED (INV-169), and its audit row carries COUNTS only — a recording file name can carry a patient/agent name, so names never enter the shared AuditLog (INV-32); status/assign/comment audit rows are id-only for the same reason — **and so are Phase 2's:** `qaSetRecordingAgent`'s audit row NEVER carries the agent name, and `qaSaveScorecard`'s carries ids only (ratings + reviewer notes stay in the QA store). (d) PHASE 2 CONTRACTS: `QaScorecards` is append-only — the LATEST card per (recording, reviewer) wins everywhere it is read (`qaLatestScorecards_`; a mis-entry is corrected by re-scoring, never by editing a review row); `qaSaveScorecard` validates against the LIVE criteria (`getQaScorecardCriteria_` — the `QA_SCORECARD_CRITERIA` CONFIG seed, Script-Property-overridable with sanitize-on-read; since 2026-08-28 the property is edited in-app via `saveQaScorecardCriteria`, INV-136's 48th — strict named-error save, delete-on-reset, with the client warning that a RENAMED key orphans every stored rating from that column) and REJECTS an unknown key by name rather than whitelist-dropping it (a review record must not silently lose ratings — the INV-96 posture); `qaStatsAggregate_` keeps the `(unassigned)` bucket VISIBLE, never invents an agent for a card whose recording is not indexed, and reads a criterion with no ratings as null, never 0 (INV-187); the client waveform is DECORATION (low-rate OfflineAudioContext decode, size-gated, seq-guarded BEFORE the peaks write — every failure leaves the Phase-1 flat timeline; since 2026-08-28 #2 ONE shared painter `qaDrawWaveOn_` serves the detail AND My Reviews — `qaDrawWave_` is a thin delegate — so the two waveform surfaces cannot drift). (e) PHASE 3 CONTRACTS: **sharing is an explicit RELEASE, never a side effect** — `qaSetRecordingShared` REFUSES until the recording is attributed to its agent (a share with no attribution would release to nobody while the queue pill claims otherwise), a status flip to `done` never auto-shares, and unsharing (SharedMs → 0) withdraws the review from the agent view; the share audit row carries `fileId` + the flag only. `qaSampleRecordings` assigns to the CALLER exclusively (the signature takes only a count — routing work to others stays the queue's manager Assign), candidates are new+unassigned only, and `qaSamplePick_` is coverage-fair (lowest done-reviews + picked-this-round load per agent, random tie-break, injectable rand); its audit row is counts-only. `qaCalibration_` includes ONLY recordings whose latest-folded cards span 2+ reviewers with computable means (a lone card has nothing to compare against; a criterion rated once never sets the widest-gap), and the table is FACTS ONLY — no verdict tone on a spread. (f) CLIENT: chunk assembly is seq-guarded (INV-156 — the guard sits BEFORE the chunk append, which a bare occurrence count cannot see; bite-caught), replaced Blob URLs are revoked, and every `onclick` handler name in the qa partial must RESOLVE to a defined function — Phase 1 shipped the detail's status buttons pointing at the SERVER helper name `qaStatus_` (dead references jsdom's outside-only mode cannot catch), fixed in Phase 2 and held by the QA-7 derived scan. My Reviews renders READ-ONLY — since the 2026-08-28 follow-ons its per-card **Play recording** button is the view's ONLY control (playback of the SHARED recording through the scoped `getMyQaReviewAudioChunk`, seq-guarded, Blob URLs revoked, NO Drive-fallback link — agents have no folder access — with the shared-painter waveform as decoration); no scorecard form, no status/share/assign controls — and both the reviewer detail and My Reviews render scorecards through ONE builder (`qaScorecardListHtml_`) so the two surfaces cannot drift. **AMENDED (design handoff PR 5, 2026-09-02 — the coverage-first surface):** (g) TWO trailing columns `DurationSec` (`qaSetRecordingDuration` — canSeeQa_-gated, bounded 1..86400, WRITE-ONCE: a filled cell is never overwritten, NO audit row — metadata the file already carries) and `SkipReason` (`qaSetRecordingStatus(fileId, status, reason)` — bounded `QA_SKIP_REASON_MAX`, stored ONLY on a skip and CLEARED by any other status; free text that may name the caller, so it stays in the QA store and never reaches the shared AuditLog), and `getOrCreateQaSheet_` now SELF-HEALS a short header (a tab provisioned before PR 5 gains the columns in place); (h) `getQaQueue(period)` ships the audit period machinery — `periodOptions` (this month / this quarter / previous quarter, from the pure `qaPeriodOptions_`), the validated `period` (an unknown key lands on the current month — the client never mirrors the arithmetic), `target` (`qaAuditTarget_`: `CONFIG.QA_AUDIT_TARGET_PER_PERIOD` seed, Script Property override 1..50), `todayYmd`/`periodEnd`, per-item `agentEmpId` (the roster id, joined server-side — the coaching hand-off keys off it) and **`coverage[]` from the pure `qaCoverageRows_`**: one row per roster name, DONE recordings attributed case-insensitively whose DriveCreatedMs falls in the period, `avg` = mean of the LATEST cards' own means (null when none — never 0, INV-187), `minCriterion`, the previous period alongside, `lastReviewedMs`, `exempt` (target 0), `eligible`; the join is best-effort WITH ITS OUTCOME CARRIED (`coverageUnavailable` → the client renders `errorStateHtml_`, never an empty table); (i) **exemptions are a MANAGER decision, not a QA one:** `qaSetExemption(name, period, on)` gates on `emp.isManager` (`'Manager access required.'` — the one QA endpoint outside the canSeeQa_ tier, in the omnibus), is locked, appends to the `QaExemptions` ledger (latest row per (name, period) wins; `qaReadExemptions_` is read-only, never provisions, and handles Sheets' TRUE coercion), and its audit row carries `period` + `active` ONLY — never the employee name; eligibility (`qaExemptEligible_`, operator decision 6) = two COVERED periods (sampled ≥ target in both) at avg ≥ 4.5 with no criterion under 4 — a rep short in either period, unscored, or already exempt is never eligible; (j) `qaSamplePick_(candidates, count, reviewedByAgent, rand, targets)` is TARGET-AWARE — an agent whose done+picked load has reached the period target is skipped and the pick STOPS SHORT rather than filling the count with covered agents (agents absent from the map, and the legacy 4-arg call, are uncapped); `qaSampleRecordings(count, period)` counts load ONLY for done reviews inside the period, gives an exempt rep target 0, and refuses an all-at-target pool BY NAME. Client (all pinned): the period strip + `umsQaPeriod`; the summary strip DERIVED from the coverage rows (`qaCoverageSummary_` — over-sampled reps are capped at target so they never cover for a short one; a CALL-weighted average; `gaps` = the sample-the-gaps count); ONE tier rule (`qaCoverageTier_`) for row tint AND pill; pause-and-pin comments (`qaOnCommentInput_` pins on the FIRST input, `qaSubmitComment_` posts the PIN via `qaParseClock_` — a typo is refused, never 0:00 — and the tick no longer relabels anything); ONE score-tone rule (`qaScoreTone_`) and ONE transport renderer (`qaRenderTransportFor_`, listener-bound; the key hint renders only where the keys work); the coaching hand-off (`qaCoachOnThis_` — manager-only, ROSTER id required, `COACH_PREFILL {empId, qaFileId, what}` then `enterTool('develop','coaching')` — the C8 park-and-consume hint); the duration write-back on `loadedmetadata`; a two-pane `.qa-det-grid` from 1000px (single column below — A2). Verify: QA-1..QA-23 (QA-10/11/14 rewritten in place; QA-19 the coverage join behavioural; QA-21 periods/eligibility/exemption/duration/skip contracts; QA-22 the client pure helpers; QA-23 the client wiring + scenarios + the fixture's recording keys DERIVED from the push literal) + the QA-20 DOM test (pause-and-pin) + `test_qa_gates_rejectNonMember` (now 15 endpoints incl. `qaSetRecordingDuration`) + the omnibus `qaSetExemption` manager case + `test_triggerGate_qaReviewPurge_nonManagerThrows` + the `saveQaScorecardCriteria` omnibus admin case | Subsystem: Server + Client (QA views)
 
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
@@ -9271,13 +9851,26 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    shot led to measuring an invisible 4px edit button (`icon('pencil')`
    resolved to NO glyph — the key is `adjust`; now tripwired, see the icon-key
    pin).
+   **Every block that can be EMPTY owes an empty-state scenario, and `?fixture=empty`
+   is how it is shot (design handoff C7, PR 1 — 2026-09-02).** The same gap surfaced
+   three times before it was a rule: `getMyCoaching` returned `{items:[]}` so the rep
+   view had never been shot populated, the Admin all-clear path had never been shot
+   at all, and the Needs-you empty state is the thing that changes most under its
+   design. `mock.js` now parses `?fixture=empty` and, for every RPC with an entry in
+   `EMPTY_FIXTURES`, returns that genuinely-empty shape instead of the populated
+   fixture — ADDITIVELY, so an RPC with no entry keeps its fixture and a scenario
+   never turns into a loader. A new block ships THREE scenarios: populated,
+   `?fixture=empty`, and `?failrpc=<rpc>` (INV-175 — failed ≠ absent, on camera).
+   The blocks that owe an entry are listed by name in the PR1-4 pin as they land
+   (a fully derived "every fixture has an empty twin" scan is not expressible —
+   fixtures are objects, not call sites).
    **The uncovered-tab list is DERIVED, not prose — the marker line below is
    machine-checked against the matrix (VIS-COVER), because the hand-kept
    sentence that used to sit here named 3 of 11 real gaps and a /sync-docs
    pass read it rather than checking it. Edit the marker only by adding a
    scenario or by accepting a new gap deliberately:**
 
-   VISUAL-GAP-TABS: callNotesForms, callNotesHistory, callNotesSearch, coverage, docsManage, intakeSent, myDocs, trainingManage
+   VISUAL-GAP-TABS: callNotesForms, callNotesHistory, callNotesSearch, docsManage, intakeSent, myDocs, trainingManage
 
    Of those, `callNotesHistory` / `callNotesSearch` are the same card
    vocabulary the Log view already shoots, and `myDocs` / `docsManage` /
@@ -9537,7 +10130,7 @@ S25 | Compact mode + per-tool pop-out (cross-tool) | Subsystem: Client (shell)
     - From the main window on Call Notes, click pop-out again → confirm it FOCUSES the existing Call Notes pop-out (no duplicate); same for Time Clock
     - Resize each pop-out, close + reopen each → confirm each restores its OWN size/position
     - In a pop-out, navigate between views (Call Notes ↔ Time Clock ↔ Manage) and resize → confirm the geometry stays under the tool the window was opened for
-  Expected: Window name is `umsTeamToolsCompact_<tool>` and geometry key `umsPopoutGeom_<tool>`, so one window per tool — Call Notes + Time Clock pop-outs coexist; a repeat click on a tool focuses that tool's window. A legacy `umsPopoutGeom` seeds size only. **The Call Notes pop-out additionally SELF-SIZES once on launch** (`cnPopoutFitToTemplate_`, operator feedback 2026-08-06): after the Log view renders, the window resizes so the whole note template (`.cnv-layout`) is visible — verify the save card isn't cut off on first open, on any display scaling; a later manual resize still persists and is restored. All tool views render without horizontal overflow; the compact Time Clock hides the world-clock strip + greeting kicker and tightens paddings; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
+  Expected: Window name is `umsTeamToolsCompact_<tool>` and geometry key `umsPopoutGeom_<tool>`, so one window per tool — Call Notes + Time Clock pop-outs coexist; a repeat click on a tool focuses that tool's window. A legacy `umsPopoutGeom` seeds size only. **The Call Notes pop-out additionally SELF-SIZES once on launch** (`cnPopoutFitToTemplate_`, operator feedback 2026-08-06): after the Log view renders, the window resizes so the whole note template (`.cnv-layout`) is visible — verify the save card isn't cut off on first open, on any display scaling; a later manual resize still persists and is restored. All tool views render without horizontal overflow; the compact Time Clock hides the Needs-you block (and makes no `getMyPendingTasks` call) + greeting kicker and tightens paddings (the world-clock strip it used to hide is retired — PR 6); action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
 
 S26 | Manager per-rep Call Notes view | Subsystem: Server, Client (Call Notes)
   Steps:
@@ -10333,6 +10926,45 @@ S96 | Resuming a closed day, and the requests that reach a manager | Subsystem: 
     - Edge case: as a manager, delete the rep's clock-out via Day Edit while a resume request is still pending, then approve it
   Expected: Adjust opens with **Clock In** already selected — the punch that state implies is missing. The Resume confirmation states the consequence BEFORE you accept: your clock-out becomes a break ending now, so the time you were away is **unpaid**, and nothing changes until a manager approves. After accepting, the chip above the punch buttons reads "Resume shift · back at HH:MM" — never "Clock Out HH:MM", which is the punch it converts, not one it adds — and the Resume button disappears (a second press is refused server-side anyway). The manager is EMAILED — both for a resume and for an ordinary adjustment; before this round that queue notified nobody. The queue row says what approving does ("clock-out becomes a break — the gap is unpaid"), not just a punch type. After approval the rep's day shows a break where the clock-out was, at the SAME time, closed at the resume time — Day Edit lists it as a break pair — and the day is open again, so the punch buttons offer Clock Out. The decision email says the same thing. **The edge case must REFUSE**: with the clock-out deleted, approving reports that there is no clock-out any more and tells the manager to deny — the request must NOT be marked Approved, because converting a punch that is gone would leave an unpaired break half that the hours arithmetic silently drops. A genuine second SHIFT (two separate stints on one date) is still not supported — use Day Edit.
 
+S97 | Admin → System is findings-first and reaches all-clear | Subsystem: Client (Call Notes views)
+  Steps:
+    - As an admin, open Manage → Admin; read the three Overview status cards, then click one
+    - On the System tab, read the "Needs attention" list, then open the "N checks passing" disclosure
+    - In the Storage inventory table, press a row's chevron
+    - Break `CDR_SS_ID` (or use `?failrpc=getAutomationHealth` on the visual harness) and reload the Admin tab
+    - On a healthy deployment with dozens of off-roster CDR agents and HR/QA stores left unset, read the System tab
+    - Narrow to a phone width and open the System tab
+  Expected: each Overview card is a BUTTON that lands on the System tab scrolled to its own section (Automation / CDR / Storage), and its aria-label names the destination. The System tab's badge equals the number of items in "Needs attention"; every item carries a Blocking/Warning pill, a title, the detail, a fix line, and — where the server supplied one — an open link. Blocking items sort first. The chevron expands the store's detail row (note / per-rep problems / the exact tz fix naming the CONFIG zone) with `aria-expanded` following. With the health read broken, the Automation and CDR cards read **Unavailable**, the findings list carries a Blocking "Automation health could not be read" item, and the Automation detail slot renders the warn card — never "All OK". On the healthy deployment the list reads **Nothing needs attention** and the off-roster agents, the no-CDR roster names, and the unset no-fallback stores appear ONLY inside "checks passing" with their counts (INV-186 — a tab that can never go green trains the reader to ignore it). At 390px nothing scrolls sideways; the finding cards stack their pill above the title.
+
+S99 | Coaching surface — signal board, drawer, business-day overdue, reply, critical-only mail, weekly recap | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, open Training → Coaching (Team); read the KPI strip and the note beneath it, then the "Who needs a 1-on-1" board
+    - Press **Log coaching** → the drawer slides in from the right; switch Coaching ⇄ Praise and watch the severity chips + coaching point hide; press Escape
+    - From Call Notes → Team Notes → Per-Rep, press **Coach on this** on a note → the drawer opens prefilled (employee, TRX, narrative, a linked-note chip)
+    - Log a MINOR item, then a CRITICAL item with a revisit date, for a rep whose roster row carries a login email; check that rep's inbox and yours
+    - Void the critical item with a reason; check the rep's inbox again; open the Voided filter
+    - Press **Nudge** on an open item twice in one day
+    - As the rep, open Coaching; read the callout, press Jump to it, type a reply, Acknowledge; as the manager, check your inbox and the card
+    - Log a praise item; as the rep, look for an Acknowledge button on it
+    - Hand-set an item's `CreatedAt` to a Friday 16:00 and read its age on Monday morning
+    - From the editor run `sendCoachingRecapDigest` as a manager; check an agent's inbox
+    - Narrow to 390px on both the manager and the rep view
+  Expected: the note reads "Ages, the overdue window and the median count business days only"; the board tiers each rep (a rep with any critical in 30 days is PRIORITY; one with nothing in 21 days reads the INFO-toned "No signal", not Clear). The drawer is a named dialog (Escape closes it through the shell). The prefilled drawer carries the note DATE, and the saved card's note chip drills back to that rep + date. **Only the critical item emails the rep at once** (cc you) — the mail names who logged it, when, the severity and the revisit date, and NOTHING of the narrative or TRX; the minor item sends nothing. Voiding the critical item sends a "Withdrawn" mail; the voided item appears ONLY under the Voided filter (All excludes it) and never in the rep's view. The second Nudge is refused ("once per day per item"). The rep's callout names the oldest open item's age in business days; after Acknowledge the card dims, the reply shows under "Your reply", and your inbox says they replied WITHOUT quoting it. The praise item carries NO Acknowledge button and sits in the Recognition feed on both views; it counts in neither "Awaiting ack" nor the ack rate. The Friday-16:00 item reads well under a day old on Monday. The recap lists the minor + praise items with severity/date/logged-by and no narrative; the critical item is absent from it. At 390px the KPI strips go 2×2, the board drops its Mix and Last columns, and nothing scrolls sideways.
+
+S98 | Manage surface — grouped Manage Time, Punctuality diagnostics, Coverage presets | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a manager, open Manage → Manage Time; read the order of the cards and the two group headings
+    - Press the Periodic heading's toggle; press it again; reload the page
+    - Wait for the PTO reconciliation and sheet doctor cards to load (they are inside the collapsed group) and read the Periodic summary line WITHOUT expanding; break one of those reads (e.g. `?failrpc=getPtoReconciliation` on the harness) and read it again
+    - Open Manage → Punctuality; click 7d / 30d / QTR, then Custom… and type a range of 100 days → Load
+    - Read the summary strip (team on-time %, the "vs prior N days" delta, worst rep + date); confirm the Outliers panel appears only when a rep is under 75% or averages >15 min late
+    - Press a rep's chevron → read the day strip (hover a day; tab to it with a screen reader running), the weekly trend chip, and press **Coach on this**
+    - In the Coaching composer that opens, read the pre-filled employee and the "what" text; cancel
+    - Temporarily rename the `TimeOffRequests` tab and reload Punctuality for a range where a rep was on approved PTO
+    - Open Manage → Coverage; click This week / Next week / Next 2 weeks; leave the tab open across midnight (or hand-set the clock) and re-enter
+    - Narrow all three tabs to 390px
+  Expected: Manage Time reads Needs you (Pending Time Off warn-toned with "oldest N days", Missed Clock-Outs destructive-toned, adjustment queue, Live Status, Team Punches) THEN Periodic collapsed; the toggle's `aria-expanded` follows it; a reload re-collapses (session-only, never persisted); the summary line reads "PTO drift: all clear · Sheet doctor: all clear · N recent punches · M activities" when clean, names the drift when not, and reads "check failed" (warn) when a read fails — never "all clear". Punctuality's presets press like Metrics'; the 100-day range is refused by name ("at most 92 days"); the delta compares against the immediately preceding range of equal length; the day strip carries an `aria-label` that summarises it in words; the trend chip reads Worsening / Flat / Improving; Coach on this lands on the Coaching composer in Team mode with the rep selected and the narrative in the "what" field. With the PTO read broken the note names it and a rep's PTO day reads "no punch" rather than "late". Coverage's presets look FORWARD; a default range re-anchors at midnight while a manually chosen one does not. At 390px nothing scrolls sideways; the punctuality table drops Shift start / Avg late / Lunch and the detail stacks.
+
 S95 | A day with more than one break is counted, displayed and repaired correctly | Subsystem: Server, Client (Time Clock views)
   Steps:
     - As a rep, punch a split day: Clock In 08:00, Lunch Out 12:00, Lunch In 12:30, Lunch Out 17:00, Lunch In 19:00, Clock Out 21:00 (the sequence is already legal — Lunch Out is re-offered after Lunch In)
@@ -10350,6 +10982,38 @@ S95 | A day with more than one break is counted, displayed and repaired correctl
     - Separately: cut a New-version deploy, leave a tab open ~20 min, and press **Reload** on the "Team Tools was updated" toast
     - Repeat that from a pinned COMPACT pop-out
   Expected: the message reads "Shift complete for today · clocked out at <time>" with a quiet "Didn't clock out? Use Adjust to add a missing punch, or ask your manager." below it — never a bare assertion, so a rep who has NOT worked yet can see which punch the app is reasoning from. Adjust remains the only action. After the approved adjustment, the trailing ClockIn wins the backward scan and **Lunch Out / Clock Out / Adjust** return (the `ADJ-` prefix is stripped on read, so an approved adjustment is a real punch — INV-09). The rep's own screen does NOT self-update on the currently-deployed code; they reload, or alt-tab away and back (`clkRefreshState_` on focus). The toast's Reload navigates the TOP window to the real `/exec` URL and the app comes back — **not** a white inner frame needing the browser's reload button. From a pop-out it comes back AS the pop-out, on the same tool.
+
+S100 | QA surface — coverage-first queue, exemptions, pause-and-pin comments, coaching hand-off | Subsystem: Server, Client (QA views)
+  Steps:
+    - As a QA member, open QA → Recordings; read the period control, the four summary cards, and the coverage table; switch to the quarter and back
+    - Reload the page → the last period you picked is still selected; in DevTools set `localStorage.umsQaPeriod` to `junk` and reload
+    - Press **Sample the gaps for me (N)** → up to N recordings flip to you, drawn from the shortest-covered agents; with everyone at target the button is disabled
+    - As a MANAGER, on a row reading Covered with two good periods, press **Grant exemption** → confirm → the row reads Exempt with target 0/0 and a Revoke button; as a non-manager QA member, confirm no Grant/Revoke buttons render and `google.script.run...qaSetExemption('x','2026-09',true)` returns "Manager access required."
+    - Open a recording → read the header actions; press **Skip…** with a blank reason (refused), then with a reason → the row on the queue shows the reason under the Skipped pill; Reopen it
+    - Press play, start typing a comment → playback PAUSES and the pin row reads the moment; seek elsewhere, keep typing → the pin does not move; edit the pin to `4:05` and press **Post & stay paused** → the comment lands at 4:05 and the player stays paused; type another and press **Post & resume**; type a third, set the pin to `9:99` and post → refused by name; Discard
+    - Rate three criteria → the running average and "3 of 5 rated" update; save → your card's chips are toned (≤2 red, 3 neutral, ≥4 green)
+    - Set the Agent to a roster name → the match line reads "On the roster · n of 3 sampled"; as a manager press **Coach on this call** → the Coaching composer opens with the rep selected and the timestamped comments as the narrative; set the Agent to a non-roster spelling → the match line warns and the coach button gives way to a note
+    - Open the queue → the recording you just played shows a Length; temporarily rename the `QaScorecards` tab and reload the queue
+    - As a shared agent (a QA member for now), open My Reviews → read the callout at the top, the per-card average, and the ±5s / speed transport after Play
+    - Narrow to a phone width on the queue and the detail
+  Expected: the period options come from the server (the client never computes them) and `junk` lands on the current month with no error; the summary strip agrees with the table beneath it (it is derived from the same rows — an over-sampled rep never covers for a short one, and the team average is call-weighted); the sampler never pulls a covered agent ahead of a short one and refuses BY NAME when everyone is at target; the exemption ledger's audit row carries the period and the flag, never the name; the skip reason never reaches the shared AuditLog either; a comment posts at the PIN, never at the live playhead; a typo'd pin is refused rather than posted at 0:00; with the scorecard tab unreadable the coverage block renders the warn card and the recordings table below is unaffected — never an empty coverage table; the detail is two panes from 1000px and a single column below with the player first; nothing scrolls sideways at 390px. Verified on camera: `qa-queue-{light,dark}-wide`, `qa-queue-light-mobile`, `qa-queue-empty-light-wide`, `qa-detail-light-{wide,mobile}`, `qa-stats-light-wide`, `qa-myreviews-light-wide`.
+
+S101 | Time Clock surface — Needs you, actions-first rail, state line, held rotator, break-chip states | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a rep with an overdue coaching item, an unsigned doc, a call-back due today, a call without a note yesterday, pending training and an open dept request, open the Dashboard at a desktop width
+    - Read what sits directly under the clock card, then the block at the top of the main column
+    - Click the "calls without a note" row; go back; click the coaching row
+    - Acknowledge the coaching item and return to the Dashboard (re-enter the tab)
+    - Temporarily rename the `ScheduledCalls` tab (or use `?failrpc=getMyScheduledCalls`-equivalent by breaking that one read) and reload
+    - Clear every item (or use `?fixture=empty` on the harness) and reload
+    - Break `getMyPendingTasks` entirely (`?failrpc=getMyPendingTasks` on the harness)
+    - Open the pinned COMPACT pop-out and watch the Network tab
+    - Read the clock card's bottom row, the greeting sentence and the shift-strip header; clock out and read the card again
+    - With a What's-new article configured, stay on the Dashboard while clocked in for 30s; clock out and wait again
+    - Read the Breaks row at 10:50 (before B1), at 12:45 (during lunch) and at 14:30
+    - Alt-tab away and back within the same minute and re-read the Breaks row
+    - Narrow to 390px
+  Expected: the punch buttons sit under the clock card (top ≈367px at 1440×900 — `node test/visual/fold-measure.mjs` prints it), with the shift strip BELOW them. The Needs-you block lists six rows overdue-first with the word "Overdue" on the overdue ones (a stronger tone when the due date has passed) and "N OVERDUE" in its head; the notes row lands on the Call Notes Log with the coverage-strip toast; the coaching row lands on Coaching. After the acknowledge, the re-entered Dashboard paints the last list instantly and refreshes it (the item drops on the refresh — never a loader over last-good). With one source broken the block still lists the other five and ends with "Couldn't check scheduled calls — those may have items too" — never a silent omission, and that round is NOT cached (reload within two minutes re-reads). With nothing outstanding the block is ABSENT (no "all clear" card). With the endpoint broken the block renders the warn error card, not an empty list. The compact pop-out makes NO `getMyPendingTasks` call and shows no block. The card's bottom row reads "On the clock · 5h 54m worked" on a dark scrim, the greeting reads "You're clocked in since 1:02 PM · 2h 33m until end of shift." with no hours, and the strip header carries only "% logged" + "Nm lunch" — the hours figure appears exactly once; after clock-out the row reads "Shift complete · 8h 00m worked". While clocked in the greeting NEVER rotates to a What's-new slide; after clock-out it does. The Breaks row shows B1 outlined "· in 10m" at 10:50, Lunch highlighted at 12:45, and B1 + Lunch struck through with B2 outlined "· in 30m" at 14:30; the states SURVIVE an alt-tab (the re-render must not ship plain chips). At 390px nothing scrolls sideways and the Needs-you rows stay two lines (title over detail). Verified on camera: `clock-light-wide`, `clock-dark-wide`, `clock-light-compact`, `clock-light-mobile`, `clock-pendingadj-light-wide`, `clock-needsyou-empty-light-wide`, `clock-needsyou-error-light-wide`.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

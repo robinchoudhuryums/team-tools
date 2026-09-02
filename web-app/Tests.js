@@ -1195,6 +1195,7 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('insurance_search_requiresEmployee',         test_insurance_search_requiresEmployee);
+  _integrationTest('pendingTasks_requiresEmployeeAndShape',      test_pendingTasks_requiresEmployeeAndShape);
   _integrationTest('deployStamp_requiresEmployeeAndHashes',      test_deployStamp_requiresEmployeeAndHashes);
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
@@ -1210,6 +1211,7 @@ function _runAllTests() {
   _integrationTest('empdocs_fieldsOnlyCompletionHash',          test_empdocs_fieldsOnlyCompletionHash);
   _integrationTest('empdocs_legacyHashDualVerify',              test_empdocs_legacyHashDualVerify);
   _integrationTest('coaching_createAckVoidFlowAndScoping',      test_coaching_createAckVoidFlowAndScoping);
+  _integrationTest('coaching_criticalMailOnlyAndMailedFalse',     test_coaching_criticalMailOnlyAndMailedFalse);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -1258,6 +1260,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
+  _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
@@ -4344,6 +4347,14 @@ function test_triggerGate_qaReviewPurge_nonManagerThrows() {
   }, 'manager access required');
 }
 
+// Design handoff PR 4 (K8) — the weekly agent recap is a trigger handler
+// reachable via google.script.run, so it carries the MANAGER_EMAILS gate.
+function test_triggerGate_coachingRecap_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCoachingRecapDigest(); });
+  }, 'manager access required');
+}
+
 // Seed (blank stamp → restamp only, no credit), one in-arrears credit whose
 // AMOUNT comes from real punched hours (the operator's rule: PTO hours per
 // hours WORKED — 3.08 per 80 by default), idempotent re-run, and the
@@ -5368,6 +5379,12 @@ function test_managerGates_rejectNonManager() {
     ['createCoaching',                 function () { return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', whatHappened: 'gate' }); }],
     ['getCoachingDashboard',           function () { return getCoachingDashboard(); }],
     ['voidCoaching',                   function () { return voidCoaching('no-such-coach', ''); }],
+    // Design handoff PR 4 (K10/K11) — both are manager-gated + team-scoped.
+    ['setCoachingFollowUp',            function () { return setCoachingFollowUp('no-such-coach', ''); }],
+    ['nudgeCoaching',                  function () { return nudgeCoaching('no-such-coach'); }],
+    // Design handoff PR 5 (Q4) — exemptions are a MANAGER decision (a QA
+    // member reviews; a manager decides who may skip a period).
+    ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],
   ];
   // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
   // non-admin caller — incl. this non-manager — gets 'Admin access required.').
@@ -5457,7 +5474,9 @@ function test_qa_gates_rejectNonMember() {
    ['getQaStats', function () { return getQaStats(); }],
    // Phase 3 — share-to-agent + sampling stay in the canSeeQa_ tier.
    ['qaSetRecordingShared', function () { return qaSetRecordingShared('x', true); }],
-   ['qaSampleRecordings', function () { return qaSampleRecordings(3); }]]
+   ['qaSampleRecordings', function () { return qaSampleRecordings(3); }],
+   // PR 5 — the duration write-back rides the same tier.
+   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');
@@ -5913,6 +5932,31 @@ function test_adminEmails_subsetOfManagersEnforced() {
 // Insurance payor lookup (operator 2026-08-25): rep-callable, so the gate case
 // is unregistered-caller-rejected (the kbRecordView idiom). The search logic
 // itself is Node-pinned (insPayorScore_/insPayorRowObj_/insToneCls_).
+/** Design handoff PR 6 — getMyPendingTasks (the Dashboard "Needs you"
+ *  aggregate). A READ gate returns a bare {error} (the GATE-SHAPE rule — never
+ *  success:false); a registered caller gets the envelope: items[] / total /
+ *  unavailable[] (an ARRAY of source KINDS, never a boolean) / todayIso. Every
+ *  item names a registered route, and the sort puts overdue first. */
+function test_pendingTasks_requiresEmployeeAndShape() {
+  const rejected = _asUser('not-a-registered-user@example.invalid', function () {
+    return getMyPendingTasks();
+  });
+  _assertContains(String(rejected && rejected.error), 'Not authorized', 'unregistered caller rejected before any source is read');
+  _assertTrue(!rejected.items, 'and no items come back with the rejection');
+  const r = _asUser(_TEST_INDIA_EMAIL, function () { return getMyPendingTasks(); });
+  _assertTrue(!r.error, 'registered caller gets the envelope: ' + JSON.stringify(r).slice(0, 200));
+  _assertTrue(Array.isArray(r.items), 'items is an array');
+  _assertTrue(Array.isArray(r.unavailable), 'unavailable is an ARRAY of source kinds (never a boolean)');
+  _assertTrue(typeof r.total === 'number' && r.total >= r.items.length, 'total carries the pre-slice count (INV-169)');
+  _assertTrue(/^\d{4}-\d{2}-\d{2}$/.test(String(r.todayIso)), 'todayIso rides the payload');
+  let lastOverdue = true;
+  r.items.forEach(function (it) {
+    _assertTrue(it.route && it.route.tool && it.route.tab, 'every item names a route: ' + JSON.stringify(it).slice(0, 120));
+    _assertTrue(!(it.overdue && !lastOverdue), 'overdue items sort first');
+    lastOverdue = !!it.overdue;
+  });
+}
+
 function test_insurance_search_requiresEmployee() {
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return searchInsurancePayors('aetna');
@@ -6451,6 +6495,9 @@ function test_coaching_createAckVoidFlowAndScoping() {
       });
       _assertTrue(created && created.success, 'coaching item created');
       coachId = created.coachId;
+      // PR 4 / K8 (operator decision 1): a MINOR item mails nobody at create
+      // — `mailed` is absent (no send was owed).
+      _assertTrue(created.mailed === undefined, 'a non-critical create sends no immediate mail');
 
       // Owner sees it; another rep does not; another rep cannot ack it.
       const mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCoaching(); });
@@ -6473,11 +6520,36 @@ function test_coaching_createAckVoidFlowAndScoping() {
       _assertEq(coachCanManagerSee_({ isManager: false, email: item.createdBy }, item), false,
         'a non-manager is denied even as creator');
 
-      // Owner acks; a second ack is a friendly idempotent no-op.
-      const ack = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId); });
+      // PR 4 / K10 + K11 — follow-up + nudge, manager-gated + team-scoped
+      // (the creator passes; the PH rep is refused as not-found).
+      const fu = _asUser(_TEST_MGR_EMAIL, function () { return setCoachingFollowUp(coachId, '2030-01-15'); });
+      _assertTrue(fu && fu.success && fu.followUpAt === '2030-01-15', 'creator sets the revisit date');
+      const fuBad = _asUser(_TEST_MGR_EMAIL, function () { return setCoachingFollowUp(coachId, 'next tuesday'); });
+      _assertFailure(fuBad, 'yyyy-MM-dd', 'a non-ISO date is refused by name');
+      const fuRep = _asUser(_TEST_PH_EMAIL, function () { return setCoachingFollowUp(coachId, ''); });
+      _assertFailure(fuRep, 'Manager access', 'a rep cannot set a follow-up');
+      const nudged = _asUser(_TEST_MGR_EMAIL, function () { return nudgeCoaching(coachId); });
+      _assertTrue(nudged && nudged.success, 'creator nudges an open item');
+      const nudged2 = _asUser(_TEST_MGR_EMAIL, function () { return nudgeCoaching(coachId); });
+      _assertFailure(nudged2, 'Already nudged today', 'a second nudge the same day is refused');
+      const dash = _asUser(_TEST_MGR_EMAIL, function () { return getCoachingDashboard(); });
+      const dashItem = (dash.items || []).filter(function (c) { return c.coachId === coachId; })[0];
+      _assertNotNull(dashItem, 'creator sees the item on the dashboard');
+      _assertEq(dashItem.followUpAt, '2030-01-15', 'the revisit date rides the dashboard item');
+      _assertTrue(dashItem.nudgedToday === true, 'the nudge stamp reads as today');
+      _assertTrue(typeof dash.businessDayMinutes === 'number' && dash.businessDayMinutes > 0, 'K9: the business-day length ships with the payload');
+
+      // Owner acks WITH a reply (K2); a second ack is a friendly idempotent
+      // no-op that never overwrites the reply.
+      const ack = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId, 'TEST_COACH reply'); });
       _assertTrue(ack && ack.success, 'owner acknowledges');
-      const ack2 = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId); });
+      const ack2 = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId, 'a different reply'); });
       _assertTrue(ack2 && ack2.success && ack2.alreadyAcknowledged === true, 'second ack is idempotent');
+      const rowAck = findCoachingRow_(coachId);
+      _assertEq(rowAck.item.repResponse, 'TEST_COACH reply', 'the FIRST reply persists in RepResponse; the second ack never overwrote it');
+      const mineAck = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCoaching(); });
+      const mineItem = (mineAck.items || []).filter(function (c) { return c.coachId === coachId; })[0];
+      _assertEq(mineItem && mineItem.repResponse, 'TEST_COACH reply', 'the reply renders back to the owner');
 
       // Creator voids; the item leaves the owner's list (void hidden).
       const voided = _asUser(_TEST_MGR_EMAIL, function () { return voidCoaching(coachId, 'TEST void reason'); });
@@ -6493,8 +6565,65 @@ function test_coaching_createAckVoidFlowAndScoping() {
       const storedReason = String(getHrDocsSS_().getSheetByName(COACH_TAB)
         .getRange(rowAfter.rowIdx, CO.VOID_REASON + 1).getValue() || '');
       _assertEq(storedReason, 'TEST void reason', 'void reason persisted in the HR store column');
+      // K6: the voided item appears in the dashboard's voided[] WITH its reason
+      // (team-scoped like everything else), and never in items[].
+      const dash2 = _asUser(_TEST_MGR_EMAIL, function () { return getCoachingDashboard(); });
+      const voidedItem = (dash2.voided || []).filter(function (c) { return c.coachId === coachId; })[0];
+      _assertNotNull(voidedItem, 'voided item listed under voided[]');
+      _assertEq(voidedItem.voidReason, 'TEST void reason', 'the reason rides the voided entry');
+      _assertEq((dash2.items || []).filter(function (c) { return c.coachId === coachId; }).length, 0, 'a voided item leaves items[]');
     } finally {
       if (coachId) _cleanupCoachingRows_(coachId);
+    }
+  });
+}
+
+// Design handoff PR 4 (K8, operator decision 1) — ONLY a critical item mails
+// the rep immediately; a throwing send still returns success + mailed:false;
+// voiding a critical item sends a retraction; the mail carries NO narrative,
+// TRX or note id. Uses the _TEST_OVERRIDE_COACH_MAIL seam (no real send).
+function test_coaching_criticalMailOnlyAndMailedFalse() {
+  _withTestHrDocs_(function () {
+    const sent = [];
+    let throwNext = false;
+    const ids = [];
+    _TEST_OVERRIDE_COACH_MAIL = function (msg) { if (throwNext) { throwNext = false; throw new Error('TEST mail down'); } sent.push(msg); };
+    try {
+      const minor = _asUser(_TEST_MGR_EMAIL, function () {
+        return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', patientTRX: 'TEST_TRX_SECRET', whatHappened: 'TEST_NARR_SECRET', noteId: 'TEST_NOTE_SECRET' });
+      });
+      _assertTrue(minor && minor.success, 'minor created'); ids.push(minor.coachId);
+      _assertEq(sent.length, 0, 'a minor item sends NO immediate mail');
+      _assertTrue(minor.mailed === undefined, 'mailed is absent when no mail was owed');
+
+      const crit = _asUser(_TEST_MGR_EMAIL, function () {
+        return createCoaching({ empId: _TEST_INDIA_ID, severity: 'critical', patientTRX: 'TEST_TRX_SECRET', whatHappened: 'TEST_NARR_SECRET', whatShould: 'TEST_POINT_SECRET', noteId: 'TEST_NOTE_SECRET', followUpAt: '2030-02-02' });
+      });
+      _assertTrue(crit && crit.success, 'critical created'); ids.push(crit.coachId);
+      _assertEq(crit.mailed, true, 'a critical item mails immediately (mailed:true)');
+      _assertEq(sent.length, 1, 'exactly one send');
+      _assertTrue(sent[0].subject.indexOf('Action needed: coaching logged for you') === 0, 'the doc\'s subject');
+      const blob = String(sent[0].subject) + String(sent[0].body) + String(sent[0].htmlBody);
+      ['TEST_TRX_SECRET', 'TEST_NARR_SECRET', 'TEST_POINT_SECRET', 'TEST_NOTE_SECRET'].forEach(function (needle) {
+        _assertTrue(blob.indexOf(needle) < 0, 'the mail never carries ' + needle);
+      });
+      _assertTrue(blob.indexOf('2030-02-02') >= 0, 'the 1-on-1 row appears when FollowUpAt is set');
+
+      throwNext = true;
+      const crit2 = _asUser(_TEST_MGR_EMAIL, function () {
+        return createCoaching({ empId: _TEST_INDIA_ID, severity: 'critical', whatHappened: 'TEST second critical' });
+      });
+      _assertTrue(crit2 && crit2.success, 'a throwing send still returns success'); ids.push(crit2.coachId);
+      _assertEq(crit2.mailed, false, 'mailed:false when the send threw');
+
+      const voided = _asUser(_TEST_MGR_EMAIL, function () { return voidCoaching(crit.coachId, 'TEST retract'); });
+      _assertTrue(voided && voided.success, 'critical voided');
+      _assertEq(sent.length, 2, 'voiding a critical item sends a retraction');
+      _assertTrue(/Withdrawn/.test(sent[1].subject), 'the retraction names itself');
+      _assertTrue(String(sent[1].htmlBody).indexOf('TEST retract') < 0, 'the void reason never reaches the mail');
+    } finally {
+      _TEST_OVERRIDE_COACH_MAIL = null;
+      ids.forEach(function (id) { _cleanupCoachingRows_(id); });
     }
   });
 }
