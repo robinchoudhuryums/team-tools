@@ -16696,6 +16696,67 @@ test('PR6-3: the rail — clock card → punch actions → shift strip; the stat
   assert.ok(/\.clk-actions-block \.actions \{ margin: 12px 0 0; \}/.test(raw), 'the actions block owns its spacing');
 });
 
+
+/* ── TZR: the one-time Timesheet timezone repair (operator 2026-09-02) ──────
+ * The PH roster rows were flipped to America/Chicago mid-shift; every punch
+ * recorded under Asia/Manila is stored as Manila digits and now reads as a
+ * split, incomplete day. The repair re-formats each stored instant in the
+ * new zone. The planner is pure (tz functions injected) and the applier is
+ * pinned on the properties that make it safe to point at payroll rows. */
+test('TZR-1: tzRepairPlanRow_ moves a pre-flip row, leaves a post-flip row, and refuses garbage', () => {
+  const tctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'tzRepairPlanRow_'), tctx);
+  const plan = tctx.tzRepairPlanRow_;
+  // Inject a fixed 13h offset (Manila → CDT) so the test needs no tz library:
+  // toMs treats the pair as UTC and fmt* subtract 13h.
+  const toMs = (d, t) => Date.parse(d + 'T' + t + 'Z');
+  const shift = (ms) => new Date(ms - 13 * 3600 * 1000);
+  const fmtDate = (ms) => shift(ms).toISOString().slice(0, 10);
+  const fmtTime = (ms) => shift(ms).toISOString().slice(11, 19);
+  const flipMs = toMs('2026-09-03', '04:00:00');            // 15:00 CDT expressed in Manila digits
+  // The motivating shift: ClockIn D 21:30 + ClockOut D+1 06:00 collapse onto ONE Chicago date.
+  assert.strictEqual(JSON.stringify(plan('2026-09-01', '21:30:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ newDate: '2026-09-01', newTime: '08:30:00' }));
+  assert.strictEqual(JSON.stringify(plan('2026-09-02', '06:00:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ newDate: '2026-09-01', newTime: '17:00:00' }));
+  // A punch stamped AFTER the flip was already written in the new zone — left alone.
+  assert.strictEqual(JSON.stringify(plan('2026-09-03', '04:30:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ skip: 'after-flip' }));
+  assert.strictEqual(JSON.stringify(plan('2026-09-03', '04:00:00', flipMs, toMs, fmtDate, fmtTime)), JSON.stringify({ skip: 'after-flip' }), 'the boundary itself is post-flip');
+  // Unparseable cells are reported, never guessed.
+  assert.strictEqual(plan('', '21:30:00', flipMs, toMs, fmtDate, fmtTime), null);
+  assert.strictEqual(plan('2026-09-01', 'Sat Dec 30 1899', flipMs, toMs, fmtDate, fmtTime), null);
+  assert.strictEqual(plan('2026-09-01', '21:30:00', flipMs, () => NaN, fmtDate, fmtTime), null);
+  // An identity conversion is a no-op, not a rewrite.
+  const same = (ms) => new Date(ms);
+  assert.strictEqual(JSON.stringify(plan('2026-09-01', '21:30:00', flipMs, toMs, (ms) => same(ms).toISOString().slice(0, 10), (ms) => same(ms).toISOString().slice(11, 19))), JSON.stringify({ skip: 'unchanged' }));
+});
+
+test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, locked, in-place, audited', () => {
+  const body = extractRawFunction('Code.js', 'repairTimesheetTimezone');
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/assertManagerCaller_\('repairTimesheetTimezone'\)/.test(stripped), 'MANAGER_EMAILS gate (INV-44 — editor-run, google.script.run-reachable)');
+  assert.ok(/const dryRun = opts\.dryRun !== false;/.test(stripped), 'a bare call NEVER writes — dryRun defaults TRUE');
+  assert.ok(/flippedAt is required/.test(stripped), 'flippedAt is required — without it post-flip punches would be shifted twice');
+  assert.ok(/ms >= flipMs/.test(extractRawFunction('Code.js', 'tzRepairPlanRow_')), 'the planner skips rows at/after the flip instant');
+  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(stripped), 'reads THROUGH the archive (INV-153/F1)');
+  assert.ok(/changes\.length > TZ_REPAIR_MAX_ROWS/.test(stripped), 'bounded per run');
+  assert.ok(/if \(dryRun\) \{[\s\S]*return \{ dryRun: true/.test(stripped), 'the dry run returns BEFORE the lock');
+  const dryIdx = stripped.indexOf('if (dryRun) {'), lockIdx = stripped.indexOf('waitLock(15000)');
+  assert.ok(dryIdx > 0 && lockIdx > dryIdx, 'lock acquired only on apply, after the dry-run return');
+  assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
+  // In place: ONLY the DATE and TIME cells are written; a punch is never appended or deleted.
+  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(c\.newDate\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(c\.newTime\)/.test(stripped), 'writes DATE + TIME in place');
+  assert.strictEqual((stripped.match(/\.setValue\(/g) || []).length, 2, 'exactly two cell writes per row — COMMENTS (the ADJ- marker) untouched');
+  ['appendRow', 'deleteRow', 'insertSheet', 'getOrCreate'].forEach((w) => assert.ok(!stripped.includes(w), 'never ' + w));
+  assert.ok(/writeAuditLog_\(targets\[id\], 'TimesheetTzRepair'/.test(stripped), 'one counts-only audit row per employee (INV-08)');
+  assert.ok(/rowsMoved=/.test(stripped) && !/oldTime|newTime' \+/.test(stripped.slice(stripped.indexOf("'TimesheetTzRepair'"))), 'the audit note carries counts, not punch times');
+  assert.ok(/would DUPLICATE an existing/.test(stripped), 'collisions are REPORTED, never resolved silently');
+  assert.ok(/clearFromEmployeeSheet_\(emp, c\.oldDate, c\.type\)/.test(stripped) && /writeToEmployeeSheet_\(emp, c\.newDate, c\.newTime, c\.dir, c\.type\)/.test(stripped), 'the personal-sheet mirror follows the move (INV-59, best-effort)');
+  assert.ok(/hits\.length !== 1/.test(stripped), 'an ambiguous name refuses rather than guessing a payroll row');
+  // The wrappers are the operator's ▶ targets and must never flip the default.
+  const dry = extractRawFunction('Code.js', 'repairTimesheetTimezone_dryRun');
+  const app = extractRawFunction('Code.js', 'repairTimesheetTimezone_apply');
+  assert.ok(/dryRun: true/.test(dry) && /dryRun: false/.test(app), 'wrappers pass the mode explicitly');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
