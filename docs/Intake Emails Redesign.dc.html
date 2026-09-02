@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#e3e6ec; font-family:'Inter Tight',system-ui,-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#1e63b8; text-decoration:none; }
+  a:hover { color:#154980; text-decoration:underline; }
+</style>
+</helmet>
+
+<div style="padding:52px 56px 90px; display:flex; flex-direction:column; gap:56px;">
+
+  <div style="max-width:880px; display:flex; flex-direction:column; gap:14px;">
+    <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#737c8c;">UMS Team Tools &nbsp;·&nbsp; Design handoff &nbsp;·&nbsp; Intake emails</div>
+    <h1 style="margin:0; font-size:42px; font-weight:600; letter-spacing:-.025em; line-height:1.08; color:#0f1623;">Built for transcription</h1>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">The receiving team reads these field-by-field and types each value into the CRM. That single fact settles most of the design: <strong style="font-weight:600; color:#0f1623;">field order stays exactly as filled</strong>, nothing is summarised, nothing is hidden, and no section gets promoted. Your two "keep the order" answers were the right call — reordering would have broken the one workflow these emails serve.</p>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">What changes is everything that makes a value <em>hard to read off and retype</em>: the label currently outweighs the value, identifiers are set in proportional type where a transposed digit is invisible, a 40-word attestation breaks the column rhythm mid-form, and an empty cell can't be told from a not-applicable one.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+      <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e4f5ec; color:#0b6e40;">Order unchanged</span>
+      <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e1ecfa; color:#154980;">Email-safe · tables + inline hex</span>
+      <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#f6f7f9; color:#3e4756; border:1px solid #dce0e7;">Presentation only · no payload change</span>
+    </div>
+  </div>
+
+  <!-- ══════ 01 · WHAT THE JOB CHANGES ══════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:20px;">
+    <div style="max-width:880px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#1e63b8;">01 — The reframe</div>
+      <h2 style="margin:0; font-size:25px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">A source document, not a briefing</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">I came in assuming the recipient was deciding something. They aren't — they're copying. Worth recording what that ruled out, because the instincts it kills are the ones a redesign reaches for first.</p>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; max-width:1140px;">
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #c13030;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:7px;">Ruled out</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">An action summary at the top; promoting scheduling/permission; recommendation-before-questionnaire; hiding empty rows. Every one of these makes the transcriber hunt for a field that used to be where they expected it.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #0f8a52;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:7px;">What matters instead</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">Never losing your place mid-column. Reading a member ID without transposing a digit. Knowing whether a blank means "leave it empty" or "go chase it". Getting a value cleanly onto the clipboard.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #1e63b8;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:7px;">Scope</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">PMD → Sales, PAP → Sleep, PPD → Sales. PMD and PAP share <code style="font:500 12px 'JetBrains Mono',monospace;">intakeEmailShell_</code> and have never had a design pass; PPD's got one, but predates the questionnaire treatment below.</div>
+      </div>
+    </div>
+
+    <div style="max-width:1140px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#737c8c; margin-bottom:10px;">The four defects, all transcription defects</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.7; color:#3e4756;">
+        <li><strong style="font-weight:600; color:#0f1623;">The label outweighs the value.</strong> Labels are bold navy; values are plain grey-black. When you're reading to retype, the value is the payload and the label is the index — the emphasis is backwards.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">Identifiers are proportional.</strong> SSN, member IDs, DOB, phone and fax all set in Arial, where <code style="font:500 12.5px 'JetBrains Mono',monospace;">1</code>/<code style="font:500 12.5px 'JetBrains Mono',monospace;">7</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">0</code>/<code style="font:500 12.5px 'JetBrains Mono',monospace;">O</code> are hard to separate and a doubled digit is invisible. These are the exact fields where an error is expensive and silent.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">Attestations break the column.</strong> PMD index 24 is a 40-word sentence in the label cell with a one-word answer beside it. Mid-form, it stops the eye and pushes the value column off its rhythm.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">Three kinds of blank look identical.</strong> SSN is a fallback for missing insurance; discharge date is conditional on being in a facility; sleep-study details depend on the prior answer. Not-applicable, not-asked and missing-but-needed all render the same.</li>
+      </ul>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ══════ 02 · THE EMAILS ══════ -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+    <div style="max-width:880px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#1e63b8;">02 — The three emails</div>
+      <h2 style="margin:0; font-size:25px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Same fields, same order, readable off the screen</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">Section headers and field sequence are exactly the live banks. Values now lead, identifiers are monospaced, attestations run full-width, and the label column is a fixed width so the value column starts at the same x on every row in the email.</p>
+    </div>
+
+    <div style="display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap;">
+
+      <!-- ════════ PMD ════════ -->
+      <div style="flex:none; width:620px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#737c8c; margin-bottom:10px;">PMD Account · to Sales</div>
+        <div style="background:#fff; border-radius:2px; box-shadow:0 1px 3px rgba(0,0,0,.08); border:1px solid #dce0e7; overflow:hidden;">
+          <div style="padding:12px 16px; border-bottom:1px solid #eef0f4; background:#fbfcfd;">
+            <div style="font-size:14px; font-weight:600; color:#0f1623;">PMD Account · Eleanor Briggs</div>
+            <div style="font-size:12px; color:#737c8c; margin-top:2px;">J. Rivera &lt;intake@ums.co&gt; · to Mobility Sales</div>
+          </div>
+          <div style="background:#e9ecf1; padding:20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto; background:#ffffff; border:1px solid #dce0e7; border-top:3px solid #223b5d; border-radius:4px;">
+              <tr><td style="padding:16px 20px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#223b5d;">UMS Team Tools</td>
+                  <td align="right" style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#a5acb8;">PMD · Account</td>
+                </tr></table>
+              </td></tr>
+              <tr><td style="padding:12px 20px 0;">
+                <div style="background:#f2f5f9; border:1px solid #e2e8f0; border-left:3px solid #223b5d; border-radius:4px; padding:11px 14px;">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:20px; font-weight:700; color:#0f1623; line-height:1.2;">Eleanor Briggs</div>
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#737c8c; margin-top:3px;">Submitted Aug 31, 2026 · 2:14 PM CST · J. Rivera</div>
+                </div>
+              </td></tr>
+
+              <tr><td style="padding:16px 20px 20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dce0e7; border-radius:6px; overflow:hidden; font-family:Arial,Helvetica,sans-serif;">
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Demographics</td></tr>
+                  <tr style="background:#ffffff;"><td width="46%" style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Full Name</td><td style="padding:8px 16px; font-size:14px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Eleanor M. Briggs</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Primary Contact Phone #</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(214) 555-0182</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Secondary Contact Ph#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(214) 555-0199</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Email Address</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7; word-break:break-all;">e.briggs54@gmail.com</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">DOB</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">04/18/1949</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Home Address</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">4417 Bluffview Ln<br>Garland, TX 75043</td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Insurance</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Primary Insurance &amp; Member ID#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><div style="font-family:Arial,Helvetica,sans-serif; font-size:13.5px; font-weight:700; color:#0f1623;">Medicare Part B</div><div style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.06em; margin-top:2px;">4EG7-TK9-QM21</div></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Secondary Insurance &amp; Member ID#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><div style="font-family:Arial,Helvetica,sans-serif; font-size:13.5px; font-weight:700; color:#0f1623;">BCBS TX</div><div style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.06em; margin-top:2px;">XZT884120077</div></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">SSN # <span style="color:#a5acb8;">(if insurance details N/A)</span></td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">Not needed — insurance on file</span></td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Clinical Information</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">PCP Name</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Dr. Anand Prakash</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">MDO Ph#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(972) 555-0410</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">MDO Fax#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(972) 555-0411</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Height</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623;">5&#39; 4&quot;</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Weight (lbs)</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623;">188</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Currently used mobility devices</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">Rollator walker; transport chair for outings</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Diagnoses</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">Osteoarthritis, lumbar stenosis, COPD</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Currently staying at Home or Facility?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Home</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">If in facility what is the approximate discharge date?</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">Not applicable — patient at home</span></td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Mobility Evaluation &amp; Scheduling</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Already had a Power Mobility Evaluation in last 6 months?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">No</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">If so please provide appointment details</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">Not applicable — no prior eval</span></td></tr>
+                  <tr style="background:#ffffff;"><td colspan="2" style="padding:9px 14px; border-top:1px solid #dce0e7;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td width="20" valign="top" style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#0b6e40; line-height:1.5;">&#10004;</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#4a5464; line-height:1.5;"><strong style="color:#0b6e40;">Confirmed by agent</strong> — explained that a mobility evaluation with the doctor is required for insurance, and that MDO paperwork will be sent to be completed during the appointment and returned.</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Permission to call &amp; schedule Mobility Evaluation with MDO?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Yes</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">ME Availability</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">Weekday mornings before 11 AM; no Fridays</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">PPD Availability</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Same — mornings</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Other Notes</td><td style="padding:8px 16px; font-size:13.5px; color:#0f1623; line-height:1.5; border-top:1px solid #dce0e7;">Daughter Ruth handles scheduling — reach her first on the secondary number.</td></tr>
+                </table>
+              </td></tr>
+
+              <tr><td style="padding:0 20px 18px;">
+                <div style="border-top:1px solid #dce0e7; padding-top:11px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#a5acb8; line-height:1.5;">Submitted through UMS Team Tools &middot; Intake &middot; PMD Account</div>
+              </td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ PAP ════════ -->
+      <div style="flex:none; width:620px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#737c8c; margin-bottom:10px;">PAP Account · to Sleep</div>
+        <div style="background:#fff; border-radius:2px; box-shadow:0 1px 3px rgba(0,0,0,.08); border:1px solid #dce0e7; overflow:hidden;">
+          <div style="padding:12px 16px; border-bottom:1px solid #eef0f4; background:#fbfcfd;">
+            <div style="font-size:14px; font-weight:600; color:#0f1623;">PAP Account · Marisol Vega</div>
+            <div style="font-size:12px; color:#737c8c; margin-top:2px;">A. Duarte &lt;intake@ums.co&gt; · to Sleep</div>
+          </div>
+          <div style="background:#e9ecf1; padding:20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto; background:#ffffff; border:1px solid #dce0e7; border-top:3px solid #223b5d; border-radius:4px;">
+              <tr><td style="padding:16px 20px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#223b5d;">UMS Team Tools</td>
+                  <td align="right" style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#a5acb8;">PAP · Account</td>
+                </tr></table>
+              </td></tr>
+              <tr><td style="padding:12px 20px 0;">
+                <div style="background:#f2f5f9; border:1px solid #e2e8f0; border-left:3px solid #223b5d; border-radius:4px; padding:11px 14px;">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:20px; font-weight:700; color:#0f1623; line-height:1.2;">Marisol Vega</div>
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#737c8c; margin-top:3px;">Submitted Aug 31, 2026 · 11:06 AM CST · A. Duarte</div>
+                </div>
+              </td></tr>
+
+              <tr><td style="padding:16px 20px 20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dce0e7; border-radius:6px; overflow:hidden; font-family:Arial,Helvetica,sans-serif;">
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Demographics</td></tr>
+                  <tr style="background:#ffffff;"><td width="46%" style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Full Name</td><td style="padding:8px 16px; font-size:14px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Marisol Vega Ortiz</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Primary Contact Phone #</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(469) 555-0347</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Secondary Contact Ph#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">&mdash; not provided</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Patient Email Address</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7; word-break:break-all;">mvega.ortiz@outlook.com</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">DOB</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">11/02/1967</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Home Address</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">2210 Cedar Springs Rd, Apt 14B<br>Dallas, TX 75201</td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Insurance</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Primary Insurance &amp; Member ID#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><div style="font-family:Arial,Helvetica,sans-serif; font-size:13.5px; font-weight:700; color:#0f1623;">Aetna PPO</div><div style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.06em; margin-top:2px;">W2049117733</div></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Secondary Insurance &amp; Member ID#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">&mdash; not provided</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">SSN # <span style="color:#a5acb8;">(if insurance details N/A)</span></td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">Not needed — insurance on file</span></td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Clinical Information</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">PCP Name</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Dr. Helena Ruiz</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">MDO Ph#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(214) 555-0288</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">MDO Fax#</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623; letter-spacing:.03em;">(214) 555-0289</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">MDO Address</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">808 N Hall St, Suite 300<br>Dallas, TX 75226</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Height</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623;">5&#39; 2&quot;</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Weight (lbs)</td><td style="padding:8px 14px; border-top:1px solid #dce0e7;"><span style="font-family:'Courier New',Courier,monospace; font-size:14px; font-weight:700; color:#0f1623;">214</span></td></tr>
+
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">PAP Details</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Already have a CPAP?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Yes</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Make &amp; Model of current CPAP (if applicable)?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">ResMed AirSense 10 AutoSet</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">How long have you had the current CPAP (if applicable)?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">More than 5 years</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">What kind of mask are you using (make/model/size)?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">ResMed AirFit F20, Medium</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Looking for Machine, PAP Supplies, or Both?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Both</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Have you done a Sleep Study in the past?</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Yes</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">If so please provide Sleep Study details (approx. date &amp; provider details)</td><td style="padding:8px 16px; font-size:13.5px; font-weight:700; color:#0f1623; line-height:1.45; border-top:1px solid #dce0e7;">Approx. March 2019 — Baylor Sleep Center, Dallas</td></tr>
+                  <tr style="background:#eef3f9;"><td colspan="2" style="padding:9px 14px; border-top:1px solid #dce0e7;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td width="20" valign="top" style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#0b6e40; line-height:1.5;">&#10004;</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#4a5464; line-height:1.5;"><strong style="color:#0b6e40;">Confirmed by agent</strong> — informed that we will reach out to the MDO for the information insurance requires, and work with both to process the order.</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:8px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;">Other Notes</td><td style="padding:8px 16px; font-size:13.5px; color:#0f1623; line-height:1.5; border-top:1px solid #dce0e7;">Prefers afternoon calls. Current mask leaking at the bridge.</td></tr>
+                </table>
+              </td></tr>
+
+              <tr><td style="padding:0 20px 18px;">
+                <div style="border-top:1px solid #dce0e7; padding-top:11px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#a5acb8; line-height:1.5;">Submitted through UMS Team Tools &middot; Intake &middot; PAP Account</div>
+              </td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ PPD ════════ -->
+      <div style="flex:none; width:620px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#737c8c; margin-bottom:10px;">PPD recommendation · to Sales — questionnaire stays first</div>
+        <div style="background:#fff; border-radius:2px; box-shadow:0 1px 3px rgba(0,0,0,.08); border:1px solid #dce0e7; overflow:hidden;">
+          <div style="padding:12px 16px; border-bottom:1px solid #eef0f4; background:#fbfcfd;">
+            <div style="font-size:14px; font-weight:600; color:#0f1623;">PPD Recommendation · Eleanor Briggs · TRX 20431</div>
+            <div style="font-size:12px; color:#737c8c; margin-top:2px;">J. Rivera &lt;intake@ums.co&gt; · to Mobility Sales</div>
+          </div>
+          <div style="background:#e9ecf1; padding:20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto; background:#ffffff; border:1px solid #dce0e7; border-top:3px solid #223b5d; border-radius:4px;">
+              <tr><td style="padding:16px 20px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#223b5d;">UMS Team Tools</td>
+                  <td align="right" style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#a5acb8;">PPD · Recommendation</td>
+                </tr></table>
+              </td></tr>
+              <tr><td style="padding:12px 20px 0;">
+                <div style="background:#f2f5f9; border:1px solid #e2e8f0; border-left:3px solid #223b5d; border-radius:4px; padding:11px 14px;">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:20px; font-weight:700; color:#0f1623; line-height:1.2;">Eleanor Briggs</div>
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#737c8c; margin-top:3px;">TRX 20431 · submitted Aug 31, 2026 · J. Rivera</div>
+                </div>
+              </td></tr>
+
+              <tr><td style="padding:16px 20px 0;">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#737c8c; margin-bottom:8px;">Completed PPD questionnaire</div>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dce0e7; border-radius:6px; overflow:hidden; font-family:Arial,Helvetica,sans-serif;">
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">MRADL</td></tr>
+                  <tr style="background:#ffffff;"><td width="66%" style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">01</span>&nbsp; Currently use a mobility device?</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#0b6e40;">Yes</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">02</span>&nbsp; Restroom &amp; toileting</td><td align="right" style="padding:7px 14px; font-size:13px; font-weight:700; color:#0f1623; border-top:1px solid #dce0e7;">Needs assistance</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">03</span>&nbsp; Preparing meals</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#a5acb8;">&mdash; not answered</span></td></tr>
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Extremity Strength</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">07</span>&nbsp; Move both arms?</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#0b6e40;">Yes</span></td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">09</span>&nbsp; Raise both hands overhead?</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#8a1f1f;">No</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">10</span>&nbsp; Move your legs?</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#0b6e40;">Yes</span></td></tr>
+                  <tr><td colspan="2" style="background:#223b5d; padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#ffffff;">Consistent Pain</td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">14</span>&nbsp; Neck</td><td align="right" style="padding:7px 14px; font-size:13px; font-weight:700; color:#737c8c; border-top:1px solid #dce0e7;">None</td></tr>
+                  <tr style="background:#eef3f9;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">19</span>&nbsp; Back</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#8a1f1f;">Severe</span></td></tr>
+                  <tr style="background:#ffffff;"><td style="padding:7px 14px; font-size:12px; line-height:1.4; color:#5f6d80; border-top:1px solid #dce0e7; border-right:1px solid #dce0e7; vertical-align:top;"><span style="font-family:'Courier New',Courier,monospace; color:#a5acb8;">21</span>&nbsp; Knees</td><td align="right" style="padding:7px 14px; border-top:1px solid #dce0e7;"><span style="font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:700; color:#8a4500;">Moderate</span></td></tr>
+                </table>
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#a5acb8; margin-top:6px;">Representative rows — the email carries all 46 questions in bank order.</div>
+              </td></tr>
+
+              <tr><td style="padding:20px 20px 0;">
+                <div style="border-top:2px solid #dce0e7; padding-top:14px; font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#737c8c;">Recommended HCPCS</div>
+              </td></tr>
+              <tr><td style="padding:10px 20px 0;">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#223b5d; margin-bottom:8px;">Complex Rehab</div>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e8ee; border-radius:8px;">
+                  <tr>
+                    <td width="24" valign="top" style="padding:13px 0 13px 12px; font-size:17px; line-height:1; color:#b7791f;">&#9733;</td>
+                    <td width="88" valign="top" style="padding:13px 0 13px 8px;">
+                      <div style="width:74px; height:54px; background:#f0f2f6; border:1px solid #dce0e7; border-radius:4px; text-align:center; font-family:Arial,Helvetica,sans-serif; font-size:10px; color:#a5acb8; line-height:54px;">image</div>
+                    </td>
+                    <td valign="top" style="padding:13px 14px 13px 10px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                        <td style="font-family:'Courier New',Courier,monospace; font-size:16px; font-weight:700; letter-spacing:.04em;"><a href="#" style="color:#1e63b8; text-decoration:none;">K0856</a></td>
+                        <td align="right"><span style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; color:#0b6e40; background:#e4f5ec; border:1px solid #abdfc4; border-radius:4px; padding:2px 7px;">&#10004; Accepted</span></td>
+                      </tr></table>
+                      <div style="font-family:Arial,Helvetica,sans-serif; font-size:12.5px; color:#555555; line-height:1.45; margin-top:6px;">Group 3 PWC, captain's seat — meets MRADL + upper-extremity strength criteria.</div>
+                    </td>
+                  </tr>
+                </table>
+              </td></tr>
+              <tr><td style="padding:8px 20px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e8ee; border-radius:8px; background:#f6f7f9;">
+                  <tr>
+                    <td width="24" valign="top" style="padding:13px 0 13px 12px; font-size:17px; line-height:1; color:#dce0e7;">&#9733;</td>
+                    <td width="88" valign="top" style="padding:13px 0 13px 8px;">
+                      <div style="width:74px; height:54px; background:#eef0f4; border:1px solid #dce0e7; border-radius:4px; text-align:center; font-family:Arial,Helvetica,sans-serif; font-size:10px; color:#c3c9d3; line-height:54px;">image</div>
+                    </td>
+                    <td valign="top" style="padding:13px 14px 13px 10px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                        <td style="font-family:'Courier New',Courier,monospace; font-size:16px; font-weight:700; letter-spacing:.04em; color:#a5acb8;">K0861</td>
+                        <td align="right"><span style="font-family:Arial,Helvetica,sans-serif; font-size:11px; font-weight:700; color:#8a1f1f; background:#fce5e5; border:1px solid #f3d4d4; border-radius:4px; padding:2px 7px;">&#10008; Rejected</span></td>
+                      </tr></table>
+                      <div style="font-family:Arial,Helvetica,sans-serif; font-size:12.5px; color:#a5acb8; line-height:1.45; margin-top:6px;">Group 3 PWC, power seat elevation — exceeds documented need.</div>
+                    </td>
+                  </tr>
+                </table>
+              </td></tr>
+              <tr><td style="padding:20px 20px 18px;">
+                <div style="border-top:1px solid #dce0e7; padding-top:11px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#a5acb8; line-height:1.5;">Generated by the UMS Intake recommendation engine &middot; verify against current payer policy before submission.</div>
+              </td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════ 03 · RULES ══════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:18px; max-width:1160px;">
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#1e63b8;">03 — The rules</div>
+      <h2 style="margin:0; font-size:25px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Four changes, applied to all three</h2>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:9px;">1 · The value leads</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty;">Label <code style="font:500 12.5px 'JetBrains Mono',monospace;">12px #737c8c</code> regular; value <code style="font:500 12.5px 'JetBrains Mono',monospace;">13.5px #0f1623</code> bold. Label column pinned at <code style="font:500 12.5px 'JetBrains Mono',monospace;">width="46%"</code> on the first row of each table, so the value column starts at the same x on every row and the eye can run straight down it. Tuned against the longest <em>verbatim</em> bank labels, EN and ES — several wrap to two lines, which is fine: both cells are <code style="font:500 12.5px 'JetBrains Mono',monospace;">vertical-align:top</code>, so a wrapped label never moves its value. Zebra <code style="font:500 12.5px 'JetBrains Mono',monospace;">#ffffff</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">#f8fafc</code> with a <code style="font:500 12.5px 'JetBrains Mono',monospace;">1px #eef0f4</code> rule — losing your line mid-transcription is the failure this prevents.</div>
+      </div>
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:9px;">2 · Identifiers are monospaced</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty;"><code style="font:500 12.5px 'JetBrains Mono',monospace;">'Courier New', Courier, monospace</code> — the one mono stack safe across Outlook, Gmail and Apple Mail. Applied to phone, fax, DOB, SSN, member IDs, height, weight, and the HCPCS codes. Fixed advance width makes a transposed or doubled digit visible; <code style="font:500 12.5px 'JetBrains Mono',monospace;">letter-spacing:.03em</code> (<code style="font:500 12.5px 'JetBrains Mono',monospace;">.06em</code> on IDs) separates runs. Insurance carrier stays proportional and the ID drops to its own line beneath — they're pasted into different CRM fields.</div>
+      </div>
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:9px;">3 · Attestations run full-width</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty;">The condition is <strong style="font-weight:600; color:#0f1623;">a checkbox index whose bank label is a declarative sentence rather than a question</strong> — today exactly <code style="font:500 12.5px 'JetBrains Mono',monospace;">PMD 24</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">PAP 26</code>. They become a <code style="font:500 12.5px 'JetBrains Mono',monospace;">colspan="2"</code> row: green check, <strong style="font-weight:600;">Confirmed by agent</strong>, then the sentence at 12px. Nothing to transcribe, so it stays out of the value column entirely. The rest of the <code style="font:500 12.5px 'JetBrains Mono',monospace;">checkboxes</code> list (<code style="font:500 12.5px 'JetBrains Mono',monospace;">PMD 22/25</code>, <code style="font:500 12.5px 'JetBrains Mono',monospace;">PAP 24</code>) are ordinary questions and keep their Yes/No in the value column — including permission-to-schedule, whose answer Sales needs. A <em>false</em> value renders the same row in <code style="font:500 12.5px 'JetBrains Mono',monospace;">#8a4500</code> with <strong style="font-weight:600;">Not confirmed</strong> — it must never simply vanish.</div>
+      </div>
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:9px;">4 · Two kinds of blank</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty;">You skipped this one, so: distinguish them, minimally. <strong style="font-weight:600; color:#0f1623;">&mdash; not provided</strong> means the field was asked and left empty; the transcriber leaves the CRM field empty. <strong style="font-weight:600; color:#0f1623;">Not applicable &mdash; <em>reason</em></strong> means a prior answer made it moot ("patient at home", "no prior eval", "insurance on file"), and the reason comes from the governing answer, not a guess. Both in <code style="font:500 12.5px 'JetBrains Mono',monospace;">12px #a5acb8</code>, visibly lighter than real values so they never read as data.</div>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px; box-shadow:inset 3px 0 0 #b7791f;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a4500; margin-bottom:9px;">One thing worth a look — you have this already, on the wrong side</div>
+      <div style="font-size:13.5px; line-height:1.65; color:#3e4756; text-wrap:pretty;">On a successful intake send the app already <strong style="font-weight:600; color:#0f1623;">builds a CRM-paste note template and copies it to the clipboard</strong> — for the <em>sender</em>, who has just finished with the patient and isn't the one entering it. The person doing the CRM entry is the recipient, and they get a form to retype by hand. If the template is close to what they paste, putting the same block at the foot of the email (or attaching it as <code style="font:500 12.5px 'JetBrains Mono',monospace;">.txt</code>) removes the transcription step this whole redesign is otherwise just making faster. I haven't designed it — it depends on how well your CRM takes a paste, which you'd know. Worth ten minutes of your time to check.</div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px; box-shadow:inset 3px 0 0 #c13030;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:9px;">Do not break these</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+        <li><strong style="font-weight:600;">Field order and section headers are the bank.</strong> Nothing here reorders, merges or drops a field. The layout constants (<code style="font:500 12.5px 'JetBrains Mono',monospace;">INTAKE_PMD_LAYOUT</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">INTAKE_PAP_LAYOUT</code>, server-authoritative) are unchanged — this is presentation only.</li>
+        <li><strong style="font-weight:600;">The client/server layout coupling stays pinned.</strong> <code style="font:500 12.5px 'JetBrains Mono',monospace;">INTAKE_PMD_CLIENT</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">INTAKE_PAP_CLIENT</code> must keep mirroring the server, and <code style="font:500 12.5px 'JetBrains Mono',monospace;">test_intake_layoutCoupling</code> must keep passing. Do <strong style="font-weight:600;">not</strong> drive the attestation styling off the whole <code style="font:500 12.5px 'JetBrains Mono',monospace;">checkboxes</code> list — it holds ordinary Yes/No questions too, and treating them as attestations would drop their answers. Key off the two named indices, or off the sentence-vs-question test, and pin it.</li>
+        <li><strong style="font-weight:600;">Both language banks.</strong> Spanish labels are longer; the 42% label column has to hold them without pushing the value column around. Check the PAP consent sentence and PMD index 24 in ES.</li>
+        <li><strong style="font-weight:600;">Email-safe throughout</strong> — tables, inline styles, literal hex, no <code style="font:500 12.5px 'JetBrains Mono',monospace;">var()</code>, no web fonts, ≤600px. Same constraints the existing template documents.</li>
+        <li><strong style="font-weight:600;">Server esc</strong> on every rendered value; PPD's <code style="font:500 12.5px 'JetBrains Mono',monospace;">payload.rows</code> render verbatim (INV-89).</li>
+      </ul>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#737c8c; margin-bottom:9px;">Two things the existing design doc is missing</div>
+      <div style="font-size:13.5px; line-height:1.65; color:#3e4756; text-wrap:pretty;">You didn't pick either for this pass, so I've left them out — but <code style="font:500 12.5px 'JetBrains Mono',monospace;">docs/…/Email Templates.dc.html</code> is now behind what ships, and someone will eventually build from it. The <strong style="font-weight:600; color:#0f1623;">Send feedback</strong> button (added 2026-08-13, its replies render in Sent detail) and the <strong style="font-weight:600; color:#0f1623;">AMENDED / superseded</strong> state both exist in the product and appear nowhere in the design. The amended one carries real risk: the code marks it "clearly … to you and the recipient", and a superseded copy that reads as current is a wrong-order path. Worth adding to that doc even if the emails don't change.</div>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return { showNotes: this.props.showNotes ?? true };
+  }
+}
+</script>
+</body>
+</html>

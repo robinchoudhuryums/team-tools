@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#e7e9ed; font-family:'Inter Tight',system-ui,-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#0f8a52; text-decoration:none; }
+  a:hover { color:#0b6e40; text-decoration:underline; }
+</style>
+</helmet>
+
+<div style="padding:56px 60px 90px; display:flex; flex-direction:column; gap:64px;">
+
+  <div style="max-width:900px; display:flex; flex-direction:column; gap:14px;">
+    <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#5f6878;">UMS Team Tools &nbsp;·&nbsp; Design handoff &nbsp;·&nbsp; Manage › Admin</div>
+    <h1 style="margin:0; font-size:44px; font-weight:600; letter-spacing:-.025em; line-height:1.08; color:#0f1623;">Admin Redesign</h1>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">System health outgrew the container it was put in. It's now three status cards plus automation health, storage health, client errors, deploy readiness and the queue inventory — <strong style="font-weight:600; color:#0f1623;">more content than the Tags or Compliance sub-tabs</strong> — folded into an unlabelled disclosure at the bottom of Overview. It gets promoted to its own <strong style="font-weight:600; color:#0f1623;">System</strong> tab.</p>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">The second change is hierarchy. Today a passing check costs a full row, so a healthy system renders six green sentences and an unhealthy one hides the real warning among them. Problems get room; all-clears collapse to a count.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e4f5ec; color:#0b6e40;">Target · cn/script_callnotes.html</span>
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e1ecfa; color:#154980;">No new RPCs</span>
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#f0f2f6; color:#3e4756; border:1px solid #dce0e7;">Queue inventory kept</span>
+    </div>
+  </div>
+
+  <!-- ══════════════ 01 · OVERVIEW ══════════════ -->
+  <div style="display:flex; flex-direction:column; gap:22px;">
+    <div style="max-width:900px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">01 — Overview</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Cards that go somewhere</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">The three status cards stay on Overview, because a health glance belongs on the landing pane. What changes is that they become <em>links</em> — the obvious gesture on a warning card is "show me why", and today that means scrolling past the KPI strip and usage panel to find a generic disclosure. Now each card opens its own section of the System tab.</p>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">Deploy readiness moves down and folds to a summary line. You've deployed, so a permanent "All clear" checklist no longer earns the top of the page — but it stays one click away for the next release.</p>
+    </div>
+
+    <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex; flex-wrap:wrap; gap:10px; max-width:1100px;">
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 15px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:6px;">Order today</div>
+        <div style="font-size:13px; line-height:1.5; color:#3e4756;">Deploy readiness → status cards → KPIs → usage → <em>System details</em> disclosure. Chronological by when each was added, not by what's looked at.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 15px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:6px;">Proposed</div>
+        <div style="font-size:13px; line-height:1.5; color:#3e4756;">Status cards → KPIs → usage → deploy readiness (folded). Health detail moves out entirely, to its own tab.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 15px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#154980; margin-bottom:6px;">Rename</div>
+        <div style="font-size:13px; line-height:1.5; color:#3e4756;"><code style="font:500 12px 'JetBrains Mono',monospace;">Call Notes · Admin</code> → <strong style="font-weight:600;">Admin</strong> under Manage. The subtitle names what the page actually governs.</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="display:flex; gap:30px; align-items:flex-start; flex-wrap:wrap;">
+      <sc-if value="{{ showLight }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Light · Console</div>
+        <div data-screen-label="Admin Overview · light" style="width:1000px; background:#f6f7f9; border:1px solid #c3c9d3; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.10); padding:22px 30px 30px; color:#0f1623;">
+
+          <div style="padding:14px 0 16px; border-bottom:1px solid #dce0e7; margin-bottom:16px;">
+            <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; color:#3e4756; display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+              <span>Tools</span><span style="opacity:.5;">›</span><span>Manage</span><span style="opacity:.5;">›</span><span style="color:#0f1623;">Admin</span>
+            </div>
+            <h3 style="margin:0 0 6px; font-size:28px; font-weight:600; letter-spacing:-.02em; line-height:1.15; color:#0f1623;">Admin</h3>
+            <div style="font-size:13.5px; line-height:1.55; color:#5f6878; max-width:76ch; text-wrap:pretty;">System health, storage, tag taxonomy, retention and department config. Changes take effect immediately — no redeploy.</div>
+          </div>
+
+          <div style="display:inline-flex; border:1px solid #dce0e7; border-radius:999px; padding:3px; background:#fff; margin-bottom:18px; flex-wrap:wrap;">
+            <button style="appearance:none; border:none; background:#0f1623; color:#f6f7f9; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Overview</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; display:inline-flex; align-items:center; gap:5px;">System<span style="display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px; padding:0 4px; border-radius:999px; background:#fce5e5; color:#8a1f1f; font:700 9px/1 'JetBrains Mono',monospace;">2</span></button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Tags</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Compliance</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Config</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Sheets</button>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">System status</div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;">
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px; box-shadow:0 1px 2px rgba(15,23,42,.04), inset 3px 0 0 #b7791f; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">
+                Automation
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">2 sync fails</div>
+              <div style="margin-top:3px; font-size:11px; color:#5f6878;">personal-sheet drift</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px; box-shadow:0 1px 2px rgba(15,23,42,.04), inset 3px 0 0 #b7791f; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">
+                CDR
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">1 name mismatch</div>
+              <div style="margin-top:3px; font-size:11px; color:#5f6878;">a rep's calls may be missing</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px; box-shadow:0 1px 2px rgba(15,23,42,.04); cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">
+                Storage
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0f8a52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">All reachable</div>
+              <div style="margin-top:3px; font-size:11px; color:#5f6878;">9 stores · timezones match</div>
+            </div>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">This week</div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px;">
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:6px;">Week notes</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#0f1623;">147</div>
+              <div style="margin-top:4px; font-size:11px; color:#5f6878;">across team</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:6px;">Unresolved</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#8a4500;">3</div>
+              <div style="margin-top:4px; font-size:11px; color:#5f6878;">action flags open</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:6px;">Tags</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#0f1623;">28</div>
+              <div style="margin-top:4px; font-size:11px; color:#5f6878;">unique in use</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:6px;">Reps</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#0f1623;">6</div>
+              <div style="margin-top:4px; font-size:11px; color:#5f6878;">enrolled scanned</div>
+            </div>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">Tab usage · last 30 days</div>
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; margin-bottom:18px;">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#0f1623; width:104px;">Call Notes</span>
+                <div style="flex:1; height:6px; background:#e5e8ee; border-radius:999px; overflow:hidden;"><div style="width:88%; height:100%; background:#0f8a52;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756; width:34px; text-align:right;">412</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#0f1623; width:104px;">Time Clock</span>
+                <div style="flex:1; height:6px; background:#e5e8ee; border-radius:999px; overflow:hidden;"><div style="width:64%; height:100%; background:#0f8a52;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756; width:34px; text-align:right;">298</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#0f1623; width:104px;">Training</span>
+                <div style="flex:1; height:6px; background:#e5e8ee; border-radius:999px; overflow:hidden;"><div style="width:23%; height:100%; background:#0f8a52;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756; width:34px; text-align:right;">107</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#0f1623; width:104px;">QA</span>
+                <div style="flex:1; height:6px; background:#e5e8ee; border-radius:999px; overflow:hidden;"><div style="width:7%; height:100%; background:#0f8a52;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756; width:34px; text-align:right;">31</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 16px; display:flex; align-items:center; gap:11px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#0f1623;">Deploy readiness</span>
+            <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:#e4f5ec; color:#0b6e40;">All clear</span>
+            <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">11 checks · CONFIG tz America/Chicago</span>
+          </div>
+
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showDark }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Dark · Console</div>
+        <div data-screen-label="Admin Overview · dark" style="width:1000px; background:#0a0d14; border:1px solid #262d3b; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.28); padding:22px 30px 30px; color:#e8e6e0;">
+
+          <div style="padding:14px 0 16px; border-bottom:1px solid #262d3b; margin-bottom:16px;">
+            <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; color:#a6adbc; display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+              <span>Tools</span><span style="opacity:.5;">›</span><span>Manage</span><span style="opacity:.5;">›</span><span style="color:#e8e6e0;">Admin</span>
+            </div>
+            <h3 style="margin:0 0 6px; font-size:28px; font-weight:600; letter-spacing:-.02em; line-height:1.15; color:#e8e6e0;">Admin</h3>
+            <div style="font-size:13.5px; line-height:1.55; color:#7b8496; max-width:76ch; text-wrap:pretty;">System health, storage, tag taxonomy, retention and department config. Changes take effect immediately — no redeploy.</div>
+          </div>
+
+          <div style="display:inline-flex; border:1px solid #262d3b; border-radius:999px; padding:3px; background:#10141d; margin-bottom:18px; flex-wrap:wrap;">
+            <button style="appearance:none; border:none; background:#e8e6e0; color:#0a0d14; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Overview</button>
+            <button style="appearance:none; border:none; background:transparent; color:#a6adbc; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; display:inline-flex; align-items:center; gap:5px;">System<span style="display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px; padding:0 4px; border-radius:999px; background:rgba(255,102,121,.18); color:#ffa0a8; font:700 9px/1 'JetBrains Mono',monospace;">2</span></button>
+            <button style="appearance:none; border:none; background:transparent; color:#a6adbc; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Tags</button>
+            <button style="appearance:none; border:none; background:transparent; color:#a6adbc; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Compliance</button>
+            <button style="appearance:none; border:none; background:transparent; color:#a6adbc; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Config</button>
+            <button style="appearance:none; border:none; background:transparent; color:#a6adbc; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Sheets</button>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#7b8496; margin-bottom:9px;">System status</div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;">
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:12px 14px; box-shadow:inset 3px 0 0 #ffb547; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:7px;">
+                Automation
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffcb80" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#e8e6e0;">2 sync fails</div>
+              <div style="margin-top:3px; font-size:11px; color:#7b8496;">personal-sheet drift</div>
+            </div>
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:12px 14px; box-shadow:inset 3px 0 0 #ffb547; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:7px;">
+                CDR
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffcb80" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#e8e6e0;">1 name mismatch</div>
+              <div style="margin-top:3px; font-size:11px; color:#7b8496;">a rep's calls may be missing</div>
+            </div>
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:12px 14px; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:6px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:7px;">
+                Storage
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7af2a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+                <svg style="margin-left:auto;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#e8e6e0;">All reachable</div>
+              <div style="margin-top:3px; font-size:11px; color:#7b8496;">9 stores · timezones match</div>
+            </div>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#7b8496; margin-bottom:9px;">This week</div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px;">
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:6px;">Week notes</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">147</div>
+              <div style="margin-top:4px; font-size:11px; color:#7b8496;">across team</div>
+            </div>
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:6px;">Unresolved</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#ffcb80;">3</div>
+              <div style="margin-top:4px; font-size:11px; color:#7b8496;">action flags open</div>
+            </div>
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:6px;">Tags</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">28</div>
+              <div style="margin-top:4px; font-size:11px; color:#7b8496;">unique in use</div>
+            </div>
+            <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 16px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496; margin-bottom:6px;">Reps</div>
+              <div style="font:700 1.5rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">6</div>
+              <div style="margin-top:4px; font-size:11px; color:#7b8496;">enrolled scanned</div>
+            </div>
+          </div>
+
+          <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#7b8496; margin-bottom:9px;">Tab usage · last 30 days</div>
+          <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px; margin-bottom:18px;">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#e8e6e0; width:104px;">Call Notes</span>
+                <div style="flex:1; height:6px; background:#1e2532; border-radius:999px; overflow:hidden;"><div style="width:88%; height:100%; background:#7af2a1;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc; width:34px; text-align:right;">412</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#e8e6e0; width:104px;">Time Clock</span>
+                <div style="flex:1; height:6px; background:#1e2532; border-radius:999px; overflow:hidden;"><div style="width:64%; height:100%; background:#7af2a1;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc; width:34px; text-align:right;">298</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#e8e6e0; width:104px;">Training</span>
+                <div style="flex:1; height:6px; background:#1e2532; border-radius:999px; overflow:hidden;"><div style="width:23%; height:100%; background:#7af2a1;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc; width:34px; text-align:right;">107</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px;">
+                <span style="font-size:13px; color:#e8e6e0; width:104px;">QA</span>
+                <div style="flex:1; height:6px; background:#1e2532; border-radius:999px; overflow:hidden;"><div style="width:7%; height:100%; background:#7af2a1;"></div></div>
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc; width:34px; text-align:right;">31</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:12px 16px; display:flex; align-items:center; gap:11px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#e8e6e0;">Deploy readiness</span>
+            <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:rgba(122,242,161,.12); color:#b8fbc8;">All clear</span>
+            <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">11 checks · CONFIG tz America/Chicago</span>
+          </div>
+
+        </div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ══════════════ 02 · SYSTEM TAB ══════════════ -->
+  <div style="display:flex; flex-direction:column; gap:22px;">
+    <div style="max-width:900px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">02 — The System tab</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Problems first, all-clears counted</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">Everything that was behind the disclosure lands here, reordered by whether it needs you. <strong style="font-weight:600; color:#0f1623;">Needs attention</strong> comes first — each problem stated once, with the fix and the link to where the fix happens. Then a single line accounting for every passing check, expandable. Then the reference material: the storage inventory, the queue inventory, the client-error tail.</p>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">The fixes are already written in the code — <code style="font:500 13px 'JetBrains Mono',monospace;">cnRenderHealthPanel_</code> tells you which alias row to add, <code style="font:500 13px 'JetBrains Mono',monospace;">cnRenderStoragePanel_</code> names the exact File → Settings path. They're just buried three levels down. Promoting them is most of the work.</p>
+    </div>
+
+    <div style="display:flex; gap:30px; align-items:flex-start; flex-wrap:wrap;">
+      <sc-if value="{{ showLight }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Light · Console</div>
+        <div data-screen-label="Admin System · light" style="width:1000px; background:#f6f7f9; border:1px solid #c3c9d3; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.10); padding:22px 30px 30px; color:#0f1623;">
+
+          <div style="padding:14px 0 16px; border-bottom:1px solid #dce0e7; margin-bottom:16px;">
+            <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; color:#3e4756; display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+              <span>Tools</span><span style="opacity:.5;">›</span><span>Manage</span><span style="opacity:.5;">›</span><span style="color:#0f1623;">Admin</span>
+            </div>
+            <h3 style="margin:0; font-size:28px; font-weight:600; letter-spacing:-.02em; line-height:1.15; color:#0f1623;">Admin</h3>
+          </div>
+
+          <div style="display:inline-flex; border:1px solid #dce0e7; border-radius:999px; padding:3px; background:#fff; margin-bottom:18px; flex-wrap:wrap;">
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Overview</button>
+            <button style="appearance:none; border:none; background:#0f1623; color:#f6f7f9; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; display:inline-flex; align-items:center; gap:5px;">System<span style="display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px; padding:0 4px; border-radius:999px; background:#fce5e5; color:#8a1f1f; font:700 9px/1 'JetBrains Mono',monospace;">2</span></button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Tags</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Compliance</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Config</button>
+            <button style="appearance:none; border:none; background:transparent; color:#3e4756; padding:6px 13px; border-radius:999px; cursor:pointer; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase;">Sheets</button>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;">
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px; box-shadow:inset 3px 0 0 #b7791f;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">Automation</div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">2 sync fails</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px; box-shadow:inset 3px 0 0 #b7791f;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">CDR</div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">1 name mismatch</div>
+            </div>
+            <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:12px 14px;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:7px;">Storage</div>
+              <div style="font:700 1.05rem/1.2 'Inter Tight',sans-serif; color:#0f1623;">All reachable</div>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:9px; margin-bottom:11px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+            <h4 style="margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; color:#0f1623;">Needs attention</h4>
+            <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">2 · nothing blocking</span>
+          </div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:15px 18px; margin-bottom:10px; box-shadow:0 1px 2px rgba(15,23,42,.04), inset 3px 0 0 #b7791f;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:9px;">
+              <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:#fbf1d9; color:#8a4500;">CDR</span>
+              <strong style="font-size:15px; font-weight:600; color:#0f1623;">One rep's calls are missing from Metrics</strong>
+            </div>
+            <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty; margin-bottom:11px;">A roster rep with no call data has a name closely resembling an unmatched CDR agent — almost certainly one person spelled two ways.</div>
+            <div style="background:#f0f2f6; border-radius:8px; padding:11px 13px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+              <span style="font:500 12px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#0f1623;">Marcus Bel <span style="color:#5f6878;">(CDR)</span> &nbsp;→&nbsp; Marcus Bell <span style="color:#5f6878;">(roster)</span></span>
+            </div>
+            <div style="margin-top:11px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+              <span style="font-size:13px; line-height:1.5; color:#3e4756;">Add an <strong style="font-weight:600; color:#0f1623;">Agent Alias Overrides</strong> row in the CDR Report — col A the CDR name, col B the roster name, exact.</span>
+              <a href="#" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#0f8a52; white-space:nowrap;">Open CDR Report<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:15px 18px; margin-bottom:18px; box-shadow:0 1px 2px rgba(15,23,42,.04), inset 3px 0 0 #b7791f;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:9px;">
+              <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:#fbf1d9; color:#8a4500;">Automation</span>
+              <strong style="font-size:15px; font-weight:600; color:#0f1623;">2 personal sheets are drifting from ADP</strong>
+              <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">last 30 days</span>
+            </div>
+            <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty; margin-bottom:11px;">Those reps' personal Sheets no longer match the ADP source of truth, so what they see differs from what payroll reads.</div>
+            <div style="background:#f0f2f6; border-radius:8px; padding:10px 13px; display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;">
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#8a4500; white-space:nowrap;">24 Aug 02:14 CT</span>
+                <strong style="font-size:13px; font-weight:600; color:#0f1623;">Devon Okafor</strong>
+                <span style="font-size:12.5px; color:#3e4756;">append failed — sheet locked</span>
+              </div>
+              <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;">
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#8a4500; white-space:nowrap;">19 Aug 02:14 CT</span>
+                <strong style="font-size:13px; font-weight:600; color:#0f1623;">Jess Nunez</strong>
+                <span style="font-size:12.5px; color:#3e4756;">append failed — permission denied</span>
+              </div>
+            </div>
+            <div style="margin-top:11px; display:flex; align-items:center; gap:11px;">
+              <span style="font-size:13px; line-height:1.5; color:#3e4756;">Re-run the sync from Manage Time, or open each rep's sheet to clear the lock.</span>
+              <a href="#" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#0f8a52; white-space:nowrap;">Open AuditLog<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 18px; margin-bottom:18px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0f8a52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#0f1623;">7 checks passing</span>
+            <span style="font:500 11px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">digests fresh · no witness losses · no client errors · CDR reachable · column layout OK · 9 stores reachable · timezones match</span>
+          </div>
+
+          <div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px;">
+            <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Storage · 5 of 9 shown</div>
+            <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">problem rows first</span>
+          </div>
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; box-shadow:0 1px 2px rgba(15,23,42,.04); overflow:hidden; margin-bottom:18px;">
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:7px 18px; border-bottom:2px solid #dce0e7; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.04em; text-transform:uppercase; color:#3e4756;">
+              <div>Store</div><div>Class</div><div>Status</div><div>Timezone</div><div>Retention</div><div></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:9px 18px; border-bottom:1px solid #dce0e7; align-items:center;">
+              <div><div style="font-size:13.5px; font-weight:500; color:#0f1623;">ADP · source of truth</div><div style="font:500 10px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878; margin-top:2px;">ADP_SS_ID</div></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">Internal</div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">ok</span></div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">America/Chicago</span></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">indefinite</div>
+              <div style="text-align:right;"><a href="#" style="font-size:12px;">Open ↗</a></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:9px 18px; border-bottom:1px solid #dce0e7; align-items:center;">
+              <div><div style="font-size:13.5px; font-weight:500; color:#0f1623;">Call Notes</div><div style="font:500 10px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878; margin-top:2px;">CN_SS_ID</div></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">Internal</div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">ok</span></div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">America/Chicago</span></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">400 days</div>
+              <div style="text-align:right;"><a href="#" style="font-size:12px;">Open ↗</a></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:9px 18px; border-bottom:1px solid #dce0e7; align-items:center;">
+              <div><div style="font-size:13.5px; font-weight:500; color:#0f1623;">CDR Report</div><div style="font:500 10px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878; margin-top:2px;">CDR_SS_ID</div></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">External</div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">ok</span></div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#fff; color:#3e4756; border:1px dashed #c3c9d3;">not set</span></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">read-only</div>
+              <div style="text-align:right;"><a href="#" style="font-size:12px;">Open ↗</a></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:9px 18px; border-bottom:1px solid #dce0e7; align-items:center; background:#f0f2f6;">
+              <div><div style="font-size:13.5px; font-weight:500; color:#5f6878;">QA recordings index</div><div style="font:500 10px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878; margin-top:2px;">QA_SS_ID</div></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">Internal</div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#fff; color:#3e4756; border:1px dashed #c3c9d3;">not set</span></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">—</div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">—</div>
+              <div></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1.6fr 96px 96px 148px 128px 66px; gap:12px; padding:9px 18px; align-items:center;">
+              <div><div style="font-size:13.5px; font-weight:500; color:#0f1623;">Employee Docs · HR</div><div style="font:500 10px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878; margin-top:2px;">HR_DOCS_SS_ID</div></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">Internal</div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#e4f5ec; color:#0b6e40;">ok</span></div>
+              <div><span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; padding:2px 7px; border-radius:999px; background:#fff; color:#3e4756; border:1px dashed #c3c9d3;">not set</span></div>
+              <div style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">indefinite</div>
+              <div style="text-align:right;"><a href="#" style="font-size:12px;">Open ↗</a></div>
+            </div>
+            <div style="padding:9px 18px; border-top:1px solid #dce0e7; background:#f0f2f6;">
+              <a href="#" style="font:500 12px/1 'JetBrains Mono',ui-monospace,monospace;">Show 4 more stores — all ok</a>
+            </div>
+          </div>
+          <div style="font-size:12.5px; line-height:1.55; color:#5f6878; margin-bottom:18px; text-wrap:pretty;"><strong style="font-weight:600; color:#0f1623;">not set</strong> is a fact, not a warning, for the three no-fallback-by-design stores (CDR · External, Employee Docs, QA — INV-122/196): they take no timezone override, so an empty cell is correct rather than broken. Only a store that <em>should</em> carry a timezone and drifts from CONFIG tones amber.</div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 18px; margin-bottom:10px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#0f1623;">Queue inventory</span>
+            <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:#e1ecfa; color:#154980;">Open question</span>
+            <span style="font:500 11px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">does DQE carry one row per agent-queue-date?</span>
+          </div>
+
+          <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 18px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#0f1623;">Client errors</span>
+            <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:#e4f5ec; color:#0b6e40;">None · 7d</span>
+          </div>
+
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showDark }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Dark · Console — needs attention</div>
+        <div data-screen-label="Admin System · dark" style="width:620px; background:#0a0d14; border:1px solid #262d3b; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.28); padding:22px 26px 26px; color:#e8e6e0;">
+
+          <div style="display:flex; align-items:center; gap:9px; margin-bottom:13px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffcb80" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+            <h4 style="margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; color:#e8e6e0;">Needs attention</h4>
+            <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">2 · nothing blocking</span>
+          </div>
+
+          <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:15px 18px; margin-bottom:10px; box-shadow:inset 3px 0 0 #ffb547;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:9px;">
+              <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:rgba(255,181,71,.14); color:#ffcb80;">CDR</span>
+              <strong style="font-size:15px; font-weight:600; color:#e8e6e0;">One rep's calls are missing from Metrics</strong>
+            </div>
+            <div style="font-size:13.5px; line-height:1.6; color:#a6adbc; text-wrap:pretty; margin-bottom:11px;">A roster rep with no call data has a name closely resembling an unmatched CDR agent — almost certainly one person spelled two ways.</div>
+            <div style="background:#161b26; border-radius:8px; padding:11px 13px;">
+              <span style="font:500 12px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#e8e6e0;">Marcus Bel <span style="color:#7b8496;">(CDR)</span> &nbsp;→&nbsp; Marcus Bell <span style="color:#7b8496;">(roster)</span></span>
+            </div>
+            <div style="margin-top:11px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+              <span style="font-size:13px; line-height:1.5; color:#a6adbc;">Add an <strong style="font-weight:600; color:#e8e6e0;">Agent Alias Overrides</strong> row — col A the CDR name, col B the roster name.</span>
+              <a href="#" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#7af2a1; white-space:nowrap;">Open CDR Report<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+            </div>
+          </div>
+
+          <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:15px 18px; margin-bottom:16px; box-shadow:inset 3px 0 0 #ffb547;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:9px;">
+              <span style="display:inline-flex; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:4px; background:rgba(255,181,71,.14); color:#ffcb80;">Automation</span>
+              <strong style="font-size:15px; font-weight:600; color:#e8e6e0;">2 personal sheets drifting from ADP</strong>
+            </div>
+            <div style="background:#161b26; border-radius:8px; padding:10px 13px; display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;">
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#ffcb80; white-space:nowrap;">24 Aug 02:14 CT</span>
+                <strong style="font-size:13px; font-weight:600; color:#e8e6e0;">Devon Okafor</strong>
+                <span style="font-size:12.5px; color:#a6adbc;">append failed — sheet locked</span>
+              </div>
+              <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;">
+                <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#ffcb80; white-space:nowrap;">19 Aug 02:14 CT</span>
+                <strong style="font-size:13px; font-weight:600; color:#e8e6e0;">Jess Nunez</strong>
+                <span style="font-size:12.5px; color:#a6adbc;">append failed — permission denied</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 18px; display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7af2a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+            <span style="font-size:14px; font-weight:600; color:#e8e6e0;">7 checks passing</span>
+          </div>
+
+        </div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ══════════════ 03 · THE INVERSION ══════════════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:22px;">
+    <div style="max-width:900px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">03 — Why invert it</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Same payload, two treatments</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">Nothing is hidden in either version — this is only about which one you read first. The left is what <code style="font:500 13px 'JetBrains Mono',monospace;">okLine()</code> plus <code style="font:500 13px 'JetBrains Mono',monospace;">warnBox()</code> produce today when nine checks run and two fail.</p>
+    </div>
+
+    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+      <div style="width:470px; background:#f6f7f9; border:1px solid #c3c9d3; border-radius:12px; padding:18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:12px;">Today · flat run</div>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>No client-side errors reported in the last 7 days.</div>
+          <div style="background:#fbf1d9; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; color:#8a4500;">⚠ 1 likely name mismatch — these reps' calls are probably missing from Metrics. Add an Agent Alias Overrides row in the CDR Report (col A = CDR name, col B = roster name, exact): · <strong style="font-weight:700;">Marcus Bel</strong> (CDR) → <strong style="font-weight:700;">Marcus Bell</strong> (roster)</div>
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>CDR reachable · column layout OK · 4,182 rows 1 Aug → 28 Aug.</div>
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>All digests ran in the last 24 hours.</div>
+          <div style="background:#fbf1d9; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; color:#8a4500;">⚠ <strong style="font-weight:700;">2</strong> personal-sheet sync failure(s) in the last 30 days — those reps' personal Sheets are drifting from the ADP source of truth.</div>
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>No lost tamper-witness audit rows.</div>
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>9 of 9 stores reachable.</div>
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#0b6e40;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>All spreadsheet timezones match CONFIG.</div>
+        </div>
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid #dce0e7; font-size:12.5px; line-height:1.55; color:#3e4756; text-wrap:pretty;">Two warnings sit in positions 3 and 6 of nine. Both are the same 12px amber box, both scannable only by reading. Neither states what to do first.</div>
+      </div>
+
+      <div style="width:470px; background:#f6f7f9; border:1px solid #c3c9d3; border-radius:12px; padding:18px; box-shadow:inset 3px 0 0 #0f8a52;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:12px;">Proposed · ranked</div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span style="font-size:14px; font-weight:600; color:#0f1623;">Needs attention</span>
+          <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">2 · nothing blocking</span>
+        </div>
+        <div style="background:#fff; border:1px solid #dce0e7; border-radius:8px; padding:11px 13px; margin-bottom:8px; box-shadow:inset 3px 0 0 #b7791f;">
+          <div style="font-size:13.5px; font-weight:600; color:#0f1623; margin-bottom:4px;">One rep's calls are missing from Metrics</div>
+          <div style="font:500 11.5px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">Marcus Bel → Marcus Bell</div>
+          <div style="margin-top:6px; font-size:12.5px; line-height:1.5; color:#3e4756;">Add an Agent Alias Overrides row. <a href="#" style="font-weight:600;">Open CDR Report ↗</a></div>
+        </div>
+        <div style="background:#fff; border:1px solid #dce0e7; border-radius:8px; padding:11px 13px; margin-bottom:12px; box-shadow:inset 3px 0 0 #b7791f;">
+          <div style="font-size:13.5px; font-weight:600; color:#0f1623; margin-bottom:4px;">2 personal sheets drifting from ADP</div>
+          <div style="font:500 11.5px/1.5 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">Okafor · 24 Aug &nbsp; Nunez · 19 Aug</div>
+        </div>
+        <div style="background:#fff; border:1px solid #dce0e7; border-radius:8px; padding:10px 13px; display:flex; align-items:center; gap:9px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0f8a52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+          <span style="font-size:13.5px; font-weight:600; color:#0f1623;">7 checks passing</span>
+        </div>
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid #dce0e7; font-size:12.5px; line-height:1.55; color:#3e4756; text-wrap:pretty;">Same nine checks. The two that need a person are named and actionable at the top; the seven that don't are accounted for in one line you can open.</div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ══════════════ 04 · NOTES ══════════════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:18px; max-width:1160px;">
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">04 — Implementation notes</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">What this costs to build</h2>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:9px;">Free — client only, no new RPCs</div>
+        <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+          <li>Add <code style="font:500 12.5px 'JetBrains Mono',monospace;">tab('system','System')</code> and a sixth <code style="font:500 12.5px 'JetBrains Mono',monospace;">.cn-admin-pane</code>. Move <code style="font:500 12.5px 'JetBrains Mono',monospace;">#cn-admin-health</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">#cn-admin-storage</code> into it; delete the disclosure and <code style="font:500 12.5px 'JetBrains Mono',monospace;">cnToggleSysDetails_</code>.</li>
+          <li>Move <code style="font:500 12.5px 'JetBrains Mono',monospace;">#cn-admin-deploy</code> below the usage panel and wrap it in the same disclosure pattern.</li>
+          <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">cnViewTitleBar_</code> → the shared <code style="font:500 12.5px 'JetBrains Mono',monospace;">.app-bar</code>: breadcrumb <code style="font:500 12.5px 'JetBrains Mono',monospace;">Tools › Manage › Admin</code>, title <strong style="font-weight:600;">Admin</strong>, new subtitle.</li>
+          <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">cnSetSysCard_</code> gains an <code style="font:500 12.5px 'JetBrains Mono',monospace;">onclick</code> → <code style="font:500 12.5px 'JetBrains Mono',monospace;">cnAdminTab_('system')</code> plus a scroll to its section, and a chevron affordance.</li>
+          <li>Storage rows → <code style="font:500 12.5px 'JetBrains Mono',monospace;">mtRenderTable_</code>. Retire <code style="font:500 12.5px 'JetBrains Mono',monospace;">.cn-storage-row</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">-main</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">-role</code> / <code style="font:500 12.5px 'JetBrains Mono',monospace;">-meta</code>.</li>
+          <li>The tab badge count is <code style="font:500 12.5px 'JetBrains Mono',monospace;">problems.length</code> from the payloads already fetched.</li>
+        </ul>
+      </div>
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a4500; margin-bottom:9px;">The one real refactor</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty; margin-bottom:10px;"><code style="font:500 12.5px 'JetBrains Mono',monospace;">cnRenderHealthPanel_</code> currently decides tone <em>and</em> emits markup in one pass, interleaved in payload order. Split it: one pure <code style="font:500 12.5px 'JetBrains Mono',monospace;">cnHealthFindings_(health, storage)</code> returning a flat array of <code style="font:500 12.5px 'JetBrains Mono',monospace;">{ id, area, severity, title, detail, fix, link }</code>, then render <code style="font:500 12.5px 'JetBrains Mono',monospace;">severity !== 'ok'</code> into Needs attention and count the rest.</div>
+        <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+          <li>It's pure, so it's Node-pinnable like <code style="font:500 12.5px 'JetBrains Mono',monospace;">qaPeaks_</code> and the other pinned helpers — worth a test asserting every findings id appears in exactly one of the two buckets.</li>
+          <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">cnSetSysFromHealth_</code> then derives the three cards from the <em>same</em> array instead of re-deriving tone independently. That removes the current risk of a card disagreeing with the panel under it.</li>
+          <li>Keep the CDR card toning off <code style="font:500 12.5px 'JetBrains Mono',monospace;">likelyMismatches</code>, never raw <code style="font:500 12.5px 'JetBrains Mono',monospace;">unmatchedAgents</code> — the existing comment explains why a card that can never go green trains the reader to ignore it. That reasoning is right and should survive the refactor.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px; box-shadow:inset 3px 0 0 #c13030;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:9px;">Do not break these</div>
+      <div style="font-size:13.5px; line-height:1.65; color:#3e4756; text-wrap:pretty;">Every panel keeps its <strong style="font-weight:600;">contained failure</strong> — the C17 batch-2 fix exists because <code style="font:500 12.5px 'JetBrains Mono',monospace;">errorStateHtml_</code> into <code style="font:500 12.5px 'JetBrains Mono',monospace;">area</code> destroyed all five panes and the slots six in-flight loaders were targeting. A sixth pane means a sixth slot to keep intact. Keep the <code style="font:500 12.5px 'JetBrains Mono',monospace;">currentView !== 'callNotesAdmin'</code> guard on every handler, and the <strong style="font-weight:600;">failed ≠ absent</strong> rule (E7/F16) — a retention or health panel that can't load must say so, never render blank. Keep the M-8 fix: the enter path must perform the same empty-pane load the click path does, or a manager returning to a persisted <code style="font:500 12.5px 'JetBrains Mono',monospace;">adminTab</code> lands on an active tab over an empty pane. <strong style="font-weight:600;">That bug applies directly to the new System tab</strong> — persist it in <code style="font:500 12.5px 'JetBrains Mono',monospace;">CN_STATE.adminTab</code> and handle the re-enter. Keep <code style="font:500 12.5px 'JetBrains Mono',monospace;">esc()</code> on every server string.</div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">Smaller things in the same pass</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+        <li>Redundant fallbacks on defined tokens: <code style="font:500 12.5px 'JetBrains Mono',monospace;">var(--warning-deep,var(--warn))</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">var(--success-deep,var(--accent))</code> in <code style="font:500 12.5px 'JetBrains Mono',monospace;">cnRenderDeployReadinessHtml_</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">cnRenderStoragePanel_</code> — same family as the <code style="font:500 12.5px 'JetBrains Mono',monospace;">--accent-deep</code> fix in the earlier handoff.</li>
+        <li>The disclosure button needs <code style="font:500 12.5px 'JetBrains Mono',monospace;">aria-controls</code> alongside its <code style="font:500 12.5px 'JetBrains Mono',monospace;">aria-expanded</code> — and the new deploy-readiness fold inherits that requirement.</li>
+        <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">cnQueueInventoryHtml_</code> stays visible (your call), but give it the heading its comment already implies — the question it answers, not "Queue inventory · discovery". A reader should know why it's on screen.</li>
+        <li>Six sub-tabs will overflow a phone. <code style="font:500 12.5px 'JetBrains Mono',monospace;">.toolbar-tabs</code> must scroll inside itself rather than push the page sideways — the V-6 390px fix.</li>
+        <li>Sort the storage table with the problem rows first, so a tz drift or unreachable store doesn't hide at row 8 of 9.</li>
+      </ul>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;themes&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;both&quot;,&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;both&quot;,&quot;tsType&quot;:&quot;'both'|'light'|'dark'&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const themes = this.props.themes ?? 'both';
+    return {
+      showLight: themes !== 'dark',
+      showDark: themes !== 'light',
+      showNotes: this.props.showNotes ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>

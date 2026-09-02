@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#e7e9ed; font-family:'Inter Tight',system-ui,-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#0f8a52; text-decoration:none; }
+  a:hover { color:#0b6e40; text-decoration:underline; }
+</style>
+</helmet>
+
+<div style="padding:56px 60px 90px; display:flex; flex-direction:column; gap:64px;">
+
+  <div style="max-width:900px; display:flex; flex-direction:column; gap:14px;">
+    <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#5f6878;">UMS Team Tools &nbsp;·&nbsp; Design handoff &nbsp;·&nbsp; Time Clock</div>
+    <h1 style="margin:0; font-size:44px; font-weight:600; letter-spacing:-.025em; line-height:1.08; color:#0f1623;">Dashboard Redesign</h1>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">You describe this page as a dashboard for a rep's own and team metrics, their pending tasks, and clocking in and out. Two of those three are well served. <strong style="font-weight:600; color:#0f1623;">Pending tasks aren't served at all</strong> — Requests and Training sit in a row labelled "extras", and the things a rep is actually behind on (an unacknowledged coaching note, a QA review, missing call notes) never reach this page.</p>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:#3e4756; max-width:70ch; text-wrap:pretty;">So this isn't a rebuild. The metrics carousels stay as they are, per your call. What changes: a <strong style="font-weight:600; color:#0f1623;">Needs you</strong> block leads the main column, the clock card gets denser so the punch buttons rise above the fold, and three duplicated readouts collapse to one each.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e4f5ec; color:#0b6e40;">Target · tc/script_clock.html</span>
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#e1ecfa; color:#154980;">Carousels unchanged</span>
+      <span style="display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:4px; background:#fbf1d9; color:#8a4500;">1 new aggregate RPC</span>
+    </div>
+  </div>
+
+  <!-- ══════════════ 01 · THE GAP ══════════════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:22px;">
+    <div style="max-width:900px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">01 — The gap</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Three jobs, two of them staffed</h2>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; max-width:1140px;">
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #0f8a52;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:7px;">Own + team metrics</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">Well served. Two carousels × three periods, with deltas, banding, projections and an honest "comparison unavailable". Left alone.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #0f8a52;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:7px;">Clock in / out</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">Works, but sits fifth in the rail under a tall decorative card. Not moved off the rail — just given room by tightening what's above it.</div>
+      </div>
+      <div style="flex:1; min-width:250px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:inset 3px 0 0 #c13030;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:7px;">Pending tasks</div>
+        <div style="font-size:13px; line-height:1.55; color:#3e4756;">Not staffed. Two of five sources appear, in a row called "extras". Coaching, QA and missing notes are absent — a rep can be behind on all three and this page looks clean.</div>
+      </div>
+    </div>
+    <div style="max-width:1140px; background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">Also collapsing</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.7; color:#3e4756;">
+        <li><strong style="font-weight:600; color:#0f1623;">Hours worked renders twice</strong>, ~100px apart — the greeting sentence and the shift-strip header carry the same "5h 54m worked · 32m lunch". The <code style="font:500 12.5px 'JetBrains Mono',monospace;">#5a</code> comment says hours moved to the strip; the sentence was never trimmed to match.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">Breaks render three times</strong> — <code style="font:500 12.5px 'JetBrains Mono',monospace;">#clk-next-break</code> inside the clock card, the B1/Lunch/B2 chips under the ribbon, and the ribbon's own scheduled band.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">Two animations compete on the hero</strong> — the cross-fading sky with its star field and randomized shooting star, and the world-clock strip rotating US regions. Neither changes a decision a CSR makes.</li>
+        <li><strong style="font-weight:600; color:#0f1623;">The state pill is far from the state.</strong> "On the clock" sits in the greeting bar; the clock card 200px below it doesn't say whether you're on shift.</li>
+      </ul>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ══════════════ 02 · THE BOARD ══════════════ -->
+  <div style="display:flex; flex-direction:column; gap:22px;">
+    <div style="max-width:900px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">02 — The dashboard</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">Needs you, then how you're doing</h2>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#3e4756; max-width:68ch; text-wrap:pretty;">The main column opens with what's outstanding and then continues into the metrics exactly as they are today. Light shows a rep mid-shift with four things pending; dark shows the same page at 2:54am for an overnight IST agent — the real <code style="font:500 13px 'JetBrains Mono',monospace;">Late night</code> phase from <code style="font:500 13px 'JetBrains Mono',monospace;">clkSkyFor_</code> (<code style="font:500 13px 'JetBrains Mono',monospace;">h &gt;= 2 &amp;&amp; h &lt; 4</code>), at its real gradient.</p>
+    </div>
+
+    <div style="display:flex; gap:30px; align-items:flex-start; flex-wrap:wrap;">
+
+      <!-- ───── LIGHT ───── -->
+      <sc-if value="{{ showLight }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Light · Console — mid-shift</div>
+        <div data-screen-label="Dashboard · light" style="width:1180px; background:#f6f7f9; border:1px solid #c3c9d3; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.10); padding:22px 30px 30px; color:#0f1623;">
+
+          <!-- greeting -->
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; background:#f0f2f6; border:1px solid #dce0e7; border-radius:10px; padding:14px 18px; margin-bottom:18px;">
+            <div style="min-width:0;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878; margin-bottom:6px;">Today · Monday</div>
+              <div style="font-size:24px; font-weight:600; letter-spacing:-.02em; color:#0f1623; margin-bottom:5px;">Hi, Devon</div>
+              <div style="display:flex; align-items:center; gap:9px;">
+                <span style="font-size:14px; line-height:1.5; color:#3e4756;">Clocked in since <strong style="font-weight:600; color:#0f1623;">8:02 AM CST</strong> · <strong style="font-weight:600; color:#0f1623;">2h 6m</strong> until end of shift.</span>
+                <span style="display:inline-flex; align-items:center; gap:4px; font:500 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; color:#5f6878; border:1px solid #dce0e7; border-radius:999px; padding:3px 7px;">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg>Held
+                </span>
+              </div>
+            </div>
+            <span style="flex-shrink:0; display:inline-flex; align-items:center; gap:7px; background:#e4f5ec; color:#0b6e40; border-radius:999px; padding:6px 13px; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase;">
+              <span style="width:7px; height:7px; border-radius:999px; background:#0f8a52;"></span>On the clock
+            </span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:360px 1fr; gap:18px; align-items:start;">
+
+            <!-- ══ RAIL ══ -->
+            <div style="display:flex; flex-direction:column; gap:12px;">
+
+              <!-- clock card -->
+              <div style="position:relative; overflow:hidden; border-radius:12px; padding:14px 16px; background:linear-gradient(135deg,#3f78c0,#f0c674); color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.35);">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px;">
+                  <span style="display:inline-flex; align-items:center; gap:5px; font:500 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>
+                    Mid-afternoon
+                  </span>
+                  <span style="display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.4); border-radius:999px; padding:2px 9px; font-size:11px;">CST
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </span>
+                </div>
+                <div style="font:700 40px/1.05 'Inter Tight',sans-serif; font-variant-numeric:tabular-nums; letter-spacing:-.02em;">2:54:18<span style="font-size:18px; font-weight:600; color:rgba(255,255,255,.88); margin-left:5px;">PM</span></div>
+                <div style="margin-top:5px; display:flex; align-items:center; gap:8px; font-size:12px; color:rgba(255,255,255,.92);">
+                  <span>August 31</span><span style="opacity:.6;">·</span><span>CST</span>
+                </div>
+                <div style="margin:11px -16px -14px; padding:10px 16px; background:rgba(10,13,20,.72); display:flex; align-items:center; gap:8px; text-shadow:none;">
+                  <span style="width:7px; height:7px; border-radius:999px; background:#7af2a1; box-shadow:0 0 0 3px rgba(122,242,161,.22);"></span>
+                  <span style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; color:#fff;">On the clock</span>
+                  <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:rgba(255,255,255,.92);">5h 54m worked</span>
+                </div>
+              </div>
+
+              <!-- punch actions -->
+              <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                <button style="width:100%; appearance:none; border:none; background:#0f8a52; color:#fff; padding:15px; border-radius:9px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:16px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:9px;">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
+                  Clock Out
+                </button>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
+                  <button style="appearance:none; background:#fff; border:1px solid #dce0e7; border-radius:8px; padding:10px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:13px; font-weight:600; color:#8a4500; display:inline-flex; align-items:center; justify-content:center; gap:7px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></svg>Lunch Out
+                  </button>
+                  <button style="appearance:none; background:#fff; border:1px solid #dce0e7; border-radius:8px; padding:10px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:13px; font-weight:600; color:#3e4756; display:inline-flex; align-items:center; justify-content:center; gap:7px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Adjust
+                  </button>
+                </div>
+              </div>
+
+              <!-- shift strip -->
+              <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:13px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:11px;">
+                  <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878;">Today's shift</span>
+                  <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">32m lunch</span>
+                  <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#8a4500;">notes 84%</span>
+                </div>
+
+                <!-- ribbon -->
+                <div style="position:relative; height:34px; background:#f0f2f6; border-radius:6px; margin-bottom:7px; overflow:hidden;">
+                  <div style="position:absolute; left:8%; right:12%; top:0; bottom:0; background:#e5e8ee;"></div>
+                  <div style="position:absolute; left:8%; bottom:0; width:14%; height:38%; background:#dce0e7;"></div>
+                  <div style="position:absolute; left:26%; bottom:0; width:18%; height:62%; background:#dce0e7;"></div>
+                  <div style="position:absolute; left:48%; bottom:0; width:16%; height:48%; background:#dce0e7;"></div>
+                  <div style="position:absolute; left:8%; top:0; bottom:0; width:2px; background:#0f8a52;"></div>
+                  <div style="position:absolute; left:8%; top:3px; font:700 8px/1 'JetBrains Mono',monospace; color:#0b6e40; padding-left:4px;">IN</div>
+                  <div style="position:absolute; left:44%; top:0; bottom:0; width:2px; background:#b7791f;"></div>
+                  <div style="position:absolute; left:44%; top:3px; font:700 8px/1 'JetBrains Mono',monospace; color:#8a4500; padding-left:4px;">LO</div>
+                  <div style="position:absolute; left:52%; top:0; bottom:0; width:2px; background:#b7791f;"></div>
+                  <div style="position:absolute; left:52%; top:3px; font:700 8px/1 'JetBrains Mono',monospace; color:#8a4500; padding-left:4px;">LI</div>
+                  <div style="position:absolute; left:74%; top:-2px; bottom:-2px; width:2px; background:#0f1623;"></div>
+                  <div style="position:absolute; left:74%; top:-2px; width:7px; height:7px; border-radius:999px; background:#0f1623; transform:translateX(-2.5px);"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font:500 9px/1 'JetBrains Mono',ui-monospace,monospace; color:#a5acb8; margin-bottom:11px;">
+                  <span>7a</span><span>9a</span><span>11a</span><span>1p</span><span>3p</span><span>5p</span><span>7p</span>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
+                  <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; color:#5f6878;">Breaks</span>
+                  <span style="font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#a5acb8; background:#f0f2f6; border-radius:999px; padding:3px 8px; text-decoration:line-through;">B1 10:00a</span>
+                  <span style="font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#a5acb8; background:#f0f2f6; border-radius:999px; padding:3px 8px; text-decoration:line-through;">Lunch 12:00p</span>
+                  <span style="font:600 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#0f1623; background:#fff; border:1px solid #0f1623; border-radius:999px; padding:3px 8px;">B2 3:00p · in 6m</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ MAIN ══ -->
+            <div style="display:flex; flex-direction:column; gap:14px; min-width:0;">
+
+              <!-- NEEDS YOU -->
+              <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; box-shadow:0 1px 2px rgba(15,23,42,.04); overflow:hidden;">
+                <div style="display:flex; align-items:center; gap:9px; padding:13px 18px 11px;">
+                  <h4 style="margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; color:#0f1623;">Needs you</h4>
+                  <span style="display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#fbf1d9; color:#8a4500; font:700 10px/1 'JetBrains Mono',monospace;">4</span>
+                  <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">nothing overdue</span>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #dce0e7; box-shadow:inset 3px 0 0 #b7791f;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.7.5 1.2 1.5 1.2 2.3h5.6c0-.8.5-1.8 1.2-2.3A7 7 0 0 0 12 2z"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#0f1623;">Coaching note to acknowledge</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#5f6878; margin-top:2px;">Minor · logged 23 Aug by R. Choudhury</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600;">Open<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></a>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #dce0e7; box-shadow:inset 3px 0 0 #b7791f;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3 4 7v6c0 4.4 3.4 8.4 8 9 4.6-.6 8-4.6 8-9V7z"/><path d="m9 12 2 2 4-4"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#0f1623;">QA review to acknowledge</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#5f6878; margin-top:2px;">Scored 84 · 2 comments · 28 Aug</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600;">Open<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></a>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #dce0e7;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#0f1623;">3 calls without a note</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#5f6878; margin-top:2px;">Answered today · notes at 84%</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600;">File<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></a>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #dce0e7;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5f6878" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 10 12 5 2 10l10 5z"/><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#0f1623;">Training module pending</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#5f6878; margin-top:2px;">PAP resupply refresher · due 5 Sep</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600;">Start<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></a>
+                </div>
+              </div>
+
+              <!-- metrics carousels -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+                    <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878;">My calls</span>
+                    <span style="margin-left:auto; display:inline-flex; background:#f0f2f6; border-radius:999px; padding:2px;">
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase; color:#5f6878;">Yest</span>
+                      <span style="padding:3px 8px; border-radius:999px; background:#0f1623; color:#f6f7f9; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase;">MTD</span>
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase; color:#5f6878;">YTD</span>
+                    </span>
+                  </div>
+                  <div style="display:flex; align-items:flex-end; gap:16px;">
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#0f1623;">412</div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Answered</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#0b6e40;">▲ 8% vs Jul</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#0f1623;">93<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Answer rate</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#0b6e40;">▲ 2 pts</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#8a4500;">11<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Transfer</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#8a4500;">▲ 1 pt · target 8%</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:11px; padding-top:9px; border-top:1px solid #dce0e7; font:500 10.5px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">1–31 Aug · vs July · projecting 448</div>
+                </div>
+
+                <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+                    <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878;">Department</span>
+                    <span style="margin-left:auto; display:inline-flex; background:#f0f2f6; border-radius:999px; padding:2px;">
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase; color:#5f6878;">Yest</span>
+                      <span style="padding:3px 8px; border-radius:999px; background:#0f1623; color:#f6f7f9; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase;">MTD</span>
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; text-transform:uppercase; color:#5f6878;">YTD</span>
+                    </span>
+                  </div>
+                  <div style="display:flex; align-items:flex-end; gap:16px;">
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#0f1623;">2,480</div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Answered</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#0b6e40;">▲ 5% vs Jul</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#0f1623;">91<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Answer rate</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">no change</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#0b6e40;">7<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878;">Transfer</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#0b6e40;">▼ 1 pt · target 8%</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:11px; padding-top:9px; border-top:1px solid #dce0e7; font:500 10.5px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">1–31 Aug · 6 reps · vs July</div>
+                </div>
+              </div>
+
+              <!-- foot -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                  <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878; margin-bottom:11px;">Today's punches</div>
+                  <div style="display:flex; flex-direction:column; gap:7px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <span style="width:22px; height:22px; border-radius:6px; background:#e4f5ec; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0b6e40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg></span>
+                      <span style="font-size:13.5px; font-weight:500; color:#0f1623;">Clock In</span>
+                      <span style="font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; color:#0b6e40; background:#e4f5ec; border-radius:3px; padding:2px 5px;">IN</span>
+                      <span style="margin-left:auto; font:500 12px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">8:02 AM</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <span style="width:22px; height:22px; border-radius:6px; background:#fbf1d9; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8a4500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/></svg></span>
+                      <span style="font-size:13.5px; font-weight:500; color:#0f1623;">Lunch Out</span>
+                      <span style="font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.06em; color:#5f6878; background:#f0f2f6; border-radius:3px; padding:2px 5px;">OUT</span>
+                      <span style="margin-left:auto; font:500 12px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">12:04 PM</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <span style="width:22px; height:22px; border-radius:6px; background:#e4f5ec; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0b6e40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/></svg></span>
+                      <span style="font-size:13.5px; font-weight:500; color:#0f1623;">Lunch In</span>
+                      <span style="display:inline-flex; align-items:center; gap:3px; font:600 9px/1 'JetBrains Mono',monospace; letter-spacing:.04em; color:#154980; background:#e1ecfa; border-radius:3px; padding:2px 5px;">ADJ</span>
+                      <span style="margin-left:auto; font:500 12px/1 'JetBrains Mono',ui-monospace,monospace; color:#3e4756;">12:36 PM</span>
+                      <button style="appearance:none; background:#fff; border:1px solid #dce0e7; border-radius:5px; padding:3px 7px; cursor:pointer; font:600 10px/1 'Inter Tight',sans-serif; color:#8a1f1f;">Undo 4:12</button>
+                    </div>
+                  </div>
+                </div>
+                <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04);">
+                  <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#5f6878; margin-bottom:11px;">Team right now</div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#0f8a52;"></span><span style="font-size:13.5px; color:#0f1623;">Alina Cole</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">working</span></div>
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#b7791f;"></span><span style="font-size:13.5px; color:#0f1623;">Marcus Bell</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">lunch</span></div>
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#a5acb8;"></span><span style="font-size:13.5px; color:#3e4756;">Priya Raman</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a5acb8;">not in</span></div>
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#0f8a52;"></span><span style="font-size:13.5px; color:#0f1623;">Jess Nunez</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#5f6878;">working</span></div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ───── DARK ───── -->
+      <sc-if value="{{ showDark }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase; color:#5f6878;">Dark · Console — overnight IST agent, 2:54am</div>
+        <div data-screen-label="Dashboard · dark" style="width:1180px; background:#0a0d14; border:1px solid #262d3b; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.28); padding:22px 30px 30px; color:#e8e6e0;">
+
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 18px; margin-bottom:18px;">
+            <div style="min-width:0;">
+              <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496; margin-bottom:6px;">Today · Tuesday</div>
+              <div style="font-size:24px; font-weight:600; letter-spacing:-.02em; color:#e8e6e0; margin-bottom:5px;">Hi, Priya</div>
+              <div style="display:flex; align-items:center; gap:9px;">
+                <span style="font-size:14px; line-height:1.5; color:#a6adbc;">Clocked in since <strong style="font-weight:600; color:#e8e6e0;">10:30 PM IST</strong> · <strong style="font-weight:600; color:#e8e6e0;">3h 36m</strong> until end of shift.</span>
+                <span style="display:inline-flex; align-items:center; gap:4px; font:500 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; color:#7b8496; border:1px solid #262d3b; border-radius:999px; padding:3px 7px;">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg>Held
+                </span>
+              </div>
+            </div>
+            <span style="flex-shrink:0; display:inline-flex; align-items:center; gap:7px; background:rgba(122,242,161,.12); color:#b8fbc8; border-radius:999px; padding:6px 13px; font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase;">
+              <span style="width:7px; height:7px; border-radius:999px; background:#7af2a1;"></span>On the clock
+            </span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:360px 1fr; gap:18px; align-items:start;">
+
+            <div style="display:flex; flex-direction:column; gap:12px;">
+
+              <div style="position:relative; overflow:hidden; border-radius:12px; padding:14px 16px; background:linear-gradient(135deg,#1a2144,#3b2d5c); color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.35);">
+                <div style="position:absolute; inset:0;">
+                  <span style="position:absolute; left:14%; top:22%; width:2px; height:2px; border-radius:999px; background:rgba(255,255,255,.85);"></span>
+                  <span style="position:absolute; left:31%; top:58%; width:2px; height:2px; border-radius:999px; background:rgba(255,255,255,.55);"></span>
+                  <span style="position:absolute; left:52%; top:16%; width:2px; height:2px; border-radius:999px; background:rgba(255,255,255,.7);"></span>
+                  <span style="position:absolute; left:73%; top:44%; width:2px; height:2px; border-radius:999px; background:rgba(255,255,255,.5);"></span>
+                  <span style="position:absolute; left:88%; top:24%; width:2px; height:2px; border-radius:999px; background:rgba(255,255,255,.8);"></span>
+                  <span style="position:absolute; right:16px; top:14px; width:18px; height:18px; border-radius:999px; background:rgba(255,255,255,.55); box-shadow:inset -5px 2px 0 0 rgba(13,19,48,.9);"></span>
+                </div>
+                <div style="position:relative;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px;">
+                    <span style="display:inline-flex; align-items:center; gap:5px; font:500 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase;">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                      Late night
+                    </span>
+                    <span style="display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.4); border-radius:999px; padding:2px 9px; font-size:11px;">IST
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </span>
+                  </div>
+                  <div style="font:700 40px/1.05 'Inter Tight',sans-serif; font-variant-numeric:tabular-nums; letter-spacing:-.02em;">2:54:18<span style="font-size:18px; font-weight:600; color:rgba(255,255,255,.88); margin-left:5px;">AM</span></div>
+                  <div style="margin-top:5px; display:flex; align-items:center; gap:8px; font-size:12px; color:rgba(255,255,255,.92);">
+                    <span>September 1</span><span style="opacity:.6;">·</span><span>IST</span>
+                  </div>
+                  <div style="margin:11px -16px -14px; padding:10px 16px; background:rgba(10,13,20,.72); display:flex; align-items:center; gap:8px; text-shadow:none;">
+                    <span style="width:7px; height:7px; border-radius:999px; background:#7af2a1; box-shadow:0 0 0 3px rgba(122,242,161,.22);"></span>
+                    <span style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; color:#fff;">On the clock</span>
+                    <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:rgba(255,255,255,.92);">4h 24m worked</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px;">
+                <button style="width:100%; appearance:none; border:none; background:#7af2a1; color:#0a0d14; padding:15px; border-radius:9px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:16px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:9px;">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></svg>
+                  Lunch Out
+                </button>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
+                  <button style="appearance:none; background:#10141d; border:1px solid #262d3b; border-radius:8px; padding:10px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:13px; font-weight:600; color:#a6adbc;">Clock Out</button>
+                  <button style="appearance:none; background:#10141d; border:1px solid #262d3b; border-radius:8px; padding:10px; cursor:pointer; font-family:'Inter Tight',sans-serif; font-size:13px; font-weight:600; color:#a6adbc;">Adjust</button>
+                </div>
+              </div>
+
+              <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:13px 16px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:11px;">
+                  <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496;">Today's shift</span>
+                  <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc;">no lunch yet</span>
+                  <span style="font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">notes 100%</span>
+                </div>
+                <div style="position:relative; height:34px; background:#161b26; border-radius:6px; margin-bottom:7px; overflow:hidden;">
+                  <div style="position:absolute; left:10%; right:14%; top:0; bottom:0; background:#1e2532;"></div>
+                  <div style="position:absolute; left:12%; bottom:0; width:16%; height:52%; background:#262d3b;"></div>
+                  <div style="position:absolute; left:34%; bottom:0; width:18%; height:70%; background:#262d3b;"></div>
+                  <div style="position:absolute; left:10%; top:0; bottom:0; width:2px; background:#7af2a1;"></div>
+                  <div style="position:absolute; left:10%; top:3px; font:700 8px/1 'JetBrains Mono',monospace; color:#b8fbc8; padding-left:4px;">IN</div>
+                  <div style="position:absolute; left:58%; top:-2px; bottom:-2px; width:2px; background:#e8e6e0;"></div>
+                  <div style="position:absolute; left:58%; top:-2px; width:7px; height:7px; border-radius:999px; background:#e8e6e0; transform:translateX(-2.5px);"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font:500 9px/1 'JetBrains Mono',ui-monospace,monospace; color:#454e60; margin-bottom:11px;">
+                  <span>9p</span><span>11p</span><span>1a</span><span>3a</span><span>5a</span><span>7a</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
+                  <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; text-transform:uppercase; color:#7b8496;">Breaks</span>
+                  <span style="font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#454e60; background:#161b26; border-radius:999px; padding:3px 8px; text-decoration:line-through;">B1 12:00a</span>
+                  <span style="font:600 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#e8e6e0; background:#10141d; border:1px solid #e8e6e0; border-radius:999px; padding:3px 8px;">Lunch 3:00a · in 6m</span>
+                  <span style="font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc; background:#161b26; border-radius:999px; padding:3px 8px;">B2 5:30a</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:14px; min-width:0;">
+
+              <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; overflow:hidden;">
+                <div style="display:flex; align-items:center; gap:9px; padding:13px 18px 11px;">
+                  <h4 style="margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; color:#e8e6e0;">Needs you</h4>
+                  <span style="display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:rgba(255,181,71,.18); color:#ffcb80; font:700 10px/1 'JetBrains Mono',monospace;">2</span>
+                  <span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">nothing overdue</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #262d3b; box-shadow:inset 3px 0 0 #ffb547;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffcb80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3 4 7v6c0 4.4 3.4 8.4 8 9 4.6-.6 8-4.6 8-9V7z"/><path d="m9 12 2 2 4-4"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#e8e6e0;">QA review to acknowledge</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#7b8496; margin-top:2px;">Scored 91 · 1 comment · 30 Aug</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; font-size:13px; font-weight:600; color:#7af2a1;">Open ›</a>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #262d3b;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7b8496" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 10 12 5 2 10l10 5z"/><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></svg>
+                  <div style="min-width:0;">
+                    <div style="font-size:14px; font-weight:600; color:#e8e6e0;">Training module pending</div>
+                    <div style="font-size:12.5px; line-height:1.45; color:#7b8496; margin-top:2px;">PAP resupply refresher · due 5 Sep</div>
+                  </div>
+                  <a href="#" style="margin-left:auto; flex-shrink:0; font-size:13px; font-weight:600; color:#7af2a1;">Start ›</a>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px;">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+                    <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496;">My calls</span>
+                    <span style="margin-left:auto; display:inline-flex; background:#161b26; border-radius:999px; padding:2px;">
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase; color:#7b8496;">Yest</span>
+                      <span style="padding:3px 8px; border-radius:999px; background:#e8e6e0; color:#0a0d14; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase;">MTD</span>
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase; color:#7b8496;">YTD</span>
+                    </span>
+                  </div>
+                  <div style="display:flex; align-items:flex-end; gap:16px;">
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">388</div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Answered</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">▲ 4% vs Jul</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">95<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Answer rate</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">▲ 1 pt</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#b8fbc8;">6<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Transfer</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">▼ 2 pts · target 8%</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:11px; padding-top:9px; border-top:1px solid #262d3b; font:500 10.5px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">1–31 Aug · vs July · projecting 401</div>
+                </div>
+
+                <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px;">
+                  <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+                    <span style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496;">Department</span>
+                    <span style="margin-left:auto; display:inline-flex; background:#161b26; border-radius:999px; padding:2px;">
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase; color:#7b8496;">Yest</span>
+                      <span style="padding:3px 8px; border-radius:999px; background:#e8e6e0; color:#0a0d14; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase;">MTD</span>
+                      <span style="padding:3px 8px; border-radius:999px; font:600 9px/1 'JetBrains Mono',monospace; text-transform:uppercase; color:#7b8496;">YTD</span>
+                    </span>
+                  </div>
+                  <div style="display:flex; align-items:flex-end; gap:16px;">
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">2,480</div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Answered</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">▲ 5% vs Jul</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#e8e6e0;">91<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Answer rate</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">no change</div>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font:700 1.75rem/1 'Inter Tight',sans-serif; color:#b8fbc8;">7<span style="font-size:.95rem;">%</span></div>
+                      <div style="margin-top:5px; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#7b8496;">Transfer</div>
+                      <div style="margin-top:4px; font:500 10.5px/1 'JetBrains Mono',ui-monospace,monospace; color:#b8fbc8;">▼ 1 pt · target 8%</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:11px; padding-top:9px; border-top:1px solid #262d3b; font:500 10.5px/1.4 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">1–31 Aug · 6 reps · vs July</div>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px;">
+                  <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496; margin-bottom:11px;">Today's punches</div>
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="width:22px; height:22px; border-radius:6px; background:rgba(122,242,161,.12); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7af2a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg></span>
+                    <span style="font-size:13.5px; font-weight:500; color:#e8e6e0;">Clock In</span>
+                    <span style="font:600 9px/1 'JetBrains Mono',monospace; color:#b8fbc8; background:rgba(122,242,161,.12); border-radius:3px; padding:2px 5px;">IN</span>
+                    <span style="margin-left:auto; font:500 12px/1 'JetBrains Mono',ui-monospace,monospace; color:#a6adbc;">10:30 PM</span>
+                  </div>
+                </div>
+                <div style="background:#10141d; border:1px solid #262d3b; border-radius:10px; padding:14px 16px;">
+                  <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#7b8496; margin-bottom:11px;">Team right now</div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#7af2a1;"></span><span style="font-size:13.5px; color:#e8e6e0;">Arjun Mehta</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#7b8496;">working</span></div>
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#454e60;"></span><span style="font-size:13.5px; color:#a6adbc;">Devon Okafor</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#454e60;">not in</span></div>
+                    <div style="display:flex; align-items:center; gap:9px;"><span style="width:7px; height:7px; border-radius:999px; background:#454e60;"></span><span style="font-size:13.5px; color:#a6adbc;">Alina Cole</span><span style="margin-left:auto; font:500 11px/1 'JetBrains Mono',ui-monospace,monospace; color:#454e60;">not in</span></div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ 03 · NOTES ══════════════ -->
+  <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex; flex-direction:column; gap:18px; max-width:1160px;">
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; color:#0f8a52;">03 — Implementation notes</div>
+      <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-.02em; color:#0f1623;">What this costs to build</h2>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#0b6e40; margin-bottom:9px;">Free — client only</div>
+        <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+          <li>Rail order: clock card → <code style="font:500 12.5px 'JetBrains Mono',monospace;">renderActions</code> → shift strip. One move in the <code style="font:500 12.5px 'JetBrains Mono',monospace;">area.innerHTML</code> template.</li>
+          <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">buildStatusSentence_</code> drops the worked/lunch clause — the shift strip owns hours (finish the <code style="font:500 12.5px 'JetBrains Mono',monospace;">#5a</code> move). Keep "since" and "until end of shift".</li>
+          <li>State chip moves into the clock card foot; the greeting keeps <code style="font:500 12.5px 'JetBrains Mono',monospace;">.dash-onclock</code>.</li>
+          <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">#clk-next-break</code> retires — <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkBreakScheduleHtml_</code> marks taken breaks struck-through and the next one outlined. Keep <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkNextBreak_</code> (the shell's <code style="font:500 12.5px 'JetBrains Mono',monospace;">remindersTick_</code> still needs it).</li>
+          <li>Undo becomes a labelled button with its live remaining time, not a bare <code style="font:500 12.5px 'JetBrains Mono',monospace;">×</code>. Same eligibility rule — keep the <code style="font:500 12.5px 'JetBrains Mono',monospace;">undoDiff &gt;= 0</code> sentinel guard.</li>
+          <li>Clock card height drops ~70px: world-clock strip and next-break chip out, state line in.</li>
+        </ul>
+      </div>
+      <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+        <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a4500; margin-bottom:9px;">The new piece</div>
+        <div style="font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty; margin-bottom:10px;">One <code style="font:500 12.5px 'JetBrains Mono',monospace;">getMyPendingTasks()</code> aggregate, rep-callable, returning a flat sorted array of <code style="font:500 12.5px 'JetBrains Mono',monospace;">{ kind, title, detail, dueIso, overdue, route }</code>. Five sources, four already reachable:</div>
+        <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+          <li><strong style="font-weight:600;">Coaching</strong> — unacknowledged, from <code style="font:500 12.5px 'JetBrains Mono',monospace;">getMyCoaching</code></li>
+          <li><strong style="font-weight:600;">QA</strong> — unacknowledged reviews (the My Reviews ack from the QA handoff)</li>
+          <li><strong style="font-weight:600;">Notes</strong> — answered-minus-logged, already computed by <code style="font:500 12.5px 'JetBrains Mono',monospace;">loadCoverageStrip_</code>; reuse <code style="font:500 12.5px 'JetBrains Mono',monospace;">fileMissingCalls_</code> and its <code style="font:500 12.5px 'JetBrains Mono',monospace;">CLK_NAV_HINT</code></li>
+          <li><strong style="font-weight:600;">Training</strong> — <code style="font:500 12.5px 'JetBrains Mono',monospace;">getMyTraining</code>, today's extras card</li>
+          <li><strong style="font-weight:600;">Requests</strong> — pending punch-edit / PTO, today's extras card</li>
+        </ul>
+        <div style="margin-top:10px; font-size:13.5px; line-height:1.6; color:#3e4756; text-wrap:pretty;">Sort overdue first, then by due date. <strong style="font-weight:600; color:#0f1623;">Render nothing when empty</strong> — an empty "Needs you" is worse than none. The extras row keeps Spanish Inbox and Requests; Training folds into Needs you.</div>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px; box-shadow:inset 3px 0 0 #b7791f;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a4500; margin-bottom:9px;">The rotator — your call, implemented</div>
+      <div style="font-size:13.5px; line-height:1.65; color:#3e4756; text-wrap:pretty;">Keep the rotation, but <strong style="font-weight:600; color:#0f1623;">never rotate away from an active shift</strong>. In <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkGreetRotStart_</code>, hold on slide 0 whenever <code style="font:500 12.5px 'JetBrains Mono',monospace;">stats.state</code> is <code style="font:500 12.5px 'JetBrains Mono',monospace;">working</code> or <code style="font:500 12.5px 'JetBrains Mono',monospace;">lunch</code>; resume when the rep is out or hasn't clocked in. The held state needs to be visible — otherwise a rep who saw a What's-new slide yesterday reads a frozen line as a stuck page. Hence the small <strong style="font-weight:600;">Held</strong> chip beside the sentence, which becomes the affordance to step through updates manually. Same reduced-motion and <code style="font:500 12.5px 'JetBrains Mono',monospace;">COMPACT_MODE</code> early-outs as today.</div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">The sky card — reworked, not removed</div>
+      <div style="font-size:13.5px; line-height:1.65; color:#3e4756; text-wrap:pretty;">The time-of-day gradient stays, night sub-phases included — it's the app's one piece of warmth and the IST case is a real one. What goes is the <strong style="font-weight:600; color:#0f1623;">rotating world-clock strip</strong>: it animates continuously, sits beside a second animation, and a CSR working one timezone never acts on it. The tz select already covers deliberate lookups. The star field stays but loses <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkShootMaybe_</code> — a randomized shooting star on a timer is motion with no information in it, and it's the one piece that can fire while a rep is reading the card. Freed height goes to the state line and to lifting the punch buttons.</div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px; box-shadow:inset 3px 0 0 #c13030;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a1f1f; margin-bottom:9px;">Do not break these</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+        <li><strong style="font-weight:600;">The compact pop-out gate.</strong> <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkLoadDashboard_</code> and <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkLoadDashboardExtras_</code> early-out under <code style="font:500 12.5px 'JetBrains Mono',monospace;">COMPACT_MODE</code> (cycle-8 M-12) — three RPCs per launch against a hidden column. <code style="font:500 12.5px 'JetBrains Mono',monospace;">getMyPendingTasks</code> needs the same gate, or it reintroduces exactly that cost.</li>
+        <li><strong style="font-weight:600;">Pending ≠ empty.</strong> <code style="font:500 12.5px 'JetBrains Mono',monospace;">undefined</code> renders a skeleton; <code style="font:500 12.5px 'JetBrains Mono',monospace;">null</code> renders "couldn't load". Needs you must follow the same rule — a failed fetch showing "nothing pending" is the worst possible failure on this card.</li>
+        <li><strong style="font-weight:600;">SWR without the flash.</strong> Cache Needs you the way <code style="font:500 12.5px 'JetBrains Mono',monospace;">CLK_DASH</code> does (60s freshness, paint-then-refresh) — <code style="font:500 12.5px 'JetBrains Mono',monospace;">clkRefreshState_</code> re-renders the whole view on every focus.</li>
+        <li><strong style="font-weight:600;">The undo sentinel.</strong> <code style="font:500 12.5px 'JetBrains Mono',monospace;">timeDiffSecondsClient</code> returns <code style="font:500 12.5px 'JetBrains Mono',monospace;">-1</code> for malformed and past-window times, and <code style="font:500 12.5px 'JetBrains Mono',monospace;">-1 &lt;= 300</code> is true — that's why eligibility needs the non-negative check. A live countdown label must not reintroduce it.</li>
+        <li><strong style="font-weight:600;">Fixed colours on the sky card.</strong> Its gradient is identical in both themes, so any text on it uses a literal, never <code style="font:500 12.5px 'JetBrains Mono',monospace;">--muted</code>/<code style="font:500 12.5px 'JetBrains Mono',monospace;">--ink</code> — the V-2 finding. The new state line is on that card and is bound by it.</li>
+      </ul>
+    </div>
+
+    <div style="background:#fff; border:1px solid #dce0e7; border-radius:10px; padding:16px 18px;">
+      <div style="font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#5f6878; margin-bottom:9px;">Smaller things</div>
+      <ul style="margin:0; padding-left:18px; font-size:13.5px; line-height:1.65; color:#3e4756;">
+        <li><code style="font:500 12.5px 'JetBrains Mono',monospace;">clkUpdateBreak_</code> builds a chip as an inline-style string in JS. Now that the chip retires, the pattern goes with it — the break chips are already classed.</li>
+        <li>Needs you is a list: real <code style="font:500 12.5px 'JetBrains Mono',monospace;">&lt;ul&gt;</code>/<code style="font:500 12.5px 'JetBrains Mono',monospace;">&lt;li&gt;</code> with real links, count announced (<code style="font:500 12.5px 'JetBrains Mono',monospace;">aria-label="Needs you, 4 items"</code>), overdue carried in words not colour.</li>
+        <li>The rail is 360px and the punch primary is now full-width — comfortably past 44px, and better on the phone layout than the current inline row.</li>
+        <li>Visual: <code style="font:500 12.5px 'JetBrains Mono',monospace;">test/visual/mock.js</code> needs a <code style="font:500 12.5px 'JetBrains Mono',monospace;">getMyPendingTasks</code> fixture, plus a zero-item variant — the empty state is the one that changes most and the one a populated fixture never shows. Same gap the QA and Coaching handoffs each hit.</li>
+      </ul>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;themes&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;both&quot;,&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;both&quot;,&quot;tsType&quot;:&quot;'both'|'light'|'dark'&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const themes = this.props.themes ?? 'both';
+    return {
+      showLight: themes !== 'dark',
+      showDark: themes !== 'light',
+      showNotes: this.props.showNotes ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>
