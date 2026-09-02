@@ -120,6 +120,12 @@ punches are re-formatted in Chicago; TZR-1/TZR-2 pins. FOLLOW-ON: delete the
 constant + wrappers once the operator confirms the repair ran; the August
 accrual needs a manual top-up afterwards; any ADP export cut while the rows
 were split needs re-exporting.
+**Post-deploy `runAllTests()` (2026-09-02 4:35 PM CDT): 303/308.** Fixed the
+one real bug (`nudgeCoaching` compared a Kolkata stamp's day to the Chicago
+day — `coachStampDayMgr_`, PR4-1 rewritten + bite-checked) and four test-side
+faults (setup restores the TEST rows' fixture timezone; `isIncomplete`; the
+multi-break refusal case). The operator re-runs after the next push; expect
+308/308.
 Next: nothing in flight — the operator's single deploy (`clasp push -f` + New
 version, then `runAllTests()` → 308, `installAutomationTriggers()` once) ships
 PRs #176–#220 plus the six handoff PRs together. Facts PR 3+ depended on: `mtDateRange_`/`mtPctTone_` now exist in

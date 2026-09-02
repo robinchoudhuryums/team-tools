@@ -1504,6 +1504,30 @@ this section before touching the relevant area.
   same breakpoint restores 390/390. Re-measure `scrollWidth` vs `clientWidth`
   after any stacking change; a squeezed layout and an overflowing one look
   identical in a screenshot.
+- **A "same day" compare between a CONFIG.TIMEZONE stamp and a MANAGER-tz
+  "today" must CONVERT the stamp first (post-deploy `runAllTests`, 2026-09-02).**
+  `nudgeCoaching` wrote `NudgedAt` via `fmtDate_`/`fmtTime_` (Asia/Kolkata) and
+  guarded "once per day" with `nudgedAt.substring(0, 10) === todayIso` where
+  `todayIso` is the Chicago day. Kolkata is 10.5 hours ahead, so from 13:30 CDT
+  every afternoon the stamp reads TOMORROW's date and a second nudge is
+  allowed; the next Chicago morning the stale stamp matches and a fresh nudge
+  is refused. `coachStampDayMgr_(ts)` parses the stamp in `CONFIG.TIMEZONE` and
+  formats it in `CONFIG.MANAGER_TIMEZONE`; both the guard and the dashboard's
+  `nudgedToday` flag use it. The suite caught it only because the run happened
+  after 13:30 CDT (the same frame class as the editor-test hazards). Any new
+  "did this happen today" check over a `fmtDate_` stamp owes the same
+  conversion. Pinned in PR4-1.
+- **The TEST roster rows keep their FIXTURE timezones, and setup restores them
+  (operator 2026-09-02).** The ALL-CST runbook says "every agent row →
+  America/Chicago", and the operator applied it to `TEST_IN_001` /
+  `TEST_PH_001` too — but the suite hardcodes `Asia/Kolkata` / `Asia/Manila`
+  for them (the IST/PHT fixtures ARE the multi-timezone coverage, kept by
+  design). Four tests failed on the frame mismatch (a fixture ClockOut written
+  on the Kolkata date while `recordPunch` read today in Chicago; the note-hour
+  bucket expected in Kolkata). `setupTestEnvironment` now restores column H on
+  re-onboard exactly as it restores the email, so a flipped test row heals on
+  the next run. Do not flip the TEST rows by hand; if you do, nothing breaks
+  beyond one red run.
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself
   (F4, cycle-16 — FIXED).** `getCoveragePlan`'s PTO read was wrapped in
   `catch (e) { /* best-effort — coverage still renders */ }`. Best-effort was
@@ -6568,7 +6592,15 @@ manually for a fresh deploy or environment:
   chip; (f) **the greeting no longer rotates What's-new slides while a rep is
   on the clock.** The pinned pop-out is unchanged: it hides the block and
   makes no extra call. **Post-deploy: run `runAllTests()`** — expect **308**
-  (the new `pendingTasks_requiresEmployeeAndShape` case). **THIS IS THE
+  (the new `pendingTasks_requiresEmployeeAndShape` case). **The operator's
+  2026-09-02 4:35 PM run read 303/308:** one REAL bug (the coaching nudge's
+  once-per-day guard compared frames — fixed, `coachStampDayMgr_`) and four
+  test-side faults (the TEST rows' timezones had been flipped with the real
+  agents' — setup now restores them; the resume test read `day.incomplete`
+  where the builder returns `isIncomplete`; the multi-break test still refused
+  a trailing open break the 2026-09-02 fix accepts by design). The run took
+  25 minutes mid-shift — the documented lock-contention window, though no
+  lock timeout fired. Re-run after the next `clasp push -f`; expect 308/308. **THIS IS THE
   FIGURE FOR THE WHOLE BACKLOG** (the six design-handoff PRs ship on one
   deploy).
 - **Design handoff PR 5 (2026-09-02, the QA surface) adds ONE optional Script
