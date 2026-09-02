@@ -4,7 +4,7 @@
   .tr-sum .cell { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 10px 16px; min-width: 96px; }
   .tr-sum .cell-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
   .tr-sum .cell-val { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .tr-sum .cell-val.warn { color: var(--warning-deep, #b86e00); }
+  .tr-sum .cell-val.warn { color: var(--warning-deep); }
   .tr-list { display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
   .tr-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 10px 14px; }
   .tr-row.done { opacity: .72; }
@@ -21,6 +21,11 @@
   .tr-spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; opacity: .8; animation: trSpin .7s linear infinite; vertical-align: -1px; }
   @keyframes trSpin { to { transform: rotate(360deg); } }
   .tr-complete-btn[disabled] { opacity: .5; cursor: default; }
+  /* Design handoff C4: the secondary button had no hover/focus state at all
+     (only .primary did). Border darkens on hover; the shared focus ring on
+     keyboard focus so a tabbing rep can see where they are. */
+  .tr-complete-btn:not([disabled]):hover { border-color: var(--border-strong); background: var(--paper-2); }
+  .tr-complete-btn:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .tr-empty { color: var(--muted); font-size: .9rem; padding: 24px 0; }
   /* reader modal */
   .tr-reader { width: min(760px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
@@ -74,7 +79,7 @@
   .tr-qed input[type=text], .tr-qed input[type=number], .tr-qed select, .tr-qed textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
   .tr-qed .foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
   .tr-qed-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-  .tr-qed-warn { border-left: 3px solid var(--warning-deep, #b86e00); background: var(--warn-soft); border-radius: 0 8px 8px 0; padding: 8px 12px; margin-bottom: 12px; font-size: .8rem; color: var(--ink); }
+  .tr-qed-warn { border-left: 3px solid var(--warning-deep); background: var(--warn-soft); border-radius: 0 8px 8px 0; padding: 8px 12px; margin-bottom: 12px; font-size: .8rem; color: var(--ink); }
   .tr-qed-warn ul { margin: 4px 0 0; padding-left: 18px; }
   .tr-qed-warn li { margin: 2px 0; }
   .tr-qed-q { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-bottom: 10px; }

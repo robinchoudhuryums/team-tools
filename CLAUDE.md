@@ -1518,6 +1518,18 @@ this section before touching the relevant area.
   which a pure hue rotation leaves untouched. Now pinned by the V-1 tripwire
   (source-level `in oklab` + a computed ≤20° hue-drift bound, both modes) —
   don't add a `-deep` alias, or "correct" a fallback hex, without re-running it.
+- **A `var(--x, fallback)` on a token the tokens partial DEFINES is banned (design
+  handoff C4, PR 1 — 2026-09-02).** A redundant fallback is a second source of truth
+  for the value: `var(--success-deep, var(--accent))` meant "green" in one file and
+  the deep alias everywhere else, and `var(--warning-deep, #b86e00)` froze a hex the
+  palette round had already moved. Thirty-odd were swept (train ×3, tc, styles, tour,
+  qa ×17, kb ×5, cn ×9). The ONLY exempt names are the inline animation parameters
+  (`--d`, `--len`, `--circ`, `--target`) — set per element via `style="--d:…"`, defined
+  in no tokens file, and their defaults ARE the value (the INV-128 note). Pinned by
+  PR1-1, a DERIVED comment-stripped scan over every shared partial (INV-179/188):
+  add a fallback to a defined token and CI names the file. NOTE the index's own
+  examples were wrong (`--accent-deep` on `.tr-complete-btn`, a `--danger-soft`
+  literal) — neither existed; the sweep list came from the tree, not the doc.
 - **Text on a FIXED-palette surface must use a fixed colour, not a theme token
   (V-2, cycle-12 visual audit — FIXED).** The clock card's sky gradient does not
   flip with the theme, but `styles.html`'s
@@ -5653,6 +5665,25 @@ this section before touching the relevant area.
   the component for the same reason the sort handler is (cycle-11 L-15 —
   entity-escaping is the wrong neutralizer in an attribute the browser decodes
   before use).
+- **Shared date-range control `mtDateRange_` + percent band `mtPctTone_`
+  (`script_core.html`, design handoff PR 1 — 2026-09-02).** Three range controls had
+  drifted (Metrics: pressed presets + a `Custom…` disclosure; Punctuality:
+  `.punct-preset` with no pressed state; Coverage: no presets at all). The Metrics
+  vocabulary is now the shared `mtDateRange_(opts)` — the STRIP only (real
+  `type="button"` chips, `data-preset` + `aria-pressed`, a Custom chip that is BOTH a
+  state chip and a disclosure with `aria-expanded`/`aria-controls`, INV-173/174) —
+  plus `mtDateRangeRow_(rowId, open, innerHtml)` for the inputs row,
+  `mtDateRangeSync_(scope, active)` to re-press after a manual edit, and
+  `mtDateRangeToggle_(scope, rowId)`, which returns the new open state so the CALLER
+  remembers it (the helper owns markup and DOM, never state — Metrics keeps its
+  `M_STATE.customOpen`; Punctuality/Coverage adopt it in PR 3). Metrics is the first
+  consumer (`mMyPresetBtn_`/`mTeamPresetBtn_`/`mCustomChip_` retired, INV-184); the
+  `.m-custom-row` + its load-bearing `[hidden]` companion moved to the tokens partial
+  with the control. `mtPctTone_(p, hi, lo)` is the ONE tri-tone band rule:
+  `mPctClass_(p, thr)` delegates as `(thr|80, 50)` byte-identically (pinned across the
+  grid), and Punctuality passes its own 90/75 — the doc's "reuse the mechanism, not
+  the numbers", which the old `mPctClass_` could not do because its lower band was a
+  hardcoded 50. Pinned by PR1-2/PR1-3 + the rewritten `#2` metrics pin.
 - **Admin sheet viewer (Tier 2 — `getAdminSheetView`).** A manager-gated
   (INV-02/31), read-only, PHI-free in-app table view of a SAFE, **allowlisted**
   tab, surfaced as the Call Notes → Admin **"Sheets"** sub-tab
@@ -5811,6 +5842,22 @@ this section before touching the relevant area.
   ships. A companion pin fails CI on `errorStateHtml_(esc(…))`, which is the
   mistake converting FROM the escaped empty-state form invites — 28 times over.
 
+- **Cross-view hints are PARKED on `window`, consumed-and-nulled on the target's
+  enter, never persisted (design handoff C8 — named 2026-09-02).** The pattern the
+  app already used four times without a name: `COACH_PREFILL` (Call Notes "Coach on
+  this" → the Coaching composer; `cnMgrCoachOnNote_`), `CLK_NAV_HINT` (the Clock
+  coverage strip's "File N missing" → the Call Notes Log; `fileMissingCalls_` →
+  `cnConsumeNavHint_`), `CN_STATE.mgrPendingRepDrill` (the audit panel → Team Notes
+  Per-Rep), and `TO_PENDING_DAY_OPEN` (the Time/PTO quick-actions card → another
+  month's day modal via `calNavTo_`). Rules: the SOURCE sets the hint then calls
+  `enterTool`/`showView`; the TARGET's enter reads it FIRST, nulls it, then acts (so a
+  stale hint can never fire on a later plain navigation); nothing is written to
+  localStorage (a hint is one gesture, not a preference — the `umsLastView` boot
+  restore must not replay it); the hint carries ids and prefill only, never a
+  server-owned decision. The QA→Coaching and Punctuality→Coaching hand-offs (PRs 3/5)
+  reuse `COACH_PREFILL`; a NEW hand-off adds a hint to this list rather than a fifth
+  shape. The URL is NOT an alternative here — INV-78 (the HtmlService iframe
+  sandboxes `window.location`) is why the in-memory hint exists.
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
@@ -8749,6 +8796,16 @@ The same day's **A4** (the Day Edit N-pair rebuild — the last path that destro
 The same day's **follow-on + Workstream B** added four more → **711** and the DOM harness 98 → **101**. The follow-on is FO-A2, a derived scan banning a STATIC inline `grid-template-columns` across the scanned partials — the A2 tripwire reads stylesheets, so it could not see the manager analytics pair's inline `1fr 1fr`, which beats every stylesheet rule INCLUDING the shell's own media queries and kept a 44px page overflow at 390px. Computed values are exempt by rule (the coverage heatmap and the training matrix compute their column counts, which CSS cannot express, and both sit in scrollers); one reasoned allowlist entry, exempt on construction because the block it guards renders only behind an opt-in scan no visual scenario reaches. **The misdiagnosis is the part worth keeping:** the first measurement blamed the team-punches `.m-table`, because `getBoundingClientRect().right` on a table inside an `overflow-x` scroller reports its full layout width and looks exactly like an overflow — to find a real overflower, walk the elements past the viewport edge and SKIP any with an overflow-x ancestor. Workstream B added B1/B2 (the done-state Adjust prefill; the manager notification that never existed — asserted post-`releaseLock` per M-7) and two B3 pins (the CONVERT-not-delete model with a ban on `deleteRow`, submit- and approval-side validation, a refused resume not marking the request Approved, back-compat on the trailing `Action` column across all four readers; and that every surface — confirm, chip, queue row, decision email — states the EFFECT rather than naming the punch it consumes). DOM: the Resume button's render conditions (including that an UNRELATED pending adjustment must not hide it), the chip's wording, and the confirm stating the unpaid gap before anything is filed — `uiConfirm` is a LEXICAL binding rather than a window property, so the stub reassigns the binding through the vm bridge. 15 mutations / 15 bites, plus 3 for the follow-on. TWO pins were corrected first, both the SAME trap: `indexOf` on a deleted needle returns −1 and `-1 < anything` is true, so an ordering check passed silently — the `assertBefore` helper is now hoisted and shared. INV-188 recurred a third time, again in a ban-shaped assertion tripping on the code comment that explains the ban. Editor suite +1 (`punchAdjust_resumeConvertsClockOut`) ≈ **305**; visual matrix 61 → **62** (`manage-light-mobile` — the tab had been wide-only, which is how the overflow survived).
 The same day's **Admin sub-tab follow-on** added one more → **712**: VIS-ADMIN, which DERIVES the Admin pane set from the client's own `tab('key','Label')` call sites and requires a mobile scenario per pane (INV-179 — the VIS-COVER marker works at TAB granularity, and all five Admin panes live inside ONE covered tab, which is how they stayed wide-only). Its first run found a live defect the matrix could not previously see: `.cn-tax-head` shared `.cn-tax-row`'s `1fr` stacking rule at ≤720px, so the tag-taxonomy header rendered as six labels stacked in a column above the first row, aligned with nothing, with the first row's usage bar riding over the word "Usage". The header is hidden when the row stacks and the two bare numerics carry their own labels; the delta label is the LITERAL `Δ`, because CSS consumes the space after a hex escape and `'\0394 wk'` renders as the joined-up "Δwk". A `getAdminSheetView` FIXTURE landed with it — the Sheets pane had none at any viewport, so its scenario rendered a loader and its "0 overflow" meant nothing; it is a FUNCTION of `viewKey` (the INV-185 F14 rule — the key decides label, columns, rows and legend). 7 mutations / 7 bites, incl. the class-closing one (a sixth pane with no scenario). Visual matrix 62 → **67**.
 The 2026-09-02 operator round added one more → **713** (NLBR — the note email keeps the rep's line breaks: the `.ce` fields are `white-space: pre-wrap` so Enter stores a real `\n`, and HTML collapsed it, so a Resolution written as paragraphs arrived as one run-on block while the CRM paste was correct. The pin drives the real `cnFmtEmailHtml_` and asserts the ORDERING property that makes it safe — breaks convert LAST, because the marker regexes are `[^…\n]+` and converting first would make `**a\nb**` start matching. 3 mutations / 3 bites, incl. the breaks-first ordering. Its first write over-reached: a ban on any inline `\n`→`<br>` found THREE pre-existing correct sites outside this fix's scope, so the ban is scoped to `buildCallNoteEmailHtml_` and the other three are a logged follow-on.)
+The design handoff's PR 1 (2026-09-02, the cross-cutting sweep) added five more →
+**718** (PR1-1 the derived no-redundant-fallback scan; PR1-2 `mtPctTone_` +
+`mPctClass_` byte-identical across the grid; PR1-3 `mtDateRange_` driven
+behaviourally — real buttons, pressed/expanded/controls, escaped labels, the row's
+hidden attribute; PR1-4 the `?fixture=empty` hook consulted BEFORE `FIXTURES`;
+PR1-5 the three CSS fixes), and REWROTE three in place for the deliberate contract
+change (the `#2` metrics-control pin now asserts the shared control and bans the
+retired builders; the previous-workday pin reads the preset LIST; the batch-7 mock
+pin re-anchors on the `FIXTURES[name]` read) plus widened the `.toolbar-tabs`
+overflow pin with the ≤480px wrap.
 **The operator's post-push `runAllTests` then reported 302/305, and one of the three was a REAL REGRESSION the suite caught (2026-09-01).** `managerSaveDay_mixedChanges` — a test predating A4 — submits a break with a leave and a blank return, which A4's `managerParseBreakSlots_` refused as a malformed pair. The refusal was wrong: a TRAILING leave with no return is an **in-progress break**, the state the punch clock creates every day at lunch, so Day Edit became unsavable for any rep who was out at that moment. Fixed at both layers (the parser accepts a trailing open break; `managerPlanDay_` matches each half at its own index so the blank REMOVES the return row instead of writing an empty time into it, and an existing lone leave is never deleted-and-re-added), and the A4-1 pin — which had encoded the wrong rule — was rewritten to assert the accepted shape plus the two that stay refused (a leading return, a half followed by more rows). 3 mutations / 3 bites. The other two were test-side: a helper I invented (`_clearAdjustRequests`) that never existed, and the calendar-dependent accrual fixture (see the editor-test hazards). **The lesson is the one the template already states and I did not follow: scan for a module's test doubles BEFORE editing it. `managerSaveDay_mixedChanges` encoded the old contract in plain sight, and reading it first would have surfaced the in-progress-lunch case during design rather than after a push.**
 The 2026-09-01 operator round added two more → **699** (CLK-DONE — the shift-complete verdict names the ClockOut it was derived from: call-site wiring, the conditional clause, and the hint class being DEFINED in a stylesheet; and BCN-3 — `reloadApp_` escapes the HtmlService iframe rather than reloading its session-bound URL, with the fallback ORDER pinned by COUNTING reloads rather than checking that one appears last, because the first version of that assertion passed against a reload-first mutation). The same round grew three existing blocks IN PLACE: the accrual pin gained the forward-stamp no-op + the caller's conditional write (PR #211), BCN-2 now requires the action to delegate to `reloadApp_` and BANS a bare `location.reload()` in the tick, and the behavioural `getNextActions_` block gained the operator's own question as a test — a stray earlier ClockOut plus an approved `ADJ-ClockIn` (INV-09 strips the prefix, so it IS a state) yields `LunchOut / ClockOut / Adjust`, which is the property the backward scan provides and a forward-scan mutation breaks. DOM stays **91** — the done-state assertions (the named clock-out, the way-out line, and both degradation paths) grew inside the existing punch-state block rather than adding one. 11 mutations / 11 bites across the round; two exposed a pin weaker than its property and were rewritten before they bit.
 The 2026-08-31 team-punches-calendar round added two more → **690**: the behavioural `getTeamCalendar` pin (the REAL endpoint driven in a vm with the real EMP/ADP/TO enums + `empRosterEmail_`/`normalizeType_`/`calcHours_` — gate + bare-{error} read shape, last-punch-per-type wins, garbage COMMENTS types are not punches, a corrupt time cell reads INCOMPLETE never 0, padded `" Approved "` overlays count, offboarded rows excluded from rows AND rosterCount, archiveNote on a pre-live-tab month) and the client wiring pin (loader beside the lazy cards, key-exact clean-round cache write BEFORE the seq check, the C17-5 painted/cold failure split, role/tabindex/aria-pressed day cells, manager-tz date derivation, future-nav refusal, the bounds-checked Day Edit prefill, the honest no-punches merge, `mtRenderTable_` per V-11, and the fixture's rep-row keys DERIVED from the server's own `repRows.push` literal per INV-185) — 6 mutations / 6 bites, TWO of which exposed the pin as weaker than its property on the first run (the null-hours mutation was UNOBSERVABLE until a corrupt-time fixture row exercised the `calcHours_`-null path — mutate against the property, not its neighbourhood — and the fixture-key drop had to remove the key from EVERY row before the presence check could see it). The omnibus gate test gained the `getTeamCalendar` case IN PLACE.
@@ -9271,6 +9328,19 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    shot led to measuring an invisible 4px edit button (`icon('pencil')`
    resolved to NO glyph — the key is `adjust`; now tripwired, see the icon-key
    pin).
+   **Every block that can be EMPTY owes an empty-state scenario, and `?fixture=empty`
+   is how it is shot (design handoff C7, PR 1 — 2026-09-02).** The same gap surfaced
+   three times before it was a rule: `getMyCoaching` returned `{items:[]}` so the rep
+   view had never been shot populated, the Admin all-clear path had never been shot
+   at all, and the Needs-you empty state is the thing that changes most under its
+   design. `mock.js` now parses `?fixture=empty` and, for every RPC with an entry in
+   `EMPTY_FIXTURES`, returns that genuinely-empty shape instead of the populated
+   fixture — ADDITIVELY, so an RPC with no entry keeps its fixture and a scenario
+   never turns into a loader. A new block ships THREE scenarios: populated,
+   `?fixture=empty`, and `?failrpc=<rpc>` (INV-175 — failed ≠ absent, on camera).
+   The blocks that owe an entry are listed by name in the PR1-4 pin as they land
+   (a fully derived "every fixture has an empty twin" scan is not expressible —
+   fixtures are objects, not call sites).
    **The uncovered-tab list is DERIVED, not prose — the marker line below is
    machine-checked against the matrix (VIS-COVER), because the hand-kept
    sentence that used to sit here named 3 of 11 real gaps and a /sync-docs

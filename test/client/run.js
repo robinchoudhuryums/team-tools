@@ -7141,7 +7141,9 @@ test('batch-7: the visual mock has the forced-failure hook and it precedes fixtu
   const m = c17strip(mock);
   assert.ok(/failrpc=/.test(m), 'mock parses ?failrpc= from the page query');
   const failAt = m.indexOf('FAIL_RPCS.indexOf(name) >= 0');
-  const fxAt = m.indexOf('var fx = FIXTURES[name]');
+  // (2026-09-02: the lookup line gained the ?fixture=empty branch, so the
+  // anchor is the FIXTURES[name] read itself, not the whole assignment.)
+  const fxAt = m.indexOf('FIXTURES[name]');
   assert.ok(failAt >= 0 && fxAt >= 0 && failAt < fxAt,
     'the forced failure fires BEFORE fixture lookup (a failed RPC is not a missing fixture)');
 });
@@ -7290,22 +7292,35 @@ test('#1: range mode fills the you-vs-team section instead of dropping it', () =
   assert.ok(/rangeMode: true/.test(fill), 'the section heading names its own (trailing-30d) window');
 });
 
-test('#2: unified time controls — pressed-state presets + Custom disclosure; the old chip class is retired', () => {
+test('#2: unified time controls — both tabs render the SHARED mtDateRange_; the old builders are retired', () => {
+  // REWRITTEN in place 2026-09-02 (design handoff PR 1): the Metrics-local
+  // preset/Custom builders became the shared mtDateRange_ in script_core so
+  // Punctuality + Coverage render the same control. The honest bookkeeping
+  // for a deliberate contract change — the a11y properties the old pin held
+  // now live in the behavioural mtDateRange_ pin below (PR1-3).
   assert.ok(!/m-preset-chip/.test(mopPartial), '.m-preset-chip is fully retired (INV-184 — no dead selectors, no zombie callers)');
   assert.ok(/function mTeamActivePreset_/.test(mopPartial), 'Team presets carry an active state (they had none)');
-  assert.ok((mopPartial.match(/data-team-preset/g) || []).length >= 2, 'team chips are stateful (aria-pressed synced by key)');
-  const chip = mopFn(mopPartial, 'mCustomChip_', 'mCustomRowOpen_');
-  assert.ok(/aria-expanded/.test(chip) && /aria-controls/.test(chip) && /aria-pressed/.test(chip),
-    'the Custom chip is a proper disclosure AND a state chip (INV-174)');
+  assert.strictEqual((mopPartial.match(/mtDateRange_\(\{ scope: '(my|team)'/g) || []).length, 2,
+    'My Stats + Team Metrics each render the shared control (scoped my / team)');
+  assert.strictEqual((mopPartial.match(/mtDateRangeRow_\('m-(my|team)-custom'/g) || []).length, 2,
+    'both custom rows come from the shared row helper');
+  // INV-184 — the local builders and their selectors do not come back.
+  ['function mMyPresetBtn_', 'function mTeamPresetBtn_', 'function mCustomChip_',
+   'data-my-preset', 'data-team-preset', 'm-custom-chip'].forEach((dead) => {
+    assert.ok(mopPartial.indexOf(dead) < 0, dead + ' is retired');
+  });
   const tog = mopFn(mopPartial, 'mToggleCustom_', 'mLoadMyStats_');
-  assert.ok(/setAttribute\('aria-expanded'/.test(tog), 'the toggle keeps aria-expanded in step');
-  // Both custom rows exist and render hidden-by-default markup.
-  assert.ok(/id="m-my-custom"/.test(mopPartial) && /id="m-team-custom"/.test(mopPartial), 'both tabs carry the Custom row');
-  // MEASURED on the first shoot: `.m-controls { display:flex }` out-specifies
-  // the UA's `[hidden] { display:none }`, so without this rule the rows render
-  // visible with a preset active — the hidden attribute alone is not enough.
-  assert.ok(/\.m-custom-row\[hidden\]\s*\{\s*display:\s*none/.test(mopPartial),
-    'the [hidden] attribute actually hides the flex row (specificity fix)');
+  assert.ok(/mtDateRangeToggle_\(which, rowId\)/.test(tog) && /M_STATE\.customOpen\[which\] = next/.test(tog),
+    'the Metrics toggle delegates the DOM work and keeps only its remembered-open state');
+  assert.strictEqual((mopPartial.match(/mtDateRangeSync_\('(my|team)'/g) || []).length, 2,
+    'both sync fns re-press through the shared helper');
+  // MEASURED on the first Metrics shoot: `.m-controls { display:flex }`
+  // out-specifies the UA's `[hidden] { display:none }` — the companion rule
+  // moved to the tokens file with the control, and must still exist.
+  const tokSrc = fs.readFileSync(path.join(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  assert.ok(/\.m-custom-row\[hidden\]\s*\{\s*display:\s*none/.test(tokSrc),
+    'the [hidden] attribute actually hides the flex row (specificity fix, now shared)');
+  assert.ok(!/\.m-custom-row\[hidden\]/.test(mopPartial), 'the rule lives in ONE place (not also in the Metrics partial)');
 });
 
 test('#3: the two permanently-non-empty CDR reference lists fold behind a disclosure; the actionable warning stays out', () => {
@@ -7694,6 +7709,12 @@ test('onboarding panel — the readiness list is a column grid, not a wrapping c
     '.toolbar-tabs scrolls internally instead of overflowing the page');
   assert.ok(/\.toolbar-tab \{[^}]*flex: 0 0 auto/.test(tok),
     'the tabs keep their width inside the scroller rather than squashing');
+  // Design handoff C5 (2026-09-02): below 480px the strip WRAPS instead of
+  // scrolling — a scroller with hidden scrollbars gives no hint that more
+  // tabs exist (the Admin doc's "honest fix"). Wide layouts keep the pill.
+  const wrap = /@media \(max-width: 480px\)\s*\{\s*\.toolbar-tabs \{[^}]*\}/.exec(tok);
+  assert.ok(wrap && /flex-wrap: wrap/.test(wrap[0]) && /overflow-x: visible/.test(wrap[0]),
+    '.toolbar-tabs wraps to a second row on a phone instead of hiding tabs in a scroller');
 });
 
 console.log('\nkb — interactive roster block (operator 2026-08-11)');
@@ -9650,8 +9671,11 @@ test('My Stats lands on the previous workday; Team Metrics deliberately keeps To
   const m = nc(extractScript('metrics/script_metrics.html'));
   // The rep-facing preset row: renamed AND repointed (CDR data is never
   // same-day, so a Today preset always showed an empty day).
-  assert.ok(/mMyPresetBtn_\('Yesterday', 'yesterday'\)/.test(m), 'the single-day preset is labeled Yesterday');
-  assert.ok(!/mMyPresetBtn_\('Today'/.test(m), 'no Today preset remains on My Stats');
+  // (2026-09-02: the chips render through the shared mtDateRange_; the
+  // preset LIST is what the pin reads now.)
+  const myPresets = /scope: 'my'[\s\S]*?presets: \[([^\]]*)\]/.exec(m);
+  assert.ok(myPresets && /key: 'yesterday', label: 'Yesterday'/.test(myPresets[1]), 'the single-day preset is labeled Yesterday');
+  assert.ok(myPresets && !/label: 'Today'/.test(myPresets[1]), 'no Today preset remains on My Stats');
   assert.ok(/M_STATE\.myDate = M_STATE\.myDate \|\| mPrevWorkdayIso_\(\);/.test(m),
     'the default landing is the previous workday too');
   const preset = nc(extractFunction('metrics/script_metrics.html', 'mMyPreset_'));
@@ -9661,7 +9685,8 @@ test('My Stats lands on the previous workday; Team Metrics deliberately keeps To
   assert.ok(/mPrevWorkdayIso_\(\)/.test(fill) && !/mTodayIso_\(\)/.test(fill),
     'the range-trend fill fetches the previous workday — the key the Yesterday preset warms');
   // The manager tab keeps Today by operator decision (same-day note counts).
-  assert.ok(/mTeamPresetBtn_\('Today', 'today'\)/.test(m), 'Team Metrics keeps its Today preset');
+  const teamPresets = /scope: 'team'[\s\S]*?presets: \[([^\]]*)\]/.exec(m);
+  assert.ok(teamPresets && /key: 'today', label: 'Today'/.test(teamPresets[1]), 'Team Metrics keeps its Today preset');
   // The single-day hero label is honest about which day it shows.
   assert.ok(/data\.date === mPrevWorkdayIso_\(\) \? 'Yesterday'/.test(m),
     'the hero period label says Yesterday only when the date IS the previous workday');
@@ -15415,6 +15440,134 @@ test('B3: every surface STATES the effect rather than naming the punch it consum
   assert.ok(/is now a break, so the time/.test(mail), 'approval explains the unpaid gap');
   assert.ok(/resume \? 'Back at' : 'Time'/.test(mail),
     'and labels the stamp as a return, not a punch time');
+});
+
+
+// ── Design handoff — PR 1 cross-cutting sweep (2026-09-02) ─────────────────
+// docs/design_handoff_five_surfaces/IMPLEMENTATION_PLAN.md §4 PR 1: the token
+// sweep (X5), the tab-strip wrap (X6 — pinned above with the overflow rule),
+// the shared range control + percent band (M1/M4 groundwork, Metrics first),
+// and the `?fixture=empty` visual-mock hook (X8).
+console.log('\ndesign handoff — PR 1 cross-cutting sweep');
+
+// PR1-1 — DERIVED scan: a `var(--x, fallback)` on a token the tokens partial
+// DEFINES is banned. A redundant fallback is a second source of truth for the
+// value (the C4 finding: `var(--success-deep, var(--accent))` silently meant
+// "green" in one file and the deep alias everywhere else). The ONLY exempt
+// names are the inline animation parameters, which are deliberately set per
+// element via style="--d:…" and have NO tokens-file definition — their
+// defaults are load-bearing (INV-128's note). form_public.html is standalone
+// (own palette) and excluded, as in the INV-128 scan this reuses.
+test('PR1-1: no var(--token, fallback) on a token the tokens partial defines (derived scan, INV-188 stripped)', () => {
+  const WEB_APP = path.resolve(__dirname, '../../web-app');
+  const INLINE_ANIM_PARAMS = new Set(['--d', '--len', '--circ', '--target']);
+  const tokSrc = fs.readFileSync(path.join(WEB_APP, 'styles_design_tokens.html'), 'utf8');
+  const defined = new Set();
+  let dm; const defRe = /(--[a-z0-9-]+)\s*:/gi;
+  while ((dm = defRe.exec(tokSrc))) defined.add(dm[1]);
+  assert.ok(defined.size > 50, 'the tokens partial defines the palette (sanity: ' + defined.size + ')');
+  const files = [];
+  (function walk(dir, rel) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name); const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) walk(abs, r); else if (e.name.endsWith('.html') && r !== 'form_public.html') files.push(r);
+    }
+  })(WEB_APP, '');
+  const strip = (x) => x.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const bad = [];
+  const useRe = /var\(\s*(--[a-z0-9-]+)\s*,/gi;
+  for (const f of files) {
+    const src = strip(fs.readFileSync(path.join(WEB_APP, f), 'utf8'));
+    let m; while ((m = useRe.exec(src))) {
+      if (INLINE_ANIM_PARAMS.has(m[1])) continue;
+      if (defined.has(m[1])) bad.push(m[1] + '  <-  ' + f);
+    }
+  }
+  assert.strictEqual(bad.length, 0, 'redundant fallbacks on DEFINED tokens (drop the fallback):\n      ' + bad.join('\n      '));
+  // The exemption is real: the animation params are used WITH a fallback and
+  // are not tokens-file definitions (otherwise the set above is dead weight).
+  const stylesSrc = strip(fs.readFileSync(path.join(WEB_APP, 'styles.html'), 'utf8'));
+  assert.ok(/var\(--d, 0m?s\)/.test(stylesSrc), 'the --d stagger default still rides inline');
+  assert.ok(!defined.has('--d'), '--d is an inline param, not a token');
+});
+
+// PR1-2 — the shared percent band. mPctClass_ delegates with (thr|80, 50);
+// the outputs are byte-identical to the pre-sweep inline rule across the
+// whole grid, so Metrics' banding cannot have moved (the #4 pin above keeps
+// the threshold-shipping half).
+test('PR1-2: mtPctTone_(p, hi, lo) is the ONE band rule; mPctClass_ delegates byte-identically', () => {
+  const mtPctTone_ = sb.mtPctTone_;
+  assert.strictEqual(typeof mtPctTone_, 'function', 'shared helper lives in script_core');
+  const legacy = (p, thr) => { const hi = (thr != null) ? thr : 80; return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low'); };
+  const mPctClass_ = sb.mPctClass_;
+  for (const p of [null, undefined, 0, 49, 49.9, 50, 79.9, 80, 84, 85, 100]) for (const thr of [undefined, null, 80, 85, 90]) {
+    assert.strictEqual(mPctClass_(p, thr), legacy(p, thr), 'mPctClass_(' + p + ', ' + thr + ')');
+  }
+  // Punctuality's own numbers (90 / 75) — the mid band is no longer pinned at 50.
+  assert.strictEqual(mtPctTone_(76, 90, 75), 'm-pct-mid', '76% with a 75 floor is mid, not low');
+  assert.strictEqual(mtPctTone_(74, 90, 75), 'm-pct-low');
+  assert.strictEqual(mtPctTone_(90, 90, 75), 'm-pct-high');
+  assert.strictEqual(mtPctTone_(null, 90, 75), '', 'absence stays unclassed (INV-187)');
+  const src = extractFunction('metrics/script_metrics.html', 'mPctClass_');
+  assert.ok(/mtPctTone_\(p, \(thr != null\) \? thr : 80, 50\)/.test(src), 'the Metrics wrapper delegates, keeping its legacy 80/50');
+});
+
+// PR1-3 — the shared range control, driven behaviourally: real <button>s
+// (INV-173), pressed state on the active preset, the Custom chip as BOTH a
+// state chip and a disclosure (INV-174), hostile labels escaped, the row's
+// hidden attribute following the open flag.
+test('PR1-3: mtDateRange_ renders an accessible, escaped control; the row honors open/closed', () => {
+  const html = sb.mtDateRange_({
+    scope: 'punct', presets: [{ key: '7d', label: '7D' }, { key: 'qtr', label: 'QTR <b>' }],
+    active: '7d', onPreset: 'punctPreset_', rowId: 'punct-custom', customOpen: false, ariaLabel: 'Window',
+  });
+  assert.strictEqual((html.match(/<button /g) || []).length, 3, 'two presets + Custom, all real buttons');
+  assert.ok(!/<button (?![^>]*type="button")/.test(html), 'every button carries type="button"');
+  assert.ok(/data-preset="7d" aria-pressed="true"/.test(html), 'the active preset is pressed');
+  assert.ok(/data-preset="qtr" aria-pressed="false"/.test(html), 'the others are not');
+  assert.ok(/QTR &lt;b&gt;/.test(html) && !/QTR <b>/.test(html), 'labels are escaped');
+  assert.ok(/onclick="punctPreset_\('7d'\)"/.test(html), 'preset click routes to the caller fn by key');
+  assert.ok(/mt-range-custom" data-custom="punct" aria-pressed="false" aria-expanded="false" aria-controls="punct-custom"/.test(html),
+    'Custom: not pressed (a preset matches), not expanded, controls the row');
+  assert.ok(/onclick="mtDateRangeToggle_\('punct', 'punct-custom'\)"/.test(html), 'default toggle is the shared one');
+  assert.ok(/data-range-scope="punct" role="group" aria-label="Window"/.test(html), 'the strip is a labelled group');
+  const none = sb.mtDateRange_({ scope: 'x', presets: [{ key: 'a', label: 'A' }], active: '', rowId: 'r', customOpen: true, onToggle: 'myTog_' });
+  assert.ok(/data-custom="x" aria-pressed="true" aria-expanded="true"/.test(none), 'no matching preset ⇒ Custom is pressed; open ⇒ expanded');
+  assert.ok(/onclick="myTog_\('x', 'r'\)"/.test(none), 'a caller-owned toggle fn is honored');
+  const noRow = sb.mtDateRange_({ scope: 'y', presets: [{ key: 'a', label: 'A' }], active: 'a' });
+  assert.ok(!/mt-range-custom/.test(noRow), 'no rowId ⇒ no Custom chip (a presets-only strip)');
+  assert.ok(/<div class="m-controls m-custom-row" id="r" hidden>/.test(sb.mtDateRangeRow_('r', false, 'X')), 'closed row carries hidden');
+  assert.ok(/<div class="m-controls m-custom-row" id="r">X<\/div>/.test(sb.mtDateRangeRow_('r', true, 'X')), 'open row does not');
+});
+
+// PR1-4 — the visual mock's `?fixture=empty` hook (C7). The mode is ADDITIVE:
+// an RPC with no empty entry keeps its populated fixture, so a scenario can
+// never turn into a loader. The blocks that owe an entry are listed by name
+// as they land (a fully derived scan is not expressible — fixtures are
+// objects, not call sites).
+test('PR1-4: mock.js honors ?fixture=empty additively; EMPTY_FIXTURES is consulted before FIXTURES', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/\[\?&\]fixture=\(\[\^&\]\+\)/.test(mock), 'the query hook is parsed');
+  assert.ok(/var EMPTY_FIXTURES = \{/.test(mock), 'the empty-shape map exists');
+  assert.ok(/FIXTURE_MODE === 'empty' && Object\.prototype\.hasOwnProperty\.call\(EMPTY_FIXTURES, name\)\)\s*\? EMPTY_FIXTURES\[name\] : FIXTURES\[name\]/.test(mock),
+    'empty mode swaps ONLY RPCs that have an empty shape (additive — never a missing fixture)');
+  const OWED = [];   // grows with each block: 'getCoachingDashboard', 'getMyCoaching', 'getMyPendingTasks', …
+  const body = /var EMPTY_FIXTURES = \{([\s\S]*?)\n  \};/.exec(mock);
+  assert.ok(body, 'EMPTY_FIXTURES is a literal object');
+  OWED.forEach((name) => assert.ok(new RegExp('\\b' + name + '\\s*:').test(body[1]), name + ' has an empty shape'));
+});
+
+// PR1-5 — the three CSS defects the sweep fixed alongside the fallbacks.
+test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; .coach-banner border is distinguishable', () => {
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  assert.ok(/\.tr-complete-btn:not\(\[disabled\]\):hover \{[^}]*border-color: var\(--border-strong\)/.test(tr), 'hover state');
+  assert.ok(/\.tr-complete-btn:focus-visible \{[^}]*box-shadow: var\(--ring-focus\)/.test(tr), 'keyboard focus ring');
+  const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  assert.ok(/\.qa-kbd-hint \{ color: var\(--muted-2\)/.test(qa), '.qa-kbd-hint on the secondary-TEXT tone, not the decoration tone (--muted-3 is decoration-only)');
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const banner = /\.coach-banner \{([^}]*)\}/.exec(co);
+  assert.ok(banner && /background:var\(--warn-soft\)/.test(banner[1]) && /border:1px solid var\(--warn\)/.test(banner[1]),
+    'the banner border and background are different tokens (they were both --warn-soft)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

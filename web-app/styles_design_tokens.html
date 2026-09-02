@@ -545,6 +545,14 @@
     max-width: 100%; overflow-x: auto; scrollbar-width: none;
   }
   .toolbar-tabs::-webkit-scrollbar { display: none; }
+  /* Below 480px the strip WRAPS to a second row instead of scrolling — the
+     design handoff's "honest fix" for the affordance problem (a scroller
+     with hidden scrollbars gives no hint that more tabs exist; the six Admin
+     sub-tabs wrap 4 + 2 at 390px). The pill radius relaxes so a two-row
+     strip does not read as a squashed capsule. Wide layouts are untouched. */
+  @media (max-width: 480px) {
+    .toolbar-tabs { flex-wrap: wrap; overflow-x: visible; border-radius: 20px; row-gap: 2px; }
+  }
   .toolbar-tab {
     appearance: none; border: none; background: transparent; flex: 0 0 auto;
     padding: 6px 14px; border-radius: 999px; cursor: pointer;
@@ -556,6 +564,15 @@
   .toolbar-tab:hover      { color: var(--ink); }
   .toolbar-tab[aria-pressed="true"],
   .toolbar-tab.active     { background: var(--ink); color: var(--paper); }
+
+  /* Shared date-range control (mtDateRange_ in script_core): the custom-inputs
+     row a "Custom…" chip discloses. `.m-controls { display:flex }` (Metrics,
+     loaded globally) out-specifies the UA's `[hidden] { display:none }`, so
+     the attribute alone never hides the row — MEASURED on the first Metrics
+     shoot; the companion rule restores the attribute's meaning. Lived in the
+     Metrics partial until the control was shared. */
+  .m-custom-row { margin-top: calc(-1 * var(--space-xs)); }
+  .m-custom-row[hidden] { display: none; }
 
   /* Inline icon sizing helper — paired with the icon() function in script_icons.html */
   .icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }

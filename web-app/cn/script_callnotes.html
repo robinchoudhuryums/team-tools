@@ -978,7 +978,7 @@
     background: var(--paper-card);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,.12));
+    box-shadow: var(--shadow-md);
     padding: 4px;
     z-index: 50;
     min-width: 220px;
@@ -1852,7 +1852,7 @@
     background: var(--paper-card);
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,.18));
+    box-shadow: var(--shadow-lg);
     padding: 24px 28px;
     max-width: 400px; width: 92vw;
   }
@@ -2083,7 +2083,7 @@
     border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
   }
   .cn-sf-card {
-    border: 1px solid var(--line); border-radius: var(--radius, 10px);
+    border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--paper-card); padding: 12px 14px;
   }
   .cn-sf-card:hover { border-color: var(--border-strong); }
@@ -2106,7 +2106,7 @@
   .cn-sf-viewbtn {
     display: inline-flex; align-items: center; gap: 5px;
     background: var(--paper-2); color: var(--ink); border: 1px solid var(--line);
-    border-radius: var(--radius-sm, 6px); padding: 5px 12px; font-size: 12px; font-weight: 600;
+    border-radius: var(--radius-sm); padding: 5px 12px; font-size: 12px; font-weight: 600;
     cursor: pointer;
   }
   .cn-sf-viewbtn:hover { border-color: var(--border-strong); background: var(--paper-card); }
@@ -9103,7 +9103,7 @@ function cnLoadDeployReadiness_() {
 function cnRenderDeployReadinessHtml_(res) {
   var items = (res && res.items) || [];
   var sum = (res && res.summary) || { ok: 0, warn: 0, fail: 0 };
-  var toneOf = function (st) { return st === 'fail' ? 'var(--danger)' : (st === 'warn' ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))'); };
+  var toneOf = function (st) { return st === 'fail' ? 'var(--danger)' : (st === 'warn' ? 'var(--warning-deep)' : 'var(--success-deep)'); };
   var glyphOf = function (st) { return st === 'fail' ? icon('x', 13) : (st === 'warn' ? icon('warning', 13) : icon('check', 13)); };
   var overallTone = sum.fail > 0 ? 'destructive' : (sum.warn > 0 ? 'warn' : 'ok');
   var pill = sum.fail > 0 ? (sum.fail + ' blocking')
@@ -9121,7 +9121,7 @@ function cnRenderDeployReadinessHtml_(res) {
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
         '<strong style="font-size:13px">Pre-deploy checklist</strong>' +
         '<span class="cn-chip cn-chip-' + overallTone + '" style="font-size:11px;padding:2px 8px;border-radius:999px;color:' +
-          (sum.fail > 0 ? 'var(--danger)' : (sum.warn > 0 ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))')) +
+          (sum.fail > 0 ? 'var(--danger)' : (sum.warn > 0 ? 'var(--warning-deep)' : 'var(--success-deep)')) +
           '">' + esc(pill) + '</span>' +
         '<span style="font-size:11px;color:var(--muted);margin-left:auto">CONFIG tz: ' + esc(res.configTimezone || '') + '</span>' +
       '</div>' +
@@ -9835,7 +9835,7 @@ function cnRenderStoragePanel_(res) {
   if (!stores.length) return '';
   var cfgTz = (res && res.configTimezone) || '';
   var pill = function (txt, tone) {
-    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep,var(--warn))' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
+    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
     var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warn-soft)' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
     return '<span style="font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;color:' + color + ';background:' + bg + '">' + esc(txt) + '</span>';
   };

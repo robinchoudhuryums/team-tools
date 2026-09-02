@@ -1132,6 +1132,26 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
       return m ? decodeURIComponent(m[1]).split(',') : [];
     } catch (e) { return []; }
   })();
+  // Design handoff C7 (2026-09-02) — the populated-AND-empty fixture rule:
+  // `?fixture=empty` makes every RPC that has an entry in EMPTY_FIXTURES
+  // return that (its genuinely-empty shape) instead of the populated fixture,
+  // so a block's empty state is shootable without a second fixture object per
+  // RPC. An RPC with NO empty entry keeps its populated fixture — so the mode
+  // is additive and a scenario never turns into a loader. Entries land with
+  // the block that owns them (Coaching / Needs-you / Admin all-clear …); a
+  // Node pin lists the blocks that owe one. The rule exists because the same
+  // gap surfaced three times (getMyCoaching `{items:[]}`, the Admin all-clear
+  // path, the Needs-you empty state) — see CLAUDE.md's Visual Audit Stage.
+  var FIXTURE_MODE = (function () {
+    try {
+      var m = /[?&]fixture=([^&]+)/.exec(window.location.search);
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (e) { return ''; }
+  })();
+  var EMPTY_FIXTURES = {
+    // getCoachingDashboard / getMyCoaching / getMyPendingTasks / the Admin
+    // health+storage all-clear shapes join here with their blocks.
+  };
   function makeChain(succ, fail) {
     return new Proxy(function () {}, {
       get: function (_t, prop) {
@@ -1147,7 +1167,8 @@ function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
               if (fail) { try { fail(new Error('[visual-mock] forced failure: ' + name)); } catch (e) {} }
               return;
             }
-            var fx = FIXTURES[name];
+            var fx = (FIXTURE_MODE === 'empty' && Object.prototype.hasOwnProperty.call(EMPTY_FIXTURES, name))
+              ? EMPTY_FIXTURES[name] : FIXTURES[name];
             if (fx === undefined) {
               window.__MISSING__.push(name);
               if (fail) { try { fail(new Error('[visual-mock] no fixture: ' + name)); } catch (e) {} }

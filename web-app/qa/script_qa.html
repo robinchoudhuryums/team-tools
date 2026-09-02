@@ -8,13 +8,13 @@
   .qa-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .qa-chip {
     appearance: none; background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius-pill, 999px); padding: 4px 12px; font: inherit;
-    font-size: var(--text-sm, 12px); color: var(--muted-2); cursor: pointer;
+    border-radius: var(--radius-pill); padding: 4px 12px; font: inherit;
+    font-size: var(--text-sm); color: var(--muted-2); cursor: pointer;
   }
   .qa-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
   .qa-btn {
     appearance: none; background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: var(--text-sm, 12px);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: var(--text-sm);
     color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
   }
   .qa-btn:hover { border-color: var(--border-strong); }
@@ -27,21 +27,21 @@
     align-items: center;
   }
   .qa-card-name { font-weight: 600; overflow-wrap: anywhere; }
-  .qa-card-meta { color: var(--muted-2); font-size: var(--text-sm, 12px); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .qa-card-meta { color: var(--muted-2); font-size: var(--text-sm); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .qa-card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  .qa-status { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
+  .qa-status { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
   .qa-status.st-new       { background: var(--info-soft);    border-color: var(--info);    color: var(--info-deep); }
   .qa-status.st-in_review { background: var(--warn-soft);    border-color: var(--warn);    color: var(--warning-deep); }
   .qa-status.st-done      { background: var(--accent-soft);  border-color: var(--accent);  color: var(--success-deep); }
   .qa-status.st-skipped   { background: var(--paper-2); }
-  .qa-assignee { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
+  .qa-assignee { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
   .qa-assignee.mine { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
   .qa-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 24px; text-align: center; color: var(--muted-2); }
-  .qa-note { color: var(--muted-2); font-size: var(--text-sm, 12px); margin: 8px 0 0; }
+  .qa-note { color: var(--muted-2); font-size: var(--text-sm); margin: 8px 0 0; }
 
   /* Detail */
   .qa-det-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-  .qa-det-title { font-weight: 700; font-size: var(--text-lg, 16px); overflow-wrap: anywhere; min-width: 0; }
+  .qa-det-title { font-weight: 700; font-size: var(--text-lg); overflow-wrap: anywhere; min-width: 0; }
   .qa-player-card, .qa-comments-card {
     background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
     padding: 14px; margin-bottom: 14px;
@@ -49,10 +49,10 @@
   .qa-player-card audio { width: 100%; }
   .qa-transport { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .qa-speed[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
-  .qa-kbd-hint { color: var(--muted-3); font-size: 11px; margin-left: auto; }
+  .qa-kbd-hint { color: var(--muted-2); font-size: 11px; margin-left: auto; }
   .qa-timeline {
     position: relative; height: 26px; background: var(--paper-2);
-    border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); margin-top: 12px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill); margin-top: 12px;
   }
   .qa-tl-mark {
     appearance: none; position: absolute; top: 2px; bottom: 2px; width: 8px; padding: 0;
@@ -64,7 +64,7 @@
   .qa-comment-row:last-child { border-bottom: none; }
   .qa-time-chip {
     appearance: none; background: var(--info-soft); border: 1px solid var(--info);
-    color: var(--info-deep); border-radius: var(--radius-pill, 999px); padding: 2px 10px;
+    color: var(--info-deep); border-radius: var(--radius-pill); padding: 2px 10px;
     font: inherit; font-family: var(--mono); font-size: 11px; cursor: pointer; white-space: nowrap;
   }
   .qa-comment-text { overflow-wrap: anywhere; }
@@ -73,14 +73,14 @@
   .qa-del-btn:hover { color: var(--danger-deep); }
   .qa-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 10px; align-items: end; }
   .qa-add-row textarea {
-    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: var(--text-sm);
     background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
   }
 
   /* Phase 2 — agent attribution, waveform, scorecards, per-agent stats */
   .qa-agent-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .qa-agent-row input {
-    font: inherit; font-size: var(--text-sm, 12px); padding: 6px 9px; border: 1px solid var(--line);
+    font: inherit; font-size: var(--text-sm); padding: 6px 9px; border: 1px solid var(--line);
     border-radius: 8px; background: var(--paper); color: var(--ink); min-width: 200px;
   }
   /* display:block would BEAT the UA's [hidden]{display:none} (the documented
@@ -96,16 +96,16 @@
   }
   .qa-rate-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 700; }
   .qa-score-notes {
-    width: 100%; min-height: 46px; resize: vertical; font: inherit; font-size: var(--text-sm, 13px);
+    width: 100%; min-height: 46px; resize: vertical; font: inherit; font-size: var(--text-sm);
     background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
   }
-  .qa-sc-item { border-top: 1px solid var(--line); padding: 8px 0; font-size: var(--text-sm, 12px); }
+  .qa-sc-item { border-top: 1px solid var(--line); padding: 8px 0; font-size: var(--text-sm); }
   .qa-sc-meta { color: var(--muted-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
-  .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm, 12px); }
+  .qa-sc-chip { border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 1px 8px; font-size: 11px; color: var(--muted-2); background: var(--paper-2); }
+  .qa-stats-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted-2); font-size: var(--text-sm); }
   .qa-stats-strip strong { color: var(--ink); font-size: 16px; }
   /* Phase 3 — share pill + agent-facing My Reviews */
-  .qa-shared-pill { border-radius: var(--radius-pill, 999px); padding: 2px 10px; font-size: 11px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--success-deep); white-space: nowrap; }
+  .qa-shared-pill { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--success-deep); white-space: nowrap; }
   .qa-myrev-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
   .qa-myrev-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
   .qa-myrev-name { font-weight: 600; overflow-wrap: anywhere; }

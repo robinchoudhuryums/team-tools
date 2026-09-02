@@ -395,7 +395,7 @@ document.addEventListener('click', function (e) {
 .coach-mode:hover { color:var(--ink); }
 .coach-mode.on { background:var(--paper-card); color:var(--ink); box-shadow:var(--shadow-sm); }
 .coach-banner { display:flex; align-items:center; gap:8px; background:var(--warn-soft); color:var(--warning-deep);
-  border:1px solid var(--warn-soft); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
+  border:1px solid var(--warn); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
 .coach-list { display:flex; flex-direction:column; gap:10px; }
 .coach-card { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:12px 14px; }
 .coach-card.is-acked { opacity:.78; }
@@ -415,7 +415,7 @@ document.addEventListener('click', function (e) {
    components on adjacent manager surfaces read differently. Matched to
    `.telemetry .tel-cell`: left-aligned, same 14px/18px padding. */
 .coach-kpi { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:14px 18px; text-align:left; }
-.coach-kpi-num { font:700 1.5rem/1 var(--display, inherit); color:var(--ink); }
+.coach-kpi-num { font:700 1.5rem/1 var(--display); color:var(--ink); }
 .coach-kpi-num.crit { color:var(--danger-deep); }
 .coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
 :root[data-compact] .coach-kpis { grid-template-columns:repeat(2, 1fr); }
