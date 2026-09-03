@@ -6731,6 +6731,46 @@ test('F1: every CONFIG key has a reader (dead declarations are defects)', () => 
     'CONFIG keys declared but never read — wire them, remove them, or allowlist with a reason');
 });
 
+// ─── F1-inverse: a READ of an undeclared CONFIG key is a null at runtime ──────
+// The operator's dry run of repairTimesheetTimezone (2026-09-03) died with
+// "Cannot read properties of null (reading 'getDataRange')": the roster read
+// used CONFIG.EMPLOYEES_TAB where the declared key is EMPLOYEE_TAB, so
+// getSheetByName(undefined) returned null. F1 above checks declared → read;
+// nothing checked read → declared. Same derivation, other direction. Only the
+// FIRST segment after `CONFIG.` is checked (nested objects keep their own
+// shapes); a `CONFIG[...]` computed read is out of scope.
+test('F1-inverse: every CONFIG.<KEY> read names a declared key (a typo reads as undefined, not an error)', () => {
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/<!--[\s\S]*?-->/g, '');
+  const root = path.join(__dirname, '../../web-app');
+  const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
+  const st = code.indexOf('const CONFIG = {') + 'const CONFIG = {'.length;
+  let d = 1, i = st;
+  while (d) { if (code[i] === '{') d++; else if (code[i] === '}') d--; i++; }
+  const body = strip(code.slice(st, i));
+  const declared = {};
+  const keyRe = /^\s{2,4}([A-Z][A-Z_0-9]+)\s*:/gm;
+  let m;
+  while ((m = keyRe.exec(body))) declared[m[1]] = true;
+  assert.ok(Object.keys(declared).length > 40, 'the CONFIG literal was located');
+  const files = [];
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+    const f = path.join(dir, e.name);
+    if (e.isDirectory()) return walk(f);
+    if (/\.(js|html)$/.test(e.name)) files.push(f);
+  });
+  walk(root);
+  const bad = [];
+  files.forEach((f) => {
+    const src = strip(fs.readFileSync(f, 'utf8'));
+    const re = /\bCONFIG\.([A-Z][A-Z_0-9]+)\b/g;
+    let r;
+    while ((r = re.exec(src))) {
+      if (!declared[r[1]]) bad.push(path.relative(root, f) + ' → CONFIG.' + r[1]);
+    }
+  });
+  assert.deepStrictEqual([...new Set(bad)], [], 'CONFIG keys READ but never declared (a typo — reads as undefined at runtime)');
+});
+
 // ---------------------------------------------------------------------------
 // Cycle 17 — top-5 fix pins (C17-2 / C17-5 / C17-6 / C17-7). C17-1 is pinned
 // by the fixed A2 scan itself (the regex now matches both attribute forms and

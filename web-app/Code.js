@@ -3065,7 +3065,7 @@ function repairTimesheetTimezone(opts) {
   // Resolve ids/names against the roster. A name must match EXACTLY ONE row
   // (a name-only offboarded row still counts as a match — its punches are
   // the point). Ambiguity refuses rather than guessing a payroll row.
-  const roster = getAdpSS_().getSheetByName(CONFIG.EMPLOYEES_TAB).getDataRange().getValues();
+  const roster = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
   const targets = {};                                          // id → emp object
   wanted.forEach((w) => {
     const wl = w.toLowerCase();

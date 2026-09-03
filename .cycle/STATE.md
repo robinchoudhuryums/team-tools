@@ -21,7 +21,7 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 749 + DOM 104;
+Test Command: manual (Node harnesses: `npm test` = pure 750 + DOM 104;
   visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
@@ -384,6 +384,11 @@ the operator has not asked): the Timesheet tz repair tool + one-time wrappers
 PHT browser-timezone visual dimension (`clock-light-wide-pht`), and NOW the
 per-agent break schedules (`.cycle/blocks/19pre-per-agent-breaks-broad-implement.md`
 — pure 745/0, DOM 104/0, 6/6 bites, admin-config re-shot clean).
+PR #224 MERGED 2026-09-03 (per-agent breaks + the planner); the operator's
+post-merge `runAllTests()` read 308/308. The tz-repair dry run then failed
+on a CONFIG-key typo (`EMPLOYEES_TAB` → `EMPLOYEE_TAB`, fixed + the
+`F1-inverse` tripwire); the repair itself is still TO BE RUN by the operator
+(dry run first, then apply, then delete `TZ_REPAIR_2026_09_02` + wrappers).
 BUILT the same day: the BREAK COVERAGE PLANNER on that card
 (`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
 11/11 bites, three admin-config scenarios clean incl. the cold-failure one).
