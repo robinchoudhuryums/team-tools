@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 745 + DOM 104;
-  visual matrix on demand — 93 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 749 + DOM 104;
+  visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-03 (per-agent break schedules — `19pre-per-agent-breaks-broad-implement.md`; the break COVERAGE planner is the next ask, planned in chat 2026-09-03, not yet built)
+Updated: 2026-09-03 (per-agent break schedules + the break COVERAGE planner — `19pre-per-agent-breaks-broad-implement.md`, `19pre-break-coverage-planner-broad-implement.md`)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -384,14 +384,14 @@ the operator has not asked): the Timesheet tz repair tool + one-time wrappers
 PHT browser-timezone visual dimension (`clock-light-wide-pht`), and NOW the
 per-agent break schedules (`.cycle/blocks/19pre-per-agent-breaks-broad-implement.md`
 — pure 745/0, DOM 104/0, 6/6 bites, admin-config re-shot clean).
-NEXT: the operator wants a BREAK COVERAGE PLANNER integrated into the same
-Admin "Break schedules" card — a visual strip of agents-away per 15-min slot
-from the effective (tz + per-agent) breaks, ideally with a background layer of
-average call volume by time-of-day. A plan was delivered in chat on
-2026-09-03; nothing is built. Data caveat for that plan: DQE is one row per
-agent+date, so hourly call volume needs a DIFFERENT CDR source (the
-`call-data-reporting` repo's hourly/interval data, if any) — confirm with the
-operator before designing the background layer around it.
+BUILT the same day: the BREAK COVERAGE PLANNER on that card
+(`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
+11/11 bites, three admin-config scenarios clean incl. the cold-failure one).
+The demand layer reads the CDR Report's `Inbound Calls` export tab (written by
+call-data-reporting — confirmed by the operator to exist; its export trigger
+must be installed there). The Coverage planner now SUBTRACTS breaks (it
+counted a rep on lunch as present). NOTHING is PR'd — the operator has not
+asked; the branch carries eleven commits over the merged #222 main.
 
 PREVIOUS (2026-09-01, after the A4 follow-on + Workstream B). Everything is
 committed on `claude/team-tools-roadmap-6e2l97`; the PR is the next step.
