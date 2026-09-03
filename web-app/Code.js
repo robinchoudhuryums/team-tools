@@ -3254,6 +3254,29 @@ function splitDayRepairPlan_(punches, from, to) {
   return { deletes: deletes, kept: kept, otherDuplicates: otherDuplicates };
 }
 
+/* One-time editor wrappers for the 2026-09-03 split-day repair — the editor's
+ * ▶ button passes NO arguments, so a bare `repairSplitDayPunches()` refuses
+ * (the dry-run guard working). Edit SPLIT_REPAIR_2026_09_03.adds with the
+ * agents' confirmed times, run _dryRun, read the log, run _apply. Delete the
+ * constant + both wrappers once the repair has run (the tz-repair precedent). */
+const SPLIT_REPAIR_2026_09_03 = {
+  employees: ['Anne Garcia', 'Margie Ingay'],
+  from: '2026-08-27',
+  to: '2026-09-02',
+  // Agent-confirmed punches (HH:mm, America/Chicago). Leave empty to collapse
+  // the duplicate clock-ins only; adds can be applied in a later run.
+  adds: [
+    // { employee: 'Anne Garcia',  date: '2026-08-27', type: 'ClockOut', time: '17:00' },
+    // { employee: 'Margie Ingay', date: '2026-08-28', type: 'LunchOut', time: '12:00' },
+  ],
+};
+function repairSplitDayPunches_dryRun() {
+  return repairSplitDayPunches(Object.assign({}, SPLIT_REPAIR_2026_09_03, { dryRun: true }));
+}
+function repairSplitDayPunches_apply() {
+  return repairSplitDayPunches(Object.assign({}, SPLIT_REPAIR_2026_09_03, { dryRun: false }));
+}
+
 function repairSplitDayPunches(opts) {
   assertManagerCaller_('repairSplitDayPunches');
   opts = opts || {};

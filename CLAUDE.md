@@ -6628,6 +6628,11 @@ manually for a fresh deploy or environment:
   `repairSplitDayPunches({ employees: ['Anne Garcia','Margie Ingay'], from: '2026-08-27', to: '2026-09-02' })`,
   read the log, then the same with `dryRun: false` and
   `adds: [{ employee: 'Anne Garcia', date: '2026-08-27', type: 'ClockOut', time: '17:00' }, …]`.
+  **The editor's ▶ button passes NO arguments, so a bare call refuses (the
+  operator hit exactly this on 2026-09-03)** — the one-time
+  `SPLIT_REPAIR_2026_09_03` constant + `repairSplitDayPunches_dryRun/_apply`
+  wrappers carry the opts (fill `adds` in the constant); delete all three
+  once the repair has run, the tz-repair precedent.
   Target resolution moved into the shared `tzRepairResolveTargets_` so the two
   tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
   (contract; the add guards asserted LIVE, not just worded — a `if (false)`
