@@ -6414,7 +6414,13 @@ manually for a fresh deploy or environment:
   gains a **Break schedules** card — Default + per-timezone sections,
   inherited sections read-only until Customize, times in each rep's OWN
   timezone; a save reaches reps on their next state refresh (page load, or
-  within ~10 minutes in an open window); (b) the QA recording detail gains an
+  within ~10 minutes in an open window) — **and since 2026-09-02 a
+  "Per-agent breaks" section below them** (pick an agent from the roster,
+  edit their own slots, Save; Remove falls back to the timezone/default
+  list; a warn pill flags an agent whose roster timezone disagrees with the
+  CST anchor — fix the roster row, the times are read in that zone). NO new
+  operator state: the same `SHIFT_BREAK_SCHEDULES` property gains an
+  `employees` key only once you save one; (b) the QA recording detail gains an
   **Agent** field (datalist of roster names — free text allowed for
   ex-agents), a **Scorecard** card (1–5 per criterion + notes; re-saving
   replaces your previous score for that recording), and — where the browser
@@ -8249,8 +8255,29 @@ manually for a fresh deploy or environment:
   editor deliberately edits breaks only. `getBreakSchedules_` sanitizes on
   read (L-12) + memoizes per execution (the coverage walks call
   `getShiftSchedule_` per-rep-per-day); saving zero custom schedules at the
-  CONFIG reminder DELETES the property (the umsTheme posture). Pinned by
-  BRK-1..4. `getShiftSchedule_` resolves all of it to
+  CONFIG reminder DELETES the property (the umsTheme posture). **PER-AGENT
+  breaks (operator 2026-09-02):** the property also carries an optional
+  `employees: { <rosterId>: [...] }` map — each agent has their OWN staggered
+  slots so the desk is never empty, which a per-timezone list structurally
+  cannot express. The ONE resolver `empShiftSchedule_(empLike, tz)` (INV-149)
+  layers it ABOVE the tz/DEFAULT entry (`prop.employees[id] !== undefined` —
+  an explicitly EMPTY list means "this agent has no breaks", exactly the
+  explicit-empty rule the tz layer uses, and `[]` is truthy so the hazardous
+  mutation is a `.length` guard, not bare truthiness — bite-checked); every
+  caller passes the rep's `id` (`getEmployeeState`, `getCoveragePlan`,
+  `getPunctualityReport`, the admin view — a caller that drops the id
+  silently loses the layer, pinned). Column O still governs start/length
+  only. The save refuses an id that is malformed or not on the roster BY
+  NAME (a typo'd id would otherwise be a silent no-op forever); an
+  OFFBOARDED id (email cleared, row kept — INV-183) still resolves, since the
+  id is reserved. The blob carries `employees` only when non-empty, in the
+  sanitizer's key order (read ≡ write byte-for-byte), and an employees-only
+  save is NOT a reset. The Admin card's "Per-agent breaks" section (roster
+  picker seeded from the DEFAULT section; "Remove (use default)" falls
+  back) names the timezone each agent's times are READ in and warn-pills a
+  profile that disagrees with the CST work anchor — the timezone class this
+  app keeps meeting, surfaced where the times are typed. Pinned by
+  BRK-1..5 (BRK-5 = the resolver behavioural). `getShiftSchedule_` resolves the tz layer to
   `{breaks:[{label,startMin,lenMin}], breakReminderMin}` on `CLK_SCHEDULE`.
   The Clock view shows a "Next break" chip (`#clk-next-break`) and fires a
   one-time reminder toast `breakReminderMin` before each break — but ONLY
@@ -9348,6 +9375,19 @@ server's own `TZ_ABBR`, and the PHT scenario's two zones are asserted DIFFERENT
 — a scenario where they agree tests nothing). The R2-FU pin was rewritten in
 place for the seven-entry destructuring. Visual matrix 92 → **93**
 (`clock-light-wide-pht`, clean on its first shoot).
+The per-agent break schedules (operator 2026-09-02) added one more → **745**
+(BRK-5 — `empShiftSchedule_` driven behaviourally: the per-employee layer
+wins over the tz layer, an explicit-empty list is honoured, no id falls to
+the tz layer, a column-O override composes with it) and GREW BRK-1..4 IN
+PLACE (sanitizer employees map + key/count caps; the resolver stub; the save's
+map shape / malformed id / unknown id / per-break rule / offboarded-id
+acceptance / canonical persist / read ≡ write / no-key-when-empty /
+employees-only-is-not-a-reset; the callers' `id`, the admin view fields, the
+client's custom-only collection, the picker and the warn pill). 6 mutations /
+6 bites — one first mutation was an EQUIVALENT MUTANT (`!== undefined` →
+bare truthiness changes nothing, because `[]` is truthy; the hazardous form
+is a `.length` guard, which bites). The fixture's `breakSchedules` mirrors
+the server view (`employees` / `roster` / `workAnchorTz`, INV-185).
 The Timesheet timezone repair (operator 2026-09-02, the same afternoon) added
 two more → **743**: TZR-1 drives the pure `tzRepairPlanRow_` with INJECTED tz
 functions (a fixed 13h offset — the pre-flip shift collapses onto one date, a
@@ -10787,6 +10827,19 @@ S76 | Break + clock-out reminders reach every tab, with sound (operator 2026-08-
       Revert every section + set the reminder lead back to the app default and Save
       → Script Properties shows NO `SHIFT_BREAK_SCHEDULES` entry (back to CONFIG
       entirely)
+    - **(per-agent breaks, operator 2026-09-02)** In the same card's **Per-agent
+      breaks** section, pick an agent from the picker → a section appears
+      pre-filled from Default; stagger their lunch by 30 min and Save → THAT
+      agent's Clock chips + reminders move while every other rep keeps the
+      timezone/default list; the Coverage planner's hourly bands and
+      Punctuality's lunch adherence read the same per-agent slots; delete all
+      of that agent's rows and Save → they get NO break reminders (explicit
+      empty); press "Remove (use default)" and Save → they fall back; pick an
+      agent whose roster Timezone is not the CST anchor → their section carries
+      a warn "times in <tz> ⚠" pill (the fix is the roster row); from the
+      console call `saveBreakSchedules({reminderMin:10, schedules:{}, employees:{'E-NOPE':[]}})`
+      as an admin → refused by name ("not on the roster"); as a non-admin →
+      "Admin access required."
   Expected: The break reminder fires ONCE per break per rep-local day, in whichever window is open — the pop-out included (it used to fire only on the Clock tab). Each reminder shows a toast, plays a two-tone chime when sound is on, and posts a desktop notification only if the browser granted permission. The desktop button most likely reports that the browser blocked or disallows notifications for an embedded app — that is EXPECTED here (cross-origin iframe) and the message must say the toast + chime still work rather than failing silently. Turning sound off persists per browser via `umsNotify`, and a theme switch must not reset it (the theme reflector writes only to `[data-theme-target]` buttons). Past the shift end a "still clocked in" nudge appears once; it never fires when the punch state is unknown. Mid-shift the ticker makes ZERO server calls; inside the end-of-shift window it refreshes `getEmployeeState` at most once per 10 minutes. A closed browser gets nothing — the daily missed-punch email remains that backstop.
 
 S77 | Team Members panel paints instantly; readiness reads as a column (operator 2026-08-11) | Subsystem: Server, Client (Call Notes views)

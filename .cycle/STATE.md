@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 744 + DOM 104;
+Test Command: manual (Node harnesses: `npm test` = pure 745 + DOM 104;
   visual matrix on demand — 93 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 6 of the design handoff landed — the handoff is COMPLETE)
+Updated: 2026-09-03 (per-agent break schedules — `19pre-per-agent-breaks-broad-implement.md`; the break COVERAGE planner is the next ask, planned in chat 2026-09-03, not yet built)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -376,7 +376,24 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-01, after the A4 follow-on + Workstream B). Everything is
+CURRENT (2026-09-03). Branch `claude/ums-team-tools-design-r8ar3o`, rebased on
+the merged PR #222 main, carries the post-handoff operator work (NOT PR'd —
+the operator has not asked): the Timesheet tz repair tool + one-time wrappers
+(`TZ_REPAIR_2026_09_02` — delete after the repair), the post-deploy
+`runAllTests` triage (coaching nudge frame fix + four test-side faults), the
+PHT browser-timezone visual dimension (`clock-light-wide-pht`), and NOW the
+per-agent break schedules (`.cycle/blocks/19pre-per-agent-breaks-broad-implement.md`
+— pure 745/0, DOM 104/0, 6/6 bites, admin-config re-shot clean).
+NEXT: the operator wants a BREAK COVERAGE PLANNER integrated into the same
+Admin "Break schedules" card — a visual strip of agents-away per 15-min slot
+from the effective (tz + per-agent) breaks, ideally with a background layer of
+average call volume by time-of-day. A plan was delivered in chat on
+2026-09-03; nothing is built. Data caveat for that plan: DQE is one row per
+agent+date, so hourly call volume needs a DIFFERENT CDR source (the
+`call-data-reporting` repo's hourly/interval data, if any) — confirm with the
+operator before designing the background layer around it.
+
+PREVIOUS (2026-09-01, after the A4 follow-on + Workstream B). Everything is
 committed on `claude/team-tools-roadmap-6e2l97`; the PR is the next step.
 
 Shipped this session (all merged unless noted):
