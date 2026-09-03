@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 744 + DOM 104;
-  visual matrix on demand — 93 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 749 + DOM 104;
+  visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-02 (PR 6 of the design handoff landed — the handoff is COMPLETE)
+Updated: 2026-09-03 (per-agent break schedules + the break COVERAGE planner — `19pre-per-agent-breaks-broad-implement.md`, `19pre-break-coverage-planner-broad-implement.md`)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -376,7 +376,24 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-01, after the A4 follow-on + Workstream B). Everything is
+CURRENT (2026-09-03). Branch `claude/ums-team-tools-design-r8ar3o`, rebased on
+the merged PR #222 main, carries the post-handoff operator work (NOT PR'd —
+the operator has not asked): the Timesheet tz repair tool + one-time wrappers
+(`TZ_REPAIR_2026_09_02` — delete after the repair), the post-deploy
+`runAllTests` triage (coaching nudge frame fix + four test-side faults), the
+PHT browser-timezone visual dimension (`clock-light-wide-pht`), and NOW the
+per-agent break schedules (`.cycle/blocks/19pre-per-agent-breaks-broad-implement.md`
+— pure 745/0, DOM 104/0, 6/6 bites, admin-config re-shot clean).
+BUILT the same day: the BREAK COVERAGE PLANNER on that card
+(`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
+11/11 bites, three admin-config scenarios clean incl. the cold-failure one).
+The demand layer reads the CDR Report's `Inbound Calls` export tab (written by
+call-data-reporting — confirmed by the operator to exist; its export trigger
+must be installed there). The Coverage planner now SUBTRACTS breaks (it
+counted a rep on lunch as present). NOTHING is PR'd — the operator has not
+asked; the branch carries eleven commits over the merged #222 main.
+
+PREVIOUS (2026-09-01, after the A4 follow-on + Workstream B). Everything is
 committed on `claude/team-tools-roadmap-6e2l97`; the PR is the next step.
 
 Shipped this session (all merged unless noted):

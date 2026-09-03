@@ -159,6 +159,22 @@ const CONFIG = {
   // the CDR Report spreadsheet.
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
+  // Break coverage planner (operator 2026-09-03, the Admin "Break schedules"
+  // card). The demand layer reads the CDR Report's `Inbound Calls` export tab
+  // (written by call-data-reporting's inboundCallsExport.js — Op State #49
+  // there; one row per inbound call, Call Start stored RAW PST 'HH:MM:SS').
+  CDR_INBOUND_TAB:   'Inbound Calls',
+  // PST(stored) → CST(anchor). A HAND-MIRROR of call-data-reporting's
+  // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
+  // fixed 2h holds year-round). Change both or the two dashboards disagree.
+  CDR_INBOUND_PST_TO_CST_HOURS: 2,
+  BREAK_COVERAGE_SLOT_MIN: 15,        // strip granularity — breaks land on quarter hours
+  BREAK_COVERAGE_VOLUME_DAYS: 28,     // trailing window the demand layer averages over
+  BREAK_COVERAGE_VOLUME_MAX_ROWS: 40000,  // tail-scan bound on the export tab (truncation REPORTED)
+  BREAK_COVERAGE_VOLUME_CACHE_SEC: 3600,  // the average moves once a day; a live-edit strip must not re-scan per keystroke
+  // Entry queues that count as THIS team's demand (the export covers the whole
+  // phone system). Empty = every non-internal inbound call.
+  BREAK_COVERAGE_VOLUME_QUEUES: ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
   CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
   // Dashboard KPI banding (operator 2026-08-12). % Answered reuses the target
@@ -13954,15 +13970,49 @@ function getShiftSchedule_(timezone) {
     rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
               : (Array.isArray(def.breaks) ? def.breaks : []);
   }
-  const breaks = rawBreaks.map(function (b) {
-    return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
-  }).filter(function (b) { return b.lenMin > 0; });
   return {
     startMin: startMin, lengthMin: endMin - startMin,
-    breaks: breaks,
+    breaks: breakListResolve_(rawBreaks),
     breakReminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
   };
 }
+
+/** Pure — a stored break list [{label, start 'H:mm', len}] → the resolved
+ *  shape every consumer reads ({label, startMin, lenMin}); zero-length rows
+ *  drop. ONE conversion for the tz layer and the per-employee layer, so the
+ *  two cannot drift (INV-72 family). */
+function breakListResolve_(raw) {
+  const toMin = function (hm) {
+    const p = String(hm || '').split(':');
+    return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+  };
+  return (Array.isArray(raw) ? raw : []).map(function (b) {
+    return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
+  }).filter(function (b) { return b.lenMin > 0; });
+}
+
+/** Pure — the lenient per-break whitelist-rebuild shared by every key of the
+ *  SHIFT_BREAK_SCHEDULES blob (timezone keys AND employee ids): a bad break is
+ *  dropped, survivors kept, label trim + cap 40 + default, at most 10. */
+function breakListSanitize_(arr) {
+  const clean = [];
+  for (let j = 0; j < arr.length && clean.length < 10; j++) {
+    const b = arr[j] || {};
+    const start = String(b.start || '').trim();
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) continue;
+    const len = parseInt(b.len, 10);
+    if (!(len >= 1 && len <= 240)) continue;
+    const label = String(b.label || '').trim().substring(0, 40) || 'Break';
+    clean.push({ label: label, start: start, len: len });
+  }
+  return clean;
+}
+
+/** Roster employee-id shape for a per-employee break key (the EMP.ID column's
+ *  own vocabulary: letters/digits/_/-; TEST_ ids included so the suite can
+ *  drive it). */
+const BREAK_EMP_KEY_RE = /^[A-Za-z0-9_\-]{1,40}$/;
+const BREAK_EMP_MAX_KEYS = 200;
 
 /** Pure (Node-pinned) — lenient sanitize of the SHIFT_BREAK_SCHEDULES Script
  *  Property blob (the L-12 sanitize-on-read rule: a hand-edited property
@@ -13988,20 +14038,29 @@ function breakSchedSanitize_(obj) {
     if (keyCount >= 20) break;
     const arr = src[keys[i]];
     if (!Array.isArray(arr)) continue;
-    const clean = [];
-    for (let j = 0; j < arr.length && clean.length < 10; j++) {
-      const b = arr[j] || {};
-      const start = String(b.start || '').trim();
-      if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) continue;
-      const len = parseInt(b.len, 10);
-      if (!(len >= 1 && len <= 240)) continue;
-      const label = String(b.label || '').trim().substring(0, 40) || 'Break';
-      clean.push({ label: label, start: start, len: len });
-    }
-    schedules[key] = clean;   // EMPTY is meaningful — "no breaks for this key"
+    schedules[key] = breakListSanitize_(arr);   // EMPTY is meaningful — "no breaks for this key"
     keyCount++;
   }
   const out = { schedules: schedules };
+  // Per-employee layer (operator 2026-09-02): { employees: { <empId>: [...] } }.
+  // Same per-break rule, keyed by ROSTER ID (never a name — names are edited,
+  // ids are reserved for life, INV-183). Emitted ONLY when non-empty so a
+  // pre-existing blob round-trips byte-identically. An explicitly EMPTY list
+  // is "no breaks for this agent" — honoured downstream via !== undefined.
+  const esrc = (obj.employees && typeof obj.employees === 'object' && !Array.isArray(obj.employees)) ? obj.employees : {};
+  const employees = {};
+  let eCount = 0;
+  const ekeys = Object.keys(esrc);
+  for (let i = 0; i < ekeys.length; i++) {
+    const id = String(ekeys[i]).trim();
+    if (!BREAK_EMP_KEY_RE.test(id)) continue;
+    if (eCount >= BREAK_EMP_MAX_KEYS) break;
+    const arr = esrc[ekeys[i]];
+    if (!Array.isArray(arr)) continue;
+    employees[id] = breakListSanitize_(arr);
+    eCount++;
+  }
+  if (eCount > 0) out.employees = employees;
   const rm = parseInt(obj.reminderMin, 10);
   if (rm >= 1 && rm <= 120) out.reminderMin = rm;
   return out;
@@ -14021,6 +14080,18 @@ function getBreakSchedules_() {
   } catch (e) { out = null; }
   _breakSchedulesCache = out;
   return out;
+}
+/** Run `fn` with a DRAFT property in place of the stored one, then restore.
+ *  The break coverage planner previews UNSAVED editor state, and every
+ *  consumer of the property — the tz layer in getShiftSchedule_ and the
+ *  per-agent layer in empShiftSchedule_ — reads it through the per-execution
+ *  memo above, so swapping the memo is how the ONE resolver (INV-149) sees the
+ *  draft without a second code path that could drift. Read-only callers only;
+ *  the finally restores the pre-swap state (undefined = re-read on demand). */
+function withBreakSchedulesProp_(prop, fn) {
+  const prev = _breakSchedulesCache;
+  _breakSchedulesCache = prop;
+  try { return fn(); } finally { _breakSchedulesCache = prev; }
 }
 /** Pure (Node-pinned) — parse a per-rep shift override cell (roster column O,
  *  Turn D): 'H:mm-H:mm' (or 'H-H', spaces tolerated), times in the REP's own
@@ -14050,9 +14121,25 @@ function parseShiftOverride_(raw) {
 function empShiftSchedule_(empLike, tz) {
   const base = getShiftSchedule_(tz);
   const ov = parseShiftOverride_(empLike && empLike.scheduleRaw);
-  if (!ov) return base;
-  return { startMin: ov.startMin, lengthMin: ov.lengthMin,
-           breaks: base.breaks, breakReminderMin: base.breakReminderMin, override: true };
+  // Per-employee breaks (operator 2026-09-02): the property's `employees`
+  // map, keyed by roster id, wins over the tz layer for that agent — the
+  // real dimension once every row shares one zone under the ALL-CST policy
+  // (staggered breaks so the whole team is never away at once). Times are
+  // wall times in the AGENT's roster tz, the same frame as column O and the
+  // tz layer. `!== undefined` so an explicitly EMPTY list is honoured.
+  let breaks = base.breaks, perEmployee = false;
+  const id = String((empLike && empLike.id) || '').trim();
+  if (id) {
+    const prop = getBreakSchedules_();
+    if (prop && prop.employees && prop.employees[id] !== undefined) {
+      breaks = breakListResolve_(prop.employees[id]);
+      perEmployee = true;
+    }
+  }
+  if (!ov && !perEmployee) return base;
+  return { startMin: ov ? ov.startMin : base.startMin, lengthMin: ov ? ov.lengthMin : base.lengthMin,
+           breaks: breaks, breakReminderMin: base.breakReminderMin,
+           override: !!ov, perEmployee: perEmployee };
 }
 
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
@@ -14173,6 +14260,113 @@ function businessMinutesBetween_(startMs, endMs, tz) {
 // no per-rep schedule UI), so coverage assumes everyone in a tz works that tz's
 // shift. The hourly math is the pure, Node-pinned coverageBucketHours_.
 
+/** PURE (Node-pinned): split one shift interval [absStart, absEnd) at its
+ *  breaks — `breaks` are {offsetMin, lenMin} RELATIVE to the shift start (an
+ *  offset is tz-free: the same instant arithmetic in any zone). Returns the
+ *  on-desk sub-intervals; a break outside the shift is ignored, one straddling
+ *  an edge is clipped, overlapping breaks union. Before this (operator
+ *  2026-09-03) the Coverage planner counted a rep on lunch as PRESENT — a
+ *  break was never subtracted anywhere the bands were drawn. */
+function coverageSplitAtBreaks_(absStart, absEnd, breaks) {
+  if (!(absEnd > absStart)) return [];
+  const cuts = (breaks || []).map(function (b) {
+    const s = absStart + (Number(b && b.offsetMin) || 0);
+    const e = s + (Number(b && b.lenMin) || 0);
+    return { s: Math.max(absStart, s), e: Math.min(absEnd, e) };
+  }).filter(function (c) { return c.e > c.s; }).sort(function (a, b) { return a.s - b.s; });
+  const out = [];
+  let cursor = absStart;
+  cuts.forEach(function (c) {
+    if (c.s > cursor) out.push({ absStart: cursor, absEnd: c.s });
+    if (c.e > cursor) cursor = c.e;
+  });
+  if (absEnd > cursor) out.push({ absStart: cursor, absEnd: absEnd });
+  return out;
+}
+
+/** PURE (Node-pinned): the break coverage strip. `agents` = [{id, name,
+ *  startMin, lengthMin, breaks:[{label, startMin, lenMin}]}] with every minute
+ *  ALREADY in the work-anchor frame (minutes from that day's midnight); `opts`
+ *  = {slotMin, startHour, endHour}. One slot per `slotMin` across the business
+ *  window; an agent is ON SHIFT in a slot when the shift overlaps it and AWAY
+ *  when any break overlaps it (a partial overlap counts as away — the desk
+ *  sees them gone for part of the slot, and over-reporting absence is the safe
+ *  direction for a staffing planner). onDesk = onShift − away. Names travel
+ *  because the strip's whole point is "WHO is away at 12:15". */
+function breakCoverageSlots_(agents, opts) {
+  const slotMin = Math.max(5, Number(opts && opts.slotMin) || 15);
+  const startMin = (Number(opts && opts.startHour) || 0) * 60;
+  const endMin = (Number(opts && opts.endHour) || 24) * 60;
+  const slots = [];
+  for (let t = startMin; t < endMin; t += slotMin) {
+    const tEnd = t + slotMin;
+    let onShift = 0;
+    const away = [];
+    (agents || []).forEach(function (a) {
+      const s0 = Number(a.startMin), e0 = s0 + Number(a.lengthMin);
+      if (!(e0 > s0) || !(s0 < tEnd && e0 > t)) return;
+      onShift++;
+      let gone = null;
+      (a.breaks || []).forEach(function (b) {
+        const bs = Number(b.startMin), be = bs + Number(b.lenMin);
+        if (be > bs && bs < tEnd && be > t && gone === null) gone = String(b.label || 'Break');
+      });
+      if (gone !== null) away.push({ id: String(a.id || ''), name: String(a.name || ''), label: gone });
+    });
+    slots.push({ startMin: t, onShift: onShift, onDesk: onShift - away.length, away: away });
+  }
+  return slots;
+}
+
+/** PURE (Node-pinned): average inbound calls per weekday per slot from the
+ *  CDR `Inbound Calls` export rows (DISPLAY values). Columns are found BY
+ *  HEADER NAME (the Phase-1 rule — self-correcting under a reorder, no parallel
+ *  header map to drift): Call Date / Call Start / Is Internal / Entry Queue.
+ *  Mirrors call-data-reporting's heatmap fallback: Call Start is RAW PST
+ *  'HH:MM:SS' shifted by `opts.shiftHours` (% 1440 wrap), internal calls
+ *  excluded, weekends excluded, an optional lowercase entry-queue set. The
+ *  denominator is the number of DISTINCT weekday dates that carried ANY
+ *  counted row (a day with no export is not a quiet day). A missing column is
+ *  NAMED in `missing` and yields no slots — never a strip of zeros. */
+function inboundVolumeBuckets_(headers, rows, opts) {
+  const need = { date: 'call date', start: 'call start', internal: 'is internal', queue: 'entry queue' };
+  const col = {};
+  (headers || []).forEach(function (h, i) {
+    const k = String(h == null ? '' : h).trim().toLowerCase();
+    Object.keys(need).forEach(function (key) { if (k === need[key] && col[key] === undefined) col[key] = i; });
+  });
+  const missing = Object.keys(need).filter(function (k) { return col[k] === undefined; }).map(function (k) { return need[k]; });
+  const slotMin = Math.max(5, Number(opts && opts.slotMin) || 15);
+  const startMin = (Number(opts && opts.startHour) || 0) * 60;
+  const endMin = (Number(opts && opts.endHour) || 24) * 60;
+  const nSlots = Math.max(0, Math.ceil((endMin - startMin) / slotMin));
+  const shift = (Number(opts && opts.shiftHours) || 0) * 60;
+  const qset = opts && opts.queues;
+  const counts = []; for (let i = 0; i < nSlots; i++) counts.push(0);
+  if (missing.length) return { slots: [], counts: counts, weekdays: 0, counted: 0, missing: missing };
+  const days = {};
+  let counted = 0;
+  (rows || []).forEach(function (r) {
+    const iso = cdrRowDateIso_(r[col.date], (opts && opts.tz) || 'UTC');
+    if (!iso || (opts && opts.fromIso && iso < opts.fromIso) || (opts && opts.toIso && iso > opts.toIso)) return;
+    if (String(r[col.internal] == null ? '' : r[col.internal]).trim().toUpperCase() === 'TRUE') return;
+    if (qset && !qset[String(r[col.queue] == null ? '' : r[col.queue]).trim().toLowerCase()]) return;
+    const wd = new Date(iso + 'T00:00:00Z').getUTCDay();
+    if (wd === 0 || wd === 6) return;
+    const cs = String(r[col.start] == null ? '' : r[col.start]).trim();
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(cs);
+    if (!m) return;
+    days[iso] = true;
+    const mins = (((+m[1]) * 60 + (+m[2])) + shift) % 1440;
+    if (mins < startMin || mins >= endMin) return;
+    counts[Math.floor((mins - startMin) / slotMin)]++;
+    counted++;
+  });
+  const nDays = Object.keys(days).length;
+  return { slots: nDays ? counts.map(function (c) { return Math.round((c / nDays) * 10) / 10; }) : [],
+           counts: counts, weekdays: nDays, counted: counted, missing: [] };
+}
+
 /** PURE: buckets shift intervals (minutes from the manager-tz midnight of the
  *  range's first day) into a per-day × 24-hour concurrency grid, counting
  *  DISTINCT reps per slot. Returns days[numDays] each = [24]{hour, confirmed,
@@ -14241,7 +14435,7 @@ function getCoveragePlan(fromDate, toDate) {
       // Turn D: per-rep column-O override (INV-127's per-tz-only limitation removed).
       const schedRaw = String(roster[i][EMP.SCHEDULE] || '').trim();
       reps.push({ id: String(roster[i][EMP.ID]).trim(), name: name, tz: tz,
-        sched: empShiftSchedule_({ scheduleRaw: schedRaw }, tz) });
+        sched: empShiftSchedule_({ id: String(roster[i][EMP.ID]).trim(), scheduleRaw: schedRaw }, tz) });
     }
 
     // PTO overlay map {empId: {dateIso: 'Approved'|'Pending'}} over a padded
@@ -14317,7 +14511,18 @@ function getCoveragePlan(fromDate, toDate) {
         // the buckets. conv.time comes from convertDateTime_ so this is
         // defensive, but the coercion makes an explicit guard mandatory.
         const absStart = (convMins === null) ? null : dayDelta * 1440 + convMins;
-        if (!off && absStart !== null) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
+        // Operator 2026-09-03: subtract the rep's breaks (tz + per-agent layers
+        // via the one resolver) so an hour where the whole desk is at lunch no
+        // longer reads as staffed. Offsets are shift-relative, so no second
+        // tz conversion; at hourly granularity a 15-min break inside an hour
+        // still leaves the rep "present" that hour — the strip on the Admin
+        // card is the 15-min view.
+        if (!off && absStart !== null) {
+          const cuts = (r.sched.breaks || []).map(function (b) { return { offsetMin: b.startMin - r.sched.startMin, lenMin: b.lenMin }; });
+          coverageSplitAtBreaks_(absStart, absStart + r.sched.lengthMin, cuts).forEach(function (iv) {
+            intervals.push({ rep: r.id, absStart: iv.absStart, absEnd: iv.absEnd, tentative: tentative });
+          });
+        }
         if (dd >= 0 && dd < numDays) {
           const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
           days[dd].reps.push({
@@ -14424,7 +14629,7 @@ function getPunctualityReport(fromDate, toDate) {
       if (!empRosterEmail_(roster[i])) continue;
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
       // Turn D: per-rep column-O override (late-start grading uses the rep's REAL shift).
-      const sched = empShiftSchedule_({ scheduleRaw: String(roster[i][EMP.SCHEDULE] || '').trim() }, tz);
+      const sched = empShiftSchedule_({ id: id, scheduleRaw: String(roster[i][EMP.SCHEDULE] || '').trim() }, tz);
       let lunchMin = null;
       (sched.breaks || []).forEach(function (b) { if (/lunch/i.test(b.label)) lunchMin = b.startMin; });
       if (lunchMin === null) {
@@ -15974,6 +16179,145 @@ function saveSpanishInboxMembers(emails) {
  *  shown: DEFAULT + every CONFIG BY_TIMEZONE tz + every property tz;
  *  rosterTimezones feeds the add-a-timezone picker (best-effort — a failed
  *  roster read still renders the config/property keys). */
+// ── Break coverage planner (operator 2026-09-03) ────────────────────────────
+// The Admin "Break schedules" card carries a 15-minute strip of who is on the
+// desk across the business window, computed from the EFFECTIVE breaks (tz +
+// per-agent layers, through the one resolver) of a DRAFT the admin has not
+// saved yet, over a background layer of average inbound call volume by time
+// of day. It is a SCHEDULE view — every rep on shift, breaks subtracted — not
+// a dated one: approved PTO lives on the Coverage planner, which now subtracts
+// breaks too (coverageSplitAtBreaks_).
+
+/** Every roster rep's shift + breaks in the WORK-ANCHOR frame (minutes from
+ *  that day's midnight), resolved through empShiftSchedule_ under `prop` (a
+ *  sanitized draft, or null for the stored property). Conversion goes through
+ *  convertDateTime_ on `dateIso` (a DST-correct instant, the getCoveragePlan
+ *  pattern); a rep whose conversion fails is NAMED in `skipped`, never dropped
+ *  silently (INV-187). */
+function breakCoverageAgents_(prop, dateIso) {
+  const anchor = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const rows = getEmployeeRosterRows_();
+  const agents = [], skipped = [];
+  const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + ':00'; };
+  withBreakSchedulesProp_(prop, function () {
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
+      const id = String(rows[i][EMP.ID] || '').trim();
+      const name = String(rows[i][EMP.NAME] || '').trim();
+      if (!id || !name) continue;
+      const tz = safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
+      const sched = empShiftSchedule_({ id: id, scheduleRaw: rows[i][EMP.SCHEDULE] }, tz);
+      const conv = convertDateTime_(dateIso, hhmm(sched.startMin), tz, anchor);
+      const startMin = timeToMins_(conv.time);
+      if (startMin === null) { skipped.push(name); continue; }
+      const dayDelta = daysBetween_(dateIso, conv.date);
+      const absStart = dayDelta * 1440 + startMin;
+      agents.push({
+        id: id, name: name, tz: tz, startMin: absStart, lengthMin: sched.lengthMin,
+        perEmployee: !!sched.perEmployee,
+        breaks: (sched.breaks || []).map(function (b) {
+          return { label: b.label, startMin: absStart + (b.startMin - sched.startMin), lenMin: b.lenMin };
+        }),
+      });
+    }
+  });
+  return { agents: agents, skipped: skipped, anchor: anchor };
+}
+
+/** Trailing-window average inbound volume per slot from the CDR export tab.
+ *  Best-effort by contract: any failure returns {unavailable: <reason>} and
+ *  the strip renders WITHOUT the layer (decoration — INV-187 says name the
+ *  gap, never draw zeros). Read with getDisplayValues throughout (INV-64: a
+ *  time-shaped column in a foreign sheet is never reinterpreted); widening
+ *  TAIL scan on the date column (the tab is date-ascending) bounded by
+ *  BREAK_COVERAGE_VOLUME_MAX_ROWS with truncation reported. Cached
+ *  BREAK_COVERAGE_VOLUME_CACHE_SEC on a CLEAN round only (INV-129); bypassed
+ *  under the CDR test override like every sibling CDR cache. */
+function getCdrInboundVolume_(opts) {
+  const slotMin = opts.slotMin, startHour = opts.startHour, endHour = opts.endHour;
+  const days = Math.max(7, Number(CONFIG.BREAK_COVERAGE_VOLUME_DAYS) || 28);
+  const anchor = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const toIso = Utilities.formatDate(new Date(), anchor, 'yyyy-MM-dd');
+  const fromIso = addDaysIso_(toIso, -days);
+  const queues = (CONFIG.BREAK_COVERAGE_VOLUME_QUEUES || []).map(function (q) { return String(q).trim().toLowerCase(); }).filter(Boolean);
+  const qset = queues.length ? queues.reduce(function (m, q) { m[q] = true; return m; }, {}) : null;
+  const useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  const cacheKey = 'brk_volume_v1:' + fromIso + ':' + toIso + ':' + slotMin + ':' + startHour + ':' + endHour + ':' + queues.join('|');
+  const cache = CacheService.getScriptCache();
+  if (useCache) { try { const hit = cache.get(cacheKey); if (hit) return JSON.parse(hit); } catch (_) {} }
+  let out;
+  try {
+    const ss = getCdrSS_();
+    const sheet = ss.getSheetByName(CONFIG.CDR_INBOUND_TAB);
+    if (!sheet) return { unavailable: 'The "' + CONFIG.CDR_INBOUND_TAB + '" tab is not in the CDR Report spreadsheet (call-data-reporting exports it — its "Inbound Calls tab export" trigger must be installed).' };
+    const lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return { unavailable: 'The "' + CONFIG.CDR_INBOUND_TAB + '" tab is empty.' };
+    const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+    const maxRows = Math.max(1000, Number(CONFIG.BREAK_COVERAGE_VOLUME_MAX_ROWS) || 40000);
+    let win = 4000, startRow, dates, truncated = false;
+    for (;;) {
+      startRow = Math.max(2, lastRow - win + 1);
+      dates = sheet.getRange(startRow, 1, lastRow - startRow + 1, 1).getDisplayValues();
+      const oldest = cdrRowDateIso_(dates[0][0], anchor);
+      if (startRow === 2 || (oldest && oldest < fromIso)) break;
+      if (win >= maxRows) { truncated = true; break; }
+      win = Math.min(maxRows, win * 4);
+    }
+    let first = -1, last = -1, through = null;
+    for (let i = 0; i < dates.length; i++) {
+      const d = cdrRowDateIso_(dates[i][0], anchor);
+      if (!d) continue;
+      if (through === null || d > through) through = d;
+      if (d >= fromIso && d <= toIso) { if (first < 0) first = i; last = i; }
+    }
+    const rows = (first < 0) ? [] : sheet.getRange(startRow + first, 1, last - first + 1, lastCol).getDisplayValues();
+    const b = inboundVolumeBuckets_(headers, rows, { fromIso: fromIso, toIso: toIso, slotMin: slotMin, startHour: startHour, endHour: endHour,
+      shiftHours: Number(CONFIG.CDR_INBOUND_PST_TO_CST_HOURS) || 0, queues: qset, tz: anchor });
+    if (b.missing.length) return { unavailable: 'The "' + CONFIG.CDR_INBOUND_TAB + '" tab is missing column(s): ' + b.missing.join(', ') + ' (a pre-extension export — re-run the export in call-data-reporting).' };
+    if (!b.weekdays) return { unavailable: 'No inbound rows between ' + fromIso + ' and ' + toIso + ' in the "' + CONFIG.CDR_INBOUND_TAB + '" tab (through ' + (through || '—') + ').' };
+    out = { slots: b.slots, weekdays: b.weekdays, counted: b.counted, from: fromIso, to: toIso, through: through,
+            queues: queues, truncated: truncated, slotMin: slotMin, startHour: startHour, endHour: endHour };
+  } catch (err) {
+    return { unavailable: 'Could not read the CDR Report: ' + (err && err.message ? err.message : String(err)) };
+  }
+  if (useCache && !out.truncated) { try { cache.put(cacheKey, JSON.stringify(out), Number(CONFIG.BREAK_COVERAGE_VOLUME_CACHE_SEC) || 3600); } catch (_) {} }
+  return out;
+}
+
+/** Break coverage planner — ADMIN-gated (INV-136: it lives on the Admin card
+ *  and previews an unsaved admin draft), READ-ONLY, bare `{error}` read shape.
+ *  `payload.draft` (optional) = the editor's unsaved {schedules, employees,
+ *  reminderMin} run through breakSchedSanitize_ — the SAME lenient read the
+ *  stored property gets, so what the strip previews is exactly what a save
+ *  would store; absent = the stored property. `payload.withVolume` adds the
+ *  demand layer (the client fetches it ONCE per card open; a draft keystroke
+ *  refresh leaves it off). Nothing here writes. */
+function getBreakCoverage(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
+  if (!emp.isAdmin) return { error: 'Admin access required.' };
+  try {
+    const p = payload || {};
+    const draft = (p.draft && typeof p.draft === 'object' && !Array.isArray(p.draft)) ? breakSchedSanitize_(p.draft) : null;
+    const anchor = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const dateIso = Utilities.formatDate(new Date(), anchor, 'yyyy-MM-dd');
+    const slotMin = Math.max(5, Number(CONFIG.BREAK_COVERAGE_SLOT_MIN) || 15);
+    const startHour = (CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8;
+    const endHour = (CONFIG.COVERAGE_BUSINESS_END_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR : 17;
+    const minStaff = (CONFIG.COVERAGE_MIN_STAFF != null) ? CONFIG.COVERAGE_MIN_STAFF : 2;
+    const goodStaff = (CONFIG.COVERAGE_STAFF_GOOD != null) ? CONFIG.COVERAGE_STAFF_GOOD : minStaff;
+    const built = breakCoverageAgents_(draft, dateIso);
+    const slots = breakCoverageSlots_(built.agents, { slotMin: slotMin, startHour: startHour, endHour: endHour });
+    const volume = p.withVolume ? getCdrInboundVolume_({ slotMin: slotMin, startHour: startHour, endHour: endHour }) : null;
+    return {
+      workAnchorTz: anchor, date: dateIso, slotMin: slotMin, startHour: startHour, endHour: endHour,
+      minStaff: minStaff, goodStaff: goodStaff, draft: !!draft,
+      agents: built.agents.length, perEmployee: built.agents.filter(function (a) { return a.perEmployee; }).length,
+      skipped: built.skipped, slots: slots, volume: volume,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 function breakSchedulesAdminView_() {
   const cfg = CONFIG.SHIFT_SCHEDULE || {};
   const prop = getBreakSchedules_();
@@ -15981,15 +16325,39 @@ function breakSchedulesAdminView_() {
   Object.keys(cfg.BY_TIMEZONE || {}).forEach(function (k) { keySet[k] = true; });
   if (prop) Object.keys(prop.schedules).forEach(function (k) { keySet[k] = true; });
   const rosterTz = [];
+  const rosterMap = {};   // id → { id, name, timezone, scheduleRaw } (INV-183-included rows only)
   try {
     const rows = getEmployeeRosterRows_();
     for (let i = 1; i < rows.length; i++) {
       if (!empRosterEmail_(rows[i])) continue;   // INV-183: one inclusion predicate
       const tz = String(rows[i][EMP.TIMEZONE] || '').trim();
       if (tz && rosterTz.indexOf(tz) < 0) rosterTz.push(tz);
+      const id = String(rows[i][EMP.ID] || '').trim();
+      if (id) rosterMap[id] = { id: id, name: String(rows[i][EMP.NAME] || '').trim(),
+        timezone: tz || CONFIG.TIMEZONE, scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim() };
     }
   } catch (e) { /* best-effort */ }
   const hm = function (m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2); };
+  const workAnchorTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  // Per-employee sections (operator 2026-09-02): every agent with a custom
+  // entry, resolved through the SAME resolver the Clock chip and reminders
+  // use, so the editor shows what ships. An entry whose id is no longer on
+  // the roster (offboarded, or a typo'd hand edit) is listed as such so it
+  // can be removed — never silently hidden. `tzMismatch` flags a roster tz
+  // that differs from the CST work anchor (the profile-vs-anchor class):
+  // the times shown are in THAT zone, which is the trap this week taught.
+  const employees = Object.keys((prop && prop.employees) || {}).map(function (id) {
+    const r = rosterMap[id];
+    const tz = r ? safeTimezone_(r.timezone) : workAnchorTz;
+    const eff = empShiftSchedule_({ id: id, scheduleRaw: r ? r.scheduleRaw : '' }, tz);
+    return { id: id, name: r ? r.name : '', onRoster: !!r, timezone: tz,
+      tzMismatch: !r ? false : !tzEquivalent_(tz, workAnchorTz),
+      breaks: eff.breaks.map(function (b) { return { label: b.label, start: hm(b.startMin), len: b.lenMin }; }) };
+  }).sort(function (a, b) { return (a.name || a.id).localeCompare(b.name || b.id); });
+  const roster = Object.keys(rosterMap).map(function (id) {
+    return { id: id, name: rosterMap[id].name, timezone: rosterMap[id].timezone,
+      tzMismatch: !tzEquivalent_(safeTimezone_(rosterMap[id].timezone), workAnchorTz) };
+  }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   const schedules = Object.keys(keySet).sort(function (a, b) {
     return a === 'DEFAULT' ? -1 : (b === 'DEFAULT' ? 1 : a.localeCompare(b));
   }).map(function (key) {
@@ -16007,17 +16375,43 @@ function breakSchedulesAdminView_() {
   });
   return {
     schedules: schedules,
+    employees: employees,
+    roster: roster,
+    workAnchorTz: workAnchorTz,
     reminderMin: (prop && prop.reminderMin) || parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
     configReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
     rosterTimezones: rosterTz.sort(),
   };
 }
 
+/** Strict per-break validation for saveBreakSchedules — names the first
+ *  problem (the editor should say what is wrong, not silently drop).
+ *  Everything it accepts round-trips through breakListSanitize_ unchanged. */
+function breakListValidate_(arr, label) {
+  if (!Array.isArray(arr)) return { error: 'Breaks for "' + label + '" must be a list.' };
+  if (arr.length > 10) return { error: 'Too many breaks for "' + label + '" (max 10).' };
+  const clean = [];
+  for (let j = 0; j < arr.length; j++) {
+    const b = arr[j] || {};
+    const start = String(b.start || '').trim();
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) {
+      return { error: 'Break start time for "' + label + '" must be H:mm (got "' + start + '").' };
+    }
+    const len = parseInt(b.len, 10);
+    if (!(len >= 1 && len <= 240)) {
+      return { error: 'Break length for "' + label + '" must be 1–240 minutes.' };
+    }
+    clean.push({ label: String(b.label || '').trim().substring(0, 40) || 'Break', start: start, len: len });
+  }
+  return { breaks: clean };
+}
+
 /** Admin-gated (INV-136 / INV-57 family): persist the break-schedule overrides
  *  to Script Property SHIFT_BREAK_SCHEDULES (operator 2026-08-27 — "where does
  *  the break schedule information go?": previously ONLY editable in
  *  CONFIG.SHIFT_SCHEDULE, i.e. a redeploy). Payload:
- *  { reminderMin, schedules: { DEFAULT|<IANA tz>: [{label,start,len}] } }.
+ *  { reminderMin, schedules: { DEFAULT|<IANA tz>: [{label,start,len}] },
+ *    employees?: { <rosterId>: [{label,start,len}] } } (per-agent layer, 2026-09-02).
  *  STRICT validation with named errors (an editor should say what is wrong,
  *  not silently drop — the saveSpanishInboxMembers posture); everything
  *  accepted here round-trips through breakSchedSanitize_ unchanged (pinned),
@@ -16046,36 +16440,56 @@ function saveBreakSchedules(payload) {
       if (key !== 'DEFAULT' && !/^[A-Za-z]+(\/[A-Za-z0-9_\-+]+)+$/.test(key)) {
         return { success: false, error: 'Not a valid timezone key: "' + key + '" — use DEFAULT or an IANA id like America/Chicago.' };
       }
-      const arr = src[keys[i]];
-      if (!Array.isArray(arr)) return { success: false, error: 'Breaks for "' + key + '" must be a list.' };
-      if (arr.length > 10) return { success: false, error: 'Too many breaks for "' + key + '" (max 10).' };
-      const clean = [];
-      for (let j = 0; j < arr.length; j++) {
-        const b = arr[j] || {};
-        const start = String(b.start || '').trim();
-        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) {
-          return { success: false, error: 'Break start time for "' + key + '" must be H:mm (got "' + start + '").' };
+      const v = breakListValidate_(src[keys[i]], key);
+      if (v.error) return { success: false, error: v.error };
+      schedules[key] = v.breaks;   // EMPTY is valid — "no breaks for this key"
+    }
+    // Per-employee layer (operator 2026-09-02): { employees: { <id>: [...] } },
+    // optional (absent = none). Keys are ROSTER IDS and must exist on the
+    // roster — a typo'd id would be a silent no-op forever, so it is refused
+    // by name; an OFFBOARDED id (name kept, email cleared) still resolves,
+    // because the editor lists it as off-roster precisely so it can be
+    // removed. An explicitly EMPTY list = "no breaks for this agent".
+    const esrc = payload.employees;
+    const employees = {};
+    if (esrc !== undefined && esrc !== null) {
+      if (typeof esrc !== 'object' || Array.isArray(esrc)) return { success: false, error: 'Expected an employees map.' };
+      const ekeys = Object.keys(esrc);
+      if (ekeys.length > BREAK_EMP_MAX_KEYS) return { success: false, error: 'Too many per-agent schedules (max ' + BREAK_EMP_MAX_KEYS + ').' };
+      let known = null;
+      if (ekeys.length) {
+        known = {};
+        const rows = getEmployeeRosterRows_();
+        for (let i = 1; i < rows.length; i++) {
+          const rid = String(rows[i][EMP.ID] || '').trim();
+          if (rid) known[rid] = String(rows[i][EMP.NAME] || '').trim();
         }
-        const len = parseInt(b.len, 10);
-        if (!(len >= 1 && len <= 240)) {
-          return { success: false, error: 'Break length for "' + key + '" must be 1–240 minutes.' };
-        }
-        clean.push({ label: String(b.label || '').trim().substring(0, 40) || 'Break', start: start, len: len });
       }
-      schedules[key] = clean;   // EMPTY is valid — "no breaks for this key"
+      for (let i = 0; i < ekeys.length; i++) {
+        const id = String(ekeys[i]).trim();
+        if (!BREAK_EMP_KEY_RE.test(id)) return { success: false, error: 'Not a valid employee id: "' + id + '".' };
+        if (!(id in known)) return { success: false, error: 'Employee id "' + id + '" is not on the roster.' };
+        const v = breakListValidate_(esrc[ekeys[i]], known[id] || id);
+        if (v.error) return { success: false, error: v.error };
+        employees[id] = v.breaks;
+      }
     }
     const rm = parseInt(payload.reminderMin, 10);
     if (!(rm >= 1 && rm <= 120)) return { success: false, error: 'Reminder lead must be 1–120 minutes.' };
     const props = PropertiesService.getScriptProperties();
     const configReminder = parseInt((CONFIG.SHIFT_SCHEDULE || {}).BREAK_REMINDER_MINUTES, 10) || 10;
-    if (Object.keys(schedules).length === 0 && rm === configReminder) {
+    const empCount = Object.keys(employees).length;
+    if (Object.keys(schedules).length === 0 && empCount === 0 && rm === configReminder) {
       props.deleteProperty('SHIFT_BREAK_SCHEDULES');
     } else {
-      props.setProperty('SHIFT_BREAK_SCHEDULES', JSON.stringify({ schedules: schedules, reminderMin: rm }));
+      const blob = { schedules: schedules };
+      if (empCount > 0) blob.employees = employees;   // absent when empty — a pre-existing blob stays byte-identical
+      blob.reminderMin = rm;                          // key order mirrors breakSchedSanitize_ so read ≡ write byte-for-byte
+      props.setProperty('SHIFT_BREAK_SCHEDULES', JSON.stringify(blob));
     }
     _breakSchedulesCache = undefined;   // re-read within this execution
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
-      'Updated break schedules (' + Object.keys(schedules).length + ' schedule(s), reminder ' + rm + 'm)', emp.email);
+      'Updated break schedules (' + Object.keys(schedules).length + ' schedule(s), ' + empCount + ' per-agent, reminder ' + rm + 'm)', emp.email);
     return { success: true, breakSchedules: breakSchedulesAdminView_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
