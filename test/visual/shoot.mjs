@@ -203,6 +203,8 @@ const SCENARIOS = [
   // editors live, incl. the 2026-08-25 Reference data-table upload — had no
   // coverage at all. One post-hook closes it (the sched-modal precedent).
   ['admin-config-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('config')"],
+  // Break coverage strip (2026-09-03): the planner RPC forced to fail on a COLD open — the strip must render the error card, never an empty strip.
+  ['admin-config-covfail-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?failrpc=getBreakCoverage', "cnAdminTab_('config')"],
 
   // A4 (2026-09-01): the Day Edit modal, rebuilt from four fixed slots to an
   // N-row break list. It had never been shot at all, which is how a modal that
