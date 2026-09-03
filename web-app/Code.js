@@ -3022,9 +3022,12 @@ function reportMultiBreakDays() {
  *  - It is a repair for the TIMESHEET only. Time-off dates were chosen by the
  *    rep and need nothing; call-note DateLocal stamps are cosmetic (which day
  *    History lists a note under) and are deliberately not touched.
- * Run from the editor: `repairTimesheetTimezone_dryRun()` first, read the
- * execution log, then `repairTimesheetTimezone_apply()`. Both read
- * TZ_REPAIR_2026_09_02 below — delete all three once the repair is done. */
+ * Run from the editor with an opts object (dryRun defaults TRUE): read the
+ * execution log first, then run again with { dryRun: false }. The 2026-09-02
+ * PH flip (Anne Garcia + Margie Ingay, Asia/Manila → America/Chicago,
+ * flippedAt '2026-09-02 15:00') was applied on 2026-09-03 — 14 rows moved,
+ * four self-colliding clock-in pairs (the midnight-PHT re-clock-ins) reported
+ * for Day Edit; its one-time wrappers were deleted afterwards. */
 const TZ_REPAIR_MAX_ROWS = 2000;
 
 /* Pure planner for one row: returns null (unparseable / no change), a
@@ -3173,24 +3176,6 @@ function repairTimesheetTimezone(opts) {
   }
   return { dryRun: false, moved: moved, skipped: skipped, warnings: warnings,
     byEmp: Object.keys(byEmp).map(id => ({ id: id, name: byEmp[id].name, rows: byEmp[id].rows, days: Object.keys(byEmp[id].dates).length })) };
-}
-
-/* ONE-TIME parameters for the 2026-09-02 PH roster flip. `flippedAt` is the
- * Chicago wall time the Timezone cells were changed — adjust it before
- * running. Delete this constant and both wrappers once the repair is done. */
-const TZ_REPAIR_2026_09_02 = {
-  employees: ['Anne Garcia', 'Margie Ingay'],
-  fromTz: 'Asia/Manila',
-  toTz: 'America/Chicago',
-  flippedAt: '2026-09-02 15:00',
-  fromDate: '',                 // '' = every row; or 'yyyy-MM-dd' (OLD-tz date) to bound the walk
-  skipDates: [],                // OLD-tz dates to leave alone (rows already fixed by hand)
-};
-function repairTimesheetTimezone_dryRun() {
-  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: true }));
-}
-function repairTimesheetTimezone_apply() {
-  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: false }));
 }
 
 function deletePunch(empId, date, time, punchType) {

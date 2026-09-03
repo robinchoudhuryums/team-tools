@@ -17020,10 +17020,9 @@ test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, lock
   assert.ok(/would DUPLICATE an existing/.test(stripped), 'collisions are REPORTED, never resolved silently');
   assert.ok(/clearFromEmployeeSheet_\(emp, c\.oldDate, c\.type\)/.test(stripped) && /writeToEmployeeSheet_\(emp, c\.newDate, c\.newTime, c\.dir, c\.type\)/.test(stripped), 'the personal-sheet mirror follows the move (INV-59, best-effort)');
   assert.ok(/hits\.length !== 1/.test(stripped), 'an ambiguous name refuses rather than guessing a payroll row');
-  // The wrappers are the operator's ▶ targets and must never flip the default.
-  const dry = extractRawFunction('Code.js', 'repairTimesheetTimezone_dryRun');
-  const app = extractRawFunction('Code.js', 'repairTimesheetTimezone_apply');
-  assert.ok(/dryRun: true/.test(dry) && /dryRun: false/.test(app), 'wrappers pass the mode explicitly');
+  // The one-time wrappers + TZ_REPAIR_2026_09_02 were DELETED after the
+  // repair ran (2026-09-03); the tool stays, dryRun-default-true above.
+  assert.ok(!/TZ_REPAIR_2026_09_02|repairTimesheetTimezone_apply/.test(codeSrc), 'the one-time constant and wrappers stay deleted');
 });
 
 
