@@ -21,7 +21,7 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 750 + DOM 104;
+Test Command: manual (Node harnesses: `npm test` = pure 752 + DOM 104;
   visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
@@ -388,9 +388,15 @@ PR #224 MERGED 2026-09-03 (per-agent breaks + the planner); the operator's
 post-merge `runAllTests()` read 308/308. The tz-repair dry run then failed
 on a CONFIG-key typo (`EMPLOYEES_TAB` → `EMPLOYEE_TAB`, fixed + the
 `F1-inverse` tripwire); the repair was then APPLIED (14 rows, 4 self-colliding
-clock-in pairs left for Day Edit with the morning time; 08-27/08-28 have no
-clock-outs at all — the agents must confirm) and the one-time constant +
-wrappers were deleted.
+clock-in pairs; 08-27/08-28 have no clock-outs at all — the agents must
+confirm) and the one-time constant + wrappers were deleted. The operator then
+asked for the Day Edit follow-ups as a FUNCTION: `repairSplitDayPunches(opts)`
+(commits 96dfb83 + the TZR-4 tightening) keeps the earliest ClockIn per date,
+deletes the rest, re-points the mirror, and writes agent-confirmed `adds`
+through the adjust writer — dry-run default, TZR-3/4 pinned, pure 752/0.
+NEXT for the operator: dry run it, then apply with `adds` once the agents
+confirm their lunch/clock-out times; then the August accrual top-up + ADP
+re-export for the affected period.
 BUILT the same day: the BREAK COVERAGE PLANNER on that card
 (`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
 11/11 bites, three admin-config scenarios clean incl. the cold-failure one).
