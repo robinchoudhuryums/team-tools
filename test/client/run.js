@@ -13361,7 +13361,8 @@ console.log('\nbreak-schedule editor (operator 2026-08-27)');
 test('BRK-1: breakSchedSanitize_ behavioral — lenient whitelist-rebuild, explicit-empty kept', () => {
   const ctx = {};
   vm.createContext(ctx);
-  vm.runInContext(extractRawFunction('Code.js', 'breakSchedSanitize_'), ctx);
+  vm.runInContext('const BREAK_EMP_KEY_RE = /^[A-Za-z0-9_\\-]{1,40}$/; const BREAK_EMP_MAX_KEYS = 200;\n' +
+    extractRawFunction('Code.js', 'breakListSanitize_') + '\n' + extractRawFunction('Code.js', 'breakSchedSanitize_'), ctx);
   const S = ctx.breakSchedSanitize_;
   // Non-object blobs → null (corrupt property degrades to CONFIG).
   assert.strictEqual(S(null), null);
@@ -13401,6 +13402,21 @@ test('BRK-1: breakSchedSanitize_ behavioral — lenient whitelist-rebuild, expli
   const junkKey = S({ schedules: { 'America/Chicago': [{ start: 'nope', len: 'x' }] } });
   assert.deepStrictEqual(JSON.parse(JSON.stringify(junkKey.schedules['America/Chicago'])), [],
     'an all-junk key reads as explicitly EMPTY, not as absent');
+  // Per-employee layer (operator 2026-09-02): same per-break rule, keyed by
+  // roster id; a bad id is dropped; an EMPTY list is kept (explicit "no
+  // breaks for this agent"); the key is ABSENT from the output when there is
+  // nothing in it — so a pre-existing blob round-trips byte-identically.
+  const withEmp = S({ schedules: { DEFAULT: [] }, employees: {
+    'E-1042': [{ label: 'Lunch', start: '12:00', len: 60 }, { start: 'bad', len: 5 }],
+    'E-1077': [],
+    'not a valid id!': [{ label: 'X', start: '10:00', len: 10 }],
+    'E-9999': 'nope',
+  } });
+  assert.strictEqual(JSON.stringify(Object.keys(withEmp.employees)), JSON.stringify(['E-1042', 'E-1077']), 'bad ids and non-array values dropped');
+  assert.strictEqual(withEmp.employees['E-1042'].length, 1, 'the bad break inside a valid id is dropped, the survivor kept');
+  assert.strictEqual(JSON.stringify(withEmp.employees['E-1077']), '[]', 'an explicitly EMPTY per-agent list is kept');
+  assert.ok(!('employees' in S({ schedules: {}, employees: {} })), 'no employees → the key is ABSENT (byte-identical legacy blobs)');
+  assert.ok(!('employees' in S(clean)), 'the pre-existing canonical payload gains no employees key');
 });
 
 test('BRK-2: getShiftSchedule_ merge behavioral — property wins (tz → DEFAULT), explicit-empty honored', () => {
@@ -13413,7 +13429,7 @@ test('BRK-2: getShiftSchedule_ merge behavioral — property wins (tz → DEFAUL
   const mk = (prop) => {
     const ctx = { CONFIG: CONFIG, getBreakSchedules_: () => prop };
     vm.createContext(ctx);
-    vm.runInContext(extractRawFunction('Code.js', 'getShiftSchedule_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'breakListResolve_') + '\n' + extractRawFunction('Code.js', 'getShiftSchedule_'), ctx);
     return ctx.getShiftSchedule_;
   };
   // Property unset → today's CONFIG behavior byte-for-byte, incl. the
@@ -13457,10 +13473,13 @@ test('BRK-3: saveBreakSchedules behavioral — gate, named errors, canonical wri
       writeAuditLog_: () => { audited++; },
       breakSchedulesAdminView_: () => ({ fromView: true }),
       CONFIG: { SHIFT_SCHEDULE: { BREAK_REMINDER_MINUTES: 10 } },
+      EMP: { ID: 1, NAME: 2 },
+      getEmployeeRosterRows_: () => [['h'], ['a@x', 'E-1042', 'Avery Blake'], ['', 'E-OLD', 'Gone Person']],
     };
     vm.createContext(ctx);
-    vm.runInContext(extractRawFunction('Code.js', 'breakSchedSanitize_'), ctx);
-    vm.runInContext(extractRawFunction('Code.js', 'saveBreakSchedules'), ctx);
+    vm.runInContext('const BREAK_EMP_KEY_RE = /^[A-Za-z0-9_\\-]{1,40}$/; const BREAK_EMP_MAX_KEYS = 200;\n' +
+      extractRawFunction('Code.js', 'breakListSanitize_') + '\n' + extractRawFunction('Code.js', 'breakListValidate_') + '\n' +
+      extractRawFunction('Code.js', 'breakSchedSanitize_') + '\n' + extractRawFunction('Code.js', 'saveBreakSchedules'), ctx);
     return ctx;
   };
   const rep = mkCtx(false);
@@ -13494,6 +13513,55 @@ test('BRK-3: saveBreakSchedules behavioral — gate, named errors, canonical wri
   const reset = S({ reminderMin: 10, schedules: {} });
   assert.ok(reset.success && deleted === 1 && !('SHIFT_BREAK_SCHEDULES' in props),
     'reset deletes the property (the umsTheme posture)');
+  // Per-employee layer (operator 2026-09-02): keyed by ROSTER ID, refused by
+  // name when the id is unknown or malformed; an OFFBOARDED id (email cleared,
+  // row kept) still resolves; written only when non-empty; an employees-only
+  // save is NOT a reset.
+  assert.ok(/Expected an employees map/.test(S({ reminderMin: 10, schedules: {}, employees: [1] }).error), 'a non-map employees value is named');
+  assert.ok(/Not a valid employee id: "bad id!"/.test(S({ reminderMin: 10, schedules: {}, employees: { 'bad id!': [] } }).error), 'a malformed id is refused by name');
+  assert.ok(/"E-NOPE" is not on the roster/.test(S({ reminderMin: 10, schedules: {}, employees: { 'E-NOPE': [] } }).error), 'an unknown id is refused by name — a typo would be a silent no-op forever');
+  assert.ok(/must be H:mm/.test(S({ reminderMin: 10, schedules: {}, employees: { 'E-1042': [{ start: '9', len: 10 }] } }).error), 'per-agent breaks get the same strict per-break rule');
+  assert.ok(!('SHIFT_BREAK_SCHEDULES' in props), 'nothing written on any per-agent reject');
+  const okEmp = S({ reminderMin: 10, schedules: {}, employees: { 'E-1042': [{ label: 'Lunch', start: '12:00', len: 60 }], 'E-OLD': [] } });
+  assert.ok(okEmp.success, 'a valid per-agent save succeeds (offboarded id accepted: ' + JSON.stringify(okEmp) + ')');
+  const storedE = JSON.parse(props.SHIFT_BREAK_SCHEDULES);
+  assert.strictEqual(JSON.stringify(storedE.employees['E-1042']), JSON.stringify([{ label: 'Lunch', start: '12:00', len: 60 }]), 'per-agent breaks persisted canonically');
+  assert.strictEqual(JSON.stringify(storedE.employees['E-OLD']), '[]', 'an explicitly EMPTY per-agent list persists');
+  assert.strictEqual(JSON.stringify(ctx.breakSchedSanitize_(storedE)), JSON.stringify(storedE), 'the per-agent write round-trips through the sanitizer unchanged (read ≡ write)');
+  const noEmp = S({ reminderMin: 15, schedules: { DEFAULT: [] } });
+  assert.ok(noEmp.success && !('employees' in JSON.parse(props.SHIFT_BREAK_SCHEDULES)), 'no per-agent entries → no employees key in the blob');
+  const resetAll = S({ reminderMin: 10, schedules: {}, employees: {} });
+  assert.ok(resetAll.success && !('SHIFT_BREAK_SCHEDULES' in props), 'an empty employees map does not block the reset');
+});
+
+test('BRK-5: empShiftSchedule_ behavioural — the per-employee layer wins over the tz layer, explicit-empty honoured, no id → tz layer, column-O override composes', () => {
+  const base = { startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 750, lenMin: 60 }], breakReminderMin: 10 };
+  const mk = (prop) => {
+    const ctx = {
+      getShiftSchedule_: () => JSON.parse(JSON.stringify(base)),
+      getBreakSchedules_: () => prop,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'parseShiftOverride_') + '\n' + extractRawFunction('Code.js', 'breakListResolve_') + '\n' +
+      extractRawFunction('Code.js', 'empShiftSchedule_'), ctx);
+    return ctx.empShiftSchedule_;
+  };
+  const prop = { schedules: {}, employees: { 'E-1042': [{ label: 'Merienda', start: '15:30', len: 20 }], 'E-1077': [] } };
+  const E = mk(prop);
+  const a = E({ id: 'E-1042', scheduleRaw: '' }, 'America/Chicago');
+  assert.strictEqual(a.breaks.length, 1); assert.strictEqual(a.breaks[0].startMin, 15 * 60 + 30); assert.strictEqual(a.perEmployee, true, 'the per-agent breaks win');
+  assert.strictEqual(a.startMin, 480, 'shift start still the tz layer\'s when column O is blank');
+  const b = E({ id: 'E-1077' }, 'America/Chicago');
+  assert.strictEqual(b.breaks.length, 0); assert.strictEqual(b.perEmployee, true, 'an explicitly EMPTY per-agent list = no breaks, never inherit ([] is truthy — the hazard is a .length guard)');
+  const c = E({ id: 'E-9999' }, 'America/Chicago');
+  assert.strictEqual(c.breaks[0].label, 'Lunch'); assert.ok(!c.perEmployee, 'an id with no entry falls through to the tz layer');
+  const d = E({ scheduleRaw: '' }, 'America/Chicago');
+  assert.strictEqual(d.breaks[0].label, 'Lunch'); assert.ok(!d.perEmployee, 'no id → the tz layer (the admin view\'s null empLike)');
+  const e = E({ id: 'E-1042', scheduleRaw: '8:30-17:00' }, 'America/Chicago');
+  assert.strictEqual(e.startMin, 510); assert.strictEqual(e.override, true); assert.strictEqual(e.breaks[0].label, 'Merienda', 'column-O start/length composes with per-agent breaks');
+  assert.strictEqual(e.breakReminderMin, 10, 'the reminder lead stays global');
+  const F = mk(null);
+  assert.ok(!F({ id: 'E-1042' }, 'America/Chicago').perEmployee, 'no property → tz layer for everyone');
 });
 
 test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminView shared, editor collects custom-only', () => {
@@ -13523,6 +13591,17 @@ test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminVi
   const view = nc(extractRawFunction('Code.js', 'breakSchedulesAdminView_'));
   assert.ok(/empShiftSchedule_\(null,/.test(view), 'the editor view resolves through empShiftSchedule_ (INV-149)');
   assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(view), 'roster tz list honors the INV-183 inclusion predicate');
+  // Per-agent layer (operator 2026-09-02): the two roster-walk consumers pass
+  // the ROSTER ID so the layer reaches coverage + punctuality; the view ships
+  // employees/roster/workAnchorTz resolved through the same resolver.
+  assert.ok(/empShiftSchedule_\(\{ id: String\(roster\[i\]\[EMP\.ID\]\)\.trim\(\), scheduleRaw: schedRaw \}, tz\)/.test(nc(extractRawFunction('Code.js', 'getCoveragePlan'))), 'getCoveragePlan passes the roster id');
+  assert.ok(/empShiftSchedule_\(\{ id: id, scheduleRaw:/.test(nc(extractRawFunction('Code.js', 'getPunctualityReport'))), 'getPunctualityReport passes the roster id');
+  assert.ok(/schedule: empShiftSchedule_\(emp, empTz\)/.test(nc(extractRawFunction('Code.js', 'getEmployeeState'))), 'getEmployeeState passes the emp object (carries id)');
+  assert.ok(/employees: employees,/.test(view) && /roster: roster,/.test(view) && /workAnchorTz: workAnchorTz,/.test(view), 'the view ships the per-agent sections, the picker roster and the work anchor');
+  assert.ok(/empShiftSchedule_\(\{ id: id, scheduleRaw: r \? r\.scheduleRaw : '' \}, tz\)/.test(view), 'per-agent sections resolve through the SAME resolver');
+  assert.ok(/tzMismatch: !r \? false : !tzEquivalent_\(tz, workAnchorTz\)/.test(view), 'a roster tz off the work anchor is flagged (the profile-vs-anchor class)');
+  const emp = nc(extractRawFunction('Code.js', 'empShiftSchedule_'));
+  assert.ok(/prop\.employees\[id\] !== undefined/.test(emp), 'the per-agent consult uses !== undefined (explicit-empty contract)');
   // Client: the card renders in the Config sub-tab, collects ONLY
   // data-custom="1" sections (an untouched Save never freezes inheritance),
   // and re-renders from the SERVER's returned view.
@@ -13531,8 +13610,12 @@ test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminVi
     'the Config sub-tab renders the editor from getAdminConfig.breakSchedules');
   assert.ok(/getAttribute\('data-custom'\) !== '1'\) continue;/.test(cn),
     'the save collects ONLY customized sections');
-  assert.ok(/\.saveBreakSchedules\(\{ reminderMin: rm, schedules: schedules \}\)/.test(cn),
-    'the editor calls the save endpoint');
+  assert.ok(/\.saveBreakSchedules\(\{ reminderMin: rm, schedules: schedules, employees: employees \}\)/.test(cn),
+    'the editor calls the save endpoint with the per-agent map');
+  assert.ok(/#cn-admin-brk-emp-list \.cn-brk-sched\[data-emp="1"\]/.test(cn) && /employees\[eid\] = ebreaks;/.test(cn),
+    'per-agent sections are collected from their own list, custom-only');
+  assert.ok(/cnBreakEmpOptionsHtml_/.test(cn) && /id="cn-admin-brk-addempbtn"/.test(cn), 'the picker lists agents without a section and adds one');
+  assert.ok(/data-tzwarn/.test(cn) && /cn-brk-pill\.warn/.test(cn), 'a roster tz off the work anchor renders a warn pill');
   assert.ok(/cnRenderBreakSchedEditor_\(res\.breakSchedules \|\| \{\}\)/.test(cn),
     'the post-save re-render uses the SERVER-resolved view, never a client paraphrase (INV-185)');
   assert.ok(/aria-label="Break start time"/.test(cn) && /aria-label="Remove break"/.test(cn),

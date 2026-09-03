@@ -1740,6 +1740,8 @@
   .cn-brk-key { font-weight: 600; font-size: 12.5px; color: var(--ink); }
   .cn-brk-pill { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted-2); }
   .cn-brk-pill.custom { color: var(--info-deep); border-color: transparent; background: var(--info-soft); }
+  .cn-brk-pill.warn { color: var(--warning-deep); border-color: transparent; background: var(--warn-soft); }
+  .cn-brk-sub { font-size: 12.5px; font-weight: 600; color: var(--ink); margin: 14px 0 4px; }
   .cn-brk-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px 30px; gap: 8px; align-items: center; padding: 3px 0; }
   .cn-brk-row input { width: 100%; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
   .cn-brk-cols { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-3); padding-bottom: 0; }
@@ -11428,7 +11430,7 @@ function cnRenderAdminBody_(cfg) {
     // reminder lead ONLY — shift start/end stay CONFIG + roster column O.
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('clock', 14) + ' Break schedules</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Scheduled breaks drive the Clock tab’s “Next break” chip and the break reminder (chime + toast) in every open window, including the pinned pop-out. <strong>Default</strong> applies to every timezone without its own schedule; Customize a timezone to give it different breaks. Times are in each rep’s <strong>own</strong> timezone. Shift start/end times are separate (per-timezone in the app configuration; per-rep via roster column O) — this edits breaks only. Reps pick changes up on their next state refresh (page load or within ~10 minutes).</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Scheduled breaks drive the Clock tab’s “Next break” chip and the break reminder (chime + toast) in every open window, including the pinned pop-out. <strong>Default</strong> applies to every timezone without its own schedule; Customize a timezone to give it different breaks. <strong>Per-agent</strong> schedules below win over both, so breaks can be staggered and the whole team is never away at once. Times are in each rep’s <strong>own roster</strong> timezone (CST for everyone under the all-CST policy — a row that disagrees is flagged). Shift start/end times are separate (per-timezone in the app configuration; per-rep via roster column O) — this edits breaks only. Reps pick changes up on their next state refresh (page load or within ~10 minutes).</div>' +
       '<div id="cn-admin-brk-editor">' + cnRenderBreakSchedEditor_(cfg.breakSchedules || {}) + '</div>' +
       '<button class="btn-modal-ok" id="cn-admin-brk-save" style="margin:10px 0 0">Save break schedules</button>' +
     '</div>' +
@@ -11857,9 +11859,23 @@ function cnRenderAdminBody_(cfg) {
         rows.appendChild(w.firstElementChild);
       }
     } else if (t.classList.contains('cn-brk-override') && sec) {
-      sec.outerHTML = cnBreakSchedSectionHtml_({ key: sec.getAttribute('data-key'), breaks: cnBreakSectionValues_(sec) }, true);
+      sec.outerHTML = cnBreakSchedSectionHtml_(cnBreakSectionMeta_(sec, { breaks: cnBreakSectionValues_(sec) }), true);
     } else if (t.classList.contains('cn-brk-revert') && sec) {
-      sec.outerHTML = cnBreakSchedSectionHtml_({ key: sec.getAttribute('data-key'), pending: true }, false);
+      // An employee section stashes its rows so Keep can restore them without a refetch.
+      sec.outerHTML = cnBreakSchedSectionHtml_(cnBreakSectionMeta_(sec, { pending: true, breaks: cnBreakSectionValues_(sec) }), false);
+    } else if (t.id === 'cn-admin-brk-addempbtn') {
+      var sel = document.getElementById('cn-admin-brk-addemp');
+      var opt = sel && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex] : null;
+      if (!opt || !opt.value) { showToast('Choose an agent first', 'toast-warn'); return; }
+      var elist = document.getElementById('cn-admin-brk-emp-list');
+      if (!elist) return;
+      if (elist.querySelector('.cn-brk-sched[data-key="' + opt.value.replace(/"/g, '') + '"]')) { showToast('That agent already has a section', 'toast-info'); return; }
+      var defSec2 = document.querySelector('#cn-admin-brk-list .cn-brk-sched[data-key="DEFAULT"]');
+      var wrap2 = document.createElement('div');
+      wrap2.innerHTML = cnBreakEmpSectionHtml_({ id: opt.value, name: opt.getAttribute('data-name') || '', timezone: opt.getAttribute('data-tz') || '',
+        tzMismatch: opt.getAttribute('data-tzwarn') === '1', breaks: defSec2 ? cnBreakSectionValues_(defSec2) : [] }, true);
+      elist.appendChild(wrap2.firstElementChild);
+      opt.remove(); sel.selectedIndex = 0;
     } else if (t.id === 'cn-admin-brk-addtzbtn') {
       var inp = document.getElementById('cn-admin-brk-addtz');
       var tz = ((inp && inp.value) || '').trim();
@@ -11898,6 +11914,27 @@ function cnRenderAdminBody_(cfg) {
       }
       schedules[key] = breaks;   // empty = deliberately no breaks for this key
     }
+    // Per-agent sections (data-emp) live in their own list; a pending (removed)
+    // one is data-custom="0" and simply drops out of the payload.
+    var employees = {};
+    var esecs = document.querySelectorAll('#cn-admin-brk-emp-list .cn-brk-sched[data-emp="1"]');
+    for (var e = 0; e < esecs.length; e++) {
+      if (esecs[e].getAttribute('data-custom') !== '1') continue;
+      var eid = esecs[e].getAttribute('data-key');
+      var ename = esecs[e].getAttribute('data-name') || eid;
+      var erows = esecs[e].querySelectorAll('.cn-brk-rows .cn-brk-row');
+      var ebreaks = [];
+      for (var k = 0; k < erows.length; k++) {
+        var el2 = (erows[k].querySelector('.cn-brk-label').value || '').trim();
+        var es2 = (erows[k].querySelector('.cn-brk-start').value || '').trim();
+        var en2 = parseInt(erows[k].querySelector('.cn-brk-len').value, 10);
+        if (!el2 && !es2 && !(en2 > 0)) continue;
+        if (!es2) { showToast('Set a start time for every break for ' + ename, 'toast-warn'); return; }
+        if (!(en2 >= 1 && en2 <= 240)) { showToast('Break length must be 1–240 minutes (' + ename + ')', 'toast-warn'); return; }
+        ebreaks.push({ label: el2, start: es2, len: en2 });
+      }
+      employees[eid] = ebreaks;   // empty = deliberately no breaks for this agent
+    }
     var rmEl = document.getElementById('cn-admin-brk-remind');
     var rm = parseInt((rmEl && rmEl.value) || '', 10);
     if (!(rm >= 1 && rm <= 120)) { showToast('Reminder lead must be 1–120 minutes', 'toast-warn'); return; }
@@ -11914,7 +11951,7 @@ function cnRenderAdminBody_(cfg) {
         btn.disabled = false; btn.textContent = 'Save break schedules';
         showToast((err && err.message) || 'Save failed', 'toast-error');
       })
-      .saveBreakSchedules({ reminderMin: rm, schedules: schedules });
+      .saveBreakSchedules({ reminderMin: rm, schedules: schedules, employees: employees });
   });
 
   // QA scorecard criteria (Phase-3 follow-on) — add/remove rows client-side;
@@ -12073,25 +12110,64 @@ function cnRenderBreakSchedEditor_(bs) {
       '<datalist id="cn-admin-brk-tzs">' + opts + '</datalist>' +
       '<button type="button" class="refresh-btn" id="cn-admin-brk-addtzbtn">' + icon('plus', 12) + ' Add timezone schedule</button>' +
     '</div>' +
+    // Per-agent breaks (operator 2026-09-02): one editable section per agent
+    // with a custom entry; a picker adds one, seeded from the Default section
+    // so the admin edits a familiar shape rather than a blank. Only agents
+    // WITHOUT a section appear in the picker. Sections carry name/tz as
+    // data-* so a Revert (pending removal) can re-render without a refetch.
+    '<h3 class="cn-brk-sub">Per-agent breaks</h3>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">An agent with their own schedule ignores the timezone/default one above. Remove it to fall back.</div>' +
+    '<div id="cn-admin-brk-emp-list">' + (bs.employees || []).map(function (e) { return cnBreakEmpSectionHtml_(e, true); }).join('') + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+      '<select id="cn-admin-brk-addemp" aria-label="Agent to add a break schedule for" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:220px">' +
+        '<option value="">Choose an agent…</option>' + cnBreakEmpOptionsHtml_(bs) +
+      '</select>' +
+      '<button type="button" class="refresh-btn" id="cn-admin-brk-addempbtn">' + icon('plus', 12) + ' Add agent schedule</button>' +
+    '</div>' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">' +
       '<label for="cn-admin-brk-remind" style="font-size:12px;color:var(--muted)">Reminder lead (minutes before each break)</label>' +
       '<input type="number" id="cn-admin-brk-remind" min="1" max="120" step="1" value="' + esc(String(bs.reminderMin || 10)) + '" style="width:80px;font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink)">' +
     '</div>';
 }
+/** Per-agent section (operator 2026-09-02) — the shared section renderer with
+ *  `emp` set: title = name · id, a "times in <tz>" pill (warn-toned when the
+ *  roster tz disagrees with the CST work anchor — the profile-vs-anchor class),
+ *  Remove instead of Revert, and an off-roster id named as such so it can be
+ *  removed rather than silently kept. */
+function cnBreakEmpSectionHtml_(e, editable) {
+  e = e || {};
+  return cnBreakSchedSectionHtml_({ key: e.id, emp: true, name: e.name || '', onRoster: e.onRoster !== false,
+    timezone: e.timezone || '', tzMismatch: !!e.tzMismatch, breaks: e.breaks || [], pending: !!e.pending }, editable);
+}
+function cnBreakEmpOptionsHtml_(bs) {
+  var have = {};
+  (bs.employees || []).forEach(function (e) { have[e.id] = true; });
+  return (bs.roster || []).filter(function (r) { return !have[r.id]; }).map(function (r) {
+    return '<option value="' + esc(r.id) + '" data-name="' + esc(r.name) + '" data-tz="' + esc(r.timezone || '') + '" data-tzwarn="' + (r.tzMismatch ? '1' : '0') + '">' +
+      esc(r.name) + ' · ' + esc(r.id) + '</option>';
+  }).join('');
+}
 function cnBreakSchedSectionHtml_(s, editable) {
   s = s || {};
   var key = s.key || 'DEFAULT';
   var isDef = key === 'DEFAULT';
-  var title = isDef ? 'Default (all timezones)' : key;
+  var isEmp = !!s.emp;
+  var title = isEmp ? ((s.name || '') + (s.name ? ' · ' : '') + key + (s.onRoster === false ? ' (not on roster)' : ''))
+    : (isDef ? 'Default (all timezones)' : key);
   var pill = editable ? '<span class="cn-brk-pill custom">custom</span>' :
-    (s.pending ? '<span class="cn-brk-pill">reverts on save</span>'
+    (s.pending ? '<span class="cn-brk-pill">' + (isEmp ? 'removed on save' : 'reverts on save') + '</span>'
                : '<span class="cn-brk-pill">' + (isDef ? 'app default' : 'inherited') + '</span>');
+  if (isEmp && s.timezone) {
+    pill += '<span class="cn-brk-pill' + (s.tzMismatch ? ' warn' : '') + '" title="' + (s.tzMismatch ? 'This roster row is not on the CST work anchor — the times below are in its own zone' : 'Times are in the agent’s roster timezone') + '">times in ' + esc(s.timezone) + (s.tzMismatch ? ' ⚠' : '') + '</span>';
+  }
   var headBtn = '';
-  if (editable) headBtn = '<button type="button" class="refresh-btn cn-brk-revert">Revert to ' + (isDef ? 'app default' : 'inherited') + '</button>';
+  if (editable) headBtn = '<button type="button" class="refresh-btn cn-brk-revert">' + (isEmp ? 'Remove (use default)' : 'Revert to ' + (isDef ? 'app default' : 'inherited')) + '</button>';
   else if (!s.pending) headBtn = '<button type="button" class="refresh-btn cn-brk-override">Customize</button>';
+  else if (isEmp) headBtn = '<button type="button" class="refresh-btn cn-brk-override">Keep</button>';
   var body;
   if (s.pending) {
-    body = '<div class="cn-brk-ro">Reverts to ' + (isDef ? 'the app default' : 'the inherited schedule') + ' — Save to apply.</div>';
+    body = '<div class="cn-brk-ro">' + (isEmp ? 'Removed on save — this agent falls back to the timezone/default schedule.'
+      : 'Reverts to ' + (isDef ? 'the app default' : 'the inherited schedule') + ' — Save to apply.') + '</div>';
   } else if (!editable) {
     body = (s.breaks || []).length
       ? (s.breaks || []).map(function (b) {
@@ -12104,7 +12180,8 @@ function cnBreakSchedSectionHtml_(s, editable) {
       '<button type="button" class="refresh-btn cn-brk-add" style="margin-top:4px">' + icon('plus', 12) + ' Add break</button>';
   }
   return '<div class="cn-brk-sched" data-key="' + esc(key) + '" data-custom="' + (editable ? '1' : '0') + '"' +
-    (!editable && !s.pending ? ' data-breaks="' + esc(JSON.stringify(s.breaks || [])) + '"' : '') + '>' +
+    (isEmp ? ' data-emp="1" data-name="' + esc(s.name || '') + '" data-tz="' + esc(s.timezone || '') + '" data-tzwarn="' + (s.tzMismatch ? '1' : '0') + '" data-onroster="' + (s.onRoster === false ? '0' : '1') + '"' : '') +
+    (!editable ? ' data-breaks="' + esc(JSON.stringify(s.breaks || [])) + '"' : '') + '>' +
     '<div class="cn-brk-head"><span class="cn-brk-key">' + esc(title) + '</span>' + pill +
     '<span class="spacer"></span>' + headBtn + '</div>' + body + '</div>';
 }
@@ -12117,8 +12194,20 @@ function cnBreakRowHtml_(b) {
     '<button type="button" class="cn-brk-x" aria-label="Remove break" onclick="this.closest(\'.cn-brk-row\').remove()">' + icon('x', 12) + '</button>' +
   '</div>';
 }
+/** The section's identity for a re-render: key plus, for an employee
+ *  section, the name/tz/roster flags it carries as data-* (decoded by
+ *  getAttribute — every value goes back through esc() on render, INV-193). */
+function cnBreakSectionMeta_(sec, extra) {
+  var m = { key: sec.getAttribute('data-key') };
+  if (sec.getAttribute('data-emp') === '1') {
+    m.emp = true; m.name = sec.getAttribute('data-name') || ''; m.timezone = sec.getAttribute('data-tz') || '';
+    m.tzMismatch = sec.getAttribute('data-tzwarn') === '1'; m.onRoster = sec.getAttribute('data-onroster') !== '0';
+  }
+  Object.keys(extra || {}).forEach(function (k) { m[k] = extra[k]; });
+  return m;
+}
 /** Current break values of a section — inputs when editable, the data-breaks
- *  stash when read-only (decoded by getAttribute; re-escaped on any re-render). */
+ *  stash when read-only or pending (decoded by getAttribute; re-escaped on any re-render). */
 function cnBreakSectionValues_(sec) {
   if (sec.getAttribute('data-custom') === '1') {
     var out = [];

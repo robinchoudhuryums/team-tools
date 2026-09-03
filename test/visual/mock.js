@@ -1147,6 +1147,27 @@ function qaLatestScorecards_(cards) {
             { label: 'Merienda', start: '15:30', len: 20 },
             { label: 'Lunch', start: '12:00', len: 45 }] },
         ],
+        // Per-agent layer (operator 2026-09-02) — shape mirrors the server's
+        // `employees` / `roster` / `workAnchorTz` fields (INV-185): one agent
+        // on the work anchor, one whose roster row still says Kolkata (the
+        // warn pill on camera), and a picker roster of the fixture reps.
+        employees: [
+          { id: 'E-1042', name: 'Avery Blake', onRoster: true, timezone: 'Asia/Kolkata', tzMismatch: true, breaks: [
+            { label: 'Morning break', start: '10:15', len: 15 },
+            { label: 'Lunch', start: '12:00', len: 60 },
+            { label: 'Afternoon break', start: '15:15', len: 15 }] },
+          { id: 'E-1077', name: 'Sam Ortiz', onRoster: true, timezone: 'America/Chicago', tzMismatch: false, breaks: [
+            { label: 'Morning break', start: '10:45', len: 15 },
+            { label: 'Lunch', start: '13:00', len: 60 },
+            { label: 'Afternoon break', start: '15:45', len: 15 }] },
+        ],
+        roster: [
+          { id: 'E-1042', name: 'Avery Blake', timezone: 'Asia/Kolkata', tzMismatch: true },
+          { id: 'E-1090', name: 'Leo Kim', timezone: 'Asia/Manila', tzMismatch: true },
+          { id: 'E-1055', name: 'Nina Patel', timezone: 'America/Chicago', tzMismatch: false },
+          { id: 'E-1077', name: 'Sam Ortiz', timezone: 'America/Chicago', tzMismatch: false },
+        ],
+        workAnchorTz: 'America/Chicago',
         reminderMin: 10, configReminderMin: 10,
         rosterTimezones: ['America/Chicago', 'Asia/Kolkata', 'Asia/Manila'],
       },
