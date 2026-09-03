@@ -3022,9 +3022,12 @@ function reportMultiBreakDays() {
  *  - It is a repair for the TIMESHEET only. Time-off dates were chosen by the
  *    rep and need nothing; call-note DateLocal stamps are cosmetic (which day
  *    History lists a note under) and are deliberately not touched.
- * Run from the editor: `repairTimesheetTimezone_dryRun()` first, read the
- * execution log, then `repairTimesheetTimezone_apply()`. Both read
- * TZ_REPAIR_2026_09_02 below — delete all three once the repair is done. */
+ * Run from the editor with an opts object (dryRun defaults TRUE): read the
+ * execution log first, then run again with { dryRun: false }. The 2026-09-02
+ * PH flip (Anne Garcia + Margie Ingay, Asia/Manila → America/Chicago,
+ * flippedAt '2026-09-02 15:00') was applied on 2026-09-03 — 14 rows moved,
+ * four self-colliding clock-in pairs (the midnight-PHT re-clock-ins) reported
+ * for Day Edit; its one-time wrappers were deleted afterwards. */
 const TZ_REPAIR_MAX_ROWS = 2000;
 
 /* Pure planner for one row: returns null (unparseable / no change), a
@@ -3040,6 +3043,31 @@ function tzRepairPlanRow_(dateStr, timeStr, flipMs, toMs, fmtDate, fmtTime) {
   const newDate = fmtDate(ms), newTime = fmtTime(ms);
   if (newDate === dateStr && newTime === timeStr) return { skip: 'unchanged' };
   return { newDate: newDate, newTime: newTime };
+}
+
+/* Resolve roster ids / exact names to emp objects for the editor-run repair
+ * tools. A name must match EXACTLY ONE row (a name-only offboarded row still
+ * counts as a match — its punches are the point). Ambiguity refuses rather
+ * than guessing a payroll row. Shared by repairTimesheetTimezone and
+ * repairSplitDayPunches so the two tools cannot resolve a name differently. */
+function tzRepairResolveTargets_(wanted) {
+  if (!wanted.length) throw new Error('employees is required — roster ids or exact names');
+  const roster = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
+  const targets = {};
+  wanted.forEach((w) => {
+    const wl = w.toLowerCase();
+    const hits = [];
+    for (let i = 1; i < roster.length; i++) {
+      const id = String(roster[i][EMP.ID] || '').trim();
+      const nm = String(roster[i][EMP.NAME] || '').trim();
+      if (!id) continue;
+      if (id === w || nm.toLowerCase() === wl) hits.push({ id: id, name: nm });
+    }
+    if (hits.length !== 1) throw new Error('"' + w + '" matched ' + hits.length + ' roster rows — pass the employee ID instead');
+    const emp = lookupEmployeeById_(hits[0].id) || { id: hits[0].id, name: hits[0].name, email: '' };
+    targets[hits[0].id] = emp;
+  });
+  return targets;
 }
 
 function repairTimesheetTimezone(opts) {
@@ -3060,26 +3088,7 @@ function repairTimesheetTimezone(opts) {
   if (fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) throw new Error('fromDate must be yyyy-MM-dd');
   const skipDates = (Array.isArray(opts.skipDates) ? opts.skipDates : []).map(String);
   const wanted = (Array.isArray(opts.employees) ? opts.employees : []).map(x => String(x || '').trim()).filter(Boolean);
-  if (!wanted.length) throw new Error('employees is required — roster ids or exact names');
-
-  // Resolve ids/names against the roster. A name must match EXACTLY ONE row
-  // (a name-only offboarded row still counts as a match — its punches are
-  // the point). Ambiguity refuses rather than guessing a payroll row.
-  const roster = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
-  const targets = {};                                          // id → emp object
-  wanted.forEach((w) => {
-    const wl = w.toLowerCase();
-    const hits = [];
-    for (let i = 1; i < roster.length; i++) {
-      const id = String(roster[i][EMP.ID] || '').trim();
-      const nm = String(roster[i][EMP.NAME] || '').trim();
-      if (!id) continue;
-      if (id === w || nm.toLowerCase() === wl) hits.push({ id: id, name: nm });
-    }
-    if (hits.length !== 1) throw new Error('"' + w + '" matched ' + hits.length + ' roster rows — pass the employee ID instead');
-    const emp = lookupEmployeeById_(hits[0].id) || { id: hits[0].id, name: hits[0].name, email: '' };
-    targets[hits[0].id] = emp;
-  });
+  const targets = tzRepairResolveTargets_(wanted);            // id → emp object (shared with repairSplitDayPunches)
   const ids = Object.keys(targets);
 
   const toMs    = (d, t) => Utilities.parseDate(d + ' ' + t, fromTz, 'yyyy-MM-dd HH:mm:ss').getTime();
@@ -3175,22 +3184,161 @@ function repairTimesheetTimezone(opts) {
     byEmp: Object.keys(byEmp).map(id => ({ id: id, name: byEmp[id].name, rows: byEmp[id].rows, days: Object.keys(byEmp[id].dates).length })) };
 }
 
-/* ONE-TIME parameters for the 2026-09-02 PH roster flip. `flippedAt` is the
- * Chicago wall time the Timezone cells were changed — adjust it before
- * running. Delete this constant and both wrappers once the repair is done. */
-const TZ_REPAIR_2026_09_02 = {
-  employees: ['Anne Garcia', 'Margie Ingay'],
-  fromTz: 'Asia/Manila',
-  toTz: 'America/Chicago',
-  flippedAt: '2026-09-02 15:00',
-  fromDate: '',                 // '' = every row; or 'yyyy-MM-dd' (OLD-tz date) to bound the walk
-  skipDates: [],                // OLD-tz dates to leave alone (rows already fixed by hand)
-};
-function repairTimesheetTimezone_dryRun() {
-  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: true }));
+/* ── Split-day punch repair (operator 2026-09-03) ─────────────────────────
+ * The follow-up to repairTimesheetTimezone. A PH agent whose roster row still
+ * read Asia/Manila hit the rep-local midnight MID-SHIFT, saw "no Clock In
+ * today", and clocked in again — so once the repair collapsed each shift onto
+ * its Chicago date, four dates carried TWO ClockIn rows: the real morning one
+ * (≈08:xx) and the spurious ~noon re-clock (the old PHT midnight). The tz
+ * repair REPORTED those as duplicates and stopped, because which row is real
+ * is a judgement; here the judgement is settled by construction — the
+ * artifact is always the LATER ClockIn, so the EARLIEST is kept.
+ *  - ClockIn ONLY. A duplicate of any other type (or a pair with an
+ *    unparseable time) is COUNTED and NAMED in the result, never touched —
+ *    nothing about this artifact says which ClockOut/lunch row is real.
+ *    (`otherDuplicates`, INV-187.)
+ *  - The sheet doctor is the wrong tool for this: its collapse keeps the LAST
+ *    appended row (INV-155), and the tz repair wrote the noon row last.
+ *  - `adds` is the optional second half — punches the agents CONFIRMED for
+ *    the days that lost a lunch pair or clock-out to the split. Each is
+ *    validated (date inside the window, HH:mm, a PUNCH_LABELS_ type, exactly
+ *    one roster target) and written through writeAdjustPunchForEmployee_,
+ *    the manager-approval writer: an ADJ- row, the mirror, an audit row with
+ *    the caller as actor (INV-09/26/59). An add whose (employee, date, type)
+ *    is a duplicate group in the same run is refused — collapse first.
+ *  - Live Timesheet tab only (the artifact lives in the current period; Day
+ *    Edit is live-only too). Adds are written BEFORE deletes (an append lands
+ *    below every planned row, so row indices stay valid); deletes run
+ *    BOTTOM-UP; the mirror is re-pointed at the kept time afterwards
+ *    (INV-59) because the tz repair's last mirror write was the noon row.
+ *  - dryRun defaults TRUE. Apply is MANAGER_EMAILS-gated (INV-44 — editor-run
+ *    but google.script.run-reachable), locked (INV-01), bounded, and writes
+ *    one `PunchDelete` audit row per removed row naming the kept time.
+ * Editor use:
+ *   repairSplitDayPunches({ employees: ['Anne Garcia','Margie Ingay'], from: '2026-08-27', to: '2026-09-02' })
+ *   repairSplitDayPunches({ ...same, dryRun: false, adds: [
+ *     { employee: 'Anne Garcia', date: '2026-08-27', type: 'ClockOut', time: '17:00' } ] }) */
+const SPLIT_REPAIR_MAX_SPAN_DAYS = 92;
+
+/* Pure planner. `punches` = [{row, empId, date, time, type}] already
+ * normalized (row = 1-based sheet row). Returns deletes (bottom-up), the
+ * kept row per collapsed group, and the duplicate groups it will NOT touch. */
+function splitDayRepairPlan_(punches, from, to) {
+  const groups = {};
+  (punches || []).forEach((p) => {
+    if (!p || !/^\d{4}-\d{2}-\d{2}$/.test(String(p.date || ''))) return;
+    if (p.date < from || p.date > to) return;
+    const k = p.empId + '|' + p.date + '|' + p.type;
+    (groups[k] || (groups[k] = [])).push(p);
+  });
+  const deletes = [], kept = [], otherDuplicates = [];
+  Object.keys(groups).sort().forEach((k) => {
+    const g = groups[k];
+    if (g.length < 2) return;
+    const first = g[0];
+    if (first.type !== 'ClockIn') {
+      otherDuplicates.push({ empId: first.empId, date: first.date, type: first.type, count: g.length, reason: 'not a ClockIn — left alone' });
+      return;
+    }
+    const parsed = g.map((p) => ({ p: p, min: timeToMins_(p.time) }));
+    if (parsed.some((x) => x.min === null)) {
+      otherDuplicates.push({ empId: first.empId, date: first.date, type: first.type, count: g.length, reason: 'unparseable time — left alone' });
+      return;
+    }
+    parsed.sort((a, b) => (a.min - b.min) || (a.p.row - b.p.row));
+    const keep = parsed[0].p;
+    kept.push({ row: keep.row, empId: keep.empId, date: keep.date, time: keep.time });
+    parsed.slice(1).forEach((x) => deletes.push({ row: x.p.row, empId: x.p.empId, date: x.p.date, time: x.p.time, keptTime: keep.time }));
+  });
+  deletes.sort((a, b) => b.row - a.row);                       // bottom-up: a delete never shifts a later planned row
+  return { deletes: deletes, kept: kept, otherDuplicates: otherDuplicates };
 }
-function repairTimesheetTimezone_apply() {
-  return repairTimesheetTimezone(Object.assign({}, TZ_REPAIR_2026_09_02, { dryRun: false }));
+
+function repairSplitDayPunches(opts) {
+  assertManagerCaller_('repairSplitDayPunches');
+  opts = opts || {};
+  const dryRun = opts.dryRun !== false;                       // a bare call NEVER writes
+  const from = String(opts.from || '').trim(), to = String(opts.to || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new Error('from/to are required as yyyy-MM-dd');
+  if (from > to) throw new Error('from must be on or before to');
+  if (daysBetween_(from, to) > SPLIT_REPAIR_MAX_SPAN_DAYS) throw new Error('Refusing: the window exceeds ' + SPLIT_REPAIR_MAX_SPAN_DAYS + ' days');
+  const wanted = (Array.isArray(opts.employees) ? opts.employees : []).map(x => String(x || '').trim()).filter(Boolean);
+  const targets = tzRepairResolveTargets_(wanted);
+  const ids = Object.keys(targets);
+  const actorEmail = getActiveUserEmail_();
+  const reason = String(opts.reason || 'split-day repair — agent-confirmed punch entered by manager').trim();
+
+  const ss = getAdpSS_();
+  const sheet = ss.getSheetByName(CONFIG.ADP_TAB);
+  const rows = sheet.getDataRange().getValues();               // ONE read; every index below comes from it
+  const punches = [];
+  const lastRowByKey = {};                                     // id|date|type → last matching sheet row (the adjust writer's INV-155 rule)
+  for (let i = 2; i < rows.length; i++) {                      // two header rows
+    const id = String(rows[i][ADP.EMP_ID] || '').trim();
+    if (!targets[id]) continue;
+    const date = normalizeDate_(rows[i][ADP.DATE]);
+    const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+    punches.push({ row: i + 1, empId: id, date: date, time: normalizeTime_(rows[i][ADP.TIME]), type: type });
+    lastRowByKey[id + '|' + date + '|' + type] = i + 1;
+  }
+  const plan = splitDayRepairPlan_(punches, from, to);
+  const dupKeys = {};
+  plan.deletes.forEach((d) => { dupKeys[d.empId + '|' + d.date + '|ClockIn'] = true; });
+
+  // Validate every add BEFORE anything is written (atomic like the tz repair).
+  const adds = (Array.isArray(opts.adds) ? opts.adds : []).map((a, n) => {
+    a = a || {};
+    const who = String(a.employee || '').trim();
+    const t = tzRepairResolveTargets_(who ? [who] : []);
+    const empId = Object.keys(t)[0];
+    if (!targets[empId]) throw new Error('adds[' + n + ']: "' + who + '" is not in this run\'s employees list');
+    const date = String(a.date || '').trim(), type = String(a.type || '').trim(), time = String(a.time || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < from || date > to) throw new Error('adds[' + n + ']: date must be yyyy-MM-dd inside [' + from + ', ' + to + ']');
+    if (PUNCH_LABELS_.indexOf(type) < 0) throw new Error('adds[' + n + ']: type must be one of ' + PUNCH_LABELS_.join('/'));
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('adds[' + n + ']: time must be HH:mm (24h)');
+    if (dupKeys[empId + '|' + date + '|' + type]) throw new Error('adds[' + n + ']: ' + targets[empId].name + ' ' + date + ' ' + type + ' is a duplicate group in this run — collapse it first');
+    return { empId: empId, date: date, type: type, time: time, existingRow: lastRowByKey[empId + '|' + date + '|' + type] || 0 };
+  });
+  if (plan.deletes.length + adds.length > TZ_REPAIR_MAX_ROWS) {
+    throw new Error('Refusing: ' + (plan.deletes.length + adds.length) + ' operations exceed TZ_REPAIR_MAX_ROWS (' + TZ_REPAIR_MAX_ROWS + ')');
+  }
+
+  Logger.log('%s: %s duplicate ClockIn row(s) to remove across %s date(s); %s add(s); %s duplicate group(s) left alone',
+    dryRun ? 'DRY RUN' : 'APPLY', plan.deletes.length, plan.kept.length, adds.length, plan.otherDuplicates.length);
+  plan.deletes.forEach((d) => Logger.log('  REMOVE %s | %s ClockIn %s (keeping %s)', targets[d.empId].name, d.date, d.time, d.keptTime));
+  adds.forEach((a) => Logger.log('  ADD    %s | %s %s %s%s', targets[a.empId].name, a.date, a.type, a.time, a.existingRow ? ' (updates the existing row)' : ''));
+  plan.otherDuplicates.forEach((o) => Logger.log('  LEFT   %s | %s %s ×%s — %s', targets[o.empId].name, o.date, o.type, o.count, o.reason));
+  const summary = {
+    dryRun: dryRun, deletes: plan.deletes.length, adds: adds.length,
+    otherDuplicates: plan.otherDuplicates.map((o) => ({ name: targets[o.empId].name, date: o.date, type: o.type, count: o.count, reason: o.reason })),
+    kept: plan.kept.map((k) => ({ name: targets[k.empId].name, date: k.date, time: k.time })),
+  };
+  if (dryRun) return summary;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    // Adds first: an update touches its own row and an append lands BELOW
+    // every planned delete, so the delete indices read above stay valid.
+    adds.forEach((a) => {
+      const ctx = { sheet: sheet, idx: {} };
+      if (a.existingRow) ctx.idx[a.date + '|' + a.type] = a.existingRow;
+      writeAdjustPunchForEmployee_(targets[a.empId], a.date, a.type, a.time, actorEmail, reason, ctx);
+    });
+    plan.deletes.forEach((d) => {                              // already bottom-up
+      sheet.deleteRow(d.row);
+      writeAuditLog_(targets[d.empId], 'PunchDelete', d.date, d.time, false, 0,
+        'duplicate ClockIn removed (split-day repair) — kept ' + d.keptTime, actorEmail);
+    });
+    SpreadsheetApp.flush();
+    plan.kept.forEach((k) => {                                 // the mirror last saw the noon row (INV-59, best-effort)
+      const emp = targets[k.empId];
+      if (emp && emp.sheetId) writeToEmployeeSheet_(emp, k.date, k.time, 'IN', 'ClockIn');
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  return summary;
 }
 
 function deletePunch(empId, date, time, punchType) {

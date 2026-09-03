@@ -6582,11 +6582,17 @@ manually for a fresh deploy or environment:
   per employee. **The dry run's collision lines are the review step:** a row
   landing on a (date, type) another row holds is a hand edit made after the
   flip or a double punch across the old midnight — the tool REPORTS it and the
-  manager decides which punch is real. Two wrappers,
-  `repairTimesheetTimezone_dryRun()` / `_apply()`, carry the one-time
-  parameters in `TZ_REPAIR_2026_09_02` (Anne Garcia + Margie Ingay,
-  Manila → Chicago) — **delete the constant + both wrappers once the repair
-  is done.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
+  manager decides which punch is real. **APPLIED 2026-09-03** (Anne Garcia + Margie Ingay, Manila → Chicago,
+  flippedAt 2026-09-02 15:00): 14 rows moved, one post-flip row correctly
+  skipped, and the eight collision warnings were four SELF-colliding pairs —
+  a real morning clock-in plus a spurious ~noon-CST clock-in on 08-28,
+  08-31 (both agents) and 09-02, the midnight-PHT bug's fingerprint (the
+  agent pressed the only button the split day offered, at what was Lunch Out
+  time); those days also lack lunch pairs, and 08-27/08-28 lack clock-outs
+  entirely. Fix path is Day Edit with the MORNING time (the sheet doctor
+  would collapse to the LAST row, i.e. the noon one). The one-time constant
+  + wrappers were deleted afterwards; the tool itself stays, called with an
+  opts object.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
   hand-corrected 08:30 would be read as Manila digits and moved to the wrong
   day); then apply; then fix any reported duplicates in Day Edit. Two knock-ons
   the repair does NOT do: the August accrual already ran against the split
@@ -6602,7 +6608,30 @@ manually for a fresh deploy or environment:
   `getSheetByName(undefined)` handed back null.** The F1 tripwire checks
   declared → read; nothing checked read → declared. `F1-inverse` now does
   (every `CONFIG.<KEY>` read across the web-app tree names a declared
-  top-level key); its first run found exactly this one.
+  top-level key); its first run found exactly this one. **The Day Edit
+  follow-ups are now an editor-run tool too (operator 2026-09-03 — "can those
+  changes not be done via Apps Script function?"): `repairSplitDayPunches(opts)`.**
+  The duplicate clock-ins are DETERMINISTIC — the later ClockIn on a date is
+  always the midnight-PHT re-clock — so the tool keeps the EARLIEST, deletes
+  the rest bottom-up, re-points the personal-sheet mirror at the kept time
+  (the tz repair's last mirror write was the noon row), and writes ONE
+  `PunchDelete` audit row per removed row naming the kept time. ClockIn ONLY:
+  any other duplicate pair (or an unparseable time) is NAMED in the result and
+  left alone (INV-187). The `adds` list is the second half — the lunch and
+  clock-out punches the agents confirm for 08-27/08-28 and the four dates —
+  each validated BEFORE the dry-run return (date inside the window, HH:mm, a
+  real punch type, one roster target, not a duplicate group in the same run)
+  and written through `writeAdjustPunchForEmployee_`, the manager-approval
+  writer (ADJ- row + mirror + audit, caller as actor). Adds run BEFORE deletes
+  inside the lock so the row indices from the ONE Timesheet read stay valid.
+  Dry-run by default; MANAGER_EMAILS gate; live tab only. Editor use:
+  `repairSplitDayPunches({ employees: ['Anne Garcia','Margie Ingay'], from: '2026-08-27', to: '2026-09-02' })`,
+  read the log, then the same with `dryRun: false` and
+  `adds: [{ employee: 'Anne Garcia', date: '2026-08-27', type: 'ClockOut', time: '17:00' }, …]`.
+  Target resolution moved into the shared `tzRepairResolveTargets_` so the two
+  tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
+  (contract; the add guards asserted LIVE, not just worded — a `if (false)`
+  beside the message passed the first draft).
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
   state** — no Script Properties, triggers, migrations or CONFIG values; ONE
   new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
@@ -9455,6 +9484,18 @@ The tz-repair dry-run failure (operator 2026-09-03) added one more → **750**
 F1 only checked the other direction, and a misspelled key reads as
 `undefined`, which surfaced as a null sheet twenty lines later; bite-checked
 against the original typo).
+The split-day punch repair (operator 2026-09-03, the same afternoon) added two
+more → **752** (TZR-3 — `splitDayRepairPlan_` driven behaviourally: the kept
+row is the earliest TIME, not the last APPENDED row (the sheet doctor's rule,
+wrong here), deletes come back bottom-up, a non-ClockIn pair and an
+unparseable pair are named and untouched, out-of-window rows never plan;
+TZR-4 — the contract: gate, dry-run default, the shared resolver, ONE read,
+adds validated → dry-run return → lock, adds through the adjust writer BEFORE
+bottom-up deletes BEFORE the mirror re-point, `PunchDelete` rows naming the
+kept time, untouched groups reported) with TZR-2 rewritten in place for the
+shared `tzRepairResolveTargets_`. 7 mutations / 7 bites; one first-draft
+assertion was wording-only (a refusal message beside `if (false)` passed) and
+was tightened to the live guard shape before it bit.
 The break coverage planner (operator 2026-09-03) added four more → **749**
 (BCV-1 `coverageSplitAtBreaks_` + `breakCoverageSlots_` behavioural — a
 partial overlap counts as away, offsets are shift-relative, the 16:45 slot is

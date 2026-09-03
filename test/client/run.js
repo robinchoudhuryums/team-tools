@@ -17019,11 +17019,83 @@ test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, lock
   assert.ok(/rowsMoved=/.test(stripped) && !/oldTime|newTime' \+/.test(stripped.slice(stripped.indexOf("'TimesheetTzRepair'"))), 'the audit note carries counts, not punch times');
   assert.ok(/would DUPLICATE an existing/.test(stripped), 'collisions are REPORTED, never resolved silently');
   assert.ok(/clearFromEmployeeSheet_\(emp, c\.oldDate, c\.type\)/.test(stripped) && /writeToEmployeeSheet_\(emp, c\.newDate, c\.newTime, c\.dir, c\.type\)/.test(stripped), 'the personal-sheet mirror follows the move (INV-59, best-effort)');
-  assert.ok(/hits\.length !== 1/.test(stripped), 'an ambiguous name refuses rather than guessing a payroll row');
-  // The wrappers are the operator's ▶ targets and must never flip the default.
-  const dry = extractRawFunction('Code.js', 'repairTimesheetTimezone_dryRun');
-  const app = extractRawFunction('Code.js', 'repairTimesheetTimezone_apply');
-  assert.ok(/dryRun: true/.test(dry) && /dryRun: false/.test(app), 'wrappers pass the mode explicitly');
+  // Target resolution is the SHARED tzRepairResolveTargets_ (one rule for both repair tools).
+  assert.ok(/const targets = tzRepairResolveTargets_\(wanted\);/.test(stripped), 'targets resolve through the shared helper');
+  const resolver = extractRawFunction('Code.js', 'tzRepairResolveTargets_');
+  assert.ok(/hits\.length !== 1/.test(resolver) && /employees is required/.test(resolver), 'an ambiguous name refuses rather than guessing a payroll row; an empty list refuses');
+  // The one-time wrappers + TZ_REPAIR_2026_09_02 were DELETED after the
+  // repair ran (2026-09-03); the tool stays, dryRun-default-true above.
+  assert.ok(!/TZ_REPAIR_2026_09_02|repairTimesheetTimezone_apply/.test(codeSrc), 'the one-time constant and wrappers stay deleted');
+});
+
+
+/* ── TZR-3/4: the split-day punch repair (operator 2026-09-03) ──────────────
+ * The tz repair REPORTED four dates carrying two ClockIn rows (the midnight-
+ * PHT re-clock beside the real morning punch) and stopped. The follow-up tool
+ * settles that one artifact by construction — the LATER ClockIn is always the
+ * spurious one — and writes agent-confirmed punches for the days that lost
+ * a lunch pair or clock-out. The planner is pure; the applier is pinned on
+ * the properties that make it safe to point at payroll rows. */
+test('TZR-3: splitDayRepairPlan_ keeps the EARLIEST ClockIn, deletes bottom-up, and leaves every other duplicate alone', () => {
+  const tctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'timeToMins_') + '\n' + extractRawFunction('Code.js', 'splitDayRepairPlan_'), tctx);
+  const plan = tctx.splitDayRepairPlan_;
+  const punches = [
+    { row: 10, empId: 'E1', date: '2026-08-28', time: '11:38:00', type: 'ClockIn' },   // the noon artifact, appended FIRST
+    { row: 14, empId: 'E1', date: '2026-08-28', time: '08:12:00', type: 'ClockIn' },   // the real morning punch, appended LATER
+    { row: 15, empId: 'E1', date: '2026-08-28', time: '12:00:00', type: 'LunchOut' },
+    { row: 20, empId: 'E1', date: '2026-08-31', time: '08:29:00', type: 'ClockIn' },
+    { row: 21, empId: 'E1', date: '2026-08-31', time: '12:17:00', type: 'ClockIn' },
+    { row: 22, empId: 'E1', date: '2026-08-31', time: '17:05:00', type: 'ClockOut' },
+    { row: 23, empId: 'E1', date: '2026-08-31', time: '17:06:00', type: 'ClockOut' },  // NOT a ClockIn — reported, untouched
+    { row: 30, empId: 'E2', date: '2026-08-31', time: '08:30:00', type: 'ClockIn' },
+    { row: 31, empId: 'E2', date: '2026-08-31', time: '12:05:00', type: 'ClockIn' },
+    { row: 40, empId: 'E2', date: '2026-09-02', time: '08:07:00', type: 'ClockIn' },
+    { row: 41, empId: 'E2', date: '2026-09-02', time: 'Sat Dec 30 1899', type: 'ClockIn' },  // unparseable — reported, untouched
+    { row: 50, empId: 'E1', date: '2026-08-20', time: '08:00:00', type: 'ClockIn' },   // outside the window
+    { row: 51, empId: 'E1', date: '2026-08-20', time: '12:00:00', type: 'ClockIn' },
+  ];
+  const r = plan(punches, '2026-08-27', '2026-09-02');
+  // The KEPT row is the earliest TIME, not the earliest/latest APPENDED row (the sheet doctor keeps LAST — wrong here).
+  assert.strictEqual(JSON.stringify(r.deletes.map(d => [d.row, d.date, d.time, d.keptTime])),
+    JSON.stringify([[31, '2026-08-31', '12:05:00', '08:30:00'], [21, '2026-08-31', '12:17:00', '08:29:00'], [10, '2026-08-28', '11:38:00', '08:12:00']]),
+    'deletes are the LATER ClockIns, ordered bottom-up by sheet row');
+  assert.strictEqual(JSON.stringify(r.kept.map(k => [k.row, k.time])), JSON.stringify([[14, '08:12:00'], [20, '08:29:00'], [30, '08:30:00']]));
+  assert.strictEqual(JSON.stringify(r.otherDuplicates.map(o => [o.date, o.type, o.count, o.reason])),
+    JSON.stringify([['2026-08-31', 'ClockOut', 2, 'not a ClockIn — left alone'], ['2026-09-02', 'ClockIn', 2, 'unparseable time — left alone']]),
+    'a non-ClockIn pair and an unparseable pair are NAMED, never resolved');
+  assert.ok(!r.deletes.some(d => d.date === '2026-08-20'), 'rows outside the window are never planned');
+  assert.strictEqual(JSON.stringify(plan([], '2026-08-27', '2026-09-02')), JSON.stringify({ deletes: [], kept: [], otherDuplicates: [] }));
+});
+
+test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-before-deletes, bottom-up, mirrored, audited', () => {
+  const body = extractRawFunction('Code.js', 'repairSplitDayPunches');
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/assertManagerCaller_\('repairSplitDayPunches'\)/.test(stripped), 'MANAGER_EMAILS gate (INV-44)');
+  assert.ok(/const dryRun = opts\.dryRun !== false;/.test(stripped), 'a bare call NEVER writes');
+  assert.ok(/const targets = tzRepairResolveTargets_\(wanted\);/.test(stripped), 'targets resolve through the SAME helper as the tz repair');
+  assert.ok(/daysBetween_\(from, to\) > SPLIT_REPAIR_MAX_SPAN_DAYS/.test(stripped), 'the window is bounded');
+  assert.strictEqual((stripped.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 1, 'ONE Timesheet read — every row index comes from it');
+  assert.ok(!/TIMESHEET_ARCHIVE_TAB/.test(stripped), 'live tab only — the artifact is in the current period (stated in the doc)');
+  assert.ok(/splitDayRepairPlan_\(punches, from, to\)/.test(stripped), 'the decision is the pure planner');
+  // Every add is validated BEFORE the dry-run return, so a bad add fails the dry run too (atomic, like the tz repair).
+  const addsIdx = stripped.indexOf('const adds = '), dryIdx = stripped.indexOf('if (dryRun) return summary;'), lockIdx = stripped.indexOf('waitLock(15000)');
+  assert.ok(addsIdx > 0 && addsIdx < dryIdx && dryIdx < lockIdx, 'adds validated → dry-run return → lock');
+  ['is not in this run', 'inside \\[', 'type must be one of', 'time must be HH:mm', 'is a duplicate group in this run'].forEach((m) =>
+    assert.ok(new RegExp(m).test(stripped), 'add refusal named: ' + m));
+  // The guards are LIVE, not just worded: each refusal is the throw of a real test (a message left beside `if (false)` passes a wording scan).
+  assert.ok(/if \(dupKeys\[empId \+ '\|' \+ date \+ '\|' \+ type\]\) throw/.test(stripped), 'an add onto a duplicate group is refused by the LIVE dupKeys check');
+  assert.ok(/if \(PUNCH_LABELS_\.indexOf\(type\) < 0\) throw/.test(stripped) && /if \(!\/\^\(\[01\]\\d\|2\[0-3\]\):\[0-5\]\\d\$\/\.test\(time\)\) throw/.test(stripped), 'type + time guards are live');
+  assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
+  // Order inside the lock: adds (through the ONE manager-approval writer) → deletes bottom-up → mirror re-point.
+  const applied = stripped.slice(lockIdx);
+  const wIdx = applied.indexOf('writeAdjustPunchForEmployee_('), dIdx = applied.indexOf('sheet.deleteRow(d.row)'), mIdx = applied.indexOf("writeToEmployeeSheet_(emp, k.date, k.time, 'IN', 'ClockIn')");
+  assert.ok(wIdx > 0 && dIdx > wIdx && mIdx > dIdx, 'adds → deletes → mirror re-point, in that order');
+  assert.ok(/writeAdjustPunchForEmployee_\(targets\[a\.empId\], a\.date, a\.type, a\.time, actorEmail, reason, ctx\)/.test(applied), 'adds go through the adjust writer (ADJ- row, mirror, audit — INV-09/26/59), never a bare appendRow');
+  assert.ok(!/appendRow\(/.test(stripped) && !/setValue\(/.test(stripped), 'no direct cell writes of its own');
+  assert.ok(/deletes\.sort\(\(a, b\) => b\.row - a\.row\)/.test(extractRawFunction('Code.js', 'splitDayRepairPlan_')), 'the planner hands back deletes bottom-up');
+  assert.ok(/writeAuditLog_\(targets\[d\.empId\], 'PunchDelete', d\.date, d\.time, false, 0,\s*'duplicate ClockIn removed \(split-day repair\) — kept ' \+ d\.keptTime, actorEmail\)/.test(applied), 'one PunchDelete audit row per removed row, naming the kept time, caller as actor (INV-08)');
+  assert.ok(/otherDuplicates: plan\.otherDuplicates\.map/.test(stripped), 'untouched duplicate groups are REPORTED in the result (INV-187)');
 });
 
 
