@@ -387,8 +387,10 @@ per-agent break schedules (`.cycle/blocks/19pre-per-agent-breaks-broad-implement
 PR #224 MERGED 2026-09-03 (per-agent breaks + the planner); the operator's
 post-merge `runAllTests()` read 308/308. The tz-repair dry run then failed
 on a CONFIG-key typo (`EMPLOYEES_TAB` → `EMPLOYEE_TAB`, fixed + the
-`F1-inverse` tripwire); the repair itself is still TO BE RUN by the operator
-(dry run first, then apply, then delete `TZ_REPAIR_2026_09_02` + wrappers).
+`F1-inverse` tripwire); the repair was then APPLIED (14 rows, 4 self-colliding
+clock-in pairs left for Day Edit with the morning time; 08-27/08-28 have no
+clock-outs at all — the agents must confirm) and the one-time constant +
+wrappers were deleted.
 BUILT the same day: the BREAK COVERAGE PLANNER on that card
 (`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
 11/11 bites, three admin-config scenarios clean incl. the cold-failure one).

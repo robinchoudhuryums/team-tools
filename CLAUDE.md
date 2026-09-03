@@ -6582,11 +6582,17 @@ manually for a fresh deploy or environment:
   per employee. **The dry run's collision lines are the review step:** a row
   landing on a (date, type) another row holds is a hand edit made after the
   flip or a double punch across the old midnight — the tool REPORTS it and the
-  manager decides which punch is real. Two wrappers,
-  `repairTimesheetTimezone_dryRun()` / `_apply()`, carry the one-time
-  parameters in `TZ_REPAIR_2026_09_02` (Anne Garcia + Margie Ingay,
-  Manila → Chicago) — **delete the constant + both wrappers once the repair
-  is done.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
+  manager decides which punch is real. **APPLIED 2026-09-03** (Anne Garcia + Margie Ingay, Manila → Chicago,
+  flippedAt 2026-09-02 15:00): 14 rows moved, one post-flip row correctly
+  skipped, and the eight collision warnings were four SELF-colliding pairs —
+  a real morning clock-in plus a spurious ~noon-CST clock-in on 08-28,
+  08-31 (both agents) and 09-02, the midnight-PHT bug's fingerprint (the
+  agent pressed the only button the split day offered, at what was Lunch Out
+  time); those days also lack lunch pairs, and 08-27/08-28 lack clock-outs
+  entirely. Fix path is Day Edit with the MORNING time (the sheet doctor
+  would collapse to the LAST row, i.e. the noon one). The one-time constant
+  + wrappers were deleted afterwards; the tool itself stays, called with an
+  opts object.** RUN ORDER: dry run BEFORE hand-editing today's rows (a
   hand-corrected 08:30 would be read as Manila digits and moved to the wrong
   day); then apply; then fix any reported duplicates in Day Edit. Two knock-ons
   the repair does NOT do: the August accrual already ran against the split
