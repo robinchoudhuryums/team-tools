@@ -1868,15 +1868,9 @@ function getManagerDashboard() {
     // since reps still mid-shift would always register as 0 hours)
     // for each liveStatus entry. Reuses already-loaded adpRows; one
     // extra in-memory pass — no Sheet reads, INV-13 honored.
-    const sparkDays = 7;
-    const sparkStart = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - sparkDays);
-      return fmtDateTz_(d, mgrTz);
-    })();
-    const sparkEnd = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - 1);
-      return fmtDateTz_(d, mgrTz);
-    })();
+    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
+    const sparkStart = sparkIsos[0];
+    const sparkEnd = sparkIsos[sparkIsos.length - 1];
     const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
     for (let i = 2; i < adpRows.length; i++) {
       const id = String(adpRows[i][ADP.EMP_ID]).trim();
@@ -1899,13 +1893,7 @@ function getManagerDashboard() {
       }
     });
     liveStatus.forEach(ls => {
-      const arr = [];
-      for (let off = sparkDays; off >= 1; off--) {
-        const dd = new Date(now); dd.setDate(dd.getDate() - off);
-        const ds = fmtDateTz_(dd, mgrTz);
-        arr.push({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 });
-      }
-      ls.recentHours = arr;
+      ls.recentHours = sparkIsos.map(ds => ({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 }));
     });
 
     // Pending time-off (with leave balance context).
@@ -2074,11 +2062,11 @@ function getManagerDashboard() {
     // this was the ONE adpRows pass without the empById filter, so off-roster
     // / TEST_-remnant ids inflated the trend bars while every other dashboard
     // aggregate excluded them.
-    const analyticsDays = 7;
+    // Operator 2026-09-03: WORKDAYS, not calendar days — the chart carried two
+    // guaranteed-zero weekend bars every week (see mgrWorkdaysEnding_).
+    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0);   // 8 bars: today + 7 prior workdays
     const punchCountsByDate = {};
-    const analyticsLookback = new Date(now);
-    analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
-    const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
+    const analyticsStart = analyticsIsos[0];
     for (let i = 2; i < adpRows.length; i++) {
       if (!empById[String(adpRows[i][ADP.EMP_ID]).trim()]) continue;   // C11
       const d = normalizeDate_(adpRows[i][ADP.DATE]);
@@ -2086,12 +2074,7 @@ function getManagerDashboard() {
         punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
       }
     }
-    const punchTrend = [];
-    for (let off = analyticsDays; off >= 0; off--) {
-      const dd = new Date(now); dd.setDate(dd.getDate() - off);
-      const ds = fmtDateTz_(dd, mgrTz);
-      punchTrend.push({ date: ds, count: punchCountsByDate[ds] || 0 });
-    }
+    const punchTrend = analyticsIsos.map(ds => ({ date: ds, count: punchCountsByDate[ds] || 0 }));
     const toSummary = { approved: 0, pending: 0, denied: 0 };
     const monthStr = todayStr.substring(0, 7);
     for (let i = 1; i < toRows.length; i++) {
@@ -2112,14 +2095,12 @@ function getManagerDashboard() {
       const d = new Date(now); d.setDate(d.getDate() - (trendDays - 1));
       return fmtDateTz_(d, mgrTz);
     })();
-    const missedTrendStart = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - trendDays);
-      return fmtDateTz_(d, mgrTz);
-    })();
-    const missedTrendEnd = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - 1);
-      return fmtDateTz_(d, mgrTz);
-    })();
+    // missedTrend walks WORKDAYS (a weekend can never carry a missed clock-out
+    // on this roster); pendingTrend stays on CALENDAR days — a PTO request can
+    // be SUBMITTED on a Saturday, and that bar is data, not a structural zero.
+    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1);
+    const missedTrendStart = missedIsos[0];
+    const missedTrendEnd = missedIsos[missedIsos.length - 1];
 
     const pendingByDate = {};
     for (let i = 1; i < toRows.length; i++) {
@@ -2172,12 +2153,7 @@ function getManagerDashboard() {
       const ds = fmtDateTz_(dd, mgrTz);
       pendingTrend.push({ date: ds, count: pendingByDate[ds] || 0 });
     }
-    const missedTrend = [];
-    for (let off = trendDays; off >= 1; off--) {
-      const dd = new Date(now); dd.setDate(dd.getDate() - off);
-      const ds = fmtDateTz_(dd, mgrTz);
-      missedTrend.push({ date: ds, count: missedByDate[ds] || 0 });
-    }
+    const missedTrend = missedIsos.map(ds => ({ date: ds, count: missedByDate[ds] || 0 }));
 
     return {
       today: todayStr,
@@ -2206,6 +2182,25 @@ function getManagerDashboard() {
  *  table can never disagree with the pay statement over the same rows.
  *  Live-tab-only by design (the calendar/Punctuality posture) — a month
  *  predating the live tab's oldest row carries archiveNote (INV-187). */
+/* Operator 2026-09-03: the manager trends counted CALENDAR days, so the Punch
+ * Activity chart and every live-status sparkline carried two guaranteed-zero
+ * bars a week (no rep works Sat/Sun — operator-confirmed 2026-08-21; the
+ * weekend is INFERRED, the same limit remindIsDayOff_ carries). Walks back
+ * from (today − endOffset) in the manager tz collecting `n` weekdays, oldest
+ * → newest. Bounded so a bad `n` can never spin. */
+function mgrWorkdaysEnding_(now, tz, n, endOffset) {
+  const out = [];
+  const limit = endOffset + n * 2 + 7;
+  for (let off = endOffset; out.length < n && off < limit; off++) {
+    const d = new Date(now); d.setDate(d.getDate() - off);
+    const iso = fmtDateTz_(d, tz);
+    const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    out.unshift(iso);
+  }
+  return out;
+}
+
 function getTeamCalendar(monthIso) {
   try {
     const emp = getEmployeeInfo_();
@@ -6744,7 +6739,7 @@ function clientErrSpikeAlert_() {
     const htmlBody = buildBrandedEmailHtml_('Client errors are spiking', inner,
       { tone: 'danger', subLabel: 'Diagnostics',
         ctaUrl: safeWebAppUrl_('callNotesAdmin'), ctaLabel: 'Open Automation Health' });
-    MailApp.sendEmail({
+    appSendMail_({
       to: recipients.join(','),
       subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
       body: n + ' client error(s) in the last hour.\n\n' + rowsText +
@@ -7638,7 +7633,7 @@ function selfTestFailureEmail_(mode, res, names) {
       esc_(String(res.skip)) + ' skipped.</p>' +
       (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
       '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
-    MailApp.sendEmail({
+    appSendMail_({
       to: mgrEmails.join(','),
       subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
       body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
@@ -7668,7 +7663,7 @@ function sendAutomationHealthDigest() {
       problems.map(function (p) { return '• ' + p; }).join('\n') +
       '\n\nOpen Call Notes → Admin → Automation Health for detail.';
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: mgrEmails.join(','),
         subject: 'Team Tools — automation health: ' + problems.length + ' issue(s) need attention',
         body: textBody,
@@ -9083,7 +9078,7 @@ function repSenderFrom_() {
  *  unchanged. GmailApp adds no new OAuth scope here (the Spanish-inbox
  *  feature already uses it) and shares the MailApp send quota. */
 function sendRepEmail_(emp, opts) {
-  const merged = Object.assign({}, opts, repSenderOpts_(emp));
+  const merged = mailMergeBcc_(Object.assign({}, opts, repSenderOpts_(emp)));   // MAIL_BCC_ALL rides both branches
   // Operator ask 2026-08-27: the sending agent gets their own copy of every
   // email they send from the app. A true Sent-folder entry in the AGENT's
   // mailbox is impossible — the app sends as USER_DEPLOYING, so only the
@@ -9109,6 +9104,36 @@ function sendRepEmail_(emp, opts) {
   } else {
     MailApp.sendEmail(merged);
   }
+}
+
+/* Operator 2026-09-03: "any email the app sends, BCC me". Script Property
+ * MAIL_BCC_ALL — a comma-separated list; unset = no change. Applied in ONE
+ * place (appSendMail_, which every automated sender now calls, plus
+ * sendRepEmail_'s two branches) so none of the ~26 senders carries its own
+ * copy of the rule. It APPENDS to a caller's bcc, never clobbers it; dedupes
+ * case-insensitively against to/cc/bcc so a manager already addressed does
+ * not get a second copy; a malformed entry is dropped; memoized per execution. */
+let _mailBccAllCache = null;
+function mailBccAll_() {
+  if (_mailBccAllCache !== null) return _mailBccAllCache;
+  let v = '';
+  try { v = String(PropertiesService.getScriptProperties().getProperty('MAIL_BCC_ALL') || ''); } catch (e) { v = ''; }
+  _mailBccAllCache = v.split(',').map((x) => x.trim()).filter((x) => /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(x));
+  return _mailBccAllCache;
+}
+function mailMergeBcc_(opts) {
+  const extra = mailBccAll_();
+  if (!extra.length || !opts) return opts;
+  const split = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const have = split(opts.bcc);
+  const seen = {};
+  [].concat(split(opts.to), split(opts.cc), have).forEach((x) => { seen[x.toLowerCase()] = true; });
+  extra.forEach((e) => { if (!seen[e.toLowerCase()]) { have.push(e); seen[e.toLowerCase()] = true; } });
+  return Object.assign({}, opts, { bcc: have.join(',') });
+}
+/** The ONE MailApp call for every automated (system-identity) send. */
+function appSendMail_(opts) {
+  MailApp.sendEmail(mailMergeBcc_(opts));
 }
 
 /** Actually sends the email composed for a note. Stamps EmailedAt +
@@ -11194,7 +11219,7 @@ function signatureDataUrlToBlob_(signatureDataUrl, name) {
 function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason) {
   if (!createdBy) return;
   try {
-    MailApp.sendEmail({
+    appSendMail_({
       to: createdBy,
       subject: 'Form submission could not be saved',
       body:
@@ -11263,7 +11288,7 @@ function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipien
     htmlBody: htmlBody,
   };
   if (attachments.length > 0) opts.attachments = attachments;
-  MailApp.sendEmail(opts);
+  appSendMail_(opts);
 }
 
 
@@ -12032,7 +12057,7 @@ function installAutomationTriggers() {
   try {
     const recipients = getManagerEmails_();
     if (recipients.length > 0) {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `UMS Team Tools — automation triggers installed by ${userEmail}`,
         body:
@@ -12146,7 +12171,7 @@ function sendDailyMissedPunchAlerts() {
 
     missed.forEach(emp => {
       try {
-        MailApp.sendEmail({
+        appSendMail_({
           to: emp.email,
           subject: `⏰ Missing Clock-Out for ${emp.yesterdayStr}`,
           body:
@@ -12183,7 +12208,7 @@ function sendDailyMissedPunchAlerts() {
           return '<li style="margin:4px 0;">' + esc_(e.name) + ' (' + esc_(e.id) + ') — ' + esc_(e.email) +
                  ' — missed ' + esc_(e.yesterdayStr) + ' ' + esc_(tzAbbr_(e.timezone)) + '</li>';
         }).join('') + '</ul>';
-        MailApp.sendEmail({
+        appSendMail_({
           to: recipients.join(','),
           subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
           body:
@@ -12274,7 +12299,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
     const result = generateExportSheet_(range.start, range.end, payCycleFilter);
     if (!result.error) createdSheet = result;
     if (result.error) {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `${subjectPrefix}: ${result.error}`,
         body: `No export generated for ${range.start} to ${range.end}.\nReason: ${result.error}`,
@@ -12292,7 +12317,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
     }).getBlob().setName(result.fileName + '.xlsx');
 
-    MailApp.sendEmail({
+    appSendMail_({
       to: recipients.join(','),
       subject: `${subjectPrefix}: ${range.start} to ${range.end}`,
       body:
@@ -12320,7 +12345,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
       `${payCycleFilter} EXCEPTION: ${err.message}`);
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `❌ ${subjectPrefix} FAILED`,
         // C12 (cycle 10): the export SHEET is usually already created when
@@ -12564,7 +12589,7 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
   const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
     `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
     itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
-  MailApp.sendEmail({
+  appSendMail_({
     to: emp.email,
     subject: `End of day · ${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged`,
     body: textBody,
@@ -12849,7 +12874,7 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
   const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html,
     { accent: P.warnDeep, subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
+  appSendMail_({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
 }
 
 /** Branded reminder to ONE employee about their own overdue documents (v2 —
@@ -12872,7 +12897,7 @@ function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
     '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
   const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html,
     { accent: P.warnDeep, subLabel: 'Employee Docs', ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
+  appSendMail_({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -13005,7 +13030,7 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
 
   html += '<p style="margin:16px 0 0;">Open the web app for detail — the separate digest emails for these streams are suppressed while the brief is on.</p>';
   text += '\n\nOpen the web app for detail.';
-  MailApp.sendEmail({
+  appSendMail_({
     to: toEmail,
     subject: 'Team Tools daily brief — ' + totalItems + ' item(s) · ' + todayIso,
     body: text,
@@ -13167,7 +13192,7 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Open Team Notes' });
   const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
-    MailApp.sendEmail({
+    appSendMail_({
       to: toEmails.join(','),
       subject: `Call Notes · ${label} (${notes.length})`,
       body: textBody,
@@ -16740,7 +16765,7 @@ function sendDeptRequestReminderDigest() {
       }).join('\n');
     }).join('\n\n') + '\n\nOpen Metrics → Dept Requests for the full list.';
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: mgrEmails.join(','),
         subject: 'Team Tools — ' + overdue.length + ' department request(s) past SLA',
         body: textBody,
@@ -17229,25 +17254,67 @@ function managerGetPendingAdjustments() {
   } catch (err) { return { error: err.message }; }
 }
 
+const PUNCH_ADJUST_BULK_MAX = 50;
+
 /** Manager-gated, locked. Approve → writes the ADJ-{punchType} punch for the
  *  target emp and marks Approved. Deny → marks Denied (no punch). Transition-
- *  guarded: only acts on a Pending row (so a double-click can't re-approve). */
+ *  guarded: only acts on a Pending row (so a double-click can't re-approve).
+ *  The single-id public wrapper below keeps its {success, error} shape. */
 function updatePunchAdjustStatus(reqId, newStatus) {
+  const r = punchAdjustDecideAll_([reqId], newStatus);
+  if (r.results && r.results.length === 1) {
+    return r.results[0].success ? { success: true } : { success: false, error: r.results[0].error };
+  }
+  return { success: false, error: r.error || 'Action failed.' };
+}
+
+/** Operator 2026-09-03: multi-select approve/deny. ONE lock, ONE queue read,
+ *  ONE Timesheet index per target employee (the C17-9 ctx) instead of a full
+ *  Timesheet read per request, and every decision email deferred past the
+ *  lock. Per-id outcomes ride back so the client can remove exactly the rows
+ *  that landed and restore the ones that did not. */
+function updatePunchAdjustStatusBulk(reqIds, newStatus) {
+  return punchAdjustDecideAll_(reqIds, newStatus);
+}
+
+function punchAdjustDecideAll_(reqIds, newStatus) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  const later = [];                                            // post-lock notifications (M-7)
   let notifyAfter = null;
+  const results = [];
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
-    const id = String(reqId || '').trim();
-    if (!id) return { success: false, error: 'Missing request id.' };
+    const ids = [];
+    (Array.isArray(reqIds) ? reqIds : [reqIds]).forEach((x) => {
+      const id = String(x || '').trim();
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (!ids.length) return { success: false, error: 'Missing request id.' };
+    if (ids.length > PUNCH_ADJUST_BULK_MAX) return { success: false, error: 'At most ' + PUNCH_ADJUST_BULK_MAX + ' requests per batch.' };
     const sheet = getOrCreatePunchAdjustSheet_();
     const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][PAR.REQ_ID]).trim() !== id) continue;
+    const rowById = {};
+    for (let i = 1; i < rows.length; i++) rowById[String(rows[i][PAR.REQ_ID]).trim()] = i;
+    // One Timesheet index per target employee, over the dates this batch
+    // touches — the adjust writer then never re-reads the sheet per request.
+    const datesByEmp = {};
+    ids.forEach((id) => {
+      const i = rowById[id];
+      if (i === undefined) return;
+      const e = String(rows[i][PAR.EMP_ID]).trim();
+      (datesByEmp[e] || (datesByEmp[e] = {}))[normalizeDate_(rows[i][PAR.DATE])] = true;
+    });
+    const ctxByEmp = {};
+    const ctxFor = (empId) => ctxByEmp[empId] || (ctxByEmp[empId] = buildAdjustPunchIndex_(empId, datesByEmp[empId] || {}));
+    const fail = (id, error) => { results.push({ reqId: id, success: false, error: error }); };
+    ids.forEach((id) => {
+      const i = rowById[id];
+      if (i === undefined) { fail(id, 'Request not found.'); return; }
       const status = String(rows[i][PAR.STATUS]).trim();
-      if (status.toLowerCase() !== 'pending') return { success: false, error: 'This request is no longer pending.' };
+      if (status.toLowerCase() !== 'pending') { fail(id, 'This request is no longer pending.'); return; }
       const empId = String(rows[i][PAR.EMP_ID]).trim();
       const empName = String(rows[i][PAR.EMP_NAME]).trim();
       const date = normalizeDate_(rows[i][PAR.DATE]);
@@ -17258,45 +17325,45 @@ function updatePunchAdjustStatus(reqId, newStatus) {
       const action = String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
-        if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        if (!targetEmp) { fail(id, 'Employee not found.'); return; }
         // Re-validate the adjust window at APPROVAL time — the submit-time
         // check (INV-106) doesn't cover a request that sat in the queue past
         // the window. Writing it would bypass the same bound recordPunch /
         // managerSaveDay enforce; the manager should deny instead.
         const ageDays = daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp)));
         if (ageDays > CONFIG.ADJUST_WINDOW_DAYS) {
-          return { success: false, error:
-            'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
-            '-day adjust window — deny it (the rep can re-submit if still needed).' };
+          fail(id, 'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
+            '-day adjust window — deny it (the rep can re-submit if still needed).');
+          return;
         }
         if (action === 'resume') {
           const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
-          if (res && res.error) return { success: false, error: res.error };
+          if (res && res.error) { fail(id, res.error); return; }
         } else {
-          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId));
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
-        notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action);
-        };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action); };
+        later.push(notifyAfter);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
           `${punchType} ${reqTime} request denied`, callerEmp.email);
-        notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action);
-        };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action); };
+        later.push(notifyAfter);
       }
       sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
-      return { success: true };
-    }
-    return { success: false, error: 'Request not found.' };
-  } catch (err) { return { success: false, error: err.message }; }
+      results.push({ reqId: id, success: true });
+    });
+    const failed = results.filter((r) => !r.success).length;
+    return { success: failed === 0, results: results, done: results.length - failed, failed: failed,
+      error: failed ? (failed + ' of ' + results.length + ' could not be ' + newStatus.toLowerCase()) : undefined };
+  } catch (err) { return { success: false, error: err.message, results: results }; }
   finally {
     lock.releaseLock();
     // M-7: best-effort mail fires only after the global lock is released.
-    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+    later.forEach((fn) => { try { fn(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } });
   }
 }
 
@@ -17332,7 +17399,7 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
       '<p style="margin:14px 0 0;">Nothing changes on their timesheet until you approve it.</p>',
       { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Pending',
         ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open Manage Time' });
-    MailApp.sendEmail({ to: to.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: to.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Adjust request notification failed: ' + e.message); }
 }
 
@@ -17384,7 +17451,7 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
         subLabel: 'Time Clock',
         statusLabel: approved ? 'Approved' : 'Denied',
         ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Open Time Clock' });
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Adjust decision email failed: ' + e.message); }
 }
 
@@ -17696,7 +17763,7 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Review',
         ctaUrl: 'https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit',
         ctaLabel: 'Open the audit log' });
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
 
@@ -17717,7 +17784,7 @@ function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
       '',
       { subLabel: 'Call Notes', statusLabel: 'Question',
         ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Reply in Team Notes' });
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
@@ -17770,7 +17837,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
       { accent: accent, subLabel: 'Time Off',
         statusLabel: newStatus === 'Approved' ? 'Approved' : newStatus === 'Denied' ? 'Denied' : 'Updated',
         ctaUrl: safeWebAppUrl_('timeoff'), ctaLabel: 'Open Time / PTO' });
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
 
@@ -25569,7 +25636,7 @@ function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
           '<p style="margin:0 0 12px;">Hi ' + esc_(name) + ',</p>' +
           brandedKvRows_([['Training item', itemTitle]].concat(dueDate ? [['Due', dueDate]] : [])) +
           '', { subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
-        MailApp.sendEmail({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
+        appSendMail_({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
       } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
     }
   } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
@@ -26662,7 +26729,7 @@ function notifyEmpDocIssued_(target, doc) {
       '<p style="margin:12px 0 0;">Please ' + esc_(action) + ' it.</p>',
       { subLabel: 'Employee Docs', statusLabel: doc.requiresSignature ? 'Signature needed' : 'Review needed',
         ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
-    MailApp.sendEmail({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
+    appSendMail_({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
 }
 
@@ -26679,7 +26746,7 @@ function notifyEmpDocSigned_(doc, signer, completedOnly) {
     const htmlBody = buildBrandedEmailHtml_(completedOnly ? 'Document completed' : 'Document signed',
       brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]),
       { tone: 'success', subLabel: 'Employee Docs' });
-    MailApp.sendEmail({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
+    appSendMail_({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
       body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }
@@ -27273,7 +27340,7 @@ function coachUnackedAll_(nowMs) {
 function coachSendMail_(msg) {
   try {
     if (typeof _TEST_OVERRIDE_COACH_MAIL === 'function') { _TEST_OVERRIDE_COACH_MAIL(msg); return true; }
-    MailApp.sendEmail(msg);
+    appSendMail_(msg);
     return true;
   } catch (e) { console.warn('coaching mail failed: ' + e.message); return false; }
 }

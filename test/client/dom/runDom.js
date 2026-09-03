@@ -1830,6 +1830,41 @@ test('reopening after a range session re-enables Add even when the day has no ro
     'and the add control comes back with it — no RPC required');
 });
 
+test('the async prefill never overwrites what the manager already typed, ignores a stale response, and a failed prefill disables Save', () => {
+  // Operator 2026-09-03: a changed Clock In "kept the old time" — the modal
+  // opens blank, the prefill lands ~1s later, and a field typed BEFORE that
+  // response was overwritten by the stored value; the save then sent the old
+  // time as a no-op while the lunch/clock-out typed AFTER the prefill landed.
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 1, 'the prefill is in flight');
+  const ci = h.document.getElementById('de-clockin');
+  ci.value = '08:30'; ci.dispatchEvent(new h.window.Event('input'));
+  const date = h.read('_deDate');
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:07:55', clockOut: '17:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(ci.value, '08:30', 'the typed Clock In SURVIVES the late prefill');
+  assert.strictEqual(h.document.getElementById('de-clockout').value, '17:00', 'an untouched field is still prefilled');
+  assert.strictEqual(h.document.getElementById('de-save').disabled, false, 'Save is live');
+
+  // A stale response (a previous open / date) never applies — sequence, not date.
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const dateEl = h.document.getElementById('de-date');
+  const earlier = dateEl.min;                                   // inside the picker's own bounds
+  dateEl.value = earlier; dateEl.dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 2, 'open + date change = two loads in flight');
+  h.run.flushSuccess({ days: [{ date: earlier, clockIn: '09:00:00' }] }, 'getEmployeeTimesheetForManager');   // the OLDER call
+  assert.strictEqual(ci.value, '', 'the superseded response is dropped even though its date matches');
+  h.run.flushSuccess({ days: [{ date: earlier, clockIn: '09:00:00' }] }, 'getEmployeeTimesheetForManager');   // the current one
+  assert.strictEqual(ci.value, '09:00', 'the current response fills');
+
+  // A FAILED prefill must not leave a saveable blank form — a blank slot
+  // DELETES that punch on save (S7).
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  h.run.flushFailure(new Error('boom'), 'getEmployeeTimesheetForManager');
+  assert.strictEqual(h.document.getElementById('de-save').disabled, true, 'Save is disabled');
+  assert.match(h.document.getElementById('day-edit-subtitle').textContent, /reopen to retry/, 'and the subtitle says why');
+});
+
 test('a hostile stored time renders as a value, never as markup', () => {
   const h = boot();
   // The server strings reach innerHTML; the break times come from a sheet a

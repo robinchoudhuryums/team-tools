@@ -21,7 +21,7 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 752 + DOM 104;
+Test Command: manual (Node harnesses: `npm test` = pure 756 + DOM 105;
   visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
@@ -394,9 +394,19 @@ asked for the Day Edit follow-ups as a FUNCTION: `repairSplitDayPunches(opts)`
 (commits 96dfb83 + the TZR-4 tightening) keeps the earliest ClockIn per date,
 deletes the rest, re-points the mirror, and writes agent-confirmed `adds`
 through the adjust writer — dry-run default, TZR-3/4 pinned, pure 752/0.
-NEXT for the operator: dry run it, then apply with `adds` once the agents
-confirm their lunch/clock-out times; then the August accrual top-up + ADP
-re-export for the affected period.
+The operator ran the dry run + apply (four duplicates collapsed); PR #226 +
+#227 (the ▶ wrappers) MERGED. The operator is entering the missing lunch/
+clock-out punches by hand in Day Edit; the `SPLIT_REPAIR_2026_09_03` constant
++ `_dryRun/_apply` wrappers are still to be DELETED once they say so.
+THEN the Manage Time feedback round (2026-09-03 late afternoon, NOT PR'd):
+Day Edit prefill race fixed; workday-only manager trends; Pending Time Off +
+Pending Punch Adjustments side by side with multi-select approve
+(`updatePunchAdjustStatusBulk`) + optimistic rows; live-status corner actions
++ taller sparkline (gated ≥541px after a measured 78px mobile overflow);
+`MAIL_BCC_ALL` seam (`appSendMail_`). Pure 756/0, DOM 105/0, manage
+wide/dark/mobile re-shot clean. Follow-on: Metrics 30-day trends still walk
+calendar days. Then the August accrual top-up + ADP re-export remain the
+operator's.
 BUILT the same day: the BREAK COVERAGE PLANNER on that card
 (`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
 11/11 bites, three admin-config scenarios clean incl. the cold-failure one).

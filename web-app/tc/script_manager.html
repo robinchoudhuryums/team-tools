@@ -151,6 +151,24 @@
   /* The status line is three coloured spans; without wrap it has a hard
      min-content width that no column count can satisfy on a phone. */
   .mgr-to-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-top: 8px; }
+  /* Operator 2026-09-03: Pending Time Off + Pending Punch Adjustments share a
+     two-column row — both were full-width cards holding a handful of one-line
+     rows. Real breakpoint (A2): a single column under 900px. `align-items:
+     start` so a long time-off queue doesn't stretch the adjustments card. */
+  .mgr-needs-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 16px; align-items: start; }
+  @media (max-width: 900px) { .mgr-needs-pair { grid-template-columns: 1fr; } }
+  .mgr-adj-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .mgr-adj-row .mgr-adj-text { flex: 1 1 180px; min-width: 0; }
+  .mgr-adj-row.is-deciding { opacity: .45; pointer-events: none; }
+  .mgr-adj-chk { width: auto; margin: 0; flex-shrink: 0; }
+  .mgr-adj-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); }
+  .mgr-adj-bar label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-family: var(--ui); text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); cursor: pointer; }
+  .mgr-adj-bar .sp { flex: 1; }
+  /* The shared .pending-btn is flex:1 for the PTO card's 50/50 pair; in the
+     half-width adjustments card that left the request text four lines deep
+     beside two half-row buttons (MEASURED on the first shoot). Compact,
+     content-sized buttons here, and the bulk labels never wrap. */
+  .mgr-adj-row .pending-btn, .mgr-adj-bar .pending-btn { flex: 0 0 auto; padding: 6px 10px; white-space: nowrap; }
 </style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
@@ -467,7 +485,11 @@ function loadPendingAdjustments_() {
       // the degraded output was MORE reassuring than the healthy one).
       // Only a genuinely empty result may render nothing.
       if (res && res.error) { s.innerHTML = errorStateHtml_('Couldn\'t load pending punch-adjustment requests — the queue may NOT be empty. Refresh to retry. (' + res.error + ')'); return; }
-      if (!res || !res.requests || res.requests.length === 0) { s.innerHTML = ''; return; }
+      // Operator 2026-09-03: the queue sits BESIDE Pending Time Off in a
+      // two-column row, so a genuinely-empty queue renders a slim quiet card
+      // rather than nothing — an empty cell beside a full-width neighbour read
+      // as a layout gap, and "no requests" is a fact worth stating.
+      if (!res || !res.requests || res.requests.length === 0) { s.innerHTML = renderAdjustQueueCard_([]); return; }
       s.innerHTML = renderAdjustQueueCard_(res.requests);
     })
     .withFailureHandler(function (err) {
@@ -479,6 +501,11 @@ function loadPendingAdjustments_() {
 }
 
 function renderAdjustQueueCard_(requests) {
+  if (!requests || !requests.length) {
+    return '<div class="card"><h2 class="card-label">Pending Punch Adjustments</h2>' +
+      '<div class="no-data">No pending requests</div></div>';
+  }
+  const multi = requests.length > 1;
   const rows = requests.map(function (r) {
     // B3: a RESUME is a different decision from a missed punch — it converts
     // the rep's clock-out into a break, so the hours they were away become
@@ -489,8 +516,9 @@ function renderAdjustQueueCard_(requests) {
       ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
         ' (clock-out becomes a break — the gap is unpaid)'
       : r.punchType + ' · ' + r.date + ' · ' + r.time;
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">' +
-      '<div style="flex:1">' +
+    return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +
+      (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
+      '<div class="mgr-adj-text">' +
         '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
           ' <span style="color:var(--muted);font-weight:400">— ' + esc(detail) + '</span></div>' +
         (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(r.reason) + '</div>' : '') +
@@ -499,26 +527,113 @@ function renderAdjustQueueCard_(requests) {
       '<button class="pending-btn pb-deny" data-req-id="' + esc(r.reqId) + '" data-act="Denied" onclick="adjDecide_(this)">' + icon('x', 14) + 'Deny</button>' +
     '</div>';
   }).join('');
+  // Operator 2026-09-03: multi-select — the PTO bulk-bar vocabulary.
+  const bar = multi
+    ? '<div class="mgr-adj-bar" id="mgr-adj-bar">' +
+        '<label><input type="checkbox" class="mgr-adj-chk-all" id="mgr-adj-all" onchange="adjBulkAll_(this)"> Select all</label>' +
+        '<span class="sp"></span>' +
+        '<button class="pending-btn pb-approve" id="mgr-adj-bulk-approve" disabled onclick="adjBulk_(\'Approved\')">' + icon('check', 14) + 'Approve Selected</button>' +
+        '<button class="pending-btn pb-deny" id="mgr-adj-bulk-deny" disabled onclick="adjBulk_(\'Denied\')">' + icon('x', 14) + 'Deny Selected</button>' +
+      '</div>'
+    : '';
   return '<div class="card">' +
     '<h2 class="card-label with-count"><span>Pending Punch Adjustments</span>' +
-      '<span class="count-pill warn">' + requests.length + '</span></h2>' +
+      '<span class="count-pill warn" id="mgr-adj-count">' + requests.length + '</span></h2>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Employee-requested punch corrections. Approve writes the adjustment to the timesheet; deny discards it.</div>' +
-    rows +
+    bar + rows +
   '</div>';
 }
 
+/* Operator 2026-09-03: the approve used to wait for the whole round trip —
+ * lock, queue read, Timesheet write, personal-sheet mirror, decision email,
+ * then a SECOND RPC re-fetching the queue — before anything on screen moved.
+ * The row now dims the instant it is clicked and is REMOVED on success (the
+ * count pill follows; the last row swaps the card for its empty state); a
+ * failure restores it with the server's reason. The background re-fetch still
+ * runs so the card reconciles with the sheet. */
+function adjRowFor_(reqId) {
+  const rows = document.querySelectorAll('.mgr-adj-row[data-req-row]');
+  for (let i = 0; i < rows.length; i++) if (rows[i].getAttribute('data-req-row') === reqId) return rows[i];
+  return null;
+}
+function adjSetDeciding_(row, on) {
+  if (!row) return;
+  row.classList.toggle('is-deciding', !!on);
+  row.querySelectorAll('button, input').forEach(function (el) { el.disabled = !!on; });
+}
+function adjRemoveRow_(row) {
+  if (!row) return;
+  const slot = document.getElementById('mgr-adjust-queue');
+  row.remove();
+  const left = document.querySelectorAll('.mgr-adj-row[data-req-row]').length;
+  const pill = document.getElementById('mgr-adj-count');
+  if (pill) pill.textContent = String(left);
+  if (left === 0 && slot) slot.innerHTML = renderAdjustQueueCard_([]);
+  adjBulkSync_();
+}
 function adjDecide_(btn) {
   const reqId = btn.getAttribute('data-req-id');
   const action = btn.getAttribute('data-act');
-  btn.disabled = true;
+  const row = adjRowFor_(reqId);
+  adjSetDeciding_(row, true);
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res || !res.success) { showToast((res && res.error) || 'Action failed', 'toast-error'); btn.disabled = false; return; }
+      if (!res || !res.success) { showToast((res && res.error) || 'Action failed', 'toast-error'); adjSetDeciding_(row, false); return; }
       showToast(action === 'Approved' ? 'Adjustment approved' : 'Request denied', 'toast-success');
+      adjRemoveRow_(row);
       loadPendingAdjustments_();
     })
-    .withFailureHandler(function (err) { showToast((err && err.message) || 'Action failed', 'toast-error'); btn.disabled = false; })
+    .withFailureHandler(function (err) { showToast((err && err.message) || 'Action failed', 'toast-error'); adjSetDeciding_(row, false); })
     .updatePunchAdjustStatus(reqId, action);
+}
+function adjBulkSync_() {
+  const n = document.querySelectorAll('.mgr-adj-chk:checked').length;
+  ['mgr-adj-bulk-approve', 'mgr-adj-bulk-deny'].forEach(function (id) {
+    const b = document.getElementById(id); if (b) b.disabled = n === 0;
+  });
+}
+function adjBulkAll_(cb) {
+  document.querySelectorAll('.mgr-adj-chk').forEach(function (c) { if (!c.disabled) c.checked = !!cb.checked; });
+  adjBulkSync_();
+}
+function adjBulk_(status) {
+  const checked = Array.from(document.querySelectorAll('.mgr-adj-chk:checked'));
+  if (!checked.length) return;
+  const verb = status === 'Approved' ? 'Approve' : 'Deny';
+  const names = [];
+  checked.forEach(function (c) { const n = c.getAttribute('data-emp-name'); if (names.indexOf(n) < 0) names.push(n); });
+  uiConfirm({
+    title: 'Bulk ' + verb.toLowerCase(),
+    message: verb + ' ' + checked.length + ' punch adjustment request(s) for: ' + names.join(', ') + '?',
+    confirmLabel: verb + ' all',
+    tone: status === 'Denied' ? 'danger' : undefined,
+  }).then(function (ok) {
+    if (!ok) return;
+    adjBulkConfirmed_(status, checked.map(function (c) { return c.getAttribute('data-req-id'); }));
+  });
+}
+function adjBulkConfirmed_(status, ids) {
+  const rows = ids.map(adjRowFor_);
+  rows.forEach(function (r) { adjSetDeciding_(r, true); });
+  ['mgr-adj-bulk-approve', 'mgr-adj-bulk-deny'].forEach(function (id) { const b = document.getElementById(id); if (b) b.disabled = true; });
+  const restore = function () { rows.forEach(function (r) { adjSetDeciding_(r, false); }); adjBulkSync_(); };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const results = (res && res.results) || [];
+      if (!results.length) { showToast((res && res.error) || 'Action failed', 'toast-error'); restore(); return; }
+      let done = 0, failed = 0;
+      results.forEach(function (r) {
+        const row = adjRowFor_(r.reqId);
+        if (r.success) { done++; adjRemoveRow_(row); }
+        else { failed++; adjSetDeciding_(row, false); }
+      });
+      if (failed) showToast(done + ' ' + status.toLowerCase() + ', ' + failed + ' failed — ' + ((res && res.error) || ''), 'toast-warn');
+      else showToast(done + ' ' + status.toLowerCase(), 'toast-success');
+      adjBulkSync_();
+      loadPendingAdjustments_();
+    })
+    .withFailureHandler(function (err) { showToast((err && err.message) || 'Action failed', 'toast-error'); restore(); })
+    .updatePunchAdjustStatusBulk(ids, status);
 }
 
 function renderManagerView(area, data) {
@@ -602,7 +717,7 @@ function renderManagerView(area, data) {
         } else {
           line = '<span style="color:var(--muted);font-style:italic">No punches today</span>';
         }
-        // V4·E3 — 7-day daily-hours sparkline under the status line.
+        // V4·E3 — 7-WORKDAY daily-hours sparkline under the status line.
         const sparkSection = renderEmpSparkline_(e.recentHours);
         // Batch 8: the actions moved OFF the name row. MEASURED at 1440 —
         // the card is 181px, and two 26px buttons plus their gaps left the
@@ -790,6 +905,7 @@ function renderManagerView(area, data) {
 
     <h2 class="mgr-group-h" id="mgr-group-needs"><span>Needs you today</span></h2>
 
+    <div class="mgr-needs-pair">
     <div class="card" data-tone="${data.pending.length > 0 ? 'warn' : ''}">
       <h2 class="card-label with-count">
         <span>Pending Time Off</span>
@@ -809,6 +925,8 @@ function renderManagerView(area, data) {
       </div>` : ''}
       ${pendingHtml}
     </div>
+    <div id="mgr-adjust-queue"></div>
+    </div>
 
     <div class="card" data-tone="${data.missedPunches.length > 0 ? 'destructive' : ''}">
       <h2 class="card-label with-count">
@@ -818,8 +936,6 @@ function renderManagerView(area, data) {
       ${data.missedPunches.length > 0 ? '<div class="mgr-card-sub">fix before payroll — Day Edit on the rep’s card, or approve their adjustment request</div>' : ''}
       ${missedHtml}
     </div>
-
-    <div id="mgr-adjust-queue"></div>
 
     <div class="card">
       <h2 class="card-label with-count">
@@ -1528,9 +1644,30 @@ function deSyncRangeMode_() {
   }
 }
 
+/* Operator 2026-09-03: a manager changed the Clock In in Day Edit, saved, and
+ * the OLD time survived while the lunch + clock-out they typed landed. The
+ * prefill is ASYNC — the modal opens blank and getEmployeeTimesheetForManager
+ * fills it a second later — so a field typed BEFORE that response arrived was
+ * overwritten by the stored value, and the save then sent the old time as a
+ * no-op. Two guards: a per-open sequence (a stale response for a previous
+ * open/date never applies) and a per-field TOUCHED flag (the prefill fills
+ * only fields the manager has not typed into yet). A FAILED prefill disables
+ * Save: a blank slot DELETES that punch on save (S7), so saving from a form
+ * that never loaded would wipe the day. */
+var _deLoadSeq = 0;
+var _deTouched = {};
+function deMarkTouched_(key) { _deTouched[key] = true; }
+function deSetLoading_(on, note) {
+  var sub = document.getElementById('day-edit-subtitle');
+  if (sub) sub.textContent = _deEmpName + (note ? ' · ' + note : '');
+  var save = document.getElementById('de-save');
+  if (save && on === 'failed') { save.disabled = true; save.textContent = 'Reopen to retry'; }
+  else if (save) { save.disabled = false; save.textContent = 'Save Changes'; }
+}
 function openDayEditModal(empId, empName, prefillDate) {
   _deEmpId = empId;
   _deEmpName = empName;
+  _deTouched = {};
   // M-2 (cycle 10): bound the picker on the TARGET employee's "today", not the
   // manager's — the server validates daysBack in the target's tz (INV-05/07),
   // so an offshore (IST/PHT) rep's in-progress local day is a VALID edit date
@@ -1547,7 +1684,7 @@ function openDayEditModal(empId, empName, prefillDate) {
   var tz = targetTz || empTz();
   var today = isoDateTz(tz);
   _deDate = today;
-  document.getElementById('day-edit-subtitle').textContent = empName;
+  deSetLoading_(true, 'loading punches…');
   var deDateEl = document.getElementById('de-date');
   deDateEl.value = today;
   // Match the Adjust modal: no future edits (server rejects daysBack<0) and
@@ -1589,21 +1726,28 @@ function openDayEditModal(empId, empName, prefillDate) {
 }
 
 function loadDayEditPunches(empId, start, end) {
+  var seq = ++_deLoadSeq;
   google.script.run
     .withSuccessHandler(function (data) {
       // Response-identity guard (L9): quickly reopening the modal for a
       // different employee on the same default date let employee A's late
       // response fill employee B's slots — saving would have written A's
-      // times to B. The date check alone can't catch that.
-      if (empId !== _deEmpId) return;
-      if (data.error) return;
+      // times to B. The date check alone can't catch that. The sequence
+      // guard covers the same employee re-opened on another date.
+      if (empId !== _deEmpId || seq !== _deLoadSeq) return;
+      if (data.error) { deSetLoading_('failed', 'couldn\u2019t load this day\u2019s punches — reopen to retry'); return; }
+      deSetLoading_(false);
       var day = (data.days || []).find(function (d) { return d.date === _deDate; });
       if (!day) return;
-      document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : '';
-      document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : '';
-      deSetBreaksFromDay_(day);
+      // Fill only what the manager has NOT typed into yet (the race above).
+      if (!_deTouched.clockin)  document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : '';
+      if (!_deTouched.clockout) document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : '';
+      if (!_deTouched.breaks)   deSetBreaksFromDay_(day);
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function () {
+      if (empId !== _deEmpId || seq !== _deLoadSeq) return;
+      deSetLoading_('failed', 'couldn\u2019t load this day\u2019s punches — reopen to retry');
+    })
     .getEmployeeTimesheetForManager(empId, start, end);
 }
 
@@ -1611,7 +1755,11 @@ function loadDayEditPunches(empId, start, end) {
  * re-render from the snapshot (the cnRenderSubforms_ pattern) — re-rendering
  * without it would wipe every other row's in-progress input. Remove is
  * delegated on the host so it survives each re-render. */
+document.getElementById('de-clockin').addEventListener('input', function () { deMarkTouched_('clockin'); });
+document.getElementById('de-clockout').addEventListener('input', function () { deMarkTouched_('clockout'); });
+document.getElementById('de-breaks').addEventListener('input', function () { deMarkTouched_('breaks'); });
 document.getElementById('de-break-add').addEventListener('click', function () {
+  deMarkTouched_('breaks');
   if (this.disabled) return;
   var pairs = deReadBreaks_();
   if (pairs.length >= DE_MAX_BREAKS) return;
@@ -1627,6 +1775,7 @@ document.getElementById('de-breaks').addEventListener('click', function (e) {
   var pairs = deReadBreaks_();
   if (!(idx >= 0) || idx >= pairs.length) return;
   pairs.splice(idx, 1);
+  deMarkTouched_('breaks');
   deRenderBreaks_(pairs);
 });
 // Filling/clearing "To" flips range mode, which caps the list at one pair.
@@ -1665,6 +1814,8 @@ document.getElementById('de-date').addEventListener('change', function () {
   var d = this.value;
   if (!d || !_deEmpId) return;
   _deDate = d;
+  _deTouched = {};
+  deSetLoading_(true, 'loading punches…');
   // F(cycle-8 M-2): keep the "To" picker's floor tracking the edit date; a
   // now-invalid To (≤ the new From) is cleared rather than silently kept.
   var deToEl = document.getElementById('de-date-to');
@@ -1736,7 +1887,7 @@ function renderEmpSparkline_(recentHours) {
   if (totalHrs === 0) return '';
   const bars = recentHours.map(d => {
     const h = d.hours || 0;
-    const px = h === 0 ? 0 : Math.max(2, Math.round((h / max) * 18));
+    const px = h === 0 ? 0 : Math.max(2, Math.round((h / max) * 34));   // 36px track (operator 2026-09-03)
     const cls = ['bar'];
     if (h === 0) cls.push('zero');
     else if (h < 6) cls.push('short');
@@ -1798,7 +1949,7 @@ function renderAnalyticsSection(data) {
   return `
     <div class="metric-grid mgr-analytics">
       <div class="card" style="margin-bottom:16px">
-        <h2 class="card-label">Punch Activity · last 7 days</h2>
+        <h2 class="card-label">Punch Activity · last ${trend.length} workdays</h2>
         <div style="display:flex;align-items:flex-end;gap:2px;height:100px;padding:4px 0">${bars}</div>
       </div>
       <div class="card" style="margin-bottom:16px">

@@ -878,7 +878,12 @@ function qaLatestScorecards_(cards) {
     },
     getManagerDashboard: (function () {
       function spark(n, base) { var a = []; for (var i = n; i >= 1; i--) a.push({ date: daysAgo(i), count: (i * base) % 4 }); return a; }
-      function rh() { var a = []; for (var i = 7; i >= 1; i--) a.push({ date: daysAgo(i), hours: [8.5, 9, 0, 8.75, 9, 8.5, 4][i - 1] }); return a; }
+      // Operator 2026-09-03: the server's punchTrend / recentHours / missedTrend
+      // walk WORKDAYS (mgrWorkdaysEnding_) — the fixture mirrors that so a
+      // screenshot never shows a weekend bar the server cannot produce (INV-185).
+      function workdaysEnding(n, endOffset) { var out = []; for (var off = endOffset; out.length < n; off++) { var d = new Date(); d.setDate(d.getDate() - off); if (d.getDay() === 0 || d.getDay() === 6) continue; out.unshift(d.toISOString().slice(0, 10)); } return out; }
+      function wspark(n, base, endOffset) { return workdaysEnding(n, endOffset).map(function (ds, i) { return { date: ds, count: ((n - i) * base) % 4 }; }); }
+      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, 9, 8.5][i] }; }); }
       // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
       // return block) — the drift made every Day-Edit button in every manager
       // screenshot render data-emp-id="undefined", and surfaced only when the
@@ -901,9 +906,9 @@ function qaLatestScorecards_(cards) {
         recentAudits: [{ timestamp: daysAgo(0) + ' 08:04:12', empName: 'Avery Blake', action: 'PunchIn', actor: '', notes: '', punchDate: todayIso, punchTime: '08:04:00', isAdjustment: false },
                        { timestamp: daysAgo(1) + ' 17:03:40', empName: 'Sam Ortiz', action: 'TimeOffStatusChange', actor: 'mgr@umsupply.com', notes: 'Pending->Approved (Full Day)', punchDate: daysAgo(-4), punchTime: '', isAdjustment: false }],
         missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST',
-        punchTrend: spark(8, 3).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
+        punchTrend: wspark(8, 3, 0).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
         toSummary: { approved: 6, pending: 1, denied: 1 },
-        pendingTrend: spark(14, 1), missedTrend: spark(14, 2),
+        pendingTrend: spark(14, 1), missedTrend: wspark(14, 2, 1),
       };
     })(),
     getPtoReconciliation: { reps: [] },
@@ -1038,7 +1043,13 @@ function qaLatestScorecards_(cards) {
         totalHours: 11.5, daysWorked: 1,
       };
     },
-    managerGetPendingAdjustments: { requests: [] },
+    // Operator 2026-09-03: the queue sits beside Pending Time Off, so the
+    // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
+    // own push literal — INV-185).
+    managerGetPendingAdjustments: { requests: [
+      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', submittedAt: daysAgo(1) + ' 08:10:00' },
+      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', submittedAt: daysAgo(1) + ' 17:40:00' },
+    ] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on
     // screen, and a static object would only ever cover one). Rep-row keys

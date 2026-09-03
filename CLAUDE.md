@@ -891,6 +891,8 @@ this section before touching the relevant area.
   `getCallNoteAuditHistory`, `getPtoReconciliation`,
   `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`,
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
+  `updatePunchAdjustStatusBulk` (the multi-select approve, operator 2026-09-03 —
+  both delegate to the private `punchAdjustDecideAll_`),
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
   `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`,
@@ -1744,6 +1746,20 @@ this section before touching the relevant area.
   that survives a screenshot review. Same family as the class-vs-identity
   entry below, one level up: there the SELECTOR was too broad, here the
   REPLACEMENT was too narrow. Pinned by the BIZ-3 wrapper-shape assertion.
+- **An ASYNC prefill must fill only the fields the user has not typed into,
+  and a FAILED prefill must not leave a saveable blank form (operator
+  2026-09-03).** Day Edit opens blank and `getEmployeeTimesheetForManager`
+  fills it about a second later; a manager who typed a corrected Clock In
+  before that response landed had it OVERWRITTEN by the stored value, so the
+  save sent the old time as a no-op while the lunch and clock-out typed
+  afterwards landed — "it kept the old clock-in". Two guards now: a per-open
+  sequence (`_deLoadSeq` — a superseded response never applies, even when its
+  date matches) and a per-field TOUCHED flag (`_deTouched` — the prefill fills
+  only untouched fields). The empty failure handler was the second half of the
+  hazard: a blank slot DELETES that punch on save (S7), so a prefill that
+  failed silently left a form whose Save would wipe the day; it now disables
+  Save and says "reopen to retry". Apply the same two guards to any modal that
+  prefills asynchronously. Pinned by the Day Edit DOM test.
 - **`location.reload()` reloads the IFRAME, not the app — and that URL is
   session-bound (operator 2026-09-01).** The shell renders inside
   HtmlService's cross-origin iframe, so `window.location` is the
@@ -3579,7 +3595,37 @@ this section before touching the relevant area.
   SESSION-only, and is deliberately NOT a `mgrSwrRenderBlocked_` reason (the
   blocker keeps exactly its two `return true;` — an open overlay and a dirty
   form; a folded group re-renders freely and re-folds). The crumb reads
-  `Manage › Manage Time`. Pinned by PR3-3.
+  `Manage › Manage Time`. Pinned by PR3-3. **Operator 2026-09-03 round:** (a)
+  **Pending Time Off and Pending Punch Adjustments share a two-column row**
+  (`.mgr-needs-pair`, single column ≤900px) — both were full-width cards
+  holding a handful of one-line rows; the queue's genuinely-empty state now
+  renders a quiet "No pending requests" card rather than nothing, so the pair
+  stays a pair, and the queue rows + bulk bar WRAP with content-sized buttons
+  (nowrap buttons pushed the page 64px sideways at 390 — measured). (b) **The
+  adjust queue has multi-select** (checkbox per row when >1, Select all,
+  Approve/Deny Selected — the PTO bulk-bar vocabulary) through ONE endpoint,
+  `updatePunchAdjustStatusBulk(reqIds, status)`: one lock, one queue read, ONE
+  Timesheet index per target employee (the C17-9 ctx — the old per-request
+  `findExistingPunch_` full read was most of the approve's latency), per-id
+  outcomes, every decision email queued past the lock (M-7). The single-id
+  `updatePunchAdjustStatus` delegates to the same body. (c) **The approve is
+  optimistic on screen**: the row dims on click and is REMOVED on success (the
+  count pill follows; the last row swaps in the empty card) or restored with
+  the server's reason; the background re-fetch still reconciles. (d) **Every
+  manager trend counts WORKDAYS** — `mgrWorkdaysEnding_` feeds the Punch
+  Activity chart (8 workdays incl. today; the label derives its count), each
+  live-status sparkline (7 workdays excl. today) and the missed-clock-out
+  sparkline (14); `pendingTrend` deliberately stays on calendar days, because
+  a PTO request can be SUBMITTED on a Saturday and that bar is data, not a
+  structural zero. The Metrics 30-day trends still walk calendar days — see the
+  follow-on in the operator entry. (e) **The live-status card's Edit-day / Pay-
+  statement buttons sit in the card's top-right corner from 541px** and the
+  sparkline doubled (36px track, total beneath). NOT below 541px: the shell
+  makes `.emp-grid` two columns there, and the 66px right padding that keeps
+  the name clear of the corner joins the top row's MIN-CONTENT width (a flex
+  item's `min-width:0` does not shrink its min-content contribution), which
+  pushed the page 78px sideways at 390 — measured, then gated. Pinned by
+  OPS-1..4 + the Day Edit DOM test.
 - **Personal pin is per-rep, capped at 3, stored in `subformData`.**
   Rep toggles the pin via the bookmark icon on a card. State lives in
   `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
@@ -6637,6 +6683,32 @@ manually for a fresh deploy or environment:
   tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
   (contract; the add guards asserted LIVE, not just worded — a `if (false)`
   beside the message passed the first draft).
+- **The 2026-09-03 Manage Time feedback round adds ONE optional Script
+  Property (`MAIL_BCC_ALL`, its own entry above) and no other operator state**
+  — no triggers, migrations or CONFIG values; one new MANAGER-gated endpoint
+  (`updatePunchAdjustStatusBulk`). Behaviour changes to expect post-deploy:
+  (a) **Pending Time Off and Pending Punch Adjustments sit side by side**, the
+  adjustments card carries checkboxes + Approve/Deny Selected once there are
+  two or more, and a decided row leaves the list the moment you click — the
+  full round trip (lock, Timesheet write, mirror, decision email) still runs,
+  it just no longer holds the screen; (b) **the Punch Activity chart and every
+  live-status sparkline skip weekends** ("last 8 workdays"); the Pending
+  sparkline keeps calendar days on purpose; (c) **the live-status cards are
+  wider with the Edit-day / Pay-statement buttons top-right and a taller
+  chart**; (d) **Day Edit no longer overwrites a time you typed before its
+  punches loaded**, and a prefill that fails disables Save instead of offering
+  a blank form whose save would delete the day's punches; (e) with
+  `MAIL_BCC_ALL` set you receive a copy of every email the app sends. Two
+  answers from the round worth recording: **Day Edit sends NO email to the
+  agent** (only the adjust-REQUEST decisions and time-off decisions email the
+  rep — `managerSaveDay` never has), and **a manager edits a rep's day
+  directly with Day Edit; the request queue is the rep-side flow**, there is
+  no manager-filed adjust request and none is needed. FOLLOW-ON: the Metrics
+  My Stats / Team Metrics 30-day trends still walk calendar days (CDR carries
+  no weekend rows, so those points render as gaps) — moving them to workdays
+  touches the cached payload shapes (INV-85) and is its own change.
+  **Post-deploy: run `runAllTests()`** — still **308** (the omnibus gained
+  the `updatePunchAdjustStatusBulk` case IN PLACE).
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
   state** — no Script Properties, triggers, migrations or CONFIG values; ONE
   new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
@@ -8667,6 +8739,15 @@ manually for a fresh deploy or environment:
   whenever the article is EDITED (the edit timestamp is the seen-stamp).
   Unset = feature fully dormant. Drafts/embeds never show; maintain the
   changelog like any other KB article.
+- **Script Property `MAIL_BCC_ALL`** (optional — operator 2026-09-03: "any
+  email the app sends, BCC me"). A comma-separated address list appended as
+  BCC to EVERY email the app sends — the 26 automated senders through the one
+  `appSendMail_` seam, and the rep-identity `sendRepEmail_` on both its
+  branches. Unset = no change. It never clobbers a caller's own bcc (the
+  intake `INTAKE_BCC_EMAIL`, the agent self-BCC), and an address already in
+  to/cc/bcc is not added twice; a malformed entry is dropped; read once per
+  execution. Set it to your address while testing; clear it when you no longer
+  want the copies. No redeploy to change.
 - **Script Property `REP_SENDER_FROM`** (optional — the NEUTRAL shared sender
   for rep-initiated emails; pilot round-1 follow-ons, 2026-08-24; DORMANT
   until configured — the `WHATSNEW_KB_ID` posture). Rep-initiated sends
@@ -9489,6 +9570,20 @@ The tz-repair dry-run failure (operator 2026-09-03) added one more → **750**
 F1 only checked the other direction, and a misspelled key reads as
 `undefined`, which surfaced as a null sheet twenty lines later; bite-checked
 against the original typo).
+The Manage Time feedback round (operator 2026-09-03, later that afternoon)
+added four more → **756** (OPS-1 `mgrWorkdaysEnding_` behavioural + the three
+consumers wired + pendingTrend pinned CALENDAR + the fixture walking workdays;
+OPS-2 the bulk approve's one-lock/one-read/one-index-per-employee/per-id
+contract + the optimistic client + the omnibus case; OPS-3 the pair grid + its
+breakpoint, the wrapping rows, and the corner actions gated to ≥541px with the
+base top row carrying NO right padding — the 78px mobile overflow the first
+shoot found; OPS-4 `mailMergeBcc_` behavioural — unset untouched, append,
+malformed dropped, never clobber, never duplicate against to/cc/bcc — plus
+exactly two direct MailApp sends in the file). DOM 104 → **105** (the Day Edit
+prefill race: typed field survives, stale response dropped by SEQUENCE not
+date, failed prefill disables Save). Three ADJ/B3 pins followed the decision
+body into `punchAdjustDecideAll_` and the M-7 inventory floor moved to the
+TRANSITIVE set (the direct set is two functions now).
 The split-day punch repair (operator 2026-09-03, the same afternoon) added two
 more → **752** (TZR-3 — `splitDayRepairPlan_` driven behaviourally: the kept
 row is the earliest TIME, not the last APPENDED row (the sheet doctor's rule,

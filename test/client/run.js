@@ -1477,7 +1477,10 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     const sb = stripC(funcs[n]);
     return sb.indexOf('MailApp.') >= 0 || sb.indexOf('GmailApp.sendEmail') >= 0;
   });
-  assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
+  // Operator 2026-09-03: every automated send routes through appSendMail_ (the
+  // MAIL_BCC_ALL seam), so the DIRECT inventory is two functions; the
+  // TRANSITIVE set below is the real one and carries the floor.
+  assert.ok(senders.length >= 2, 'mail-sender inventory armed (got ' + senders.length + ')');
   // Cycle-11 (tripwire hole): TRANSITIVE closure — a locked fn calling a
   // mail-free wrapper that itself calls a sender escaped the depth-1
   // inventory. Expansion uses notifyAfter-STRIPPED bodies so a function whose
@@ -1498,6 +1501,7 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     });
   }
   const sendersAll = [...senderSet];
+  assert.ok(sendersAll.length >= 15, 'transitive mail-sender inventory armed (got ' + sendersAll.length + ')');
   // Deliberate in-lock senders, each with a load-bearing reason:
   const ALLOWLIST = {
     emailFromCallNote: 'INV-42 — send-then-stamp is one locked unit: the send outcome decides success:false vs stamp, and the stamp must not race a concurrent edit',
@@ -5187,6 +5191,7 @@ test('F9: every gated endpoint is covered by a gate test (enumerated from source
     // Called only by managerGetTrainingQueue / managerGetReviewCandidates,
     // both of which are omnibus cases.
     managerAggregateFlagged_: 'private helper; public wrappers are covered',
+    punchAdjustDecideAll_: 'private helper (operator 2026-09-03); both public wrappers — updatePunchAdjustStatus + updatePunchAdjustStatusBulk — are covered',
   };
   const uncovered = gated.admin.concat(gated.manager)
     .filter((n) => !ALLOW[n] && blob.indexOf(n) < 0);
@@ -11337,9 +11342,10 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
       },
       MailApp: { sent: null, sendEmail: function (o) { this.sent = o; } },
       _repSenderFromResolved: null,
+      _mailBccAllCache: null,
     };
     vm.createContext(ctx);
-    ['repSenderOpts_', 'repSenderFrom_', 'sendRepEmail_'].forEach((fn) => {
+    ['repSenderOpts_', 'repSenderFrom_', 'mailBccAll_', 'mailMergeBcc_', 'sendRepEmail_'].forEach((fn) => {
       vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn });
     });
     return ctx;
@@ -14795,8 +14801,14 @@ test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is 
   // Slice the function's OWN body. Slicing "up to the next named function"
   // silently widened the moment a MailApp-using helper was inserted between
   // them (B2, 2026-09-01) and the M-7 assertion below failed on correct code.
-  const upd = nc(extractRawFunction('Code.js', 'updatePunchAdjustStatus'));
+  // Operator 2026-09-03: the decision body moved into punchAdjustDecideAll_
+  // (ONE lock + ONE read for the multi-select approve); the single-id public
+  // wrapper delegates to it. The pins follow the body.
+  const upd = nc(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
   assert.ok(/let notifyAfter = null;/.test(upd), 'the closure slot exists');
+  assert.ok(/punchAdjustDecideAll_\(\[reqId\], newStatus\)/.test(extractRawFunction('Code.js', 'updatePunchAdjustStatus')) &&
+    /punchAdjustDecideAll_\(reqIds, newStatus\)/.test(extractRawFunction('Code.js', 'updatePunchAdjustStatusBulk')),
+    'both public entry points delegate to the one decision body');
   // B3 (2026-09-01) added a trailing `action` arg so a resume decision reads as
   // a resume rather than a punch write; the arity is not the property here.
   assert.ok(/notifyEmployeeOfAdjustDecision_\(targetEmp, date, punchType, reqTime, reason, 'Approved'/.test(upd),
@@ -14805,8 +14817,8 @@ test('ADJ-2/3: pendingAdjustments is bounded + read-only; the decision email is 
     'DENY notifies too — a silent denial is indistinguishable from an approval that has not propagated');
   assert.ok(!/MailApp/.test(upd), 'no MailApp inside the locked body (M-7)');
   const relIdx = upd.indexOf('lock.releaseLock()');
-  assert.ok(relIdx !== -1 && upd.indexOf('notifyAfter()', relIdx) > relIdx,
-    'the closure fires AFTER releaseLock');
+  assert.ok(relIdx !== -1 && upd.indexOf('later.forEach', relIdx) > relIdx && /later\.push\(notifyAfter\)/.test(upd),
+    'every queued closure fires AFTER releaseLock');
   // (c) The email itself: branded, escaped, best-effort, and it must not
   // pretend a denial changed the timesheet.
   const mail = nc(codeSrc.slice(codeSrc.indexOf('function notifyEmployeeOfAdjustDecision_'),
@@ -15718,9 +15730,9 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
 
   // The approve branch routes to it, and its refusal blocks the approval —
   // marking a request Approved that did not apply would be the worst outcome.
-  const upd = extractRawFunction('Code.js', 'updatePunchAdjustStatus');
+  const upd = extractRawFunction('Code.js', 'punchAdjustDecideAll_');
   assert.ok(/if \(action === 'resume'\)/.test(upd), 'approve branches on the action');
-  assert.ok(/if \(res && res\.error\) return \{ success: false, error: res\.error \};/.test(upd),
+  assert.ok(/if \(res && res\.error\) \{ fail\(id, res\.error\); return; \}/.test(upd),
     'a refused resume does NOT mark the request approved');
 
   // SUBMIT-side: a resume is only meaningful against a real clock-out, and it
@@ -15739,7 +15751,7 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
     extractRawFunction('Code.js', 'getOrCreatePunchAdjustSheet_')),
     'an existing tab self-heals its header');
   ['empPendingAdjustments_', 'getMyPunchAdjustRequests', 'managerGetPendingAdjustments',
-   'updatePunchAdjustStatus'].forEach((fn) => {
+   'punchAdjustDecideAll_'].forEach((fn) => {
     assert.ok(/=== 'resume' \? 'resume' : 'set'/.test(extractRawFunction('Code.js', fn)),
       fn + ' reads a missing ACTION as the ordinary punch write');
   });
@@ -16159,7 +16171,7 @@ test('PR3-3: Manage Time — Needs-you before Periodic, a real collapse disclosu
   const code = stripJsComments_(mgr);
   const render = extractFnFrom(code, 'renderManagerView');
   const tpl = render.slice(render.indexOf('area.innerHTML = `'));
-  const order = ['Manage Time</h1>', 'Needs you today', 'Pending Time Off', 'Missed Clock-Outs', 'id="mgr-adjust-queue"', 'Live Status', 'id="mgr-team-cal"',
+  const order = ['Manage Time</h1>', 'Needs you today', 'class="mgr-needs-pair"', 'Pending Time Off', 'id="mgr-adjust-queue"', 'Missed Clock-Outs', 'Live Status', 'id="mgr-team-cal"',
     'mgrToggleGroup_(\'periodic\'', 'id="mgr-periodic"', 'Export ADP Upload', 'id="mgr-pto-recon"', 'id="mgr-sheet-doctor"', 'Recent Punches', 'Recent Activity'];
   let last = -1;
   order.forEach((needle) => { const i = tpl.indexOf(needle); assert.ok(i > last, 'ORDER: ' + needle + ' comes after the previous item'); last = i; });
@@ -17096,6 +17108,103 @@ test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-
   assert.ok(/deletes\.sort\(\(a, b\) => b\.row - a\.row\)/.test(extractRawFunction('Code.js', 'splitDayRepairPlan_')), 'the planner hands back deletes bottom-up');
   assert.ok(/writeAuditLog_\(targets\[d\.empId\], 'PunchDelete', d\.date, d\.time, false, 0,\s*'duplicate ClockIn removed \(split-day repair\) — kept ' \+ d\.keptTime, actorEmail\)/.test(applied), 'one PunchDelete audit row per removed row, naming the kept time, caller as actor (INV-08)');
   assert.ok(/otherDuplicates: plan\.otherDuplicates\.map/.test(stripped), 'untouched duplicate groups are REPORTED in the result (INV-187)');
+});
+
+
+/* ── OPS (operator 2026-09-03): Manage Time feedback round ─────────────────
+ * Workday-only trends, the multi-select adjust approve, the two-column
+ * Needs-you row, the live-status card's corner actions, the Day Edit prefill
+ * race (DOM harness), and the MAIL_BCC_ALL seam. */
+test('OPS-1: mgrWorkdaysEnding_ walks weekdays only, oldest→newest, and every manager trend consumes it', () => {
+  const tctx = vm.createContext({ Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+  vm.runInContext(extractRawFunction('Code.js', 'fmtDateTz_') + '\n' + extractRawFunction('Code.js', 'mgrWorkdaysEnding_'), tctx);
+  const f = tctx.mgrWorkdaysEnding_;
+  const wed = new Date('2026-09-02T12:00:00Z');
+  assert.strictEqual(f(wed, 'UTC', 8, 0).join('|'), '2026-08-24|2026-08-25|2026-08-26|2026-08-27|2026-08-28|2026-08-31|2026-09-01|2026-09-02',
+    '8 workdays ending today skip the 08-29/08-30 weekend');
+  assert.strictEqual(f(wed, 'UTC', 7, 1).join('|'), '2026-08-24|2026-08-25|2026-08-26|2026-08-27|2026-08-28|2026-08-31|2026-09-01',
+    'endOffset 1 excludes today');
+  assert.strictEqual(f(new Date('2026-09-05T12:00:00Z'), 'UTC', 1, 0).join('|'), '2026-09-04', 'a Saturday "today" is itself skipped');
+  assert.strictEqual(f(wed, 'UTC', 0, 0).length, 0, 'n=0 is empty, never a spin');
+  const dash = extractRawFunction('Code.js', 'getManagerDashboard').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 8, 0\)/.test(dash), 'punchTrend: 8 workdays incl. today');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 7, 1\)/.test(dash), 'recentHours: 7 workdays excl. today');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, trendDays, 1\)/.test(dash), 'missedTrend: 14 workdays excl. today');
+  assert.ok(/for \(let off = trendDays - 1; off >= 0; off--\)/.test(dash), 'pendingTrend stays on CALENDAR days — a Saturday submission is data');
+  assert.ok(!/analyticsDays|sparkDays/.test(dash), 'the calendar-day loops are gone');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/Punch Activity · last \$\{trend\.length\} workdays/.test(mgr), 'the card label says workdays and derives its count');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/punchTrend: wspark\(8, 3, 0\)/.test(mock) && /missedTrend: wspark\(14, 2, 1\)/.test(mock) && /workdaysEnding\(7, 1\)/.test(mock),
+    'the fixture walks workdays too — a weekend bar the server cannot produce must not be on camera (INV-185)');
+});
+
+test('OPS-2: the multi-select adjust approve is ONE lock + ONE read, per-id outcomes, optimistic rows, and a real bulk bar', () => {
+  const body = extractRawFunction('Code.js', 'punchAdjustDecideAll_').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.strictEqual((body.match(/waitLock\(15000\)/g) || []).length, 1, 'one lock for the whole batch');
+  assert.strictEqual((body.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 1, 'one queue read');
+  assert.ok(/ids\.length > PUNCH_ADJUST_BULK_MAX/.test(body), 'bounded per batch');
+  assert.ok(/buildAdjustPunchIndex_\(empId, datesByEmp\[empId\] \|\| \{\}\)/.test(body) && /writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\)\)/.test(body),
+    'the adjust writer gets ONE Timesheet index per employee (C17-9) instead of a full read per request');
+  assert.ok(/results\.push\(\{ reqId: id, success: true \}\)/.test(body) && /const fail = \(id, error\) =>/.test(body), 'per-id outcomes');
+  assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(newStatus\)/.test(body), 'the status cell flips per row');
+  // Tests.js covers the new public entry on the manager tier (F9 derives the rest).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['updatePunchAdjustStatusBulk', function \(\) \{ return updatePunchAdjustStatusBulk\(\['nonexistent'\], 'Denied'\); \}\]/.test(tests), 'omnibus gate case');
+  // Client.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const card = extractFnFrom(mgr, 'renderAdjustQueueCard_');
+  assert.ok(/const multi = requests\.length > 1;/.test(card) && /\(multi \? '<input type="checkbox" class="mgr-adj-chk"/.test(card), 'a checkbox per row only when there is something to multi-select');
+  assert.ok(/id="mgr-adj-bulk-approve" disabled onclick="adjBulk_\(\\'Approved\\'\)"/.test(card) && /id="mgr-adj-bulk-deny" disabled onclick="adjBulk_\(\\'Denied\\'\)"/.test(card), 'the bulk bar is real buttons, disabled until a row is checked');
+  assert.ok(/No pending requests/.test(card) && /if \(!requests \|\| !requests\.length\)/.test(card), 'an empty queue renders a quiet card (the pair stays a pair)');
+  const decide = extractFnFrom(mgr, 'adjDecide_');
+  assert.ok(decide.indexOf('adjSetDeciding_(row, true)') < decide.indexOf('google.script.run'), 'the row dims BEFORE the RPC');
+  assert.ok(/adjRemoveRow_\(row\)/.test(decide) && (decide.match(/adjSetDeciding_\(row, false\)/g) || []).length === 2, 'removed on success, restored on BOTH failure shapes');
+  const bulk = extractFnFrom(mgr, 'adjBulkConfirmed_');
+  assert.ok(/\.updatePunchAdjustStatusBulk\(ids, status\)/.test(bulk), 'the bulk bar calls the bulk endpoint, not N singles');
+  assert.ok(/if \(r\.success\) \{ done\+\+; adjRemoveRow_\(row\); \}/.test(bulk) && /else \{ failed\+\+; adjSetDeciding_\(row, false\); \}/.test(bulk), 'per-id: landed rows leave, failed rows come back');
+  assert.ok(/uiConfirm\(\{/.test(extractFnFrom(mgr, 'adjBulk_')), 'a bulk decision confirms first');
+  assert.ok(/if \(left === 0 && slot\) slot\.innerHTML = renderAdjustQueueCard_\(\[\]\);/.test(extractFnFrom(mgr, 'adjRemoveRow_')), 'the last row swaps in the empty card');
+  const loader = extractFnFrom(mgr, 'loadPendingAdjustments_');
+  assert.ok(/s\.innerHTML = renderAdjustQueueCard_\(\[\]\); return;/.test(loader), 'the loader renders the empty card, not nothing');
+});
+
+test('OPS-3: the Needs-you pair, the wrapping queue rows, and the live-status corner actions are viewport-safe', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/\.mgr-needs-pair \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/.test(mgr), 'two-column row');
+  assert.ok(/@media \(max-width: 900px\) \{ \.mgr-needs-pair \{ grid-template-columns: 1fr; \} \}/.test(mgr), 'with a real breakpoint (A2)');
+  assert.ok(/\.mgr-adj-row \{ display: flex; flex-wrap: wrap;/.test(mgr) && /\.mgr-adj-bar \{ display: flex; flex-wrap: wrap;/.test(mgr),
+    'the queue rows + bulk bar WRAP — nowrap buttons pushed the page 64px sideways at 390 (measured)');
+  assert.ok(/\.mgr-adj-row \.pending-btn, \.mgr-adj-bar \.pending-btn \{ flex: 0 0 auto;/.test(mgr), 'compact content-sized buttons in the half-width card');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.emp-grid \{\s*display: grid;\s*grid-template-columns: repeat\(auto-fill, minmax\(220px, 1fr\)\);/.test(css), 'live-status cards min 220px');
+  assert.ok(/\.emp-spark \{\s*display: flex; align-items: flex-end; gap: 3px;\s*height: 36px;/.test(css) && /\(h \/ max\) \* 34\)/.test(mgr), 'the sparkline doubled (36px track, bars scaled to it)');
+  const top = /\.emp-card-top \{([^}]*)\}/.exec(css);
+  assert.ok(top && !/padding-right/.test(top[1]), 'the BASE top row carries no right padding — it joins the min-content width and overflowed the two-column mobile grid by 78px (measured)');
+  assert.ok(/@media \(min-width: 541px\) \{\s*\.emp-card-top \{ padding-right: 66px; \}\s*\.emp-card-actions \{ position: absolute; top: 12px; right: 12px; margin: 0; \}\s*\}/.test(css),
+    'from 541px the actions sit top-right and the top row reserves their width');
+});
+
+test('OPS-4: MAIL_BCC_ALL rides every send through ONE seam and never clobbers or duplicates', () => {
+  const mk = (prop) => {
+    const ctx = { _mailBccAllCache: null, Object, String, PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'MAIL_BCC_ALL' ? prop : null) }) } };
+    vm.createContext(ctx);
+    ['mailBccAll_', 'mailMergeBcc_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+    return ctx;
+  };
+  const off = mk(null);
+  const o1 = { to: 'a@x.com', subject: 's' };
+  assert.strictEqual(off.mailMergeBcc_(o1), o1, 'unset → the caller\'s options object is returned untouched');
+  const on = mk('robin@x.com, not-an-address, Second@x.com');
+  assert.strictEqual(on.mailMergeBcc_({ to: 'a@x.com' }).bcc, 'robin@x.com,Second@x.com', 'appended; the malformed entry is dropped');
+  assert.strictEqual(on.mailMergeBcc_({ to: 'a@x.com', bcc: 'agent@x.com' }).bcc, 'agent@x.com,robin@x.com,Second@x.com', 'a caller\'s bcc is kept FIRST, never clobbered');
+  assert.strictEqual(on.mailMergeBcc_({ to: 'ROBIN@x.com', cc: 'second@x.com' }).bcc, '', 'already in to/cc (case-insensitive) → no second copy');
+  assert.strictEqual(on.mailMergeBcc_({ to: 'a@x.com', bcc: 'ROBIN@x.com' }).bcc, 'ROBIN@x.com,Second@x.com', 'and not duplicated into an existing bcc');
+  const code = codeSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.strictEqual((code.match(/MailApp\.sendEmail\(/g) || []).length, 2, 'exactly two direct MailApp sends: appSendMail_ and sendRepEmail_\'s MailApp branch');
+  assert.ok(/function appSendMail_\(opts\) \{\s*MailApp\.sendEmail\(mailMergeBcc_\(opts\)\);/.test(code), 'the seam merges before sending');
+  assert.ok((code.match(/appSendMail_\(\{/g) || []).length + (code.match(/appSendMail_\((opts|msg)\)/g) || []).length >= 20, 'every automated sender routes through it');
+  assert.ok(/const merged = mailMergeBcc_\(Object\.assign\(\{\}, opts, repSenderOpts_\(emp\)\)\);/.test(code), 'the rep-identity wrapper merges it too (both branches share `merged`)');
 });
 
 

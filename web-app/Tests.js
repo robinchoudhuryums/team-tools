@@ -5314,6 +5314,7 @@ function test_managerGates_rejectNonManager() {
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
     // Break coverage planner (operator 2026-09-03) — a READ (bare {error}); the gate precedes any roster/CDR read.
     ['getBreakCoverage',               function () { return getBreakCoverage({ withVolume: false }); }],
+    ['updatePunchAdjustStatusBulk', function () { return updatePunchAdjustStatusBulk(['nonexistent'], 'Denied'); }],
     ['saveQaScorecardCriteria',        function () { return saveQaScorecardCriteria([{ key: 'greeting', label: 'Greeting' }]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],

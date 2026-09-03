@@ -1105,7 +1105,7 @@
   /* ─── EMPLOYEE GRID ──────────────────────────────────────────── */
   .emp-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 12px;
   }
   .emp-card {
@@ -1164,13 +1164,17 @@
      in-memory, no extra Sheet reads — INV-13 honored). Bars are
      color-coded by hours: short (<6h) warn-toned, normal (≥6h) accent,
      zero days dimmed. Total/days-worked label below. */
+  /* Operator 2026-09-03: the chart doubled in height (18 → 36px) and the
+     total moved BELOW it, right-aligned, once the action buttons left the
+     card's flow for its top-right corner and the grid's minimum went 180 →
+     220px — the bars had been sharing their row with a 60px label. */
   .emp-spark-wrap {
-    display: flex; align-items: center; gap: 8px;
-    margin-top: 8px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+    margin-top: 10px;
   }
   .emp-spark {
-    flex: 1; display: flex; align-items: flex-end; gap: 2px;
-    height: 18px;
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 36px;
   }
   .emp-spark .bar {
     flex: 1; background: var(--accent-soft); border-radius: 1px;
@@ -1189,7 +1193,7 @@
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .04em;
     font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
+    flex-shrink: 0; align-self: flex-end;
   }
 
   /* Manager doc-row variant — same disc treatment as above */
@@ -1784,6 +1788,19 @@
      name at 1440). margin-left:auto on .de-open-btn would right-push only
      the FIRST button, so the row owns the alignment instead. */
   .emp-card-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  /* Operator 2026-09-03: from 541px the two buttons sit in the card's
+     top-right corner (the card is position:relative) so the sparkline gets
+     the row back, and .emp-card-top's padding-right reserves their width so
+     the name never runs under them (2×26 + 6 gap + 8). NOT below 541px: the
+     shell's ≤540px rule makes .emp-grid two columns, and that padding joins
+     the top row's MIN-CONTENT width (a flex item's min-width:0 does not
+     shrink its min-content contribution), which pushed the page 78px
+     sideways at 390 — MEASURED. Below the breakpoint the buttons keep the
+     batch-8 row, which was measured clean. */
+  @media (min-width: 541px) {
+    .emp-card-top { padding-right: 66px; }
+    .emp-card-actions { position: absolute; top: 12px; right: 12px; margin: 0; }
+  }
   .emp-card-actions .de-open-btn { margin-left: 0; }
   .de-open-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .de-open-btn svg { width: 13px; height: 13px; }
