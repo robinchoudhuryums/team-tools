@@ -17083,6 +17083,9 @@ test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-
   assert.ok(addsIdx > 0 && addsIdx < dryIdx && dryIdx < lockIdx, 'adds validated → dry-run return → lock');
   ['is not in this run', 'inside \\[', 'type must be one of', 'time must be HH:mm', 'is a duplicate group in this run'].forEach((m) =>
     assert.ok(new RegExp(m).test(stripped), 'add refusal named: ' + m));
+  // The guards are LIVE, not just worded: each refusal is the throw of a real test (a message left beside `if (false)` passes a wording scan).
+  assert.ok(/if \(dupKeys\[empId \+ '\|' \+ date \+ '\|' \+ type\]\) throw/.test(stripped), 'an add onto a duplicate group is refused by the LIVE dupKeys check');
+  assert.ok(/if \(PUNCH_LABELS_\.indexOf\(type\) < 0\) throw/.test(stripped) && /if \(!\/\^\(\[01\]\\d\|2\[0-3\]\):\[0-5\]\\d\$\/\.test\(time\)\) throw/.test(stripped), 'type + time guards are live');
   assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
   // Order inside the lock: adds (through the ONE manager-approval writer) → deletes bottom-up → mirror re-point.
   const applied = stripped.slice(lockIdx);
