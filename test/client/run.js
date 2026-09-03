@@ -13564,6 +13564,147 @@ test('BRK-5: empShiftSchedule_ behavioural — the per-employee layer wins over 
   assert.ok(!F({ id: 'E-1042' }, 'America/Chicago').perEmployee, 'no property → tz layer for everyone');
 });
 
+// ── Break coverage planner (operator 2026-09-03) ────────────────────────────
+// The strip on the Admin "Break schedules" card + the Coverage planner's
+// break subtraction + the CDR demand layer.
+test('BCV-1: coverageSplitAtBreaks_ + breakCoverageSlots_ behavioural — breaks subtract, partial overlap = away, offsets are shift-relative', () => {
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'coverageSplitAtBreaks_') + '\n' + extractRawFunction('Code.js', 'breakCoverageSlots_'), ctx);
+  const J = (v) => JSON.stringify(v);
+  const S = ctx.coverageSplitAtBreaks_;
+  assert.strictEqual(J(S(480, 1020, [])), J([{ absStart: 480, absEnd: 1020 }]), 'no breaks → the whole shift');
+  assert.strictEqual(J(S(480, 1020, [{ offsetMin: 240, lenMin: 60 }])), J([{ absStart: 480, absEnd: 720 }, { absStart: 780, absEnd: 1020 }]), 'one break → two on-desk intervals');
+  assert.strictEqual(J(S(480, 1020, [{ offsetMin: -10, lenMin: 20 }])), J([{ absStart: 490, absEnd: 1020 }]), 'a break straddling the start is clipped');
+  assert.strictEqual(J(S(480, 1020, [{ offsetMin: 600, lenMin: 20 }])), J([{ absStart: 480, absEnd: 1020 }]), 'a break outside the shift is ignored');
+  assert.strictEqual(J(S(480, 1020, [{ offsetMin: 240, lenMin: 60 }, { offsetMin: 270, lenMin: 60 }])), J([{ absStart: 480, absEnd: 720 }, { absStart: 810, absEnd: 1020 }]), 'overlapping breaks union');
+  assert.strictEqual(J(S(480, 1020, [{ offsetMin: 240, lenMin: 0 }])), J([{ absStart: 480, absEnd: 1020 }]), 'a zero-length break is nothing');
+  assert.strictEqual(J(S(1020, 480, [])), '[]', 'an inverted shift yields nothing');
+  const B = ctx.breakCoverageSlots_;
+  const agents = [
+    { id: 'a', name: 'Ann', startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 720, lenMin: 60 }] },
+    { id: 'b', name: 'Bo', startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 725, lenMin: 30 }] },   // starts mid-slot
+    { id: 'c', name: 'Cy', startMin: 510, lengthMin: 510, breaks: [] },                                                // 8:30 start
+    { id: 'd', name: 'Di', startMin: 18 * 60, lengthMin: 120, breaks: [] },                                            // evening — outside the window
+  ];
+  const slots = B(agents, { slotMin: 15, startHour: 8, endHour: 17 });
+  assert.strictEqual(slots.length, 36, '9 hours × 4 quarter-hours');
+  assert.strictEqual(slots[0].startMin, 480); assert.strictEqual(slots[0].onShift, 2, 'Cy (8:30) is not on shift at 8:00; Di never is');
+  assert.strictEqual(slots[2].onShift, 3, 'Cy joins at 8:30');
+  const noon = slots[16]; assert.strictEqual(noon.startMin, 720);
+  assert.strictEqual(noon.onShift, 3); assert.strictEqual(noon.onDesk, 1, 'Ann (12:00) and Bo (12:05 — partial overlap counts) are away at 12:00');
+  assert.strictEqual(J(noon.away), J([{ id: 'a', name: 'Ann', label: 'Lunch' }, { id: 'b', name: 'Bo', label: 'Lunch' }]), 'away carries who + which break');
+  assert.strictEqual(slots[19].onDesk, 2, 'Bo is back by 12:45; Ann still at lunch'); assert.strictEqual(slots[20].onDesk, 3, 'everyone back at 13:00');
+  assert.strictEqual(slots[35].onDesk, 3, 'the 16:45 slot is on shift for a 17:00 end');
+  assert.strictEqual(B([], { slotMin: 15, startHour: 8, endHour: 17 })[5].onShift, 0, 'no agents → empty slots, never a throw');
+});
+
+test('BCV-2: inboundVolumeBuckets_ behavioural — header-name discovery, PST→CST shift + wrap, internal/weekend/queue filters, distinct-weekday denominator, missing column NAMED', () => {
+  const ctx = { Utilities: { formatDate: () => '' } }; vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_') + '\n' + extractRawFunction('Code.js', 'inboundVolumeBuckets_'), ctx);
+  const V = ctx.inboundVolumeBuckets_;
+  // Reordered vs the export's real layout on purpose — discovery is by NAME.
+  const H = ['Call ID', 'Is Internal', 'Entry Queue', 'Call Start', 'Call Date', 'Disposition'];
+  const R = (date, start, q, internal) => ['x', internal ? 'TRUE' : 'FALSE', q, start, date, 'answered'];
+  const opts = { fromIso: '2026-08-31', toIso: '2026-09-04', slotMin: 15, startHour: 8, endHour: 17, shiftHours: 2, queues: { 'a_q_csr': true }, tz: 'UTC' };
+  const rows = [
+    R('2026-08-31', '06:03:10', 'A_Q_CSR', false),     // Mon 06:03 PST = 08:03 CST → slot 0
+    R('2026-08-31', '06:20:00', 'A_Q_CSR', false),     // 08:20 → slot 1
+    R('2026-08-31', '06:20:00', 'A_Q_CSR', true),      // internal — excluded
+    R('2026-08-31', '06:20:00', 'A_Q_Sales', false),   // other queue — excluded
+    R('9/1/2026',   '6:04:00',  'a_q_csr', false),     // Tue, M/D/YYYY date, unpadded hour, lowercase queue → slot 0
+    R('2026-09-01', '15:10:00', 'A_Q_CSR', false),     // 17:10 CST — past the window
+    R('2026-09-05', '06:04:00', 'A_Q_CSR', false),     // Saturday — excluded (also outside toIso)
+    R('2026-09-02', '23:30:00', 'A_Q_CSR', false),     // wraps to 01:30 — outside the window, but the DAY counts
+    R('2026-09-02', 'n/a',      'A_Q_CSR', false),     // unparseable start — skipped, day NOT counted by it
+  ];
+  const out = V(H, rows, opts);
+  assert.strictEqual(JSON.stringify(out.missing), '[]', 'no missing columns (JSON compare — vm-realm arrays fail deepStrictEqual)');
+  assert.strictEqual(out.weekdays, 3, 'Mon, Tue, Wed carried counted rows (the Saturday row does not)');
+  assert.strictEqual(out.counted, 3, 'three rows landed in slots');
+  assert.strictEqual(out.slots.length, 36);
+  assert.strictEqual(out.slots[0], Math.round((2 / 3) * 10) / 10, 'slot 0 = 2 calls over 3 weekdays, 1-dp');
+  assert.strictEqual(out.slots[1], Math.round((1 / 3) * 10) / 10);
+  assert.strictEqual(out.slots[2], 0);
+  const all = V(H, rows, Object.assign({}, opts, { queues: null }));
+  assert.strictEqual(all.counted, 4, 'queues:null = every non-internal queue');
+  const miss = V(['Call Date', 'Call Start', 'Entry Queue'], rows, opts);
+  assert.strictEqual(JSON.stringify(miss.missing), '["is internal"]', 'a pre-extension tab names its missing column');
+  assert.strictEqual(JSON.stringify(miss.slots), '[]', 'and yields NO slots — never a strip of zeros');
+  const none = V(H, [], opts);
+  assert.strictEqual(none.weekdays, 0); assert.strictEqual(JSON.stringify(none.slots), '[]', 'no rows → no slots (the caller reports unavailable)');
+});
+
+test('BCV-3: server contract — admin READ gate, draft through the sanitizer, memo swap restored, display-value reads, clean-round cache, every failure named, planner splits at breaks', () => {
+  const fn = (name) => stripJsComments_(extractRawFunction('Code.js', name));
+  const g = fn('getBreakCoverage');
+  assert.ok(/const emp = getEmployeeInfo_\(\);[\s\S]*?if \(!emp\) return \{ error: 'Not authorized\.' \};[\s\S]*?if \(!emp\.isAdmin\) return \{ error: 'Admin access required\.' \};/.test(g), 'gate first, bare {error} read shape');
+  assert.ok(!/success:\s*false/.test(g), 'a READ never returns success:false (the GATE-SHAPE rule)');
+  assert.ok(/breakSchedSanitize_\(p\.draft\)/.test(g), 'the draft is read through the SAME sanitizer the stored property gets');
+  assert.ok(/breakCoverageAgents_\(draft, dateIso\)/.test(g) && /breakCoverageSlots_\(built\.agents/.test(g), 'agents resolved under the draft, then bucketed by the pure helper');
+  assert.ok(/p\.withVolume \? getCdrInboundVolume_\(/.test(g), 'the demand layer is opt-in per call');
+  assert.ok(!/setValue|appendRow|setProperty|deleteProperty/.test(g), 'read-only');
+  const w = fn('withBreakSchedulesProp_');
+  assert.ok(/const prev = _breakSchedulesCache;[\s\S]*_breakSchedulesCache = prop;[\s\S]*finally \{ _breakSchedulesCache = prev; \}/.test(w), 'the memo swap restores the previous state in finally');
+  const a = fn('breakCoverageAgents_');
+  assert.ok(/withBreakSchedulesProp_\(prop, function/.test(a) && /empShiftSchedule_\(\{ id: id, scheduleRaw:/.test(a), 'the ONE resolver (INV-149) sees the draft via the memo swap, with the rep id');
+  assert.ok(/if \(!empRosterEmail_\(rows\[i\]\)\) continue;/.test(a), 'roster inclusion through the one predicate (INV-183)');
+  assert.ok(/skipped\.push\(name\); continue;/.test(a), 'a rep whose conversion fails is NAMED, not dropped');
+  assert.ok(/startMin: absStart \+ \(b\.startMin - sched\.startMin\)/.test(a), 'breaks convert as shift-relative offsets (no second tz conversion)');
+  const v = fn('getCdrInboundVolume_');
+  assert.ok(!/\.getValues\(/.test(v) && (v.match(/getDisplayValues\(\)/g) || []).length >= 3, 'the foreign tab is read with getDisplayValues throughout (INV-64)');
+  assert.ok(/useCache = !\(typeof _TEST_OVERRIDE_CDR_SS_ID/.test(v) && /if \(useCache && !out\.truncated\) \{ try \{ cache\.put\(/.test(v), 'cache put only on a clean, untruncated round; bypassed under the CDR test override');
+  assert.ok((v.match(/unavailable:/g) || []).length >= 5, 'every degradation names itself as unavailable (tab missing / empty / columns / no rows / read error)');
+  assert.ok(/if \(win >= maxRows\) \{ truncated = true; break; \}/.test(v), 'the tail scan is bounded and REPORTS truncation');
+  assert.ok(!/setValue|appendRow|setProperty/.test(v), 'read-only');
+  const cp = fn('getCoveragePlan');
+  assert.ok(/offsetMin: b\.startMin - r\.sched\.startMin, lenMin: b\.lenMin/.test(cp) && /coverageSplitAtBreaks_\(absStart, absStart \+ r\.sched\.lengthMin, cuts\)\.forEach/.test(cp),
+    'the Coverage planner subtracts every rep\'s breaks before bucketing (it counted a rep on lunch as PRESENT until 2026-09-03)');
+  assert.ok(!/intervals\.push\(\{ rep: r\.id, absStart: absStart, absEnd: absStart \+ r\.sched\.lengthMin/.test(cp), 'the whole-shift push is gone');
+  // CONFIG readers for the new keys (F1 keeps this derived; named here so a rename fails loudly)
+  ['CDR_INBOUND_TAB', 'CDR_INBOUND_PST_TO_CST_HOURS', 'BREAK_COVERAGE_SLOT_MIN', 'BREAK_COVERAGE_VOLUME_DAYS', 'BREAK_COVERAGE_VOLUME_MAX_ROWS', 'BREAK_COVERAGE_VOLUME_CACHE_SEC', 'BREAK_COVERAGE_VOLUME_QUEUES']
+    .forEach((k) => assert.ok((codeSrc.match(new RegExp('CONFIG\\.' + k + '\\b', 'g')) || []).length >= 1, k + ' is read'));
+});
+
+test('BCV-4: client wiring — one collector for Save AND the strip, seq-guarded live refresh, last-good on failure, volume once, real cells, own scroller, fixture keys derived', () => {
+  const cnRaw = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const cn = stripJsComments_(cnRaw.replace(/<!--[\s\S]*?-->/g, ''));
+  assert.ok(/var draft = cnBreakCollectDraft_\(false\);[\s\S]*?\.saveBreakSchedules\(\{ reminderMin: rm, schedules: schedules, employees: employees \}\)/.test(cn), 'Save collects through the shared collector (strict)');
+  assert.ok(/function cnBreakCovRefresh_[\s\S]*?var draft = cnBreakCollectDraft_\(true\);/.test(cn), 'the strip collects through the SAME collector (lenient)');
+  assert.ok(/if \(!start\) \{ if \(lenient\) continue; return \{ error:/.test(cn), 'lenient skips a half-typed row; strict refuses it');
+  assert.ok(/id="cn-brk-cov"/.test(cn) && /cnBreakCovStripHtml_\(null, null\)/.test(cn), 'the strip host leads the editor with a skeleton');
+  assert.ok(/brkEd\.addEventListener\('input', function \(\) \{ cnBreakCovSchedule_\(\); \}\)/.test(cn) && /brkEd\.addEventListener\('change'/.test(cn), 'edits schedule a refresh');
+  assert.ok(/setTimeout\(function \(\) \{ CN_BRK_COV\.timer = null; cnBreakCovRefresh_\(false\); \}, 450\)/.test(cn), 'debounced');
+  assert.strictEqual((cn.match(/if \(seq !== CN_BRK_COV\.seq \|\| currentView !== requestedView\) return;/g) || []).length, 2, 'both handlers seq-guard AND view-guard (INV-156)');
+  assert.ok(/\.getBreakCoverage\(\{ draft: \{ reminderMin: draft\.reminderMin, schedules: draft\.schedules, employees: draft\.employees \}, withVolume: wantVolume \}\)/.test(cn), 'the draft rides the call in the save payload shape');
+  assert.ok(/var wantVolume = !!withVolume && !CN_BRK_COV\.volumeTried;/.test(cn) && /cnBreakCovRefresh_\(true\);/.test(cn), 'the demand layer is fetched once per card open');
+  assert.ok(/function cnBreakCovFail_[\s\S]*?if \(CN_BRK_COV\.last\) \{[\s\S]*?cn-bcv-note warn[\s\S]*?\} else \{[\s\S]*?errorStateHtml_\(/.test(cn), 'a failed refresh keeps last-good with a warn line; a cold failure renders the error card (C17-5)');
+  assert.ok(/cnBreakCovRefresh_\(false\);\s*\/\/ the re-render replaced the strip's host/.test(cnRaw), 'a successful save re-fills the strip after the editor re-renders');
+  assert.ok(/<button type="button" class="cn-bcv-cell [\s\S]*?aria-label="' \+ esc\(label\) \+ '" aria-pressed=/.test(cn), 'cells are real named buttons with pressed state (INV-173/174)');
+  assert.ok(/'repeat\(' \+ n \+ ', minmax\(0, 1fr\)\)'/.test(cn), 'the grid column count is COMPUTED from the slot count (FO-A2)');
+  assert.ok(/\.cn-bcv-wrap \{ max-width: 100%; overflow-x: auto; \}/.test(cnRaw) && /\.cn-bcv-grid \{[^}]*min-width: 560px/.test(cnRaw), 'the strip scrolls inside its own wrap — never the page');
+  assert.ok(/\.cn-bcv-detail\[hidden\] \{ display: none; \}/.test(cnRaw), 'the [hidden] companion (the display-class trap)');
+  assert.ok(/vslots \? '<span class="cn-bcv-vol"/.test(cn) && /else if \(vol\.unavailable\) volNote = 'Background call volume unavailable — ' \+ esc\(vol\.unavailable\)/.test(cn), 'an unavailable demand layer is NAMED and draws no bars');
+  assert.ok(/esc\(cov\.skipped\.join/.test(cn) && /esc\(a\.name\)/.test(cn) && /esc\(vol\.unavailable\)/.test(cn), 'server strings escape before innerHTML');
+  // Fixture keys DERIVED from the server's own return literals (INV-185).
+  const keysOf = (lit) => (lit.match(/(?:^|[{,\s])([A-Za-z_]\w*):\s/g) || []).map((m) => m.replace(/^[{,\s]+/, '').replace(/:\s$/, ''));
+  const gsrc = stripJsComments_(extractRawFunction('Code.js', 'getBreakCoverage'));
+  // The SUCCESS literal only — the catch's `{ error }` is a different shape.
+  const retLit = /return \{\s*workAnchorTz([\s\S]*?)\};/.exec(gsrc)[1];
+  const serverKeys = keysOf(retLit).filter((k) => k !== 'function');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const fx = /getBreakCoverage: function \(payload\) \{([\s\S]*?)\n    \},/.exec(mock)[1];
+  const fxRet = /return \{ workAnchorTz([\s\S]*?)\};/.exec(fx)[0];
+  const fxKeys = keysOf(fxRet);
+  serverKeys.forEach((k) => assert.ok(fxKeys.indexOf(k) >= 0, 'fixture is missing server key ' + k));
+  const slotLit = /slots\.push\(\{([^}]*)\}\)/.exec(stripJsComments_(extractRawFunction('Code.js', 'breakCoverageSlots_')))[1];
+  const fxSlot = /slots\.push\(\{([^}]*)\}\)/.exec(fx)[1];
+  keysOf('{' + slotLit + '}').forEach((k) => assert.ok(keysOf('{' + fxSlot + '}').indexOf(k) >= 0, 'fixture slot is missing ' + k));
+  const volLit = /out = \{([\s\S]*?)\};/.exec(stripJsComments_(extractRawFunction('Code.js', 'getCdrInboundVolume_')))[1];
+  const fxVol = /vol = \{([\s\S]*?)\};/.exec(fx)[1];
+  keysOf('{' + volLit + '}').forEach((k) => assert.ok(keysOf('{' + fxVol + '}').indexOf(k) >= 0, 'fixture volume is missing ' + k));
+  assert.ok(serverKeys.length >= 12 && keysOf('{' + volLit + '}').length >= 8, 'the derivations actually captured the literals');
+});
+
 test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminView shared, editor collects custom-only', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const stripped = nc(codeSrc);
@@ -13612,8 +13753,8 @@ test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminVi
     'the save collects ONLY customized sections');
   assert.ok(/\.saveBreakSchedules\(\{ reminderMin: rm, schedules: schedules, employees: employees \}\)/.test(cn),
     'the editor calls the save endpoint with the per-agent map');
-  assert.ok(/#cn-admin-brk-emp-list \.cn-brk-sched\[data-emp="1"\]/.test(cn) && /employees\[eid\] = ebreaks;/.test(cn),
-    'per-agent sections are collected from their own list, custom-only');
+  assert.ok(/#cn-admin-brk-emp-list \.cn-brk-sched\[data-emp="1"\]/.test(cn) && /employees\[eid\] = er\.rows;/.test(cn),
+    'per-agent sections are collected from their own list, custom-only (inside the shared collector since the coverage strip, 2026-09-03)');
   assert.ok(/cnBreakEmpOptionsHtml_/.test(cn) && /id="cn-admin-brk-addempbtn"/.test(cn), 'the picker lists agents without a section and adds one');
   assert.ok(/data-tzwarn/.test(cn) && /cn-brk-pill\.warn/.test(cn), 'a roster tz off the work anchor renders a warn pill');
   assert.ok(/cnRenderBreakSchedEditor_\(res\.breakSchedules \|\| \{\}\)/.test(cn),

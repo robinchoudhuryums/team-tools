@@ -954,6 +954,44 @@ function qaLatestScorecards_(cards) {
     // scenario). A FUNCTION of the range (F14); keys mirror getCoveragePlan's
     // return block + its days[].reps[] push literal (INV-185, pinned). One
     // weekend, one holiday, one rep off, one tentative, one cross-tz shift.
+    // getBreakCoverage (operator 2026-09-03) — a FUNCTION of the payload
+    // (F14): the demand layer rides only when `withVolume` is asked for, as
+    // on the server. Keys mirror getBreakCoverage's return literal + the
+    // breakCoverageSlots_ slot shape + getCdrInboundVolume_'s clean-round
+    // object (INV-185). 36 quarter-hour slots 8:00–17:00 in the CST frame;
+    // the lunch hour dips below the fixture's minStaff so all three tones
+    // and the away list are on camera.
+    getBreakCoverage: function (payload) {
+      var slotMin = 15, startHour = 8, endHour = 17;
+      var names = ['Avery Blake', 'Sam Ortiz', 'Leo Kim', 'Nina Patel', 'Jordan Lee', 'Priya Nair', 'Casey Morgan', 'Rae Quinn'];
+      var ids = ['E-1042', 'E-1077', 'E-1090', 'E-1055', 'E-1061', 'E-1063', 'E-1070', 'E-1081'];
+      var breaks = [ [615, 15, 'Morning break'], [720, 60, 'Lunch'], [915, 15, 'Afternoon break'] ];
+      var slots = [];
+      for (var t = startHour * 60; t < endHour * 60; t += slotMin) {
+        var away = [];
+        names.forEach(function (n, i) {
+          var off = (i % 4) * 15;                           // staggered by 15 min per group of four
+          for (var b = 0; b < breaks.length; b++) {
+            var bs = breaks[b][0] + off, be = bs + breaks[b][1];
+            if (bs < t + slotMin && be > t) { away.push({ id: ids[i], name: n, label: breaks[b][2] }); break; }
+          }
+        });
+        slots.push({ startMin: t, onShift: names.length, onDesk: names.length - away.length, away: away });
+      }
+      var vol = null;
+      if (payload && payload.withVolume) {
+        var vs = [];
+        for (var i = 0; i < slots.length; i++) {
+          var h = (slots[i].startMin - startHour * 60) / 60;            // 0..9
+          vs.push(Math.round((6 + 9 * Math.exp(-Math.pow(h - 2.5, 2) / 3) + 5 * Math.exp(-Math.pow(h - 6.5, 2) / 4)) * 10) / 10);
+        }
+        vol = { slots: vs, weekdays: 20, counted: 4210, from: '2026-08-06', to: '2026-09-03', through: '2026-09-02',
+                queues: ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'], truncated: false, slotMin: slotMin, startHour: startHour, endHour: endHour };
+      }
+      return { workAnchorTz: 'America/Chicago', date: '2026-09-03', slotMin: slotMin, startHour: startHour, endHour: endHour,
+               minStaff: 6, goodStaff: 7, draft: !!(payload && payload.draft), agents: names.length, perEmployee: 2,
+               skipped: [], slots: slots, volume: vol };
+    },
     getCoveragePlan: function (from, to) {
       var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
       var n = Math.min(14, Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1);

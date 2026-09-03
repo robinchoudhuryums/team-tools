@@ -1742,6 +1742,34 @@
   .cn-brk-pill.custom { color: var(--info-deep); border-color: transparent; background: var(--info-soft); }
   .cn-brk-pill.warn { color: var(--warning-deep); border-color: transparent; background: var(--warn-soft); }
   .cn-brk-sub { font-size: 12.5px; font-weight: 600; color: var(--ink); margin: 14px 0 4px; }
+  /* Break coverage strip (operator 2026-09-03). The grid's column count is
+     COMPUTED from the slot count (FO-A2) and the strip scrolls inside its own
+     wrap at narrow widths — a 36-cell row must never push the page sideways. */
+  .cn-bcv { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; background: var(--paper); }
+  .cn-bcv-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .cn-bcv-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .cn-bcv-sum { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .cn-bcv-wrap { max-width: 100%; overflow-x: auto; }
+  .cn-bcv-grid { display: grid; gap: 2px; min-width: 560px; align-items: end; }
+  .cn-bcv-hr { font-family: var(--mono); font-size: 9px; color: var(--muted); white-space: nowrap; overflow: visible; height: 12px; }
+  .cn-bcv-cell { appearance: none; -webkit-appearance: none; position: relative; height: 40px; border: 0; border-radius: 4px; padding: 0;
+    font-family: var(--mono); font-size: 11px; color: var(--ink); cursor: pointer; overflow: hidden; background: var(--paper-2); }
+  .cn-bcv-cell.ok   { background: var(--accent-soft); }
+  .cn-bcv-cell.risk { background: var(--warn-soft); }
+  .cn-bcv-cell.low  { background: var(--destructive-soft); }
+  .cn-bcv-cell.none { color: var(--muted-2); }
+  .cn-bcv-cell.is-open { outline: 2px solid var(--info); outline-offset: -2px; }
+  .cn-bcv-cell:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: -2px; }
+  .cn-bcv-vol { position: absolute; left: 0; right: 0; bottom: 0; height: var(--v, 0%); background: var(--ink); opacity: .13; pointer-events: none; }
+  .cn-bcv-n { position: relative; }
+  .cn-bcv-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin: 6px 0 2px; }
+  .cn-bcv-legend .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; vertical-align: -1px; margin-right: 4px; }
+  .cn-bcv-legend .sw.ok { background: var(--accent-soft); } .cn-bcv-legend .sw.risk { background: var(--warn-soft); }
+  .cn-bcv-legend .sw.low { background: var(--destructive-soft); } .cn-bcv-legend .sw.vol { background: var(--ink); opacity: .13; }
+  .cn-bcv-detail { font-size: 12px; color: var(--ink); margin: 6px 0 2px; }
+  .cn-bcv-detail[hidden] { display: none; }
+  .cn-bcv-note { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .cn-bcv-note.warn { color: var(--warning-deep); }
   .cn-brk-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px 30px; gap: 8px; align-items: center; padding: 3px 0; }
   .cn-brk-row input { width: 100%; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
   .cn-brk-cols { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-3); padding-bottom: 0; }
@@ -11893,51 +11921,31 @@ function cnRenderAdminBody_(cfg) {
       if (inp) inp.value = '';
     }
   });
+  // Break coverage strip (operator 2026-09-03): re-derive from the UNSAVED
+  // editor state on every edit — inputs, the time/number changes, and the
+  // structural clicks (add/remove row, Customize/Revert, add agent). The
+  // click listener is bound AFTER the mutating one above, so it sees the
+  // mutated DOM. The demand layer is fetched ONCE per card open.
+  if (brkEd) {
+    brkEd.addEventListener('input', function () { cnBreakCovSchedule_(); });
+    brkEd.addEventListener('change', function () { cnBreakCovSchedule_(); });
+    brkEd.addEventListener('click', function (ev) {
+      var t = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+      if (!t) return;
+      var cell = t.closest('.cn-bcv-cell');
+      if (cell) { cnBreakCovShowSlot_(parseInt(cell.getAttribute('data-slot'), 10)); return; }
+      cnBreakCovSchedule_();
+    });
+    cnBreakCovRefresh_(true);
+  }
   var brkSaveBtn = document.getElementById('cn-admin-brk-save');
   if (brkSaveBtn) brkSaveBtn.addEventListener('click', function () {
     var btn = this;
-    var secs = document.querySelectorAll('#cn-admin-brk-list .cn-brk-sched');
-    var schedules = {};
-    for (var i = 0; i < secs.length; i++) {
-      if (secs[i].getAttribute('data-custom') !== '1') continue;
-      var key = secs[i].getAttribute('data-key');
-      var rows = secs[i].querySelectorAll('.cn-brk-rows .cn-brk-row');
-      var breaks = [];
-      for (var j = 0; j < rows.length; j++) {
-        var label = (rows[j].querySelector('.cn-brk-label').value || '').trim();
-        var start = (rows[j].querySelector('.cn-brk-start').value || '').trim();
-        var len = parseInt(rows[j].querySelector('.cn-brk-len').value, 10);
-        if (!label && !start && !(len > 0)) continue;      // fully blank row — ignore
-        if (!start) { showToast('Set a start time for every break in "' + key + '"', 'toast-warn'); return; }
-        if (!(len >= 1 && len <= 240)) { showToast('Break length must be 1–240 minutes ("' + key + '")', 'toast-warn'); return; }
-        breaks.push({ label: label, start: start, len: len });
-      }
-      schedules[key] = breaks;   // empty = deliberately no breaks for this key
-    }
-    // Per-agent sections (data-emp) live in their own list; a pending (removed)
-    // one is data-custom="0" and simply drops out of the payload.
-    var employees = {};
-    var esecs = document.querySelectorAll('#cn-admin-brk-emp-list .cn-brk-sched[data-emp="1"]');
-    for (var e = 0; e < esecs.length; e++) {
-      if (esecs[e].getAttribute('data-custom') !== '1') continue;
-      var eid = esecs[e].getAttribute('data-key');
-      var ename = esecs[e].getAttribute('data-name') || eid;
-      var erows = esecs[e].querySelectorAll('.cn-brk-rows .cn-brk-row');
-      var ebreaks = [];
-      for (var k = 0; k < erows.length; k++) {
-        var el2 = (erows[k].querySelector('.cn-brk-label').value || '').trim();
-        var es2 = (erows[k].querySelector('.cn-brk-start').value || '').trim();
-        var en2 = parseInt(erows[k].querySelector('.cn-brk-len').value, 10);
-        if (!el2 && !es2 && !(en2 > 0)) continue;
-        if (!es2) { showToast('Set a start time for every break for ' + ename, 'toast-warn'); return; }
-        if (!(en2 >= 1 && en2 <= 240)) { showToast('Break length must be 1–240 minutes (' + ename + ')', 'toast-warn'); return; }
-        ebreaks.push({ label: el2, start: es2, len: en2 });
-      }
-      employees[eid] = ebreaks;   // empty = deliberately no breaks for this agent
-    }
-    var rmEl = document.getElementById('cn-admin-brk-remind');
-    var rm = parseInt((rmEl && rmEl.value) || '', 10);
-    if (!(rm >= 1 && rm <= 120)) { showToast('Reminder lead must be 1–120 minutes', 'toast-warn'); return; }
+    // ONE collector serves Save and the live coverage strip (operator
+    // 2026-09-03) — the strip previews EXACTLY the payload a Save would send.
+    var draft = cnBreakCollectDraft_(false);
+    if (draft.error) { showToast(draft.error, 'toast-warn'); return; }
+    var schedules = draft.schedules, employees = draft.employees, rm = draft.reminderMin;
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
       .withSuccessHandler(function (res) {
@@ -11946,6 +11954,7 @@ function cnRenderAdminBody_(cfg) {
         showToast('Break schedules saved — reps pick them up on their next state refresh', 'toast-success');
         var ed = document.getElementById('cn-admin-brk-editor');
         if (ed) ed.innerHTML = cnRenderBreakSchedEditor_(res.breakSchedules || {});
+        cnBreakCovRefresh_(false);   // the re-render replaced the strip's host
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Save break schedules';
@@ -12100,6 +12109,8 @@ function cnRenderQaCritRows_(list) {
 function cnRenderBreakSchedEditor_(bs) {
   bs = bs || {};
   var list = (bs.schedules || []).map(function (s) { return cnBreakSchedSectionHtml_(s, !!s.custom); }).join('');
+  // The coverage strip host leads the editor; cnBreakCovRefresh_ fills it.
+  list = '<div id="cn-brk-cov" class="cn-bcv" aria-live="polite">' + cnBreakCovStripHtml_(null, null) + '</div>' + list;
   var have = {};
   (bs.schedules || []).forEach(function (s) { have[s.key] = true; });
   var opts = (bs.rosterTimezones || []).filter(function (t) { return !have[t]; })
@@ -12197,6 +12208,178 @@ function cnBreakRowHtml_(b) {
 /** The section's identity for a re-render: key plus, for an employee
  *  section, the name/tz/roster flags it carries as data-* (decoded by
  *  getAttribute — every value goes back through esc() on render, INV-193). */
+// ── Break coverage strip (operator 2026-09-03) ──────────────────────────────
+// A 15-minute "who is on the desk" strip over the business window, derived
+// from the editor's UNSAVED state through the server's own resolver
+// (getBreakCoverage runs the draft through breakSchedSanitize_ — no client
+// twin of the merge to drift), over a background layer of average inbound
+// call volume from the CDR export. Decoration rules: a failed refresh keeps
+// the last painted strip with a warn line (C17-5), a cold failure renders
+// errorStateHtml_, and a missing demand layer is NAMED, never drawn as zeros.
+var CN_BRK_COV = { seq: 0, last: null, volume: null, volumeTried: false, timer: null, open: null };
+
+/** Collect the editor's state into the saveBreakSchedules payload shape.
+ *  `lenient` (the live strip) SKIPS an incomplete row instead of refusing —
+ *  a half-typed break must not blank the preview; Save is strict. */
+function cnBreakCollectDraft_(lenient) {
+  var secs = document.querySelectorAll('#cn-admin-brk-list .cn-brk-sched');
+  var schedules = {};
+  var readRows = function (rowsEl, who) {
+    var out = [];
+    for (var j = 0; j < rowsEl.length; j++) {
+      var label = (rowsEl[j].querySelector('.cn-brk-label').value || '').trim();
+      var start = (rowsEl[j].querySelector('.cn-brk-start').value || '').trim();
+      var len = parseInt(rowsEl[j].querySelector('.cn-brk-len').value, 10);
+      if (!label && !start && !(len > 0)) continue;      // fully blank row — ignore
+      if (!start) { if (lenient) continue; return { error: 'Set a start time for every break ' + who }; }
+      if (!(len >= 1 && len <= 240)) { if (lenient) continue; return { error: 'Break length must be 1–240 minutes ' + who }; }
+      out.push({ label: label, start: start, len: len });
+    }
+    return { rows: out };
+  };
+  for (var i = 0; i < secs.length; i++) {
+    if (secs[i].getAttribute('data-custom') !== '1') continue;
+    var key = secs[i].getAttribute('data-key');
+    var r = readRows(secs[i].querySelectorAll('.cn-brk-rows .cn-brk-row'), 'in "' + key + '"');
+    if (r.error) return r;
+    schedules[key] = r.rows;   // empty = deliberately no breaks for this key
+  }
+  var employees = {};
+  var esecs = document.querySelectorAll('#cn-admin-brk-emp-list .cn-brk-sched[data-emp="1"]');
+  for (var e = 0; e < esecs.length; e++) {
+    if (esecs[e].getAttribute('data-custom') !== '1') continue;
+    var eid = esecs[e].getAttribute('data-key');
+    var ename = esecs[e].getAttribute('data-name') || eid;
+    var er = readRows(esecs[e].querySelectorAll('.cn-brk-rows .cn-brk-row'), 'for ' + ename);
+    if (er.error) return er;
+    employees[eid] = er.rows;   // empty = deliberately no breaks for this agent
+  }
+  var rmEl = document.getElementById('cn-admin-brk-remind');
+  var rm = parseInt((rmEl && rmEl.value) || '', 10);
+  if (!(rm >= 1 && rm <= 120)) { if (!lenient) return { error: 'Reminder lead must be 1–120 minutes' }; rm = 10; }
+  return { reminderMin: rm, schedules: schedules, employees: employees };
+}
+
+function cnBreakCovSchedule_() {
+  if (CN_BRK_COV.timer) clearTimeout(CN_BRK_COV.timer);
+  CN_BRK_COV.timer = setTimeout(function () { CN_BRK_COV.timer = null; cnBreakCovRefresh_(false); }, 450);
+}
+
+function cnBreakCovRefresh_(withVolume) {
+  var host = document.getElementById('cn-brk-cov');
+  if (!host) return;
+  var draft = cnBreakCollectDraft_(true);
+  var wantVolume = !!withVolume && !CN_BRK_COV.volumeTried;
+  var seq = ++CN_BRK_COV.seq;
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== CN_BRK_COV.seq || currentView !== requestedView) return;
+      var h = document.getElementById('cn-brk-cov');
+      if (!h) return;
+      if (!res || res.error) { cnBreakCovFail_(h, (res && res.error) || 'Coverage preview failed'); return; }
+      if (res.volume !== null && res.volume !== undefined) { CN_BRK_COV.volume = res.volume; CN_BRK_COV.volumeTried = true; }
+      CN_BRK_COV.last = res;
+      h.innerHTML = cnBreakCovStripHtml_(res, CN_BRK_COV.volume);
+      if (CN_BRK_COV.open !== null) cnBreakCovShowSlot_(CN_BRK_COV.open);
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== CN_BRK_COV.seq || currentView !== requestedView) return;
+      var h = document.getElementById('cn-brk-cov');
+      if (h) cnBreakCovFail_(h, (err && err.message) || 'Coverage preview failed');
+    })
+    .getBreakCoverage({ draft: { reminderMin: draft.reminderMin, schedules: draft.schedules, employees: draft.employees }, withVolume: wantVolume });
+}
+
+function cnBreakCovFail_(host, msg) {
+  if (CN_BRK_COV.last) {
+    host.innerHTML = cnBreakCovStripHtml_(CN_BRK_COV.last, CN_BRK_COV.volume) +
+      '<div class="cn-bcv-note warn" role="status">Preview not refreshed — ' + esc(msg) + '. Showing the last computed strip.</div>';
+  } else {
+    host.innerHTML = errorStateHtml_('Break coverage preview unavailable: ' + msg);
+  }
+}
+
+function cnBreakCovTier_(onDesk, onShift, minStaff, goodStaff) {
+  if (!(onShift > 0)) return 'none';
+  if (onDesk >= goodStaff) return 'ok';
+  if (onDesk >= minStaff) return 'risk';
+  return 'low';
+}
+function cnBreakCovClock_(m) {
+  var h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? 'PM' : 'AM';
+  var hh = h % 12; if (hh === 0) hh = 12;
+  return hh + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ap;
+}
+
+/** The strip. `cov` null = skeleton (first paint); `vol` null = no demand layer. */
+function cnBreakCovStripHtml_(cov, vol) {
+  if (!cov) {
+    return '<div class="cn-bcv-head"><span class="cn-bcv-title">Desk coverage across the day</span></div>' +
+      '<div class="cn-bcv-wrap"><div class="skel" style="height:44px;border-radius:6px"></div></div>' +
+      '<div class="cn-bcv-note">Computing who is on the desk from the schedules below…</div>';
+  }
+  var slots = cov.slots || [];
+  var n = slots.length;
+  if (!n) return '<div class="cn-bcv-note warn">No slots — the business window is empty.</div>';
+  var perHour = Math.max(1, Math.round(60 / (cov.slotMin || 15)));
+  var vmax = 0, vslots = (vol && !vol.unavailable && vol.slots && vol.slots.length === n) ? vol.slots : null;
+  if (vslots) vslots.forEach(function (v) { if (v > vmax) vmax = v; });
+  var lowest = null;
+  slots.forEach(function (sl) { if (sl.onShift > 0 && (lowest === null || sl.onDesk < lowest.onDesk)) lowest = sl; });
+  var cols = 'repeat(' + n + ', minmax(0, 1fr))';
+  var hours = '';
+  for (var i = 0; i < n; i++) {
+    hours += '<div class="cn-bcv-hr">' + (i % perHour === 0 ? esc(cnBreakCovClock_(slots[i].startMin).replace(':00', '')) : '') + '</div>';
+  }
+  var cells = slots.map(function (sl, i) {
+    var tier = cnBreakCovTier_(sl.onDesk, sl.onShift, cov.minStaff, cov.goodStaff);
+    var pct = (vslots && vmax > 0) ? Math.round((vslots[i] / vmax) * 100) : 0;
+    var label = cnBreakCovClock_(sl.startMin) + '–' + cnBreakCovClock_(sl.startMin + (cov.slotMin || 15)) + ': ' +
+      sl.onDesk + ' on desk of ' + sl.onShift + ' on shift' + (sl.away.length ? ', ' + sl.away.length + ' away' : '') +
+      (vslots ? ', avg ' + vslots[i] + ' calls' : '');
+    return '<button type="button" class="cn-bcv-cell ' + tier + (CN_BRK_COV.open === i ? ' is-open' : '') + '" data-slot="' + i + '" aria-label="' + esc(label) + '" aria-pressed="' + (CN_BRK_COV.open === i ? 'true' : 'false') + '">' +
+      (vslots ? '<span class="cn-bcv-vol" style="--v:' + pct + '%" aria-hidden="true"></span>' : '') +
+      '<span class="cn-bcv-n">' + (sl.onShift > 0 ? sl.onDesk : '') + '</span></button>';
+  }).join('');
+  var summary = cov.agents + ' agent' + (cov.agents === 1 ? '' : 's') + ' on shift · ' +
+    (lowest ? 'lowest desk ' + lowest.onDesk + ' at ' + cnBreakCovClock_(lowest.startMin) : 'no shifts in the window') +
+    (cov.perEmployee ? ' · ' + cov.perEmployee + ' per-agent schedule' + (cov.perEmployee === 1 ? '' : 's') : '');
+  var volNote;
+  if (!vol) volNote = 'Background: average inbound calls by time of day loads once per open.';
+  else if (vol.unavailable) volNote = 'Background call volume unavailable — ' + esc(vol.unavailable);
+  else volNote = 'Background bars: average inbound calls per weekday per ' + esc(String(vol.slotMin)) + ' min, ' + esc(String(vol.weekdays)) + ' weekday' + (vol.weekdays === 1 ? '' : 's') +
+    ' ending ' + esc(vol.through || vol.to) + (vol.queues && vol.queues.length ? ' · queues: ' + esc(vol.queues.join(', ')) : ' · all inbound queues') +
+    (vol.truncated ? ' · scan capped, figures may be incomplete' : '');
+  return '<div class="cn-bcv-head"><span class="cn-bcv-title">Desk coverage across the day</span><span class="cn-bcv-sum">' + esc(summary) + '</span></div>' +
+    '<div class="cn-bcv-wrap"><div class="cn-bcv-grid" style="grid-template-columns:' + cols + '">' + hours + cells + '</div></div>' +
+    '<div class="cn-bcv-legend"><span><i class="sw ok"></i>≥ ' + esc(String(cov.goodStaff)) + ' on desk</span><span><i class="sw risk"></i>≥ ' + esc(String(cov.minStaff)) + '</span><span><i class="sw low"></i>under ' + esc(String(cov.minStaff)) + '</span><span><i class="sw vol"></i>call volume</span></div>' +
+    '<div id="cn-bcv-detail" class="cn-bcv-detail"' + (CN_BRK_COV.open === null ? ' hidden' : '') + '></div>' +
+    '<div class="cn-bcv-note' + (vol && vol.unavailable ? ' warn' : '') + '">' + volNote + '</div>' +
+    '<div class="cn-bcv-note">Live preview of the schedules as edited below (' + esc(cov.workAnchorTz || '') + ' frame; every agent on shift, breaks subtracted). Approved time off is on the Coverage planner, which subtracts breaks too.' +
+      (cov.skipped && cov.skipped.length ? ' Could not place: ' + esc(cov.skipped.join(', ')) + '.' : '') + '</div>';
+}
+
+function cnBreakCovShowSlot_(i) {
+  var cov = CN_BRK_COV.last;
+  var det = document.getElementById('cn-bcv-detail');
+  if (!cov || !det || !(i >= 0 && i < cov.slots.length)) return;
+  var same = CN_BRK_COV.open === i;
+  CN_BRK_COV.open = same ? null : i;
+  var cells = document.querySelectorAll('#cn-brk-cov .cn-bcv-cell');
+  for (var k = 0; k < cells.length; k++) {
+    var on = CN_BRK_COV.open === k;
+    cells[k].classList.toggle('is-open', on);
+    cells[k].setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  if (CN_BRK_COV.open === null) { det.hidden = true; det.innerHTML = ''; return; }
+  var sl = cov.slots[i];
+  var when = cnBreakCovClock_(sl.startMin) + '–' + cnBreakCovClock_(sl.startMin + (cov.slotMin || 15));
+  det.innerHTML = '<strong>' + esc(when) + '</strong> · ' + sl.onDesk + ' on desk of ' + sl.onShift + ' on shift' +
+    (sl.away.length ? ' · away: ' + sl.away.map(function (a) { return esc(a.name) + ' (' + esc(a.label) + ')'; }).join(', ') : ' · nobody away');
+  det.hidden = false;
+}
+
 function cnBreakSectionMeta_(sec, extra) {
   var m = { key: sec.getAttribute('data-key') };
   if (sec.getAttribute('data-emp') === '1') {

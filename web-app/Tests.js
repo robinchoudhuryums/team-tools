@@ -5312,6 +5312,8 @@ function test_managerGates_rejectNonManager() {
     // Break-schedule editor (operator 2026-08-27) — gate precedes any
     // property write; an empty payload could never write regardless.
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
+    // Break coverage planner (operator 2026-09-03) — a READ (bare {error}); the gate precedes any roster/CDR read.
+    ['getBreakCoverage',               function () { return getBreakCoverage({ withVolume: false }); }],
     ['saveQaScorecardCriteria',        function () { return saveQaScorecardCriteria([{ key: 'greeting', label: 'Greeting' }]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
@@ -5415,7 +5417,7 @@ function test_managerGates_rejectNonManager() {
     getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
     getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
-    saveBreakSchedules: 1,
+    saveBreakSchedules: 1, getBreakCoverage: 1,
     saveQaScorecardCriteria: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
