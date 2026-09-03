@@ -6595,7 +6595,14 @@ manually for a fresh deploy or environment:
   are deltas), and any ADP export cut while the rows were split is short those
   shifts (re-export). Call-note `DateLocal` stamps are left alone (cosmetic).
   Pinned by TZR-1 (planner behavioural) + TZR-2 (gate / dry-run default /
-  bounded / locked / in-place / audited / collisions reported).
+  bounded / locked / in-place / audited / collisions reported). **The
+  operator's first dry run (2026-09-03) died on a NULL sheet — the roster read
+  said `CONFIG.EMPLOYEES_TAB` where the declared key is `EMPLOYEE_TAB`, and a
+  misspelled CONFIG key reads as `undefined` rather than throwing, so
+  `getSheetByName(undefined)` handed back null.** The F1 tripwire checks
+  declared → read; nothing checked read → declared. `F1-inverse` now does
+  (every `CONFIG.<KEY>` read across the web-app tree names a declared
+  top-level key); its first run found exactly this one.
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
   state** — no Script Properties, triggers, migrations or CONFIG values; ONE
   new rep-callable read endpoint (`getMyPendingTasks`, read-only, per-rep
@@ -9443,6 +9450,11 @@ server's own `TZ_ABBR`, and the PHT scenario's two zones are asserted DIFFERENT
 — a scenario where they agree tests nothing). The R2-FU pin was rewritten in
 place for the seven-entry destructuring. Visual matrix 92 → **93**
 (`clock-light-wide-pht`, clean on its first shoot).
+The tz-repair dry-run failure (operator 2026-09-03) added one more → **750**
+(`F1-inverse` — every `CONFIG.<KEY>` read names a declared key; the existing
+F1 only checked the other direction, and a misspelled key reads as
+`undefined`, which surfaced as a null sheet twenty lines later; bite-checked
+against the original typo).
 The break coverage planner (operator 2026-09-03) added four more → **749**
 (BCV-1 `coverageSplitAtBreaks_` + `breakCoverageSlots_` behavioural — a
 partial overlap counts as away, offsets are shift-relative, the 16:45 slot is
