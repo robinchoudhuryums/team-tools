@@ -375,9 +375,8 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, latest). Branch `claude/ums-team-tools-design-r8ar3o`
-(reset onto the merged PR #228 main) carries, NOT PR'd — the operator has not
-asked: the split-repair constant deletion (`66fb623`), then the **English-email
+CURRENT (2026-09-04, latest). **PR #230 MERGED** (squash, CI green) — the
+branch is reset onto main. It carried: the split-repair constant deletion (`66fb623`), then the **English-email
 fix + follow-ons round** (`97f9d78` + docs): intake payload labels always EN
 (fired live), Metrics trends on workdays (`metricsWorkdayIsos_`, cache keys
 v2), the QA criterion type-change confirm (`cnQaCritRetyped_`), the QA Log
@@ -385,7 +384,7 @@ agent filter, the archive spare-row guard, `cnNlBr_` at the three inline
 sites. Pure 768/0, DOM 108/0, 10/10 bites, four scenarios re-shot clean.
 Block: `.cycle/blocks/19pre-english-email-followons-broad-implement.md`.
 The operator's deploy of #176–#228 is LIVE (308/308, triggers re-installed);
-this round is not deployed until it is merged + a New version is cut.
+PR #230 needs its own `clasp push -f` + New version to reach the live app.
 
 PREVIOUS (2026-09-04, late). **PR #228 MERGED** (squash, CI green) — it carried
 the five commits below; the branch is reset onto main. Those were: the boot-timing beacon + QA waveform
