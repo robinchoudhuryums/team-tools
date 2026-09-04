@@ -42,7 +42,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
     audit.
   - **Metrics** — CDR integration reading DQE Historical Data from
     the CDR Report spreadsheet. Four tabs: "My Stats" (self-view —
-    the previous workday's KPIs, 30-day % Answered trend,
+    the previous workday's KPIs, a 30-day workday % Answered trend,
     note-to-call coverage; CDR data is never same-day), "Team
     Metrics" (the team aggregate for everyone; the per-rep table
     and diagnostics stay manager-only — date-range and preset
@@ -54,9 +54,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
   - **Intake** — patient-intake forms ported from the bound
     `form-generator` Apps Script. PPD (a 46-item intake driving a
     clinical HCPCS recommendation engine) plus PMD/PAP account-creation
-    forms with image attachments. Each renders a branded email (two-stage,
-    bodyHash-guarded) and persists a PHI backup row to the Intake
-    spreadsheet; the shared AuditLog row stays PHI-free.
+    forms with image attachments; each can be completed in English or
+    Spanish, but the previewed and emailed form is always English. Each
+    renders a branded email (two-stage, bodyHash-guarded) and persists a
+    PHI backup row to the Intake spreadsheet; the shared AuditLog row
+    stays PHI-free.
   - **Reference** — in-app knowledge base: a per-department tree +
     section-aware full-text search + reader for training/policy docs.
     Markdown articles (rendered with HTML-escape-first) and embedded

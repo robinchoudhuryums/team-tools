@@ -3717,8 +3717,8 @@ this section before touching the relevant area.
   live-status sparkline (7 workdays excl. today) and the missed-clock-out
   sparkline (14); `pendingTrend` deliberately stays on calendar days, because
   a PTO request can be SUBMITTED on a Saturday and that bar is data, not a
-  structural zero. The Metrics 30-day trends still walk calendar days — see the
-  follow-on in the operator entry. (e) **The live-status card's Edit-day / Pay-
+  structural zero. (The Metrics 30-day trends joined the workday rule on
+  2026-09-04 via `metricsWorkdayIsos_`.) (e) **The live-status card's Edit-day / Pay-
   statement buttons sit in the card's top-right corner from 541px** and the
   sparkline doubled (36px track, total beneath). NOT below 541px: the shell
   makes `.emp-grid` two columns there, and the 66px right padding that keeps
