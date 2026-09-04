@@ -15,8 +15,8 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   Cycle 19 opens on the next /broad-scan or /audit — at that point move the
   cycle-18 block to HISTORY.md and reset this file from the template.
   THE ONE OUTSTANDING ACTION IS THE OPERATOR'S DEPLOY: every PR from #176 to
-  #220 ships on a single `clasp push -f` + New version. `runAllTests()` after
-  it expects **305**; `installAutomationTriggers()` must be re-run once for
+  #228 ships on a single `clasp push -f` + New version. `runAllTests()` after
+  it expects **308**; `installAutomationTriggers()` must be re-run once for
   the 18th trigger; `reportMultiBreakDays()` has already been run and came
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
@@ -24,7 +24,7 @@ Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
 Test Command: manual (Node harnesses: `npm test` = pure 762 + DOM 107;
   visual matrix on demand — 99 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
-  Regression Scenarios run to S99)
+  Regression Scenarios run to S103)
 Subsystem cycles since last Seams audit: 1
 Updated: 2026-09-04 (QA Log + typed criteria + manual fallback — `19pre-qa-log-broad-implement.md`; earlier the same day: boot-timing beacon + QA waveform icon)
 
@@ -376,8 +376,8 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, late). Branch `claude/ums-team-tools-design-r8ar3o` carries
-(NOT PR'd — the operator has not asked): the boot-timing beacon + QA waveform
+CURRENT (2026-09-04, late). **PR #228 MERGED** (squash, CI green) — it carried
+the five commits below; the branch is reset onto main. Those were: the boot-timing beacon + QA waveform
 icon (`c057894`) and the **QA Log round** (`3f9c359` + the docs commit) —
 `getQaLog` + the pure `qaLogEntries_` over the scorecard store, typed rubric
 criteria (`type`: scale/check/choice, non-numeric storage rule, `qaRatingNormalize_`,
