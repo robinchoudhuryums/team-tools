@@ -100,7 +100,12 @@ Script project synced via [clasp](https://github.com/google/clasp).
     waveform and click-to-seek, timestamped comments rendered as
     seek markers, structured scorecards (criteria editable in Admin →
     Config), per-agent stats, coverage-fair "Sample 3 for me"
-    self-assignment, and a reviewer-calibration table. Sharing a
+    self-assignment, and a reviewer-calibration table. Scorecard
+    criteria carry a type (scale 1–5, Yes/No, or a dropdown) defined in
+    that same Admin editor, and a **Log** tab lists one entry per
+    recording audited (managers see every reviewer's log; a manual
+    entry with no recording attached is the last-resort fallback).
+    Sharing a
     review with its agent is an explicit per-recording release feeding
     a read-only My Reviews view (scorecards, comments, and scoped
     playback of the shared recording — dormant while the tool is
