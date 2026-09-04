@@ -1830,6 +1830,41 @@ test('reopening after a range session re-enables Add even when the day has no ro
     'and the add control comes back with it — no RPC required');
 });
 
+test('the async prefill never overwrites what the manager already typed, ignores a stale response, and a failed prefill disables Save', () => {
+  // Operator 2026-09-03: a changed Clock In "kept the old time" — the modal
+  // opens blank, the prefill lands ~1s later, and a field typed BEFORE that
+  // response was overwritten by the stored value; the save then sent the old
+  // time as a no-op while the lunch/clock-out typed AFTER the prefill landed.
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 1, 'the prefill is in flight');
+  const ci = h.document.getElementById('de-clockin');
+  ci.value = '08:30'; ci.dispatchEvent(new h.window.Event('input'));
+  const date = h.read('_deDate');
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:07:55', clockOut: '17:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(ci.value, '08:30', 'the typed Clock In SURVIVES the late prefill');
+  assert.strictEqual(h.document.getElementById('de-clockout').value, '17:00', 'an untouched field is still prefilled');
+  assert.strictEqual(h.document.getElementById('de-save').disabled, false, 'Save is live');
+
+  // A stale response (a previous open / date) never applies — sequence, not date.
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const dateEl = h.document.getElementById('de-date');
+  const earlier = dateEl.min;                                   // inside the picker's own bounds
+  dateEl.value = earlier; dateEl.dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 2, 'open + date change = two loads in flight');
+  h.run.flushSuccess({ days: [{ date: earlier, clockIn: '09:00:00' }] }, 'getEmployeeTimesheetForManager');   // the OLDER call
+  assert.strictEqual(ci.value, '', 'the superseded response is dropped even though its date matches');
+  h.run.flushSuccess({ days: [{ date: earlier, clockIn: '09:00:00' }] }, 'getEmployeeTimesheetForManager');   // the current one
+  assert.strictEqual(ci.value, '09:00', 'the current response fills');
+
+  // A FAILED prefill must not leave a saveable blank form — a blank slot
+  // DELETES that punch on save (S7).
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  h.run.flushFailure(new Error('boom'), 'getEmployeeTimesheetForManager');
+  assert.strictEqual(h.document.getElementById('de-save').disabled, true, 'Save is disabled');
+  assert.match(h.document.getElementById('day-edit-subtitle').textContent, /reopen to retry/, 'and the subtitle says why');
+});
+
 test('a hostile stored time renders as a value, never as markup', () => {
   const h = boot();
   // The server strings reach innerHTML; the break times come from a sheet a
@@ -1855,6 +1890,76 @@ test('a hostile stored time renders as a value, never as markup', () => {
 // changed under them). Now the FIRST keystroke pauses + pins; the pin is
 // editable; the post uses the pin. A stubbed <audio> stands in for jsdom's
 // unimplemented media element.
+test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, the save carries string answers; the Log lists + opens through the hint', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeQa: true });
+  const criteria = [
+    { key: 'greeting', label: 'Greeting' },
+    { key: 'verified', label: 'Verified two identifiers', type: 'check' },
+    { key: 'outcome', label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated'] },
+  ];
+  const rec = { fileId: 'manual-abc', name: 'Live-monitored call', sizeBytes: 0, mime: 'manual', createdMs: 1, createdYmd: '2026-09-04',
+    status: 'in_review', statusMs: 0, assignee: 'me@umsupply.com', url: '', agent: 'Ana Reyes', agentEmpId: 'E-1088', sharedMs: 0, durationSec: 0, skipReason: '', comments: 0, manual: true };
+  let audioCalls = 0;
+  h.run.respond('getQaQueue', () => ({ members: ['me@umsupply.com'], self: 'me@umsupply.com', isManager: true, folderConfigured: true,
+    agentOptions: ['Ana Reyes'], criteria: criteria, period: '2026-09', periodOptions: [{ key: '2026-09', label: 'Sep 2026' }], target: 3,
+    todayYmd: '2026-09-04', periodEnd: '2026-09-30', recordings: [rec], total: 1, cap: 200, coverage: [] }));
+  h.run.respond('qaListComments', () => ({ comments: [], canModerate: false }));
+  h.run.respond('qaListScorecards', () => ({ scorecards: [], criteria: criteria, selfEmpId: 'E-1' }));
+  h.run.respond('qaGetAudioChunk', () => { audioCalls++; return { success: false, error: 'never' }; });
+  const saved = [];
+  h.run.respond('qaSaveScorecard', (...args) => { saved.push(args); return { success: true }; });
+  const today = new Date().toISOString().slice(0, 10);
+  h.run.respond('getQaLog', () => ({ self: 'E-1', selfName: 'Me', isManager: true, reviewer: '', from: today, to: today, todayYmd: today,
+    criteria: criteria, agentOptions: ['Ana Reyes'], reviewers: [{ empId: 'E-1', name: 'Me' }], pending: [{ fileId: 'manual-abc', name: 'Live-monitored call', agent: 'Ana Reyes', status: 'in_review', manual: true }],
+    total: 1, cap: 300, truncated: false,
+    entries: [{ scorecardId: 'sc1', fileId: 'manual-abc', recordingName: 'Live-monitored call', agent: 'Ana Reyes', agentEmpId: 'E-1088', recordingStatus: 'in_review', recordingCreatedMs: 1,
+      manual: true, indexed: true, reviewerEmpId: 'E-1', reviewerName: 'Me', createdMs: Date.now(), day: today, ratings: { greeting: 4, verified: 'no', outcome: 'Escalated' }, notes: 'n', avg: 4, comments: 0 }] }));
+  // 1. The Log lists the entry with a typed chip row and a manual pill; opening it parks the hint.
+  h.window.enterTool('qa', 'qaLog');
+  h.flushTimers();
+  const cardEl = h.$('.qa-log-card');
+  assert.ok(cardEl, 'a log card rendered');
+  assert.ok(cardEl.querySelector('.qa-manual-pill'), 'the manual entry is pilled "no recording"');
+  const chips = [...cardEl.querySelectorAll('.qa-sc-chip')].map((c) => c.textContent);
+  assert.ok(chips.indexOf('Verified two identifiers No') >= 0 && chips.indexOf('Call outcome Escalated') >= 0 && chips.indexOf('Greeting 4') >= 0, 'typed answers render by label: ' + chips.join('|'));
+  assert.strictEqual(cardEl.querySelector('.qa-sc-chip[data-tone="no"]').textContent, 'Verified two identifiers No', 'a No answer carries the destructive tone');
+  assert.ok(h.$('#qa-log-body .qa-log-strip'), 'the derived summary strip rendered');
+  h.read('qaLogOpen_')('manual-abc');   // jsdom never compiles inline onclick — call the handler
+  h.flushTimers();
+  assert.strictEqual(h.read('currentView'), 'qaQueue', 'opening an entry lands on the queue');
+  assert.strictEqual(h.window.QA_OPEN_HINT, null, 'the hint was consumed (read → null → act, C8)');
+  h.flushTimers();
+  assert.ok(h.$('#qa-score-form'), 'the detail opened from the hint');
+  assert.strictEqual(audioCalls, 0, 'a manual recording NEVER asks for audio');
+  assert.ok(/without a recording attached/.test(h.$('#qa-audio-slot').textContent), 'the player slot says why');
+  // 2. The typed form: a Yes/No pair, a dropdown, and the unselect rule.
+  const yn = [...h.$$('.qa-yn-btn')];
+  assert.strictEqual(yn.length, 2, 'one Yes/No pair for the check criterion');
+  const sel = h.$('.qa-choice-sel');
+  assert.ok(sel && sel.getAttribute('aria-label') === 'Call outcome', 'the dropdown is NAMED');
+  h.read('qaSetRating_')('verified', 'yes');
+  assert.strictEqual(h.$('.qa-yn-btn[data-v="yes"]').getAttribute('aria-pressed'), 'true', 'Yes pressed');
+  h.read('qaSetRating_')('verified', 'yes');
+  assert.strictEqual(h.$('.qa-yn-btn[data-v="yes"]').getAttribute('aria-pressed'), 'false', 'clicking the SELECTED answer unselects it');
+  h.read('qaSetRating_')('verified', 'no');
+  h.read('qaSetRating_')('outcome', 'Escalated');
+  assert.strictEqual(h.$('.qa-choice-sel').value, 'Escalated', 'the dropdown keeps its selection across the re-render');
+  h.read('qaSetRating_')('outcome', '');
+  assert.strictEqual(h.read('QA_STATE').ratings.outcome, undefined, 'the blank option clears the choice');
+  h.read('qaSetRating_')('outcome', 'Resolved');
+  h.read('qaSetRating_')('greeting', 5);
+  assert.ok(/running avg 5/.test(h.$('.qa-score-running').textContent), 'the running average counts ONLY the scale answer');
+  assert.ok(/3 of 3 rated/.test(h.$('.qa-score-running').textContent), 'but completeness counts every answered criterion');
+  h.$('#qa-score-notes').value = 'Escalated correctly.';
+  h.read('qaSubmitScorecard_')();
+  assert.strictEqual(saved.length, 1, 'one save');
+  // jsdom-realm object: compare by JSON, never deepStrictEqual (prototype trap).
+  assert.strictEqual(JSON.stringify(saved[0]), JSON.stringify(['manual-abc', { verified: 'no', outcome: 'Resolved', greeting: 5 }, 'Escalated correctly.']),
+    'non-scale answers travel as STRINGS (never a number the type-blind folds could read as a score)');
+});
+
 test('QA-20: the first keystroke pauses and PINS; the post sends the pin, not the drifted playhead', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -1979,6 +2084,45 @@ test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes 
   assert.ok(ov.classList.contains('open'), 'reopened from the button');
   assert.strictEqual(h.$('#coach-what').value, '', 'no stale prefill leaks into a fresh drawer');
   assert.ok(!h.$('#coach-note-chip'), 'no linked-note chip without a prefill');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Boot timing (operator 2026-09-04): the landing view's usage row is held back
+// until its first real paint and then carries the three durations.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Shell — boot timing beacon');
+
+test('BOOT-DOM: the landing view\'s usage row waits for the first paint, then carries shell/state/view timings once', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const sent = () => h.run.calls.filter((c) => c.method === 'recordViewEnter');
+  assert.strictEqual(sent().length, 0, 'the Dashboard landing did NOT send its usage row at enter — it is deferred for the timings');
+  const T = h.read('BOOT_T');
+  assert.strictEqual(T.view, 'clock', 'the landing view was captured while arming');
+  assert.strictEqual(T.arming, false, 'and arming ended after enterTool');
+  assert.ok(typeof T.shellMs === 'number' && T.shellMs >= 0, 'shell time stamped');
+  assert.ok(typeof T.stateMs === 'number' && T.stateMs >= 0, 'state round-trip stamped');
+  // A paint from ANOTHER view must not count.
+  h.read('currentView = "timeoff"; bootFirstPaint_(); currentView = "clock";');
+  assert.strictEqual(sent().length, 0, 'a first-paint from a non-landing view is ignored');
+  // The Dashboard's first real card paint → send, with all three timings.
+  h.read('clkRenderDashboard_()');
+  const rows = sent();
+  assert.strictEqual(rows.length, 1, 'exactly one row after the first paint');
+  assert.strictEqual(rows[0].args[0], 'clock');
+  const timing = rows[0].args[2];
+  assert.ok(timing && typeof timing.view === 'number' && timing.view >= timing.shell, 'view paint is at or after the shell mount');
+  assert.strictEqual(timing.state, T.stateMs);
+  h.read('clkRenderDashboard_()');
+  h.flushTimers();   // the 20s fallback, had it survived, would fire here
+  assert.strictEqual(sent().length, 1, 'a second paint and the fallback timer send nothing more');
+  // Later navigation is the ordinary throttled beacon with no timing.
+  h.read('showView("timeoff")');
+  const later = sent();
+  assert.strictEqual(later.length, 2);
+  assert.strictEqual(later[1].args[0], 'timeoff');
+  assert.strictEqual(later[1].args[2], null, 'a plain navigation carries no timing');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

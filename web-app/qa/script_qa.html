@@ -29,6 +29,49 @@
   .qa-assignee { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px solid var(--line); color: var(--muted-2); }
   .qa-assignee.mine { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
   .qa-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 24px; text-align: center; color: var(--muted-2); }
+
+  /* ── QA Log (operator 2026-09-04) — the reviewer's ledger, one card per
+     audited recording, grouped by day. Fixed grids owe breakpoints (A2). */
+  .qa-log-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
+  .qa-log-tools select, .qa-log-tools input[type="search"] {
+    font: inherit; font-size: var(--text-sm); padding: 6px 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--paper-card); color: var(--ink); min-width: 160px;
+  }
+  .qa-log-tools input[type="search"] { flex: 1 1 200px; }
+  .qa-log-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+  .qa-log-day { margin: 0 0 18px; }
+  .qa-log-day > .card-label { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .qa-log-day > .card-label .qa-note { margin: 0; font-weight: 400; }
+  .qa-log-card {
+    background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px;
+  }
+  .qa-log-main { min-width: 0; }
+  .qa-log-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .qa-log-title .qa-log-name { appearance: none; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+  .qa-log-title .qa-log-name:hover { text-decoration: underline; }
+  .qa-log-meta { color: var(--muted-2); font-size: var(--text-sm); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .qa-log-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .qa-log-notes { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .qa-log-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .qa-manual-pill { border-radius: var(--radius-pill); padding: 2px 10px; font-size: 11px; background: var(--paper-2); border: 1px dashed var(--line); color: var(--muted-2); white-space: nowrap; }
+  /* Rubric controls by type: a Yes/No pair reuses the rate-button look; a
+     dropdown is a real <select>. */
+  .qa-yn-btn { appearance: none; background: var(--paper-card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font: inherit; font-size: var(--text-sm); color: var(--ink); cursor: pointer; }
+  .qa-yn-btn[aria-pressed="true"][data-v="yes"] { background: var(--accent-soft); border-color: var(--accent); }
+  .qa-yn-btn[aria-pressed="true"][data-v="no"]  { background: var(--destructive-soft); border-color: var(--destructive); }
+  .qa-choice-sel { font: inherit; font-size: var(--text-sm); padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); color: var(--ink); max-width: 100%; }
+  .qa-sc-chip[data-tone="yes"] { background: var(--accent-soft); border-color: var(--accent); }
+  .qa-sc-chip[data-tone="no"]  { background: var(--destructive-soft); border-color: var(--destructive); }
+  .qa-log-dialog h3 { margin: 0 0 14px; }
+  .qa-log-dialog .field { margin-bottom: 12px; }
+  .qa-log-dialog select, .qa-log-dialog input[type="text"] { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--text-sm); padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  @media (max-width: 720px) {
+    .qa-log-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .qa-log-card { grid-template-columns: minmax(0, 1fr); }
+    .qa-log-side { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  }
+  :root[data-compact] .qa-log-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .qa-note { color: var(--muted-2); font-size: var(--text-sm); margin: 8px 0 0; }
   .qa-section { margin-bottom: 22px; }
   .qa-section > .card-label { margin-bottom: 8px; }
@@ -198,6 +241,8 @@ var QA_STATE = {
   myRevSeq: 0,          // Phase 3 — My Reviews load seq guard
   myRevAudioSeq: 0,     // follow-on — shared-review playback seq guard (one active load)
   myRevObjectUrl: null, // follow-on — the shared-review Blob URL (revoked on replace)
+  // QA Log (operator 2026-09-04)
+  log: { seq: 0, data: null, reviewer: '', from: '', to: '', customOpen: false, q: '' },
 };
 var QA_PERIOD_KEY = 'umsQaPeriod';   // per-browser: the last audit period picked (validated against what the server ships)
 
@@ -208,7 +253,7 @@ function enterQaQueueView() {
   qaReleaseAudio_();
   if (!QA_STATE.period) QA_STATE.period = qaReadPeriodPref_();
   const area = document.getElementById('view-area');
-  renderLoading(area, 'Loading QA queue…', 'headset');
+  renderLoading(area, 'Loading QA queue…', 'waveform');
   qaLoadQueue_();
 }
 
@@ -437,7 +482,7 @@ function qaSetPeriod_(key) {
   if (!ok || key === QA_STATE.period) return;
   QA_STATE.period = key;
   qaWritePeriodPref_(key);
-  renderLoading(document.getElementById('view-area'), 'Loading ' + qaPeriodLabelOf_(key) + '…', 'headset');
+  renderLoading(document.getElementById('view-area'), 'Loading ' + qaPeriodLabelOf_(key) + '…', 'waveform');
   qaLoadQueue_();
 }
 
@@ -653,7 +698,7 @@ function qaSync_() {
       if (r.truncated) msg += ' · scan capped at ' + r.scanned + ' files — sync again for the rest';
       showToast(msg, r.truncated ? 'toast-warn' : 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
-        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
         qaLoadQueue_();
       }
     })
@@ -681,7 +726,7 @@ function qaSample_() {
       if (!r || !r.success) { showToast((r && r.error) || 'Sampling failed.', 'toast-warn'); return; }
       showToast(r.assigned + ' recording(s) assigned to you — shortest-covered agents first', 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
-        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
         qaLoadQueue_();
       }
     })
@@ -710,7 +755,7 @@ function qaSetExemption_(name, on) {
         if (!r || !r.success) { showToast((r && r.error) || 'Exemption change failed.', 'toast-error'); return; }
         showToast(on ? 'Exempt for ' + label : 'Exemption revoked', 'toast-success');
         if (currentView === 'qaQueue' && !QA_STATE.det) {
-          renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+          renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
           qaLoadQueue_();
         }
       })
@@ -764,7 +809,14 @@ function qaOpenDetail_(fileId) {
   QA_STATE.scoreNotes = '';
   QA_STATE.pin = null;
   qaRenderDetail_();
-  qaLoadAudio_(rec);
+  if (rec.manual || rec.mime === 'manual') {
+    // A recording-less audit (the operator's fallback): nothing to stream —
+    // say so instead of asking the Drive boundary and rendering its refusal.
+    const slot = document.getElementById('qa-audio-slot');
+    if (slot) slot.innerHTML = '<div class="qa-note" style="margin:0"><span class="qa-manual-pill">no recording</span> This audit was logged without a recording attached.</div>';
+  } else {
+    qaLoadAudio_(rec);
+  }
   qaLoadComments_(rec.fileId);
   qaLoadScorecards_(rec.fileId);
   qaEnsureKeysBound_();
@@ -1431,8 +1483,10 @@ function qaLoadScorecards_(fileId) {
         const c = QA_STATE.scorecards[i];
         if (String(c.empId) !== String(QA_STATE.selfEmpId)) continue;
         Object.keys(c.ratings || {}).forEach(function (k) {
-          const v = Number(c.ratings[k]);
-          if (v >= 1 && v <= 5) QA_STATE.ratings[k] = v;
+          const crit = qaCritByKey_(QA_STATE.criteria, k);
+          const t = qaCritTypeOf_(crit);
+          if (t === 'scale') { const v = Number(c.ratings[k]); if (v >= 1 && v <= 5) QA_STATE.ratings[k] = v; }
+          else if (crit) QA_STATE.ratings[k] = String(c.ratings[k]);   // 'yes'/'no' or the option text
         });
         QA_STATE.scoreNotes = c.notes || '';
         break;   // newest-first — the first of mine is my latest
@@ -1462,12 +1516,30 @@ function qaRenderScoreForm_() {
   '<div class="qa-score-anchors" aria-hidden="true"><span>1 · missed</span><span>3 · met</span><span>5 · exemplary</span></div>' +
   crit.map(function (c) {
     const cur = QA_STATE.ratings[c.key];
-    return '<div class="qa-score-row"><span>' + esc(c.label) + '</span>' +
-      '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + ' rating">' +
-      [1, 2, 3, 4, 5].map(function (v) {
-        return '<button type="button" class="qa-rate-btn" aria-pressed="' + (cur === v ? 'true' : 'false') +
-          '" aria-label="' + esc(c.label) + ': ' + v + ' of 5" onclick="qaSetRating_(\'' + esc(c.key) + '\', ' + v + ')">' + v + '</button>';
-      }).join('') + '</div></div>';
+    const t = qaCritTypeOf_(c);
+    let control;
+    if (t === 'check') {
+      // Yes / No pair — click the selected one again to unselect (the intake
+      // accidental-click recovery pattern), so "not answered" stays possible.
+      control = '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + '">' +
+        ['yes', 'no'].map(function (v) {
+          return '<button type="button" class="qa-yn-btn" data-v="' + v + '" aria-pressed="' + (cur === v ? 'true' : 'false') +
+            '" onclick="qaSetRating_(\'' + esc(c.key) + '\', \'' + v + '\')">' + (v === 'yes' ? 'Yes' : 'No') + '</button>';
+        }).join('') + '</div>';
+    } else if (t === 'choice') {
+      control = '<select class="qa-choice-sel" aria-label="' + esc(c.label) + '" onchange="qaSetRating_(\'' + esc(c.key) + '\', this.value)">' +
+        '<option value=""' + (cur == null ? ' selected' : '') + '>— choose —</option>' +
+        (c.options || []).map(function (o) {
+          return '<option value="' + esc(o) + '"' + (String(cur) === String(o) ? ' selected' : '') + '>' + esc(o) + '</option>';
+        }).join('') + '</select>';
+    } else {
+      control = '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + ' rating">' +
+        [1, 2, 3, 4, 5].map(function (v) {
+          return '<button type="button" class="qa-rate-btn" aria-pressed="' + (cur === v ? 'true' : 'false') +
+            '" aria-label="' + esc(c.label) + ': ' + v + ' of 5" onclick="qaSetRating_(\'' + esc(c.key) + '\', ' + v + ')">' + v + '</button>';
+        }).join('') + '</div>';
+    }
+    return '<div class="qa-score-row"><span>' + esc(c.label) + '</span>' + control + '</div>';
   }).join('') +
   '<div class="qa-score-running" aria-live="polite">' +
     (avg == null
@@ -1484,8 +1556,8 @@ function qaRenderScoreForm_() {
 
 function qaSetRating_(key, v) {
   // Clicking the SELECTED rating unselects it (the intake accidental-click
-  // recovery pattern).
-  if (QA_STATE.ratings[key] === v) delete QA_STATE.ratings[key];
+  // recovery pattern); a dropdown's blank option clears the same way.
+  if (v === '' || v == null || QA_STATE.ratings[key] === v) delete QA_STATE.ratings[key];
   else QA_STATE.ratings[key] = v;
   const ta = document.getElementById('qa-score-notes');
   if (ta) QA_STATE.scoreNotes = ta.value;   // typed notes survive the re-render
@@ -1533,9 +1605,32 @@ function qaCardsAvg_(cards) {
 /** Shared scorecard-list markup — the detail's list AND the agent-facing My
  *  Reviews render through this ONE builder, so the two surfaces cannot drift
  *  (every string esc()'d; every 1..5 figure toned by qaScoreTone_). */
+function qaCritByKey_(criteria, key) {
+  return ((criteria || []).filter(function (c) { return c && c.key === key; })[0]) || null;
+}
+/** A criterion's type as the client reads it — absent = scale (the server's
+ *  canonical shape carries `type` only when it is not scale). */
+function qaCritTypeOf_(c) {
+  const t = c && c.type;
+  return (t === 'check' || t === 'choice') ? t : 'scale';
+}
+/** ONE chip builder for a card's ratings, by criterion type: a scale value is
+ *  toned by qaScoreTone_; a check reads Yes/No (accent/destructive); a choice
+ *  reads its option text untoned (a category is not a verdict). A key the
+ *  live criteria no longer carry renders by key, untoned unless numeric. */
+function qaRatingChipsHtml_(ratings, criteria) {
+  return Object.keys(ratings || {}).map(function (k) {
+    const crit = qaCritByKey_(criteria, k);
+    const label = crit ? crit.label : k;
+    const v = ratings[k];
+    const t = crit ? qaCritTypeOf_(crit) : ((Number(v) >= 1 && Number(v) <= 5) ? 'scale' : 'choice');
+    let tone = '', text = String(v);
+    if (t === 'scale') tone = qaScoreTone_(v) || '';
+    else if (t === 'check') { tone = String(v) === 'yes' ? 'yes' : String(v) === 'no' ? 'no' : ''; text = String(v) === 'yes' ? 'Yes' : String(v) === 'no' ? 'No' : String(v); }
+    return '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(label) + ' ' + esc(text) + '</span>';
+  }).join('');
+}
 function qaScorecardListHtml_(cards, criteria) {
-  const critLabel = {};
-  (criteria || []).forEach(function (c) { critLabel[c.key] = c.label; });
   return (cards || []).map(function (c) {
     const avg = qaCardAvg_(c.ratings);
     const avgTone = qaScoreTone_(avg);
@@ -1543,11 +1638,7 @@ function qaScorecardListHtml_(cards, criteria) {
       '<div class="qa-sc-meta"><strong>' + esc(c.name || '') + '</strong>' +
         (avg != null ? '<span class="qa-sc-chip"' + (avgTone ? ' data-tone="' + avgTone + '"' : '') + '>avg ' + esc(String(avg)) + '/5</span>' : '') +
         '<span>' + esc(qaFmtDate_(c.createdMs)) + '</span></div>' +
-      '<div class="qa-sc-meta" style="margin-top:4px">' +
-        Object.keys(c.ratings || {}).map(function (k) {
-          const tone = qaScoreTone_(c.ratings[k]);
-          return '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(critLabel[k] || k) + ' ' + esc(String(c.ratings[k])) + '</span>';
-        }).join('') + '</div>' +
+      '<div class="qa-sc-meta" style="margin-top:4px">' + qaRatingChipsHtml_(c.ratings, criteria) + '</div>' +
       (c.notes ? '<div style="margin-top:4px">' + esc(c.notes) + '</div>' : '') +
       '</div>';
   }).join('');
@@ -1607,7 +1698,9 @@ function qaRenderStats_(d) {
     { key: 'reviewed',   label: 'Reviewed',   numeric: true, cell: function (r) { return String(Number(r.reviewed) || 0); } },
     { key: 'scorecards', label: 'Scorecards', numeric: true, cell: function (r) { return String(Number(r.scorecards) || 0); } },
     { key: 'avgScore',   label: 'Avg /5',     numeric: true, cell: function (r) { return r.avgScore == null ? '—' : esc(String(r.avgScore)); } },
-  ].concat((d.criteria || []).map(function (c) {
+  ].concat((d.criteria || []).filter(function (c) { return qaCritTypeOf_(c) === 'scale'; }).map(function (c) {
+    // Only SCALE criteria carry an average — a Yes/No or dropdown column would
+    // read as a permanent em dash.
     return { key: 'pc-' + c.key, label: c.label, numeric: true, cell: function (r) {
       const v = (r.perCriterion || {})[c.key];
       return v == null ? '—' : esc(String(v));
@@ -1711,7 +1804,8 @@ function qaRenderMyReviews_(d) {
       // qaGetAudioChunk). fileId is Drive-shaped ([A-Za-z0-9_-]); esc is
       // defensive.
       '<div class="qa-myrev-audio" id="qa-mra-' + esc(r.fileId) + '" style="margin:4px 0 8px">' +
-        '<button type="button" class="qa-btn" onclick="qaMyRevPlay_(\'' + esc(r.fileId) + '\')">' + icon('headset', 14) + ' Play recording</button>' +
+        (r.manual ? '<span class="qa-manual-pill">no recording</span>' :
+          '<button type="button" class="qa-btn" onclick="qaMyRevPlay_(\'' + esc(r.fileId) + '\')">' + icon('headset', 14) + ' Play recording</button>') +
       '</div>' +
       ((r.scorecards || []).length
         ? qaScorecardListHtml_(r.scorecards, d.criteria)
@@ -1854,5 +1948,293 @@ function qaEnsureKeysBound_() {
     } else if (e.key === 'ArrowLeft') { e.preventDefault(); qaSeekBy_(-5); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); qaSeekBy_(5); }
   });
+}
+
+// ── QA Log (operator 2026-09-04) ─────────────────────────────────────────────
+// The reviewer's own ledger: ONE card per recording audited (a scorecard IS
+// that entry — the Log is a read over the same store, never a second table),
+// grouped by day, newest first. Managers pick any reviewer or "all".
+// "Log an audit" opens a queue detail (where the scorecard is saved as
+// today) — for one of the caller's open assignments, or, the operator's
+// fallback, a recording-less manual entry minted by qaCreateManualRecording.
+var QA_LOG_PRESETS = [
+  { key: '7d',  label: '7d',  days: 7 },
+  { key: '30d', label: '30d', days: 30 },
+  { key: 'qtr', label: 'QTR', days: 92 },
+];
+function qaAddDaysIso_(iso, n) {
+  const d = new Date(iso + 'T12:00:00Z');   // noon UTC — immune to DST steps
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function qaLogTodayIso_() {
+  return (typeof isoDateTz === 'function' && typeof empTz === 'function') ? isoDateTz(empTz()) : new Date().toISOString().slice(0, 10);
+}
+function qaLogActivePreset_() {
+  const L = QA_STATE.log;
+  const today = qaLogTodayIso_();
+  for (let i = 0; i < QA_LOG_PRESETS.length; i++) {
+    const p = QA_LOG_PRESETS[i];
+    if (L.to === today && L.from === qaAddDaysIso_(today, -(p.days - 1))) return p.key;
+  }
+  return '';
+}
+function qaLogPreset_(key) {
+  const p = QA_LOG_PRESETS.filter(function (x) { return x.key === key; })[0];
+  if (!p) return;
+  const today = qaLogTodayIso_();
+  QA_STATE.log.to = today;
+  QA_STATE.log.from = qaAddDaysIso_(today, -(p.days - 1));
+  QA_STATE.log.customOpen = false;
+  qaLogLoad_();
+}
+function qaLogToggleCustom_() {
+  const next = mtDateRangeToggle_('qalog', 'qalog-custom');
+  if (next !== null) QA_STATE.log.customOpen = next;
+}
+function qaLogApplyCustom_() {
+  const f = document.getElementById('qalog-from'), t = document.getElementById('qalog-to');
+  if (!f || !t || !f.value || !t.value) { showToast('Pick both dates.', 'toast-warn'); return; }
+  QA_STATE.log.from = f.value; QA_STATE.log.to = t.value;
+  qaLogLoad_();
+}
+function qaLogSetReviewer_(v) {
+  QA_STATE.log.reviewer = String(v || '');
+  qaLogLoad_();
+}
+function qaLogSearch_(v) {
+  QA_STATE.log.q = String(v || '');
+  const host = document.getElementById('qa-log-body');
+  if (host && QA_STATE.log.data) host.innerHTML = qaLogEntriesHtml_(QA_STATE.log.data);
+}
+
+function enterQaLogView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  QA_STATE.det = null;
+  qaReleaseAudio_();
+  const L = QA_STATE.log;
+  if (!L.from || !L.to) { const today = qaLogTodayIso_(); L.to = today; L.from = qaAddDaysIso_(today, -29); }
+  renderLoading(document.getElementById('view-area'), 'Loading your QA log…', 'list');
+  qaLogLoad_();
+}
+function qaLogLoad_() {
+  const requestedView = currentView;
+  const mySeq = ++QA_STATE.log.seq;
+  const L = QA_STATE.log;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView || QA_STATE.log.seq !== mySeq) return;
+      const area = document.getElementById('view-area');
+      if (!data || data.error) { area.innerHTML = errorStateHtml_((data && data.error) || 'Could not load the QA log.'); return; }
+      // The server's echoed scope/range is the truth (a non-manager asking
+      // for "all" is scoped back to themselves there).
+      L.data = data;
+      L.reviewer = data.isManager ? (data.reviewer || '') : '';
+      if (data.from) L.from = data.from;
+      if (data.to) L.to = data.to;
+      qaLogRender_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView || QA_STATE.log.seq !== mySeq) return;
+      document.getElementById('view-area').innerHTML = errorStateHtml_('Could not load the QA log: ' + (err && err.message));
+    })
+    .getQaLog({ reviewer: L.reviewer || '', from: L.from, to: L.to });
+}
+
+function qaLogRender_() {
+  const area = document.getElementById('view-area');
+  const d = QA_STATE.log.data;
+  if (!d) return;
+  const L = QA_STATE.log;
+  const active = qaLogActivePreset_();
+  const open = L.customOpen || active === '';
+  const control = mtDateRange_({ scope: 'qalog', ariaLabel: 'Log range',
+    presets: QA_LOG_PRESETS.map(function (p) { return { key: p.key, label: p.label }; }),
+    active: active, onPreset: 'qaLogPreset_', rowId: 'qalog-custom', customOpen: open, onToggle: 'qaLogToggleCustom_' });
+  const whose = d.isManager && !d.reviewer ? 'Every reviewer\'s audits' : (d.isManager && d.reviewer !== d.self ? 'A reviewer\'s audits' : 'Your audits');
+  let html = qaAppBarHtml_('Log', 'QA Log', whose + ' — one entry per recording audited, newest first.', control) +
+    mtDateRangeRow_('qalog-custom', open,
+      '<div class="field"><label for="qalog-from">From</label><input type="date" id="qalog-from" value="' + esc(L.from) + '"></div>' +
+      '<div class="field"><label for="qalog-to">To</label><input type="date" id="qalog-to" value="' + esc(L.to) + '"></div>' +
+      '<button type="button" class="refresh-btn" onclick="qaLogApplyCustom_()">Load</button>');
+  if (d.notConfigured) {
+    area.innerHTML = html + '<div class="qa-empty">QA is not set up yet — see the Recordings tab.</div>';
+    return;
+  }
+  html += '<div class="qa-log-tools">' +
+    (d.isManager
+      ? '<select aria-label="Reviewer" onchange="qaLogSetReviewer_(this.value)">' +
+          '<option value="*"' + (!d.reviewer ? ' selected' : '') + '>All reviewers</option>' +
+          (d.reviewers || []).map(function (r) {
+            return '<option value="' + esc(r.empId) + '"' + (d.reviewer === r.empId ? ' selected' : '') + '>' +
+              esc(r.name || r.empId) + (r.empId === d.self ? ' (you)' : '') + '</option>';
+          }).join('') + '</select>'
+      : '') +
+    '<input type="search" aria-label="Search your log" placeholder="Search agent, recording, notes…" value="' + esc(L.q) + '" oninput="qaLogSearch_(this.value)">' +
+    '<button type="button" class="qa-btn prime" onclick="qaLogNew_()">' + icon('plus', 14) + ' Log an audit</button>' +
+  '</div>';
+  html += '<div id="qa-log-body">' + qaLogEntriesHtml_(d) + '</div>';
+  area.innerHTML = html;
+}
+
+/** Client-side filter over the loaded entries (the search never refetches). */
+function qaLogFiltered_(d) {
+  const q = String(QA_STATE.log.q || '').trim().toLowerCase();
+  const all = d.entries || [];
+  if (!q) return all;
+  return all.filter(function (e) {
+    return [e.recordingName, e.agent, e.notes, e.reviewerName].some(function (v) { return String(v || '').toLowerCase().indexOf(q) >= 0; });
+  });
+}
+function qaLogEntriesHtml_(d) {
+  const entries = qaLogFiltered_(d);
+  const all = d.entries || [];
+  let html = '';
+  if (!all.length) {
+    return '<div class="qa-empty">No audits logged between ' + esc(d.from) + ' and ' + esc(d.to) + '. Press <strong>Log an audit</strong> to start one, or widen the range.</div>';
+  }
+  // Summary strip DERIVED from the loaded entries (never a second read).
+  const days = {};
+  let scored = 0, sum = 0, recs = {};
+  entries.forEach(function (e) { days[e.day] = 1; recs[e.fileId] = 1; if (e.avg != null) { scored++; sum += e.avg; } });
+  const avg = scored ? Math.round((sum / scored) * 10) / 10 : null;
+  const avgTone = qaScoreTone_(avg);
+  html += '<div class="qa-log-strip">' +
+    '<div class="qa-sum"><div class="qa-sum-k">Audits</div><div class="qa-sum-v">' + entries.length + (d.total > all.length ? ' <small>of ' + esc(String(d.total)) + ' (capped)</small>' : '') + '</div></div>' +
+    '<div class="qa-sum"><div class="qa-sum-k">Recordings</div><div class="qa-sum-v">' + Object.keys(recs).length + '</div></div>' +
+    '<div class="qa-sum"><div class="qa-sum-k">Days active</div><div class="qa-sum-v">' + Object.keys(days).length + '</div></div>' +
+    '<div class="qa-sum"' + (avgTone ? ' data-tone="' + avgTone + '"' : '') + '><div class="qa-sum-k">Avg score</div><div class="qa-sum-v">' + (avg == null ? '—' : esc(String(avg)) + ' <small>/5</small>') + '</div></div>' +
+  '</div>';
+  if (d.truncated) html += '<div class="qa-note" style="margin:0 0 10px;color:var(--warning-deep)">Scan capped — the oldest rows were not read.</div>';
+  if (!entries.length) return html + '<div class="qa-empty">Nothing matches "' + esc(QA_STATE.log.q) + '".</div>';
+  // Day groups, newest first (entries arrive sorted).
+  const groups = [];
+  entries.forEach(function (e) {
+    const g = groups[groups.length - 1];
+    if (g && g.day === e.day) g.items.push(e); else groups.push({ day: e.day, items: [e] });
+  });
+  html += groups.map(function (g) {
+    let gs = 0, gn = 0;
+    g.items.forEach(function (e) { if (e.avg != null) { gn++; gs += e.avg; } });
+    const gAvg = gn ? Math.round((gs / gn) * 10) / 10 : null;
+    return '<section class="qa-log-day"><h2 class="card-label">' + esc(qaLogDayLabel_(g.day)) +
+      '<span class="qa-note">' + g.items.length + ' audit' + (g.items.length === 1 ? '' : 's') + (gAvg != null ? ' · avg ' + esc(String(gAvg)) + '/5' : '') + '</span></h2>' +
+      g.items.map(function (e) { return qaLogCardHtml_(e, d); }).join('') + '</section>';
+  }).join('');
+  return html;
+}
+function qaLogDayLabel_(ymd) {
+  try {
+    const d = new Date(ymd + 'T12:00:00Z');
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  } catch (e) { return ymd; }
+}
+function qaLogCardHtml_(e, d) {
+  const tone = qaScoreTone_(e.avg);
+  const showReviewer = d.isManager && !d.reviewer;
+  const title = e.recordingName || (e.indexed ? '(unnamed)' : '(recording no longer indexed)');
+  return '<article class="qa-log-card" data-file-id="' + esc(e.fileId) + '">' +
+    '<div class="qa-log-main">' +
+      '<div class="qa-log-title">' +
+        (e.indexed
+          ? '<button type="button" class="qa-log-name" onclick="qaLogOpen_(\'' + esc(e.fileId) + '\')">' + esc(title) + '</button>'
+          : '<span class="qa-log-name" style="cursor:default">' + esc(title) + '</span>') +
+        (e.manual ? '<span class="qa-manual-pill">no recording</span>' : '') +
+        (e.recordingStatus ? qaStatusPillHtml_(e.recordingStatus) : '') +
+      '</div>' +
+      '<div class="qa-log-meta">' +
+        '<span>' + (e.agent ? 'Agent: ' + esc(e.agent) : '<span class="qa-unattributed">Unattributed</span>') + '</span>' +
+        (showReviewer ? '<span>Reviewer: ' + esc(e.reviewerName || e.reviewerEmpId) + '</span>' : '') +
+        '<span>' + esc(qaFmtDate_(e.createdMs)) + '</span>' +
+        (e.comments ? '<span>' + esc(String(e.comments)) + ' comment' + (e.comments === 1 ? '' : 's') + '</span>' : '') +
+      '</div>' +
+      '<div class="qa-log-chips">' + qaRatingChipsHtml_(e.ratings, d.criteria) + '</div>' +
+      (e.notes ? '<div class="qa-log-notes">' + esc(e.notes) + '</div>' : '') +
+    '</div>' +
+    '<div class="qa-log-side">' +
+      (e.avg != null ? '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>avg ' + esc(String(e.avg)) + '/5</span>' : '<span class="qa-note" style="margin:0">no scale rating</span>') +
+    '</div>' +
+  '</article>';
+}
+/** Open the recording behind an entry: park the hint (the C8 pattern —
+ *  read, nulled, then acted on by the queue loader) and enter the queue. */
+function qaLogOpen_(fileId) {
+  window.QA_OPEN_HINT = { fileId: String(fileId) };
+  enterTool('qa', 'qaQueue');
+}
+
+/** "Log an audit" — a named dialog: one of the caller's open assignments, or
+ *  the recording-less fallback (agent + label). Either way the audit itself
+ *  is saved on the queue detail, the ONE place a scorecard is written. */
+function qaLogNew_() {
+  const d = QA_STATE.log.data || {};
+  const pending = d.pending || [];
+  const ov = ensureOverlay('qa-log-new-overlay', { labelledBy: 'qa-log-new-title', onClose: qaLogNewClose_ });
+  ov.innerHTML =
+    '<div class="modal qa-log-dialog" style="max-width:520px">' +
+      '<h3 id="qa-log-new-title" style="margin-top:0">Log an audit</h3>' +
+      '<div>' +
+        '<div class="field"><label for="qa-log-new-rec">Recording assigned to you</label>' +
+          '<select id="qa-log-new-rec" onchange="qaLogNewMode_()">' +
+            '<option value="">— pick a recording —</option>' +
+            pending.map(function (p) { return '<option value="' + esc(p.fileId) + '">' + esc(p.name || '(unnamed)') + (p.agent ? ' · ' + esc(p.agent) : '') + '</option>'; }).join('') +
+            '<option value="__manual__">No recording attached (manual entry)</option>' +
+          '</select>' +
+          (pending.length ? '' : '<div class="qa-note">No open assignments — claim or sample recordings on the Recordings tab, or log a manual entry.</div>') +
+        '</div>' +
+        '<div id="qa-log-new-manual" hidden>' +
+          '<div class="qa-note" style="margin:0 0 10px">Audits should have a recording attached, for posterity. Use this only when there is none.</div>' +
+          '<div class="field"><label for="qa-log-new-agent">Agent</label>' +
+            '<input type="text" id="qa-log-new-agent" list="qa-log-new-agents" maxlength="80" placeholder="Agent name">' +
+            '<datalist id="qa-log-new-agents">' + (d.agentOptions || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist></div>' +
+          '<div class="field"><label for="qa-log-new-label">Label</label>' +
+            '<input type="text" id="qa-log-new-label" maxlength="120" placeholder="e.g. Live-monitored call, Sep 4 — 2:15 PM"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button type="button" class="qa-btn" onclick="qaLogNewCancel_()">Cancel</button>' +
+        '<button type="button" class="qa-btn prime" id="qa-log-new-go" onclick="qaLogNewGo_()">Continue</button>' +
+      '</div>' +
+    '</div>';
+}
+function qaLogNewCancel_() { closeOverlay(document.getElementById('qa-log-new-overlay')); }
+/** Idempotent close hook (INV-83) — ensureOverlay re-asserts `open` on reuse. */
+function qaLogNewClose_() {
+  const el = document.getElementById('qa-log-new-overlay');
+  if (el) el.classList.remove('open');
+}
+function qaLogNewMode_() {
+  const sel = document.getElementById('qa-log-new-rec');
+  const man = document.getElementById('qa-log-new-manual');
+  if (sel && man) man.hidden = sel.value !== '__manual__';
+}
+function qaLogNewGo_() {
+  const sel = document.getElementById('qa-log-new-rec');
+  const v = sel ? sel.value : '';
+  if (!v) { showToast('Pick a recording, or choose the manual entry.', 'toast-warn'); return; }
+  const ov = document.getElementById('qa-log-new-overlay');
+  if (v !== '__manual__') {
+    closeOverlay(ov);
+    qaLogOpen_(v);
+    return;
+  }
+  const agent = String((document.getElementById('qa-log-new-agent') || {}).value || '').trim();
+  const label = String((document.getElementById('qa-log-new-label') || {}).value || '').trim();
+  if (!label) { showToast('Give the audit a label.', 'toast-warn'); return; }
+  const btn = document.getElementById('qa-log-new-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      if (!res || !res.success) { showToast((res && res.error) || 'Could not create the entry.', 'toast-error'); return; }
+      closeOverlay(ov);
+      qaLogOpen_(res.fileId);
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      showToast('Could not create the entry: ' + (err && err.message), 'toast-error');
+    })
+    .qaCreateManualRecording(agent, label);
 }
 </script>

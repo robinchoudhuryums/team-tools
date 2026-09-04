@@ -615,7 +615,7 @@ function qaLatestScorecards_(cards) {
         var r = { fileId: id, name: name, sizeBytes: 6291456, mime: 'audio/mpeg', createdMs: ms(ymd), createdYmd: ymd,
           status: status, statusMs: status === 'done' ? ms(ymd, '18') : 0, assignee: assignee || '',
           url: 'https://drive.google.com/file/d/' + id + '/view', agent: agent || '', agentEmpId: agentEmpId || '',
-          sharedMs: 0, durationSec: 0, skipReason: '', comments: 0 };
+          sharedMs: 0, durationSec: 0, skipReason: '', comments: 0, manual: false };
         Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
         recs.push(r); return r;
       };
@@ -669,6 +669,11 @@ function qaLatestScorecards_(cards) {
         { key: 'accuracy',      label: 'Accuracy & process' },
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+        // Rubric types (2026-09-04): a Yes/No check and a dropdown ride the
+        // same list; `type` is present ONLY when not scale (the server's
+        // canonical shape), `options` only for choice.
+        { key: 'verified-id',   label: 'Verified two identifiers', type: 'check' },
+        { key: 'outcome',       label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated', 'Callback scheduled'] },
       ],
       totalRecordings: 9, totalScorecards: 4, truncated: false,
       // Phase 3 — calibration rows (qaCalibration_ shape: recordings scored by
@@ -697,11 +702,50 @@ function qaLatestScorecards_(cards) {
       ],
       canModerate: true,
     },
+    // QA Log (operator 2026-09-04) — shape mirrors getQaLog's return block +
+    // qaLogEntries_'s push literal (INV-185). Two days, a manual (recording-
+    // less) entry, a Yes/No + dropdown answer, an unindexed recording.
+    getQaLog: (function () {
+      var C = [
+        { key: 'greeting',      label: 'Greeting & opening' },
+        { key: 'communication', label: 'Communication & tone' },
+        { key: 'accuracy',      label: 'Accuracy & process' },
+        { key: 'resolution',    label: 'Resolution & next steps' },
+        { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+        { key: 'verified-id',   label: 'Verified two identifiers', type: 'check' },
+        { key: 'outcome',       label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated', 'Callback scheduled'] },
+      ];
+      var mk = function (o) {
+        return Object.assign({ scorecardId: 'sc-' + o.fileId, agentEmpId: '', recordingStatus: 'done', recordingCreatedMs: o.createdMs - 3600000,
+          manual: false, indexed: true, reviewerEmpId: 'E-100', reviewerName: 'Team Tools', notes: '', comments: 0 }, o);
+      };
+      var t = Date.now();
+      return {
+        self: 'E-100', selfName: 'Team Tools', isManager: true, reviewer: '', from: daysAgo(29), to: todayIso, todayYmd: todayIso,
+        criteria: C, agentOptions: ['Ana Reyes', 'Sam Ortiz', 'Jo Tran'],
+        reviewers: [{ empId: 'E-201', name: 'QA Reviewer' }, { empId: 'E-100', name: 'Team Tools' }],
+        pending: [{ fileId: 'qaFileAaaaaaaa1', name: '2026-09-01 resupply call.mp3', agent: 'Ana Reyes', status: 'in_review', manual: false }],
+        total: 4, cap: 300, truncated: false,
+        entries: [
+          mk({ fileId: 'qaFileBbbbbbbb2', recordingName: 'resupply follow-up.mp3', agent: 'Ana Reyes', agentEmpId: 'E-1088', createdMs: t - 3600000, day: todayIso,
+               ratings: { greeting: 5, communication: 4, accuracy: 5, resolution: 4, compliance: 5, 'verified-id': 'yes', outcome: 'Resolved' }, avg: 4.6, comments: 2,
+               notes: 'Great verification discipline — slow the shipping recap down.' }),
+          mk({ fileId: 'manual-0f3a', recordingName: 'Live-monitored call — Sep 4, 2:15 PM', agent: 'Sam Ortiz', createdMs: t - 7200000, day: todayIso, manual: true,
+               recordingStatus: 'in_review', ratings: { greeting: 3, accuracy: 2, 'verified-id': 'no', outcome: 'Escalated' }, avg: 2.5,
+               notes: 'Skipped the second identifier; escalated correctly once the caller pushed back.' }),
+          mk({ fileId: 'qaFileCccccccc3', recordingName: '2026-08-22 close order review.wav', agent: 'Jo Tran', createdMs: t - 90000000, day: daysAgo(1),
+               reviewerEmpId: 'E-201', reviewerName: 'QA Reviewer', ratings: { greeting: 4, communication: 4, accuracy: 4, resolution: 5, compliance: 4, outcome: 'Callback scheduled' }, avg: 4.2, comments: 1 }),
+          mk({ fileId: 'qaFileGone', recordingName: '', agent: '', indexed: false, recordingStatus: '', recordingCreatedMs: 0, createdMs: t - 100000000, day: daysAgo(1),
+               ratings: { 'verified-id': 'no' }, avg: null, notes: 'Recording was removed from Drive after the audit.' }),
+        ],
+      };
+    })(),
+    qaCreateManualRecording: { success: true, fileId: 'manual-new' },
     qaListScorecards: {
       scorecards: [
         { fileId: 'qaFileBbbbbbbb2', empId: 'E-201', name: 'QA Reviewer', createdMs: Date.now() - 86400000,
           notes: 'Great verification discipline — slow the shipping recap down.',
-          ratings: { greeting: 5, communication: 4, accuracy: 5, resolution: 4, compliance: 5 } },
+          ratings: { greeting: 5, communication: 4, accuracy: 5, resolution: 4, compliance: 5, 'verified-id': 'yes', outcome: 'Resolved' } },
       ],
       criteria: [
         { key: 'greeting',      label: 'Greeting & opening' },
@@ -709,6 +753,11 @@ function qaLatestScorecards_(cards) {
         { key: 'accuracy',      label: 'Accuracy & process' },
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+        // Rubric types (2026-09-04): a Yes/No check and a dropdown ride the
+        // same list; `type` is present ONLY when not scale (the server's
+        // canonical shape), `options` only for choice.
+        { key: 'verified-id',   label: 'Verified two identifiers', type: 'check' },
+        { key: 'outcome',       label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated', 'Callback scheduled'] },
       ],
       selfEmpId: 'E-100',
     },
@@ -718,7 +767,7 @@ function qaLatestScorecards_(cards) {
     getMyQaReviews: {
       recordings: [
         { fileId: 'qaFileCccccccc3', name: '2026-08-22 close order review.wav',
-          createdMs: Date.now() - 432000000, sharedMs: Date.now() - 86400000,
+          createdMs: Date.now() - 432000000, sharedMs: Date.now() - 86400000, manual: false,
           scorecards: [
             { name: 'QA Reviewer', createdMs: Date.now() - 172800000, notes: 'Great verification discipline — slow down on the shipping recap so the patient can write the tracking number down.',
               ratings: { greeting: 5, communication: 4, accuracy: 5, resolution: 4, compliance: 5 } },
@@ -737,6 +786,11 @@ function qaLatestScorecards_(cards) {
         { key: 'accuracy',      label: 'Accuracy & process' },
         { key: 'resolution',    label: 'Resolution & next steps' },
         { key: 'compliance',    label: 'Compliance (verification, disclosures)' },
+        // Rubric types (2026-09-04): a Yes/No check and a dropdown ride the
+        // same list; `type` is present ONLY when not scale (the server's
+        // canonical shape), `options` only for choice.
+        { key: 'verified-id',   label: 'Verified two identifiers', type: 'check' },
+        { key: 'outcome',       label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated', 'Callback scheduled'] },
       ],
     },
     getSpanishInboxPending: { pending: [
@@ -878,7 +932,12 @@ function qaLatestScorecards_(cards) {
     },
     getManagerDashboard: (function () {
       function spark(n, base) { var a = []; for (var i = n; i >= 1; i--) a.push({ date: daysAgo(i), count: (i * base) % 4 }); return a; }
-      function rh() { var a = []; for (var i = 7; i >= 1; i--) a.push({ date: daysAgo(i), hours: [8.5, 9, 0, 8.75, 9, 8.5, 4][i - 1] }); return a; }
+      // Operator 2026-09-03: the server's punchTrend / recentHours / missedTrend
+      // walk WORKDAYS (mgrWorkdaysEnding_) — the fixture mirrors that so a
+      // screenshot never shows a weekend bar the server cannot produce (INV-185).
+      function workdaysEnding(n, endOffset) { var out = []; for (var off = endOffset; out.length < n; off++) { var d = new Date(); d.setDate(d.getDate() - off); if (d.getDay() === 0 || d.getDay() === 6) continue; out.unshift(d.toISOString().slice(0, 10)); } return out; }
+      function wspark(n, base, endOffset) { return workdaysEnding(n, endOffset).map(function (ds, i) { return { date: ds, count: ((n - i) * base) % 4 }; }); }
+      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, 9, 8.5][i] }; }); }
       // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
       // return block) — the drift made every Day-Edit button in every manager
       // screenshot render data-emp-id="undefined", and surfaced only when the
@@ -901,9 +960,9 @@ function qaLatestScorecards_(cards) {
         recentAudits: [{ timestamp: daysAgo(0) + ' 08:04:12', empName: 'Avery Blake', action: 'PunchIn', actor: '', notes: '', punchDate: todayIso, punchTime: '08:04:00', isAdjustment: false },
                        { timestamp: daysAgo(1) + ' 17:03:40', empName: 'Sam Ortiz', action: 'TimeOffStatusChange', actor: 'mgr@umsupply.com', notes: 'Pending->Approved (Full Day)', punchDate: daysAgo(-4), punchTime: '', isAdjustment: false }],
         missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST',
-        punchTrend: spark(8, 3).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
+        punchTrend: wspark(8, 3, 0).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
         toSummary: { approved: 6, pending: 1, denied: 1 },
-        pendingTrend: spark(14, 1), missedTrend: spark(14, 2),
+        pendingTrend: spark(14, 1), missedTrend: wspark(14, 2, 1),
       };
     })(),
     getPtoReconciliation: { reps: [] },
@@ -1038,7 +1097,13 @@ function qaLatestScorecards_(cards) {
         totalHours: 11.5, daysWorked: 1,
       };
     },
-    managerGetPendingAdjustments: { requests: [] },
+    // Operator 2026-09-03: the queue sits beside Pending Time Off, so the
+    // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
+    // own push literal — INV-185).
+    managerGetPendingAdjustments: { requests: [
+      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', submittedAt: daysAgo(1) + ' 08:10:00' },
+      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', submittedAt: daysAgo(1) + ' 17:40:00' },
+    ] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on
     // screen, and a static object would only ever cover one). Rep-row keys
@@ -1102,6 +1167,7 @@ function qaLatestScorecards_(cards) {
         { empId: 'E-102', n30: 64, topView: 'clock' },
       ],
       totals: { n7: 125, n30: 506, reps7: 8, reps30: 8 },
+      boot: { n7: 41, shell: { n: 41, median: 3120, p90: 5400 }, state: { n: 41, median: 1480, p90: 2600 }, view: { n: 37, median: 5210, p90: 8900 } },
     } },
     // Design handoff PR 4 (K12): the manager fixture carries a critical, an
     // overdue (business-day age past the window), a praise, a replied item and
@@ -1580,6 +1646,9 @@ function qaLatestScorecards_(cards) {
     // (the design's "render nothing when the list is empty"), which is what
     // changes most under this design and a populated fixture never shows.
     getMyPendingTasks: { items: [], total: 0, cap: 30, overdue: 0, unavailable: [], todayIso: todayIso, prevWorkday: daysAgo(1) },
+    // QA Log (2026-09-04): nothing audited in the window.
+    getQaLog: { self: 'E-100', selfName: 'Team Tools', isManager: true, reviewer: '', from: daysAgo(29), to: todayIso, todayYmd: todayIso,
+      criteria: [], agentOptions: [], reviewers: [{ empId: 'E-100', name: 'Team Tools' }], pending: [], entries: [], total: 0, cap: 300, truncated: false },
     // PR 5 (QA): a configured store with nothing indexed and no roster rows —
     // the coverage block's own empty state + the recordings empty state.
     getQaQueue: (function () {

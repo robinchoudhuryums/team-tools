@@ -1868,15 +1868,9 @@ function getManagerDashboard() {
     // since reps still mid-shift would always register as 0 hours)
     // for each liveStatus entry. Reuses already-loaded adpRows; one
     // extra in-memory pass — no Sheet reads, INV-13 honored.
-    const sparkDays = 7;
-    const sparkStart = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - sparkDays);
-      return fmtDateTz_(d, mgrTz);
-    })();
-    const sparkEnd = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - 1);
-      return fmtDateTz_(d, mgrTz);
-    })();
+    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
+    const sparkStart = sparkIsos[0];
+    const sparkEnd = sparkIsos[sparkIsos.length - 1];
     const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
     for (let i = 2; i < adpRows.length; i++) {
       const id = String(adpRows[i][ADP.EMP_ID]).trim();
@@ -1899,13 +1893,7 @@ function getManagerDashboard() {
       }
     });
     liveStatus.forEach(ls => {
-      const arr = [];
-      for (let off = sparkDays; off >= 1; off--) {
-        const dd = new Date(now); dd.setDate(dd.getDate() - off);
-        const ds = fmtDateTz_(dd, mgrTz);
-        arr.push({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 });
-      }
-      ls.recentHours = arr;
+      ls.recentHours = sparkIsos.map(ds => ({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 }));
     });
 
     // Pending time-off (with leave balance context).
@@ -2074,11 +2062,11 @@ function getManagerDashboard() {
     // this was the ONE adpRows pass without the empById filter, so off-roster
     // / TEST_-remnant ids inflated the trend bars while every other dashboard
     // aggregate excluded them.
-    const analyticsDays = 7;
+    // Operator 2026-09-03: WORKDAYS, not calendar days — the chart carried two
+    // guaranteed-zero weekend bars every week (see mgrWorkdaysEnding_).
+    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0);   // 8 bars: today + 7 prior workdays
     const punchCountsByDate = {};
-    const analyticsLookback = new Date(now);
-    analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
-    const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
+    const analyticsStart = analyticsIsos[0];
     for (let i = 2; i < adpRows.length; i++) {
       if (!empById[String(adpRows[i][ADP.EMP_ID]).trim()]) continue;   // C11
       const d = normalizeDate_(adpRows[i][ADP.DATE]);
@@ -2086,12 +2074,7 @@ function getManagerDashboard() {
         punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
       }
     }
-    const punchTrend = [];
-    for (let off = analyticsDays; off >= 0; off--) {
-      const dd = new Date(now); dd.setDate(dd.getDate() - off);
-      const ds = fmtDateTz_(dd, mgrTz);
-      punchTrend.push({ date: ds, count: punchCountsByDate[ds] || 0 });
-    }
+    const punchTrend = analyticsIsos.map(ds => ({ date: ds, count: punchCountsByDate[ds] || 0 }));
     const toSummary = { approved: 0, pending: 0, denied: 0 };
     const monthStr = todayStr.substring(0, 7);
     for (let i = 1; i < toRows.length; i++) {
@@ -2112,14 +2095,12 @@ function getManagerDashboard() {
       const d = new Date(now); d.setDate(d.getDate() - (trendDays - 1));
       return fmtDateTz_(d, mgrTz);
     })();
-    const missedTrendStart = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - trendDays);
-      return fmtDateTz_(d, mgrTz);
-    })();
-    const missedTrendEnd = (() => {
-      const d = new Date(now); d.setDate(d.getDate() - 1);
-      return fmtDateTz_(d, mgrTz);
-    })();
+    // missedTrend walks WORKDAYS (a weekend can never carry a missed clock-out
+    // on this roster); pendingTrend stays on CALENDAR days — a PTO request can
+    // be SUBMITTED on a Saturday, and that bar is data, not a structural zero.
+    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1);
+    const missedTrendStart = missedIsos[0];
+    const missedTrendEnd = missedIsos[missedIsos.length - 1];
 
     const pendingByDate = {};
     for (let i = 1; i < toRows.length; i++) {
@@ -2172,12 +2153,7 @@ function getManagerDashboard() {
       const ds = fmtDateTz_(dd, mgrTz);
       pendingTrend.push({ date: ds, count: pendingByDate[ds] || 0 });
     }
-    const missedTrend = [];
-    for (let off = trendDays; off >= 1; off--) {
-      const dd = new Date(now); dd.setDate(dd.getDate() - off);
-      const ds = fmtDateTz_(dd, mgrTz);
-      missedTrend.push({ date: ds, count: missedByDate[ds] || 0 });
-    }
+    const missedTrend = missedIsos.map(ds => ({ date: ds, count: missedByDate[ds] || 0 }));
 
     return {
       today: todayStr,
@@ -2206,6 +2182,25 @@ function getManagerDashboard() {
  *  table can never disagree with the pay statement over the same rows.
  *  Live-tab-only by design (the calendar/Punctuality posture) — a month
  *  predating the live tab's oldest row carries archiveNote (INV-187). */
+/* Operator 2026-09-03: the manager trends counted CALENDAR days, so the Punch
+ * Activity chart and every live-status sparkline carried two guaranteed-zero
+ * bars a week (no rep works Sat/Sun — operator-confirmed 2026-08-21; the
+ * weekend is INFERRED, the same limit remindIsDayOff_ carries). Walks back
+ * from (today − endOffset) in the manager tz collecting `n` weekdays, oldest
+ * → newest. Bounded so a bad `n` can never spin. */
+function mgrWorkdaysEnding_(now, tz, n, endOffset) {
+  const out = [];
+  const limit = endOffset + n * 2 + 7;
+  for (let off = endOffset; out.length < n && off < limit; off++) {
+    const d = new Date(now); d.setDate(d.getDate() - off);
+    const iso = fmtDateTz_(d, tz);
+    const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    out.unshift(iso);
+  }
+  return out;
+}
+
 function getTeamCalendar(monthIso) {
   try {
     const emp = getEmployeeInfo_();
@@ -6744,7 +6739,7 @@ function clientErrSpikeAlert_() {
     const htmlBody = buildBrandedEmailHtml_('Client errors are spiking', inner,
       { tone: 'danger', subLabel: 'Diagnostics',
         ctaUrl: safeWebAppUrl_('callNotesAdmin'), ctaLabel: 'Open Automation Health' });
-    MailApp.sendEmail({
+    appSendMail_({
       to: recipients.join(','),
       subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
       body: n + ' client error(s) in the last hour.\n\n' + rowsText +
@@ -6774,17 +6769,62 @@ function getOrCreateViewUsageSheet_() {
     sheet = ss.insertSheet(VIEW_USAGE_TAB);
     sheet.appendRow([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
-      'EmployeeId', 'View', 'Mode',
+      'EmployeeId', 'View', 'Mode', 'BootTiming',
     ]);
     sheet.setFrozenRows(1);
+  } else if (sheet.getLastColumn() < VIEW_USAGE_WIDTH) {
+    // Trailing column added 2026-09-04 (boot timing) — the header self-heals
+    // like CN_HEADERS; pre-existing rows read a blank cell (no timing).
+    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue('BootTiming');
   }
   return sheet;
+}
+
+// Boot-timing beacon (operator 2026-09-04 — "can the app be pre-warmed
+// before each shift?"). Nothing measured which phase of a cold start a rep
+// actually waits on, so a warm-up would have been a guess. The client's boot
+// send now carries three durations — `shell` (navigation start → shell painted
+// after getEmployeeState), `state` (the getEmployeeState round trip alone) and
+// `view` (navigation start → the landing view's FIRST real data paint) — as a
+// JSON cell on the SAME ViewUsage row (no second endpoint, no second row).
+// Bounded per value so a garbage client cannot skew the medians.
+const VIEW_USAGE_WIDTH = 5;
+const VIEW_USAGE_TIMING_MAX_MS = 300000;   // five minutes — beyond that it is not a boot, it is a stall
+const VIEW_USAGE_TIMING_KEYS = ['shell', 'state', 'view'];
+
+/** PURE (Node-pinned): the stored cell for a client-supplied timing object.
+ *  Each phase → a whole non-negative ms count ≤ VIEW_USAGE_TIMING_MAX_MS, else
+ *  dropped; nothing usable → '' (the row stays a plain view-enter row). */
+function viewUsageTimingCell_(timing) {
+  if (!timing || typeof timing !== 'object' || Array.isArray(timing)) return '';
+  const out = {};
+  let any = false;
+  VIEW_USAGE_TIMING_KEYS.forEach(function (k) {
+    // null/blank = "this phase was not measured" (the fallback send carries
+    // view:null) — Number(null) is 0, which would record a confident 0 ms.
+    if (timing[k] === null || timing[k] === undefined || timing[k] === '') return;
+    const v = Number(timing[k]);
+    if (!isFinite(v) || v < 0 || v > VIEW_USAGE_TIMING_MAX_MS) return;
+    out[k] = Math.round(v);
+    any = true;
+  });
+  return any ? JSON.stringify(out) : '';
+}
+
+/** Inverse of the cell writer — a blank/corrupt cell reads as no timing. */
+function viewUsageTimingParse_(cell) {
+  const raw = String(cell || '').trim();
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    return (o && typeof o === 'object') ? o : null;
+  } catch (e) { return null; }
 }
 
 /** Rep-callable, USER-locked (the recordClientError reasoning — a telemetry
  *  append must never queue punch/note writes behind the ONE script lock),
  *  append-only, shape-validated + rate-capped. Fire-and-forget end to end. */
-function recordViewEnter(viewKey, mode) {
+function recordViewEnter(viewKey, mode, timing) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
@@ -6803,7 +6843,7 @@ function recordViewEnter(viewKey, mode) {
     try {
       getOrCreateViewUsageSheet_().appendRow([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
-        emp.id, v, m,
+        emp.id, v, m, viewUsageTimingCell_(timing),
       ]);
     } finally { lock.releaseLock(); }
     return { success: true };
@@ -6819,9 +6859,21 @@ function recordViewEnter(viewKey, mode) {
  *  in the SAME tz+format, so lexicographic compare is chronological. */
 function viewUsageAggregate_(events, cut7, cut30) {
   const byView = {}, reps7 = {}, reps30 = {}, byRep = {};
-  let n7 = 0, n30 = 0;
+  const boot = { shell: [], state: [], view: [] };
+  let n7 = 0, n30 = 0, boot7 = 0;
   (events || []).forEach(function (e) {
     if (!e || !e.ts || e.ts < cut30) return;
+    // Boot timings ride the 7-day window only — a startup figure from a month
+    // ago describes a build that may no longer be deployed.
+    if (e.ts >= cut7 && e.timing && typeof e.timing === 'object') {
+      let counted = false;
+      VIEW_USAGE_TIMING_KEYS.forEach(function (k) {
+        if (e.timing[k] === null || e.timing[k] === undefined || e.timing[k] === '') return;
+        const v = Number(e.timing[k]);
+        if (isFinite(v) && v >= 0) { boot[k].push(v); counted = true; }
+      });
+      if (counted) boot7++;
+    }
     const v = String(e.view || '?');
     const r = String(e.empId || '?');
     if (!byView[v]) byView[v] = { view: v, n7: 0, n30: 0, reps: {} };
@@ -6841,10 +6893,20 @@ function viewUsageAggregate_(events, cut7, cut30) {
     Object.keys(vc).forEach(function (v) { if (vc[v] > topN) { top = v; topN = vc[v]; } });
     return { empId: r, n30: byRep[r].n30, topView: top };
   }).sort(function (a, b) { return b.n30 - a.n30 || a.empId.localeCompare(b.empId); });
+  const stat = function (arr) {
+    if (!arr.length) return null;
+    const a = arr.slice().sort(function (x, y) { return x - y; });
+    const at = function (q) { return a[Math.min(a.length - 1, Math.max(0, Math.ceil(q * a.length) - 1))]; };
+    const mid = a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+    return { n: a.length, median: Math.round(mid), p90: Math.round(at(0.9)) };
+  };
   return {
     views: views,
     reps: reps,
     totals: { n7: n7, n30: n30, reps7: Object.keys(reps7).length, reps30: Object.keys(reps30).length },
+    // Startup: per-phase median + p90 over the trailing 7 days (null = no
+    // timed boot in the window — never a 0, INV-187).
+    boot: { n7: boot7, shell: stat(boot.shell), state: stat(boot.state), view: stat(boot.view) },
   };
 }
 
@@ -6864,12 +6926,13 @@ function getViewUsageStats() {
     try { url = ss.getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - VIEW_USAGE_SCAN_MAX + 1);
-    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 4).getValues();
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, VIEW_USAGE_WIDTH).getValues();
     const events = [];
     for (let i = 0; i < data.length; i++) {
       const ts = normalizeAuditTs_(data[i][0]);
       if (!ts) continue;
-      events.push({ ts: ts, empId: String(data[i][1]), view: String(data[i][2]), mode: String(data[i][3]) });
+      events.push({ ts: ts, empId: String(data[i][1]), view: String(data[i][2]), mode: String(data[i][3]),
+                    timing: viewUsageTimingParse_(data[i][4]) });
     }
     const cut7 = Utilities.formatDate(new Date(Date.now() - 7 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
     const cut30 = Utilities.formatDate(new Date(Date.now() - 30 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
@@ -7638,7 +7701,7 @@ function selfTestFailureEmail_(mode, res, names) {
       esc_(String(res.skip)) + ' skipped.</p>' +
       (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
       '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
-    MailApp.sendEmail({
+    appSendMail_({
       to: mgrEmails.join(','),
       subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
       body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
@@ -7668,7 +7731,7 @@ function sendAutomationHealthDigest() {
       problems.map(function (p) { return '• ' + p; }).join('\n') +
       '\n\nOpen Call Notes → Admin → Automation Health for detail.';
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: mgrEmails.join(','),
         subject: 'Team Tools — automation health: ' + problems.length + ' issue(s) need attention',
         body: textBody,
@@ -9083,7 +9146,7 @@ function repSenderFrom_() {
  *  unchanged. GmailApp adds no new OAuth scope here (the Spanish-inbox
  *  feature already uses it) and shares the MailApp send quota. */
 function sendRepEmail_(emp, opts) {
-  const merged = Object.assign({}, opts, repSenderOpts_(emp));
+  const merged = mailMergeBcc_(Object.assign({}, opts, repSenderOpts_(emp)));   // MAIL_BCC_ALL rides both branches
   // Operator ask 2026-08-27: the sending agent gets their own copy of every
   // email they send from the app. A true Sent-folder entry in the AGENT's
   // mailbox is impossible — the app sends as USER_DEPLOYING, so only the
@@ -9109,6 +9172,36 @@ function sendRepEmail_(emp, opts) {
   } else {
     MailApp.sendEmail(merged);
   }
+}
+
+/* Operator 2026-09-03: "any email the app sends, BCC me". Script Property
+ * MAIL_BCC_ALL — a comma-separated list; unset = no change. Applied in ONE
+ * place (appSendMail_, which every automated sender now calls, plus
+ * sendRepEmail_'s two branches) so none of the ~26 senders carries its own
+ * copy of the rule. It APPENDS to a caller's bcc, never clobbers it; dedupes
+ * case-insensitively against to/cc/bcc so a manager already addressed does
+ * not get a second copy; a malformed entry is dropped; memoized per execution. */
+let _mailBccAllCache = null;
+function mailBccAll_() {
+  if (_mailBccAllCache !== null) return _mailBccAllCache;
+  let v = '';
+  try { v = String(PropertiesService.getScriptProperties().getProperty('MAIL_BCC_ALL') || ''); } catch (e) { v = ''; }
+  _mailBccAllCache = v.split(',').map((x) => x.trim()).filter((x) => /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(x));
+  return _mailBccAllCache;
+}
+function mailMergeBcc_(opts) {
+  const extra = mailBccAll_();
+  if (!extra.length || !opts) return opts;
+  const split = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const have = split(opts.bcc);
+  const seen = {};
+  [].concat(split(opts.to), split(opts.cc), have).forEach((x) => { seen[x.toLowerCase()] = true; });
+  extra.forEach((e) => { if (!seen[e.toLowerCase()]) { have.push(e); seen[e.toLowerCase()] = true; } });
+  return Object.assign({}, opts, { bcc: have.join(',') });
+}
+/** The ONE MailApp call for every automated (system-identity) send. */
+function appSendMail_(opts) {
+  MailApp.sendEmail(mailMergeBcc_(opts));
 }
 
 /** Actually sends the email composed for a note. Stamps EmailedAt +
@@ -11194,7 +11287,7 @@ function signatureDataUrlToBlob_(signatureDataUrl, name) {
 function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason) {
   if (!createdBy) return;
   try {
-    MailApp.sendEmail({
+    appSendMail_({
       to: createdBy,
       subject: 'Form submission could not be saved',
       body:
@@ -11263,7 +11356,7 @@ function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipien
     htmlBody: htmlBody,
   };
   if (attachments.length > 0) opts.attachments = attachments;
-  MailApp.sendEmail(opts);
+  appSendMail_(opts);
 }
 
 
@@ -12032,7 +12125,7 @@ function installAutomationTriggers() {
   try {
     const recipients = getManagerEmails_();
     if (recipients.length > 0) {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `UMS Team Tools — automation triggers installed by ${userEmail}`,
         body:
@@ -12146,7 +12239,7 @@ function sendDailyMissedPunchAlerts() {
 
     missed.forEach(emp => {
       try {
-        MailApp.sendEmail({
+        appSendMail_({
           to: emp.email,
           subject: `⏰ Missing Clock-Out for ${emp.yesterdayStr}`,
           body:
@@ -12183,7 +12276,7 @@ function sendDailyMissedPunchAlerts() {
           return '<li style="margin:4px 0;">' + esc_(e.name) + ' (' + esc_(e.id) + ') — ' + esc_(e.email) +
                  ' — missed ' + esc_(e.yesterdayStr) + ' ' + esc_(tzAbbr_(e.timezone)) + '</li>';
         }).join('') + '</ul>';
-        MailApp.sendEmail({
+        appSendMail_({
           to: recipients.join(','),
           subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
           body:
@@ -12274,7 +12367,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
     const result = generateExportSheet_(range.start, range.end, payCycleFilter);
     if (!result.error) createdSheet = result;
     if (result.error) {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `${subjectPrefix}: ${result.error}`,
         body: `No export generated for ${range.start} to ${range.end}.\nReason: ${result.error}`,
@@ -12292,7 +12385,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
     }).getBlob().setName(result.fileName + '.xlsx');
 
-    MailApp.sendEmail({
+    appSendMail_({
       to: recipients.join(','),
       subject: `${subjectPrefix}: ${range.start} to ${range.end}`,
       body:
@@ -12320,7 +12413,7 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
       `${payCycleFilter} EXCEPTION: ${err.message}`);
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: recipients.join(','),
         subject: `❌ ${subjectPrefix} FAILED`,
         // C12 (cycle 10): the export SHEET is usually already created when
@@ -12564,7 +12657,7 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
   const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
     `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
     itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
-  MailApp.sendEmail({
+  appSendMail_({
     to: emp.email,
     subject: `End of day · ${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged`,
     body: textBody,
@@ -12849,7 +12942,7 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
   const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html,
     { accent: P.warnDeep, subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
+  appSendMail_({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
 }
 
 /** Branded reminder to ONE employee about their own overdue documents (v2 —
@@ -12872,7 +12965,7 @@ function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
     '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
   const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html,
     { accent: P.warnDeep, subLabel: 'Employee Docs', ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
+  appSendMail_({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -13005,7 +13098,7 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
 
   html += '<p style="margin:16px 0 0;">Open the web app for detail — the separate digest emails for these streams are suppressed while the brief is on.</p>';
   text += '\n\nOpen the web app for detail.';
-  MailApp.sendEmail({
+  appSendMail_({
     to: toEmail,
     subject: 'Team Tools daily brief — ' + totalItems + ' item(s) · ' + todayIso,
     body: text,
@@ -13167,7 +13260,7 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Open Team Notes' });
   const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}${skipText}\n\n— UMS Team Tools`;
   try {
-    MailApp.sendEmail({
+    appSendMail_({
       to: toEmails.join(','),
       subject: `Call Notes · ${label} (${notes.length})`,
       body: textBody,
@@ -16740,7 +16833,7 @@ function sendDeptRequestReminderDigest() {
       }).join('\n');
     }).join('\n\n') + '\n\nOpen Metrics → Dept Requests for the full list.';
     try {
-      MailApp.sendEmail({
+      appSendMail_({
         to: mgrEmails.join(','),
         subject: 'Team Tools — ' + overdue.length + ' department request(s) past SLA',
         body: textBody,
@@ -17229,25 +17322,67 @@ function managerGetPendingAdjustments() {
   } catch (err) { return { error: err.message }; }
 }
 
+const PUNCH_ADJUST_BULK_MAX = 50;
+
 /** Manager-gated, locked. Approve → writes the ADJ-{punchType} punch for the
  *  target emp and marks Approved. Deny → marks Denied (no punch). Transition-
- *  guarded: only acts on a Pending row (so a double-click can't re-approve). */
+ *  guarded: only acts on a Pending row (so a double-click can't re-approve).
+ *  The single-id public wrapper below keeps its {success, error} shape. */
 function updatePunchAdjustStatus(reqId, newStatus) {
+  const r = punchAdjustDecideAll_([reqId], newStatus);
+  if (r.results && r.results.length === 1) {
+    return r.results[0].success ? { success: true } : { success: false, error: r.results[0].error };
+  }
+  return { success: false, error: r.error || 'Action failed.' };
+}
+
+/** Operator 2026-09-03: multi-select approve/deny. ONE lock, ONE queue read,
+ *  ONE Timesheet index per target employee (the C17-9 ctx) instead of a full
+ *  Timesheet read per request, and every decision email deferred past the
+ *  lock. Per-id outcomes ride back so the client can remove exactly the rows
+ *  that landed and restore the ones that did not. */
+function updatePunchAdjustStatusBulk(reqIds, newStatus) {
+  return punchAdjustDecideAll_(reqIds, newStatus);
+}
+
+function punchAdjustDecideAll_(reqIds, newStatus) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  const later = [];                                            // post-lock notifications (M-7)
   let notifyAfter = null;
+  const results = [];
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
-    const id = String(reqId || '').trim();
-    if (!id) return { success: false, error: 'Missing request id.' };
+    const ids = [];
+    (Array.isArray(reqIds) ? reqIds : [reqIds]).forEach((x) => {
+      const id = String(x || '').trim();
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (!ids.length) return { success: false, error: 'Missing request id.' };
+    if (ids.length > PUNCH_ADJUST_BULK_MAX) return { success: false, error: 'At most ' + PUNCH_ADJUST_BULK_MAX + ' requests per batch.' };
     const sheet = getOrCreatePunchAdjustSheet_();
     const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][PAR.REQ_ID]).trim() !== id) continue;
+    const rowById = {};
+    for (let i = 1; i < rows.length; i++) rowById[String(rows[i][PAR.REQ_ID]).trim()] = i;
+    // One Timesheet index per target employee, over the dates this batch
+    // touches — the adjust writer then never re-reads the sheet per request.
+    const datesByEmp = {};
+    ids.forEach((id) => {
+      const i = rowById[id];
+      if (i === undefined) return;
+      const e = String(rows[i][PAR.EMP_ID]).trim();
+      (datesByEmp[e] || (datesByEmp[e] = {}))[normalizeDate_(rows[i][PAR.DATE])] = true;
+    });
+    const ctxByEmp = {};
+    const ctxFor = (empId) => ctxByEmp[empId] || (ctxByEmp[empId] = buildAdjustPunchIndex_(empId, datesByEmp[empId] || {}));
+    const fail = (id, error) => { results.push({ reqId: id, success: false, error: error }); };
+    ids.forEach((id) => {
+      const i = rowById[id];
+      if (i === undefined) { fail(id, 'Request not found.'); return; }
       const status = String(rows[i][PAR.STATUS]).trim();
-      if (status.toLowerCase() !== 'pending') return { success: false, error: 'This request is no longer pending.' };
+      if (status.toLowerCase() !== 'pending') { fail(id, 'This request is no longer pending.'); return; }
       const empId = String(rows[i][PAR.EMP_ID]).trim();
       const empName = String(rows[i][PAR.EMP_NAME]).trim();
       const date = normalizeDate_(rows[i][PAR.DATE]);
@@ -17258,45 +17393,45 @@ function updatePunchAdjustStatus(reqId, newStatus) {
       const action = String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
-        if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        if (!targetEmp) { fail(id, 'Employee not found.'); return; }
         // Re-validate the adjust window at APPROVAL time — the submit-time
         // check (INV-106) doesn't cover a request that sat in the queue past
         // the window. Writing it would bypass the same bound recordPunch /
         // managerSaveDay enforce; the manager should deny instead.
         const ageDays = daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp)));
         if (ageDays > CONFIG.ADJUST_WINDOW_DAYS) {
-          return { success: false, error:
-            'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
-            '-day adjust window — deny it (the rep can re-submit if still needed).' };
+          fail(id, 'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
+            '-day adjust window — deny it (the rep can re-submit if still needed).');
+          return;
         }
         if (action === 'resume') {
           const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
-          if (res && res.error) return { success: false, error: res.error };
+          if (res && res.error) { fail(id, res.error); return; }
         } else {
-          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId));
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
-        notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action);
-        };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action); };
+        later.push(notifyAfter);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
           `${punchType} ${reqTime} request denied`, callerEmp.email);
-        notifyAfter = function () {
-          notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action);
-        };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action); };
+        later.push(notifyAfter);
       }
       sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
-      return { success: true };
-    }
-    return { success: false, error: 'Request not found.' };
-  } catch (err) { return { success: false, error: err.message }; }
+      results.push({ reqId: id, success: true });
+    });
+    const failed = results.filter((r) => !r.success).length;
+    return { success: failed === 0, results: results, done: results.length - failed, failed: failed,
+      error: failed ? (failed + ' of ' + results.length + ' could not be ' + newStatus.toLowerCase()) : undefined };
+  } catch (err) { return { success: false, error: err.message, results: results }; }
   finally {
     lock.releaseLock();
     // M-7: best-effort mail fires only after the global lock is released.
-    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+    later.forEach((fn) => { try { fn(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } });
   }
 }
 
@@ -17332,7 +17467,7 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
       '<p style="margin:14px 0 0;">Nothing changes on their timesheet until you approve it.</p>',
       { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Pending',
         ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open Manage Time' });
-    MailApp.sendEmail({ to: to.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: to.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Adjust request notification failed: ' + e.message); }
 }
 
@@ -17384,7 +17519,7 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
         subLabel: 'Time Clock',
         statusLabel: approved ? 'Approved' : 'Denied',
         ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Open Time Clock' });
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Adjust decision email failed: ' + e.message); }
 }
 
@@ -17696,7 +17831,7 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Review',
         ctaUrl: 'https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit',
         ctaLabel: 'Open the audit log' });
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
 
@@ -17717,7 +17852,7 @@ function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
       '',
       { subLabel: 'Call Notes', statusLabel: 'Question',
         ctaUrl: safeWebAppUrl_('callNotesManage'), ctaLabel: 'Reply in Team Notes' });
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
@@ -17770,7 +17905,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
       { accent: accent, subLabel: 'Time Off',
         statusLabel: newStatus === 'Approved' ? 'Approved' : newStatus === 'Denied' ? 'Denied' : 'Updated',
         ctaUrl: safeWebAppUrl_('timeoff'), ctaLabel: 'Open Time / PTO' });
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
+    appSendMail_({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
 
@@ -25569,7 +25704,7 @@ function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
           '<p style="margin:0 0 12px;">Hi ' + esc_(name) + ',</p>' +
           brandedKvRows_([['Training item', itemTitle]].concat(dueDate ? [['Due', dueDate]] : [])) +
           '', { subLabel: 'Training', ctaUrl: safeWebAppUrl_('trainingHome'), ctaLabel: 'Open My Training' });
-        MailApp.sendEmail({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
+        appSendMail_({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
       } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
     }
   } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
@@ -26662,7 +26797,7 @@ function notifyEmpDocIssued_(target, doc) {
       '<p style="margin:12px 0 0;">Please ' + esc_(action) + ' it.</p>',
       { subLabel: 'Employee Docs', statusLabel: doc.requiresSignature ? 'Signature needed' : 'Review needed',
         ctaUrl: safeWebAppUrl_('myDocs'), ctaLabel: 'Open My Docs' });
-    MailApp.sendEmail({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
+    appSendMail_({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
 }
 
@@ -26679,7 +26814,7 @@ function notifyEmpDocSigned_(doc, signer, completedOnly) {
     const htmlBody = buildBrandedEmailHtml_(completedOnly ? 'Document completed' : 'Document signed',
       brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]),
       { tone: 'success', subLabel: 'Employee Docs' });
-    MailApp.sendEmail({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
+    appSendMail_({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
       body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }
@@ -27273,7 +27408,7 @@ function coachUnackedAll_(nowMs) {
 function coachSendMail_(msg) {
   try {
     if (typeof _TEST_OVERRIDE_COACH_MAIL === 'function') { _TEST_OVERRIDE_COACH_MAIL(msg); return true; }
-    MailApp.sendEmail(msg);
+    appSendMail_(msg);
     return true;
   } catch (e) { console.warn('coaching mail failed: ' + e.message); return false; }
 }
@@ -27585,6 +27720,31 @@ const QA_SCORECARDS_HEADERS = ['ScorecardId', 'FileId', 'ReviewerEmpId', 'Review
 const QSC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, RATINGS: 4, NOTES: 5, CREATED_MS: 6 };
 const QA_SCORECARDS_SCAN = 4000;      // bounded tail over QaScorecards
 const QA_SCORECARD_NOTES_MAX = 2000;
+// Rubric criterion TYPES (operator 2026-09-04 — the QA Log round). `scale` is
+// the 1–5 rating every criterion was until now; `check` is a Yes/No; `choice`
+// is a dropdown over operator-defined options. THE STORAGE RULE THAT KEEPS
+// EVERY NUMERIC FOLD TYPE-BLIND: a non-scale answer is stored as a NON-NUMERIC
+// string ('yes'/'no', or the option text — which the criteria editor refuses
+// when it is a bare number), so qaCardStats_ / qaStatsAggregate_ /
+// qaCalibration_ / the coverage join keep averaging exactly the 1–5 values
+// they always did without knowing a criterion's type. The canonical criterion
+// shape carries `type` ONLY when it is not `scale` (and `options` only for
+// `choice`), so the CONFIG seed, every stored property blob and the
+// save-the-seed-deletes-the-property rule stay byte-identical.
+const QA_CRITERION_TYPES = ['scale', 'check', 'choice'];
+const QA_CHOICE_OPTIONS_MIN = 2;
+const QA_CHOICE_OPTIONS_MAX = 12;
+const QA_CHOICE_OPTION_MAX_CHARS = 40;
+const QA_CHECK_YES = 'yes';
+const QA_CHECK_NO = 'no';
+// QA Log (operator 2026-09-04): the reviewer-centred ledger over the SAME
+// scorecard store — one entry per recording audited, never a second table.
+const QA_LOG_CAP = 300;               // payload cap; pre-slice total reported (INV-169)
+const QA_LOG_MAX_SPAN_DAYS = 92;      // the QTR preset fits
+const QA_LOG_DEFAULT_DAYS = 30;
+const QA_LOG_PENDING_CAP = 50;        // "Log an audit" picker — the caller's open assignments
+const QA_MANUAL_ID_PREFIX = 'manual-';   // a recording-less audit's synthetic FileId (never a Drive id)
+const QA_MANUAL_LABEL_MAX = 120;
 // The scorecard criteria SEED — Script Property QA_SCORECARD_CRITERIA
 // (JSON [{key,label}], sanitize-on-read via qaCriteriaSanitize_) overrides
 // without a redeploy. Keys ride stored RatingsJson, so renaming a key orphans
@@ -27750,6 +27910,7 @@ function getQaQueue(period) {
           durationSec: Number(rows[i][QAR.DURATION_SEC]) || 0,
           skipReason: String(rows[i][QAR.SKIP_REASON] || ''),
           comments: 0,
+          manual: qaIsManualId_(fid),   // a recording-less audit — no audio to load
         });
       }
     }
@@ -28121,10 +28282,72 @@ function qaCriteriaSanitize_(arr) {
     if (!/^[a-z][a-z0-9-]{1,23}$/.test(key) || seen[key]) continue;
     const label = String(c.label || '').trim().substring(0, 60);
     if (!label) continue;
+    const type = qaCritType_(c);
+    const entry = { key: key, label: label };
+    if (type === 'choice') {
+      // A dropdown with fewer than two usable options cannot be answered —
+      // the criterion is DROPPED (lenient read), never demoted to a scale
+      // that would re-type its stored answers.
+      const opts = qaChoiceOptionsSanitize_(c.options);
+      if (opts.length < QA_CHOICE_OPTIONS_MIN) continue;
+      entry.type = 'choice';
+      entry.options = opts;
+    } else if (type === 'check') {
+      entry.type = 'check';
+    }
     seen[key] = true;
-    out.push({ key: key, label: label });
+    out.push(entry);
   }
   return out.length ? out : null;
+}
+/** The criterion's type — absent/unknown reads as `scale` (every pre-existing
+ *  criterion), so a stored blob written before types existed is unchanged. */
+function qaCritType_(c) {
+  const t = String((c && c.type) || '').trim().toLowerCase();
+  return QA_CRITERION_TYPES.indexOf(t) >= 0 ? t : 'scale';
+}
+/** PURE (Node-pinned) — a choice criterion's options: trimmed, ≤40 chars,
+ *  deduped case-insensitively, capped, and NEVER a bare number (a numeric
+ *  option text would parse as a 1–5 score inside the type-blind folds). */
+function qaChoiceOptionsSanitize_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < arr.length && out.length < QA_CHOICE_OPTIONS_MAX; i++) {
+    const o = String(arr[i] == null ? '' : arr[i]).trim().substring(0, QA_CHOICE_OPTION_MAX_CHARS);
+    if (!o || qaOptionIsNumeric_(o) || seen[o.toLowerCase()]) continue;
+    seen[o.toLowerCase()] = true;
+    out.push(o);
+  }
+  return out;
+}
+function qaOptionIsNumeric_(o) { return /^\s*[-+]?\d+(\.\d+)?\s*$/.test(String(o || '')); }
+/** PURE (Node-pinned) — normalize ONE client-supplied rating against its
+ *  criterion. Returns {value} (the canonical stored form) or {error}. scale →
+ *  an integer 1–5; check → 'yes'/'no' (true/false/1/0/'y'/'n' accepted);
+ *  choice → the option text, matched case-insensitively and stored in the
+ *  criterion's own spelling. An answer the type cannot take is REFUSED by
+ *  name, never coerced (the INV-96 refuse-not-drop posture). */
+function qaRatingNormalize_(criterion, raw) {
+  const type = qaCritType_(criterion);
+  const label = String((criterion && criterion.label) || (criterion && criterion.key) || 'criterion');
+  if (type === 'scale') {
+    const v = parseInt(raw, 10);
+    if (!(v >= 1 && v <= 5) || String(raw).trim() !== String(v)) return { error: 'Ratings must be 1–5 (' + label + ').' };
+    return { value: v };
+  }
+  if (type === 'check') {
+    const t = String(raw === true ? 'yes' : raw === false ? 'no' : raw == null ? '' : raw).trim().toLowerCase();
+    if (t === 'yes' || t === 'true' || t === 'y' || t === '1') return { value: QA_CHECK_YES };
+    if (t === 'no' || t === 'false' || t === 'n' || t === '0') return { value: QA_CHECK_NO };
+    return { error: label + ' takes Yes or No.' };
+  }
+  const want = String(raw == null ? '' : raw).trim().toLowerCase();
+  const opts = (criterion && criterion.options) || [];
+  for (let i = 0; i < opts.length; i++) {
+    if (String(opts[i]).trim().toLowerCase() === want) return { value: String(opts[i]) };
+  }
+  return { error: label + ' must be one of: ' + opts.join(', ') + '.' };
 }
 function getQaScorecardCriteria_() {
   try {
@@ -28167,8 +28390,30 @@ function saveQaScorecardCriteria(list) {
       const label = String(c.label || '').trim();
       if (!label) return { success: false, error: 'Criterion "' + key + '" needs a label.' };
       if (label.length > 60) return { success: false, error: 'Label for "' + key + '" is over 60 characters.' };
+      const typeRaw = String(c.type || 'scale').trim().toLowerCase();
+      if (QA_CRITERION_TYPES.indexOf(typeRaw) < 0) {
+        return { success: false, error: 'Unknown type "' + String(c.type) + '" for "' + key + '" — scale, check or choice.' };
+      }
+      const entry = { key: key, label: label };
+      if (typeRaw === 'choice') {
+        const rawOpts = Array.isArray(c.options) ? c.options : String(c.options || '').split(',');
+        const trimmed = rawOpts.map(function (o) { return String(o == null ? '' : o).trim(); }).filter(Boolean);
+        for (let j = 0; j < trimmed.length; j++) {
+          if (trimmed[j].length > QA_CHOICE_OPTION_MAX_CHARS) return { success: false, error: 'Option "' + trimmed[j].substring(0, 20) + '…" for "' + key + '" is over ' + QA_CHOICE_OPTION_MAX_CHARS + ' characters.' };
+          if (qaOptionIsNumeric_(trimmed[j])) return { success: false, error: 'Option "' + trimmed[j] + '" for "' + key + '" is a bare number — dropdown options must be words, so an answer never reads as a 1–5 score.' };
+        }
+        const opts = qaChoiceOptionsSanitize_(trimmed);
+        if (opts.length !== trimmed.length) return { success: false, error: 'Duplicate option in "' + key + '".' };
+        if (opts.length < QA_CHOICE_OPTIONS_MIN || opts.length > QA_CHOICE_OPTIONS_MAX) {
+          return { success: false, error: 'Dropdown "' + key + '" needs ' + QA_CHOICE_OPTIONS_MIN + '–' + QA_CHOICE_OPTIONS_MAX + ' options (comma-separated).' };
+        }
+        entry.type = 'choice';
+        entry.options = opts;
+      } else if (typeRaw === 'check') {
+        entry.type = 'check';
+      }
       seen[key] = true;
-      clean.push({ key: key, label: label });
+      clean.push(entry);
     }
     const props = PropertiesService.getScriptProperties();
     if (JSON.stringify(clean) === JSON.stringify(QA_SCORECARD_CRITERIA)) {
@@ -28297,16 +28542,18 @@ function qaSaveScorecard(fileId, ratings, notes) {
     }
     const criteria = getQaScorecardCriteria_();
     const known = {};
-    criteria.forEach(function (c) { known[c.key] = true; });
+    criteria.forEach(function (c) { known[c.key] = c; });
     const clean = {};
     let count = 0;
     const keys = Object.keys(ratings);
     for (let i = 0; i < keys.length; i++) {
       const k = String(keys[i]).trim().toLowerCase();
       if (!known[k]) return { success: false, error: 'Scorecard criteria changed since this page loaded — reload and score again.' };
-      const v = parseInt(ratings[keys[i]], 10);
-      if (!(v >= 1 && v <= 5)) return { success: false, error: 'Ratings must be 1–5.' };
-      clean[k] = v; count++;
+      // Per TYPE (scale 1–5 / check yes-no / choice option) — a non-scale
+      // answer is stored NON-NUMERIC so every numeric fold stays type-blind.
+      const norm = qaRatingNormalize_(known[k], ratings[keys[i]]);
+      if (norm.error) return { success: false, error: norm.error };
+      clean[k] = norm.value; count++;
     }
     if (!count) return { success: false, error: 'Rate at least one criterion.' };
     const t = String(notes || '').trim();
@@ -28484,6 +28731,203 @@ function getQaStats() {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── QA Log (operator 2026-09-04) ─────────────────────────────────────────────
+// "One entry per call recording audited" — which is exactly what a scorecard
+// row already IS. The Log is therefore a reviewer-centred READ over the same
+// QaScorecards store (latest card per recording+reviewer, newest first), never
+// a second table; the one addition is the recording-less audit below.
+
+/** Is this FileId a recording-less (manual) audit's synthetic id? Such ids are
+ *  minted here, never by Drive, so the audio boundary refuses them by
+ *  construction (folder parentage fails) and the client skips the player. */
+function qaIsManualId_(fid) { return String(fid || '').indexOf(QA_MANUAL_ID_PREFIX) === 0; }
+
+/** The recording-less FALLBACK (operator: audits happen with a recording
+ *  attached, for posterity, but the fallback must exist). Appends a
+ *  QaRecordings row with a synthetic `manual-<uuid>` FileId, mime `manual`,
+ *  status in_review assigned to the CALLER, so every downstream read — the
+ *  scorecard, the coverage join, the stats fold, the Log — treats it as a
+ *  reviewed recording. QA-gated, locked, audit row id-only (the label may
+ *  name the caller/agent; it stays in the QA store — INV-32/196). */
+function qaCreateManualRecording(agentName, label) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const name = String(label || '').trim();
+    if (!name) return { success: false, error: 'Give the audit a label (e.g. the call date and caller).' };
+    if (name.length > QA_MANUAL_LABEL_MAX) return { success: false, error: 'Label is capped at ' + QA_MANUAL_LABEL_MAX + ' characters.' };
+    const agent = String(agentName || '').trim().substring(0, 80);
+    const fid = QA_MANUAL_ID_PREFIX + Utilities.getUuid();
+    const now = Date.now();
+    getOrCreateQaRecordingsSheet_().appendRow([
+      fid, name, 0, 'manual', now, now, 'in_review', String(emp.email || '').trim().toLowerCase(), now, '', agent, 0, 0, '',
+    ]);
+    writeAuditLog_(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' + fid, emp.email);
+    return { success: true, fileId: fid };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** PURE (Node-pinned) — the Log fold. latestCards: LATEST-per-(recording,
+ *  reviewer) cards; recs: {fileId → recording meta}; commentCounts: {fileId|
+ *  empId → active comment count}; reviewerEmpId: '' = every reviewer; from/to
+ *  = yyyy-MM-dd bounds (inclusive) compared against the card's day (a
+ *  manager-tz yyyy-MM-dd the caller supplies per card via dayOf). Returns
+ *  entries newest-first. A card whose recording is NOT indexed still lists
+ *  (the audit happened — INV-187), with the recording fields blank. */
+function qaLogEntries_(latestCards, recs, commentCounts, reviewerEmpId, from, to, dayOf) {
+  const out = [];
+  (latestCards || []).forEach(function (c) {
+    if (!c) return;
+    if (reviewerEmpId && String(c.empId) !== String(reviewerEmpId)) return;
+    const day = dayOf(Number(c.createdMs) || 0);
+    if (!day || day < from || day > to) return;
+    const r = (recs && recs[c.fileId]) || null;
+    const st = qaCardStats_(c);
+    out.push({
+      scorecardId: String(c.scorecardId || ''),
+      fileId: String(c.fileId || ''),
+      recordingName: r ? String(r.name || '') : '',
+      agent: r ? String(r.agent || '') : '',
+      agentEmpId: r ? String(r.agentEmpId || '') : '',
+      recordingStatus: r ? String(r.status || '') : '',
+      recordingCreatedMs: r ? Number(r.createdMs) || 0 : 0,
+      manual: qaIsManualId_(c.fileId),
+      indexed: !!r,
+      reviewerEmpId: String(c.empId || ''),
+      reviewerName: String(c.name || ''),
+      createdMs: Number(c.createdMs) || 0,
+      day: day,
+      ratings: c.ratings || {},
+      notes: String(c.notes || ''),
+      avg: st ? Math.round(st.avg * 10) / 10 : null,
+      comments: (commentCounts && commentCounts[String(c.fileId) + '|' + String(c.empId)]) || 0,
+    });
+  });
+  out.sort(function (a, b) { return b.createdMs - a.createdMs; });
+  return out;
+}
+
+/** The QA Log read. QA-gated; a NON-manager is scoped to their OWN entries
+ *  whatever `reviewer` says (managers see every reviewer's log — operator
+ *  decision); dates yyyy-MM-dd, span capped, default the trailing 30 days in
+ *  the manager tz. One bounded read each of recordings / scorecards /
+ *  comments; payload capped with the pre-slice total (INV-169). Also ships
+ *  the caller's OPEN assignments (the "Log an audit" picker) and the roster
+ *  names (the manual entry's agent datalist). */
+function getQaLog(opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    opts = (opts && typeof opts === 'object') ? opts : {};
+    const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const todayYmd = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+    let to = dayRe.test(String(opts.to || '')) ? String(opts.to) : todayYmd;
+    let from = dayRe.test(String(opts.from || '')) ? String(opts.from) : qaMsToYmd_(qaYmdMs_(to, tz) - (QA_LOG_DEFAULT_DAYS - 1) * 86400000);
+    if (from > to) { const t = from; from = to; to = t; }
+    const spanDays = Math.round((qaYmdMs_(to, tz) - qaYmdMs_(from, tz)) / 86400000) + 1;
+    if (!(spanDays >= 1) || spanDays > QA_LOG_MAX_SPAN_DAYS) {
+      return { error: 'The log range is at most ' + QA_LOG_MAX_SPAN_DAYS + ' days.' };
+    }
+    // Scope: a non-manager sees ONLY their own log, whatever they asked for.
+    const wantAll = String(opts.reviewer || '') === '*';
+    let reviewerEmpId = String(emp.id);
+    if (emp.isManager) reviewerEmpId = wantAll ? '' : (String(opts.reviewer || '').trim() || String(emp.id));
+    let storeSet = true;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const base = {
+      self: String(emp.id), selfName: String(emp.name || ''), isManager: !!emp.isManager,
+      reviewer: reviewerEmpId, from: from, to: to, todayYmd: todayYmd,
+      criteria: getQaScorecardCriteria_(), agentOptions: [],
+      entries: [], total: 0, cap: QA_LOG_CAP, reviewers: [], pending: [], truncated: false,
+    };
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (nm && base.agentOptions.indexOf(nm) < 0) base.agentOptions.push(nm);
+      }
+      base.agentOptions.sort();
+    } catch (e) { /* best-effort — the log still renders */ }
+    if (!storeSet) { base.notConfigured = true; return base; }
+    // Recordings (bounded tail) → meta by FileId + the caller's open assignments.
+    const recs = {};
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    const last = recSheet.getLastRow();
+    const selfEmail = String(emp.email || '').trim().toLowerCase();
+    let rosterIdByName = {};
+    try {
+      const rrows2 = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows2.length; i++) {
+        if (!empRosterEmail_(rrows2[i])) continue;
+        const nm = String(rrows2[i][EMP.NAME] || '').trim().toLowerCase();
+        if (nm && !rosterIdByName[nm]) rosterIdByName[nm] = String(rrows2[i][EMP.ID] || '').trim();
+      }
+    } catch (e) { rosterIdByName = {}; }
+    if (last >= 2) {
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      base.truncated = start > 2;
+      const rows = recSheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        const agent = String(rows[i][QAR.AGENT] || '').trim();
+        const status = qaStatus_(rows[i][QAR.STATUS]);
+        recs[fid] = { name: String(rows[i][QAR.NAME] || ''), agent: agent,
+                      agentEmpId: agent ? (rosterIdByName[agent.toLowerCase()] || '') : '',
+                      status: status, createdMs: Number(rows[i][QAR.CREATED_MS]) || 0 };
+        if ((status === 'new' || status === 'in_review') &&
+            String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase() === selfEmail && base.pending.length < QA_LOG_PENDING_CAP) {
+          base.pending.push({ fileId: fid, name: recs[fid].name, agent: agent, status: status, manual: qaIsManualId_(fid) });
+        }
+      }
+    }
+    const read = qaReadScorecards_(null);
+    base.truncated = base.truncated || read.truncated;
+    const latest = qaLatestScorecards_(read.cards);
+    // Reviewer picker (managers): every reviewer with a card, plus the caller.
+    const seenRev = {};
+    latest.forEach(function (c) {
+      const id = String(c.empId || '');
+      if (!id || seenRev[id]) return;
+      seenRev[id] = true;
+      base.reviewers.push({ empId: id, name: String(c.name || '') });
+    });
+    if (!seenRev[String(emp.id)]) base.reviewers.push({ empId: String(emp.id), name: String(emp.name || '') });
+    base.reviewers.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    // Active comment counts per (recording, reviewer) — decoration; a failed
+    // read leaves them at 0 rather than failing the log.
+    const commentCounts = {};
+    try {
+      const cs = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
+      if (cs && cs.getLastRow() >= 2) {
+        const cLast = cs.getLastRow();
+        const cStart = Math.max(2, cLast - QA_COMMENTS_SCAN + 1);
+        const cRows = cs.getRange(cStart, 1, cLast - cStart + 1, QA_COMMENTS_HEADERS.length).getValues();
+        for (let i = 0; i < cRows.length; i++) {
+          if (String(cRows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+          const k = String(cRows[i][QAC.FILE_ID] || '') + '|' + String(cRows[i][QAC.EMP_ID] || '');
+          commentCounts[k] = (commentCounts[k] || 0) + 1;
+        }
+      }
+    } catch (e) { /* counts are decoration */ }
+    const entries = qaLogEntries_(latest, recs, commentCounts, reviewerEmpId, from, to, function (ms) { return qaMsToYmd_(ms); });
+    base.entries = entries.slice(0, QA_LOG_CAP);
+    base.total = entries.length;
+    return base;
+  } catch (err) { return { error: err.message }; }
+}
+/** Midnight (manager tz) of a yyyy-MM-dd as epoch ms — the day arithmetic
+ *  the log's range uses; parsed in the tz the days are labelled in. */
+function qaYmdMs_(ymd, tz) {
+  return Utilities.parseDate(ymd + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+}
+
 // ── QA Phase 3 — sampling, calibration, agent-facing reviews ────────────────
 // The v1 "agents do not see their reviews" gate is REVISED here by operator
 // order (the Phase-3 scope): agents get a READ-ONLY "My Reviews" tab showing
@@ -28554,6 +28998,7 @@ function getMyQaReviews() {
           name: String(rows[i][QAR.NAME] || ''),
           createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
           sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
+          manual: qaIsManualId_(fid),
           scorecards: [], comments: [],
         });
       }

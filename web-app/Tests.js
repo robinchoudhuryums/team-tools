@@ -5314,6 +5314,7 @@ function test_managerGates_rejectNonManager() {
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
     // Break coverage planner (operator 2026-09-03) — a READ (bare {error}); the gate precedes any roster/CDR read.
     ['getBreakCoverage',               function () { return getBreakCoverage({ withVolume: false }); }],
+    ['updatePunchAdjustStatusBulk', function () { return updatePunchAdjustStatusBulk(['nonexistent'], 'Denied'); }],
     ['saveQaScorecardCriteria',        function () { return saveQaScorecardCriteria([{ key: 'greeting', label: 'Greeting' }]); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
@@ -5499,7 +5500,10 @@ function test_qa_gates_rejectNonMember() {
    ['qaSetRecordingShared', function () { return qaSetRecordingShared('x', true); }],
    ['qaSampleRecordings', function () { return qaSampleRecordings(3); }],
    // PR 5 — the duration write-back rides the same tier.
-   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }]]
+   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }],
+   // QA Log (2026-09-04) — the ledger read + the recording-less fallback.
+   ['getQaLog', function () { return getQaLog({}); }],
+   ['qaCreateManualRecording', function () { return qaCreateManualRecording('A Name', 'label'); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');

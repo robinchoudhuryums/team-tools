@@ -159,6 +159,14 @@ const SCENARIOS = [
   // QA Phase 2 — the per-agent stats table (mtRenderTable_ with dynamic
   // criterion columns; em dashes for null averages, the '(unassigned)' row).
   ['qa-stats-light-wide', { tool: 'qa', tab: 'qaStats' }, WIDE, 'light', ''],
+  // QA Log (operator 2026-09-04): the reviewer's ledger — day groups, a
+  // manual (recording-less) entry, Yes/No + dropdown chips, an unindexed
+  // recording; the empty twin and the cold failure per the C7 rule.
+  ['qa-log-light-wide', { tool: 'qa', tab: 'qaLog' }, WIDE, 'light', ''],
+  ['qa-log-light-mobile', { tool: 'qa', tab: 'qaLog' }, MOBILE, 'light', ''],
+  ['qa-log-empty-light-wide', { tool: 'qa', tab: 'qaLog' }, WIDE, 'light', '?fixture=empty'],
+  ['qa-log-error-light-wide', { tool: 'qa', tab: 'qaLog' }, WIDE, 'light', '?failrpc=getQaLog'],
+  ['qa-log-new-light-wide', { tool: 'qa', tab: 'qaLog' }, WIDE, 'light', '', "qaLogNew_()"],
   // QA Phase 3 — the agent-facing read-only My Reviews tab (canSeeQa-gated
   // since the 2026-08-28 operator decision; the persona here is a QA member).
   // The post hook presses Play on the first card, so the follow-on's
