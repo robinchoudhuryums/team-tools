@@ -1926,6 +1926,18 @@ test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, 
   assert.ok(chips.indexOf('Verified two identifiers No') >= 0 && chips.indexOf('Call outcome Escalated') >= 0 && chips.indexOf('Greeting 4') >= 0, 'typed answers render by label: ' + chips.join('|'));
   assert.strictEqual(cardEl.querySelector('.qa-sc-chip[data-tone="no"]').textContent, 'Verified two identifiers No', 'a No answer carries the destructive tone');
   assert.ok(h.$('#qa-log-body .qa-log-strip'), 'the derived summary strip rendered');
+  // Agent filter (2026-09-04 follow-on): a select over the loaded agents, refetch-free.
+  const agentSel = h.$('select[aria-label="Agent"]');
+  assert.ok(agentSel && agentSel.querySelector('option[value="Ana Reyes"]'), 'the agent select lists the loaded agent');
+  const logCount = () => h.run.calls.filter((c) => c.method === 'getQaLog').length;
+  const logCalls = logCount();
+  h.read('qaLogSetAgent_')('Nobody Here');
+  assert.strictEqual(h.$$('#qa-log-body .qa-log-card').length, 0, 'a non-matching agent hides every card');
+  assert.ok(/Nothing matches the current filter/.test(h.$('#qa-log-body').textContent), 'and says so (distinct from the empty-range state)');
+  h.read('qaLogSetAgent_')('ana reyes');
+  assert.strictEqual(h.$$('#qa-log-body .qa-log-card').length, 1, 'the match is case-insensitive');
+  h.read('qaLogSetAgent_')('');
+  assert.strictEqual(logCount(), logCalls, 'no refetch across three filter changes');
   h.read('qaLogOpen_')('manual-abc');   // jsdom never compiles inline onclick — call the handler
   h.flushTimers();
   assert.strictEqual(h.read('currentView'), 'qaQueue', 'opening an entry lands on the queue');
@@ -1958,6 +1970,29 @@ test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, 
   // jsdom-realm object: compare by JSON, never deepStrictEqual (prototype trap).
   assert.strictEqual(JSON.stringify(saved[0]), JSON.stringify(['manual-abc', { verified: 'no', outcome: 'Resolved', greeting: 5 }, 'Escalated correctly.']),
     'non-scale answers travel as STRINGS (never a number the type-blind folds could read as a score)');
+});
+
+test('INTK-EN-DOM: a form completed in Spanish still collects an ENGLISH-labelled payload (PPD + PMD), and records the completion language', () => {
+  const h = boot(); mount_(h, 'view-area');
+  const W = h.window;
+  W.INTAKE_STATE.ppd.lang = 'ES';
+  const p = W.intakeCollectPpd_();
+  assert.strictEqual(p.language, 'ES', 'the completion language is recorded');
+  const en = W.INTAKE_PPD_Q.EN.map((t) => String(t || '').trim()).filter(Boolean);
+  const es = W.INTAKE_PPD_Q.ES.map((t) => String(t || '').trim()).filter(Boolean);
+  const labels = p.rows.map((r) => r.label);
+  assert.ok(labels.length > 40, 'rows collected (' + labels.length + ')');
+  labels.slice(0, -2).forEach((l) => assert.ok(en.indexOf(l) >= 0, 'row label is from the EN bank: ' + l));
+  const esOnly = es.filter((t) => en.indexOf(t) < 0);
+  assert.ok(esOnly.length > 20, 'sanity: the ES bank really differs from EN');
+  labels.forEach((l) => assert.ok(esOnly.indexOf(l) < 0, 'no Spanish label reaches the payload: ' + l));
+  assert.strictEqual(labels[labels.length - 2], 'Additional Notes', 'the notes section title is English');
+  assert.strictEqual(labels[labels.length - 1], 'Additional notes (optional)', 'the notes label is English');
+  W.INTAKE_STATE.pmd.lang = 'ES';
+  const a = W.intakeCollectAcct_('pmd');
+  assert.strictEqual(a.language, 'ES');
+  const enPmd = W.INTAKE_PMD_Q.EN.map((t) => String(t || ''));
+  a.rows.forEach((r, i) => assert.strictEqual(r.label, enPmd[i], 'PMD row ' + i + ' carries the EN label'));
 });
 
 test('QA-20: the first keystroke pauses and PINS; the post sends the pin, not the drifted playhead', () => {

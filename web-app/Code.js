@@ -10170,7 +10170,7 @@ function buildCustomerEmailHtml_(recipientName, message, formNames, formLinks) {
     ? 'Dear ' + esc_(recipientName) + ','
     : 'Hello,';
   const messageBlock = message
-    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + cnNlBr_(esc_(message)) + '</p>'
     : '';
   let formsBlock = '';
   if (formNames.length > 0) {
@@ -10216,7 +10216,7 @@ function buildProviderEmailHtml_(recipientName, message, formNames, formLinks) {
     ? 'Dear ' + esc_(recipientName) + ','
     : 'To Whom It May Concern,';
   const messageBlock = message
-    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + cnNlBr_(esc_(message)) + '</p>'
     : '';
   let formsBlock = '';
   if (formNames.length > 0) {
@@ -11182,7 +11182,7 @@ function buildFormSubmissionTableHtml_(sanitizedData) {
       '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';font-weight:600;width:38%;color:' + P.brand + ';vertical-align:top;">' +
         esc_(humanizeFormFieldKey_(k)) + '</td>' +
       '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';color:' + P.ink + ';">' +
-        esc_(formatFormFieldValue_(sanitizedData[k])).replace(/\n/g, '<br>') + '</td>' +
+        cnNlBr_(esc_(formatFormFieldValue_(sanitizedData[k]))) + '</td>' +
     '</tr>';
   }).join('');
   return '<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ' + P.line + ';border-radius:6px;overflow:hidden;">' +
@@ -11567,6 +11567,15 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   }
   archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(block);
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
+  // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
+  // delete all non-frozen rows" — the _clearTestCallNotes lesson). A run whose
+  // cutoff covers the whole tab on a grid with no spare rows would throw on
+  // the LAST delete, after the archive append had landed, and the per-rep
+  // catch would then skip that rep's archive forever. Keep one spare row so
+  // the final delete is never "all non-frozen rows" (2026-09-04 follow-on).
+  if (toDelete.length && toDelete.length >= srcSheet.getMaxRows() - headerRows) {
+    srcSheet.insertRowAfter(srcSheet.getMaxRows());
+  }
   for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
   return toMoveRows.length;
 }
@@ -18669,6 +18678,23 @@ function metricsParsePercent_(s) {
  *  for each date in `dates` it averages valueKey over the reps that reported,
  *  returning { date, cohort, avg } with avg=null when cohort < minCohort so a
  *  small team can't be back-solved to an individual. Pinned by a Node test. */
+/** PURE (Node-pinned) — the yyyy-MM-dd WORKDAYS (Mon–Fri, UTC-noon anchored
+ *  like every metrics date walk) from `fromIso` to `toIso` inclusive. The
+ *  Metrics trends walk THIS instead of every calendar day (operator 2026-09-03
+ *  follow-on, shipped 2026-09-04): CDR carries no weekend rows, so a calendar
+ *  walk rendered two gaps per week on every sparkline. Weekends only — the
+ *  manager trends (mgrWorkdaysEnding_) draw the same line. A reversed range
+ *  yields []. */
+function metricsWorkdayIsos_(fromIso, toIso) {
+  const out = [];
+  const endD = new Date(toIso + 'T12:00:00Z');
+  for (let d = new Date(fromIso + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    out.push(isoFromUtc_(d));
+  }
+  return out;
+}
 function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
   const min = minCohort || 3;
   return (dates || []).map(function (d) {
@@ -19531,7 +19557,7 @@ function getMyMetrics(date) {
     // coverage strip — a just-filed note surfaces within the TTL. Keyed by
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
-    var myCacheKey = 'metrics_my_v1:' + emp.id + ':' + date;
+    var myCacheKey = 'metrics_my_v2:' + emp.id + ':' + date;   // v2: workday-only trend/series (INV-85)
     // Bypass the endpoint cache whenever a test points the CDR reader at a
     // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
     // entry from a prior fixture read would mask a later test's CDR state
@@ -19573,9 +19599,9 @@ function getMyMetrics(date) {
     var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
     var todayCdr = todayResult.agents[emp.name] || null;
 
-    // Date axis for the 30-day window.
-    var dates = [];
-    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) dates.push(isoFromUtc_(d));
+    // Date axis for the 30-day window — WORKDAYS only (weekends carry no CDR
+    // rows and rendered as gaps).
+    var dates = metricsWorkdayIsos_(trendFrom, trendTo);
 
     // Legacy own % Answered trend (back-compat for the current client) — now
     // sourced from the rep's own row in the all-reps perRepDaily matrix.
@@ -19868,7 +19894,7 @@ function getMyMetricsRange(from, to) {
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v1:' + emp.id + ':' + from + ':' + to;
+    var rangeKey = 'metrics_range_v2:' + emp.id + ':' + from + ':' + to;   // v2: workday-only trend (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -19891,9 +19917,7 @@ function getMyMetricsRange(from, to) {
     try {
       var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
       var prd = (bd && bd.perRepDaily) || {};
-      var endD = new Date(to + 'T12:00:00Z');
-      for (var d = new Date(from + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
-        var iso = isoFromUtc_(d);
+      metricsWorkdayIsos_(from, to).forEach(function (iso) {   // workdays only
         var own = prd[iso] && prd[iso][emp.name];
         trend.push({
           date: iso,
@@ -19901,7 +19925,7 @@ function getMyMetricsRange(from, to) {
           answered: own ? own.answered : 0,
           missed: own ? own.missed : 0,
         });
-      }
+      });
     } catch (e) { trend = []; trendFailed = true; }
 
     // #5 (operator 2026-08-06) — own transfer aggregate over the range.
@@ -20012,7 +20036,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // enrolled REP as the whitelist-built aggregate (INV-66). The threat model
     // changed and the cap did not follow: a rep could ask for a decade, driving
     // the full cross-rep note walk plus a per-day CDR breakdown, and mint
-    // arbitrarily many distinct org-wide cache keys (`team_metrics_v1:<from>:<to>`)
+    // arbitrarily many distinct org-wide cache keys (`team_metrics_v2:<from>:<to>`)
     // that evict managers' warm entries LRU. 92 matches getMyMetricsRange —
     // the same window the multi-day trend below already refuses to exceed.
     var teamSpanDays = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
@@ -20024,7 +20048,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v1:' + from + ':' + toDate;
+    var teamCacheKey = 'team_metrics_v2:' + from + ':' + toDate;   // v2: workday-only trend (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -20069,8 +20093,7 @@ function getTeamMetrics(dateOrFrom, to) {
       var trendFrom = isoFromUtc_(startD);
       var trendBreakdown = getCdrDailyBreakdown_(trendFrom, from, rosterNames);
       trendData = [];
-      for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
-        var iso = isoFromUtc_(d);
+      metricsWorkdayIsos_(trendFrom, from).forEach(function (iso) {   // workdays only
         var day = trendBreakdown.daily[iso];
         trendData.push({
           date: iso,
@@ -20079,7 +20102,7 @@ function getTeamMetrics(dateOrFrom, to) {
           answered: day ? day.answered : 0,
           missed: day ? day.missed : 0,
         });
-      }
+      });
     } else {
       // #8 (operator 2026-08-06) — per-day TEAM trend over the selected range,
       // so a multi-day range gets the hero sparkline instead of a bare number.
@@ -20094,9 +20117,7 @@ function getTeamMetrics(dateOrFrom, to) {
         try {
           var rangeBreakdown = getCdrDailyBreakdown_(from, toDate, rosterNames);
           trendData = [];
-          var rEndD = new Date(toDate + 'T12:00:00Z');
-          for (var rd = new Date(from + 'T12:00:00Z'); rd <= rEndD; rd.setUTCDate(rd.getUTCDate() + 1)) {
-            var rIso = isoFromUtc_(rd);
+          metricsWorkdayIsos_(from, toDate).forEach(function (rIso) {   // workdays only
             var rDay = rangeBreakdown.daily[rIso];
             trendData.push({
               date: rIso,
@@ -20105,7 +20126,7 @@ function getTeamMetrics(dateOrFrom, to) {
               answered: rDay ? rDay.answered : 0,
               missed: rDay ? rDay.missed : 0,
             });
-          }
+          });
         } catch (eRt) { trendData = null; }
       }
     }
