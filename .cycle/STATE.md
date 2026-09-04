@@ -376,8 +376,8 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, late). Branch `claude/ums-team-tools-design-r8ar3o` carries
-(NOT PR'd — the operator has not asked): the boot-timing beacon + QA waveform
+CURRENT (2026-09-04, late). **PR #228 MERGED** (squash, CI green) — it carried
+the five commits below; the branch is reset onto main. Those were: the boot-timing beacon + QA waveform
 icon (`c057894`) and the **QA Log round** (`3f9c359` + the docs commit) —
 `getQaLog` + the pure `qaLogEntries_` over the scorecard store, typed rubric
 criteria (`type`: scale/check/choice, non-numeric storage rule, `qaRatingNormalize_`,
