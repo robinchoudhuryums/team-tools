@@ -12004,7 +12004,14 @@ function cnRenderAdminBody_(cfg) {
       var key = (rows[i].querySelector('.cn-qacrit-key').value || '').trim();
       var label = (rows[i].querySelector('.cn-qacrit-label').value || '').trim();
       if (!key && !label) continue;               // fully blank row — ignore
-      list.push({ key: key, label: label });
+      var typeEl = rows[i].querySelector('.cn-qacrit-type');
+      var type = typeEl ? typeEl.value : 'scale';
+      var entry = { key: key, label: label, type: type };
+      if (type === 'choice') {
+        var optEl = rows[i].querySelector('.cn-qacrit-options');
+        entry.options = String((optEl && optEl.value) || '').split(',').map(function (o) { return o.trim(); }).filter(Boolean);
+      }
+      list.push(entry);
     }
     if (!list.length) { showToast('Add at least one criterion', 'toast-warn'); return; }
     btn.disabled = true; btn.textContent = 'Saving…';
@@ -12115,14 +12122,30 @@ function cnRenderSpanishMemberChips_(members) {
 // Key + label inputs over getAdminConfig.qaCriteria.live. Keys are the JOIN
 // column for stored ratings (scorecards + the stats fold read by key), which
 // is why the card copy steers renames toward add/remove instead.
+// Rubric TYPES (operator 2026-09-04): scale 1–5 (the default; absent `type`
+// on the wire), check (Yes/No) and choice (a dropdown over comma-separated
+// options — words, never bare numbers: a numeric option would read as a 1–5
+// score in the type-blind stats folds, and the server refuses it by name).
+var CN_QACRIT_TYPES = [['scale', 'Scale 1–5'], ['check', 'Yes / No'], ['choice', 'Dropdown']];
 function cnRenderQaCritRows_(list) {
+  var inp = 'font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink)';
   return (list || []).map(function (c) {
+    var type = (c.type === 'check' || c.type === 'choice') ? c.type : 'scale';
     return '<div class="cn-qacrit-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">' +
-      '<input class="cn-qacrit-key" value="' + esc(c.key || '') + '" aria-label="Criterion key" placeholder="key (e.g. greeting)" style="font:inherit;font-size:12px;font-family:var(--mono);padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);width:170px">' +
-      '<input class="cn-qacrit-label" value="' + esc(c.label || '') + '" aria-label="Criterion label" placeholder="Label reviewers see" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);flex:1;min-width:220px">' +
+      '<input class="cn-qacrit-key" value="' + esc(c.key || '') + '" aria-label="Criterion key" placeholder="key (e.g. greeting)" style="' + inp + ';font-family:var(--mono);width:150px">' +
+      '<input class="cn-qacrit-label" value="' + esc(c.label || '') + '" aria-label="Criterion label" placeholder="Label reviewers see" style="' + inp + ';flex:1;min-width:200px">' +
+      '<select class="cn-qacrit-type" aria-label="Criterion type" onchange="cnQaCritTypeChanged_(this)" style="' + inp + '">' +
+        CN_QACRIT_TYPES.map(function (t) { return '<option value="' + t[0] + '"' + (t[0] === type ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') +
+      '</select>' +
+      '<input class="cn-qacrit-options" value="' + esc((c.options || []).join(', ')) + '" aria-label="Dropdown options, comma-separated" placeholder="options, comma-separated" style="' + inp + ';flex:1;min-width:200px"' + (type === 'choice' ? '' : ' hidden') + '>' +
       '<button type="button" class="cn-brk-x" aria-label="Remove criterion" onclick="this.closest(\'.cn-qacrit-row\').remove()">' + icon('x', 12) + '</button>' +
       '</div>';
   }).join('');
+}
+function cnQaCritTypeChanged_(sel) {
+  var row = sel.closest('.cn-qacrit-row');
+  var opts = row && row.querySelector('.cn-qacrit-options');
+  if (opts) opts.hidden = sel.value !== 'choice';
 }
 
 function cnRenderBreakSchedEditor_(bs) {

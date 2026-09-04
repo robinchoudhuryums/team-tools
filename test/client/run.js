@@ -13985,6 +13985,8 @@ test('QA-9: scorecard save contract — criteria sanitize, reject-unknown-key, t
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
   const ctx = {};
   vm.createContext(ctx);
+  vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40;", ctx);
+  ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
   vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
   const S = ctx.qaCriteriaSanitize_;
   assert.strictEqual(S('x'), null, 'non-array → null (the CONFIG seed applies)');
@@ -14000,7 +14002,8 @@ test('QA-9: scorecard save contract — criteria sanitize, reject-unknown-key, t
   // misrepresent the review (INV-96 posture) — an unknown key REFUSES by name.
   const rejIdx = save.indexOf('criteria changed since this page loaded');
   assert.ok(rejIdx >= 0, 'an unknown ratings key is REJECTED by name, never whitelist-dropped');
-  assert.ok(/Ratings must be 1–5\./.test(save), 'rating bounds enforced');
+  assert.ok(/qaRatingNormalize_\(known\[k\], ratings\[keys\[i\]\]\)/.test(save) && /Ratings must be 1–5/.test(nc(extractRawFunction('Code.js', 'qaRatingNormalize_'))),
+    'rating bounds enforced — per TYPE, through the one normalizer (QA Log round, 2026-09-04)');
   assert.ok(save.indexOf('Notes are capped at') >= 0, 'over-cap notes REFUSE with the count (INV-96)');
   const existsIdx = save.indexOf('qaFindRecordingRow_(recSheet, fid)');
   const appendIdx = save.indexOf('.appendRow([');
@@ -14061,7 +14064,7 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   // Rating buttons expose state; a rating click on the selected value
   // UNSELECTS (the intake pattern); stats nulls render em dashes.
   assert.ok(/qa-rate-btn" aria-pressed="/.test(qaSrc), 'rating buttons carry aria-pressed (A11/INV-174)');
-  assert.ok(/if \(QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qaSrc), 'selected-rating click unselects');
+  assert.ok(/if \(v === '' \|\| v == null \|\| QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qaSrc), 'selected-rating click unselects (and a dropdown\'s blank option clears)');
   assert.ok(/r\.avgScore == null \? '—'/.test(qaSrc), 'a missing average is an em dash, never 0 (INV-187)');
   // The stats tab rides the same third-tier gate flag as the queue.
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -14326,6 +14329,8 @@ test('QA-15: saveQaScorecardCriteria behavioral — gate, named errors, delete-o
       JSON: JSON,
     };
     vm.createContext(ctx);
+    vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40;", ctx);
+    ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
     vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
     vm.runInContext(extractRawFunction('Code.js', 'getQaScorecardCriteria_'), ctx);
     vm.runInContext(extractRawFunction('Code.js', 'saveQaScorecardCriteria'), ctx);
@@ -16848,7 +16853,8 @@ test('QA-23: PR 5 client wiring — period control + pref, coverage-derived stri
   assert.ok(/qaRenderTransportFor_\(el\.querySelector\('\.qa-transport'\), el\.querySelector\('audio'\), \{ speed: 1 \}\)/.test(play), 'My Reviews gets the same transport, per-card speed');
   assert.ok(/qa-score-anchors/.test(qa) && /running avg /.test(qa), 'scorecard anchors + running average');
   const list = nc(extractFnFrom(qa, 'qaScorecardListHtml_'));
-  assert.ok((list.match(/qaScoreTone_\(/g) || []).length >= 2, 'chips + the per-card average are toned by the shared rule');
+  assert.ok(/qaScoreTone_\(avg\)/.test(list) && /qaRatingChipsHtml_\(c\.ratings, criteria\)/.test(list) && /qaScoreTone_\(v\)/.test(nc(extractFnFrom(qa, 'qaRatingChipsHtml_'))),
+    'chips + the per-card average are toned by the shared rule (chips through the ONE typed builder since the QA Log round)');
   assert.ok(/qa-callout/.test(nc(extractFnFrom(qa, 'qaRenderMyReviews_'))), 'My Reviews leads with the read-only callout');
   // (f) Q7 hand-off: manager-only, needs a ROSTER id, parks COACH_PREFILL
   // (empId + qaFileId + the comments as the narrative) then enters coaching.
@@ -17289,6 +17295,259 @@ test('OPS-4: MAIL_BCC_ALL rides every send through ONE seam and never clobbers o
   assert.ok(/const merged = mailMergeBcc_\(Object\.assign\(\{\}, opts, repSenderOpts_\(emp\)\)\);/.test(code), 'the rep-identity wrapper merges it too (both branches share `merged`)');
 });
 
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QA Log + typed rubric criteria (operator 2026-09-04) — QA-24..QA-27.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nQA Log (operator 2026-09-04) — typed criteria, the log fold, the manual fallback, the client');
+
+const qaLogNc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const qaLogTypesCtx = () => {
+  const ctx = { JSON: JSON };
+  vm.createContext(ctx);
+  vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40; const QA_CHECK_YES = 'yes'; const QA_CHECK_NO = 'no';", ctx);
+  ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_', 'qaRatingNormalize_', 'qaCriteriaSanitize_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  return ctx;
+};
+
+test('QA-24: criterion types — canonical shape, non-numeric option rule, the normalizer by type, strict save names each refusal', () => {
+  const ctx = qaLogTypesCtx();
+  // Type reading: absent/unknown = scale, so every pre-existing criterion is unchanged.
+  assert.strictEqual(ctx.qaCritType_({ key: 'a' }), 'scale');
+  assert.strictEqual(ctx.qaCritType_({ type: ' CHECK ' }), 'check');
+  assert.strictEqual(ctx.qaCritType_({ type: 'bogus' }), 'scale');
+  // Sanitize keeps the canonical shape: `type` only when not scale, `options`
+  // only for choice — the seed and every stored blob stay byte-identical.
+  const clean = ctx.qaCriteriaSanitize_([
+    { key: 'greeting', label: 'Greeting', type: 'scale' },
+    { key: 'verified', label: 'Verified', type: 'check' },
+    { key: 'outcome', label: 'Outcome', type: 'choice', options: [' Resolved ', 'resolved', 'Escalated', '3'] },
+    { key: 'thin', label: 'Thin', type: 'choice', options: ['Only one'] },
+  ]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(clean)), [
+    { key: 'greeting', label: 'Greeting' },
+    { key: 'verified', label: 'Verified', type: 'check' },
+    { key: 'outcome', label: 'Outcome', type: 'choice', options: ['Resolved', 'Escalated'] },
+  ], 'scale carries no type key; options trimmed + deduped ci + the bare number dropped; a choice with <2 usable options is DROPPED, never demoted to a scale');
+  assert.strictEqual(ctx.qaCriteriaSanitize_([{ key: 'x1', label: 'X', type: 'choice', options: ['1', '2'] }]), null,
+    'numeric-only options leave nothing usable → the list is null (falls back to the seed)');
+  // The storage rule the type-blind folds rest on: a stored non-scale answer
+  // is NEVER a bare 1–5 number, so qaCardStats_ cannot read it as a score.
+  const N = ctx.qaRatingNormalize_;
+  // Compare by JSON — a vm-realm object fails deepStrictEqual on prototype alone.
+  const J = (x) => JSON.stringify(x);
+  assert.strictEqual(J(N({ key: 's', label: 'Scale' }, 4)), J({ value: 4 }));
+  assert.strictEqual(J(N({ key: 's', label: 'Scale' }, '4')), J({ value: 4 }));
+  assert.ok(/Ratings must be 1–5 \(Scale\)/.test(N({ key: 's', label: 'Scale' }, 6).error));
+  assert.ok(/Ratings must be 1–5/.test(N({ key: 's', label: 'Scale' }, '4.5').error), 'a fractional scale is refused (strict integer)');
+  assert.ok(/Ratings must be 1–5/.test(N({ key: 's', label: 'Scale' }, 'yes').error), 'a check answer on a scale criterion is refused, not coerced');
+  assert.strictEqual(J(N({ key: 'c', label: 'Check', type: 'check' }, true)), J({ value: 'yes' }));
+  assert.strictEqual(J(N({ key: 'c', label: 'Check', type: 'check' }, ' NO ')), J({ value: 'no' }));
+  assert.strictEqual(J(N({ key: 'c', label: 'Check', type: 'check' }, 0)), J({ value: 'no' }));
+  assert.ok(/Check takes Yes or No/.test(N({ key: 'c', label: 'Check', type: 'check' }, 'maybe').error));
+  const ch = { key: 'o', label: 'Outcome', type: 'choice', options: ['Resolved', 'Escalated'] };
+  assert.strictEqual(J(N(ch, ' escalated ')), J({ value: 'Escalated' }), 'a choice is matched ci and stored in the criterion\'s OWN spelling');
+  assert.ok(/Outcome must be one of: Resolved, Escalated\./.test(N(ch, 'Resolvd').error), 'an off-list choice is refused by name');
+  assert.ok(N(ch, 3).error, 'a number on a choice criterion is refused');
+  // Strict save: every refusal is NAMED, nothing written on a reject, and an
+  // accepted typed save round-trips through the lenient read unchanged.
+  const props = {};
+  const sctx = {
+    getEmployeeInfo_: () => ({ isAdmin: true, isManager: true, email: 'a@x.com' }),
+    PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, deleteProperty: (k) => { delete props[k]; }, getProperty: (k) => props[k] || null }) },
+    writeAuditLog_: () => {}, JSON: JSON,
+    QA_SCORECARD_CRITERIA: [{ key: 'greeting', label: 'Greeting' }],
+  };
+  vm.createContext(sctx);
+  vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40;", sctx);
+  ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_', 'qaCriteriaSanitize_', 'getQaScorecardCriteria_', 'saveQaScorecardCriteria'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), sctx));
+  const S = sctx.saveQaScorecardCriteria;
+  assert.ok(/Unknown type "grade" for "a1"/.test(S([{ key: 'a1', label: 'A', type: 'grade' }]).error));
+  assert.ok(/is a bare number — dropdown options must be words/.test(S([{ key: 'a1', label: 'A', type: 'choice', options: 'Yes, 3' }]).error),
+    'a numeric option is refused BY NAME at save (the lenient read would silently drop it)');
+  assert.ok(/needs 2–12 options/.test(S([{ key: 'a1', label: 'A', type: 'choice', options: 'Solo' }]).error));
+  assert.ok(/Duplicate option in "a1"/.test(S([{ key: 'a1', label: 'A', type: 'choice', options: ['Yes', 'yes'] }]).error));
+  assert.ok(!('QA_SCORECARD_CRITERIA' in props), 'nothing written on any reject');
+  const ok = S([{ key: 'greeting', label: 'Greeting' }, { key: 'verified', label: 'Verified', type: 'CHECK' }, { key: 'outcome', label: 'Outcome', type: 'choice', options: 'Resolved, Escalated' }]);
+  assert.ok(ok.success, 'a typed save is accepted (comma-string options parsed)');
+  const stored = JSON.parse(props.QA_SCORECARD_CRITERIA);
+  assert.strictEqual(J(stored[1]), J({ key: 'verified', label: 'Verified', type: 'check' }));
+  assert.strictEqual(J(stored[2]), J({ key: 'outcome', label: 'Outcome', type: 'choice', options: ['Resolved', 'Escalated'] }));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sctx.qaCriteriaSanitize_(stored))), stored, 'strict-save ⇒ lenient-read round-trip holds for typed criteria');
+  // Wiring: qaSaveScorecard normalizes EVERY rating through the typed
+  // normalizer (never the old bare 1–5 parse), and refuses by name.
+  const save = qaLogNc(extractRawFunction('Code.js', 'qaSaveScorecard'));
+  assert.ok(/qaRatingNormalize_\(known\[k\], ratings\[keys\[i\]\]\)/.test(save), 'qaSaveScorecard routes each rating through qaRatingNormalize_');
+  assert.ok(!/Ratings must be 1–5/.test(save), 'the 1–5 message lives in the normalizer, not a second inline check');
+  // The type-blind folds are UNCHANGED — the storage rule is what keeps them correct.
+  const stats = qaLogNc(extractRawFunction('Code.js', 'qaCardStats_'));
+  assert.ok(/v >= 1 && v <= 5/.test(stats) && !/type/.test(stats), 'qaCardStats_ still reads only 1–5 numbers and knows nothing of types');
+  // Admin editor: a type select per row + an options field shown only for choice.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/CN_QACRIT_TYPES = \[\['scale'.*\['check'.*\['choice'/.test(cn), 'the editor offers exactly the three server types');
+  assert.ok(/class="cn-qacrit-type"[^>]*onchange="cnQaCritTypeChanged_\(this\)"/.test(cn), 'a type select per row');
+  assert.ok(/class="cn-qacrit-options"[\s\S]{0,400}\(type === 'choice' \? '' : ' hidden'\)/.test(cn), 'the options field is hidden unless the type is choice');
+});
+
+test('QA-25: qaLogEntries_ behavioural — reviewer scope, day window, unindexed kept, avg null-never-0, comment counts, newest-first', () => {
+  const ctx = { JSON: JSON };
+  vm.createContext(ctx);
+  vm.runInContext("const QA_MANUAL_ID_PREFIX = 'manual-';", ctx);
+  ['qaIsManualId_', 'qaCardStats_', 'qaLogEntries_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  const day = 86400000;
+  const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const t0 = Date.UTC(2026, 8, 4, 12);   // 2026-09-04 noon UTC
+  const cards = [
+    { scorecardId: 'sc1', fileId: 'f1', empId: 'E-1', name: 'Ana', createdMs: t0, ratings: { g: 5, v: 'yes', o: 'Resolved' }, notes: 'n1' },
+    { scorecardId: 'sc2', fileId: 'f2', empId: 'E-2', name: 'Bo', createdMs: t0 - day, ratings: { g: 3, a: 2 }, notes: '' },
+    { scorecardId: 'sc3', fileId: 'manual-x', empId: 'E-1', name: 'Ana', createdMs: t0 - 2 * day, ratings: { v: 'no' }, notes: '' },
+    { scorecardId: 'sc4', fileId: 'gone', empId: 'E-1', name: 'Ana', createdMs: t0 - 3 * day, ratings: { g: 4 }, notes: 'removed' },
+    { scorecardId: 'sc5', fileId: 'f1', empId: 'E-1', name: 'Ana', createdMs: t0 - 40 * day, ratings: { g: 1 }, notes: 'old' },
+    null,
+  ];
+  const recs = {
+    f1: { name: 'call one.mp3', agent: 'Ana Reyes', agentEmpId: 'E-1088', status: 'done', createdMs: t0 - 3600000 },
+    f2: { name: 'call two.mp3', agent: '', agentEmpId: '', status: 'in_review', createdMs: t0 - day - 3600000 },
+    'manual-x': { name: 'Live-monitored', agent: 'Sam', agentEmpId: '', status: 'in_review', createdMs: t0 - 2 * day },
+  };
+  const counts = { 'f1|E-1': 2, 'f2|E-2': 1, 'f1|E-9': 7 };
+  const all = ctx.qaLogEntries_(cards, recs, counts, '', dayOf(t0 - 30 * day), dayOf(t0), dayOf);
+  // vm-realm arrays: compare by value (.join), never deepStrictEqual.
+  assert.strictEqual(all.map((e) => e.scorecardId).join('|'), 'sc1|sc2|sc3|sc4', 'every reviewer, inside the window, newest first; the 40-day-old card is outside; a null card is skipped');
+  assert.strictEqual(all[0].comments, 2, 'comment count keyed by (recording, reviewer) — another reviewer\'s 7 comments do not count');
+  assert.strictEqual(all[0].avg, 5, 'avg over the 1–5 answers only');
+  assert.strictEqual(JSON.stringify(all[0].ratings), JSON.stringify({ g: 5, v: 'yes', o: 'Resolved' }), 'typed answers ride the entry verbatim');
+  assert.strictEqual(all[0].agentEmpId, 'E-1088');
+  assert.strictEqual(all[1].avg, 2.5, 'a 3 and a 2 average 2.5');
+  assert.strictEqual(all[2].manual, true, 'a manual- id flags the entry');
+  assert.strictEqual(all[2].avg, null, 'a card with only a check answer has NO scale average — null, never 0');
+  const gone = all[3];
+  assert.strictEqual(gone.indexed, false, 'a card whose recording is no longer indexed still LISTS (the audit happened — INV-187)');
+  assert.strictEqual(gone.recordingName, '', 'with blank recording fields');
+  assert.strictEqual(gone.notes, 'removed');
+  const mine = ctx.qaLogEntries_(cards, recs, counts, 'E-1', dayOf(t0 - 30 * day), dayOf(t0), dayOf);
+  assert.strictEqual(mine.map((e) => e.scorecardId).join('|'), 'sc1|sc3|sc4', 'a reviewer scope keeps only that reviewer\'s cards');
+  const narrow = ctx.qaLogEntries_(cards, recs, counts, '', dayOf(t0 - day), dayOf(t0 - day), dayOf);
+  assert.strictEqual(narrow.map((e) => e.scorecardId).join('|'), 'sc2', 'the day window is INCLUSIVE on both ends');
+});
+
+test('QA-26: getQaLog + qaCreateManualRecording contracts — gate shape, self-scope for non-managers, span cap, pre-slice total, manual row shape + id-only audit, the audio boundary refuses a manual id', () => {
+  const log = qaLogNc(extractRawFunction('Code.js', 'getQaLog'));
+  assert.ok(/if \(!emp \|\| !canSeeQa_\(emp\)\) return \{ error: 'QA access required\.' \};/.test(log), 'QA-gated with the bare {error} READ shape');
+  assert.ok(log.indexOf('canSeeQa_(emp)') < log.indexOf('getOrCreateQaRecordingsSheet_'), 'gate before any store access');
+  assert.ok(/let reviewerEmpId = String\(emp\.id\);\s*if \(emp\.isManager\) reviewerEmpId = wantAll \? '' : /.test(log),
+    'a NON-manager is scoped to SELF whatever `reviewer` says; only a manager may widen to all (\'*\') or another reviewer');
+  assert.ok(/spanDays > QA_LOG_MAX_SPAN_DAYS/.test(log) && /The log range is at most/.test(log), 'span cap refused by name');
+  assert.ok(/base\.entries = entries\.slice\(0, QA_LOG_CAP\);\s*base\.total = entries\.length;/.test(log), 'payload capped with the pre-slice total (INV-169)');
+  assert.ok(/if \(!empRosterEmail_\(rrows\[i\]\)\) continue;/.test(log), 'the agent datalist walks the roster through the ONE predicate (INV-183)');
+  assert.ok(/base\.notConfigured = true; return base;/.test(log), 'an unset store returns a friendly not-configured payload, never a throw');
+  assert.ok(/catch \(e\) \{[^}]*\}/.test(log) && /commentCounts\[k\] = \(commentCounts\[k\] \|\| 0\) \+ 1/.test(log), 'comment counts are decoration — a failed read leaves them at 0');
+  assert.ok(/qaLogEntries_\(latest, recs, commentCounts, reviewerEmpId, from, to,/.test(log), 'the fold runs over the LATEST-per-(recording, reviewer) cards');
+  assert.ok(/base\.pending\.length < QA_LOG_PENDING_CAP/.test(log) && /status === 'new' \|\| status === 'in_review'/.test(log), 'the picker lists only the caller\'s OPEN assignments, capped');
+  // Manual fallback: a synthetic id the Drive boundary can never resolve.
+  const man = qaLogNc(extractRawFunction('Code.js', 'qaCreateManualRecording'));
+  assert.ok(/if \(!emp \|\| !canSeeQa_\(emp\)\) return \{ success: false, error: 'QA access required\.' \};/.test(man), 'QA-gated (write shape)');
+  assert.ok(/lock\.waitLock\(15000\)/.test(man) && /finally \{ lock\.releaseLock\(\); \}/.test(man), 'locked (INV-01)');
+  assert.ok(/Give the audit a label/.test(man) && /Label is capped at/.test(man), 'label required + capped, by name');
+  assert.ok(/const fid = QA_MANUAL_ID_PREFIX \+ Utilities\.getUuid\(\);/.test(man), 'the id is minted here — never a Drive id');
+  assert.ok(/appendRow\(\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\)/.test(man),
+    'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed, unshared, no duration/skip');
+  assert.ok(/writeAuditLog_\(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' \+ fid, emp\.email\);/.test(man), 'audit row is id-only — the label may name a caller (INV-32/196)');
+  assert.ok(!/name/.test(man.slice(man.indexOf("writeAuditLog_"), man.indexOf("writeAuditLog_") + 120)), 'the label never reaches the audit note');
+  const pfx = /const QA_MANUAL_ID_PREFIX = 'manual-';/.test(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.ok(pfx, 'the prefix is the named constant');
+  assert.ok(/^function qaIsManualId_\(fid\) \{ return String\(fid \|\| ''\)\.indexOf\(QA_MANUAL_ID_PREFIX\) === 0; \}/m.test(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')), 'ONE predicate for manual ids');
+  // The `manual` flag rides every surface that lists a recording, so no
+  // client reaches for the player on a recording-less audit.
+  const queue = qaLogNc(extractRawFunction('Code.js', 'getQaQueue'));
+  const mine = qaLogNc(extractRawFunction('Code.js', 'getMyQaReviews'));
+  assert.ok(/manual: qaIsManualId_\(fid\),/.test(queue), 'queue items carry manual');
+  assert.ok(/manual: qaIsManualId_\(/.test(mine), 'My Reviews rows carry manual');
+  // The audio boundary: a manual id is not a Drive id, so folder parentage
+  // fails BEFORE any bytes — no special case needed, and none must be added.
+  const audio = qaLogNc(extractRawFunction('Code.js', 'qaAudioChunkFor_'));
+  assert.ok(!/manual/i.test(audio), 'qaAudioChunkFor_ carries NO manual branch — the folder check refuses it by construction');
+  // Tests.js gate cases exist for both endpoints.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['getQaLog', function \(\) \{ return getQaLog\(\{\}\); \}\]/.test(tests) && /\['qaCreateManualRecording', function/.test(tests), 'both endpoints are in the QA gate case set');
+});
+
+test('QA-27: QA Log client — registry entry, shared range control, seq/view guards + errorStateHtml_, refetch-free search, derived strip, manual pill + no player, named dialog, scenarios + derived fixture keys', () => {
+  const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  const qan = qaLogNc(qa);
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  assert.ok(/qaLog: \{ label: 'Log', icon: 'list', enter: 'enterQaLogView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
+    'the Log tab sits beside the reviewer tabs under the SAME gate (operator decision 13 holds — agents see none of it)');
+  // Loader discipline (INV-146/156 + INV-175).
+  const load = qan.slice(qan.indexOf('function qaLogLoad_()'), qan.indexOf('function qaLogRender_()'));
+  assert.strictEqual((load.match(/currentView !== requestedView \|\| QA_STATE\.log\.seq !== mySeq/g) || []).length, 2, 'both handlers view- AND seq-guarded');
+  assert.strictEqual((load.match(/errorStateHtml_\(/g) || []).length, 2, 'a server {error} and a transport failure both render the error card, never an empty log');
+  assert.ok(/L\.reviewer = data\.isManager \? \(data\.reviewer \|\| ''\) : '';/.test(load), 'the server\'s echoed scope is the truth (a non-manager is scoped back to self)');
+  // The shared range control (PR 1) — never a bespoke preset row.
+  assert.ok(/mtDateRange_\(\{ scope: 'qalog'/.test(qan) && /mtDateRangeRow_\('qalog-custom'/.test(qan) && /mtDateRangeToggle_\('qalog', 'qalog-custom'\)/.test(qan), 'the range control is the shared mtDateRange_ family');
+  assert.ok(/QA_LOG_PRESETS = \[/.test(qan) && /days: 92/.test(qan), 'presets incl. QTR (92 — the server cap)');
+  // Search never refetches; the strip derives from the loaded entries.
+  const search = qan.slice(qan.indexOf('function qaLogSearch_('), qan.indexOf('function enterQaLogView('));
+  assert.ok(!/google\.script\.run/.test(search) && /qaLogEntriesHtml_\(QA_STATE\.log\.data\)/.test(search), 'search re-renders from the cached payload — no refetch');
+  const list = qan.slice(qan.indexOf('function qaLogEntriesHtml_('), qan.indexOf('function qaLogDayLabel_('));
+  assert.ok(/entries\.forEach\(function \(e\) \{ days\[e\.day\] = 1; recs\[e\.fileId\] = 1; if \(e\.avg != null\)/.test(list), 'the summary strip is derived from the entries (never a second read)');
+  assert.ok(/d\.total > all\.length \? ' <small>of ' \+ esc\(String\(d\.total\)\) \+ ' \(capped\)/.test(list), 'a capped payload says so with the pre-slice total (INV-169)');
+  assert.ok(/if \(d\.truncated\) html \+= /.test(list), 'a capped SCAN is named too');
+  assert.ok(/avg == null \? '—'/.test(list), 'no scale average renders an em dash, never 0');
+  assert.ok(/No audits logged between/.test(list) && /Nothing matches/.test(list), 'a clean-empty range and an empty FILTER are distinct states');
+  // Cards: manual pill, unindexed rows NOT clickable, opening parks the C8 hint.
+  const card = qan.slice(qan.indexOf('function qaLogCardHtml_('), qan.indexOf('function qaLogOpen_('));
+  assert.ok(/e\.manual \? '<span class="qa-manual-pill">no recording<\/span>'/.test(card), 'a manual entry is pilled');
+  assert.ok(/e\.indexed\s*\? '<button type="button" class="qa-log-name"/.test(card), 'only an INDEXED recording renders an open button (INV-173 — a real button)');
+  assert.ok(/qaRatingChipsHtml_\(e\.ratings, d\.criteria\)/.test(card), 'ratings render through the ONE chip builder');
+  assert.ok(/window\.QA_OPEN_HINT = \{ fileId: String\(fileId\) \};\s*enterTool\('qa', 'qaQueue'\);/.test(qan), 'opening parks the hint then enters the queue (C8)');
+  assert.ok(/const hint = window\.QA_OPEN_HINT \|\| null;\s*window\.QA_OPEN_HINT = null;/.test(qan), 'the queue reads → nulls → acts on the hint');
+  // The detail skips the player on a manual recording; My Reviews too.
+  assert.ok(/if \(rec\.manual \|\| rec\.mime === 'manual'\) \{/.test(qan), 'the detail branches on manual BEFORE the audio load');
+  const det = qan.slice(qan.indexOf("if (rec.manual || rec.mime === 'manual') {"), qan.indexOf("if (rec.manual || rec.mime === 'manual') {") + 600);
+  assert.ok(det.indexOf('qaLoadAudio_(rec)') > det.indexOf('} else {'), 'qaLoadAudio_ runs only on the else branch');
+  assert.ok(/r\.manual \? '<span class="qa-manual-pill">no recording<\/span>' :/.test(qan), 'My Reviews renders the pill instead of Play on a manual review');
+  // Typed form controls + the unselect rule.
+  assert.ok(/class="qa-yn-btn" data-v="' \+ v \+ '" aria-pressed=/.test(qan), 'a check renders a Yes/No pair with aria-pressed');
+  assert.ok(/class="qa-choice-sel" aria-label=/.test(qan), 'a choice renders a NAMED select');
+  assert.ok(/if \(v === '' \|\| v == null \|\| QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qan), 'clicking the selected answer (or the blank option) UNSELECTS');
+  // The "Log an audit" dialog: ensureOverlay + a name + an idempotent close hook.
+  assert.ok(/ensureOverlay\('qa-log-new-overlay', \{ labelledBy: 'qa-log-new-title', onClose: qaLogNewClose_ \}\)/.test(qan), 'a NAMED dialog via ensureOverlay (INV-83)');
+  assert.ok(/id="qa-log-new-title"/.test(qan), 'the labelledBy target exists in the markup');
+  assert.ok(/<option value="__manual__">No recording attached \(manual entry\)<\/option>/.test(qan), 'the recording-less fallback is offered LAST, as a fallback');
+  assert.ok(/Audits should have a recording attached, for posterity/.test(qan), 'the fallback states the operator\'s posture');
+  assert.ok(/\.qaCreateManualRecording\(agent, label\)/.test(qan), 'the manual path mints the recording through the endpoint, then opens it — the scorecard is still saved on the detail (ONE write path)');
+  // Every CSS class the Log emits is defined.
+  ['qa-log-tools', 'qa-log-strip', 'qa-log-day', 'qa-log-card', 'qa-log-main', 'qa-log-title', 'qa-log-name', 'qa-log-meta', 'qa-log-chips', 'qa-log-notes', 'qa-log-side', 'qa-manual-pill', 'qa-yn-btn', 'qa-choice-sel', 'qa-log-dialog'].forEach((c) => {
+    assert.ok(new RegExp('\\.' + c + '[\\s,.:\\[{]').test(qa), 'class .' + c + ' is DEFINED in the qa partial');
+  });
+  assert.ok(/@media \(max-width: 720px\) \{[\s\S]*?\.qa-log-card \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(qa), 'the two-column card stacks at ≤720px (A2)');
+  // Scenarios (populated / mobile / empty twin / forced failure / the dialog).
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  ['qa-log-light-wide', 'qa-log-light-mobile', 'qa-log-empty-light-wide', 'qa-log-error-light-wide', 'qa-log-new-light-wide'].forEach((n) => assert.ok(shoot.indexOf("['" + n + "'") >= 0, 'scenario ' + n));
+  assert.ok(/\['qa-log-empty-light-wide'[^\n]*\?fixture=empty/.test(shoot) && /\['qa-log-error-light-wide'[^\n]*\?failrpc=getQaLog/.test(shoot) && /\['qa-log-new-light-wide'[^\n]*"qaLogNew_\(\)"/.test(shoot), 'the empty / error / dialog hooks');
+  // Fixture keys DERIVED from the server's own literals (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const foldRaw = extractRawFunction('Code.js', 'qaLogEntries_');
+  const pushBlock = foldRaw.slice(foldRaw.indexOf('out.push({'), foldRaw.indexOf('});', foldRaw.indexOf('out.push({')));
+  const entryKeys = [...pushBlock.matchAll(/^\s+(\w+): /gm)].map((m) => m[1]);
+  assert.ok(entryKeys.indexOf('manual') >= 0 && entryKeys.indexOf('indexed') >= 0 && entryKeys.length >= 16, 'sanity: entry keys extracted (' + entryKeys.length + ')');
+  const fx = mock.slice(mock.indexOf('getQaLog: (function () {'), mock.indexOf('qaCreateManualRecording:'));
+  const mkFn = fx.slice(fx.indexOf('var mk = function'), fx.indexOf('var t = Date.now()'));
+  const firstEntry = fx.slice(fx.indexOf('mk({ fileId:'), fx.indexOf('}),', fx.indexOf('mk({ fileId:')));
+  entryKeys.forEach((k) => assert.ok(mkFn.indexOf(k + ':') >= 0 || firstEntry.indexOf(k + ':') >= 0, 'fixture entry carries server key "' + k + '"'));
+  const logRaw = extractRawFunction('Code.js', 'getQaLog');
+  const baseBlock = logRaw.slice(logRaw.indexOf('const base = {'), logRaw.indexOf('};', logRaw.indexOf('const base = {')));
+  const baseKeys = [...baseBlock.matchAll(/(?:^|[\s{,])(\w+): /g)].map((m) => m[1]);
+  assert.ok(baseKeys.indexOf('pending') >= 0 && baseKeys.length >= 14, 'sanity: payload keys extracted');
+  const fxTop = fx.slice(fx.indexOf('return {'), fx.indexOf('entries: ['));
+  baseKeys.forEach((k) => assert.ok(fxTop.indexOf(k + ':') >= 0 || fx.indexOf(k + ':') >= 0, 'fixture payload carries server key "' + k + '"'));
+  const emptyFx = mock.slice(mock.indexOf('var EMPTY_FIXTURES = {'));
+  assert.ok(/getQaLog: \{[\s\S]{0,600}?entries: \[\]/.test(emptyFx), 'the empty twin exists (C7) and is genuinely empty');
+  // Tests.js + the count: the queue's `manual` key reached the recording fixture.
+  assert.ok(/manual: false \};/.test(mock.slice(mock.indexOf('var rec = function (id, name, ymd'), mock.indexOf('recs.push(r); return r;'))), 'the queue fixture carries manual (QA-23 derives it too)');
+});
 
 /* ── VIS-TZ: the browser-vs-roster timezone dimension (operator 2026-09-02) ──
  * A PH agent's browser and roster row disagree by design under the ALL-CST

@@ -150,6 +150,9 @@ const TOOLS = {
     tabs: {
       qaQueue: { label: 'Recordings', icon: 'waveform', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' },
       qaStats: { label: 'Stats', icon: 'chart', enter: 'enterQaStatsView', managerOnly: true, also: 'canSeeQa' },
+      // QA Log (operator 2026-09-04): the reviewer's ledger over the SAME
+      // scorecard store — one entry per recording audited.
+      qaLog: { label: 'Log', icon: 'list', enter: 'enterQaLogView', managerOnly: true, also: 'canSeeQa' },
       // Phase 3 (operator-ordered gate revision): the agent-facing read-only
       // tab is UNGATED, so the QA tool now appears for EVERY rep with just
       // this tab (enterTool bumps the gated defaultTab to it). An agent sees

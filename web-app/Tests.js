@@ -5500,7 +5500,10 @@ function test_qa_gates_rejectNonMember() {
    ['qaSetRecordingShared', function () { return qaSetRecordingShared('x', true); }],
    ['qaSampleRecordings', function () { return qaSampleRecordings(3); }],
    // PR 5 — the duration write-back rides the same tier.
-   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }]]
+   ['qaSetRecordingDuration', function () { return qaSetRecordingDuration('x', 60); }],
+   // QA Log (2026-09-04) — the ledger read + the recording-less fallback.
+   ['getQaLog', function () { return getQaLog({}); }],
+   ['qaCreateManualRecording', function () { return qaCreateManualRecording('A Name', 'label'); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-QA rep');

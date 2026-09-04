@@ -1890,6 +1890,76 @@ test('a hostile stored time renders as a value, never as markup', () => {
 // changed under them). Now the FIRST keystroke pauses + pins; the pin is
 // editable; the post uses the pin. A stubbed <audio> stands in for jsdom's
 // unimplemented media element.
+test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, the save carries string answers; the Log lists + opens through the hint', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeQa: true });
+  const criteria = [
+    { key: 'greeting', label: 'Greeting' },
+    { key: 'verified', label: 'Verified two identifiers', type: 'check' },
+    { key: 'outcome', label: 'Call outcome', type: 'choice', options: ['Resolved', 'Escalated'] },
+  ];
+  const rec = { fileId: 'manual-abc', name: 'Live-monitored call', sizeBytes: 0, mime: 'manual', createdMs: 1, createdYmd: '2026-09-04',
+    status: 'in_review', statusMs: 0, assignee: 'me@umsupply.com', url: '', agent: 'Ana Reyes', agentEmpId: 'E-1088', sharedMs: 0, durationSec: 0, skipReason: '', comments: 0, manual: true };
+  let audioCalls = 0;
+  h.run.respond('getQaQueue', () => ({ members: ['me@umsupply.com'], self: 'me@umsupply.com', isManager: true, folderConfigured: true,
+    agentOptions: ['Ana Reyes'], criteria: criteria, period: '2026-09', periodOptions: [{ key: '2026-09', label: 'Sep 2026' }], target: 3,
+    todayYmd: '2026-09-04', periodEnd: '2026-09-30', recordings: [rec], total: 1, cap: 200, coverage: [] }));
+  h.run.respond('qaListComments', () => ({ comments: [], canModerate: false }));
+  h.run.respond('qaListScorecards', () => ({ scorecards: [], criteria: criteria, selfEmpId: 'E-1' }));
+  h.run.respond('qaGetAudioChunk', () => { audioCalls++; return { success: false, error: 'never' }; });
+  const saved = [];
+  h.run.respond('qaSaveScorecard', (...args) => { saved.push(args); return { success: true }; });
+  const today = new Date().toISOString().slice(0, 10);
+  h.run.respond('getQaLog', () => ({ self: 'E-1', selfName: 'Me', isManager: true, reviewer: '', from: today, to: today, todayYmd: today,
+    criteria: criteria, agentOptions: ['Ana Reyes'], reviewers: [{ empId: 'E-1', name: 'Me' }], pending: [{ fileId: 'manual-abc', name: 'Live-monitored call', agent: 'Ana Reyes', status: 'in_review', manual: true }],
+    total: 1, cap: 300, truncated: false,
+    entries: [{ scorecardId: 'sc1', fileId: 'manual-abc', recordingName: 'Live-monitored call', agent: 'Ana Reyes', agentEmpId: 'E-1088', recordingStatus: 'in_review', recordingCreatedMs: 1,
+      manual: true, indexed: true, reviewerEmpId: 'E-1', reviewerName: 'Me', createdMs: Date.now(), day: today, ratings: { greeting: 4, verified: 'no', outcome: 'Escalated' }, notes: 'n', avg: 4, comments: 0 }] }));
+  // 1. The Log lists the entry with a typed chip row and a manual pill; opening it parks the hint.
+  h.window.enterTool('qa', 'qaLog');
+  h.flushTimers();
+  const cardEl = h.$('.qa-log-card');
+  assert.ok(cardEl, 'a log card rendered');
+  assert.ok(cardEl.querySelector('.qa-manual-pill'), 'the manual entry is pilled "no recording"');
+  const chips = [...cardEl.querySelectorAll('.qa-sc-chip')].map((c) => c.textContent);
+  assert.ok(chips.indexOf('Verified two identifiers No') >= 0 && chips.indexOf('Call outcome Escalated') >= 0 && chips.indexOf('Greeting 4') >= 0, 'typed answers render by label: ' + chips.join('|'));
+  assert.strictEqual(cardEl.querySelector('.qa-sc-chip[data-tone="no"]').textContent, 'Verified two identifiers No', 'a No answer carries the destructive tone');
+  assert.ok(h.$('#qa-log-body .qa-log-strip'), 'the derived summary strip rendered');
+  h.read('qaLogOpen_')('manual-abc');   // jsdom never compiles inline onclick — call the handler
+  h.flushTimers();
+  assert.strictEqual(h.read('currentView'), 'qaQueue', 'opening an entry lands on the queue');
+  assert.strictEqual(h.window.QA_OPEN_HINT, null, 'the hint was consumed (read → null → act, C8)');
+  h.flushTimers();
+  assert.ok(h.$('#qa-score-form'), 'the detail opened from the hint');
+  assert.strictEqual(audioCalls, 0, 'a manual recording NEVER asks for audio');
+  assert.ok(/without a recording attached/.test(h.$('#qa-audio-slot').textContent), 'the player slot says why');
+  // 2. The typed form: a Yes/No pair, a dropdown, and the unselect rule.
+  const yn = [...h.$$('.qa-yn-btn')];
+  assert.strictEqual(yn.length, 2, 'one Yes/No pair for the check criterion');
+  const sel = h.$('.qa-choice-sel');
+  assert.ok(sel && sel.getAttribute('aria-label') === 'Call outcome', 'the dropdown is NAMED');
+  h.read('qaSetRating_')('verified', 'yes');
+  assert.strictEqual(h.$('.qa-yn-btn[data-v="yes"]').getAttribute('aria-pressed'), 'true', 'Yes pressed');
+  h.read('qaSetRating_')('verified', 'yes');
+  assert.strictEqual(h.$('.qa-yn-btn[data-v="yes"]').getAttribute('aria-pressed'), 'false', 'clicking the SELECTED answer unselects it');
+  h.read('qaSetRating_')('verified', 'no');
+  h.read('qaSetRating_')('outcome', 'Escalated');
+  assert.strictEqual(h.$('.qa-choice-sel').value, 'Escalated', 'the dropdown keeps its selection across the re-render');
+  h.read('qaSetRating_')('outcome', '');
+  assert.strictEqual(h.read('QA_STATE').ratings.outcome, undefined, 'the blank option clears the choice');
+  h.read('qaSetRating_')('outcome', 'Resolved');
+  h.read('qaSetRating_')('greeting', 5);
+  assert.ok(/running avg 5/.test(h.$('.qa-score-running').textContent), 'the running average counts ONLY the scale answer');
+  assert.ok(/3 of 3 rated/.test(h.$('.qa-score-running').textContent), 'but completeness counts every answered criterion');
+  h.$('#qa-score-notes').value = 'Escalated correctly.';
+  h.read('qaSubmitScorecard_')();
+  assert.strictEqual(saved.length, 1, 'one save');
+  // jsdom-realm object: compare by JSON, never deepStrictEqual (prototype trap).
+  assert.strictEqual(JSON.stringify(saved[0]), JSON.stringify(['manual-abc', { verified: 'no', outcome: 'Resolved', greeting: 5 }, 'Escalated correctly.']),
+    'non-scale answers travel as STRINGS (never a number the type-blind folds could read as a score)');
+});
+
 test('QA-20: the first keystroke pauses and PINS; the post sends the pin, not the drifted playhead', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

@@ -27720,6 +27720,31 @@ const QA_SCORECARDS_HEADERS = ['ScorecardId', 'FileId', 'ReviewerEmpId', 'Review
 const QSC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, RATINGS: 4, NOTES: 5, CREATED_MS: 6 };
 const QA_SCORECARDS_SCAN = 4000;      // bounded tail over QaScorecards
 const QA_SCORECARD_NOTES_MAX = 2000;
+// Rubric criterion TYPES (operator 2026-09-04 — the QA Log round). `scale` is
+// the 1–5 rating every criterion was until now; `check` is a Yes/No; `choice`
+// is a dropdown over operator-defined options. THE STORAGE RULE THAT KEEPS
+// EVERY NUMERIC FOLD TYPE-BLIND: a non-scale answer is stored as a NON-NUMERIC
+// string ('yes'/'no', or the option text — which the criteria editor refuses
+// when it is a bare number), so qaCardStats_ / qaStatsAggregate_ /
+// qaCalibration_ / the coverage join keep averaging exactly the 1–5 values
+// they always did without knowing a criterion's type. The canonical criterion
+// shape carries `type` ONLY when it is not `scale` (and `options` only for
+// `choice`), so the CONFIG seed, every stored property blob and the
+// save-the-seed-deletes-the-property rule stay byte-identical.
+const QA_CRITERION_TYPES = ['scale', 'check', 'choice'];
+const QA_CHOICE_OPTIONS_MIN = 2;
+const QA_CHOICE_OPTIONS_MAX = 12;
+const QA_CHOICE_OPTION_MAX_CHARS = 40;
+const QA_CHECK_YES = 'yes';
+const QA_CHECK_NO = 'no';
+// QA Log (operator 2026-09-04): the reviewer-centred ledger over the SAME
+// scorecard store — one entry per recording audited, never a second table.
+const QA_LOG_CAP = 300;               // payload cap; pre-slice total reported (INV-169)
+const QA_LOG_MAX_SPAN_DAYS = 92;      // the QTR preset fits
+const QA_LOG_DEFAULT_DAYS = 30;
+const QA_LOG_PENDING_CAP = 50;        // "Log an audit" picker — the caller's open assignments
+const QA_MANUAL_ID_PREFIX = 'manual-';   // a recording-less audit's synthetic FileId (never a Drive id)
+const QA_MANUAL_LABEL_MAX = 120;
 // The scorecard criteria SEED — Script Property QA_SCORECARD_CRITERIA
 // (JSON [{key,label}], sanitize-on-read via qaCriteriaSanitize_) overrides
 // without a redeploy. Keys ride stored RatingsJson, so renaming a key orphans
@@ -27885,6 +27910,7 @@ function getQaQueue(period) {
           durationSec: Number(rows[i][QAR.DURATION_SEC]) || 0,
           skipReason: String(rows[i][QAR.SKIP_REASON] || ''),
           comments: 0,
+          manual: qaIsManualId_(fid),   // a recording-less audit — no audio to load
         });
       }
     }
@@ -28256,10 +28282,72 @@ function qaCriteriaSanitize_(arr) {
     if (!/^[a-z][a-z0-9-]{1,23}$/.test(key) || seen[key]) continue;
     const label = String(c.label || '').trim().substring(0, 60);
     if (!label) continue;
+    const type = qaCritType_(c);
+    const entry = { key: key, label: label };
+    if (type === 'choice') {
+      // A dropdown with fewer than two usable options cannot be answered —
+      // the criterion is DROPPED (lenient read), never demoted to a scale
+      // that would re-type its stored answers.
+      const opts = qaChoiceOptionsSanitize_(c.options);
+      if (opts.length < QA_CHOICE_OPTIONS_MIN) continue;
+      entry.type = 'choice';
+      entry.options = opts;
+    } else if (type === 'check') {
+      entry.type = 'check';
+    }
     seen[key] = true;
-    out.push({ key: key, label: label });
+    out.push(entry);
   }
   return out.length ? out : null;
+}
+/** The criterion's type — absent/unknown reads as `scale` (every pre-existing
+ *  criterion), so a stored blob written before types existed is unchanged. */
+function qaCritType_(c) {
+  const t = String((c && c.type) || '').trim().toLowerCase();
+  return QA_CRITERION_TYPES.indexOf(t) >= 0 ? t : 'scale';
+}
+/** PURE (Node-pinned) — a choice criterion's options: trimmed, ≤40 chars,
+ *  deduped case-insensitively, capped, and NEVER a bare number (a numeric
+ *  option text would parse as a 1–5 score inside the type-blind folds). */
+function qaChoiceOptionsSanitize_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < arr.length && out.length < QA_CHOICE_OPTIONS_MAX; i++) {
+    const o = String(arr[i] == null ? '' : arr[i]).trim().substring(0, QA_CHOICE_OPTION_MAX_CHARS);
+    if (!o || qaOptionIsNumeric_(o) || seen[o.toLowerCase()]) continue;
+    seen[o.toLowerCase()] = true;
+    out.push(o);
+  }
+  return out;
+}
+function qaOptionIsNumeric_(o) { return /^\s*[-+]?\d+(\.\d+)?\s*$/.test(String(o || '')); }
+/** PURE (Node-pinned) — normalize ONE client-supplied rating against its
+ *  criterion. Returns {value} (the canonical stored form) or {error}. scale →
+ *  an integer 1–5; check → 'yes'/'no' (true/false/1/0/'y'/'n' accepted);
+ *  choice → the option text, matched case-insensitively and stored in the
+ *  criterion's own spelling. An answer the type cannot take is REFUSED by
+ *  name, never coerced (the INV-96 refuse-not-drop posture). */
+function qaRatingNormalize_(criterion, raw) {
+  const type = qaCritType_(criterion);
+  const label = String((criterion && criterion.label) || (criterion && criterion.key) || 'criterion');
+  if (type === 'scale') {
+    const v = parseInt(raw, 10);
+    if (!(v >= 1 && v <= 5) || String(raw).trim() !== String(v)) return { error: 'Ratings must be 1–5 (' + label + ').' };
+    return { value: v };
+  }
+  if (type === 'check') {
+    const t = String(raw === true ? 'yes' : raw === false ? 'no' : raw == null ? '' : raw).trim().toLowerCase();
+    if (t === 'yes' || t === 'true' || t === 'y' || t === '1') return { value: QA_CHECK_YES };
+    if (t === 'no' || t === 'false' || t === 'n' || t === '0') return { value: QA_CHECK_NO };
+    return { error: label + ' takes Yes or No.' };
+  }
+  const want = String(raw == null ? '' : raw).trim().toLowerCase();
+  const opts = (criterion && criterion.options) || [];
+  for (let i = 0; i < opts.length; i++) {
+    if (String(opts[i]).trim().toLowerCase() === want) return { value: String(opts[i]) };
+  }
+  return { error: label + ' must be one of: ' + opts.join(', ') + '.' };
 }
 function getQaScorecardCriteria_() {
   try {
@@ -28302,8 +28390,30 @@ function saveQaScorecardCriteria(list) {
       const label = String(c.label || '').trim();
       if (!label) return { success: false, error: 'Criterion "' + key + '" needs a label.' };
       if (label.length > 60) return { success: false, error: 'Label for "' + key + '" is over 60 characters.' };
+      const typeRaw = String(c.type || 'scale').trim().toLowerCase();
+      if (QA_CRITERION_TYPES.indexOf(typeRaw) < 0) {
+        return { success: false, error: 'Unknown type "' + String(c.type) + '" for "' + key + '" — scale, check or choice.' };
+      }
+      const entry = { key: key, label: label };
+      if (typeRaw === 'choice') {
+        const rawOpts = Array.isArray(c.options) ? c.options : String(c.options || '').split(',');
+        const trimmed = rawOpts.map(function (o) { return String(o == null ? '' : o).trim(); }).filter(Boolean);
+        for (let j = 0; j < trimmed.length; j++) {
+          if (trimmed[j].length > QA_CHOICE_OPTION_MAX_CHARS) return { success: false, error: 'Option "' + trimmed[j].substring(0, 20) + '…" for "' + key + '" is over ' + QA_CHOICE_OPTION_MAX_CHARS + ' characters.' };
+          if (qaOptionIsNumeric_(trimmed[j])) return { success: false, error: 'Option "' + trimmed[j] + '" for "' + key + '" is a bare number — dropdown options must be words, so an answer never reads as a 1–5 score.' };
+        }
+        const opts = qaChoiceOptionsSanitize_(trimmed);
+        if (opts.length !== trimmed.length) return { success: false, error: 'Duplicate option in "' + key + '".' };
+        if (opts.length < QA_CHOICE_OPTIONS_MIN || opts.length > QA_CHOICE_OPTIONS_MAX) {
+          return { success: false, error: 'Dropdown "' + key + '" needs ' + QA_CHOICE_OPTIONS_MIN + '–' + QA_CHOICE_OPTIONS_MAX + ' options (comma-separated).' };
+        }
+        entry.type = 'choice';
+        entry.options = opts;
+      } else if (typeRaw === 'check') {
+        entry.type = 'check';
+      }
       seen[key] = true;
-      clean.push({ key: key, label: label });
+      clean.push(entry);
     }
     const props = PropertiesService.getScriptProperties();
     if (JSON.stringify(clean) === JSON.stringify(QA_SCORECARD_CRITERIA)) {
@@ -28432,16 +28542,18 @@ function qaSaveScorecard(fileId, ratings, notes) {
     }
     const criteria = getQaScorecardCriteria_();
     const known = {};
-    criteria.forEach(function (c) { known[c.key] = true; });
+    criteria.forEach(function (c) { known[c.key] = c; });
     const clean = {};
     let count = 0;
     const keys = Object.keys(ratings);
     for (let i = 0; i < keys.length; i++) {
       const k = String(keys[i]).trim().toLowerCase();
       if (!known[k]) return { success: false, error: 'Scorecard criteria changed since this page loaded — reload and score again.' };
-      const v = parseInt(ratings[keys[i]], 10);
-      if (!(v >= 1 && v <= 5)) return { success: false, error: 'Ratings must be 1–5.' };
-      clean[k] = v; count++;
+      // Per TYPE (scale 1–5 / check yes-no / choice option) — a non-scale
+      // answer is stored NON-NUMERIC so every numeric fold stays type-blind.
+      const norm = qaRatingNormalize_(known[k], ratings[keys[i]]);
+      if (norm.error) return { success: false, error: norm.error };
+      clean[k] = norm.value; count++;
     }
     if (!count) return { success: false, error: 'Rate at least one criterion.' };
     const t = String(notes || '').trim();
@@ -28619,6 +28731,203 @@ function getQaStats() {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── QA Log (operator 2026-09-04) ─────────────────────────────────────────────
+// "One entry per call recording audited" — which is exactly what a scorecard
+// row already IS. The Log is therefore a reviewer-centred READ over the same
+// QaScorecards store (latest card per recording+reviewer, newest first), never
+// a second table; the one addition is the recording-less audit below.
+
+/** Is this FileId a recording-less (manual) audit's synthetic id? Such ids are
+ *  minted here, never by Drive, so the audio boundary refuses them by
+ *  construction (folder parentage fails) and the client skips the player. */
+function qaIsManualId_(fid) { return String(fid || '').indexOf(QA_MANUAL_ID_PREFIX) === 0; }
+
+/** The recording-less FALLBACK (operator: audits happen with a recording
+ *  attached, for posterity, but the fallback must exist). Appends a
+ *  QaRecordings row with a synthetic `manual-<uuid>` FileId, mime `manual`,
+ *  status in_review assigned to the CALLER, so every downstream read — the
+ *  scorecard, the coverage join, the stats fold, the Log — treats it as a
+ *  reviewed recording. QA-gated, locked, audit row id-only (the label may
+ *  name the caller/agent; it stays in the QA store — INV-32/196). */
+function qaCreateManualRecording(agentName, label) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
+    const name = String(label || '').trim();
+    if (!name) return { success: false, error: 'Give the audit a label (e.g. the call date and caller).' };
+    if (name.length > QA_MANUAL_LABEL_MAX) return { success: false, error: 'Label is capped at ' + QA_MANUAL_LABEL_MAX + ' characters.' };
+    const agent = String(agentName || '').trim().substring(0, 80);
+    const fid = QA_MANUAL_ID_PREFIX + Utilities.getUuid();
+    const now = Date.now();
+    getOrCreateQaRecordingsSheet_().appendRow([
+      fid, name, 0, 'manual', now, now, 'in_review', String(emp.email || '').trim().toLowerCase(), now, '', agent, 0, 0, '',
+    ]);
+    writeAuditLog_(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' + fid, emp.email);
+    return { success: true, fileId: fid };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** PURE (Node-pinned) — the Log fold. latestCards: LATEST-per-(recording,
+ *  reviewer) cards; recs: {fileId → recording meta}; commentCounts: {fileId|
+ *  empId → active comment count}; reviewerEmpId: '' = every reviewer; from/to
+ *  = yyyy-MM-dd bounds (inclusive) compared against the card's day (a
+ *  manager-tz yyyy-MM-dd the caller supplies per card via dayOf). Returns
+ *  entries newest-first. A card whose recording is NOT indexed still lists
+ *  (the audit happened — INV-187), with the recording fields blank. */
+function qaLogEntries_(latestCards, recs, commentCounts, reviewerEmpId, from, to, dayOf) {
+  const out = [];
+  (latestCards || []).forEach(function (c) {
+    if (!c) return;
+    if (reviewerEmpId && String(c.empId) !== String(reviewerEmpId)) return;
+    const day = dayOf(Number(c.createdMs) || 0);
+    if (!day || day < from || day > to) return;
+    const r = (recs && recs[c.fileId]) || null;
+    const st = qaCardStats_(c);
+    out.push({
+      scorecardId: String(c.scorecardId || ''),
+      fileId: String(c.fileId || ''),
+      recordingName: r ? String(r.name || '') : '',
+      agent: r ? String(r.agent || '') : '',
+      agentEmpId: r ? String(r.agentEmpId || '') : '',
+      recordingStatus: r ? String(r.status || '') : '',
+      recordingCreatedMs: r ? Number(r.createdMs) || 0 : 0,
+      manual: qaIsManualId_(c.fileId),
+      indexed: !!r,
+      reviewerEmpId: String(c.empId || ''),
+      reviewerName: String(c.name || ''),
+      createdMs: Number(c.createdMs) || 0,
+      day: day,
+      ratings: c.ratings || {},
+      notes: String(c.notes || ''),
+      avg: st ? Math.round(st.avg * 10) / 10 : null,
+      comments: (commentCounts && commentCounts[String(c.fileId) + '|' + String(c.empId)]) || 0,
+    });
+  });
+  out.sort(function (a, b) { return b.createdMs - a.createdMs; });
+  return out;
+}
+
+/** The QA Log read. QA-gated; a NON-manager is scoped to their OWN entries
+ *  whatever `reviewer` says (managers see every reviewer's log — operator
+ *  decision); dates yyyy-MM-dd, span capped, default the trailing 30 days in
+ *  the manager tz. One bounded read each of recordings / scorecards /
+ *  comments; payload capped with the pre-slice total (INV-169). Also ships
+ *  the caller's OPEN assignments (the "Log an audit" picker) and the roster
+ *  names (the manual entry's agent datalist). */
+function getQaLog(opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
+    opts = (opts && typeof opts === 'object') ? opts : {};
+    const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const todayYmd = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+    let to = dayRe.test(String(opts.to || '')) ? String(opts.to) : todayYmd;
+    let from = dayRe.test(String(opts.from || '')) ? String(opts.from) : qaMsToYmd_(qaYmdMs_(to, tz) - (QA_LOG_DEFAULT_DAYS - 1) * 86400000);
+    if (from > to) { const t = from; from = to; to = t; }
+    const spanDays = Math.round((qaYmdMs_(to, tz) - qaYmdMs_(from, tz)) / 86400000) + 1;
+    if (!(spanDays >= 1) || spanDays > QA_LOG_MAX_SPAN_DAYS) {
+      return { error: 'The log range is at most ' + QA_LOG_MAX_SPAN_DAYS + ' days.' };
+    }
+    // Scope: a non-manager sees ONLY their own log, whatever they asked for.
+    const wantAll = String(opts.reviewer || '') === '*';
+    let reviewerEmpId = String(emp.id);
+    if (emp.isManager) reviewerEmpId = wantAll ? '' : (String(opts.reviewer || '').trim() || String(emp.id));
+    let storeSet = true;
+    try { storeSet = !!(PropertiesService.getScriptProperties().getProperty('QA_SS_ID')); } catch (e) {}
+    if (typeof _TEST_OVERRIDE_QA_SS_ID !== 'undefined' && _TEST_OVERRIDE_QA_SS_ID) storeSet = true;
+    const base = {
+      self: String(emp.id), selfName: String(emp.name || ''), isManager: !!emp.isManager,
+      reviewer: reviewerEmpId, from: from, to: to, todayYmd: todayYmd,
+      criteria: getQaScorecardCriteria_(), agentOptions: [],
+      entries: [], total: 0, cap: QA_LOG_CAP, reviewers: [], pending: [], truncated: false,
+    };
+    try {
+      const rrows = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows.length; i++) {
+        if (!empRosterEmail_(rrows[i])) continue;   // INV-183
+        const nm = String(rrows[i][EMP.NAME] || '').trim();
+        if (nm && base.agentOptions.indexOf(nm) < 0) base.agentOptions.push(nm);
+      }
+      base.agentOptions.sort();
+    } catch (e) { /* best-effort — the log still renders */ }
+    if (!storeSet) { base.notConfigured = true; return base; }
+    // Recordings (bounded tail) → meta by FileId + the caller's open assignments.
+    const recs = {};
+    const recSheet = getOrCreateQaRecordingsSheet_();
+    const last = recSheet.getLastRow();
+    const selfEmail = String(emp.email || '').trim().toLowerCase();
+    let rosterIdByName = {};
+    try {
+      const rrows2 = getEmployeeRosterRows_();
+      for (let i = 1; i < rrows2.length; i++) {
+        if (!empRosterEmail_(rrows2[i])) continue;
+        const nm = String(rrows2[i][EMP.NAME] || '').trim().toLowerCase();
+        if (nm && !rosterIdByName[nm]) rosterIdByName[nm] = String(rrows2[i][EMP.ID] || '').trim();
+      }
+    } catch (e) { rosterIdByName = {}; }
+    if (last >= 2) {
+      const start = Math.max(2, last - QA_LIST_SCAN + 1);
+      base.truncated = start > 2;
+      const rows = recSheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const fid = String(rows[i][QAR.FILE_ID] || '').trim();
+        if (!fid) continue;
+        const agent = String(rows[i][QAR.AGENT] || '').trim();
+        const status = qaStatus_(rows[i][QAR.STATUS]);
+        recs[fid] = { name: String(rows[i][QAR.NAME] || ''), agent: agent,
+                      agentEmpId: agent ? (rosterIdByName[agent.toLowerCase()] || '') : '',
+                      status: status, createdMs: Number(rows[i][QAR.CREATED_MS]) || 0 };
+        if ((status === 'new' || status === 'in_review') &&
+            String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase() === selfEmail && base.pending.length < QA_LOG_PENDING_CAP) {
+          base.pending.push({ fileId: fid, name: recs[fid].name, agent: agent, status: status, manual: qaIsManualId_(fid) });
+        }
+      }
+    }
+    const read = qaReadScorecards_(null);
+    base.truncated = base.truncated || read.truncated;
+    const latest = qaLatestScorecards_(read.cards);
+    // Reviewer picker (managers): every reviewer with a card, plus the caller.
+    const seenRev = {};
+    latest.forEach(function (c) {
+      const id = String(c.empId || '');
+      if (!id || seenRev[id]) return;
+      seenRev[id] = true;
+      base.reviewers.push({ empId: id, name: String(c.name || '') });
+    });
+    if (!seenRev[String(emp.id)]) base.reviewers.push({ empId: String(emp.id), name: String(emp.name || '') });
+    base.reviewers.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    // Active comment counts per (recording, reviewer) — decoration; a failed
+    // read leaves them at 0 rather than failing the log.
+    const commentCounts = {};
+    try {
+      const cs = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
+      if (cs && cs.getLastRow() >= 2) {
+        const cLast = cs.getLastRow();
+        const cStart = Math.max(2, cLast - QA_COMMENTS_SCAN + 1);
+        const cRows = cs.getRange(cStart, 1, cLast - cStart + 1, QA_COMMENTS_HEADERS.length).getValues();
+        for (let i = 0; i < cRows.length; i++) {
+          if (String(cRows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
+          const k = String(cRows[i][QAC.FILE_ID] || '') + '|' + String(cRows[i][QAC.EMP_ID] || '');
+          commentCounts[k] = (commentCounts[k] || 0) + 1;
+        }
+      }
+    } catch (e) { /* counts are decoration */ }
+    const entries = qaLogEntries_(latest, recs, commentCounts, reviewerEmpId, from, to, function (ms) { return qaMsToYmd_(ms); });
+    base.entries = entries.slice(0, QA_LOG_CAP);
+    base.total = entries.length;
+    return base;
+  } catch (err) { return { error: err.message }; }
+}
+/** Midnight (manager tz) of a yyyy-MM-dd as epoch ms — the day arithmetic
+ *  the log's range uses; parsed in the tz the days are labelled in. */
+function qaYmdMs_(ymd, tz) {
+  return Utilities.parseDate(ymd + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+}
+
 // ── QA Phase 3 — sampling, calibration, agent-facing reviews ────────────────
 // The v1 "agents do not see their reviews" gate is REVISED here by operator
 // order (the Phase-3 scope): agents get a READ-ONLY "My Reviews" tab showing
@@ -28689,6 +28998,7 @@ function getMyQaReviews() {
           name: String(rows[i][QAR.NAME] || ''),
           createdMs: Number(rows[i][QAR.CREATED_MS]) || 0,
           sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
+          manual: qaIsManualId_(fid),
           scorecards: [], comments: [],
         });
       }
