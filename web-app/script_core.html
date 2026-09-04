@@ -145,10 +145,10 @@ const TOOLS = {
   // their reviews in v1 (operator decision).
   qa: {
     label: 'QA',
-    sidebarIcon: 'headset',
+    sidebarIcon: 'waveform',
     defaultTab: 'qaQueue',
     tabs: {
-      qaQueue: { label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' },
+      qaQueue: { label: 'Recordings', icon: 'waveform', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' },
       qaStats: { label: 'Stats', icon: 'chart', enter: 'enterQaStatsView', managerOnly: true, also: 'canSeeQa' },
       // Phase 3 (operator-ordered gate revision): the agent-facing read-only
       // tab is UNGATED, so the QA tool now appears for EVERY rep with just
@@ -302,8 +302,10 @@ window.addEventListener('unhandledrejection', function (e) {
 //  INIT
 // ════════════════════════════════════════════════════════════════════════════
 window.addEventListener('load', () => {
+  BOOT_T.stateStart = bootNow_();   // stamped BEFORE the call — a synchronously-answered RPC (the DOM harness) must still measure
   google.script.run
     .withSuccessHandler(state => {
+      if (BOOT_T.stateStart !== null) { var _bn = bootNow_(); BOOT_T.stateMs = _bn === null ? null : _bn - BOOT_T.stateStart; }
       if (state.error) { renderError(state.error); return; }
       empState = state;
       adjustWindowDays = state.adjustWindowDays || 30;
@@ -341,7 +343,9 @@ window.addEventListener('load', () => {
           }
         } catch (e) {}
       }
+      BOOT_T.arming = true;
       enterTool(initialTool, initialTab);
+      bootTimingArm_();
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
       startHealthBadgePolling_();
@@ -848,7 +852,7 @@ function renderShell(state) {
   const popOutBtn = COMPACT_MODE ? '' : `
     <button type="button" class="sb-popout-btn"
             aria-label="Pop out to small window"
-            title="Pop out a compact panel — tip: PowerToys 'Always On Top' (Win+Ctrl+T) keeps it above other windows"
+            title="Pop out a compact panel — tip: PowerToys 'Always On Top' (Win+Ctrl+T) keeps it above other windows; leave it open overnight and it is already warm at shift start"
             onclick="popOutCurrentView()">
       ${icon('popOut', 14)}
     </button>`;
@@ -1166,17 +1170,68 @@ function renderToolTabBar(toolKey) {
 // nothing for the rep.
 var _viewUsageSent = Object.create(null);
 var VIEW_USAGE_THROTTLE_MS = 5 * 60000;
-function recordViewUsage_(viewKey) {
+function recordViewUsage_(viewKey, timing) {
   try {
     if (!empState) return;
     if (typeof VIEW_AS !== 'undefined' && VIEW_AS.active) return;
+    // Boot: the landing view's row is DEFERRED so it can carry the startup
+    // timings (bootTimingSend_ fires it once the view paints, or on the
+    // fallback timer). The throttle stamp lands now so a tab-hop straight
+    // back within 5 min still counts as one visit.
+    if (BOOT_T.arming) { BOOT_T.view = viewKey; _viewUsageSent[viewKey] = Date.now(); return; }
     var now = Date.now();
-    if (_viewUsageSent[viewKey] && now - _viewUsageSent[viewKey] < VIEW_USAGE_THROTTLE_MS) return;
+    if (!timing && _viewUsageSent[viewKey] && now - _viewUsageSent[viewKey] < VIEW_USAGE_THROTTLE_MS) return;
     _viewUsageSent[viewKey] = now;
     if (typeof google === 'undefined' || !google.script || !google.script.run) return;
     google.script.run.withFailureHandler(function () {})
-      .recordViewEnter(viewKey, COMPACT_MODE ? 'compact' : 'full');
+      .recordViewEnter(viewKey, COMPACT_MODE ? 'compact' : 'full', timing || null);
   } catch (e) { /* telemetry never breaks navigation */ }
+}
+
+// ── Boot timing (operator 2026-09-04 — "warm up the app before each shift?")
+// A pre-shift trigger cannot reach the browser and the caches it could fill
+// expire in 5 minutes, so the honest first step is to MEASURE what a cold
+// boot spends its time on. Three durations, all from the iframe's navigation
+// start (performance.now()): `state` = the getEmployeeState round trip alone,
+// `shell` = until the shell + landing view are mounted, `view` = until the
+// landing view's FIRST real data paint (the Dashboard cards or the Call Notes
+// form — the two realistic boot tabs call bootFirstPaint_). They ride the
+// landing view's usage row (recordViewEnter's 3rd arg) — no new endpoint, no
+// extra row. Fallback: BOOT_TIMING_FALLBACK_MS after the shell mounts the row
+// is sent with whatever is known (view null), so a boot onto a tab without a
+// paint hook still reports its shell time. Everything here is try/caught —
+// telemetry never breaks boot.
+var BOOT_TIMING_FALLBACK_MS = 20000;
+var BOOT_T = { arming: false, view: '', stateStart: null, stateMs: null, shellMs: null, viewMs: null, sent: false, timer: null };
+function bootNow_() {
+  try { if (typeof performance !== 'undefined' && performance.now) return Math.round(performance.now()); } catch (e) {}
+  return null;
+}
+function bootTimingArm_() {
+  try {
+    BOOT_T.arming = false;
+    BOOT_T.shellMs = bootNow_();
+    if (!BOOT_T.view) return;
+    BOOT_T.timer = setTimeout(bootTimingSend_, BOOT_TIMING_FALLBACK_MS);
+  } catch (e) {}
+}
+/** Called by a landing view when its first REAL data has painted. Ignored for
+ *  any view other than the one the app booted onto, and after the send. */
+function bootFirstPaint_() {
+  try {
+    if (BOOT_T.sent || !BOOT_T.view || BOOT_T.viewMs !== null) return;
+    if (typeof currentView !== 'undefined' && currentView !== BOOT_T.view) return;
+    BOOT_T.viewMs = bootNow_();
+    bootTimingSend_();
+  } catch (e) {}
+}
+function bootTimingSend_() {
+  try {
+    if (BOOT_T.sent || !BOOT_T.view) return;
+    BOOT_T.sent = true;
+    if (BOOT_T.timer) { clearTimeout(BOOT_T.timer); BOOT_T.timer = null; }
+    recordViewUsage_(BOOT_T.view, { shell: BOOT_T.shellMs, state: BOOT_T.stateMs, view: BOOT_T.viewMs });
+  } catch (e) {}
 }
 
 function showView(view) {

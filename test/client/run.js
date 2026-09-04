@@ -9716,6 +9716,88 @@ test('viewUsageAggregate_ behavioral — windows, distinct reps, top view', () =
   assert.strictEqual(out.reps[0].topView, 'callNotes');
 });
 
+test('BOOT-1: viewUsageTimingCell_ bounds + drops, viewUsageAggregate_ reports 7d startup medians as null-never-0', () => {
+  const ctx = vm.createContext({ Object, String, Number, JSON, Array, Math, isFinite });
+  vm.runInContext("const VIEW_USAGE_TIMING_MAX_MS = 300000; const VIEW_USAGE_TIMING_KEYS = ['shell', 'state', 'view'];", ctx);
+  ['viewUsageTimingCell_', 'viewUsageTimingParse_', 'viewUsageAggregate_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  const cell = ctx.viewUsageTimingCell_;
+  assert.strictEqual(cell(null), '', 'no timing → plain row');
+  assert.strictEqual(cell('x'), '', 'a string is not a timing object');
+  assert.strictEqual(cell([1, 2, 3]), '', 'an array is not a timing object');
+  assert.strictEqual(cell({ shell: 3120.6, state: 'abc', view: null, extra: 9 }), '{"shell":3121}',
+    'rounded; junk + unknown keys dropped — and a NULL phase is dropped, not recorded as 0 (Number(null) is 0; the fallback send carries view:null)');
+  assert.strictEqual(cell({ shell: -5, state: 400000 }), '', 'negative and over-cap values drop — nothing usable = blank cell');
+  assert.deepStrictEqual(JSON.parse(cell({ shell: 1, state: 2, view: 3 })), { shell: 1, state: 2, view: 3 });
+  assert.strictEqual(ctx.viewUsageTimingParse_(''), null);
+  assert.strictEqual(ctx.viewUsageTimingParse_('{not json'), null, 'a corrupt cell reads as no timing, never throws');
+  assert.strictEqual(ctx.viewUsageTimingParse_('{"shell":5}').shell, 5);
+  const cut30 = '2026-07-15 00:00:00', cut7 = '2026-08-07 00:00:00';
+  const ev = (ts, timing) => ({ ts, empId: 'E1', view: 'clock', mode: 'full', timing });
+  const out = ctx.viewUsageAggregate_([
+    ev('2026-08-13 10:00:00', { shell: 3000, state: 1000, view: 5000 }),
+    ev('2026-08-12 10:00:00', { shell: 4000, state: 2000 }),           // no view phase
+    ev('2026-08-11 10:00:00', { shell: 2000, state: 1500, view: 7000 }),
+    ev('2026-08-10 10:00:00', null),                                    // an untimed navigation row
+    ev('2026-08-01 10:00:00', { shell: 90000, state: 90000, view: 90000 }),   // 30d-only — a stale build's boot must not skew
+  ], cut7, cut30);
+  assert.strictEqual(out.boot.n7, 3, 'timed boots in the 7d window only');
+  assert.strictEqual(out.boot.shell.median, 3000);
+  assert.strictEqual(out.boot.state.median, 1500);
+  assert.strictEqual(out.boot.view.n, 2, 'the phase count is per phase — a boot with no first-paint hook still reports its shell');
+  assert.strictEqual(out.boot.view.median, 6000, 'even count → mean of the middle pair');
+  assert.strictEqual(out.boot.shell.p90, 4000);
+  assert.strictEqual(out.totals.n30, 5, 'timing never changes the visit counts');
+  const empty = ctx.viewUsageAggregate_([], cut7, cut30);
+  assert.strictEqual(empty.boot.n7, 0);
+  assert.strictEqual(empty.boot.shell, null, 'no timed boot → null, never a confident 0 (INV-187)');
+});
+
+test('BOOT-2: the boot send is DEFERRED to the landing view\'s first paint (or a fallback), rides the SAME row, and every hook is try/caught', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const core = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  // Server: the 3rd arg lands in the SAME appendRow (no second row, no second endpoint), sanitized.
+  const srv = nc(extractRawFunction('Code.js', 'recordViewEnter'));
+  assert.ok(/function recordViewEnter\(viewKey, mode, timing\)/.test(srv), 'timing is the 3rd arg');
+  assert.ok(/emp\.id, v, m, viewUsageTimingCell_\(timing\),/.test(srv), 'sanitized into the trailing cell of the same row');
+  const sheet = nc(extractRawFunction('Code.js', 'getOrCreateViewUsageSheet_'));
+  assert.ok(/getLastColumn\(\) < VIEW_USAGE_WIDTH/.test(sheet) && /setValue\('BootTiming'\)/.test(sheet), 'the header self-heals (CN_HEADERS posture)');
+  const stats = nc(extractRawFunction('Code.js', 'getViewUsageStats'));
+  assert.ok(/VIEW_USAGE_WIDTH\)\.getValues\(\)/.test(stats) && /timing: viewUsageTimingParse_\(data\[i\]\[4\]\)/.test(stats), 'the reader parses the trailing cell');
+  // Client: ordering + deferral.
+  const usage = nc(extractFunction('script_core.html', 'recordViewUsage_'));
+  assert.ok(/if \(BOOT_T\.arming\) \{ BOOT_T\.view = viewKey; _viewUsageSent\[viewKey\] = Date\.now\(\); return; \}/.test(usage),
+    'while arming, the landing view is captured and NOT sent (the throttle stamp still lands)');
+  assert.ok(/if \(!timing && _viewUsageSent\[viewKey\]/.test(usage), 'the deferred timed send is not blocked by its own throttle stamp');
+  assert.ok(/\.recordViewEnter\(viewKey, COMPACT_MODE \? 'compact' : 'full', timing \|\| null\)/.test(usage), 'timing rides the 3rd arg');
+  const load = core.slice(core.indexOf("window.addEventListener('load', () => {"), core.indexOf('function renderShell('));
+  const ord = (a, b) => { const i = load.indexOf(a), j = load.indexOf(b); assert.ok(i >= 0 && j >= 0, 'both present: ' + a + ' / ' + b); return i < j; };
+  assert.ok(ord('BOOT_T.stateMs =', 'empState = state;'), 'the state round trip is stamped BEFORE anything else runs in the handler');
+  assert.ok(ord('BOOT_T.arming = true;', 'enterTool(initialTool, initialTab);'), 'arming precedes the landing enterTool');
+  assert.ok(ord('enterTool(initialTool, initialTab);', 'bootTimingArm_();'), 'and disarms right after it (shellMs stamped, fallback timer set)');
+  assert.ok(ord('BOOT_T.stateStart = bootNow_();', 'google.script.run'), 'stateStart is stamped BEFORE the RPC is issued (a synchronous answer must still measure)');
+  const paint = extractFunction('script_core.html', 'bootFirstPaint_');
+  assert.ok(/currentView !== BOOT_T\.view\) return;/.test(paint), 'a paint on a view other than the landing one is ignored');
+  assert.ok(/BOOT_T\.viewMs !== null\) return;/.test(paint), 'only the FIRST paint counts');
+  const send = extractFunction('script_core.html', 'bootTimingSend_');
+  assert.ok(/if \(BOOT_T\.sent \|\| !BOOT_T\.view\) return;\s*BOOT_T\.sent = true;/.test(send), 'sends exactly once');
+  assert.ok(/clearTimeout\(BOOT_T\.timer\)/.test(send), 'the fallback timer is cancelled by a real paint');
+  ['bootTimingArm_', 'bootFirstPaint_', 'bootTimingSend_'].forEach((fn) => {
+    assert.ok(/^\s*try \{/m.test(extractFunction('script_core.html', fn).split('\n').slice(1).join('\n')), fn + ' is try/caught — telemetry never breaks boot');
+  });
+  assert.ok(/BOOT_TIMING_FALLBACK_MS = 20000/.test(core), 'a boot onto a tab with no paint hook still reports its shell time after 20s');
+  // The two realistic landing views call the hook (typeof-guarded — the partial may load without the shell).
+  assert.ok(/if \(typeof bootFirstPaint_ === 'function'\) bootFirstPaint_\(\);/.test(nc(extractFunction('tc/script_clock.html', 'clkRenderDashboard_'))), 'Dashboard cards');
+  assert.ok(/if \(typeof bootFirstPaint_ === 'function'\) bootFirstPaint_\(\);/.test(nc(extractFunction('cn/script_callnotes.html', 'cnRenderNotesView'))), 'Call Notes Log form');
+  // Panel: em dash never 0, escaped, absent field renders nothing (older server).
+  const panel = nc(extractFunction('cn/script_callnotes.html', 'cnUsageBootHtml_'));
+  assert.ok(/if \(!boot\) return '';/.test(panel), 'older server → no startup line');
+  assert.ok(/st\.median == null\) return '<span[^>]*>\\u2014<\/span>'/.test(panel), 'a phase nobody reported is an em dash');
+  assert.ok(/esc\(\(st\.median \/ 1000\)\.toFixed\(1\)\)/.test(panel), 'figures escaped');
+  assert.ok(/cnUsageBootHtml_\(st\.boot\)/.test(nc(extractFunction('cn/script_callnotes.html', 'cnUsagePanelHtml_'))), 'wired into the usage panel');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/boot: \{ n7: \d+, shell: \{ n: \d+, median: \d+, p90: \d+ \}/.test(mock), 'the fixture carries the boot shape (INV-185)');
+});
+
 test('usage beacon: gated + capped server, throttled + preview-skipping client', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const srv = nc(extractRawFunction('Code.js', 'recordViewEnter'));
@@ -13336,7 +13418,7 @@ test('QA-5: wiring — every endpoint gates before its store, the tab rides also
   assert.ok(/throw new Error/.test(store) && !/getAdpSS_|getKbSS_|getHrDocsSS_/.test(store),
     'the QA store has NO fallback — an unset QA_SS_ID errors, never writes into another store (the HR_DOCS_SS_ID posture)');
   const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
-  assert.ok(/qaQueue: \{ label: 'Recordings', icon: 'headset', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
+  assert.ok(/qaQueue: \{ label: 'Recordings', icon: 'waveform', enter: 'enterQaQueueView', managerOnly: true, also: 'canSeeQa' \}/.test(core),
     "the QA tab is gated managers + QA_MEMBERS via also:'canSeeQa' — agents never see it (operator decision, v1)");
   const qa = nc(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
   // The guard that MATTERS is the one before the chunk APPEND — the fail()

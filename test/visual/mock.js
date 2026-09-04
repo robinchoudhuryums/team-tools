@@ -1113,6 +1113,7 @@ function qaLatestScorecards_(cards) {
         { empId: 'E-102', n30: 64, topView: 'clock' },
       ],
       totals: { n7: 125, n30: 506, reps7: 8, reps30: 8 },
+      boot: { n7: 41, shell: { n: 41, median: 3120, p90: 5400 }, state: { n: 41, median: 1480, p90: 2600 }, view: { n: 37, median: 5210, p90: 8900 } },
     } },
     // Design handoff PR 4 (K12): the manager fixture carries a critical, an
     // overdue (business-day age past the window), a praise, a replied item and

@@ -6769,17 +6769,62 @@ function getOrCreateViewUsageSheet_() {
     sheet = ss.insertSheet(VIEW_USAGE_TAB);
     sheet.appendRow([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
-      'EmployeeId', 'View', 'Mode',
+      'EmployeeId', 'View', 'Mode', 'BootTiming',
     ]);
     sheet.setFrozenRows(1);
+  } else if (sheet.getLastColumn() < VIEW_USAGE_WIDTH) {
+    // Trailing column added 2026-09-04 (boot timing) — the header self-heals
+    // like CN_HEADERS; pre-existing rows read a blank cell (no timing).
+    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue('BootTiming');
   }
   return sheet;
+}
+
+// Boot-timing beacon (operator 2026-09-04 — "can the app be pre-warmed
+// before each shift?"). Nothing measured which phase of a cold start a rep
+// actually waits on, so a warm-up would have been a guess. The client's boot
+// send now carries three durations — `shell` (navigation start → shell painted
+// after getEmployeeState), `state` (the getEmployeeState round trip alone) and
+// `view` (navigation start → the landing view's FIRST real data paint) — as a
+// JSON cell on the SAME ViewUsage row (no second endpoint, no second row).
+// Bounded per value so a garbage client cannot skew the medians.
+const VIEW_USAGE_WIDTH = 5;
+const VIEW_USAGE_TIMING_MAX_MS = 300000;   // five minutes — beyond that it is not a boot, it is a stall
+const VIEW_USAGE_TIMING_KEYS = ['shell', 'state', 'view'];
+
+/** PURE (Node-pinned): the stored cell for a client-supplied timing object.
+ *  Each phase → a whole non-negative ms count ≤ VIEW_USAGE_TIMING_MAX_MS, else
+ *  dropped; nothing usable → '' (the row stays a plain view-enter row). */
+function viewUsageTimingCell_(timing) {
+  if (!timing || typeof timing !== 'object' || Array.isArray(timing)) return '';
+  const out = {};
+  let any = false;
+  VIEW_USAGE_TIMING_KEYS.forEach(function (k) {
+    // null/blank = "this phase was not measured" (the fallback send carries
+    // view:null) — Number(null) is 0, which would record a confident 0 ms.
+    if (timing[k] === null || timing[k] === undefined || timing[k] === '') return;
+    const v = Number(timing[k]);
+    if (!isFinite(v) || v < 0 || v > VIEW_USAGE_TIMING_MAX_MS) return;
+    out[k] = Math.round(v);
+    any = true;
+  });
+  return any ? JSON.stringify(out) : '';
+}
+
+/** Inverse of the cell writer — a blank/corrupt cell reads as no timing. */
+function viewUsageTimingParse_(cell) {
+  const raw = String(cell || '').trim();
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    return (o && typeof o === 'object') ? o : null;
+  } catch (e) { return null; }
 }
 
 /** Rep-callable, USER-locked (the recordClientError reasoning — a telemetry
  *  append must never queue punch/note writes behind the ONE script lock),
  *  append-only, shape-validated + rate-capped. Fire-and-forget end to end. */
-function recordViewEnter(viewKey, mode) {
+function recordViewEnter(viewKey, mode, timing) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
@@ -6798,7 +6843,7 @@ function recordViewEnter(viewKey, mode) {
     try {
       getOrCreateViewUsageSheet_().appendRow([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
-        emp.id, v, m,
+        emp.id, v, m, viewUsageTimingCell_(timing),
       ]);
     } finally { lock.releaseLock(); }
     return { success: true };
@@ -6814,9 +6859,21 @@ function recordViewEnter(viewKey, mode) {
  *  in the SAME tz+format, so lexicographic compare is chronological. */
 function viewUsageAggregate_(events, cut7, cut30) {
   const byView = {}, reps7 = {}, reps30 = {}, byRep = {};
-  let n7 = 0, n30 = 0;
+  const boot = { shell: [], state: [], view: [] };
+  let n7 = 0, n30 = 0, boot7 = 0;
   (events || []).forEach(function (e) {
     if (!e || !e.ts || e.ts < cut30) return;
+    // Boot timings ride the 7-day window only — a startup figure from a month
+    // ago describes a build that may no longer be deployed.
+    if (e.ts >= cut7 && e.timing && typeof e.timing === 'object') {
+      let counted = false;
+      VIEW_USAGE_TIMING_KEYS.forEach(function (k) {
+        if (e.timing[k] === null || e.timing[k] === undefined || e.timing[k] === '') return;
+        const v = Number(e.timing[k]);
+        if (isFinite(v) && v >= 0) { boot[k].push(v); counted = true; }
+      });
+      if (counted) boot7++;
+    }
     const v = String(e.view || '?');
     const r = String(e.empId || '?');
     if (!byView[v]) byView[v] = { view: v, n7: 0, n30: 0, reps: {} };
@@ -6836,10 +6893,20 @@ function viewUsageAggregate_(events, cut7, cut30) {
     Object.keys(vc).forEach(function (v) { if (vc[v] > topN) { top = v; topN = vc[v]; } });
     return { empId: r, n30: byRep[r].n30, topView: top };
   }).sort(function (a, b) { return b.n30 - a.n30 || a.empId.localeCompare(b.empId); });
+  const stat = function (arr) {
+    if (!arr.length) return null;
+    const a = arr.slice().sort(function (x, y) { return x - y; });
+    const at = function (q) { return a[Math.min(a.length - 1, Math.max(0, Math.ceil(q * a.length) - 1))]; };
+    const mid = a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+    return { n: a.length, median: Math.round(mid), p90: Math.round(at(0.9)) };
+  };
   return {
     views: views,
     reps: reps,
     totals: { n7: n7, n30: n30, reps7: Object.keys(reps7).length, reps30: Object.keys(reps30).length },
+    // Startup: per-phase median + p90 over the trailing 7 days (null = no
+    // timed boot in the window — never a 0, INV-187).
+    boot: { n7: boot7, shell: stat(boot.shell), state: stat(boot.state), view: stat(boot.view) },
   };
 }
 
@@ -6859,12 +6926,13 @@ function getViewUsageStats() {
     try { url = ss.getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - VIEW_USAGE_SCAN_MAX + 1);
-    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 4).getValues();
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, VIEW_USAGE_WIDTH).getValues();
     const events = [];
     for (let i = 0; i < data.length; i++) {
       const ts = normalizeAuditTs_(data[i][0]);
       if (!ts) continue;
-      events.push({ ts: ts, empId: String(data[i][1]), view: String(data[i][2]), mode: String(data[i][3]) });
+      events.push({ ts: ts, empId: String(data[i][1]), view: String(data[i][2]), mode: String(data[i][3]),
+                    timing: viewUsageTimingParse_(data[i][4]) });
     }
     const cut7 = Utilities.formatDate(new Date(Date.now() - 7 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
     const cut30 = Utilities.formatDate(new Date(Date.now() - 30 * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');

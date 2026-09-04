@@ -21,12 +21,12 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   back CLEAN (2026-09-01).
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 756 + DOM 105;
+Test Command: manual (Node harnesses: `npm test` = pure 758 + DOM 106;
   visual matrix on demand — 94 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S99)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-03 (per-agent break schedules + the break COVERAGE planner — `19pre-per-agent-breaks-broad-implement.md`, `19pre-break-coverage-planner-broad-implement.md`)
+Updated: 2026-09-04 (boot-timing beacon + QA waveform icon — `19pre-boot-timing-broad-implement.md`)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -407,6 +407,14 @@ Pending Punch Adjustments side by side with multi-select approve
 wide/dark/mobile re-shot clean. Follow-on: Metrics 30-day trends still walk
 calendar days. Then the August accrual top-up + ADP re-export remain the
 operator's.
+COMMITTED + PUSHED 2026-09-04 (`6b87ca1`, 8/8 bites; not PR'd — the operator
+has not asked). THEN the boot-timing beacon + QA waveform icon
+(`19pre-boot-timing-broad-implement.md`): three durations ride the landing
+view's `recordViewEnter` row (deferred to first paint), aggregated as a
+"Startup time · 7d" line on Admin → Overview; QA icon → `waveform`; admin QA
+access verified already-true. Pure 758/0, DOM 106/0. NEXT: the operator wants
+a **QA Log tab** (a QA agent's daily-progress "Notes" equivalent) PLANNED
+before it is built — see the block's follow-on.
 BUILT the same day: the BREAK COVERAGE PLANNER on that card
 (`19pre-break-coverage-planner-broad-implement.md` — pure 749/0, DOM 104/0,
 11/11 bites, three admin-config scenarios clean incl. the cold-failure one).

@@ -208,7 +208,7 @@ function enterQaQueueView() {
   qaReleaseAudio_();
   if (!QA_STATE.period) QA_STATE.period = qaReadPeriodPref_();
   const area = document.getElementById('view-area');
-  renderLoading(area, 'Loading QA queue…', 'headset');
+  renderLoading(area, 'Loading QA queue…', 'waveform');
   qaLoadQueue_();
 }
 
@@ -437,7 +437,7 @@ function qaSetPeriod_(key) {
   if (!ok || key === QA_STATE.period) return;
   QA_STATE.period = key;
   qaWritePeriodPref_(key);
-  renderLoading(document.getElementById('view-area'), 'Loading ' + qaPeriodLabelOf_(key) + '…', 'headset');
+  renderLoading(document.getElementById('view-area'), 'Loading ' + qaPeriodLabelOf_(key) + '…', 'waveform');
   qaLoadQueue_();
 }
 
@@ -653,7 +653,7 @@ function qaSync_() {
       if (r.truncated) msg += ' · scan capped at ' + r.scanned + ' files — sync again for the rest';
       showToast(msg, r.truncated ? 'toast-warn' : 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
-        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
         qaLoadQueue_();
       }
     })
@@ -681,7 +681,7 @@ function qaSample_() {
       if (!r || !r.success) { showToast((r && r.error) || 'Sampling failed.', 'toast-warn'); return; }
       showToast(r.assigned + ' recording(s) assigned to you — shortest-covered agents first', 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
-        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+        renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
         qaLoadQueue_();
       }
     })
@@ -710,7 +710,7 @@ function qaSetExemption_(name, on) {
         if (!r || !r.success) { showToast((r && r.error) || 'Exemption change failed.', 'toast-error'); return; }
         showToast(on ? 'Exempt for ' + label : 'Exemption revoked', 'toast-success');
         if (currentView === 'qaQueue' && !QA_STATE.det) {
-          renderLoading(document.getElementById('view-area'), 'Refreshing…', 'headset');
+          renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
           qaLoadQueue_();
         }
       })

@@ -786,6 +786,9 @@ function clkRenderDashboard_() {
   clkBindDashFit_();
   requestAnimationFrame(clkDashFitAll_);   // fit mine/team once laid out (sw fits when its extras render)
   clkLoadDashboardExtras_();   // manager Spanish↔Requests switcher / Spanish-rep card
+  // Boot timing: the first REAL card paint (a same-day localStorage seed
+  // counts — that IS what the rep sees first). Ignored after boot.
+  if (typeof bootFirstPaint_ === 'function') bootFirstPaint_();
 }
 
 /** One carousel: a segmented chip (period selector) + a clipped track of 3 slides. */

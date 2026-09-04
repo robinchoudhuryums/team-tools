@@ -2017,6 +2017,45 @@ test('PR4 drawer: opens prefilled from COACH_PREFILL, is a NAMED dialog, closes 
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Boot timing (operator 2026-09-04): the landing view's usage row is held back
+// until its first real paint and then carries the three durations.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Shell — boot timing beacon');
+
+test('BOOT-DOM: the landing view\'s usage row waits for the first paint, then carries shell/state/view timings once', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const sent = () => h.run.calls.filter((c) => c.method === 'recordViewEnter');
+  assert.strictEqual(sent().length, 0, 'the Dashboard landing did NOT send its usage row at enter — it is deferred for the timings');
+  const T = h.read('BOOT_T');
+  assert.strictEqual(T.view, 'clock', 'the landing view was captured while arming');
+  assert.strictEqual(T.arming, false, 'and arming ended after enterTool');
+  assert.ok(typeof T.shellMs === 'number' && T.shellMs >= 0, 'shell time stamped');
+  assert.ok(typeof T.stateMs === 'number' && T.stateMs >= 0, 'state round-trip stamped');
+  // A paint from ANOTHER view must not count.
+  h.read('currentView = "timeoff"; bootFirstPaint_(); currentView = "clock";');
+  assert.strictEqual(sent().length, 0, 'a first-paint from a non-landing view is ignored');
+  // The Dashboard's first real card paint → send, with all three timings.
+  h.read('clkRenderDashboard_()');
+  const rows = sent();
+  assert.strictEqual(rows.length, 1, 'exactly one row after the first paint');
+  assert.strictEqual(rows[0].args[0], 'clock');
+  const timing = rows[0].args[2];
+  assert.ok(timing && typeof timing.view === 'number' && timing.view >= timing.shell, 'view paint is at or after the shell mount');
+  assert.strictEqual(timing.state, T.stateMs);
+  h.read('clkRenderDashboard_()');
+  h.flushTimers();   // the 20s fallback, had it survived, would fire here
+  assert.strictEqual(sent().length, 1, 'a second paint and the fallback timer send nothing more');
+  // Later navigation is the ordinary throttled beacon with no timing.
+  h.read('showView("timeoff")');
+  const later = sent();
+  assert.strictEqual(later.length, 2);
+  assert.strictEqual(later[1].args[0], 'timeoff');
+  assert.strictEqual(later[1].args[2], null, 'a plain navigation carries no timing');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Design handoff PR 6 (T1/T6) — "Needs you". Pending ≠ empty ≠ error, driven
 // through the real renderer into a live DOM, plus the loader's freshness rule
 // and the notes row's CLK_NAV_HINT hand-off.

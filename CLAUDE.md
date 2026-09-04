@@ -3256,6 +3256,47 @@ this section before touching the relevant area.
   every string `esc()`'d, `truncated` surfaced, Open↗ deep-link to the tab,
   stacking at ≤700px per A2). Pinned by the five observability-round Node
   tests (all bite-checked) + the `getViewUsageStats` omnibus gate case.
+  **BOOT TIMING rides the same row (operator 2026-09-04 — "can the app be
+  warmed up before each shift?").** The answer to that question was NO in the
+  form asked: a pre-shift trigger cannot reach the browser (the app has no
+  background presence — the reminders reasoning), every boot read is keyed to
+  the CALLER (`getEmployeeState`, the dashboard/pending-tasks/metrics caches
+  are per employee id and the only impersonation seam is the test-only
+  override), and the shared caches it could fill (roster, CDR agent metrics,
+  KB tree, build hash) live 5 minutes — cold again at shift start. Nothing
+  measured which phase a cold boot spends its time on, so a warm-up would
+  have been built against a guess. The client now stamps three durations off
+  the iframe's own navigation start (`performance.now()`): `state` (the
+  `getEmployeeState` round trip alone — stamped BEFORE the call is issued, so
+  a synchronously-answered RPC still measures), `shell` (until the shell +
+  landing view are mounted) and `view` (until the landing view's FIRST real
+  data paint — `bootFirstPaint_()`, called by the Dashboard's card render and
+  the Call Notes form render, the two realistic landing tabs; ignored for any
+  other view and after the first paint). They ride `recordViewEnter`'s 3rd
+  arg on the LANDING view's usage row — `recordViewUsage_` DEFERS that one
+  row while `BOOT_T.arming` (the throttle stamp still lands) and
+  `bootTimingSend_` fires it once at first paint or on a 20-second fallback
+  with `view: null` — so there is no second endpoint and no second row. Server:
+  `viewUsageTimingCell_` (pure) drops a null/blank/negative/over-cap phase —
+  **`Number(null)` is 0, and the first draft recorded the fallback send's
+  `view: null` as a confident 0 ms paint; BOOT-1 caught it** — and writes a
+  JSON cell in a trailing `BootTiming` column (header self-heals);
+  `viewUsageAggregate_` folds the 7-day window only (a month-old boot
+  describes a build that may no longer be deployed) into `boot.{n7, shell,
+  state, view}` as median + p90, null when nobody reported that phase
+  (INV-187). The panel renders one "Startup time · 7d" line, em dash per
+  unreported phase, and says the sign-in redirect is not included. The other
+  half of the answer is operational and needs no code: **an open tab or the
+  pinned pop-out left overnight IS the warm start** — the Clock view reconciles
+  on day rollover and focus, and the SWR caches paint instantly — so the
+  pop-out tooltip now says so. If the figures show the CDR-backed dashboard
+  cards dominate, a pre-shift trigger CAN fill the 6-hour dashboard cache for
+  every rep (that one cache outlives the lead), which needs the builder to
+  take an employee rather than the caller — a logged follow-on, gated on the
+  numbers. Pinned by BOOT-1 (sanitizer/parser/aggregate behavioural), BOOT-2
+  (the wiring + ordering + both paint hooks + the panel's em dash) and the
+  BOOT-DOM test (deferred at enter, ignores a foreign paint, sends ONCE with
+  all three figures, plain navigation carries none).
 - **Deploy-version beacon — open clients PROMPT to reload after a New-version
   deploy (operator 2026-08-27).** A deploy updates the SERVER half instantly
   (every `google.script.run` call runs the newly deployed code), but an open
@@ -6683,6 +6724,24 @@ manually for a fresh deploy or environment:
   tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
   (contract; the add guards asserted LIVE, not just worded — a `if (false)`
   beside the message passed the first draft).
+- **The 2026-09-04 boot-timing + QA icon round adds NO operator state** — no
+  properties, triggers, migrations, endpoints or CONFIG values; the `ViewUsage`
+  tab gains a trailing `BootTiming` column whose header self-heals on the
+  first beacon after deploy (older rows read as untimed). Behaviour changes to
+  expect post-deploy: (a) **Admin → Overview → Feature usage gains a "Startup
+  time · 7d" line** — median and p90 seconds to the shell, to the first server
+  call, and to the first content paint, from boots recorded since the deploy;
+  it reads "no timed boots yet" until reps have opened the app on the new
+  build, and it deliberately excludes the Google sign-in redirect (the page
+  cannot see it). Read it for a week before deciding on a pre-shift warm-up —
+  the honest answer to "warm the app before each shift" is that a trigger
+  cannot reach the browser and the 5-minute caches expire before the shift;
+  an open tab or pinned pop-out left overnight IS the warm start, and the
+  pop-out tooltip now says so; (b) **the QA sidebar + Recordings tab carry a
+  waveform glyph** instead of the headset. Admin QA access needed no change:
+  `canSeeQa_` admits every manager, and admins are a subset of managers, so
+  the operator already sees all three QA tabs; `QA_MEMBERS` is only for
+  non-manager reviewers. **Post-deploy: run `runAllTests()`** — still **308**.
 - **The 2026-09-03 Manage Time feedback round adds ONE optional Script
   Property (`MAIL_BCC_ALL`, its own entry above) and no other operator state**
   — no triggers, migrations or CONFIG values; one new MANAGER-gated endpoint
@@ -8715,7 +8774,9 @@ manually for a fresh deploy or environment:
 - **`ViewUsage` sheet tab** (auto-provisioned in the ADP spreadsheet on the
   first view-enter after the 2026-08-13 observability deploy). PHI-free
   feature-usage telemetry — Timestamp / EmployeeId / View / Mode per row,
-  never content. Written by `recordViewEnter` (rep-gated, USER lock,
+  plus a trailing `BootTiming` JSON cell on the landing-view row since
+  2026-09-04 (`{shell,state,view}` ms — see the boot-timing note in the
+  observability KDD), never content. Written by `recordViewEnter` (rep-gated, USER lock,
   rate-capped 120/hr/rep; the client throttles to one send per view per
   5 min and skips View-as previews); read by the admin-gated
   `getViewUsageStats` behind the Admin → Overview "Feature usage" panel
@@ -9584,6 +9645,19 @@ prefill race: typed field survives, stale response dropped by SEQUENCE not
 date, failed prefill disables Save). Three ADJ/B3 pins followed the decision
 body into `punchAdjustDecideAll_` and the M-7 inventory floor moved to the
 TRANSITIVE set (the direct set is two functions now).
+The boot-timing beacon (operator 2026-09-04) added two more → **758** (BOOT-1
+the sanitizer/parser/aggregate driven behaviourally — junk, negative, over-cap
+and NULL phases dropped, 7-day window only, medians null-never-0; BOOT-2 the
+same-row wiring, the stateStart-before-RPC ordering, both landing-view paint
+hooks, the 20s fallback, every hook try/caught, the panel's em dash and the
+fixture's boot shape) and DOM 105 → **106** (BOOT-DOM: deferred at enter, a
+foreign view's paint ignored, ONE send with all three figures, plain
+navigation carries none). The QA-5 registry pin was repointed for the
+`waveform` icon. BOOT-1's first run caught a live defect in the sanitizer
+(`Number(null)` recording a fallback send as a 0 ms paint), and BOOT-DOM's
+first run caught an ordering one (a synchronously-answered `getEmployeeState`
+ran the success handler before `stateStart` was stamped) — both fixed before
+the pins went green.
 The split-day punch repair (operator 2026-09-03, the same afternoon) added two
 more → **752** (TZR-3 — `splitDayRepairPlan_` driven behaviourally: the kept
 row is the earliest TIME, not the last APPENDED row (the sheet doctor's rule,
