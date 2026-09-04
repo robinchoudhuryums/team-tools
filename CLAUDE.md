@@ -161,7 +161,9 @@ Apps Script project under its own directory, synced via `clasp`.
      new row stores the source id in the trailing **`AmendsId`** column
      (submission-tab headers self-heal), and the Sent list marks the pair
      ("amended copy" info chip / "superseded" warn chip + banners; the Amend
-     button hides on superseded rows). Backs the Intake spreadsheet
+     button hides on superseded rows). **The previewed + emailed form is
+     ALWAYS English whatever language it was completed in (operator
+     2026-09-04, fired live — see the Common Gotcha).** Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
    - **Reference** — in-app knowledge base (Phase 1). A per-department
      tree + full-text search + reader for training/policy docs, so the
@@ -1187,10 +1189,11 @@ this section before touching the relevant area.
   share the helper now. **It is deliberately NOT in the client `cnFmtHtml_`** —
   that formatter also feeds the note CARDS, which are `white-space: nowrap` +
   ellipsis one-line previews by design, and a `<br>` breaks out of that
-  regardless of nowrap. Three OTHER sites still write the same replace inline
-  (external customer/provider message body ×2, the form-submission table
-  cell): correct, and routing them through `cnNlBr_` is a logged consistency
-  follow-on, not a change to smuggle into a fix that touches PHI rendering.
+  regardless of nowrap. The three OTHER sites that wrote the same replace
+  inline (external customer/provider message body ×2, the form-submission
+  table cell) were routed through `cnNlBr_` on 2026-09-04 as their own
+  follow-on (NLBR-2 pins ZERO inline `\n`→`<br>` replaces in Code.js; the
+  helper also folds CRLF, a small widening for those three).
 - **Metrics client must `esc()` every server string before `innerHTML`.**
   `metrics/script_metrics.html` renders `repName`, CDR agent names
   (`unmatchedAgents` / `rosterWithNoCdr`), and `data.error` /
@@ -1342,6 +1345,24 @@ this section before touching the relevant area.
   entry (`5'1"` → `61`) to total inches on blur (`intakeParseHeightInches_`, pure).
   None of Q32/Q33a/Q37/Q45 are engine-read, so no drift-guard is needed; the pure
   serialize/parse helpers are Node-pinned. Optional Q31a body diagram DEFERRED.
+- **The intake payload's LABELS are always the English bank — the email is
+  English whatever language the form was completed in (operator 2026-09-04,
+  FIRED LIVE: a testing agent sent a PPD to the Power dept with Spanish
+  labels).** The server renders `payload.rows` verbatim (that is how the
+  notes section and the amend banner got in with zero server edits), so the
+  ROWS decide the email's language, and both collectors
+  (`intakeCollectPpd_` / `intakeCollectAcct_`) used to read the bank by the
+  DISPLAY language. They now read `INTAKE_PPD_Q.EN` / `intakeAcctBank_(form).EN`
+  (+ `INTAKE_PPD_NOTES.EN`), pairing each English label with the answer
+  collected by qNum / index from the rendered form — safe ONLY because the EN
+  and ES banks are positionally equivalent, which INTK-EN pins (same qNums at
+  the same positions; same PMD/PAP lengths). Answer VALUES were never the
+  problem (the CANONICAL-ENGLISH VALUE RULE); free text stays as typed.
+  `language` still records the COMPLETION language — the Sent tab re-renders
+  against it and the amend replay is language-matched — and the in-app
+  confirm list (`intakeRecwarnLabel_`) stays localized: only what LEAVES the
+  app is forced English. Pinned by INTK-EN + INTK-EN-DOM (both collectors
+  driven under `lang = 'ES'` in jsdom).
 - **Intake email builders must `esc_` every patient field; the justification
   is the ONE raw exception.** `intakeBuildPpdBodyHtml_` / `intakeBuildAcctBodyHtml_`
   inject the body into the preview modal via `innerHTML` and into the sent
@@ -2265,7 +2286,7 @@ this section before touching the relevant area.
 - **`getMyMetrics` is ALSO server-result-cached (L-1).** Independent
   of the client cache above, the endpoint caches its assembled result
   in `CacheService` for `CONFIG.CDR_CACHE_TTL` (5 min) keyed by
-  `metrics_my_v1:<emp.id>:<date>`. It's the only rep-facing CDR read
+  `metrics_my_v2:<emp.id>:<date>`. It's the only rep-facing CDR read
   and per INV-124 it scans the WHOLE roster's per-rep matrix +
   the Transfer sheet UNCACHED on every open — the result cache keeps a
   Metrics-tab re-enter / date toggle from re-scanning. The cache is at
@@ -3239,7 +3260,7 @@ this section before touching the relevant area.
   `#spanish-head`, and the list refresh paints the seeded lists first and
   keeps last-good on a failed half — so the painted content is never
   disturbed mid-read. (c) `getTeamMetrics` — the one UNCACHED heavy manager
-  endpoint — gained the sibling endpoint result cache (`team_metrics_v1:
+  endpoint — gained the sibling endpoint result cache (`team_metrics_v2:
   <from>:<to>`, org-wide since every manager sees the same aggregate,
   `CDR_CACHE_TTL`, `_TEST_OVERRIDE_CDR_SS_ID` bypass), with the put gated on
   a CLEAN round (`!noteCountPartial && !transferMeta.error` — INV-129: a
@@ -3696,8 +3717,8 @@ this section before touching the relevant area.
   live-status sparkline (7 workdays excl. today) and the missed-clock-out
   sparkline (14); `pendingTrend` deliberately stays on calendar days, because
   a PTO request can be SUBMITTED on a Saturday and that bar is data, not a
-  structural zero. The Metrics 30-day trends still walk calendar days — see the
-  follow-on in the operator entry. (e) **The live-status card's Edit-day / Pay-
+  structural zero. (The Metrics 30-day trends joined the workday rule on
+  2026-09-04 via `metricsWorkdayIsos_`.) (e) **The live-status card's Edit-day / Pay-
   statement buttons sit in the card's top-right corner from 541px** and the
   sparkline doubled (36px track, total beneath). NOT below 541px: the shell
   makes `.emp-grid` two columns there, and the 66px right padding that keeps
@@ -4190,7 +4211,7 @@ this section before touching the relevant area.
   immediately; `managerGetUnresolvedActionCount`
   (`CN_UNRESOLVED_CACHE_KEY`, 2 min) is TTL-only like the ambient
   cache (INV-43). Since the 2026-08-13 speed round `getTeamMetrics` is ALSO
-  endpoint-result-cached (`team_metrics_v1:<from>:<to>`, org-wide,
+  endpoint-result-cached (`team_metrics_v2:<from>:<to>`, org-wide,
   `CDR_CACHE_TTL`; put gated on a clean round — see the slow-tabs KDD).
   Open-ended substring search (`managerSearchCallNotes`
   without a date range) is intentionally NOT cached — speeding it up
@@ -6435,7 +6456,7 @@ manually for a fresh deploy or environment:
   no Script Properties, triggers, migrations, or CONFIG constants; two new
   per-browser localStorage keys (`umsTzWarnedDay`, `umsDashMetrics` — count
   now sixteen) and one new server-side CacheService entry
-  (`team_metrics_v1:<from>:<to>`, self-managing). **ONE OPERATOR ACTION from
+  (`team_metrics_v2:<from>:<to>`, self-managing). **ONE OPERATOR ACTION from
   the 9:30 PM note report: open the Employees sheet and set YOUR OWN row's
   Timezone cell to `America/Chicago`** — a blank cell falls back to
   `CONFIG.TIMEZONE` (Asia/Kolkata), which is why a note logged mid-morning
@@ -6754,14 +6775,38 @@ manually for a fresh deploy or environment:
   read the log, then the same with `dryRun: false` and
   `adds: [{ employee: 'Anne Garcia', date: '2026-08-27', type: 'ClockOut', time: '17:00' }, …]`.
   **The editor's ▶ button passes NO arguments, so a bare call refuses (the
-  operator hit exactly this on 2026-09-03)** — the one-time
-  `SPLIT_REPAIR_2026_09_03` constant + `repairSplitDayPunches_dryRun/_apply`
-  wrappers carry the opts (fill `adds` in the constant); delete all three
-  once the repair has run, the tz-repair precedent.
+  operator hit exactly this on 2026-09-03)** — a one-time
+  `SPLIT_REPAIR_2026_09_03` constant + `_dryRun/_apply` wrappers carried the
+  opts for that run; the repair was applied, the missing punches were entered
+  by hand in Day Edit, and all three were DELETED on 2026-09-04 (the tz-repair
+  precedent). The tool itself stays, called with an opts object.
   Target resolution moved into the shared `tzRepairResolveTargets_` so the two
   tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
   (contract; the add guards asserted LIVE, not just worded — a `if (false)`
   beside the message passed the first draft).
+- **The 2026-09-04 late round (the English-email fix + five logged follow-ons)
+  adds NO operator state** — no Script Properties, triggers, migrations,
+  endpoints or CONFIG values. Behaviour changes to expect post-deploy: (a) **an
+  intake form completed in Spanish now previews and emails in ENGLISH** — the
+  question text, section headers and notes title are always the English bank
+  (this fired live the same afternoon: a PPD reached the Power dept in
+  Spanish); the answer values were already English, free text stays as typed,
+  and the Sent tab still shows which language the agent completed it in; (b)
+  **the Metrics trend sparklines (My Stats hero + the five KPI cards, Team
+  Metrics single-day and range) plot WORKDAYS only** — the two weekend gaps
+  per week are gone and the headings say so; the three endpoint caches were
+  bumped so a stale calendar-day payload is never served (up to 5 minutes
+  after deploy the OLD shape can still paint); (c) **changing a QA criterion's
+  TYPE in the Admin editor asks first** (a danger confirm naming the criteria
+  and what old answers will look like); (d) **the QA Log gains an Agent
+  filter** beside the search (refetch-free, with an Unattributed bucket); (e)
+  the disabled-by-default archive tiers gain a guard against the Sheets
+  "cannot delete all non-frozen rows" refusal — invisible while both windows
+  are 0; (f) the external customer/provider email bodies and the
+  form-submission table now fold CRLF line breaks like the note email does.
+  **Post-deploy: run `runAllTests()`** — still **308**; then re-send yourself
+  ONE PPD from the Spanish form and confirm the email is English (the one
+  check CI cannot make, since the email body is built from the client's rows).
 - **The 2026-09-04 QA Log round adds NO operator state** — no Script Properties,
   triggers, migrations, OAuth scopes or CONFIG values; two new QA-tier endpoints
   (`getQaLog`, `qaCreateManualRecording` — the `canSeeQa_` tier, so INV-136's
@@ -6822,10 +6867,9 @@ manually for a fresh deploy or environment:
   agent** (only the adjust-REQUEST decisions and time-off decisions email the
   rep — `managerSaveDay` never has), and **a manager edits a rep's day
   directly with Day Edit; the request queue is the rep-side flow**, there is
-  no manager-filed adjust request and none is needed. FOLLOW-ON: the Metrics
-  My Stats / Team Metrics 30-day trends still walk calendar days (CDR carries
-  no weekend rows, so those points render as gaps) — moving them to workdays
-  touches the cached payload shapes (INV-85) and is its own change.
+  no manager-filed adjust request and none is needed. (The Metrics 30-day
+  trends walked calendar days until the 2026-09-04 follow-ons round — see
+  that entry; they walk workdays now.)
   **Post-deploy: run `runAllTests()`** — still **308** (the omnibus gained
   the `updatePunchAdjustStatusBulk` case IN PLACE).
 - **Design handoff PR 6 (2026-09-02, the Time Clock surface) adds NO operator
@@ -9741,6 +9785,24 @@ trap bit THREE times in one write (two pure, one jsdom) — compare by JSON or
 on "same structure". Visual matrix 94 → **99** (`qa-log-light-{wide,mobile}`,
 `qa-log-empty-light-wide`, `qa-log-error-light-wide`, `qa-log-new-light-wide`
 — the dialog via the `post` hook).
+The English-email fix + follow-ons round (operator 2026-09-04, late) added six
+more → **768** (INTK-EN — both collectors read the EN bank, the completion
+language still recorded, EN/ES bank POSITIONAL parity asserted, the server
+builder renders the labels it is given; MW-1 — `metricsWorkdayIsos_`
+behavioural incl. the 22-of-30 count, all four trend walks wired, no calendar
+loop survives, three cache keys bumped and no v1 left, the fixture skipping
+weekends, the headings saying workdays; QC-TYPE — `cnQaCritRetyped_`
+behavioural + the gate-before-RPC wiring; ARCH-GUARD — the spare-row guard
+between the flush and the deletes; NLBR-2 — zero inline replaces in Code.js,
+the three sites through the helper; QA-28 — the agent filter's select,
+unattributed bucket, filter-before-search and stale-pick drop) and DOM 107 →
+**108** (INTK-EN-DOM drives both collectors under `lang = 'ES'` — every PPD
+label is EN-bank, none is ES-only, the notes rows are English, PMD rows pair
+index-for-index with the EN bank; QA-LOG-DOM grew the agent filter — a
+non-match hides every card and says so, the match is case-insensitive, three
+filter changes make ZERO refetches). 10 mutations / 10 bites. Visual:
+`metrics-light-wide`, `metrics-team-light-wide`, `metrics-light-mobile`,
+`qa-log-light-wide` re-shot clean (the trend lines now continuous).
 The split-day punch repair (operator 2026-09-03, the same afternoon) added two
 more → **752** (TZR-3 — `splitDayRepairPlan_` driven behaviourally: the kept
 row is the earliest TIME, not the last APPENDED row (the sheet doctor's rule,
@@ -10221,7 +10283,7 @@ INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gat
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's shift via `empShiftSchedule_` (roster column-O per-rep override wins, else the per-tz schedule — the v1 per-tz-only limitation was removed in Turn D, INV-149) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Since cycle 9 (L-2) the roster walk skips rows with no EMAIL (sibling parity with `getManagerDashboard`/`getTeammateStatus`/`getEmployeesList`) — a name-only offboarded/placeholder row used to count as a full working shift every day, inflating the confirmed band. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped), and a rep row whose shift STARTS on the previous manager-tz day carries `startsPrevDay` → the client renders "(from prev. day)" (cycle-8 — a bare "9:30 PM – 6:30 AM" on an IST rep's card read as THIS day's evening coverage). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab in the **Manage** module (moved from Time Clock; `enterCoverageView` in `tc/script_manager.html`, tab key unchanged); every server string `esc()`'d. **Since 2026-09-03 every rep's BREAKS are subtracted before bucketing** (`coverageSplitAtBreaks_`, the tz + per-agent layers through the one resolver — the planner counted a rep on lunch as present until then; at hourly granularity only a break spanning the whole hour empties it, the 15-min strip on the Admin card is the finer view). **The PTO overlay read is best-effort, and since cycle-16 F4 its failure is REPORTED: the response carries `ptoUnavailable` (additive), the client renders a `role="alert"` banner naming the bands as an upper bound, and the green all-clear is downgraded — with the overlay empty every rep counts as working, so silence made the planner report full staffing on a day half the team is off.** Pinned by the `coverageBucketHours_` Node tests + the F4 pin + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). SCOPE precision (cycle-10 audit note): the implementation builds its defined-token set from ALL shared HTML files, not the token partial alone — so a token declared only in a tool partial passes (behaviorally-correct CSS; weaker than the single-source rule this entry implies — e.g. the two `--lo-*` loader aliases live in `styles.html`). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
-INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Yesterday/7D/30D range presets (Yesterday = the previous workday since 2026-08-17). Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). **Operator #5 (2026-08-06) added the transfer read to the same set:** a THROWN `getCsrTransferPerRepDaily_` read in `getMyMetricsRange` degrades to `transfer: null` and skips the put (`!transferThrew` joins the guard); a reader-returned `meta.error` (Transfer tab absent — a steady CONFIG state, not transient) also yields null but stays cacheable, per the documented "Transfer trend simply absent" posture. Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
+INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Yesterday/7D/30D range presets (Yesterday = the previous workday since 2026-08-17). Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v2:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). **Operator #5 (2026-08-06) added the transfer read to the same set:** a THROWN `getCsrTransferPerRepDaily_` read in `getMyMetricsRange` degrades to `transfer: null` and skips the put (`!transferThrew` joins the guard); a reader-returned `meta.error` (Transfer tab absent — a steady CONFIG state, not transient) also yields null but stays cacheable, per the documented "Transfer trend simply absent" posture. Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
 INV-131 | The `emailFromCallNote` dept-request auto-log is IDEMPOTENT per open `(noteId, deptLabel)` request (A5): before send, `drFindOpenRequest_(noteId, deptLabel)` (bounded tail of `DR_MAX_SCAN` rows, newest-first) reuses an existing OPEN row's `ReqId` as the resolve token and the post-send block SKIPS the append (auditing `resend`), so re-sending the same note to the same dept re-notifies without opening a second request. The lookup is best-effort (any throw → fresh token, never fails the send) and hash-safe (the token rides the CTA appended AFTER the INV-41 check; only the token VALUE changes). The `DR.NOTE_ID` column (col 11) is a back-compat trailing add (`DR_HEADERS` 11→12, the `CN_HEADERS`/`FS_HEADERS` posture — legacy rows read `''` and never dedupe). The resolve-by-token scans (`resolveDeptRequest`/`markDeptRequestResolved_`) stay FULL and don't read `NOTE_ID`. Pinned by `test_deptReq_resendDedupLookup` | Subsystem: Server + Client (Call Notes views)
 

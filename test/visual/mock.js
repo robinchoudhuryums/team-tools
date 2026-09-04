@@ -266,13 +266,16 @@ function qaLatestScorecards_(cards) {
   }
 
   var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89.1, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
+  // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
+  // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
+  function isWeekendIso(iso) { var dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return dow === 0 || dow === 6; }
   function trend30(own) {
     var out = [];
-    for (var i = 29; i >= 0; i--) out.push({ date: daysAgo(i), pctAnswered: 80 + (i * 7) % 15, answered: 30 + (i * 3) % 12, missed: (i * 2) % 5, own: 80 + (i * 7) % 15, team: 84 + (i * 5) % 9, cohort: 6 });
+    for (var i = 29; i >= 0; i--) { if (isWeekendIso(daysAgo(i))) continue; out.push({ date: daysAgo(i), pctAnswered: 80 + (i * 7) % 15, answered: 30 + (i * 3) % 12, missed: (i * 2) % 5, own: 80 + (i * 7) % 15, team: 84 + (i * 5) % 9, cohort: 6 }); }
     return out;
   }
   function kpiSeries() {
-    var mk = function (base) { var s = []; for (var i = 29; i >= 0; i--) s.push({ date: daysAgo(i), own: base + (i * 7) % 12, team: base + 2 + (i * 5) % 8, cohort: 6 }); return s; };
+    var mk = function (base) { var s = []; for (var i = 29; i >= 0; i--) { if (isWeekendIso(daysAgo(i))) continue; s.push({ date: daysAgo(i), own: base + (i * 7) % 12, team: base + 2 + (i * 5) % 8, cohort: 6 }); } return s; };
     return { pctAnswered: mk(82), answered: mk(30), missed: mk(2), attSeconds: mk(240), transferPct: mk(9) };
   }
 

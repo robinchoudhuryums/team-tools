@@ -242,7 +242,7 @@ var QA_STATE = {
   myRevAudioSeq: 0,     // follow-on — shared-review playback seq guard (one active load)
   myRevObjectUrl: null, // follow-on — the shared-review Blob URL (revoked on replace)
   // QA Log (operator 2026-09-04)
-  log: { seq: 0, data: null, reviewer: '', from: '', to: '', customOpen: false, q: '' },
+  log: { seq: 0, data: null, reviewer: '', from: '', to: '', customOpen: false, q: '', agent: '' },
 };
 var QA_PERIOD_KEY = 'umsQaPeriod';   // per-browser: the last audit period picked (validated against what the server ships)
 
@@ -2007,6 +2007,27 @@ function qaLogSearch_(v) {
   const host = document.getElementById('qa-log-body');
   if (host && QA_STATE.log.data) host.innerHTML = qaLogEntriesHtml_(QA_STATE.log.data);
 }
+/** Per-agent filter (2026-09-04 follow-on) — a refetch-free select over the
+ *  agents the LOADED entries carry ('' = every agent, '__none__' =
+ *  unattributed). Like the search, it never re-queries. */
+function qaLogSetAgent_(v) {
+  QA_STATE.log.agent = String(v || '');
+  const host = document.getElementById('qa-log-body');
+  if (host && QA_STATE.log.data) host.innerHTML = qaLogEntriesHtml_(QA_STATE.log.data);
+}
+function qaLogAgentOptions_(entries) {
+  const seen = {};
+  const names = [];
+  let unattributed = false;
+  (entries || []).forEach(function (e) {
+    const a = String((e && e.agent) || '').trim();
+    if (!a) { unattributed = true; return; }
+    const k = a.toLowerCase();
+    if (!seen[k]) { seen[k] = true; names.push(a); }
+  });
+  names.sort(function (a, b) { return a.localeCompare(b); });
+  return { names: names, unattributed: unattributed };
+}
 
 function enterQaLogView() {
   if (typeof stopClock === 'function') stopClock();
@@ -2031,6 +2052,12 @@ function qaLogLoad_() {
       // for "all" is scoped back to themselves there).
       L.data = data;
       L.reviewer = data.isManager ? (data.reviewer || '') : '';
+      // A remembered agent filter that no loaded entry carries would hide
+      // everything behind an "All agents" select — drop it.
+      if (L.agent && L.agent !== '__none__') {
+        const ao = qaLogAgentOptions_(data.entries);
+        if (!ao.names.some(function (n) { return n.toLowerCase() === L.agent.toLowerCase(); })) L.agent = '';
+      }
       if (data.from) L.from = data.from;
       if (data.to) L.to = data.to;
       qaLogRender_();
@@ -2071,6 +2098,15 @@ function qaLogRender_() {
               esc(r.name || r.empId) + (r.empId === d.self ? ' (you)' : '') + '</option>';
           }).join('') + '</select>'
       : '') +
+    (function () {
+      const ao = qaLogAgentOptions_(d.entries);
+      if (!ao.names.length && !ao.unattributed) return '';
+      return '<select aria-label="Agent" onchange="qaLogSetAgent_(this.value)">' +
+        '<option value=""' + (!L.agent ? ' selected' : '') + '>All agents</option>' +
+        ao.names.map(function (n) { return '<option value="' + esc(n) + '"' + (L.agent.toLowerCase() === n.toLowerCase() ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
+        (ao.unattributed ? '<option value="__none__"' + (L.agent === '__none__' ? ' selected' : '') + '>Unattributed</option>' : '') +
+      '</select>';
+    })() +
     '<input type="search" aria-label="Search your log" placeholder="Search agent, recording, notes…" value="' + esc(L.q) + '" oninput="qaLogSearch_(this.value)">' +
     '<button type="button" class="qa-btn prime" onclick="qaLogNew_()">' + icon('plus', 14) + ' Log an audit</button>' +
   '</div>';
@@ -2081,7 +2117,10 @@ function qaLogRender_() {
 /** Client-side filter over the loaded entries (the search never refetches). */
 function qaLogFiltered_(d) {
   const q = String(QA_STATE.log.q || '').trim().toLowerCase();
-  const all = d.entries || [];
+  const agent = String(QA_STATE.log.agent || '');
+  let all = d.entries || [];
+  if (agent === '__none__') all = all.filter(function (e) { return !String(e.agent || '').trim(); });
+  else if (agent) all = all.filter(function (e) { return String(e.agent || '').trim().toLowerCase() === agent.toLowerCase(); });
   if (!q) return all;
   return all.filter(function (e) {
     return [e.recordingName, e.agent, e.notes, e.reviewerName].some(function (v) { return String(v || '').toLowerCase().indexOf(q) >= 0; });
@@ -2107,7 +2146,7 @@ function qaLogEntriesHtml_(d) {
     '<div class="qa-sum"' + (avgTone ? ' data-tone="' + avgTone + '"' : '') + '><div class="qa-sum-k">Avg score</div><div class="qa-sum-v">' + (avg == null ? '—' : esc(String(avg)) + ' <small>/5</small>') + '</div></div>' +
   '</div>';
   if (d.truncated) html += '<div class="qa-note" style="margin:0 0 10px;color:var(--warning-deep)">Scan capped — the oldest rows were not read.</div>';
-  if (!entries.length) return html + '<div class="qa-empty">Nothing matches "' + esc(QA_STATE.log.q) + '".</div>';
+  if (!entries.length) return html + '<div class="qa-empty">Nothing matches the current filter' + (QA_STATE.log.q ? ' ("' + esc(QA_STATE.log.q) + '")' : '') + '.</div>';
   // Day groups, newest first (entries arrive sorted).
   const groups = [];
   entries.forEach(function (e) {

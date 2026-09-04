@@ -1595,7 +1595,14 @@ function intakePpdUpdateProgress_() {
 // Collect { patientInfo, answers, rows, language } from the PPD DOM.
 function intakeCollectPpd_() {
   var lang = INTAKE_STATE.ppd.lang;
-  var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
+  // Operator 2026-09-04 (fired live: a PPD reached the Power dept in Spanish):
+  // the payload's LABELS — question text, section headers, the notes title —
+  // are ALWAYS the English bank, whatever language the form was completed in.
+  // The email and its preview render payload.rows verbatim, and every reader
+  // downstream is English. Answer VALUES are already canonical English (the
+  // CANONICAL-ENGLISH VALUE RULE); free text stays as typed. `language` still
+  // records the completion language (the Sent tab + the amend replay use it).
+  var qs = INTAKE_PPD_Q.EN;
   var root = document.getElementById('intk-ppd-form');
   var answers = {};
   var rows = [];
@@ -1616,7 +1623,7 @@ function intakeCollectPpd_() {
   // builder renders payload.rows verbatim (esc_'d), so no server change; the
   // engine ignores non-numeric keys; AnswersJson carries it to the Sent tab.
   var notesVal = root ? intakePpdGetVal_(root, 'notes') : '';
-  var nlc = INTAKE_PPD_NOTES[lang] || INTAKE_PPD_NOTES.EN;
+  var nlc = INTAKE_PPD_NOTES.EN;   // English labels in the payload (see above)
   answers.notes = notesVal;
   rows.push({ isHeader: true, label: nlc.title });
   rows.push({ qNum: 'notes', label: nlc.label, value: notesVal, isSecondary: false });
@@ -2071,7 +2078,9 @@ function intakeAcctGetVal_(root, i, isCheckbox) {
 // DOB is form index 5 for both PMD & PAP; patient name is index 1.
 function intakeCollectAcct_(form) {
   var lang = INTAKE_STATE[form].lang;
-  var qs = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
+  // English labels in the payload whatever the display language — the email
+  // is always English (operator 2026-09-04; see intakeCollectPpd_).
+  var qs = intakeAcctBank_(form).EN;
   var L = intakeAcctLayout_(form);
   var root = document.getElementById('intk-' + form + '-form');
   var rows = [], answers = {};

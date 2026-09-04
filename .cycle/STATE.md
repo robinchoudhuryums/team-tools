@@ -14,19 +14,17 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   reflected too, as `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
   Cycle 19 opens on the next /broad-scan or /audit — at that point move the
   cycle-18 block to HISTORY.md and reset this file from the template.
-  THE ONE OUTSTANDING ACTION IS THE OPERATOR'S DEPLOY: every PR from #176 to
-  #228 ships on a single `clasp push -f` + New version. `runAllTests()` after
-  it expects **308**; `installAutomationTriggers()` must be re-run once for
-  the 18th trigger; `reportMultiBreakDays()` has already been run and came
-  back CLEAN (2026-09-01).
+  DEPLOYED 2026-09-04: the #176–#228 backlog is live — `runAllTests()` read
+  **308/308** and `installAutomationTriggers()` was re-run (all 19 triggers).
+  No operator action is outstanding.
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 762 + DOM 107;
+Test Command: manual (Node harnesses: `npm test` = pure 768 + DOM 108;
   visual matrix on demand — 99 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S103)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-04 (QA Log + typed criteria + manual fallback — `19pre-qa-log-broad-implement.md`; earlier the same day: boot-timing beacon + QA waveform icon)
+Updated: 2026-09-04 late (English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -325,8 +323,9 @@ needs no further affordance work in PR 2.
   that rep's archive forever, logged but unfixed. Only reachable with
   `CN_NOTE_ARCHIVE_DAYS` / `TIMESHEET_ARCHIVE_DAYS` enabled (both default
   0). One-line guard: `insertRowsAfter` a spare row before deleting, or
-  keep the final row and clearContent it. NOT fixed here (out of the scope
-  asked for, and no urgency while both windows are 0).
+  keep the final row and clearContent it. **DONE 2026-09-04** (the
+  follow-ons round — a spare row is inserted when the run covers every
+  non-header row; ARCH-GUARD pins it).
 - ~~intakeHttpOnly_ schemeless-URL catalog warning~~ — DONE 2026-08-24
   (round-1 follow-ons FO-D, commit 86c64df)
 - CDR col-4 header one-liner (cycle 15, still open — operator)
@@ -376,7 +375,19 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, late). **PR #228 MERGED** (squash, CI green) — it carried
+CURRENT (2026-09-04, latest). Branch `claude/ums-team-tools-design-r8ar3o`
+(reset onto the merged PR #228 main) carries, NOT PR'd — the operator has not
+asked: the split-repair constant deletion (`66fb623`), then the **English-email
+fix + follow-ons round** (`97f9d78` + docs): intake payload labels always EN
+(fired live), Metrics trends on workdays (`metricsWorkdayIsos_`, cache keys
+v2), the QA criterion type-change confirm (`cnQaCritRetyped_`), the QA Log
+agent filter, the archive spare-row guard, `cnNlBr_` at the three inline
+sites. Pure 768/0, DOM 108/0, 10/10 bites, four scenarios re-shot clean.
+Block: `.cycle/blocks/19pre-english-email-followons-broad-implement.md`.
+The operator's deploy of #176–#228 is LIVE (308/308, triggers re-installed);
+this round is not deployed until it is merged + a New version is cut.
+
+PREVIOUS (2026-09-04, late). **PR #228 MERGED** (squash, CI green) — it carried
 the five commits below; the branch is reset onto main. Those were: the boot-timing beacon + QA waveform
 icon (`c057894`) and the **QA Log round** (`3f9c359` + the docs commit) —
 `getQaLog` + the pure `qaLogEntries_` over the scorecard store, typed rubric
@@ -409,8 +420,8 @@ deletes the rest, re-points the mirror, and writes agent-confirmed `adds`
 through the adjust writer — dry-run default, TZR-3/4 pinned, pure 752/0.
 The operator ran the dry run + apply (four duplicates collapsed); PR #226 +
 #227 (the ▶ wrappers) MERGED. The operator is entering the missing lunch/
-clock-out punches by hand in Day Edit; the `SPLIT_REPAIR_2026_09_03` constant
-+ `_dryRun/_apply` wrappers are still to be DELETED once they say so.
+clock-out punches by hand in Day Edit (done); the `SPLIT_REPAIR_2026_09_03`
+constant + `_dryRun/_apply` wrappers were DELETED 2026-09-04.
 THEN the Manage Time feedback round (2026-09-03 late afternoon, NOT PR'd):
 Day Edit prefill race fixed; workday-only manager trends; Pending Time Off +
 Pending Punch Adjustments side by side with multi-select approve

@@ -11364,6 +11364,7 @@ function cnRenderAdminBody_(cfg) {
   ffRegistry.forEach(function (f) { if (f.danger) ffDanger[f.key] = f.danger; });
   var kbAi = cfg.kbAi || null;
   CN_STATE.qaCritSeed = (cfg.qaCriteria || {}).seed || [];   // the Reset-to-default source
+  CN_STATE.qaCritLive = (cfg.qaCriteria || {}).live || [];   // the type-change warning's baseline
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
@@ -12014,22 +12015,38 @@ function cnRenderAdminBody_(cfg) {
       list.push(entry);
     }
     if (!list.length) { showToast('Add at least one criterion', 'toast-warn'); return; }
-    btn.disabled = true; btn.textContent = 'Saving…';
-    google.script.run
-      .withSuccessHandler(function (res) {
-        btn.disabled = false; btn.textContent = 'Save criteria';
-        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
-        showToast('Scorecard criteria saved', 'toast-success');
-        CN_STATE.qaCritSeed = (res.qaCriteria || {}).seed || CN_STATE.qaCritSeed;
-        var listEl = document.getElementById('cn-admin-qacrit-list');
-        // Re-render from the SERVER-resolved list, never the client rows (INV-185 posture).
-        if (listEl) listEl.innerHTML = cnRenderQaCritRows_((res.qaCriteria || {}).live || []);
-      })
-      .withFailureHandler(function (err) {
-        btn.disabled = false; btn.textContent = 'Save criteria';
-        showToast((err && err.message) || 'Save failed', 'toast-error');
-      })
-      .saveQaScorecardCriteria(list);
+    var go = function () {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false; btn.textContent = 'Save criteria';
+          if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+          showToast('Scorecard criteria saved', 'toast-success');
+          CN_STATE.qaCritSeed = (res.qaCriteria || {}).seed || CN_STATE.qaCritSeed;
+          CN_STATE.qaCritLive = (res.qaCriteria || {}).live || CN_STATE.qaCritLive;
+          var listEl = document.getElementById('cn-admin-qacrit-list');
+          // Re-render from the SERVER-resolved list, never the client rows (INV-185 posture).
+          if (listEl) listEl.innerHTML = cnRenderQaCritRows_((res.qaCriteria || {}).live || []);
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false; btn.textContent = 'Save criteria';
+          showToast((err && err.message) || 'Save failed', 'toast-error');
+        })
+        .saveQaScorecardCriteria(list);
+    };
+    // 2026-09-04 follow-on: a criterion whose TYPE changes under the same key
+    // leaves every rating already saved under the OLD type rendering as-is (a
+    // stored 4 beneath a Yes/No label; a 'yes' beneath a 1–5 scale — answers
+    // are never coerced). Name them and ask — the rename-orphans posture.
+    var retyped = cnQaCritRetyped_(CN_STATE.qaCritLive || [], list);
+    if (!retyped.length) { go(); return; }
+    uiConfirm({
+      title: 'Change a criterion\'s type?',
+      message: retyped.map(function (r) { return r.key + ' (' + r.from + ' → ' + r.to + ')'; }).join(', ') +
+        ' — ratings already saved under the old type stay stored as they are and will show under the new control as-is. ' +
+        'Prefer adding a new criterion and removing the old one. Change the type anyway?',
+      confirmLabel: 'Change type', cancelLabel: 'Go back', tone: 'danger',
+    }).then(function (ok) { if (ok) go(); });
   });
 
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
@@ -12141,6 +12158,22 @@ function cnRenderQaCritRows_(list) {
       '<button type="button" class="cn-brk-x" aria-label="Remove criterion" onclick="this.closest(\'.cn-qacrit-row\').remove()">' + icon('x', 12) + '</button>' +
       '</div>';
   }).join('');
+}
+/** PURE (Node-pinned) — the criteria in `next` whose KEY exists in `live` with a
+ *  DIFFERENT type (absent/unknown = scale, the server's canonical reading).
+ *  Keys compare canonically (trimmed, lowercase); a new key never counts. */
+function cnQaCritRetyped_(live, next) {
+  var norm = function (t) { t = String(t || '').trim().toLowerCase(); return (t === 'check' || t === 'choice') ? t : 'scale'; };
+  var was = {};
+  (live || []).forEach(function (c) { var k = String((c && c.key) || '').trim().toLowerCase(); if (k) was[k] = norm(c.type); });
+  var out = [];
+  (next || []).forEach(function (c) {
+    var k = String((c && c.key) || '').trim().toLowerCase();
+    if (!k || !(k in was)) return;
+    var to = norm(c.type);
+    if (was[k] !== to) out.push({ key: k, from: was[k], to: to });
+  });
+  return out;
 }
 function cnQaCritTypeChanged_(sel) {
   var row = sel.closest('.cn-qacrit-row');

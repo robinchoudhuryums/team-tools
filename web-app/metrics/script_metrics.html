@@ -937,8 +937,8 @@ function mRenderTrendSection_(data, opts) {
   // payload (the day the Yesterday preset warms), so the heading says exactly
   // what window it shows (independent of the range).
   var head = (opts && opts.rangeMode)
-    ? 'Trends · you vs team avg (trailing 30 days ending ' + esc(mPrevWorkdayIso_()) + ')'
-    : 'Trends · you vs team avg (30 days)';
+    ? 'Trends · you vs team avg (workdays in the 30 days ending ' + esc(mPrevWorkdayIso_()) + ')'
+    : 'Trends · you vs team avg (30 days · workdays)';
   return '<div class="m-trends">' +
     '<div class="m-trends-head">' + head + '</div>' +
     '<div class="m-trends-grid">' + cards + '</div>' +

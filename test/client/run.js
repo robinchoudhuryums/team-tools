@@ -9586,7 +9586,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v1:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate');
+  assert.ok(/team_metrics_v2:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v2: workday-only trend, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -17547,6 +17547,131 @@ test('QA-27: QA Log client — registry entry, shared range control, seq/view gu
   assert.ok(/getQaLog: \{[\s\S]{0,600}?entries: \[\]/.test(emptyFx), 'the empty twin exists (C7) and is genuinely empty');
   // Tests.js + the count: the queue's `manual` key reached the recording fixture.
   assert.ok(/manual: false \};/.test(mock.slice(mock.indexOf('var rec = function (id, name, ymd'), mock.indexOf('recs.push(r); return r;'))), 'the queue fixture carries manual (QA-23 derives it too)');
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2026-09-04 late: the English-email fix (fired live) + the logged follow-ons.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nintake English-email fix + follow-ons (2026-09-04)');
+
+const foNc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const foLit = (src, name) => {
+  const start = src.indexOf('var ' + name + ' = {');
+  assert.ok(start >= 0, name + ' literal found');
+  const end = src.indexOf('\n};', start);
+  return vm.runInNewContext('(' + src.slice(start + ('var ' + name + ' = ').length, end + 2) + ')');
+};
+
+test('INTK-EN: the intake payload LABELS are always the English bank, whatever language the form was completed in (fired live 2026-09-04)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const ppd = foNc(extractRawFunction('intake/script_intake.html', 'intakeCollectPpd_'));
+  const acct = foNc(extractRawFunction('intake/script_intake.html', 'intakeCollectAcct_'));
+  assert.ok(/var qs = INTAKE_PPD_Q\.EN;/.test(ppd), 'PPD rows read the EN bank');
+  assert.ok(/var nlc = INTAKE_PPD_NOTES\.EN;/.test(ppd), 'the notes section title/label are EN');
+  assert.ok(!/INTAKE_PPD_Q\[lang\]/.test(ppd) && !/INTAKE_PPD_NOTES\[lang\]/.test(ppd), 'no language-keyed bank read survives in the PPD collector');
+  assert.ok(/language: lang/.test(ppd), 'the completion language is still recorded (the Sent tab + the amend replay read it)');
+  assert.ok(/var qs = intakeAcctBank_\(form\)\.EN;/.test(acct) && !/\[lang\]/.test(acct), 'PMD/PAP rows read the EN bank');
+  assert.ok(/language: lang/.test(acct), 'the acct payload keeps the completion language too');
+  // The two banks must be POSITIONALLY equivalent for this to be safe: the
+  // answers are collected by qNum / index from the rendered (possibly Spanish)
+  // form and paired with the English label at the same position.
+  const PPD = foLit(src, 'INTAKE_PPD_Q');
+  const qnums = (arr) => arr.map((t) => { const m = String(t || '').trim().match(/^(\d+[a-z]?)\./); return m ? m[1] : (String(t || '').trim() ? 'H' : ''); });
+  assert.strictEqual(qnums(PPD.EN).join('|'), qnums(PPD.ES).join('|'), 'EN and ES PPD banks carry the same qNums/headers at the same positions');
+  ['INTAKE_PMD_Q', 'INTAKE_PAP_Q'].forEach((n) => {
+    const B = foLit(src, n);
+    assert.strictEqual(B.EN.length, B.ES.length, n + ': EN and ES banks have the same length (index-paired)');
+  });
+  // The server renders payload.rows verbatim — so an English payload IS an
+  // English email; no server change was needed, and none may be relied on.
+  const build = foNc(extractRawFunction('Code.js', 'intakeBuildPpdBodyHtml_'));
+  assert.ok(/const label = esc_\(r\.label \|\| ''\);/.test(build) && !/language/.test(build), 'the server body builder renders the row labels it is given');
+});
+
+test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, all four trend walks wired, cache keys bumped (INV-85), fixture mirrors it', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'metricsWorkdayIsos_'), ctx);
+  const W = ctx.metricsWorkdayIsos_;
+  // 2026-08-31 is a Monday; 2026-09-06 a Sunday.
+  assert.strictEqual(W('2026-08-31', '2026-09-06').join('|'), '2026-08-31|2026-09-01|2026-09-02|2026-09-03|2026-09-04', 'Mon–Fri kept, Sat/Sun dropped');
+  assert.strictEqual(W('2026-09-05', '2026-09-06').join('|'), '', 'a weekend-only range is empty');
+  assert.strictEqual(W('2026-09-04', '2026-09-04').join('|'), '2026-09-04', 'a single weekday');
+  assert.strictEqual(W('2026-09-06', '2026-09-01').join('|'), '', 'a reversed range yields []');
+  assert.strictEqual(W('2026-08-06', '2026-09-04').length, 22, '30 calendar days ending Fri 2026-09-04 = 22 workdays');
+  const my = foNc(extractRawFunction('Code.js', 'getMyMetrics'));
+  const rng = foNc(extractRawFunction('Code.js', 'getMyMetricsRange'));
+  const team = foNc(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/var dates = metricsWorkdayIsos_\(trendFrom, trendTo\);/.test(my), 'getMyMetrics: the 30-day axis (trend + the INV-124 series) is the workday list');
+  assert.ok(!/setUTCDate\(d\.getUTCDate\(\) \+ 1\)\) dates\.push/.test(my), 'the calendar-day axis loop is gone');
+  assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
+  assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
+  assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
+  assert.ok(/metrics_my_v2:/.test(my) && /metrics_range_v2:/.test(rng) && /team_metrics_v2:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85)');
+  assert.ok(!/metrics_my_v1|metrics_range_v1|team_metrics_v1/.test(my + rng + team), 'no v1 key survives');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
+  assert.strictEqual((t30.match(/if \(isWeekendIso\(daysAgo\(i\)\)\) continue;/g) || []).length, 2, 'the fixture trend + KPI series skip weekends — the server shape, not a paraphrase (INV-185)');
+  const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/30 days · workdays/.test(mp) && /workdays in the 30 days ending/.test(mp), 'the trend headings say workdays');
+});
+
+test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {
+  const fnCtx = { JSON: JSON };
+  vm.createContext(fnCtx);
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnQaCritRetyped_'), fnCtx);
+  const fn = fnCtx.cnQaCritRetyped_;
+  const live = [{ key: 'greeting', label: 'G' }, { key: 'verified', label: 'V', type: 'check' }, { key: 'outcome', label: 'O', type: 'choice', options: ['a', 'b'] }];
+  assert.strictEqual(JSON.stringify(fn(live, live)), '[]', 'an unchanged list reports nothing');
+  assert.strictEqual(JSON.stringify(fn(live, [{ key: 'greeting', label: 'G', type: 'scale' }, { key: 'verified', label: 'V', type: 'check' }])), '[]', 'an explicit scale equals the absent type; a removed criterion is not a retype');
+  assert.strictEqual(JSON.stringify(fn(live, [{ key: ' GREETING ', type: 'check' }, { key: 'verified', type: 'choice' }, { key: 'brand-new', type: 'choice' }])),
+    JSON.stringify([{ key: 'greeting', from: 'scale', to: 'check' }, { key: 'verified', from: 'check', to: 'choice' }]),
+    'a retyped key is named with from → to (canonical key compare); a NEW key never counts');
+  assert.strictEqual(JSON.stringify(fn(live, [{ key: 'verified', type: 'bogus' }])), JSON.stringify([{ key: 'verified', from: 'check', to: 'scale' }]), 'an unknown type reads as scale — the server\'s canonical reading');
+  const cn = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/CN_STATE\.qaCritLive = \(cfg\.qaCriteria \|\| \{\}\)\.live \|\| \[\];/.test(cn), 'the live list is stashed at Admin render (the baseline)');
+  assert.ok(/CN_STATE\.qaCritLive = \(res\.qaCriteria \|\| \{\}\)\.live \|\| CN_STATE\.qaCritLive;/.test(cn), 'and refreshed from the SERVER-resolved list after a save');
+  const save = cn.slice(cn.indexOf("var qcSaveBtn = document.getElementById('cn-admin-qacrit-save')"), cn.indexOf("var slaSaveBtn"));
+  assert.ok(/var retyped = cnQaCritRetyped_\(CN_STATE\.qaCritLive \|\| \[\], list\);/.test(save), 'the save consults the helper');
+  assert.ok(/if \(!retyped\.length\) \{ go\(\); return; \}/.test(save), 'no retype → saves straight away');
+  assert.ok(/uiConfirm\(\{[\s\S]*?tone: 'danger',[\s\S]*?\}\)\.then\(function \(ok\) \{ if \(ok\) go\(\); \}\);/.test(save), 'a retype asks with a danger confirm and saves only on OK');
+  assert.ok(/Prefer adding a new criterion and removing the old one/.test(save), 'the confirm names the safer edit');
+  assert.ok(save.indexOf('var retyped') < save.indexOf('uiConfirm('), 'the check runs BEFORE any RPC');
+  assert.ok(save.indexOf('.saveQaScorecardCriteria(list)') < save.indexOf('var retyped'), 'the RPC lives inside go() (declared above the gate)');
+});
+
+test('ARCH-GUARD: archiveSheetRowsOlderThan_ keeps a spare row so the final delete is never "all non-frozen rows"', () => {
+  const helper = foNc(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'));
+  assert.ok(/if \(toDelete\.length && toDelete\.length >= srcSheet\.getMaxRows\(\) - headerRows\) \{\s*srcSheet\.insertRowAfter\(srcSheet\.getMaxRows\(\)\);\s*\}/.test(helper),
+    'a run covering every non-header row inserts one spare row first');
+  assert.ok(helper.indexOf('insertRowAfter') > helper.indexOf('SpreadsheetApp.flush()') && helper.indexOf('insertRowAfter') < helper.indexOf('srcSheet.deleteRow('),
+    'the guard sits AFTER the archive append has flushed and BEFORE the bottom-up deletes');
+  assert.ok(!/getMaxRows\(\) - headerRows \+ 1/.test(helper), 'the threshold is exactly the non-header row count');
+});
+
+test('NLBR-2: every line-break conversion in Code.js routes through cnNlBr_ — the three inline sites joined the note-email path', () => {
+  const code = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  assert.strictEqual((code.match(/\.replace\(\/\\n\/g, '<br>'\)/g) || []).length, 0, 'no inline \\n→<br> replace survives anywhere in Code.js');
+  assert.strictEqual((code.match(/cnNlBr_\(esc_\(message\)\)/g) || []).length, 2, 'both external customer/provider message bodies route through the helper');
+  assert.strictEqual((code.match(/cnNlBr_\(esc_\(formatFormFieldValue_\(sanitizedData\[k\]\)\)\)/g) || []).length, 1, 'the form-submission table cell routes through the helper');
+  const helper = foNc(extractRawFunction('Code.js', 'cnNlBr_'));
+  assert.ok(/\\r\\n\?\|\\n/.test(helper), 'the helper also folds CRLF (a small widening for the three sites — a pasted Windows body no longer leaks a stray CR)');
+});
+
+test('QA-28: the QA Log agent filter — refetch-free select over the LOADED entries, unattributed bucket, a stale pick is dropped on load', () => {
+  const qa = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
+  assert.ok(/log: \{ seq: 0, data: null, reviewer: '', from: '', to: '', customOpen: false, q: '', agent: '' \}/.test(qa), 'agent joins the log state');
+  const setter = qa.slice(qa.indexOf('function qaLogSetAgent_('), qa.indexOf('function qaLogAgentOptions_('));
+  assert.ok(!/google\.script\.run/.test(setter) && /qaLogEntriesHtml_\(QA_STATE\.log\.data\)/.test(setter), 'the agent filter re-renders from the cached payload — never a refetch');
+  assert.ok(/<select aria-label="Agent" onchange="qaLogSetAgent_\(this\.value\)">/.test(qa), 'a NAMED select');
+  assert.ok(/<option value="__none__"/.test(qa) && /Unattributed/.test(qa), 'an unattributed bucket when any loaded entry has no agent');
+  const filt = qa.slice(qa.indexOf('function qaLogFiltered_('), qa.indexOf('function qaLogEntriesHtml_('));
+  assert.ok(/agent === '__none__'/.test(filt) && /\.toLowerCase\(\) === agent\.toLowerCase\(\)/.test(filt), 'the filter matches case-insensitively and handles the unattributed bucket');
+  assert.ok(filt.indexOf("agent === '__none__'") < filt.indexOf('if (!q) return all;'), 'the agent filter applies BEFORE the search');
+  assert.ok(/if \(!ao\.names\.some\(function \(n\) \{ return n\.toLowerCase\(\) === L\.agent\.toLowerCase\(\); \}\)\) L\.agent = '';/.test(qa),
+    'a remembered agent no loaded entry carries is dropped, so an "All agents" select never hides everything');
 });
 
 /* ── VIS-TZ: the browser-vs-roster timezone dimension (operator 2026-09-02) ──
