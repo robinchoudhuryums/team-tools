@@ -14,11 +14,9 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   reflected too, as `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
   Cycle 19 opens on the next /broad-scan or /audit — at that point move the
   cycle-18 block to HISTORY.md and reset this file from the template.
-  THE ONE OUTSTANDING ACTION IS THE OPERATOR'S DEPLOY: every PR from #176 to
-  #228 ships on a single `clasp push -f` + New version. `runAllTests()` after
-  it expects **308**; `installAutomationTriggers()` must be re-run once for
-  the 18th trigger; `reportMultiBreakDays()` has already been run and came
-  back CLEAN (2026-09-01).
+  DEPLOYED 2026-09-04: the #176–#228 backlog is live — `runAllTests()` read
+  **308/308** and `installAutomationTriggers()` was re-run (all 19 triggers).
+  No operator action is outstanding.
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
 Test Command: manual (Node harnesses: `npm test` = pure 762 + DOM 107;
@@ -409,8 +407,8 @@ deletes the rest, re-points the mirror, and writes agent-confirmed `adds`
 through the adjust writer — dry-run default, TZR-3/4 pinned, pure 752/0.
 The operator ran the dry run + apply (four duplicates collapsed); PR #226 +
 #227 (the ▶ wrappers) MERGED. The operator is entering the missing lunch/
-clock-out punches by hand in Day Edit; the `SPLIT_REPAIR_2026_09_03` constant
-+ `_dryRun/_apply` wrappers are still to be DELETED once they say so.
+clock-out punches by hand in Day Edit (done); the `SPLIT_REPAIR_2026_09_03`
+constant + `_dryRun/_apply` wrappers were DELETED 2026-09-04.
 THEN the Manage Time feedback round (2026-09-03 late afternoon, NOT PR'd):
 Day Edit prefill race fixed; workday-only manager trends; Pending Time Off +
 Pending Punch Adjustments side by side with multi-select approve
