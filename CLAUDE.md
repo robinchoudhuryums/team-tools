@@ -2753,6 +2753,31 @@ this section before touching the relevant area.
   LIVE punches queue behind TEST writes too — run `runAllTests` before the
   CST shift or in the ~6pm CT all-team quiet window (the INV-153 reasoning),
   and a retry-once in the test would only mask genuine deadlocks.
+  **TWO OVERLAPPING `runAllTests` EXECUTIONS CORRUPT EACH OTHER AND LEAVE
+  RESIDUE THAT OUTLIVES BOTH (operator 2026-09-04 — ▶ pressed twice).** The
+  editor lets executions overlap, and the suite's fixtures assume exclusive
+  ownership: the twin's `_clearTestState` deletes rows this run just wrote
+  ("Those rows are out of bounds" from a bottom-up `deleteRow` walk whose
+  snapshot is stale, "Request not found", "Note not found", an audit count
+  that drops from 6 to 0 inside one test, KB/HR fixture rows vanishing
+  mid-test) — 30 failures with ZERO code change. The shape that OUTLIVES the
+  run: `test_adminEmails_subsetOfManagersEnforced` restores the property it
+  read at its start, and the second run read the first run's TEMPORARY test
+  address, so `ADMIN_EMAILS` was left at `do-not-send-india@example.invalid`
+  — the next solo run then failed every admin-gated endpoint (`kbSaveItem`
+  included, which surfaces only as "item created" false) and its own
+  adminEmails test put the residue back. A twin stopped by hand or by the
+  execution limit also skips `cleanupTestData`, so its `TEST_` rows are
+  inherited by the next run. Three self-heals since: `setupTestEnvironment`
+  DELETES an `ADMIN_EMAILS` holding only `@example.invalid` addresses (never
+  a real one), the two `selfDeletePunch` tests clear the manager's state
+  instead of assuming it, and `_clearTestCallNotes` tops the fixture tab's
+  grid back up to `_TEST_CN_MIN_GRID_ROWS` (deleteCallNote shrinks it one row
+  per run; at two rows with row 1 frozen, deleting the only note is REFUSED by
+  Sheets — `cn_deleteCallNote_basic` passed or failed by whether a neighbour
+  had regrown the grid). The classification rule: a failure set spanning
+  unrelated stores with no commit on any failing path = look for a second
+  execution in the Executions panel, then re-run ALONE.
   **A GATE test must assert the shape its endpoint
   RETURNS (post-deploy 2026-08-25).** A READ gate returns a bare `{error}`
   (`getReferenceTree`, `searchReference`, `getTeamMetrics`,

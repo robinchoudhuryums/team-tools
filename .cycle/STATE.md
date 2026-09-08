@@ -375,7 +375,18 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, latest). **PR #230 MERGED** (squash, CI green) — the
+CURRENT (2026-09-04, evening). Post-#230 `runAllTests` triage: the
+operator's 278/308 run was TWO overlapping executions (▶ twice), and the
+296/308 re-run was their residue — `ADMIN_EMAILS` left at a test address by
+the adminEmails test's finally race (10 admin-gated failures incl. the four
+KB "item created" ones) + stray TEST_MGR punches from the killed twin (the
+two selfDeletePunch counts). Three Tests.js self-heals committed on the
+branch (setup deletes a test-address ADMIN_EMAILS; selfDeletePunch ×2 clear
+state; `_clearTestCallNotes` tops the grid up to 50 rows) + the CLAUDE.md
+hazard entry. NOT PR'd. Operator: delete `ADMIN_EMAILS` if it still reads
+`@example.invalid` (or push this branch — setup does it), then re-run alone
+→ expect 308/308. PR #230 still needs its own `clasp push -f` + New version.
+PRIOR. **PR #230 MERGED** (squash, CI green) — the
 branch is reset onto main. It carried: the split-repair constant deletion (`66fb623`), then the **English-email
 fix + follow-ons round** (`97f9d78` + docs): intake payload labels always EN
 (fired live), Metrics trends on workdays (`metricsWorkdayIsos_`, cache keys

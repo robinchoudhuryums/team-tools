@@ -467,6 +467,24 @@ function setupTestEnvironment() {
   try { _setupTestIntakeFixture_(); }
   catch (e) { Logger.log('  Intake fixture setup skipped: ' + e.message); }
 
+  // Operator 2026-09-04: two overlapping runAllTests executions raced in
+  // test_adminEmails_subsetOfManagersEnforced — the second run captured the
+  // first run's TEMPORARY test address as "previous value" and its finally
+  // "restored" ADMIN_EMAILS to do-not-send-india@example.invalid. The suite
+  // assumes ADMIN_EMAILS is UNSET (admin == manager), so every admin-gated
+  // endpoint then rejected the TEST manager and ten tests failed on
+  // "Admin access required." — and each later run's adminEmails test put the
+  // residue straight back. Setup now deletes the property when it holds a
+  // test address (never a real one — that is the operator's decision), the
+  // same self-heal it already applies to the test accounts' emails.
+  try {
+    const adminProps = PropertiesService.getScriptProperties();
+    const adminRaw = adminProps.getProperty('ADMIN_EMAILS');
+    if (adminRaw && adminRaw.split(',').every(e => /@example\.invalid$/i.test(e.trim()) || !e.trim())) {
+      adminProps.deleteProperty('ADMIN_EMAILS');
+      Logger.log('setupTestEnvironment: ADMIN_EMAILS held only test addresses (' + adminRaw + ') — deleted (residue of an overlapping run).');
+    }
+  } catch (e) { Logger.log('setupTestEnvironment: ADMIN_EMAILS residue check skipped: ' + e.message); }
   invalidateRosterCache_();
   Logger.log(`setupTestEnvironment: ${added} test employee row(s) added, ${restored} re-onboarded (email restored).`);
   if (_TEST_CN_SS_ID) Logger.log('  Call-notes test Sheet ID: ' + _TEST_CN_SS_ID);
@@ -2743,8 +2761,12 @@ function test_recordPunch_minIntervalAllowsAdjustment() {
 // ── selfDeletePunch (INV-23) ──
 
 function test_selfDeletePunch_withinWindow() {
-  // Pre-position a punch at "now" for the manager test user (clean state — no
-  // prior recordPunch tests target _TEST_MGR). Then self-undo it.
+  // Pre-position a punch at "now" for the manager test user, then self-undo it.
+  // Operator 2026-09-04: this test used to rely on "no prior test targets
+  // _TEST_MGR" for its clean state — a killed twin run left one stray ClockIn
+  // for the manager dated today and the count read 2. Clear like every other
+  // stateful test does.
+  _clearTestState(_TEST_MGR_ID);
   const empTz = 'America/Chicago';
   const today = _empTzToday(empTz);
   const time  = _empTzNow(empTz);
@@ -2777,6 +2799,7 @@ function test_selfDeletePunch_rejectsAdjustment() {
   // Insert an adjustment punch (ADJ-ClockIn in COMMENTS). Self-undo must reject
   // even though date+time+type match — leaving adjustments to go through Adjust
   // preserves the audit trail.
+  _clearTestState(_TEST_MGR_ID);   // 2026-09-04: same residue class as withinWindow (read 3, not 1)
   const empTz = 'America/Chicago';
   const today = _empTzToday(empTz);
   const time  = _empTzNow(empTz);
@@ -3961,6 +3984,7 @@ function test_cn_extractAuditNoteId_noMatch() {
  *  infrastructure. It now names the sheet it could not clear, flushes so the
  *  delete is visible to the next openById handle, and VERIFIES the tab is
  *  empty rather than assuming deleteRows took. */
+const _TEST_CN_MIN_GRID_ROWS = 50;   // spare rows the CN fixture tab is topped up to after each clear
 function _clearTestCallNotes() {
   if (!_TEST_CN_SS_ID) {
     throw new Error('_clearTestCallNotes: _TEST_CN_SS_ID is not set — run setupTestEnvironment first.');
@@ -3979,6 +4003,18 @@ function _clearTestCallNotes() {
     // failure. clearContent empties the tab without touching the grid, so it
     // stays correct however small the grid has already become.
     notesTab.getRange(2, 1, last - 1, notesTab.getMaxColumns()).clearContent();
+  }
+  // Operator 2026-09-04: clearContent keeps the grid, but deleteCallNote /
+  // managerDeleteCallNote SHRINK it by one row per run, so the fixture tab's
+  // grid eventually reaches two rows (row 1 frozen). A submit then lands on
+  // the only non-frozen row and deleting it is refused by Sheets ("not
+  // possible to delete all non-frozen rows") — cn_deleteCallNote_basic
+  // passed or failed depending on whether a NEIGHBOURING test had regrown
+  // the grid with its appends. Top the grid back up so the test never
+  // depends on its neighbours.
+  const maxRows = notesTab.getMaxRows();
+  if (maxRows < _TEST_CN_MIN_GRID_ROWS) {
+    notesTab.insertRowsAfter(maxRows, _TEST_CN_MIN_GRID_ROWS - maxRows);
   }
   SpreadsheetApp.flush();
   // Verify SEMANTICALLY — count rows that still carry a DateLocal, i.e. rows
