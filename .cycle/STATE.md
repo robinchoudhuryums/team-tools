@@ -16,7 +16,10 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   cycle-18 block to HISTORY.md and reset this file from the template.
   DEPLOYED 2026-09-04: the #176–#228 backlog is live — `runAllTests()` read
   **308/308** and `installAutomationTriggers()` was re-run (all 19 triggers).
-  No operator action is outstanding.
+  **PRs #230 + #232 merged AFTER that deploy, so ONE `clasp push -f` + New
+  version is owed** — it ships the English intake emails / Metrics workday
+  trends / QA + archive + line-break follow-ons (#230) and the Tests.js
+  overlapping-run self-heals (#232). No other operator action is outstanding.
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
 Test Command: manual (Node harnesses: `npm test` = pure 768 + DOM 108;
@@ -24,7 +27,7 @@ Test Command: manual (Node harnesses: `npm test` = pure 768 + DOM 108;
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S103)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-04 late (English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
+Updated: 2026-09-09 (PR #232 merged — Tests.js overlapping-run self-heals; earlier: English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -380,12 +383,19 @@ operator's 278/308 run was TWO overlapping executions (▶ twice), and the
 296/308 re-run was their residue — `ADMIN_EMAILS` left at a test address by
 the adminEmails test's finally race (10 admin-gated failures incl. the four
 KB "item created" ones) + stray TEST_MGR punches from the killed twin (the
-two selfDeletePunch counts). Three Tests.js self-heals committed on the
-branch (setup deletes a test-address ADMIN_EMAILS; selfDeletePunch ×2 clear
-state; `_clearTestCallNotes` tops the grid up to 50 rows) + the CLAUDE.md
-hazard entry. NOT PR'd. Operator: delete `ADMIN_EMAILS` if it still reads
-`@example.invalid` (or push this branch — setup does it), then re-run alone
-→ expect 308/308. PR #230 still needs its own `clasp push -f` + New version.
+two selfDeletePunch counts). Three Tests.js self-heals + the CLAUDE.md
+hazard entry shipped as **PR #232, MERGED** (squash, CI green; branch reset
+onto main at `b107c83`): setup DELETES an `ADMIN_EMAILS` holding only
+`@example.invalid` addresses, both selfDeletePunch tests clear the manager's
+state, and `_clearTestCallNotes` tops the fixture grid back up to
+`_TEST_CN_MIN_GRID_ROWS` (50). Nothing is left uncommitted or un-PR'd.
+OPERATOR, in order: (1) `clasp push -f` from `web-app/` then Deploy → New
+version — ONE deploy ships both #230 and #232; (2) `ADMIN_EMAILS` heals
+itself on the next suite run (setup logs when it deletes the residue), or
+clear it by hand in Script Properties; (3) run `runAllTests()` **ALONE** in a
+quiet window → expect 308/308 (a second concurrent ▶ is what produced the
+278/308 and 296/308 runs); (4) re-send one Spanish-completed PPD and confirm
+the email renders in English — the one #230 check CI cannot make.
 PRIOR. **PR #230 MERGED** (squash, CI green) — the
 branch is reset onto main. It carried: the split-repair constant deletion (`66fb623`), then the **English-email
 fix + follow-ons round** (`97f9d78` + docs): intake payload labels always EN
