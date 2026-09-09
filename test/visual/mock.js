@@ -1564,6 +1564,10 @@ function qaLatestScorecards_(cards) {
           reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
           folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '', folderOk: null, folderError: '',
         },
+        // F3 — mailBccStatus_'s shape (INV-185). Set-and-internal is the warn
+        // state, which is what the Admin System scenarios put on camera.
+        mailBcc: { prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['robin@umsupply.com'],
+                   external: [], ownDomain: 'umsupply.com' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -1713,6 +1717,7 @@ function qaLatestScorecards_(cards) {
         reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
         folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz', folderOk: true, folderError: '',
       },
+      mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };

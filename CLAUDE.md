@@ -9927,9 +9927,13 @@ DRV-3 `driveAccessStatus_` behavioural — granted/denied/unknown, folder
 states, side-effect freedom, clean-round-only cache, the token never in the
 URL, the deploy-readiness opt-out; DRV-4 the findings severities + the
 inventory line + escaping + the scenarios), DOM unchanged at **108**, and the
-visual matrix 99 → **101** (`admin-system-nodrive-light-{wide,mobile}` via a
+visual matrix 97 → **99** (`admin-system-nodrive-light-{wide,mobile}` via a
 new `?drive=denied` mock hook — the failing state carries the longest string
-the line can render, so it is where wrapping breaks first). 13 mutations /
+the line can render, so it is where wrapping breaks first; **the running
+total above is the MEASURED one — `shoot.mjs`'s own SCENARIOS list is the
+authority, and the hand-carried chain had drifted two high before cycle 19
+caught it, which is the same reason the Visual Audit Stage tells you to read
+the count off the run rather than from prose**). 13 mutations /
 13 bites — **one did not bite on the first pass and the pin was wrong, not
 the code: routing the probe through `getOrCreateKbImagesFolder_` provisions a
 replacement, but its thrown message CARRIES the open reason, so the pin's

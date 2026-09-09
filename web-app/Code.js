@@ -7891,7 +7891,13 @@ function getStorageHealth(opts) {
                             reauthHint: DRIVE_REAUTH_HINT, folderProp: KB_IMAGES_FOLDER_PROP,
                             folderId: '', folderOk: null, folderError: '' }; }
     }
-    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds, drive: drive };
+    // F3 — the SECOND app-wide fact no store row can see: where copies of
+    // every outgoing email are going. One property read, already memoized;
+    // no probe, so it rides every call (unlike the Drive check).
+    let mailBcc = null;
+    try { mailBcc = mailBccStatus_(); } catch (e) { mailBcc = null; }
+    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
+             drive: drive, mailBcc: mailBcc };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9183,6 +9189,38 @@ function mailBccAll_() {
   _mailBccAllCache = v.split(',').map((x) => x.trim()).filter((x) => /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(x));
   return _mailBccAllCache;
 }
+/** What MAIL_BCC_ALL is currently doing, for the Admin System tab (F3,
+ *  2026-09-09). The property is merged into EVERY email the app sends —
+ *  intake PPD/PMD/PAP bodies carry full patient answers, department emails
+ *  carry the patient name + TRX — and until this shipped it appeared NOWHERE
+ *  in the app: not Admin, not Storage Health, not Automation Health, not the
+ *  feature-flag surface. Its documented purpose is transient ("set it while
+ *  testing, clear it after"), which is exactly the setting most likely to be
+ *  left on, and a silent standing PHI copy is the kind of thing an audit
+ *  finds rather than an operator remembers.
+ *
+ *  It REPORTS, it does not enforce. An address outside the deploying
+ *  account's own domain is escalated to a blocking finding rather than
+ *  dropped: silently discarding an address the operator deliberately typed
+ *  would leave them believing they are getting copies they are not — a worse
+ *  failure than the one being guarded (INV-187's direction). The domain comes
+ *  from Session.getEffectiveUser(), the account that owns every store and
+ *  sends every message, so there is no second copy of the org domain to
+ *  drift from doGet's own check. `external` is null when that account cannot
+ *  be read: unknown, never "all clear". */
+function mailBccStatus_() {
+  const list = mailBccAll_();
+  const out = { prop: 'MAIL_BCC_ALL', enabled: list.length > 0, addresses: list, external: null, ownDomain: '' };
+  if (!out.enabled) return out;
+  let own = '';
+  try { own = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) { own = ''; }
+  const at = own.lastIndexOf('@');
+  if (at < 0) return out;                       // can't tell whose domain is ours → external stays null
+  out.ownDomain = own.slice(at + 1);
+  out.external = list.filter((a) => String(a).toLowerCase().slice(String(a).lastIndexOf('@') + 1) !== out.ownDomain);
+  return out;
+}
+
 function mailMergeBcc_(opts) {
   const extra = mailBccAll_();
   if (!extra.length || !opts) return opts;
@@ -20743,7 +20781,25 @@ function intakeFeedbackFor_(formType, submissionId) {
       });
     }
     return out;
-  } catch (e) { return []; }   // best-effort: the submission detail still renders
+  } catch (e) {
+    // F8 (2026-09-09): best-effort is right — a feedback read must never take
+    // the submission detail down with it — but SILENT was not. `[]` is exactly
+    // what a clean submission with no feedback returns, so a swallowed failure
+    // rendered as "nobody has said anything", which is the one reading the
+    // data cannot support (INV-187). The outcome now rides back and the
+    // client says "couldn't load" instead.
+    return { unavailable: true, error: String((e && e.message) || e) };
+  }
+}
+
+/** The read outcome, normalized for a caller that just wants the list (F8).
+ *  Returns {items, unavailable} — `unavailable` is the INV-35 distinction:
+ *  an empty list is a FACT, an unreadable one is not. */
+function intakeFeedbackResult_(formType, submissionId) {
+  const r = intakeFeedbackFor_(formType, submissionId);
+  return Array.isArray(r)
+    ? { items: r, unavailable: false }
+    : { items: [], unavailable: true, error: String((r && r.error) || '') };
 }
 
 /** Rep-callable (the recipient IS an employee — intake recipients resolve from
@@ -21907,13 +21963,19 @@ function intakeGetSubmission(formType, submissionId) {
         }
       }
     }
+    const fbRes = intakeFeedbackResult_(ft, id);
     const result = {
       formType: ft,
       submissionId: id,
       isOwn: repId === emp.id,
       amendsId: String(row[width - 1] == null ? '' : row[width - 1]).trim(),
       supersededBy: supersededBy,
-      feedback: intakeFeedbackFor_(ft, id),   // recipient feedback, all three forms (2026-08-13)
+      // Recipient feedback, all three forms (2026-08-13). F8: `feedback` keeps
+      // its array shape for an older client; `feedbackUnavailable` is additive
+      // and says the list is empty because the read FAILED, not because there
+      // is none.
+      feedback: fbRes.items,
+      feedbackUnavailable: fbRes.unavailable,
       timestamp: intakeTsString_(row[1]),
       repId: repId,
       repName: String(row[3] || ''),
@@ -28535,7 +28597,21 @@ function qaChoiceOptionsSanitize_(arr) {
   }
   return out;
 }
-function qaOptionIsNumeric_(o) { return /^\s*[-+]?\d+(\.\d+)?\s*$/.test(String(o || '')); }
+/** Would this dropdown option READ AS A SCORE downstream? (F5, 2026-09-09.)
+ *  The guard must be as wide as the parse it protects, and it was not: the
+ *  consumers (qaCardStats_, qaStatsAggregate_, qaCalibration_, the coverage
+ *  join) all decide "is this a 1–5 score" with Number(v), which accepts three
+ *  forms the old decimal regex refused — "4." → 4, "0x5" → 5, "1e0" → 1. An
+ *  option so named would fold its answers into the QA scale averages that
+ *  drive coverage avg, calibration means and the exemption thresholds
+ *  (avg ≥ 4.5, minCriterion ≥ 4). isFinite(Number()) IS the consumers' own
+ *  test, so the accept-set can no longer be narrower than the parse. NOTE the
+ *  empty string is deliberately NOT numeric here — Number('') is 0, but a
+ *  blank option is already dropped by the caller as falsy. */
+function qaOptionIsNumeric_(o) {
+  const t = String(o == null ? '' : o).trim();
+  return t !== '' && isFinite(Number(t));
+}
 /** PURE (Node-pinned) — normalize ONE client-supplied rating against its
  *  criterion. Returns {value} (the canonical stored form) or {error}. scale →
  *  an integer 1–5; check → 'yes'/'no' (true/false/1/0/'y'/'n' accepted);
