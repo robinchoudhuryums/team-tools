@@ -16164,8 +16164,8 @@ test('PR2-4: mock.js carries the Admin all-clear empty shapes; shoot.mjs covers 
   ['getAutomationHealth', 'getStorageHealth'].forEach((n) => assert.ok(new RegExp('\\b' + n + '\\s*:').test(body), n + ' has an all-clear shape'));
   // The all-clear shape must ACTUALLY be all-clear: no likely mismatch, no
   // unset/unreachable/drifted store, no stale digest, nothing failing.
-  assert.ok(/likelyMismatches: \[\]/.test(body) && !/configured: false|reachable: false|tzMatch: false|stale: true|fail: [1-9]/.test(body),
-    'the empty shapes carry no finding');
+  assert.ok(/likelyMismatches: \[\]/.test(body) && !/configured: false|reachable: false|tzMatch: false|stale: true|fail: [1-9]|granted: false|folderOk: false/.test(body),
+    'the empty shapes carry no finding');   // DRV: the Drive line is part of "all clear" too
   const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
   ['admin-system-light-wide', 'admin-system-dark-wide', 'admin-system-light-mobile', 'admin-system-allclear-light-wide', 'admin-system-error-light-wide']
     .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
