@@ -27,7 +27,7 @@ Test Command: manual (Node harnesses: `npm test` = pure 768 + DOM 108;
   (the 20 design-handoff additions shot individually, all clean);
   Regression Scenarios run to S103)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-09 (PR #232 merged — Tests.js overlapping-run self-heals; earlier: English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
+Updated: 2026-09-09 late (Drive capability — `19pre-drive-capability-broad-implement.md`; earlier: PR #232 merged — Tests.js overlapping-run self-heals; earlier: English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
@@ -378,7 +378,32 @@ needs no further affordance work in PR 2.
   masking all three. PRs #187 + #188. Pure 651→653.
 
 ## Where I left off
-CURRENT (2026-09-04, evening). Post-#230 `runAllTests` triage: the
+CURRENT (2026-09-09, late). **Drive capability round — committed on the branch,
+NOT PR'd** (`19pre-drive-capability-broad-implement.md`). The operator's Doc
+conversion failed with Apps Script's missing-SCOPE refusal on
+`DriveApp.createFolder`, and `KB_IMAGES_FOLDER_ID` turns out to have NEVER been
+set — so the KB Images folder has never existed, every article image has been a
+placeholder, and the 2026-08-13 `kbGetImageData` fallback has been inert (it
+returns 'Not available.' with no folder id to scope against). Two fixes:
+`getOrCreateKbImagesFolder_` now NAMES why (the stored-folder open reason used
+to be swallowed, so the warning could only report the create error while saying
+"open or create"), and `driveAccessStatus_` reports whether the deploying
+account's token carries `/auth/drive` — side-effect free (token introspection,
+never a write; `getFolderById` on the stored id, never the provisioning helper),
+unknown-is-unknown, clean-rounds-only cached — surfaced on Admin → System as a
+finding and a line above the Storage inventory. Pure 768 → 772, DOM 108, 14/14
+bites, matrix 99 → 101 (`admin-system-nodrive-*` via a new `?drive=denied` hook).
+INV-197 written. **THE DIAGNOSIS IS NOT SETTLED AND THE CODE DOES NOT SETTLE IT:**
+the scope error is what Apps Script raises when the RUNNING grant is short, and a
+`clasp push` + New version never re-prompts — so it is most likely a missing
+re-consent (or Google's granular consent with the Drive box unticked) rather than
+the Workspace block the operator suspected. The decisive test is in the operator
+note: run any function from the editor as the DEPLOYING account and watch what
+the consent screen does. OPERATOR, in order: (1) `clasp push -f` + New version
+(this round is what makes the diagnostic visible); (2) re-authorize as above;
+(3) re-run the Doc conversion — if the images export, expect the SECOND
+already-documented block (domain-link sharing), which the fallback covers.
+PRIOR (2026-09-04, evening). Post-#230 `runAllTests` triage: the
 operator's 278/308 run was TWO overlapping executions (▶ twice), and the
 296/308 re-run was their residue — `ADMIN_EMAILS` left at a test address by
 the adminEmails test's finally race (10 admin-gated failures incl. the four
