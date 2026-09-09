@@ -9206,14 +9206,31 @@ carries the same number. `/cycle-status` surfaces it.
   one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
-**Command templates: synced to `claude-workflow-tools` v1.23.0 (2026-07-27).**
+**Command templates: synced to `claude-workflow-tools` v1.33.0 (2026-09-09).**
 `.claude/commands/` carries 19 of the template's 20 commands, verified
 byte-identical at sync time; `/pr-review` is the one not installed (it sits
 under the template's separate "Per-Change Review" heading). Record the version
 here on every `/sync-commands` — before this line existed the previous version
 had to be INFERRED from which features were missing (it was ≤1.18.0, five
 releases of command semantics behind: R18's interface lens and R19's block
-persistence were both absent). Note a deliberate scoring discontinuity that
+persistence were both absent). The 1.23.0 → 1.33.0 sync updated four commands,
+all additively: **`/broad-scan`** gained a closing **IMPLEMENTATION BATCH PLAN**
+(1.26.0) that groups every finding from Stages 1–3 into sequential
+`/broad-implement`-sized batches ordered by impact then dependency — a guard
+that would turn CI red goes AFTER the batch closing the gap it guards, and
+every finding appears exactly once or under `Deferred`; **`/cycle-init`**
+inlines the PROJECT_HEALTH.md skeleton instead of cross-referencing a §7 the
+command file cannot see, and warns that `portfolio.mjs` / the console Dashboard
+parse the labels `Overall (weighted avg):` and the two `Top … priority:` lines
+verbatim; **`/reflect`** requires double-quoting ANY metrics field containing a
+comma (the `subsystem` column especially — an unquoted comma shifts every later
+column); **`/setup-cycle`** rewrites the `Policy threshold` recommendation for
+1.33.0's RELATIVE policy trigger. That trigger is the substantive change: §6a
+now fires on (a) a decline over `Consecutive cycles`, (b) a sharp drop of ≥1.5
+in one cycle, (c) lowest-scoring for `Consecutive cycles` AND not improving, or
+(d) the old absolute floor at `Policy threshold` — kept only as a backstop,
+because a fixed floor never fired once in six cycles of the template repo,
+including one where a category fell 9.0 → 7.0. Note a deliberate scoring discontinuity that
 came with R18: cycles ≤11 scored user-visible interface defects as
 defensive/structural and excluded them from `net_score`, while 12 onward counts
 them as production fixes — nothing was rewritten retroactively, so cumulative
@@ -11789,5 +11806,5 @@ S104 | Drive capability — the Admin signal and the folder error that names its
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load — and since 2026-08-27 open windows notice on their own: the deploy-version beacon shows each open tab a sticky "reload to get the latest version" prompt within ~20 minutes of the New version (see the beacon Key Design Decision).
-Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (QA views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).
