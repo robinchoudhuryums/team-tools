@@ -52,10 +52,15 @@ Script project synced via [clasp](https://github.com/google/clasp).
     CDR metrics also enrich the Call Notes Stats tab via a
     best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound
-    `form-generator` Apps Script. PPD (a 46-item intake driving a
-    clinical HCPCS recommendation engine) plus PMD/PAP account-creation
-    forms with image attachments; each can be completed in English or
-    Spanish, but the previewed and emailed form is always English. Each
+    `form-generator` Apps Script. Five tabs: PPD (a 46-item intake
+    driving a clinical HCPCS recommendation engine), PMD and PAP
+    account-creation forms with image attachments, a read-only **Sent**
+    viewer for the rep's own submissions (with any recipient feedback on
+    the recommendation), and a read-only **Catalog** browse of the PMD
+    Offerings sheet so looking up a HCPCS code or a weight capacity no
+    longer means opening the spreadsheet that also holds the PHI
+    submission tabs. Each form can be completed in English or Spanish, but
+    the previewed and emailed form is always English, and each
     renders a branded email (two-stage, bodyHash-guarded) and persists a
     PHI backup row to the Intake spreadsheet; the shared AuditLog row
     stays PHI-free.
@@ -101,14 +106,16 @@ Script project synced via [clasp](https://github.com/google/clasp).
     and patients). Reviewers get chunked in-app playback with a
     waveform and click-to-seek, timestamped comments rendered as
     seek markers, structured scorecards (criteria editable in Admin →
-    Config), per-agent stats, coverage-fair "Sample 3 for me"
-    self-assignment, and a reviewer-calibration table. Scorecard
-    criteria carry a type (scale 1–5, Yes/No, or a dropdown) defined in
+    Config), per-agent stats, and a reviewer-calibration table. The
+    Recordings tab opens on COVERAGE for a chosen audit period — who
+    still owes a sampled call — with a one-press "Sample the gaps for
+    me" that assigns from the shortest-covered agents, and a
+    manager-only per-period exemption for reps with a sustained record.
+    Scorecard criteria carry a type (scale 1–5, Yes/No, or a dropdown) defined in
     that same Admin editor, and a **Log** tab lists one entry per
     recording audited (managers see every reviewer's log; a manual
     entry with no recording attached is the last-resort fallback).
-    Sharing a
-    review with its agent is an explicit per-recording release feeding
+    Sharing a review with its agent is an explicit per-recording release feeding
     a read-only My Reviews view (scorecards, comments, and scoped
     playback of the shared recording — dormant while the tool is
     hidden). An optional retention purge (default off) ages out review
@@ -152,8 +159,12 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders a 67-scenario matrix in headless Chromium; it is
-manual / on-demand, NOT in CI. A GitHub Action
+(`test/visual/`) renders a 99-scenario matrix in headless Chromium; it is
+manual / on-demand, NOT in CI. (Read that count off the run —
+`shoot.mjs`'s own `SCENARIOS` list is the authority; a hand-carried number
+here has drifted before.) Four small companion harnesses live beside it and
+answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
+`a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
 `npm ci` + the DOM harness, on every push and PR — the project's only

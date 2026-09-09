@@ -6,8 +6,10 @@ moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
 Phase: implement — ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
-  are DONE and committed. Nothing from the plan remains except its Deferred
-  set, which is operator/feature decisions rather than defect work.
+  are DONE and committed, and `/sync-docs` has reconciled the documentation
+  behind them. Nothing from the plan remains except its Deferred set, which is
+  operator/feature decisions rather than defect work. The cycle is ready for
+  `/reflect`.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
@@ -18,8 +20,9 @@ Updated: 2026-09-09
 - Nothing in flight. Both harnesses are green (777 pure / 108 DOM), the tree
   is committed on `claude/broad-scan-fw462g`, and every change in all four
   batches was bite-checked (20 mutations / 20 bites across the two sessions).
-- The next concrete step is `/sync-docs` — fourteen documentation updates are
-  owed across the two implementation blocks and none has been applied.
+- `/sync-docs` is DONE and applied (not merely proposed): all fourteen owed
+  updates plus three drifts the four checks turned up on their own. The next
+  concrete step is `/reflect` to close cycle 19.
 
 ## Completed this cycle
 - (template sync) | .claude/commands/{broad-scan,cycle-init,reflect,setup-cycle}.md, CLAUDE.md | synced to claude-workflow-tools v1.33.0; `Client (QA views)` added to the Deploy Command map. Commit 53b1f44.
@@ -32,15 +35,18 @@ Updated: 2026-09-09
 - F7 | web-app/styles_design_tokens.html, web-app/intake/script_intake.html, web-app/cn/script_callnotes.html, test/client/run.js | the PAP purple has ONE home: both consumers ride `--intake-pap` with a new `--intake-pap-soft` tint declared beside it, and the hand-written dark override is gone. Measured AA across all ten palette × mode combinations; the pill alpha moved .16 → .14 (measured 4.47, under AA for 11px).
 - F8 | web-app/Code.js, web-app/intake/script_intake.html, test/client/run.js | a failed intake-feedback read is NAMED (`feedbackUnavailable` → `errorStateHtml_`) instead of rendering as "nobody has said anything" — the reading the data cannot support.
 - D1 | CLAUDE.md | visual-matrix running total corrected 99→101 to 97→99 and annotated that `shoot.mjs`'s SCENARIOS list is the authority. The S103/S104 half was resolved by construction when STATE.md was reset for cycle 19.
+- /sync-docs | CLAUDE.md, README.md, web-app/Code.js | all fourteen owed updates APPLIED (the user's argument overrode the skill's approval gate), plus three the four checks found on their own: `test/visual/fold-measure.mjs` was missing from the Test Suite subsystem list while CLAUDE.md's own PR6 text tells a reader to run it; the README's visual-matrix count had drifted 67 vs the 99 `shoot.mjs` runs; and the README described Intake as three forms (it has five tabs — Sent and Catalog were missing) and still called the QA sampler "Sample 3 for me", which PR 5 renamed. The literally-stale "Pairing is then positional" sentence turned out to live in a **Code.js doc comment**, not in INV-176 — the invariant needed the greedy rule ADDED, the comment needed it CORRECTED; both were done. Scenario coverage followed the fixes rather than only the prose: S95 gained the in-direction break case with its arithmetic (8.5h, not 9.0), S101 the unset-store silence and the completes-and-refreshes step, S97 the two capability lines and all three mail states, S59 the feedback block's third state.
 
 ## Pending / not yet done
-- Nothing from the IMPLEMENTATION BATCH PLAN. All four batches are landed.
+- Nothing from the IMPLEMENTATION BATCH PLAN. All four batches are landed,
+  and their documentation is reconciled.
 - The audit's own IMPLEMENTATION BATCH PLAN was produced in chat and is NOT
   on disk — it exists only in this session's transcript.
-- `/sync-docs`: fourteen documentation updates across the two blocks
-  (`19-batch1-2` lists seven, `19-batch3-4` lists seven). INV-176's "Pairing
-  is then positional" wording is the one that is now factually WRONG and
-  should go first.
+- `/reflect` has not been run; cycle 19 is still OPEN. Its per-batch nets are
+  already derived strictly in the two blocks (Batches 1+2 net +1, Batches 3+4
+  net 0), so the reflection has honest inputs to start from.
+- The ONE deploy owed for PRs #230/#232/#233 now also carries all four
+  batches AND these doc changes; nothing here reaches production without it.
 
 ## Open follow-on items
 - web-app/Code.js — a `reportBreakPairingChanges()` twin of `reportMultiBreakDays()` would enumerate the historical days whose hours move under F1. Not written (out of scope); F1's shape is rarer than the multi-break one, and no existing report finds it.
@@ -65,13 +71,12 @@ Updated: 2026-09-09
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-All four batches of the audit plan are implemented, bite-checked, committed
-and pushed to `claude/broad-scan-fw462g`; the two summary blocks are at
-`.cycle/blocks/19-batch1-2-broad-implement.md` and
-`.cycle/blocks/19-batch3-4-broad-implement.md`. Nothing is half-done and no
-finding from the plan is outstanding. Pick up with `/sync-docs` — fourteen
-documentation updates are owed and INV-176's "Pairing is then positional"
-sentence is now factually wrong, so it goes first. The single `clasp push -f`
-+ New version owed for PRs #230/#232/#233 now also carries all four batches;
-after deploying, open Manage → Admin → System to learn whether MAIL_BCC_ALL
-is actually set on this deployment.
+All four batches are implemented, bite-checked and pushed to
+`claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
+`19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
+they owed. Nothing is half-done and no finding from the plan is outstanding.
+Pick up with `/reflect` to close cycle 19. The single `clasp push -f` + New
+version owed for PRs #230/#232/#233 now also carries all four batches; after
+deploying, open Manage → Admin → System to learn whether MAIL_BCC_ALL is
+actually set on this deployment — nothing in the container can read a live
+Script Property, so that one look is the only way to settle it.

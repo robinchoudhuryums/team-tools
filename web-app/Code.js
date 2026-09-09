@@ -18017,7 +18017,13 @@ function breakSortKey_(time, anchorMins) {
  *  Stamps are normalized onto the SHIFT's own timeline before sorting — a time
  *  at or before the clock-in belongs to the next calendar day, the same wrap
  *  the clock pair uses — so an overnight shift's 02:00 break correctly sorts
- *  AFTER its 23:50 one instead of ahead of it. Pairing is then positional.
+ *  AFTER its 23:50 one instead of ahead of it. Pairing is then GREEDY over
+ *  two INDEPENDENT cursors: each `out` takes the earliest `in` that can close
+ *  it, and an `in` that cannot close the current `out` is skipped ALONE.
+ *  Walking both lists on ONE index (the original shape, F1 2026-09-09) made a
+ *  single stray early LunchIn shift every later `in` a slot and un-pair the
+ *  whole day — so the rep was PAID for every real break they took, the exact
+ *  over-payment the 2026-09-01 multi-break round exists to prevent.
  *
  *  An UNPAIRED extra (more outs than ins, a corrupt stamp, or an in that does
  *  not follow its out) is DROPPED rather than guessed at: the same shape as a
