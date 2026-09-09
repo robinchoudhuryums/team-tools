@@ -16,18 +16,26 @@ Phase: idle — nothing in flight. Cycle 18 is closed and REFLECTED; the
   cycle-18 block to HISTORY.md and reset this file from the template.
   DEPLOYED 2026-09-04: the #176–#228 backlog is live — `runAllTests()` read
   **308/308** and `installAutomationTriggers()` was re-run (all 19 triggers).
-  **PRs #230 + #232 merged AFTER that deploy, so ONE `clasp push -f` + New
-  version is owed** — it ships the English intake emails / Metrics workday
-  trends / QA + archive + line-break follow-ons (#230) and the Tests.js
-  overlapping-run self-heals (#232). No other operator action is outstanding.
+  **PRs #230, #232 and #233 merged AFTER that deploy, so ONE `clasp push -f` +
+  New version is owed** — it ships the English intake emails / Metrics workday
+  trends / QA + archive + line-break follow-ons (#230), the Tests.js
+  overlapping-run self-heals (#232), and the Drive-capability round (#233).
+  TWO operator actions ride the last of those, neither blocking the deploy:
+  **re-authorize Drive as the DEPLOYING account** (Apps Script editor → run any
+  function → accept the Drive permission — `KB_IMAGES_FOLDER_ID` has never been
+  set here and the grant is missing `/auth/drive`, so every article image on
+  this deployment is a placeholder), and then expect the second, already-known
+  block — this domain forbids the folder's domain-link sharing, so thumbnails
+  403 and the `kbGetImageData` fallback renders the images instead. Admin →
+  System now says which of the three Drive failure shapes you are in.
 Scope: between-cycles operator work (pilot feedback, QA module, timekeeping
   correctness) — no audit-derived cycle is open
-Test Command: manual (Node harnesses: `npm test` = pure 768 + DOM 108;
-  visual matrix on demand — 99 scenarios, last full shoot 2026-09-01 clean, 67/67
+Test Command: manual (Node harnesses: `npm test` = pure 772 + DOM 108;
+  visual matrix on demand — 101 scenarios, last full shoot 2026-09-01 clean, 67/67
   (the 20 design-handoff additions shot individually, all clean);
-  Regression Scenarios run to S103)
+  Regression Scenarios run to S104)
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-09-09 late (Drive capability — `19pre-drive-capability-broad-implement.md`; earlier: PR #232 merged — Tests.js overlapping-run self-heals; earlier: English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
+Updated: 2026-09-09 late (Drive capability — PR #233 MERGED, branch reset onto main; `19pre-drive-capability-broad-implement.md`; earlier: PR #232 merged — Tests.js overlapping-run self-heals; earlier: English-email fix + follow-ons — `19pre-english-email-followons-broad-implement.md`; earlier: the QA Log round, the boot-timing beacon)
 
 ## Design handoff — five surfaces (opened 2026-09-02; branch `claude/ums-team-tools-design-r8ar3o`)
 The operator's five-surface design bundle (Coaching · Manage · QA · Admin · Time
