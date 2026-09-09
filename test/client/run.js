@@ -15223,6 +15223,24 @@ test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairin
     'a return at/before its leave is malformed and deducts nothing');
   close(ch('09:00:00', '17:00:00', [], []), 8.0, 'empty arrays behave like no break');
 
+  // F1 (2026-09-09) — the IN direction, which the OUT cases above cannot see.
+  // The original index-locked loop compared outs[i] against ins[i], so one
+  // stray early `in` shifted every later one and un-paired the WHOLE day,
+  // paying the rep for breaks they took. A dropped `in` must be dropped ALONE.
+  close(ch('09:00:00', '17:00:00', ['12:00:00'], ['11:00:00', '12:30:00']), 7.5,
+    'a stray early LunchIn is dropped alone — the real pair still deducts');
+  close(ch('09:00:00', '17:00:00', ['12:00:00', '15:00:00'],
+                                   ['11:00:00', '12:30:00', '15:30:00']), 7.0,
+    'a stray early LunchIn does not misalign the pairs after it');
+  assert.strictEqual(
+    bp(['12:00'], ['11:00', '12:30'], 540).map((b) => b.out + '/' + b.in).join('|'),
+    '12:00/12:30', 'the surviving pair is the earliest in that can CLOSE the out');
+  assert.strictEqual(bp(['12:00'], ['10:00', '11:00'], 540).length, 0,
+    'when no in can close the out, nothing is invented');
+  assert.strictEqual(
+    bp(['12:00', '12:10'], ['12:30', '12:40'], 540).map((b) => b.minutes).join('|'),
+    '30|30', 'each out takes its own in — a shared in is never double-counted');
+
   // Overnight ORDERING is the reason breakPairs_ normalizes onto the shift
   // timeline: a 00:10 break stamp belongs AFTER a 23:50 one on a 22:00 shift.
   // Sorting the raw clock strings would pair 23:50 with 00:10's predecessor.
@@ -15821,6 +15839,29 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   assert.ok(/if \(action === 'resume'\)/.test(upd), 'approve branches on the action');
   assert.ok(/if \(res && res\.error\) \{ fail\(id, res\.error\); return; \}/.test(upd),
     'a refused resume does NOT mark the request approved');
+
+  // F6 (2026-09-09): a resume writes OUTSIDE the C17-9 index — it retypes the
+  // ClockOut row and appends a LunchIn — so the cached index stops describing
+  // the sheet. The bulk loop DISCARDS it for that employee; without this, a
+  // later request in the same batch reads stale row numbers. Ordering is the
+  // property: dropping it before the write would be a no-op.
+  const uncommented = upd.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/delete ctxByEmp\[empId\];/.test(uncommented),
+    'a resume discards the employee cached punch index');
+  assertBefore(uncommented, 'resumeShiftForEmployee_(', 'delete ctxByEmp[empId];',
+    'the index is dropped AFTER the resume has written, not before');
+  const resumeBranch = uncommented.slice(uncommented.indexOf("if (action === 'resume')"),
+    uncommented.indexOf('} else {', uncommented.indexOf("if (action === 'resume')")));
+  assert.ok(/delete ctxByEmp\[empId\];/.test(resumeBranch),
+    'the drop is inside the resume branch — a set request must keep the index');
+  // The reason it is owed: the resume path takes no ctx and writes directly.
+  assert.ok(!/\bctx\b/.test(resume),
+    'resumeShiftForEmployee_ takes no index — if it ever does, re-derive the drop');
+  // And the index itself no longer claims a universal that is not true.
+  const idxDoc = code.slice(Math.max(0, code.indexOf('function buildAdjustPunchIndex_(') - 1400),
+    code.indexOf('function buildAdjustPunchIndex_('));
+  assert.ok(/PRECONDITION/.test(idxDoc) && /resume/.test(idxDoc),
+    'buildAdjustPunchIndex_ states the precondition a caller owes, and names the resume exception');
 
   // SUBMIT-side: a resume is only meaningful against a real clock-out, and it
   // can only ever target one.

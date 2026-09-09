@@ -17410,6 +17410,16 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         if (action === 'resume') {
           const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
           if (res && res.error) { fail(id, res.error); return; }
+          // F6: a resume writes OUTSIDE the ctx — it retypes the ClockOut row
+          // to ADJ-LunchOut and appends an ADJ-LunchIn — so this employee's
+          // cached index no longer describes the sheet. Drop it; the next
+          // request for them rebuilds from the sheet as it now stands. Today's
+          // (date, punchType) dup guard makes the worst read (a later ClockOut
+          // set landing on the row the resume just converted, undoing the
+          // unpaid gap) unreachable, but that guard is a distant invariant to
+          // rest a payroll write on. Cost is one extra read, only in a batch
+          // that actually contains a resume.
+          delete ctxByEmp[empId];
         } else {
           writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId));
         }
@@ -17619,9 +17629,20 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
 /** C17-9 — one Timesheet read for a whole managerSaveDayRange run. Builds
  *  {date|type: rowIndex} for the target emp over the range's dates. The LAST
  *  matching row wins — agreeing with findExistingPunch_ and managerSaveDay's
- *  snapshot (INV-155). Each (date, type) is written at most once per run, so
- *  the index never needs updating mid-run (an append can't collide with a
- *  later lookup). */
+ *  snapshot (INV-155).
+ *
+ *  THE PRECONDITION, which a caller owes and must re-derive (F6, 2026-09-09):
+ *  every write during the index's lifetime goes THROUGH the index, and each
+ *  (date, type) is written at most once — so an append can never collide with
+ *  a later lookup and the index never needs updating mid-run.
+ *  `managerSaveDayRange` satisfies it by construction (one slot per type per
+ *  day). `punchAdjustDecideAll_` satisfies it only for `set` requests: a
+ *  `resume` decision writes through resumeShiftForEmployee_ instead — it
+ *  RETYPES the ClockOut row to ADJ-LunchOut and appends an ADJ-LunchIn — so
+ *  three keys for that date are stale the moment it lands, and that caller
+ *  DISCARDS the employee's cached index rather than reasoning about which of
+ *  them a later request in the same batch might read. Any new write path added
+ *  to a ctx-bearing loop owes the same. */
 function buildAdjustPunchIndex_(empId, dateSet) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -17952,7 +17973,18 @@ function breakSortKey_(time, anchorMins) {
  *  An UNPAIRED extra (more outs than ins, a corrupt stamp, or an in that does
  *  not follow its out) is DROPPED rather than guessed at: the same shape as a
  *  missing lunch, so one bad break can never void an otherwise-good clock pair
- *  (INV-176). The sheet doctor is what surfaces those rows as damage. */
+ *  (INV-176). The sheet doctor is what surfaces those rows as damage.
+ *
+ *  DROPPING IT DROPS IT ALONE (F1, 2026-09-09). Pairing walks the two sorted
+ *  lists with independent cursors: an `in` that cannot close the current `out`
+ *  is skipped and the NEXT one is tried against the same out. The original
+ *  index-locked loop advanced both cursors together, so one stray early `in`
+ *  (a hand-entered row, a mis-keyed AM/PM, the LunchIn half of a break whose
+ *  LunchOut was deleted) shifted every later `in` one slot and silently
+ *  un-paired the whole day — the rep was then PAID for every real break they
+ *  took, which is the exact over-payment the multi-break round exists to
+ *  prevent, arriving through the other door. Greedy is also the conservative
+ *  reading: each out takes the EARLIEST in that can close it. */
 /** THE per-day punch accumulator every hours consumer builds through (A2,
  *  operator 2026-09-01). ClockIn/ClockOut stay LAST-WINS — a second CLOCK pair
  *  is multi-shift support, a different feature, deliberately out of scope and
@@ -17981,9 +18013,12 @@ function breakPairs_(lunchOut, lunchIn, clockInMins) {
     .sort((a, b) => a.mins - b.mins);
   const outs = list(lunchOut), ins = list(lunchIn);
   const pairs = [];
-  for (let i = 0; i < Math.min(outs.length, ins.length); i++) {
-    if (ins[i].mins <= outs[i].mins) continue;             // malformed: in at/before out
-    pairs.push({ out: outs[i].raw, in: ins[i].raw, minutes: ins[i].mins - outs[i].mins });
+  let j = 0;
+  for (let i = 0; i < outs.length; i++) {
+    while (j < ins.length && ins[j].mins <= outs[i].mins) j++;  // drop an in that can't close this out
+    if (j >= ins.length) break;                                 // outs are sorted: no later out can pair
+    pairs.push({ out: outs[i].raw, in: ins[j].raw, minutes: ins[j].mins - outs[i].mins });
+    j++;
   }
   return pairs;
 }
