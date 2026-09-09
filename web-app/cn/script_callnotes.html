@@ -2122,8 +2122,10 @@
   }
   .cn-intake-pill.ppd { background: var(--info-soft);   color: var(--info-deep); }
   .cn-intake-pill.pmd { background: var(--warn-soft);   color: var(--warning-deep); }
-  .cn-intake-pill.pap { background: rgba(124, 92, 208, .16); color: #6a45c0; }
-  :root[data-mode="dark"] .cn-intake-pill.pap { color: #c3a8f5; }
+  /* F7 — the same token as the Intake tab's own PAP header and progress ring.
+     The tint drops .16 → .14 with it: MEASURED, --intake-pap on a .16 tint is
+     4.47:1, a hair under AA for 11px text, and 4.61:1 on .14. */
+  .cn-intake-pill.pap { background: var(--intake-pap-soft); color: var(--intake-pap); }
   .cn-form-sub-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   .cn-fs-row {
     display: grid; grid-template-columns: 38% 1fr; gap: 10px;
@@ -10028,7 +10030,8 @@ function cnRenderStoragePanel_(res) {
     : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(cfgTz) + '). Open a row’s chevron for its note, per-rep problems, or the tz fix.</div>';
   return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
     '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
-    cnDriveAccessHtml_(res && res.drive) + hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
+    cnDriveAccessHtml_(res && res.drive) + cnMailBccHtml_(res && res.mailBcc) +
+    hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
 }
 
@@ -10065,7 +10068,32 @@ function cnDriveAccessHtml_(dr) {
     icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
 }
 
-/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
+/** Where copies of every outgoing email go (F3, 2026-09-09). The sibling of
+ *  the Drive line above: an app-wide routing fact that no STORE row can see,
+ *  because it is a Script Property rather than a spreadsheet. Renders nothing
+ *  when unset — the normal state — so it is a line that appears exactly when
+ *  there is something to know. */
+function cnMailBccHtml_(mb) {
+  if (!mb || !mb.enabled) return '';
+  var ext = mb.external, tone, body;
+  if (ext && ext.length) {
+    tone = 'danger';
+    body = '<strong>Every outgoing email is copied outside the org.</strong> ' +
+      esc(ext.join(', ')) + ' ' + (ext.length === 1 ? 'is' : 'are') + ' outside ' +
+      esc(mb.ownDomain || 'the deploying domain') + ' — intake bodies carry full patient answers. ' +
+      'Clear or correct ' + esc(mb.prop) + ' unless this copy is deliberate and covered.';
+  } else {
+    tone = 'warn';
+    body = '<strong>Every outgoing email is BCC\u2019d to ' + esc(mb.addresses.join(', ')) + '.</strong> ' +
+      (ext === null ? 'Could not tell whether that is inside the org. ' : '') +
+      'That includes intake bodies (full patient answers) and department emails (patient name + TRX). ' +
+      'Clear ' + esc(mb.prop) + ' when the copies are no longer wanted.';
+  }
+  return '<div class="cn-drive-line cn-drive-' + tone + '">' +
+    icon('warning', 12) + '<span>' + body + '</span></div>';
+}
+
+/** Expand/collapse an mtRenderTable_ detail row from its disclosure button/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
  *  (the metrics mToggleQueueRow_ shape — aria-expanded + the hidden attribute,
  *  INV-174). */
 function cnToggleDetailRow_(btn) {
@@ -10342,6 +10370,29 @@ function cnHealthFindings_(health, storage) {
         add(id, 'storage', 'ok', s.label, 'reachable' + (s.tzMatch === true ? ' · tz matches' : ''));
       }
     });
+    // (F3, 2026-09-09) Where copies of every outgoing email go. MAIL_BCC_ALL
+    // is merged into EVERY send — intake bodies carry full patient answers —
+    // and it had no surface anywhere in the app. It REPORTS: an address
+    // outside the deploying account's domain is blocking, an internal one is
+    // a standing warning, unset is the ok fact (INV-186 — this reads clean on
+    // a normal deployment, which is what lets it carry a tone at all).
+    var mb = storage.mailBcc;
+    if (mb && mb.enabled) {
+      var ext = mb.external;
+      if (ext && ext.length) {
+        add('mailBcc', 'storage', 'fail', 'Every outgoing email is copied outside the org',
+          plural(ext.length, 'address') + ' outside ' + (mb.ownDomain || 'the deploying domain') + ': ' + ext.join(', ') +
+          ' — intake bodies carry full patient answers and department emails carry the patient name and TRX',
+          'Clear or correct ' + mb.prop + ' in Script Properties unless this copy is deliberate and covered.');
+      } else {
+        add('mailBcc', 'storage', 'warn', 'Every outgoing email is BCC\u2019d to ' + mb.addresses.join(', '),
+          (ext === null ? 'could not tell whether that is inside the org — ' : '') +
+          'this includes intake bodies (full patient answers) and department emails (patient name + TRX)',
+          'It is meant to be temporary — clear ' + mb.prop + ' when the copies are no longer wanted.');
+      }
+    } else if (mb) {
+      add('mailBcc', 'storage', 'ok', 'Outgoing email copies', 'no blanket BCC configured');
+    }
     // (operator 2026-09-09) Drive capability — the one thing the store rows
     // above structurally cannot see. null = not probed on this path.
     var dr = storage.drive;

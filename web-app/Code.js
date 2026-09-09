@@ -7741,7 +7741,7 @@ function getStorageHealth(opts) {
     const checkDrive = !opts || opts.checkDrive !== false;
     const props = PropertiesService.getScriptProperties();
     const cfgTz = CONFIG.TIMEZONE;
-    const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
+    const isPlaceholder = storePlaceholder_;
 
     // Open a resolved id and report reachability / name / tz / tz-match.
     const probe = function (spec) {
@@ -7891,7 +7891,13 @@ function getStorageHealth(opts) {
                             reauthHint: DRIVE_REAUTH_HINT, folderProp: KB_IMAGES_FOLDER_PROP,
                             folderId: '', folderOk: null, folderError: '' }; }
     }
-    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds, drive: drive };
+    // F3 — the SECOND app-wide fact no store row can see: where copies of
+    // every outgoing email are going. One property read, already memoized;
+    // no probe, so it rides every call (unlike the Drive check).
+    let mailBcc = null;
+    try { mailBcc = mailBccStatus_(); } catch (e) { mailBcc = null; }
+    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
+             drive: drive, mailBcc: mailBcc };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9183,6 +9189,38 @@ function mailBccAll_() {
   _mailBccAllCache = v.split(',').map((x) => x.trim()).filter((x) => /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(x));
   return _mailBccAllCache;
 }
+/** What MAIL_BCC_ALL is currently doing, for the Admin System tab (F3,
+ *  2026-09-09). The property is merged into EVERY email the app sends —
+ *  intake PPD/PMD/PAP bodies carry full patient answers, department emails
+ *  carry the patient name + TRX — and until this shipped it appeared NOWHERE
+ *  in the app: not Admin, not Storage Health, not Automation Health, not the
+ *  feature-flag surface. Its documented purpose is transient ("set it while
+ *  testing, clear it after"), which is exactly the setting most likely to be
+ *  left on, and a silent standing PHI copy is the kind of thing an audit
+ *  finds rather than an operator remembers.
+ *
+ *  It REPORTS, it does not enforce. An address outside the deploying
+ *  account's own domain is escalated to a blocking finding rather than
+ *  dropped: silently discarding an address the operator deliberately typed
+ *  would leave them believing they are getting copies they are not — a worse
+ *  failure than the one being guarded (INV-187's direction). The domain comes
+ *  from Session.getEffectiveUser(), the account that owns every store and
+ *  sends every message, so there is no second copy of the org domain to
+ *  drift from doGet's own check. `external` is null when that account cannot
+ *  be read: unknown, never "all clear". */
+function mailBccStatus_() {
+  const list = mailBccAll_();
+  const out = { prop: 'MAIL_BCC_ALL', enabled: list.length > 0, addresses: list, external: null, ownDomain: '' };
+  if (!out.enabled) return out;
+  let own = '';
+  try { own = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) { own = ''; }
+  const at = own.lastIndexOf('@');
+  if (at < 0) return out;                       // can't tell whose domain is ours → external stays null
+  out.ownDomain = own.slice(at + 1);
+  out.external = list.filter((a) => String(a).toLowerCase().slice(String(a).lastIndexOf('@') + 1) !== out.ownDomain);
+  return out;
+}
+
 function mailMergeBcc_(opts) {
   const extra = mailBccAll_();
   if (!extra.length || !opts) return opts;
@@ -15813,6 +15851,7 @@ function setScheduledCallStatus(id, status) {
     if (!hit) return { error: 'Reminder not found.' };
     sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(st);
     writeAuditLog_(emp, 'ScheduledCallStatus', '', '', false, 0, 'id=' + hit.id + '; ' + st);
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }
@@ -16072,6 +16111,7 @@ function markDeptRequestResolved_(token, byEmail) {
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
       sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
       drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
+      pendingTasksBust_(rows[i][DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
       try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
         '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
       return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
@@ -16112,6 +16152,15 @@ function resolveDeptRequest(requestId) {
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
     if (!res.found) return { success: false, error: 'Request not found.' };
+    // F4 — the writer already cleared the SENDER's cached list; a dept member
+    // resolving someone else's request is the one case where the acting rep is
+    // not the owner, so clear theirs too (a no-op when they are the same rep).
+    // Residual, deliberately: another member of the same desk keeps the
+    // incoming row for up to PENDING_TASKS_CACHE_TTL. A generation salt would
+    // close that by evicting EVERY rep's entry on every resolve — too blunt a
+    // trade for a 2-minute cache on the app's busiest surface, and the stale
+    // window here is bounded rather than permanent.
+    pendingTasksBust_(emp.id);
     return { success: true, already: !!res.already };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -17410,6 +17459,16 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         if (action === 'resume') {
           const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
           if (res && res.error) { fail(id, res.error); return; }
+          // F6: a resume writes OUTSIDE the ctx — it retypes the ClockOut row
+          // to ADJ-LunchOut and appends an ADJ-LunchIn — so this employee's
+          // cached index no longer describes the sheet. Drop it; the next
+          // request for them rebuilds from the sheet as it now stands. Today's
+          // (date, punchType) dup guard makes the worst read (a later ClockOut
+          // set landing on the row the resume just converted, undoing the
+          // unpaid gap) unreachable, but that guard is a distant invariant to
+          // rest a payroll write on. Cost is one extra read, only in a batch
+          // that actually contains a resume.
+          delete ctxByEmp[empId];
         } else {
           writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId));
         }
@@ -17619,9 +17678,20 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
 /** C17-9 — one Timesheet read for a whole managerSaveDayRange run. Builds
  *  {date|type: rowIndex} for the target emp over the range's dates. The LAST
  *  matching row wins — agreeing with findExistingPunch_ and managerSaveDay's
- *  snapshot (INV-155). Each (date, type) is written at most once per run, so
- *  the index never needs updating mid-run (an append can't collide with a
- *  later lookup). */
+ *  snapshot (INV-155).
+ *
+ *  THE PRECONDITION, which a caller owes and must re-derive (F6, 2026-09-09):
+ *  every write during the index's lifetime goes THROUGH the index, and each
+ *  (date, type) is written at most once — so an append can never collide with
+ *  a later lookup and the index never needs updating mid-run.
+ *  `managerSaveDayRange` satisfies it by construction (one slot per type per
+ *  day). `punchAdjustDecideAll_` satisfies it only for `set` requests: a
+ *  `resume` decision writes through resumeShiftForEmployee_ instead — it
+ *  RETYPES the ClockOut row to ADJ-LunchOut and appends an ADJ-LunchIn — so
+ *  three keys for that date are stale the moment it lands, and that caller
+ *  DISCARDS the employee's cached index rather than reasoning about which of
+ *  them a later request in the same batch might read. Any new write path added
+ *  to a ctx-bearing loop owes the same. */
 function buildAdjustPunchIndex_(empId, dateSet) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -17947,12 +18017,29 @@ function breakSortKey_(time, anchorMins) {
  *  Stamps are normalized onto the SHIFT's own timeline before sorting — a time
  *  at or before the clock-in belongs to the next calendar day, the same wrap
  *  the clock pair uses — so an overnight shift's 02:00 break correctly sorts
- *  AFTER its 23:50 one instead of ahead of it. Pairing is then positional.
+ *  AFTER its 23:50 one instead of ahead of it. Pairing is then GREEDY over
+ *  two INDEPENDENT cursors: each `out` takes the earliest `in` that can close
+ *  it, and an `in` that cannot close the current `out` is skipped ALONE.
+ *  Walking both lists on ONE index (the original shape, F1 2026-09-09) made a
+ *  single stray early LunchIn shift every later `in` a slot and un-pair the
+ *  whole day — so the rep was PAID for every real break they took, the exact
+ *  over-payment the 2026-09-01 multi-break round exists to prevent.
  *
  *  An UNPAIRED extra (more outs than ins, a corrupt stamp, or an in that does
  *  not follow its out) is DROPPED rather than guessed at: the same shape as a
  *  missing lunch, so one bad break can never void an otherwise-good clock pair
- *  (INV-176). The sheet doctor is what surfaces those rows as damage. */
+ *  (INV-176). The sheet doctor is what surfaces those rows as damage.
+ *
+ *  DROPPING IT DROPS IT ALONE (F1, 2026-09-09). Pairing walks the two sorted
+ *  lists with independent cursors: an `in` that cannot close the current `out`
+ *  is skipped and the NEXT one is tried against the same out. The original
+ *  index-locked loop advanced both cursors together, so one stray early `in`
+ *  (a hand-entered row, a mis-keyed AM/PM, the LunchIn half of a break whose
+ *  LunchOut was deleted) shifted every later `in` one slot and silently
+ *  un-paired the whole day — the rep was then PAID for every real break they
+ *  took, which is the exact over-payment the multi-break round exists to
+ *  prevent, arriving through the other door. Greedy is also the conservative
+ *  reading: each out takes the EARLIEST in that can close it. */
 /** THE per-day punch accumulator every hours consumer builds through (A2,
  *  operator 2026-09-01). ClockIn/ClockOut stay LAST-WINS — a second CLOCK pair
  *  is multi-shift support, a different feature, deliberately out of scope and
@@ -17981,9 +18068,12 @@ function breakPairs_(lunchOut, lunchIn, clockInMins) {
     .sort((a, b) => a.mins - b.mins);
   const outs = list(lunchOut), ins = list(lunchIn);
   const pairs = [];
-  for (let i = 0; i < Math.min(outs.length, ins.length); i++) {
-    if (ins[i].mins <= outs[i].mins) continue;             // malformed: in at/before out
-    pairs.push({ out: outs[i].raw, in: ins[i].raw, minutes: ins[i].mins - outs[i].mins });
+  let j = 0;
+  for (let i = 0; i < outs.length; i++) {
+    while (j < ins.length && ins[j].mins <= outs[i].mins) j++;  // drop an in that can't close this out
+    if (j >= ins.length) break;                                 // outs are sorted: no later out can pair
+    pairs.push({ out: outs[i].raw, in: ins[j].raw, minutes: ins[j].mins - outs[i].mins });
+    j++;
   }
   return pairs;
 }
@@ -19717,6 +19807,23 @@ var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
 var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
 
+/** Drop a rep's cached Needs-you list (F4, 2026-09-09). The block is the first
+ *  thing on the Dashboard, and a rep who has just DONE the thing it names goes
+ *  back to look — so a 2-minute stale entry telling them it is still
+ *  outstanding is the one staleness this cache cannot afford. Every completing
+ *  flow calls this after its write lands; the key is the rep's own id, so a
+ *  targeted delete is enough and no generation salt is needed (the
+ *  drCacheGen_ salt exists because a dept request may be resolved by someone
+ *  OTHER than its owner — that flow busts both ids for the same reason).
+ *  Best-effort by construction: a cache miss is the correct fallback, so this
+ *  must never throw into a write that already succeeded. */
+function pendingTasksBust_(empId) {
+  try {
+    var id = String(empId || '').trim();
+    if (id) CacheService.getScriptCache().remove(PENDING_TASKS_CACHE_PREFIX + id);
+  } catch (e) {}
+}
+
 /** Previous WORKDAY (Mon–Fri) before an ISO date — the server twin of the
  *  client's mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never
  *  populated same-day, so "calls without a note" is a previous-workday
@@ -19756,6 +19863,22 @@ function getMyPendingTasks() {
     var nowMs = Date.now();
     var items = [];
     var unavailable = [];
+    // F2 (2026-09-09) — a store the operator has deliberately NOT configured is
+    // not a failed read, and reporting it as one costs twice. On a deployment
+    // with no HR_DOCS_SS_ID (no fallback store, by design — INV-122) the two
+    // HR-backed sources threw on EVERY call, so every rep saw "Couldn't check
+    // coaching, employee docs" forever — an indicator that can never be clean
+    // (INV-186) — the block never reached its clean-empty state and so never
+    // disappeared, and `!unavailable.length` meant the 2-minute cache was NEVER
+    // written: six reads on every Dashboard paint and every focus wake, for the
+    // life of the deployment. These kinds ride `notConfigured` instead: honest
+    // in the payload, silent in the UI (an unset store is Storage Health's to
+    // report, and it already does), and never a reason to skip the cache.
+    var notConfigured = [];
+    var hrOk = storeConfigured_('HR_DOCS_SS_ID', '',
+      typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID);
+    var kbOk = storeConfigured_('KB_SS_ID', CONFIG.KB.SS_ID,
+      typeof _TEST_OVERRIDE_KB_SS_ID !== 'undefined' && _TEST_OVERRIDE_KB_SS_ID);
     var pushDate = function (iso) { return String(iso || '').slice(0, 10); };
 
     // training — getMyTraining's own status rule (trainDeriveStatus_) decides
@@ -19773,7 +19896,7 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'trainingHome' },
         });
       });
-    } catch (e) { unavailable.push('training'); }
+    } catch (e) { (kbOk ? unavailable : notConfigured).push('training'); }
 
     // coaching — open, NON-praise (praise needs no acknowledgement — PR 4,
     // decision 8). Overdue = ageDays (BUSINESS days, server-computed; null =
@@ -19792,7 +19915,7 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'coaching' },
         });
       });
-    } catch (e) { unavailable.push('coaching'); }
+    } catch (e) { (hrOk ? unavailable : notConfigured).push('coaching'); }
 
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
@@ -19868,16 +19991,19 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'myDocs' },
         });
       });
-    } catch (e) { unavailable.push('docs'); }
+    } catch (e) { (hrOk ? unavailable : notConfigured).push('docs'); }
 
     var sorted = pendingTasksSort_(items);
     var result = {
       items: sorted.slice(0, PENDING_TASKS_CAP), total: sorted.length, cap: PENDING_TASKS_CAP,
       overdue: sorted.filter(function (i) { return i.overdue; }).length,
-      unavailable: unavailable, todayIso: todayIso, prevWorkday: prev,
+      unavailable: unavailable, notConfigured: notConfigured,
+      todayIso: todayIso, prevWorkday: prev,
     };
-    // INV-129: cache only a round where EVERY source was readable — a pinned
-    // degraded round would hide a task for the full TTL.
+    // INV-129: cache only a round where every CONFIGURED source was readable —
+    // a pinned degraded round would hide a task for the full TTL. A source
+    // whose store is unset is not degraded: it will answer the same way on
+    // every call, so caching it is correct rather than a pinned failure.
     if (!unavailable.length) {
       try { cache.put(key, JSON.stringify(result), PENDING_TASKS_CACHE_TTL); } catch (_) {}
     }
@@ -20661,7 +20787,25 @@ function intakeFeedbackFor_(formType, submissionId) {
       });
     }
     return out;
-  } catch (e) { return []; }   // best-effort: the submission detail still renders
+  } catch (e) {
+    // F8 (2026-09-09): best-effort is right — a feedback read must never take
+    // the submission detail down with it — but SILENT was not. `[]` is exactly
+    // what a clean submission with no feedback returns, so a swallowed failure
+    // rendered as "nobody has said anything", which is the one reading the
+    // data cannot support (INV-187). The outcome now rides back and the
+    // client says "couldn't load" instead.
+    return { unavailable: true, error: String((e && e.message) || e) };
+  }
+}
+
+/** The read outcome, normalized for a caller that just wants the list (F8).
+ *  Returns {items, unavailable} — `unavailable` is the INV-35 distinction:
+ *  an empty list is a FACT, an unreadable one is not. */
+function intakeFeedbackResult_(formType, submissionId) {
+  const r = intakeFeedbackFor_(formType, submissionId);
+  return Array.isArray(r)
+    ? { items: r, unavailable: false }
+    : { items: [], unavailable: true, error: String((r && r.error) || '') };
 }
 
 /** Rep-callable (the recipient IS an employee — intake recipients resolve from
@@ -21825,13 +21969,19 @@ function intakeGetSubmission(formType, submissionId) {
         }
       }
     }
+    const fbRes = intakeFeedbackResult_(ft, id);
     const result = {
       formType: ft,
       submissionId: id,
       isOwn: repId === emp.id,
       amendsId: String(row[width - 1] == null ? '' : row[width - 1]).trim(),
       supersededBy: supersededBy,
-      feedback: intakeFeedbackFor_(ft, id),   // recipient feedback, all three forms (2026-08-13)
+      // Recipient feedback, all three forms (2026-08-13). F8: `feedback` keeps
+      // its array shape for an older client; `feedbackUnavailable` is additive
+      // and says the list is empty because the read FAILED, not because there
+      // is none.
+      feedback: fbRes.items,
+      feedbackUnavailable: fbRes.unavailable,
       timestamp: intakeTsString_(row[1]),
       repId: repId,
       repName: String(row[3] || ''),
@@ -25584,6 +25734,7 @@ function markTrainingComplete(itemId) {
       .appendRow([emp.id, 'kb', itemId, ts, 'read', '']);
     writeAuditLog_(emp, 'TrainingComplete', fmtDate_(now), '', false, 0,
       'itemId=' + itemId + '; via=read');
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, completedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -26025,6 +26176,7 @@ function submitQuizAttempt(quizId, answers) {
     }
     writeAuditLog_(emp, 'QuizAttempt', fmtDate_(now), '', false, 0,
       'quizId=' + quizId + '; score=' + graded.scorePct + '; passed=' + passed + '; attempt=' + stats.count);
+    if (passed) pendingTasksBust_(emp.id);                       // F4
     return {
       success: true, scorePct: graded.scorePct, passed: passed,
       right: graded.right, total: graded.total,
@@ -26203,6 +26355,26 @@ const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales t
 const EMPDOC_ACK_VERSION = 1;
 const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
   'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+
+/** A store id that is absent or still the shipped CONFIG placeholder — i.e.
+ *  the store is NOT configured on this deployment. Hoisted out of
+ *  getStorageHealth (F2, 2026-09-09) so "is this store set up?" has ONE
+ *  definition: getMyPendingTasks now asks the same question to tell a
+ *  deliberately-unset feature apart from a read that failed. */
+function storePlaceholder_(v) { return !v || /^YOUR_/.test(String(v)); }
+
+/** Is a spreadsheet store CONFIGURED here? A Script Property, a non-placeholder
+ *  CONFIG fallback, or an active test override all count. Answering this is the
+ *  only way to distinguish "this deployment does not have the feature" from
+ *  "the feature is set up and the read failed" — the cnCountNotesResult_
+ *  unenrolled-vs-unavailable rule (INV-35), applied to a store. */
+function storeConfigured_(prop, configFallback, testOverride) {
+  if (testOverride) return true;
+  try {
+    if (PropertiesService.getScriptProperties().getProperty(prop)) return true;
+  } catch (e) { return true; }   // can't tell → assume configured (a real read failure then reports itself)
+  return !storePlaceholder_(configFallback);
+}
 
 function getHrDocsSS_() {
   if (typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID) {
@@ -26585,6 +26757,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     // L-6: a fields-only completion emails "completed", not "signed".
     const completedOnly = !d.requiresSignature;
     notifyAfter = function () { notifyEmpDocSigned_(d, emp, completedOnly); };   // M-7: post-lock
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -27301,6 +27474,7 @@ function acknowledgeCoaching(coachId, response) {
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
     notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp, !!reply); };   // M-7: post-lock
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, acknowledgedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -28429,7 +28603,21 @@ function qaChoiceOptionsSanitize_(arr) {
   }
   return out;
 }
-function qaOptionIsNumeric_(o) { return /^\s*[-+]?\d+(\.\d+)?\s*$/.test(String(o || '')); }
+/** Would this dropdown option READ AS A SCORE downstream? (F5, 2026-09-09.)
+ *  The guard must be as wide as the parse it protects, and it was not: the
+ *  consumers (qaCardStats_, qaStatsAggregate_, qaCalibration_, the coverage
+ *  join) all decide "is this a 1–5 score" with Number(v), which accepts three
+ *  forms the old decimal regex refused — "4." → 4, "0x5" → 5, "1e0" → 1. An
+ *  option so named would fold its answers into the QA scale averages that
+ *  drive coverage avg, calibration means and the exemption thresholds
+ *  (avg ≥ 4.5, minCriterion ≥ 4). isFinite(Number()) IS the consumers' own
+ *  test, so the accept-set can no longer be narrower than the parse. NOTE the
+ *  empty string is deliberately NOT numeric here — Number('') is 0, but a
+ *  blank option is already dropped by the caller as falsy. */
+function qaOptionIsNumeric_(o) {
+  const t = String(o == null ? '' : o).trim();
+  return t !== '' && isFinite(Number(t));
+}
 /** PURE (Node-pinned) — normalize ONE client-supplied rating against its
  *  criterion. Returns {value} (the canonical stored form) or {error}. scale →
  *  an integer 1–5; check → 'yes'/'no' (true/false/1/0/'y'/'n' accepted);

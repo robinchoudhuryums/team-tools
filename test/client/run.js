@@ -309,6 +309,74 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
     });
   });
 });
+
+// F7 (2026-09-09) — the PAP purple bypassed its own token in FOUR values.
+// PPD and PMD borrow the semantic --info-* / --warn-* pairs; purple has no
+// semantic pair, so those two rules hardcoded #7c5cd0 / #6a45c0 /
+// rgba(124,92,208,…) plus a hand-written dark override — none of them the
+// --intake-pap the progress ring uses. Two different purples for one concept
+// on the same screen, and a colour change needed five edits. The INV-128
+// tripwire only checks that USED tokens are DEFINED; it cannot see a literal
+// that should have been a token, which is the rule this pin stands in for.
+test('F7: the PAP purple has ONE home — both rules ride --intake-pap', () => {
+  const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../web-app/' + f), 'utf8');
+  const toks = read('styles_design_tokens.html');
+  const intake = read('intake/script_intake.html');
+  const cn = read('cn/script_callnotes.html');
+
+  // (a) The retired literals are banned from the whole shipped tree (INV-184).
+  const files = ['styles_design_tokens.html', 'styles.html', 'index.html', 'modals.html',
+    'script_core.html', 'intake/script_intake.html', 'cn/script_callnotes.html'];
+  ['7c5cd0', '6a45c0', 'c3a8f5', '124, 92, 208', '124,92,208'].forEach((lit) => {
+    files.forEach((f) => assert.ok(read(f).indexOf(lit) < 0,
+      'the retired PAP literal ' + lit + ' is back in ' + f));
+  });
+
+  // (b) Both rules route through the token, and the dark override is GONE —
+  //     --intake-pap already flips per mode, so a second copy is what drifted.
+  assert.ok(/\.intk-cat-pap \.sec-title \{ background: var\(--intake-pap-soft\); border-left-color: var\(--intake-pap\); color: var\(--intake-pap\); \}/.test(intake),
+    'the Intake section header rides the token');
+  assert.ok(/\.intk-cat-pap \.intk-section \{ box-shadow: var\(--shadow-sm\), inset 0 2px 0 var\(--intake-pap\); \}/.test(intake),
+    'and so does its top rail');
+  assert.ok(/\.cn-intake-pill\.pap \{ background: var\(--intake-pap-soft\); color: var\(--intake-pap\); \}/.test(cn),
+    'the Call Notes intake pill rides the same token');
+  assert.ok(!/data-mode="dark"\][^{]*\.intk-cat-pap/.test(intake) && !/data-mode="dark"\][^{]*\.cn-intake-pill/.test(cn),
+    'no hand-written dark override survives — the token carries the mode');
+
+  // (c) The soft tint is declared ONCE per mode, and its channels ARE the
+  //     token's: edit --intake-pap without its twin and this fails.
+  const papHex = (toks.match(/--intake-pap:\s*(#[0-9a-fA-F]{6})/g) || []).map((x) => x.slice(-7));
+  const soft = (toks.match(/--intake-pap-soft:\s*rgba\(([^)]+)\)/g) || [])
+    .map((x) => /rgba\(([^)]+)\)/.exec(x)[1].split(',').map((n) => n.trim()));
+  assert.strictEqual(papHex.length, 2, 'one --intake-pap per mode block');
+  assert.strictEqual(soft.length, 2, 'one --intake-pap-soft per mode block');
+  soft.forEach((parts, i) => {
+    const rgb = [1, 3, 5].map((k) => parseInt(papHex[i].slice(k, k + 2), 16));
+    assert.strictEqual(parts.slice(0, 3).join(','), rgb.join(','),
+      'the ' + (i ? 'dark' : 'light') + ' tint channels ARE --intake-pap ' + papHex[i]);
+    assert.strictEqual(parts[3], '.14', 'both tints use the same alpha');
+  });
+
+  // (d) MEASURED: the token is legible as text on its own tint, in every
+  //     palette. (Light .16 was 4.47 — under AA for 11px text — which is why
+  //     the pill's alpha moved to .14 with the token.)
+  const toLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const lum = (hex) => { const c = [1, 3, 5].map((i) => toLin(parseInt(hex.slice(i, i + 2), 16) / 255));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b) => { const l1 = Math.max(lum(a), lum(b)), l2 = Math.min(lum(a), lum(b));
+    return (l1 + 0.05) / (l2 + 0.05); };
+  const over = (fg, alpha, bg) => { const f = [1, 3, 5].map((i) => parseInt(fg.slice(i, i + 2), 16)),
+    b = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+    return '#' + f.map((v, i) => Math.round(v * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, '0')).join(''); };
+  const cards = (toks.match(/--paper-card:\s*(#[0-9a-fA-F]{6})/g) || []).map((x) => x.slice(-7));
+  assert.ok(cards.length >= 2, 'card colours found');
+  cards.forEach((card) => {
+    const pap = lum(card) < 0.5 ? papHex[1] : papHex[0];
+    const r = ratio(pap, over(pap, 0.14, card));
+    assert.ok(r >= 4.5, '--intake-pap on its own tint over ' + card + ' is ' + r.toFixed(2) + ':1 — under AA');
+  });
+});
+
 test('CN flag stripes use three distinct tokens', () => {
   const cn = fs.readFileSync(
     path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
@@ -9242,8 +9310,12 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   assert.ok(/if \(!base\) return '';/.test(cta), 'no resolvable exec URL → no button (never a dead one)');
   // The route exists, and the detail read surfaces the rows for ALL forms.
   assert.ok(/e\.parameter\.intakefb/.test(nc(extractRawFunction('Code.js', 'doGet'))), 'doGet routes ?intakefb=');
-  assert.ok(/feedback: intakeFeedbackFor_\(ft, id\)/.test(nc(extractRawFunction('Code.js', 'intakeGetSubmission'))),
+  const getSub = nc(extractRawFunction('Code.js', 'intakeGetSubmission'));
+  assert.ok(/const fbRes = intakeFeedbackResult_\(ft, id\);/.test(getSub) && /feedback: fbRes\.items/.test(getSub),
     'the Sent detail carries the feedback rows');
+  // F8 — and says WHY the list is empty when the read failed (INV-187).
+  assert.ok(/feedbackUnavailable: fbRes\.unavailable/.test(getSub),
+    'an unreadable feedback list is distinguishable from an empty one');
   // Client render: escapes, and an EMPTY feedback list renders NOTHING — an
   // empty "Recipient feedback" section would read as "no complaints yet",
   // which the data cannot support.
@@ -9251,6 +9323,60 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   assert.ok(/Array\.isArray\(d\.feedback\) && d\.feedback\.length/.test(intake), 'feedback section only when rows exist');
   assert.ok(/esc\(String\(f\.text \|\| ''\)\)/.test(intake), 'feedback text is esc()-escaped before innerHTML');
 });
+
+test('F8: a failed intake-feedback read is NAMED, never rendered as "no feedback"', () => {
+  // Behavioural: the reader still degrades (the submission detail must render
+  // either way) but it no longer degrades to the SAME value a clean read
+  // produces. `[]` said "nobody has said anything"; only a real read can.
+  const ctx = vm.createContext({ String, Math, Array });
+  ctx.INTAKE_FEEDBACK_SCAN_MAX = 500;
+  ctx.INTAKE_FEEDBACK_HEADERS = ['At', 'Id', 'Type', 'Email', 'Name', 'Text'];
+  ctx.intakeTsString_ = (v) => String(v);
+  let mode = 'ok';
+  ctx.getIntakeFeedbackSheet_ = () => {
+    if (mode === 'throw') throw new Error('Intake store unreachable');
+    return {
+      getLastRow: () => (mode === 'empty' ? 1 : 3),
+      getRange: () => ({ getValues: () => [
+        ['2026-09-01 10:00:00', 'SUB-1', 'PPD', 'a@umsupply.com', 'Ann', 'Wrong chair'],
+        ['2026-09-02 11:00:00', 'SUB-2', 'PPD', 'b@umsupply.com', 'Bo', 'other submission'],
+      ] }),
+    };
+  };
+  ['intakeFeedbackFor_', 'intakeFeedbackResult_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+
+  const ok = ctx.intakeFeedbackResult_('PPD', 'SUB-1');
+  assert.strictEqual(ok.unavailable, false);
+  assert.strictEqual(ok.items.length, 1, 'the matching row, and only it');
+  assert.strictEqual(ok.items[0].fromName, 'Ann');
+
+  mode = 'empty';
+  const none = ctx.intakeFeedbackResult_('PPD', 'SUB-1');
+  assert.strictEqual(none.unavailable, false, 'an EMPTY sheet is a fact, not a failure (INV-35)');
+  assert.strictEqual(none.items.length, 0);
+
+  mode = 'throw';
+  const bad = ctx.intakeFeedbackResult_('PPD', 'SUB-1');
+  assert.strictEqual(bad.unavailable, true, 'an unreadable store is NOT "no feedback"');
+  assert.strictEqual(bad.items.length, 0, 'and still yields a renderable empty list');
+  assert.ok(/unreachable/.test(bad.error || ''), 'the reason rides along');
+  // The detail must still render — best-effort was always the right call.
+  assert.ok(/catch \(e\)/.test(extractRawFunction('Code.js', 'intakeFeedbackFor_')),
+    'the read still swallows its own failure rather than taking the submission down');
+
+  // Client: the failed read renders the shared error card, and the CLEAN empty
+  // case still renders NOTHING (an empty section would read as "no one has
+  // complaints yet", which the data cannot support — that part was correct).
+  const intake = fs.readFileSync(path.resolve(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const win = intake.slice(intake.indexOf('var fbHtml = '), intake.indexOf('var fbHtml = ') + 900);
+  assert.ok(/if \(d\.feedbackUnavailable\) \{/.test(win), 'the client branches on the outcome FIRST');
+  assert.ok(/errorStateHtml_\(/.test(win), 'and renders the shared error card (INV-175), not a muted empty state');
+  assert.ok(!/errorStateHtml_\(esc\(/.test(win), 'never double-escaped — the helper escapes internally');
+  assert.ok(/\} else if \(Array\.isArray\(d\.feedback\) && d\.feedback\.length\) \{/.test(win),
+    'the clean-empty case is unchanged: absent or empty still renders nothing');
+});
+
 
 console.log('\nkb — article-image server fallback (operator 2026-08-13)');
 
@@ -15223,6 +15349,24 @@ test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairin
     'a return at/before its leave is malformed and deducts nothing');
   close(ch('09:00:00', '17:00:00', [], []), 8.0, 'empty arrays behave like no break');
 
+  // F1 (2026-09-09) — the IN direction, which the OUT cases above cannot see.
+  // The original index-locked loop compared outs[i] against ins[i], so one
+  // stray early `in` shifted every later one and un-paired the WHOLE day,
+  // paying the rep for breaks they took. A dropped `in` must be dropped ALONE.
+  close(ch('09:00:00', '17:00:00', ['12:00:00'], ['11:00:00', '12:30:00']), 7.5,
+    'a stray early LunchIn is dropped alone — the real pair still deducts');
+  close(ch('09:00:00', '17:00:00', ['12:00:00', '15:00:00'],
+                                   ['11:00:00', '12:30:00', '15:30:00']), 7.0,
+    'a stray early LunchIn does not misalign the pairs after it');
+  assert.strictEqual(
+    bp(['12:00'], ['11:00', '12:30'], 540).map((b) => b.out + '/' + b.in).join('|'),
+    '12:00/12:30', 'the surviving pair is the earliest in that can CLOSE the out');
+  assert.strictEqual(bp(['12:00'], ['10:00', '11:00'], 540).length, 0,
+    'when no in can close the out, nothing is invented');
+  assert.strictEqual(
+    bp(['12:00', '12:10'], ['12:30', '12:40'], 540).map((b) => b.minutes).join('|'),
+    '30|30', 'each out takes its own in — a shared in is never double-counted');
+
   // Overnight ORDERING is the reason breakPairs_ normalizes onto the shift
   // timeline: a 00:10 break stamp belongs AFTER a 23:50 one on a 22:00 shift.
   // Sorting the raw clock strings would pair 23:50 with 00:10's predecessor.
@@ -15822,6 +15966,29 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   assert.ok(/if \(res && res\.error\) \{ fail\(id, res\.error\); return; \}/.test(upd),
     'a refused resume does NOT mark the request approved');
 
+  // F6 (2026-09-09): a resume writes OUTSIDE the C17-9 index — it retypes the
+  // ClockOut row and appends a LunchIn — so the cached index stops describing
+  // the sheet. The bulk loop DISCARDS it for that employee; without this, a
+  // later request in the same batch reads stale row numbers. Ordering is the
+  // property: dropping it before the write would be a no-op.
+  const uncommented = upd.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/delete ctxByEmp\[empId\];/.test(uncommented),
+    'a resume discards the employee cached punch index');
+  assertBefore(uncommented, 'resumeShiftForEmployee_(', 'delete ctxByEmp[empId];',
+    'the index is dropped AFTER the resume has written, not before');
+  const resumeBranch = uncommented.slice(uncommented.indexOf("if (action === 'resume')"),
+    uncommented.indexOf('} else {', uncommented.indexOf("if (action === 'resume')")));
+  assert.ok(/delete ctxByEmp\[empId\];/.test(resumeBranch),
+    'the drop is inside the resume branch — a set request must keep the index');
+  // The reason it is owed: the resume path takes no ctx and writes directly.
+  assert.ok(!/\bctx\b/.test(resume),
+    'resumeShiftForEmployee_ takes no index — if it ever does, re-derive the drop');
+  // And the index itself no longer claims a universal that is not true.
+  const idxDoc = code.slice(Math.max(0, code.indexOf('function buildAdjustPunchIndex_(') - 1400),
+    code.indexOf('function buildAdjustPunchIndex_('));
+  assert.ok(/PRECONDITION/.test(idxDoc) && /resume/.test(idxDoc),
+    'buildAdjustPunchIndex_ states the precondition a caller owes, and names the resume exception');
+
   // SUBMIT-side: a resume is only meaningful against a real clock-out, and it
   // can only ever target one.
   const sub = extractRawFunction('Code.js', 'submitPunchAdjustRequests');
@@ -16140,6 +16307,7 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   // toned rows, the pills, and exactly the detail rows that have content.
   loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -16908,14 +17076,36 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   assert.ok(/return \{ error: 'Not authorized\.' \};/.test(fn), 'READ gate — a bare {error}, never success:false (the GATE-SHAPE rule)');
   // Every source is its own try/catch and NAMES itself on failure (INV-187):
   // a source that could not be read must render "couldn\'t check", never 0.
-  const pushes = [...fn.matchAll(/unavailable\.push\('(\w+)'\)/g)].map((m) => m[1]);
+  const pushes = [...fn.matchAll(/(?:unavailable|notConfigured)\)?\.push\('(\w+)'\)/g)].map((m) => m[1]);
   const kindsLine = /PENDING_TASKS_KINDS = \[([^\]]+)\]/.exec(pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')));
   const kinds = kindsLine[1].match(/'(\w+)'/g).map((k) => k.replace(/'/g, ''));
-  assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one `unavailable` push per declared kind: ' + pushes.join(','));
-  assert.ok((fn.match(/\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length, 'each push sits in its OWN catch — one failed source must not take the others with it');
+  assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one classification per declared kind: ' + pushes.join(','));
+  assert.ok((fn.match(/\} catch \(e\) \{ \(?\w+ \? unavailable : notConfigured\)?\.?push|\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length,
+    'each classification sits in its OWN catch — one failed source must not take the others with it');
+  // F2 (2026-09-09): a source whose STORE is unset is not a failed read. It
+  // rides `notConfigured` — silent in the UI, and NEVER a reason to skip the
+  // cache — because an unset store answers the same way on every call, so
+  // reporting it as degraded produced a warning that could never clear
+  // (INV-186) on top of a cache that could never fill.
+  ['coaching', 'docs'].forEach((k) => assert.ok(
+    new RegExp('\\(hrOk \\? unavailable : notConfigured\\)\\.push\\(\'' + k + '\'\\)').test(fn),
+    k + ' is classified by whether the HR store is configured'));
+  assert.ok(/\(kbOk \? unavailable : notConfigured\)\.push\('training'\)/.test(fn),
+    'training is classified by whether the KB store is configured');
+  assert.ok(/storeConfigured_\('HR_DOCS_SS_ID'/.test(fn) && /storeConfigured_\('KB_SS_ID'/.test(fn),
+    'the gates ASK the store rather than string-matching an error message');
+  assert.ok(/_TEST_OVERRIDE_HRDOCS_SS_ID/.test(fn) && /_TEST_OVERRIDE_KB_SS_ID/.test(fn),
+    'an active test override counts as configured — a fixture run must not classify as unset');
+  assert.ok(/notConfigured: notConfigured/.test(fn), 'the payload carries it (additive — an older client ignores it)');
   // INV-129: the cache put is guarded on a CLEAN round, and there is exactly one.
   assert.strictEqual((fn.match(/cache\.put\(key/g) || []).length, 1, 'one cache write');
   assertBefore(fn, 'if (!unavailable.length) {', 'cache.put(key', 'the put sits INSIDE the clean-round guard');
+  assert.ok(!/if \(!unavailable\.length && !notConfigured\.length\)/.test(fn),
+    'notConfigured must NOT gate the put — that is the defect, restated');
+  // ONE definition of "is this store set up" — getStorageHealth delegates to it.
+  assert.ok(/const isPlaceholder = storePlaceholder_;/.test(
+    extractRawFunction('Code.js', 'getStorageHealth')),
+    'getStorageHealth uses the shared placeholder test, not a second copy');
   assert.ok(/PENDING_TASKS_CACHE_PREFIX \+ emp\.id/.test(fn), 'cached per rep');
   // Operator decisions #3: praise is not a task; a done training item is not
   // a task; a failed NOTES read is "couldn\'t check", never "0 missing".
@@ -16955,6 +17145,92 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   ]).map((i) => i.title).join('|');
   assert.strictEqual(sorted, 'y|z|a|b|c', 'overdue first (due before blank), then due ascending, blank due LAST');
 });
+
+test('F2: storeConfigured_ tells a deliberately-unset store from a failed read', () => {
+  const ctx = vm.createContext({ String, props: {} });
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => ctx.props[k] || null }) };
+  ['storePlaceholder_', 'storeConfigured_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const sc = ctx.storeConfigured_, ph = ctx.storePlaceholder_;
+
+  assert.strictEqual(ph(''), true, 'empty is a placeholder');
+  assert.strictEqual(ph('YOUR_KB_SPREADSHEET_ID'), true, 'the shipped CONFIG stub is a placeholder');
+  assert.strictEqual(ph('1AbC_real-id'), false, 'a real id is not');
+
+  // A no-fallback store (HR): the property is the ONLY source.
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', null), false, 'unset with no fallback → not configured');
+  ctx.props.HR_DOCS_SS_ID = '1AbC';
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', null), true, 'a property configures it');
+  delete ctx.props.HR_DOCS_SS_ID;
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', '1TEST'), true,
+    'an ACTIVE test override counts — the editor suite must not read as unset');
+
+  // A placeholder-fallback store (KB): the CONFIG stub does NOT configure it.
+  assert.strictEqual(sc('KB_SS_ID', 'YOUR_KB_SPREADSHEET_ID', null), false,
+    'the shipped placeholder is not a configured store');
+  assert.strictEqual(sc('KB_SS_ID', '1RealId', null), true, 'a real CONFIG value is');
+
+  // Fail direction: if the property store itself cannot be read we cannot
+  // tell, and "configured" is the safe answer — the real read then fails and
+  // reports ITSELF as unavailable, which is the honest signal.
+  const bad = vm.createContext({ String });
+  bad.PropertiesService = { getScriptProperties: () => { throw new Error('nope'); } };
+  ['storePlaceholder_', 'storeConfigured_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), bad));
+  assert.strictEqual(bad.storeConfigured_('HR_DOCS_SS_ID', '', null), true,
+    'an unreadable property store fails toward "configured", never toward silence');
+});
+
+test('F4: every completing flow drops the rep cached Needs-you list', () => {
+  // Behavioural: best-effort by construction, keyed per rep, blank is a no-op.
+  const ctx = vm.createContext({ String, removed: [] });
+  ctx.PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+  ctx.CacheService = { getScriptCache: () => ({ remove: (k) => ctx.removed.push(k) }) };
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBust_'), ctx);
+  ctx.pendingTasksBust_('E-1');
+  ctx.pendingTasksBust_('');
+  ctx.pendingTasksBust_(null);
+  ctx.pendingTasksBust_('  ');
+  assert.strictEqual(ctx.removed.join('|'), 'pending_tasks_v1:E-1',
+    'one targeted delete; a blank/absent id never touches the cache');
+  const bad = vm.createContext({ String });
+  bad.PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+  bad.CacheService = { getScriptCache: () => { throw new Error('nope'); } };
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBust_'), bad);
+  assert.doesNotThrow(() => bad.pendingTasksBust_('E-1'),
+    'a cache failure never throws into a write that already succeeded');
+
+  // Wiring: the Needs-you block is the first thing on the Dashboard, so a rep
+  // who has just DONE the thing it names must not be told it is outstanding.
+  const nc = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  [['markTrainingComplete',   "'TrainingComplete'"],
+   ['acknowledgeCoaching',    "'CoachingAck'"],
+   ['setScheduledCallStatus', "'ScheduledCallStatus'"]].forEach(([fn, auditTag]) => {
+    const body = nc(extractRawFunction('Code.js', fn));
+    assert.ok(/pendingTasksBust_\(emp\.id\)/.test(body), fn + ' clears the rep cached list');
+    assertBefore(body, auditTag, 'pendingTasksBust_(emp.id)',
+      fn + ' clears it AFTER the write has landed');
+  });
+  const doc = nc(extractRawFunction('Code.js', 'acknowledgeDoc'));
+  assert.ok(/pendingTasksBust_\(emp\.id\)/.test(doc), 'a signed/completed doc clears the list');
+  // A quiz PASS is a completion too — hooking only the read path would be a
+  // half-fix that looks whole.
+  const quiz = nc(extractRawFunction('Code.js', 'submitQuizAttempt'));
+  assert.ok(/if \(passed\) pendingTasksBust_\(emp\.id\);/.test(quiz),
+    'a PASS clears the list; a failed attempt leaves the item standing');
+  // Dept requests: BOTH resolve paths route through the writer, which clears
+  // the SENDER's list; the in-app path also clears the RESOLVER's (the one
+  // case where the acting rep is not the owner).
+  const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(/pendingTasksBust_\(rows\[i\]\[DR\.BY_ID\]\)/.test(mark),
+    'resolving clears the SENDER list — by emp id, never an email');
+  assertBefore(mark, 'drBumpCacheGen_()', 'pendingTasksBust_(rows[i][DR.BY_ID])',
+    'the bust sits with the other cache invalidation, after the status write');
+  assert.ok(/pendingTasksBust_\(emp\.id\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
+    'the in-app path also clears the resolver own incoming row');
+});
+
+
 
 test('PR6-2: "Needs you" client — compact gate, leads the main column, pending ≠ empty ≠ error, real list with the count announced, overdue in words, degraded rounds never fresh, notes row through CLK_NAV_HINT, Training folded out of the extras', () => {
   const raw = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
@@ -17333,6 +17609,19 @@ test('QA-24: criterion types — canonical shape, non-numeric option rule, the n
   ], 'scale carries no type key; options trimmed + deduped ci + the bare number dropped; a choice with <2 usable options is DROPPED, never demoted to a scale');
   assert.strictEqual(ctx.qaCriteriaSanitize_([{ key: 'x1', label: 'X', type: 'choice', options: ['1', '2'] }]), null,
     'numeric-only options leave nothing usable → the list is null (falls back to the seed)');
+  // F5 (2026-09-09) — the guard must be as wide as the parse it protects. The
+  // consumers (qaCardStats_, qaStatsAggregate_, qaCalibration_, the coverage
+  // join) all ask Number(v), which accepts three forms the old decimal regex
+  // refused; an option so named would fold its answers into the scale averages
+  // that drive coverage avg, calibration means and the exemption thresholds.
+  ['4.', '0x5', '1e0', '4', '-2', '3.5', ' 5 '].forEach((o) => assert.strictEqual(
+    ctx.qaOptionIsNumeric_(o), true, JSON.stringify(o) + ' parses as ' + Number(o) + ' — it must be refused as an option'));
+  ['Resolved', 'Escalated', 'Callback scheduled', '5%', 'NaN', 'Infinity', ''].forEach((o) =>
+    assert.strictEqual(ctx.qaOptionIsNumeric_(o), false, JSON.stringify(o) + ' is a word, not a score'));
+  assert.strictEqual(ctx.qaCriteriaSanitize_([{ key: 'x2', label: 'X', type: 'choice', options: ['4.', '1e0'] }]), null,
+    'the three Number()-parsable forms are dropped like any other bare number');
+  assert.ok(!/\\d\+\(\\\.\\d\+\)\?/.test(extractRawFunction('Code.js', 'qaOptionIsNumeric_')),
+    'the narrower decimal regex is gone — the guard asks Number(), like its consumers');
   // The storage rule the type-blind folds rest on: a stored non-scale answer
   // is NEVER a bare 1–5 number, so qaCardStats_ cannot read it as a score.
   const N = ctx.qaRatingNormalize_;
@@ -17957,7 +18246,10 @@ test('DRV-4: the Admin System tab reports Drive — finding + inventory line, an
   assert.ok(/&lt;img/.test(hostile));
   // The line sits ABOVE the table, in the Storage section the cards link to.
   const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
-  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\) \+ hdr \+ table/.test(panel), 'rendered before the inventory table');
+  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\)[\s\S]{0,120}?hdr \+ table/.test(panel),
+    'rendered before the inventory table');
+  assert.ok(panel.indexOf('cnDriveAccessHtml_') < panel.indexOf('cnMailBccHtml_'),
+    'and above the F3 mail-routing line, which joined it as the second capability fact');
   // Every class it emits is DEFINED (the A13 lesson).
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   ['cn-drive-line', 'cn-drive-ok', 'cn-drive-warn', 'cn-drive-danger'].forEach((c) =>
@@ -17973,6 +18265,85 @@ test('DRV-4: the Admin System tab reports Drive — finding + inventory line, an
   ['admin-system-nodrive-light-wide', 'admin-system-nodrive-light-mobile'].forEach((n) =>
     assert.ok(new RegExp("'" + n + "'").test(shoot) && new RegExp("'" + n + "'[\\s\\S]{0,200}\\?drive=denied").test(shoot), n + ' is shot with the hook'));
 });
+
+test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywhere was the defect', () => {
+  // Behavioural: unset is the ok fact; set-and-internal is a warning; an
+  // address outside the DEPLOYING account's own domain escalates.
+  const mk = (prop, own) => {
+    const ctx = vm.createContext({ String });
+    ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: () => prop }) };
+    ctx.Session = { getEffectiveUser: () => ({ getEmail: () => {
+      if (own === null) throw new Error('nope');
+      return own;
+    } }) };
+    ctx._mailBccAllCache = null;
+    ['mailBccAll_', 'mailBccStatus_'].forEach((fn) =>
+      vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+    return ctx.mailBccStatus_();
+  };
+  const off = mk('', 'ops@umsupply.com');
+  assert.strictEqual(off.enabled, false, 'unset → not enabled');
+  assert.strictEqual(off.addresses.length, 0);
+  const inside = mk('robin@umsupply.com', 'ops@umsupply.com');
+  assert.strictEqual(inside.enabled, true);
+  assert.strictEqual(inside.external.length, 0, 'an in-domain address is not external');
+  assert.strictEqual(inside.ownDomain, 'umsupply.com');
+  const mixed = mk('robin@umsupply.com, someone@gmail.com', 'ops@umsupply.com');
+  assert.strictEqual(mixed.external.join('|'), 'someone@gmail.com', 'only the off-domain address is external');
+  const unknown = mk('robin@umsupply.com', null);
+  assert.strictEqual(unknown.external, null,
+    'an unreadable deploying account is UNKNOWN, never "all clear" (INV-187)');
+  assert.strictEqual(mk('not-an-email', 'ops@umsupply.com').enabled, false,
+    'the existing shape validation still drops junk');
+
+  // It REPORTS, it does not enforce: silently dropping an address the operator
+  // typed would leave them believing they get copies they do not.
+  const merge = stripJsComments_(extractRawFunction('Code.js', 'mailMergeBcc_'));
+  assert.ok(!/ownDomain|external|Session\./.test(merge),
+    'the merge is unchanged — no domain policy silently filters a configured address');
+  assert.ok(!/mailBccStatus_/.test(stripJsComments_(extractRawFunction('Code.js', 'appSendMail_'))),
+    'the send path does not consult the reporter');
+
+  // It rides Storage Health beside the Drive capability line, best-effort.
+  const sh = stripJsComments_(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/mailBcc: mailBcc/.test(sh), 'the payload carries it');
+  assert.ok(/try \{ mailBcc = mailBccStatus_\(\); \} catch \(e\) \{ mailBcc = null; \}/.test(sh),
+    'a surprise there can never take down the inventory');
+
+  // The finding: three states, and the off-domain one BLOCKS.
+  const cnCode = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const sb = vm.createContext({ String, Number, Boolean, Object, Array, JSON, Math, RegExp });
+  const findings = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const forBcc = (mb) => (findings(null, { stores: [], mailBcc: mb }).items || [])
+    .filter((i) => i.id === 'mailBcc')[0];
+  assert.strictEqual(forBcc({ prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null }).severity, 'ok',
+    'unset reads clean — which is what lets this item carry a tone at all (INV-186)');
+  const warn = forBcc({ prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['a@umsupply.com'], external: [], ownDomain: 'umsupply.com' });
+  assert.strictEqual(warn.severity, 'warn');
+  assert.ok(/a@umsupply\.com/.test(warn.title), 'the finding NAMES the address — the whole point is that it was invisible');
+  const fail = forBcc({ prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['a@umsupply.com', 'x@gmail.com'], external: ['x@gmail.com'], ownDomain: 'umsupply.com' });
+  assert.strictEqual(fail.severity, 'fail', 'a copy leaving the org is BLOCKING');
+  assert.ok(/x@gmail\.com/.test(fail.detail) && /patient/.test(fail.detail), 'and says what is in those emails');
+  assert.strictEqual(forBcc(null), undefined, 'an older server (no field) raises nothing');
+
+  // The inventory line: silent when unset, escaped when hostile.
+  const line = loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');
+  sb.icon = () => ''; sb.esc = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  assert.strictEqual(line(null), '', 'absent renders nothing');
+  assert.strictEqual(line({ enabled: false, addresses: [] }), '',
+    'the normal state renders NOTHING — a line that appears only when there is something to know');
+  assert.ok(/cn-drive-warn/.test(line({ prop: 'P', enabled: true, addresses: ['a@umsupply.com'], external: [], ownDomain: 'umsupply.com' })));
+  assert.ok(/cn-drive-danger/.test(line({ prop: 'P', enabled: true, addresses: ['x@evil.com'], external: ['x@evil.com'], ownDomain: 'umsupply.com' })));
+  const hostile = line({ prop: 'P', enabled: true, addresses: ['<img src=x onerror=alert(1)>@evil.com'], external: ['<img src=x onerror=alert(1)>@evil.com'], ownDomain: 'umsupply.com' });
+  assert.ok(!/<img/.test(hostile) && /&lt;img/.test(hostile), 'a hostile address is escaped: ' + hostile);
+  // And the fixture mirrors the server shape (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/mailBcc: \{ prop: 'MAIL_BCC_ALL', enabled: true/.test(mock), 'the populated fixture puts the line on camera');
+  assert.ok(/mailBcc: \{ prop: 'MAIL_BCC_ALL', enabled: false/.test(mock), 'the all-clear twin has it unset');
+  assert.ok(cnCode.indexOf('cnMailBccHtml_') > 0, 'the renderer exists in the partial');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

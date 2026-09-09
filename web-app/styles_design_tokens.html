@@ -68,6 +68,12 @@
     --intake-ppd:   #1e63b8;   /* blue   */
     --intake-pmd:   #d9730d;   /* orange */
     --intake-pap:   #7c3aed;   /* purple */
+    /* PPD and PMD borrow the semantic --info-soft / --warn-soft for their
+       tinted section headers and pills; purple has no semantic pair, which is
+       why those two rules hardcoded four different purples until F7. This is
+       the tint, declared beside its source so the channels have ONE home —
+       the same shape --warn-soft / --info-soft take in the dark block. */
+    --intake-pap-soft: rgba(124, 58, 237, .14);   /* --intake-pap @14% */
 
     /* ── Depth (warm-paper aesthetic uses minimal shadow) ──────────── */
     --shadow-sm: 0 1px 2px rgba(15,23,42,.04);
@@ -194,6 +200,7 @@
     --intake-ppd:   #74c7ff;   /* blue   */
     --intake-pmd:   #ffa657;   /* orange */
     --intake-pap:   #c4a5ff;   /* purple */
+    --intake-pap-soft: rgba(196, 165, 255, .14);   /* --intake-pap @14% */
 
     --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
     --shadow:    0 1px 3px rgba(0,0,0,.30);

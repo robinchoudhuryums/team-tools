@@ -2204,6 +2204,20 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   // empty + an unreadable source → the named couldn't-check line
   NEEDS.data = { items: [], total: 0, unavailable: ['docs'], todayIso: '2026-09-02' }; render();
   assert.ok(/Couldn't check employee docs/.test(host.textContent), 'an unreadable source is named, never rendered as nothing pending');
+  // F2 — a source whose STORE is deliberately unset is NOT an unreadable one.
+  // On a deployment with no HR_DOCS_SS_ID it would otherwise say "couldn't
+  // check coaching, employee docs" on every render forever, and the block
+  // would never reach the clean-empty silence above.
+  NEEDS.data = { items: [], total: 0, unavailable: [], notConfigured: ['coaching', 'docs'], todayIso: '2026-09-02' }; render();
+  assert.strictEqual(host.innerHTML, '', 'a not-configured source says NOTHING — the clean-empty silence still holds');
+  NEEDS.data = { items: [
+    { kind: 'training', title: 'HIPAA refresher', detail: 'due', dueIso: '', overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
+  ], total: 1, unavailable: [], notConfigured: ['docs'], todayIso: '2026-09-02' }; render();
+  assert.ok(/HIPAA refresher/.test(host.textContent), 'the real items still render beside it');
+  assert.ok(!/Couldn't check/.test(host.textContent), 'and it never borrows the unreadable-source warning');
+  // A degraded round LOOKS the same to the freshness gate whether or not a
+  // not-configured source rode along — only `unavailable` decides.
+  NEEDS.data = { items: [], total: 0, unavailable: [], notConfigured: ['docs'], todayIso: '2026-09-02' };
   // Loader freshness: a degraded round never stamps fresh; a clean one does.
   NEEDS.data = undefined; NEEDS.day = ''; NEEDS.at = 0; NEEDS.busy = false;
   h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: ['sched'], todayIso: '2026-09-02' }));
@@ -2212,10 +2226,10 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   assert.strictEqual(NEEDS.at, 0, 'a degraded round is painted but never stamped fresh (INV-129)');
   assert.ok(NEEDS.data && NEEDS.data.unavailable.length === 1, 'and its payload is kept for the render');
   NEEDS.busy = false; NEEDS.day = '';
-  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: [], todayIso: '2026-09-02' }));
+  h.run.respond('getMyPendingTasks', () => ({ items: [], total: 0, unavailable: [], notConfigured: ['docs'], todayIso: '2026-09-02' }));
   h.read('clkLoadNeedsYou_')();
   h.flushTimers();
-  assert.ok(NEEDS.at > 0, 'a clean round stamps freshness');
+  assert.ok(NEEDS.at > 0, 'a clean round stamps freshness — a not-configured source does not make it degraded');
   // LAST, because it navigates away: the notes row → the coverage strip's
   // CLK_NAV_HINT hand-off (C8), not a bare enterTool.
   NEEDS.data = { items: [
