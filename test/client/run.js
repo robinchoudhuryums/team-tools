@@ -16949,14 +16949,36 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   assert.ok(/return \{ error: 'Not authorized\.' \};/.test(fn), 'READ gate — a bare {error}, never success:false (the GATE-SHAPE rule)');
   // Every source is its own try/catch and NAMES itself on failure (INV-187):
   // a source that could not be read must render "couldn\'t check", never 0.
-  const pushes = [...fn.matchAll(/unavailable\.push\('(\w+)'\)/g)].map((m) => m[1]);
+  const pushes = [...fn.matchAll(/(?:unavailable|notConfigured)\)?\.push\('(\w+)'\)/g)].map((m) => m[1]);
   const kindsLine = /PENDING_TASKS_KINDS = \[([^\]]+)\]/.exec(pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')));
   const kinds = kindsLine[1].match(/'(\w+)'/g).map((k) => k.replace(/'/g, ''));
-  assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one `unavailable` push per declared kind: ' + pushes.join(','));
-  assert.ok((fn.match(/\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length, 'each push sits in its OWN catch — one failed source must not take the others with it');
+  assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one classification per declared kind: ' + pushes.join(','));
+  assert.ok((fn.match(/\} catch \(e\) \{ \(?\w+ \? unavailable : notConfigured\)?\.?push|\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length,
+    'each classification sits in its OWN catch — one failed source must not take the others with it');
+  // F2 (2026-09-09): a source whose STORE is unset is not a failed read. It
+  // rides `notConfigured` — silent in the UI, and NEVER a reason to skip the
+  // cache — because an unset store answers the same way on every call, so
+  // reporting it as degraded produced a warning that could never clear
+  // (INV-186) on top of a cache that could never fill.
+  ['coaching', 'docs'].forEach((k) => assert.ok(
+    new RegExp('\\(hrOk \\? unavailable : notConfigured\\)\\.push\\(\'' + k + '\'\\)').test(fn),
+    k + ' is classified by whether the HR store is configured'));
+  assert.ok(/\(kbOk \? unavailable : notConfigured\)\.push\('training'\)/.test(fn),
+    'training is classified by whether the KB store is configured');
+  assert.ok(/storeConfigured_\('HR_DOCS_SS_ID'/.test(fn) && /storeConfigured_\('KB_SS_ID'/.test(fn),
+    'the gates ASK the store rather than string-matching an error message');
+  assert.ok(/_TEST_OVERRIDE_HRDOCS_SS_ID/.test(fn) && /_TEST_OVERRIDE_KB_SS_ID/.test(fn),
+    'an active test override counts as configured — a fixture run must not classify as unset');
+  assert.ok(/notConfigured: notConfigured/.test(fn), 'the payload carries it (additive — an older client ignores it)');
   // INV-129: the cache put is guarded on a CLEAN round, and there is exactly one.
   assert.strictEqual((fn.match(/cache\.put\(key/g) || []).length, 1, 'one cache write');
   assertBefore(fn, 'if (!unavailable.length) {', 'cache.put(key', 'the put sits INSIDE the clean-round guard');
+  assert.ok(!/if \(!unavailable\.length && !notConfigured\.length\)/.test(fn),
+    'notConfigured must NOT gate the put — that is the defect, restated');
+  // ONE definition of "is this store set up" — getStorageHealth delegates to it.
+  assert.ok(/const isPlaceholder = storePlaceholder_;/.test(
+    extractRawFunction('Code.js', 'getStorageHealth')),
+    'getStorageHealth uses the shared placeholder test, not a second copy');
   assert.ok(/PENDING_TASKS_CACHE_PREFIX \+ emp\.id/.test(fn), 'cached per rep');
   // Operator decisions #3: praise is not a task; a done training item is not
   // a task; a failed NOTES read is "couldn\'t check", never "0 missing".
@@ -16996,6 +17018,92 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   ]).map((i) => i.title).join('|');
   assert.strictEqual(sorted, 'y|z|a|b|c', 'overdue first (due before blank), then due ascending, blank due LAST');
 });
+
+test('F2: storeConfigured_ tells a deliberately-unset store from a failed read', () => {
+  const ctx = vm.createContext({ String, props: {} });
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => ctx.props[k] || null }) };
+  ['storePlaceholder_', 'storeConfigured_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const sc = ctx.storeConfigured_, ph = ctx.storePlaceholder_;
+
+  assert.strictEqual(ph(''), true, 'empty is a placeholder');
+  assert.strictEqual(ph('YOUR_KB_SPREADSHEET_ID'), true, 'the shipped CONFIG stub is a placeholder');
+  assert.strictEqual(ph('1AbC_real-id'), false, 'a real id is not');
+
+  // A no-fallback store (HR): the property is the ONLY source.
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', null), false, 'unset with no fallback → not configured');
+  ctx.props.HR_DOCS_SS_ID = '1AbC';
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', null), true, 'a property configures it');
+  delete ctx.props.HR_DOCS_SS_ID;
+  assert.strictEqual(sc('HR_DOCS_SS_ID', '', '1TEST'), true,
+    'an ACTIVE test override counts — the editor suite must not read as unset');
+
+  // A placeholder-fallback store (KB): the CONFIG stub does NOT configure it.
+  assert.strictEqual(sc('KB_SS_ID', 'YOUR_KB_SPREADSHEET_ID', null), false,
+    'the shipped placeholder is not a configured store');
+  assert.strictEqual(sc('KB_SS_ID', '1RealId', null), true, 'a real CONFIG value is');
+
+  // Fail direction: if the property store itself cannot be read we cannot
+  // tell, and "configured" is the safe answer — the real read then fails and
+  // reports ITSELF as unavailable, which is the honest signal.
+  const bad = vm.createContext({ String });
+  bad.PropertiesService = { getScriptProperties: () => { throw new Error('nope'); } };
+  ['storePlaceholder_', 'storeConfigured_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), bad));
+  assert.strictEqual(bad.storeConfigured_('HR_DOCS_SS_ID', '', null), true,
+    'an unreadable property store fails toward "configured", never toward silence');
+});
+
+test('F4: every completing flow drops the rep cached Needs-you list', () => {
+  // Behavioural: best-effort by construction, keyed per rep, blank is a no-op.
+  const ctx = vm.createContext({ String, removed: [] });
+  ctx.PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+  ctx.CacheService = { getScriptCache: () => ({ remove: (k) => ctx.removed.push(k) }) };
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBust_'), ctx);
+  ctx.pendingTasksBust_('E-1');
+  ctx.pendingTasksBust_('');
+  ctx.pendingTasksBust_(null);
+  ctx.pendingTasksBust_('  ');
+  assert.strictEqual(ctx.removed.join('|'), 'pending_tasks_v1:E-1',
+    'one targeted delete; a blank/absent id never touches the cache');
+  const bad = vm.createContext({ String });
+  bad.PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
+  bad.CacheService = { getScriptCache: () => { throw new Error('nope'); } };
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBust_'), bad);
+  assert.doesNotThrow(() => bad.pendingTasksBust_('E-1'),
+    'a cache failure never throws into a write that already succeeded');
+
+  // Wiring: the Needs-you block is the first thing on the Dashboard, so a rep
+  // who has just DONE the thing it names must not be told it is outstanding.
+  const nc = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  [['markTrainingComplete',   "'TrainingComplete'"],
+   ['acknowledgeCoaching',    "'CoachingAck'"],
+   ['setScheduledCallStatus', "'ScheduledCallStatus'"]].forEach(([fn, auditTag]) => {
+    const body = nc(extractRawFunction('Code.js', fn));
+    assert.ok(/pendingTasksBust_\(emp\.id\)/.test(body), fn + ' clears the rep cached list');
+    assertBefore(body, auditTag, 'pendingTasksBust_(emp.id)',
+      fn + ' clears it AFTER the write has landed');
+  });
+  const doc = nc(extractRawFunction('Code.js', 'acknowledgeDoc'));
+  assert.ok(/pendingTasksBust_\(emp\.id\)/.test(doc), 'a signed/completed doc clears the list');
+  // A quiz PASS is a completion too — hooking only the read path would be a
+  // half-fix that looks whole.
+  const quiz = nc(extractRawFunction('Code.js', 'submitQuizAttempt'));
+  assert.ok(/if \(passed\) pendingTasksBust_\(emp\.id\);/.test(quiz),
+    'a PASS clears the list; a failed attempt leaves the item standing');
+  // Dept requests: BOTH resolve paths route through the writer, which clears
+  // the SENDER's list; the in-app path also clears the RESOLVER's (the one
+  // case where the acting rep is not the owner).
+  const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(/pendingTasksBust_\(rows\[i\]\[DR\.BY_ID\]\)/.test(mark),
+    'resolving clears the SENDER list — by emp id, never an email');
+  assertBefore(mark, 'drBumpCacheGen_()', 'pendingTasksBust_(rows[i][DR.BY_ID])',
+    'the bust sits with the other cache invalidation, after the status write');
+  assert.ok(/pendingTasksBust_\(emp\.id\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
+    'the in-app path also clears the resolver own incoming row');
+});
+
+
 
 test('PR6-2: "Needs you" client — compact gate, leads the main column, pending ≠ empty ≠ error, real list with the count announced, overdue in words, degraded rounds never fresh, notes row through CLK_NAV_HINT, Training folded out of the extras', () => {
   const raw = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');

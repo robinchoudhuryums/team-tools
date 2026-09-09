@@ -7741,7 +7741,7 @@ function getStorageHealth(opts) {
     const checkDrive = !opts || opts.checkDrive !== false;
     const props = PropertiesService.getScriptProperties();
     const cfgTz = CONFIG.TIMEZONE;
-    const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
+    const isPlaceholder = storePlaceholder_;
 
     // Open a resolved id and report reachability / name / tz / tz-match.
     const probe = function (spec) {
@@ -15813,6 +15813,7 @@ function setScheduledCallStatus(id, status) {
     if (!hit) return { error: 'Reminder not found.' };
     sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(st);
     writeAuditLog_(emp, 'ScheduledCallStatus', '', '', false, 0, 'id=' + hit.id + '; ' + st);
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }
@@ -16072,6 +16073,7 @@ function markDeptRequestResolved_(token, byEmail) {
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
       sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
       drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
+      pendingTasksBust_(rows[i][DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
       try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
         '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
       return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
@@ -16112,6 +16114,15 @@ function resolveDeptRequest(requestId) {
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
     if (!res.found) return { success: false, error: 'Request not found.' };
+    // F4 — the writer already cleared the SENDER's cached list; a dept member
+    // resolving someone else's request is the one case where the acting rep is
+    // not the owner, so clear theirs too (a no-op when they are the same rep).
+    // Residual, deliberately: another member of the same desk keeps the
+    // incoming row for up to PENDING_TASKS_CACHE_TTL. A generation salt would
+    // close that by evicting EVERY rep's entry on every resolve — too blunt a
+    // trade for a 2-minute cache on the app's busiest surface, and the stale
+    // window here is bounded rather than permanent.
+    pendingTasksBust_(emp.id);
     return { success: true, already: !!res.already };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -19752,6 +19763,23 @@ var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
 var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
 
+/** Drop a rep's cached Needs-you list (F4, 2026-09-09). The block is the first
+ *  thing on the Dashboard, and a rep who has just DONE the thing it names goes
+ *  back to look — so a 2-minute stale entry telling them it is still
+ *  outstanding is the one staleness this cache cannot afford. Every completing
+ *  flow calls this after its write lands; the key is the rep's own id, so a
+ *  targeted delete is enough and no generation salt is needed (the
+ *  drCacheGen_ salt exists because a dept request may be resolved by someone
+ *  OTHER than its owner — that flow busts both ids for the same reason).
+ *  Best-effort by construction: a cache miss is the correct fallback, so this
+ *  must never throw into a write that already succeeded. */
+function pendingTasksBust_(empId) {
+  try {
+    var id = String(empId || '').trim();
+    if (id) CacheService.getScriptCache().remove(PENDING_TASKS_CACHE_PREFIX + id);
+  } catch (e) {}
+}
+
 /** Previous WORKDAY (Mon–Fri) before an ISO date — the server twin of the
  *  client's mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never
  *  populated same-day, so "calls without a note" is a previous-workday
@@ -19791,6 +19819,22 @@ function getMyPendingTasks() {
     var nowMs = Date.now();
     var items = [];
     var unavailable = [];
+    // F2 (2026-09-09) — a store the operator has deliberately NOT configured is
+    // not a failed read, and reporting it as one costs twice. On a deployment
+    // with no HR_DOCS_SS_ID (no fallback store, by design — INV-122) the two
+    // HR-backed sources threw on EVERY call, so every rep saw "Couldn't check
+    // coaching, employee docs" forever — an indicator that can never be clean
+    // (INV-186) — the block never reached its clean-empty state and so never
+    // disappeared, and `!unavailable.length` meant the 2-minute cache was NEVER
+    // written: six reads on every Dashboard paint and every focus wake, for the
+    // life of the deployment. These kinds ride `notConfigured` instead: honest
+    // in the payload, silent in the UI (an unset store is Storage Health's to
+    // report, and it already does), and never a reason to skip the cache.
+    var notConfigured = [];
+    var hrOk = storeConfigured_('HR_DOCS_SS_ID', '',
+      typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID);
+    var kbOk = storeConfigured_('KB_SS_ID', CONFIG.KB.SS_ID,
+      typeof _TEST_OVERRIDE_KB_SS_ID !== 'undefined' && _TEST_OVERRIDE_KB_SS_ID);
     var pushDate = function (iso) { return String(iso || '').slice(0, 10); };
 
     // training — getMyTraining's own status rule (trainDeriveStatus_) decides
@@ -19808,7 +19852,7 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'trainingHome' },
         });
       });
-    } catch (e) { unavailable.push('training'); }
+    } catch (e) { (kbOk ? unavailable : notConfigured).push('training'); }
 
     // coaching — open, NON-praise (praise needs no acknowledgement — PR 4,
     // decision 8). Overdue = ageDays (BUSINESS days, server-computed; null =
@@ -19827,7 +19871,7 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'coaching' },
         });
       });
-    } catch (e) { unavailable.push('coaching'); }
+    } catch (e) { (hrOk ? unavailable : notConfigured).push('coaching'); }
 
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
@@ -19903,16 +19947,19 @@ function getMyPendingTasks() {
           route: { tool: 'develop', tab: 'myDocs' },
         });
       });
-    } catch (e) { unavailable.push('docs'); }
+    } catch (e) { (hrOk ? unavailable : notConfigured).push('docs'); }
 
     var sorted = pendingTasksSort_(items);
     var result = {
       items: sorted.slice(0, PENDING_TASKS_CAP), total: sorted.length, cap: PENDING_TASKS_CAP,
       overdue: sorted.filter(function (i) { return i.overdue; }).length,
-      unavailable: unavailable, todayIso: todayIso, prevWorkday: prev,
+      unavailable: unavailable, notConfigured: notConfigured,
+      todayIso: todayIso, prevWorkday: prev,
     };
-    // INV-129: cache only a round where EVERY source was readable — a pinned
-    // degraded round would hide a task for the full TTL.
+    // INV-129: cache only a round where every CONFIGURED source was readable —
+    // a pinned degraded round would hide a task for the full TTL. A source
+    // whose store is unset is not degraded: it will answer the same way on
+    // every call, so caching it is correct rather than a pinned failure.
     if (!unavailable.length) {
       try { cache.put(key, JSON.stringify(result), PENDING_TASKS_CACHE_TTL); } catch (_) {}
     }
@@ -25619,6 +25666,7 @@ function markTrainingComplete(itemId) {
       .appendRow([emp.id, 'kb', itemId, ts, 'read', '']);
     writeAuditLog_(emp, 'TrainingComplete', fmtDate_(now), '', false, 0,
       'itemId=' + itemId + '; via=read');
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, completedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -26060,6 +26108,7 @@ function submitQuizAttempt(quizId, answers) {
     }
     writeAuditLog_(emp, 'QuizAttempt', fmtDate_(now), '', false, 0,
       'quizId=' + quizId + '; score=' + graded.scorePct + '; passed=' + passed + '; attempt=' + stats.count);
+    if (passed) pendingTasksBust_(emp.id);                       // F4
     return {
       success: true, scorePct: graded.scorePct, passed: passed,
       right: graded.right, total: graded.total,
@@ -26238,6 +26287,26 @@ const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales t
 const EMPDOC_ACK_VERSION = 1;
 const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
   'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+
+/** A store id that is absent or still the shipped CONFIG placeholder — i.e.
+ *  the store is NOT configured on this deployment. Hoisted out of
+ *  getStorageHealth (F2, 2026-09-09) so "is this store set up?" has ONE
+ *  definition: getMyPendingTasks now asks the same question to tell a
+ *  deliberately-unset feature apart from a read that failed. */
+function storePlaceholder_(v) { return !v || /^YOUR_/.test(String(v)); }
+
+/** Is a spreadsheet store CONFIGURED here? A Script Property, a non-placeholder
+ *  CONFIG fallback, or an active test override all count. Answering this is the
+ *  only way to distinguish "this deployment does not have the feature" from
+ *  "the feature is set up and the read failed" — the cnCountNotesResult_
+ *  unenrolled-vs-unavailable rule (INV-35), applied to a store. */
+function storeConfigured_(prop, configFallback, testOverride) {
+  if (testOverride) return true;
+  try {
+    if (PropertiesService.getScriptProperties().getProperty(prop)) return true;
+  } catch (e) { return true; }   // can't tell → assume configured (a real read failure then reports itself)
+  return !storePlaceholder_(configFallback);
+}
 
 function getHrDocsSS_() {
   if (typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID) {
@@ -26620,6 +26689,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     // L-6: a fields-only completion emails "completed", not "signed".
     const completedOnly = !d.requiresSignature;
     notifyAfter = function () { notifyEmpDocSigned_(d, emp, completedOnly); };   // M-7: post-lock
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -27336,6 +27406,7 @@ function acknowledgeCoaching(coachId, response) {
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
     notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp, !!reply); };   // M-7: post-lock
+    pendingTasksBust_(emp.id);                                   // F4
     return { success: true, acknowledgedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {

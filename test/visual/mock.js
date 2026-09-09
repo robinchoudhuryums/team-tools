@@ -305,10 +305,12 @@ function qaLatestScorecards_(cards) {
     getWhatsNew: { none: true },
     // Design handoff PR 6 — "Needs you". Shape mirrors getMyPendingTasks'
     // return block (INV-185): {items[], total, cap, overdue, unavailable[],
-    // todayIso, prevWorkday}; item keys mirror the server's push literals
-    // (kind/title/detail/dueIso/overdue/action/route). All six kinds + one
-    // overdue-in-words row + one PAST-due row are on camera; `unavailable`
-    // carries one source so the "couldn't check" line renders too.
+    // notConfigured[], todayIso, prevWorkday}; item keys mirror the server's
+    // push literals (kind/title/detail/dueIso/overdue/action/route). All six
+    // kinds + one overdue-in-words row + one PAST-due row are on camera;
+    // `unavailable` carries one source so the "couldn't check" line renders
+    // too. `notConfigured` is a source whose STORE is unset — F2: it must
+    // render nothing at all, so this fixture proves the silence.
     getMyPendingTasks: {
       items: [
         { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Moderate · logged ' + daysAgo(9) + ' by Robin Choudhury', dueIso: '', overdue: true, action: 'Open', route: { tool: 'develop', tab: 'coaching' } },
@@ -318,7 +320,7 @@ function qaLatestScorecards_(cards) {
         { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
         { kind: 'requests', title: 'Request to Shipping · Verified Shipping', detail: 'Sent ' + daysAgo(0), dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
       ],
-      total: 6, cap: 30, overdue: 3, unavailable: ['sched'], todayIso: todayIso, prevWorkday: daysAgo(1),
+      total: 6, cap: 30, overdue: 3, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
@@ -1661,7 +1663,7 @@ function qaLatestScorecards_(cards) {
     // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING
     // (the design's "render nothing when the list is empty"), which is what
     // changes most under this design and a populated fixture never shows.
-    getMyPendingTasks: { items: [], total: 0, cap: 30, overdue: 0, unavailable: [], todayIso: todayIso, prevWorkday: daysAgo(1) },
+    getMyPendingTasks: { items: [], total: 0, cap: 30, overdue: 0, unavailable: [], notConfigured: [], todayIso: todayIso, prevWorkday: daysAgo(1) },
     // QA Log (2026-09-04): nothing audited in the window.
     getQaLog: { self: 'E-100', selfName: 'Team Tools', isManager: true, reviewer: '', from: daysAgo(29), to: todayIso, todayYmd: todayIso,
       criteria: [], agentOptions: [], reviewers: [{ empId: 'E-100', name: 'Team Tools' }], pending: [], entries: [], total: 0, cap: 300, truncated: false },
