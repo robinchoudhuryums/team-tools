@@ -1557,6 +1557,11 @@ function qaLatestScorecards_(cards) {
             name: '', tz: '', tzMatch: null, url: '',
             perRep: { enrolled: 2, reachable: 2, tzMismatch: 0, problems: [] },
           }],
+        drive: {
+          scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
+          reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
+          folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '', folderOk: null, folderError: '',
+        },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -1602,6 +1607,14 @@ function qaLatestScorecards_(cards) {
       FIXTURES.getEmployeeState.isAdmin = false;
       FIXTURES.getEmployeeState.canSeeSpanish = false;
       FIXTURES.getEmployeeState.canSeeQa = false;
+    }
+    // `?drive=denied` (operator 2026-09-09) — shoot the state the operator
+    // actually hit: the deploying account's token is missing /auth/drive, so
+    // every Drive-backed surface fails while every Sheets store still reads
+    // OK. The longest string the line can carry (the full re-auth hint), so
+    // it is where wrapping breaks first.
+    if (/[?&]drive=denied\b/.test(window.location.search)) {
+      FIXTURES.getStorageHealth.drive.granted = false;
     }
   } catch (e) {}
 
@@ -1693,6 +1706,11 @@ function qaLatestScorecards_(cards) {
           source: 'Script Property', note: '', configured: true, reachable: true, name: 'KB (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
         { label: 'Call Notes (per-rep)', role: '2 enrolled rep Sheet(s)', cls: 'PHI', retention: 'Optional purge', prop: 'Employees col L (CallNotesSheetId)',
           source: 'roster', note: '', configured: true, reachable: true, name: '', tz: '', tzMatch: null, url: '', perRep: { enrolled: 2, reachable: 2, tzMismatch: 0, problems: [] } }],
+      drive: {
+        scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
+        reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
+        folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz', folderOk: true, folderError: '',
+      },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };
