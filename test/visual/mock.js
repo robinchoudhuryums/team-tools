@@ -1608,6 +1608,14 @@ function qaLatestScorecards_(cards) {
       FIXTURES.getEmployeeState.canSeeSpanish = false;
       FIXTURES.getEmployeeState.canSeeQa = false;
     }
+    // `?drive=denied` (operator 2026-09-09) — shoot the state the operator
+    // actually hit: the deploying account's token is missing /auth/drive, so
+    // every Drive-backed surface fails while every Sheets store still reads
+    // OK. The longest string the line can carry (the full re-auth hint), so
+    // it is where wrapping breaks first.
+    if (/[?&]drive=denied\b/.test(window.location.search)) {
+      FIXTURES.getStorageHealth.drive.granted = false;
+    }
   } catch (e) {}
 
   window.__MISSING__ = [];

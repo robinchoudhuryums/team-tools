@@ -17876,6 +17876,11 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
   assert.strictEqual(r.folderOk, false);
   assert.ok(/gone/.test(r.folderError));
   assert.strictEqual(h.calls.put, 0, 'not a clean round');
+  // THE side-effect assertion has to live HERE, on the dead-folder path:
+  // routing the probe through getOrCreateKbImagesFolder_ would provision a
+  // replacement, and its thrown message CARRIES the open reason, so a
+  // /gone/ check alone passes against that mutation. (Found by bite-check.)
+  assert.strictEqual(h.calls.created, 0, 'a dead stored folder is NOT silently replaced by a panel read');
 
   // The probe itself failing is UNKNOWN, never OK (INV-187) — both shapes.
   h = mk({ code: 401, scopes: [] });
@@ -17895,6 +17900,11 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
   // Wiring: the field rides getStorageHealth, is opt-outable, and
   // getDeployReadiness opts OUT so it keeps its "composes, never scans"
   // property (no network call of its own).
+  // Scoped ban: the probe reads, it never provisions. Comment-stripped, since
+  // the function's own comment names the helper it must not call (INV-188).
+  const probe = extractRawFunction('Code.js', 'driveAccessStatus_').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/getOrCreateKbImagesFolder_/.test(probe), 'the probe never routes through the provisioning helper');
+  assert.ok(!/createFolder|createFile/.test(probe), 'and never writes to Drive');
   const sh = extractRawFunction('Code.js', 'getStorageHealth').replace(/^\s*\/\/.*$/gm, '');
   assert.ok(/const checkDrive = !opts \|\| opts\.checkDrive !== false;/.test(sh), 'checkDrive defaults on');
   assert.ok(/drive: drive/.test(sh), 'the field rides the return');
@@ -17955,6 +17965,13 @@ test('DRV-4: the Admin System tab reports Drive — finding + inventory line, an
   // And the fixture carries the field, so the System scenarios shoot it (INV-185).
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
   assert.strictEqual((mock.match(/folderProp: 'KB_IMAGES_FOLDER_ID'/g) || []).length, 2, 'both getStorageHealth fixtures carry drive');
+  // The FAILING state is on camera too — it carries the longest string the
+  // line can render, so it is where wrapping breaks first (INV-175: failed is
+  // not absent, and both need shooting).
+  assert.ok(/\[\?&\]drive=denied/.test(mock) && /FIXTURES\.getStorageHealth\.drive\.granted = false;/.test(mock), 'the mock has a denied-Drive hook');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  ['admin-system-nodrive-light-wide', 'admin-system-nodrive-light-mobile'].forEach((n) =>
+    assert.ok(new RegExp("'" + n + "'").test(shoot) && new RegExp("'" + n + "'[\\s\\S]{0,200}\\?drive=denied").test(shoot), n + ' is shot with the hook'));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
