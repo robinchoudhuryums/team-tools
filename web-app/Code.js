@@ -7735,6 +7735,10 @@ function getStorageHealth(opts) {
     // #3 — the KB-embed Drive scan runs for the Storage Health panel (default)
     // but is skipped by getDeployReadiness, which only bands store config.
     const scanEmbeds = !opts || opts.scanEmbeds !== false;
+    // Drive capability probe — same opt-out posture as the embed scan, so
+    // getDeployReadiness keeps its documented "composes, never scans"
+    // property (it makes no network call of its own).
+    const checkDrive = !opts || opts.checkDrive !== false;
     const props = PropertiesService.getScriptProperties();
     const cfgTz = CONFIG.TIMEZONE;
     const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
@@ -7874,7 +7878,20 @@ function getStorageHealth(opts) {
       });
     }
 
-    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds };
+    // Drive is the ONE capability every store probe above cannot see: the
+    // stores are Sheets, and a missing /auth/drive grant breaks the KB image
+    // export, the embed reachability scan and QA recording playback while
+    // every row here still reads OK. driveAccessStatus_ is total (it swallows
+    // its own failures into granted:null), but keep the call defensive so a
+    // surprise can never take down the inventory.
+    let drive = null;
+    if (checkDrive) {
+      try { drive = driveAccessStatus_(); }
+      catch (e) { drive = { scope: DRIVE_WRITE_SCOPE, granted: null, error: String((e && e.message) || e),
+                            reauthHint: DRIVE_REAUTH_HINT, folderProp: KB_IMAGES_FOLDER_PROP,
+                            folderId: '', folderOk: null, folderError: '' }; }
+    }
+    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds, drive: drive };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -8183,7 +8200,7 @@ function getDeployReadiness() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
-    const storage = getStorageHealth({ scanEmbeds: false });   // #3 — deploy-readiness bands store config only, skip the Drive scan
+    const storage = getStorageHealth({ scanEmbeds: false, checkDrive: false });   // #3 — deploy-readiness bands store config only; no Drive scan, no network probe
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
     try { automation = getAutomationHealth({ scanQueues: false }) || {}; } catch (e) { automation = {}; }
@@ -23821,6 +23838,82 @@ function kbPublishItem(id) {
 const KB_IMAGES_FOLDER_PROP = 'KB_IMAGES_FOLDER_ID';
 const KB_DOC_IMAGE_CAP = 20;   // per-doc export cap — extras stay placeholders
 
+// --- Drive capability (operator 2026-09-09) --------------------------------
+// Every Drive call in this project runs on ONE grant: the web app is
+// executeAs USER_DEPLOYING, so the token is the DEPLOYING account's. A
+// `clasp push` + New version NEVER re-prompts for consent, so a deploy that
+// widens the auto-detected scope set leaves that grant short and every Drive
+// call fails with Apps Script's missing-SCOPE refusal — raised by the runtime
+// before any request reaches Drive, which is why the execution log carries
+// nothing further. Nothing surfaced it: the editor suite makes ZERO DriveApp
+// calls, so a green runAllTests says nothing about Drive.
+const DRIVE_WRITE_SCOPE = 'https://www.googleapis.com/auth/drive';
+const DRIVE_ACCESS_CACHE_KEY = 'drive_access_v1';
+const DRIVE_ACCESS_CACHE_SEC = 300;
+const DRIVE_REAUTH_HINT = 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.';
+
+/** PURE: is this error Apps Script's own missing-SCOPE refusal (the runtime
+ *  declining locally) rather than a failure Drive itself returned? The ONE
+ *  rule, shared by the folder helper and the Admin diagnostic so the two
+ *  cannot disagree about what a scope error looks like. */
+function driveScopeError_(msg) {
+  const s = String(msg || '');
+  if (/authorization is required to perform that action/i.test(s)) return true;
+  return /do not have permission to call/i.test(s) && /googleapis\.com\/auth\/drive/i.test(s);
+}
+
+/** Is the Drive scope the KB image export needs actually GRANTED to the
+ *  identity this app runs as? SIDE-EFFECT FREE BY CONSTRUCTION: it
+ *  introspects the OAuth token instead of attempting a write, so opening the
+ *  Admin tab never creates a folder or a file — and it probes the stored
+ *  folder id with getFolderById, NEVER getOrCreateKbImagesFolder_, which
+ *  would provision one as a side effect of looking.
+ *  granted:null means the PROBE failed and is reported as unknown, never as
+ *  OK (INV-187). Only a fully-clean round is cached (INV-129), so the panel
+ *  updates immediately while an operator is fixing the grant. */
+function driveAccessStatus_() {
+  const out = {
+    scope: DRIVE_WRITE_SCOPE, granted: null, error: '', reauthHint: DRIVE_REAUTH_HINT,
+    folderProp: KB_IMAGES_FOLDER_PROP, folderId: '', folderOk: null, folderError: '',
+  };
+  const cache = CacheService.getScriptCache();
+  try {
+    const hit = cache.get(DRIVE_ACCESS_CACHE_KEY);
+    if (hit) {
+      const prev = JSON.parse(hit);
+      if (prev && typeof prev.granted !== 'undefined') return prev;
+    }
+  } catch (e) { /* cache is best-effort */ }
+
+  try {
+    const resp = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo', {
+      method: 'post',
+      payload: { access_token: ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+    if (resp.getResponseCode() !== 200) {
+      out.error = 'token introspection returned HTTP ' + resp.getResponseCode();
+    } else {
+      const scopes = String((JSON.parse(resp.getContentText()) || {}).scope || '').split(/\s+/);
+      out.granted = scopes.indexOf(DRIVE_WRITE_SCOPE) >= 0;
+    }
+  } catch (e) { out.error = String((e && e.message) || e); }
+
+  try {
+    const fid = String(PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP) || '').trim();
+    out.folderId = fid;
+    if (fid) {
+      try { DriveApp.getFolderById(fid).getName(); out.folderOk = true; }
+      catch (e) { out.folderOk = false; out.folderError = String((e && e.message) || e); }
+    }
+  } catch (e) { out.folderError = String((e && e.message) || e); }
+
+  if (!out.error && out.granted === true && out.folderOk !== false) {
+    try { cache.put(DRIVE_ACCESS_CACHE_KEY, JSON.stringify(out), DRIVE_ACCESS_CACHE_SEC); } catch (e) {}
+  }
+  return out;
+}
+
 /** PURE: unique {fileId, ord} refs from kbdoc image tokens in an article body. */
 function kbExtractDocImageRefs_(bodyMd) {
   const out = [];
@@ -23882,11 +23975,28 @@ function kbCollectDocInlineImages_(body, cap) {
  *  requirement. */
 function getOrCreateKbImagesFolder_() {
   const props = PropertiesService.getScriptProperties();
-  const id = props.getProperty(KB_IMAGES_FOLDER_PROP);
+  const id = String(props.getProperty(KB_IMAGES_FOLDER_PROP) || '').trim();
+  let openErr = '';
   if (id) {
-    try { return DriveApp.getFolderById(id); } catch (e) { /* fall through — recreate */ }
+    try { return DriveApp.getFolderById(id); }
+    catch (e) {
+      // Operator 2026-09-09: this catch swallowed the reason entirely, so the
+      // caller's warning could only ever report the CREATE error — a trashed
+      // folder, a revoked share and a missing Drive scope all read alike, and
+      // the message said "open or create" while describing only the second
+      // half. Carry the reason into the throw (INV-187).
+      openErr = KB_IMAGES_FOLDER_PROP + ' is set to ' + id + ' but that folder could not be opened (' + e.message + ')';
+      console.warn('KB Images: ' + openErr + ' — creating a replacement.');
+    }
   }
-  const folder = DriveApp.createFolder('KB Images');
+  let folder;
+  try { folder = DriveApp.createFolder('KB Images'); }
+  catch (e) {
+    const hint = driveScopeError_(e.message) ? ' — ' + DRIVE_REAUTH_HINT : '';
+    throw new Error((openErr
+      ? openErr + '; creating a replacement also failed: ' + e.message
+      : KB_IMAGES_FOLDER_PROP + ' is not set, and the folder could not be created: ' + e.message) + hint);
+  }
   try { folder.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW); }
   catch (e) { console.warn('KB Images folder sharing failed (' + e.message + ') — images may not render for reps until shared.'); }
   props.setProperty(KB_IMAGES_FOLDER_PROP, folder.getId());
@@ -23904,7 +24014,7 @@ function kbResolveDocImages_(bodyMd) {
   try { folder = getOrCreateKbImagesFolder_(); }
   catch (e) {
     const r0 = kbReplaceDocImageTokens_(bodyMd, function () { return null; });
-    warnings.push('Could not open or create the KB Images folder (' + e.message + ') — image(s) left as placeholders.');
+    warnings.push('KB Images folder: ' + e.message + ' — image(s) left as placeholders.');
     return { bodyMd: r0.bodyMd, exported: 0, warnings: warnings };
   }
   const blobsByDoc = {};   // fileId → blobs[] | null (Doc unreachable)

@@ -499,6 +499,16 @@
   .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .cn-store-detail .fix { color: var(--warning-deep); }
   .cn-store-detail .bad { color: var(--danger-deep); }
+  /* Drive capability line (operator 2026-09-09) — a capability, not a store,
+     so it sits ABOVE the inventory table rather than inside it: it has no
+     timezone, retention or link column to fill. */
+  .cn-drive-line { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.5;
+    padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px; }
+  .cn-drive-line svg { flex: 0 0 auto; margin-top: 2px; }
+  .cn-drive-line code { font-family: var(--mono); font-size: 11px; word-break: break-all; }
+  .cn-drive-ok { background: var(--accent-soft); color: var(--success-deep); }
+  .cn-drive-warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .cn-drive-danger { background: var(--danger-soft); color: var(--danger-deep); }
   .cn-pill { font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
   .cn-pill[data-tone="ok"]    { color: var(--success-deep); background: var(--accent-soft); }
   .cn-pill[data-tone="warn"]  { color: var(--warning-deep); background: var(--warn-soft); }
@@ -10018,8 +10028,41 @@ function cnRenderStoragePanel_(res) {
     : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(cfgTz) + '). Open a row’s chevron for its note, per-rep problems, or the tz fix.</div>';
   return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
     '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
-    hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
+    cnDriveAccessHtml_(res && res.drive) + hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
+}
+
+/** Drive capability line (operator 2026-09-09). The store probes above can
+ *  every one of them read OK while Drive is unusable — they are Sheets, and
+ *  Sheets ride a different scope. Renders NOTHING when the probe was skipped
+ *  (getDeployReadiness passes checkDrive:false), so an older server is
+ *  unchanged. An unprovisioned KB Images folder is stated as a FACT, not a
+ *  warning: it is created on the first image export (INV-186). */
+function cnDriveAccessHtml_(dr) {
+  if (!dr) return '';
+  var tone, body;
+  if (dr.granted === false) {
+    tone = 'danger';
+    body = '<strong>Drive access not granted.</strong> The deploying account’s token is missing <code>' +
+      esc(dr.scope || '') + '</code>, so Reference article images, the embed reachability check and QA ' +
+      'recording playback all fail with a scope error. ' + esc(dr.reauthHint || '');
+  } else if (dr.granted === null) {
+    tone = 'warn';
+    body = '<strong>Drive access could not be checked</strong> — ' +
+      esc(dr.error || 'the token could not be introspected') + '. Treat this as unknown, not as OK.';
+  } else if (dr.folderOk === false) {
+    tone = 'warn';
+    body = '<strong>KB Images folder unreachable.</strong> ' + esc(dr.folderProp || '') +
+      ' points at a folder the deploying account cannot open — ' + esc(dr.folderError || 'unknown error') +
+      '. Clear the property to let the next image export create a fresh folder.';
+  } else {
+    tone = 'ok';
+    body = 'Drive access granted' + (dr.folderId
+      ? ' · KB Images folder reachable.'
+      : ' · the KB Images folder is created on the first image export (' + esc(dr.folderProp || '') + ' is not set yet).');
+  }
+  return '<div class="cn-drive-line cn-drive-' + tone + '">' +
+    icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
 }
 
 /** Expand/collapse an mtRenderTable_ detail row from its disclosure button
@@ -10299,6 +10342,27 @@ function cnHealthFindings_(health, storage) {
         add(id, 'storage', 'ok', s.label, 'reachable' + (s.tzMatch === true ? ' · tz matches' : ''));
       }
     });
+    // (operator 2026-09-09) Drive capability — the one thing the store rows
+    // above structurally cannot see. null = not probed on this path.
+    var dr = storage.drive;
+    if (dr) {
+      if (dr.granted === false) {
+        add('driveScope', 'storage', 'fail', 'Drive access not granted',
+          'the deploying account’s token is missing ' + dr.scope + ' — Reference article images, the embed reachability check and QA recording playback all fail with a scope error',
+          dr.reauthHint);
+      } else if (dr.granted === null) {
+        add('driveScope', 'storage', 'warn', 'Drive access could not be checked',
+          dr.error || 'the token could not be introspected',
+          'Retry from the Admin tab — until it reads, treat Drive as unknown rather than working.');
+      } else if (dr.folderOk === false) {
+        add('driveScope', 'storage', 'warn', 'KB Images folder unreachable',
+          dr.folderProp + ' points at a folder the deploying account cannot open — ' + (dr.folderError || 'unknown error'),
+          'Clear ' + dr.folderProp + ' to let the next image export create a fresh folder, or re-share the existing one.');
+      } else {
+        add('driveScope', 'storage', 'ok', 'Drive access',
+          'granted' + (dr.folderId ? ' · KB Images folder reachable' : ' · KB Images folder is created on the first image export'));
+      }
+    }
     var ke = storage.kbEmbeds;
     if (ke && ke.total) {
       var broken = (ke.broken || []).length;

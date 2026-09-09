@@ -16139,6 +16139,7 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   // Driven: a fixture with one unreachable + one tz-drifted store renders the
   // toned rows, the pills, and exactly the detail rows that have content.
   loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -17700,6 +17701,260 @@ test('VIS-TZ: shoot.mjs carries a browser-timezone tuple entry, the mock honours
   [['America/Chicago', 'CST'], ['Asia/Kolkata', 'IST'], ['Asia/Manila', 'PHT']].forEach(([z, a]) => {
     assert.ok(new RegExp("'" + z.replace('/', '\\/') + "':\\s*'" + a + "'").test(tzAbbr[1]), z + ' → ' + a + ' matches the server map');
   });
+});
+
+/* ---------------------------------------------------------------------------
+ * DRV-1..4 — Drive capability (operator 2026-09-09). A Doc conversion left
+ * its images as placeholders with "You do not have permission to call
+ * DriveApp.createFolder"; nothing in the app could say whether Drive was
+ * usable, and the folder helper's open-failure reason was swallowed outright.
+ * NOTE the placement: ABOVE process.exit (the documented harness hazard — a
+ * block appended below it never runs and looks exactly like one that passes).
+ */
+
+// The live message Apps Script raised for the operator, kept verbatim.
+const DRV_SCOPE_MSG = 'You do not have permission to call DriveApp.createFolder. Required permissions: https://www.googleapis.com/auth/drive';
+
+function drvCtx(extra) {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const ctx = vm.createContext(Object.assign({ console: { warn() {}, log() {} }, JSON, String, Number, Object }, extra || {}));
+  // Pull the real constants, so a rename or a reworded hint fails here.
+  ['KB_IMAGES_FOLDER_PROP', 'DRIVE_WRITE_SCOPE', 'DRIVE_REAUTH_HINT', 'DRIVE_ACCESS_CACHE_KEY', 'DRIVE_ACCESS_CACHE_SEC']
+    .forEach((k) => {
+      const m = new RegExp('^const ' + k + ' = .*?;$', 'm').exec(code);
+      assert.ok(m, k + ' declared');
+      vm.runInContext(m[0], ctx, { filename: 'Code.js#' + k });
+    });
+  ['driveScopeError_', 'driveAccessStatus_', 'getOrCreateKbImagesFolder_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  return ctx;
+}
+
+test('DRV-1: driveScopeError_ recognises Apps Script’s missing-SCOPE refusal and nothing else', () => {
+  const ctx = drvCtx();
+  const f = (m) => vm.runInContext('driveScopeError_(' + JSON.stringify(m) + ')', ctx);
+  assert.strictEqual(f(DRV_SCOPE_MSG), true, 'the operator’s live message');
+  assert.strictEqual(f('Authorization is required to perform that action. (line 1)'), true, 'the generic variant');
+  // A Drive-SIDE failure is a different animal: the call was made and Drive
+  // said no. Appending "re-authorize" there would misdiagnose it.
+  assert.strictEqual(f('Limit Exceeded: Drive. (line 42)'), false, 'a Drive quota failure');
+  assert.strictEqual(f('No item with the given ID could be found'), false, 'a missing folder');
+  assert.strictEqual(f(''), false); assert.strictEqual(f(null), false);
+  // A scope refusal naming a DIFFERENT scope must not be claimed as Drive's.
+  assert.strictEqual(f('You do not have permission to call GmailApp.sendEmail. Required permissions: https://mail.google.com/'), false, 'a Gmail scope error');
+  assert.strictEqual(f('You do not have permission to call DocumentApp.openById. Required permissions: https://www.googleapis.com/auth/documents'), false, 'a Docs scope error');
+});
+
+test('DRV-2: getOrCreateKbImagesFolder_ NAMES why it failed — unset property vs an unopenable stored folder', () => {
+  const mk = (opts) => {
+    const props = { store: Object.assign({}, opts.props || {}) };
+    const calls = { created: 0, opened: 0, set: 0 };
+    return {
+      calls, props,
+      ctx: drvCtx({
+        PropertiesService: { getScriptProperties: () => ({
+          getProperty: (k) => (k in props.store ? props.store[k] : null),
+          setProperty: (k, v) => { calls.set++; props.store[k] = v; },
+        }) },
+        DriveApp: {
+          Access: { DOMAIN_WITH_LINK: 'd' }, Permission: { VIEW: 'v' },
+          getFolderById: (id) => { calls.opened++; if (opts.openThrows) throw new Error(opts.openThrows); return { getId: () => id, getName: () => 'KB Images', setSharing() {} }; },
+          createFolder: () => { calls.created++; if (opts.createThrows) throw new Error(opts.createThrows); return { getId: () => 'NEW_ID', setSharing() {} }; },
+        },
+      }),
+    };
+  };
+  const run = (h) => { try { return { ok: true, v: vm.runInContext('getOrCreateKbImagesFolder_()', h.ctx) }; }
+                       catch (e) { return { ok: false, msg: e.message }; } };
+
+  // (a) The operator's live state: the property has NEVER been set, so the
+  // helper goes straight to create — and the message must say so, because
+  // "could not open or create" sent them looking for a folder that has never
+  // existed.
+  let h = mk({ createThrows: DRV_SCOPE_MSG });
+  let r = run(h);
+  assert.strictEqual(r.ok, false);
+  assert.ok(/KB_IMAGES_FOLDER_ID is not set/.test(r.msg), 'names the unset property: ' + r.msg);
+  assert.ok(r.msg.indexOf(DRV_SCOPE_MSG) >= 0, 'carries Apps Script’s own reason verbatim');
+  assert.ok(/re-authorize/.test(r.msg) && /never re-prompts/.test(r.msg), 'appends the re-auth hint on a SCOPE error');
+  assert.strictEqual(h.calls.opened, 0, 'an unset property never opens anything');
+
+  // (b) The case that was previously UNREPORTABLE: a stored folder that will
+  // not open. Before this fix the open reason was swallowed and only the
+  // create error surfaced.
+  h = mk({ props: { KB_IMAGES_FOLDER_ID: 'STORED_ID' }, openThrows: 'No item with the given ID could be found',
+           createThrows: DRV_SCOPE_MSG });
+  r = run(h);
+  assert.strictEqual(r.ok, false);
+  assert.ok(/STORED_ID/.test(r.msg), 'names the id that failed to open');
+  assert.ok(/No item with the given ID could be found/.test(r.msg), 'carries the OPEN reason — the half that used to vanish');
+  assert.ok(/creating a replacement also failed/.test(r.msg), 'and says the recovery attempt failed too');
+
+  // (c) A NON-scope create failure must NOT be diagnosed as a missing grant.
+  h = mk({ createThrows: 'Limit Exceeded: Drive. (line 42)' });
+  r = run(h);
+  assert.strictEqual(r.ok, false);
+  assert.ok(!/re-authorize/.test(r.msg), 'no re-auth hint on a Drive-side failure: ' + r.msg);
+
+  // (d) The pre-existing recovery path still works: a dead stored id is
+  // replaced and the new id is stored.
+  h = mk({ props: { KB_IMAGES_FOLDER_ID: 'DEAD' }, openThrows: 'gone' });
+  r = run(h);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(h.calls.created, 1); assert.strictEqual(h.calls.set, 1);
+  assert.strictEqual(h.props.store.KB_IMAGES_FOLDER_ID, 'NEW_ID', 'the replacement id is persisted');
+
+  // (e) Happy path: a good stored id is returned WITHOUT creating anything.
+  h = mk({ props: { KB_IMAGES_FOLDER_ID: 'GOOD' } });
+  r = run(h);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(h.calls.created, 0, 'never creates when the stored folder opens');
+  assert.strictEqual(h.calls.set, 0, 'and never rewrites the property');
+
+  // The caller's warning no longer double-says "open or create" over a
+  // message that now explains itself.
+  const src = extractRawFunction('Code.js', 'kbResolveDocImages_');
+  assert.ok(/KB Images folder: ' \+ e\.message/.test(src), 'the warning prefixes the real reason');
+  assert.ok(!/Could not open or create/.test(src), 'the old blanket wording is gone');
+});
+
+test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown, and caches only a clean round', () => {
+  const mk = (opts) => {
+    const calls = { fetch: 0, put: 0, created: 0 };
+    let cacheHit = opts.cacheHit || null;
+    return {
+      calls,
+      ctx: drvCtx({
+        ScriptApp: { getOAuthToken: () => 'tok' },
+        UrlFetchApp: { fetch: (url, params) => {
+          calls.fetch++; calls.url = url; calls.params = params;
+          if (opts.fetchThrows) throw new Error(opts.fetchThrows);
+          return { getResponseCode: () => (opts.code || 200), getContentText: () => JSON.stringify({ scope: (opts.scopes || []).join(' ') }) };
+        } },
+        CacheService: { getScriptCache: () => ({ get: () => cacheHit, put: (k, v) => { calls.put++; calls.putKey = k; calls.putVal = v; } }) },
+        PropertiesService: { getScriptProperties: () => ({ getProperty: () => (opts.folderId || null) }) },
+        DriveApp: {
+          getFolderById: (id) => { if (opts.folderThrows) throw new Error(opts.folderThrows); return { getName: () => 'KB Images' }; },
+          createFolder: () => { calls.created++; throw new Error('driveAccessStatus_ must NEVER create anything'); },
+        },
+      }),
+    };
+  };
+  const run = (h) => vm.runInContext('driveAccessStatus_()', h.ctx);
+
+  // Granted + folder provisioned = the fully-clean round: cached.
+  let h = mk({ scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'], folderId: 'F1' });
+  let r = run(h);
+  assert.strictEqual(r.granted, true);
+  assert.strictEqual(r.folderOk, true);
+  assert.strictEqual(r.folderId, 'F1');
+  assert.strictEqual(h.calls.created, 0, 'SIDE-EFFECT FREE — opening the Admin tab must never provision a folder');
+  assert.strictEqual(h.calls.put, 1, 'a clean round is cached');
+  assert.strictEqual(h.calls.params.method, 'post', 'the token rides the BODY, not a logged query string');
+  assert.ok(!/access_token=/.test(String(h.calls.url)), 'the access token is never put in the URL');
+
+  // The operator's reported state: granted, but the folder has never been
+  // provisioned. folderOk stays NULL — "not created yet" is not "broken".
+  h = mk({ scopes: ['https://www.googleapis.com/auth/drive'] });
+  r = run(h);
+  assert.strictEqual(r.granted, true);
+  assert.strictEqual(r.folderOk, null, 'an unprovisioned folder is null, never false');
+  assert.strictEqual(h.calls.created, 0);
+
+  // Scope NOT granted — and a degraded round is NEVER cached, so the panel
+  // updates the moment the operator fixes the grant (INV-129).
+  h = mk({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  r = run(h);
+  assert.strictEqual(r.granted, false);
+  assert.strictEqual(h.calls.put, 0, 'a degraded round is not cached');
+  assert.ok(/re-authorize/.test(r.reauthHint), 'the fix rides the payload');
+
+  // A stored folder that will not open is FALSE with the reason, and is not cached.
+  h = mk({ scopes: ['https://www.googleapis.com/auth/drive'], folderId: 'F2', folderThrows: 'gone' });
+  r = run(h);
+  assert.strictEqual(r.granted, true);
+  assert.strictEqual(r.folderOk, false);
+  assert.ok(/gone/.test(r.folderError));
+  assert.strictEqual(h.calls.put, 0, 'not a clean round');
+
+  // The probe itself failing is UNKNOWN, never OK (INV-187) — both shapes.
+  h = mk({ code: 401, scopes: [] });
+  r = run(h);
+  assert.strictEqual(r.granted, null); assert.ok(/HTTP 401/.test(r.error));
+  h = mk({ fetchThrows: 'DNS exploded' });
+  r = run(h);
+  assert.strictEqual(r.granted, null); assert.ok(/DNS exploded/.test(r.error));
+  assert.strictEqual(h.calls.put, 0, 'an unknown round is not cached either');
+
+  // A cache hit short-circuits without a fetch.
+  h = mk({ cacheHit: JSON.stringify({ granted: true, folderOk: true, scope: 'x', error: '', reauthHint: '', folderProp: 'p', folderId: 'F', folderError: '' }) });
+  r = run(h);
+  assert.strictEqual(r.granted, true);
+  assert.strictEqual(h.calls.fetch, 0, 'a cached round makes no network call');
+
+  // Wiring: the field rides getStorageHealth, is opt-outable, and
+  // getDeployReadiness opts OUT so it keeps its "composes, never scans"
+  // property (no network call of its own).
+  const sh = extractRawFunction('Code.js', 'getStorageHealth').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/const checkDrive = !opts \|\| opts\.checkDrive !== false;/.test(sh), 'checkDrive defaults on');
+  assert.ok(/drive: drive/.test(sh), 'the field rides the return');
+  assert.ok(/if \(checkDrive\)/.test(sh), 'and is gated');
+  const dr = extractRawFunction('Code.js', 'getDeployReadiness').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/getStorageHealth\(\{ scanEmbeds: false, checkDrive: false \}\)/.test(dr), 'deploy readiness makes no Drive probe');
+});
+
+test('DRV-4: the Admin System tab reports Drive — finding + inventory line, and renders nothing when unprobed', () => {
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const line = loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');
+  const stores = [{ label: 'Time Clock / ADP', cls: 'Payroll', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }];
+  const find = (drive) => fn(null, { configTimezone: 'Asia/Kolkata', stores: stores, drive: drive })
+    .items.filter((f) => f.id === 'driveScope')[0];
+  const base = { scope: 'https://www.googleapis.com/auth/drive', reauthHint: 'the DEPLOYING account must re-authorize', folderProp: 'KB_IMAGES_FOLDER_ID', error: '', folderError: '', folderId: '', folderOk: null };
+
+  // Not granted is a FAIL that names what breaks and how to fix it.
+  let f = find(Object.assign({}, base, { granted: false }));
+  assert.strictEqual(f.severity, 'fail');
+  assert.strictEqual(f.area, 'storage', 'it rides the Storage card + badge');
+  assert.ok(/auth\/drive/.test(f.detail) && /QA recording playback/.test(f.detail), 'names the scope and the surfaces');
+  assert.ok(/re-authorize/.test(f.fix), 'the fix is the re-auth, not a shrug');
+
+  // Unknown is a WARN, never an ok (INV-187).
+  f = find(Object.assign({}, base, { granted: null, error: 'HTTP 401' }));
+  assert.strictEqual(f.severity, 'warn');
+  assert.ok(/HTTP 401/.test(f.detail));
+
+  // Granted with no folder yet is OK — it is created on first export (INV-186).
+  f = find(Object.assign({}, base, { granted: true }));
+  assert.strictEqual(f.severity, 'ok');
+  assert.ok(/first image export/.test(f.detail));
+
+  // Granted but the stored folder is dead is a WARN naming the property.
+  f = find(Object.assign({}, base, { granted: true, folderId: 'F', folderOk: false, folderError: 'gone' }));
+  assert.strictEqual(f.severity, 'warn');
+  assert.ok(/KB_IMAGES_FOLDER_ID/.test(f.detail) && /gone/.test(f.detail));
+
+  // An older server (no drive field) raises NOTHING — deploy skew is safe.
+  assert.strictEqual(find(undefined), undefined, 'absent field → no finding');
+  assert.strictEqual(line(null), '', 'and no inventory line');
+
+  // The inventory line: tone mapping + escaping of every server string.
+  assert.ok(/cn-drive-danger/.test(line(Object.assign({}, base, { granted: false }))));
+  assert.ok(/cn-drive-warn/.test(line(Object.assign({}, base, { granted: null, error: 'x' }))));
+  assert.ok(/cn-drive-ok/.test(line(Object.assign({}, base, { granted: true }))));
+  const hostile = line(Object.assign({}, base, { granted: null, error: '<img src=x onerror=alert(1)>' }));
+  assert.ok(!/<img/.test(hostile), 'a hostile probe error is escaped: ' + hostile);
+  assert.ok(/&lt;img/.test(hostile));
+  // The line sits ABOVE the table, in the Storage section the cards link to.
+  const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
+  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\) \+ hdr \+ table/.test(panel), 'rendered before the inventory table');
+  // Every class it emits is DEFINED (the A13 lesson).
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  ['cn-drive-line', 'cn-drive-ok', 'cn-drive-warn', 'cn-drive-danger'].forEach((c) =>
+    assert.ok(new RegExp('\\.' + c + '\\s*[,{]').test(css), c + ' is defined in a stylesheet'));
+  // And the fixture carries the field, so the System scenarios shoot it (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.strictEqual((mock.match(/folderProp: 'KB_IMAGES_FOLDER_ID'/g) || []).length, 2, 'both getStorageHealth fixtures carry drive');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
