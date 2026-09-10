@@ -1202,6 +1202,8 @@ function _runAllTests() {
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
+  // ── Operator testing note 6: the Expand detail is scoped like resolve ─────
+  _integrationTest('deptReq_detailScoped',                    test_deptReq_detailScoped);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
   // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
@@ -5345,6 +5347,7 @@ function test_managerGates_rejectNonManager() {
     ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
     ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
     ['saveSpanishInboxMembers',        function () { return saveSpanishInboxMembers([]); }],
+    ['saveQaMembers',                  function () { return saveQaMembers([]); }],   // operator testing note 8
     // Break-schedule editor (operator 2026-08-27) — gate precedes any
     // property write; an empty payload could never write regardless.
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
@@ -5445,6 +5448,7 @@ function test_managerGates_rejectNonManager() {
     // Design handoff PR 5 (Q4) — exemptions are a MANAGER decision (a QA
     // member reviews; a manager decides who may skip a period).
     ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],
+    ['autoAssignSpanishThreads',       function () { return autoAssignSpanishThreads(30); }],   // operator testing note 4 — MANAGER tier, not canSeeSpanishInbox_
   ];
   // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
   // non-admin caller — incl. this non-manager — gets 'Admin access required.').
@@ -5455,7 +5459,7 @@ function test_managerGates_rejectNonManager() {
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
     getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
     saveBreakSchedules: 1, getBreakCoverage: 1,
-    saveQaScorecardCriteria: 1,
+    saveQaScorecardCriteria: 1, saveQaMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -5632,6 +5636,53 @@ function test_deptReq_incomingAndMemberResolve() {
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
     drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
+  }
+}
+
+// Operator testing note 6 (2026-09-10) — getDeptRequestDetail is scoped by the
+// SAME rule as resolve (drCanAct_: sender / manager / receiving-dept member),
+// a scope refusal reads as not-found, and a request whose sender is not a
+// roster employee returns the base (label + patient & TRX) with note:null and
+// a NAMED reason rather than an empty note (INV-187). Same fixture shape as
+// the incoming test above, plus the two trailing columns.
+function test_deptReq_detailScoped() {
+  const deptKeys = Object.keys(getDepartmentEmails_() || {});
+  if (!deptKeys.length) { _skipTest('no departments configured'); }
+  const dept = deptKeys[0];
+  const ss = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const roster = ss.getDataRange().getValues();
+  let empRow = -1;
+  for (let i = 1; i < roster.length; i++) {
+    if (String(roster[i][EMP.ID]).trim() === _TEST_INDIA_ID) { empRow = i + 1; break; }
+  }
+  if (empRow < 0) { _skipTest('India test emp not on roster'); }
+  const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  try {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
+    invalidateRosterCache_();
+    sh.appendRow(['TEST_DR_DET', 'TEST_OTHER_SENDER', 'Other', 'o@x.com', dept, 'x.com',
+      drNowTs_(), 'open', '', '', 'detail-test', 'TEST_DR_NOTE_DET', '', 'Test Patient · TRX 1']);
+    SpreadsheetApp.flush();
+    let res; _asUser(_TEST_INDIA_EMAIL, function () { res = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(res && !res.error), 'a receiving-dept member may read the detail');
+    _assertEq(res.patientTrx, 'Test Patient · TRX 1', 'the stored patient & TRX rides back');
+    _assertTrue(res.note === null, 'no note when the sender is not a roster employee');
+    _assertTrue(!!res.reason, 'the missing note is explained by name (INV-187)');
+    let other; _asUser(_TEST_PH_EMAIL, function () { other = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(other && other.error), 'an unrelated rep is refused');
+    _assertContains(other.error, 'Request not found', 'a scope refusal reads as not-found (existence never leaks)');
+    let mgr; _asUser(_TEST_MGR_EMAIL, function () { mgr = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(mgr && !mgr.error), 'a manager may read any request');
+    let bad; _asUser(_TEST_MGR_EMAIL, function () { bad = getDeptRequestDetail('TEST_DR_NOPE'); });
+    _assertContains((bad && bad.error) || '', 'Request not found', 'an unknown id reads exactly like a scope refusal');
+  } finally {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
+    invalidateRosterCache_();
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+    drBumpCacheGen_();
   }
 }
 

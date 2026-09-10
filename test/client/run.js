@@ -7103,7 +7103,11 @@ test('batch-4: fillable switch + CN disclosures expose real semantics', () => {
 // found — each meant a screenshot state the server cannot produce.
 test('batch-3: visual-fixture payload shapes match the server field names', () => {
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
-  assert.ok(/patientTRX: 'TRX-/.test(mock) && !/patientTrx:/.test(mock),
+  // Scoped to the COACHING rows (Batch C, operator note 6): the Dept Requests
+  // item's server field is spelled `patientTrx`, so a mock-wide ban on that
+  // casing would now fail on a fixture that mirrors its server correctly.
+  const coachRows = mock.split('\n').filter((l) => /coachId/.test(l));
+  assert.ok(coachRows.length && /patientTRX: 'TRX-/.test(mock) && coachRows.every((l) => !/patientTrx:/.test(l)),
     'coaching fixture rows carry patientTRX (server casing) — the lowercase drift hid the TRX chip from every shot');
   const rd = /kbGetReviewDue:\s*\{[^\n]*\}/.exec(mock);
   assert.ok(rd && /views:/.test(rd[0]) && !/usage30/.test(rd[0]) && /total:/.test(rd[0]),
@@ -18467,8 +18471,9 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   const code = nc(codeSrc);
   // (a) The store: a trailing column (the CN_HEADERS back-compat posture), the
   //     enum slot, and a header that SELF-HEALS on a pre-existing tab (INV-126).
-  assert.ok(/RESOLVED_VIA:12 \}/.test(code), 'DR.RESOLVED_VIA is the trailing slot');
-  assert.ok(/'NoteId','ResolvedVia'\]/.test(code), 'DR_HEADERS ends with ResolvedVia');
+  // (Batch C, operator note 6, appended PATIENT_TRX:13 after it — rewritten in place.)
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx trails it since note 6)');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
   assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(\[DR_HEADERS\]\)/.test(mk),
     'a short header self-heals — a tab provisioned before the column gains it in place');
@@ -18574,6 +18579,222 @@ test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats,
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
   assert.ok(/manual: true, resolveMinutes: null, resolveWallMinutes: null/.test(mock), 'fixture: manual thread has null minutes');
   assert.ok(/businessCount: 11, manualCount: 1,/.test(mock), 'fixture: stats carry the manual count');
+});
+
+// ---------------------------------------------------------------------------
+// Operator testing notes 2026-09-10 — Batch C (N4 auto-assign / N6 Dept
+// Requests patient & TRX + expand / N8 QA reviewers editor).
+console.log('\nOperator notes 2026-09-10 — Batch C (N4 auto-assign, N6 DR detail, N8 QA reviewers)');
+
+test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFORE the core, one lock + batched rows, counts-only audit, the client button/refresh/confirm, the fixture calls the verbatim pick', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) The pick, driven.
+  const sbx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'spanishAutoAssignPick_'), sbx, { filename: 'Code.js#spanishAutoAssignPick_' });
+  const pick = sbx.spanishAutoAssignPick_;
+  const ids = (out) => out.map((o) => o.threadId + '>' + o.by).join('|');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }, { threadId: 'c' }], ['sam@x', 'ines@x', 'avery@x'], {})),
+    'a>avery@x|b>ines@x|c>sam@x', 'round-robins alphabetically from an even load');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }], ['sam@x', 'ines@x', 'avery@x'], { 'avery@x': 2, 'ines@x': 1 })),
+    'a>sam@x|b>ines@x', 'existing claims count as load — the least-loaded member goes first');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }, { threadId: 'c' }, { threadId: 'd' }], ['b@x', 'a@x'], { 'a@x': 1 })),
+    'a>b@x|b>a@x|c>b@x|d>a@x', 'balances as it goes — each pick raises that member\'s load');
+  assert.strictEqual(pick([{ threadId: 'a' }], [], {}).length, 0, 'no members → nothing assigned');
+  assert.strictEqual(pick([], ['a@x'], {}).length, 0, 'nothing unclaimed → nothing assigned');
+  assert.strictEqual(pick([{ threadId: '' }, { threadId: 'z' }], ['a@x'], {}).length, 1, 'a blank thread id is skipped');
+  // (b) The endpoint: manager gate FIRST, then the core; writer shape.
+  const ep = nc(extractRawFunction('Code.js', 'autoAssignSpanishThreads'));
+  assert.ok(/if \(!emp \|\| !emp\.isManager\) return \{ success: false, error: 'Manager access required\.' \};/.test(ep),
+    'MANAGER-gated, writer shape (not the canSeeSpanishInbox_ tier)');
+  assert.ok(ep.indexOf('emp.isManager') < ep.indexOf('spanishAutoAssignCore_('), 'the gate precedes the core');
+  // (c) The core: unclaimed from the pending read, load re-derived from the
+  //     LIVE map inside the lock, one batched write, counts-only audit.
+  const core = nc(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(/getSpanishInboxPending\(days\)/.test(core), 'reuses the pending read (one scope rule, one voicemail fold)');
+  assert.ok(!/\bkind\b/.test(core), 'voicemails are NOT filtered out — they are worked the same way');
+  assert.ok(/lock\.waitLock\(15000\)/.test(core) && /finally \{ lock\.releaseLock\(\); \}/.test(core), 'locked (INV-01)');
+  const lockAt = core.indexOf('waitLock(15000)');
+  assert.ok(lockAt > 0 && core.indexOf('spanishClaimsMap_()') > lockAt, 'the load + still-unclaimed set are re-derived from the LIVE map INSIDE the lock');
+  assert.ok(core.indexOf('spanishAutoAssignPick_(') > lockAt, 'the pick runs inside the lock too');
+  assert.ok(/\.setValues\(rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
+  assert.ok(/'claim', pk\.by, self, nowMs\]/.test(core), 'each row is a claim by the pick, assigned by the caller (the row shape spanishClaimsFold_ reads)');
+  const auditIdx = core.indexOf("writeAuditLog_(emp, 'SpanishInboxAutoAssign'");
+  assert.ok(auditIdx > core.indexOf('lock.releaseLock()'), 'the audit row lands after the lock releases');
+  const auditCall = core.slice(auditIdx, core.indexOf(');', auditIdx));
+  assert.ok(/'assigned=' \+ picks\.length \+ '; members=' \+ members\.length/.test(auditCall), 'counts-only audit row');
+  assert.ok(!/threadId|\.by\b/.test(auditCall), 'no thread id or email in the audit row');
+  assert.ok(/No Spanish Inbox members are configured/.test(core), 'an empty member list is refused by name');
+  // (d) The client.
+  const btn = nc(extractFunction('metrics/script_metrics.html', 'spanishAutoAssignBtnHtml_'));
+  assert.ok(/if \(!isMgr\) return '';/.test(btn), 'the button renders for a manager only');
+  assert.ok(/<button type="button"/.test(btn) && /id="sp-autoassign"/.test(btn), 'a real button (INV-173) with the id the refresher swaps');
+  assert.ok(/still loading/.test(btn) && /No Spanish Inbox members/.test(btn) && /already claimed/.test(btn),
+    'disabled with the REASON in the title for each of the three inert states');
+  assert.ok(/spanishAutoAssignBtnHtml_\(\)/.test(extractFunction('metrics/script_metrics.html', 'spanishHeadHtml_')), 'rendered from the head (state-driven)');
+  assert.ok(/spanishRefreshAutoAssign_\(\);/.test(extractFunction('metrics/script_metrics.html', 'spanishRenderList_')), 'the list renderer refreshes the count');
+  const go = nc(extractFunction('metrics/script_metrics.html', 'spanishAutoAssign_'));
+  assert.ok(/uiConfirm\(\{/.test(go) && go.indexOf('uiConfirm(') < go.indexOf('autoAssignSpanishThreads('), 'confirm BEFORE the RPC');
+  assert.ok(/\.autoAssignSpanishThreads\(SPANISH_STATE\.days\)/.test(go), 'the RPC carries the window the list was read with');
+  assert.ok(/currentView !== requestedView/.test(go), 'nav-guarded (the F(cycle-8 M-9) rule)');
+  assert.strictEqual((go.match(/spanishRenderList_\(\)/g) || []).length, 1, 'ONE list render after applying every returned claim');
+  assert.ok(go.indexOf('pd.pending[i].claim = a.claim') < go.indexOf('spanishRenderList_()'), 'claims applied to STATE before the render');
+  // (e) The fixture calls the VERBATIM pick (INV-185) and updates its own claims.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/autoAssignSpanishThreads: function/.test(mock), 'fixture present');
+  assert.ok(/const picks = spanishAutoAssignPick_\(unclaimed, pd\.members/.test(mock), 'the fixture routes through the verbatim server pick');
+  assert.ok(mock.indexOf('function spanishAutoAssignPick_(') < mock.indexOf('end verbatim copies'), 'the copy sits inside the DO-NOT-EDIT region the F4 mirror pin derives from');
+  // (f) The omnibus carries the MANAGER-tier case (F9 needs it; GATE-TIER must NOT see it in ADMIN_GATED).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['autoAssignSpanishThreads',\s+function \(\) \{ return autoAssignSpanishThreads\(30\); \}\]/.test(tests), 'omnibus case');
+  assert.ok(!/autoAssignSpanishThreads: 1/.test(tests), 'not on the admin tier');
+});
+
+test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE ownership rule, the scoped detail read, the SLA digest + audit stay label-only, client expand/escape/CSS, fixture + scenario + editor test', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(codeSrc);
+  // (a) Store.
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.PATIENT_TRX is the trailing slot');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS ends with PatientTrx');
+  assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
+  const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\);/.test(send),
+    'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX as the LAST cell');
+  // (b) ONE ownership rule, driven.
+  const sbx = vm.createContext({
+    DR: { BY_ID: 1, TO_DEPT: 4 },
+    drSplitDepts_: (s) => String(s).split(/[,;]/).map((x) => x.trim()).filter((x) => x && x.toLowerCase() !== 'other'),
+    empDepartments_: (emp) => (emp && emp.depts) || [],
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'drCanAct_'), sbx, { filename: 'Code.js#drCanAct_' });
+  const row = []; row[1] = 'E1'; row[4] = 'Billing, Shipping';
+  assert.strictEqual(sbx.drCanAct_({ id: 'E1' }, row), true, 'the sender may act');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', isManager: true }, row), true, 'a manager may act');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', depts: ['Shipping'] }, row), true, 'a member of ANY component dept may act (M-5)');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', depts: ['Resupply'] }, row), false, 'an unrelated rep may not');
+  assert.strictEqual(sbx.drCanAct_(null, row), false, 'no caller → no');
+  const resolve = nc(extractRawFunction('Code.js', 'resolveDeptRequest'));
+  const detail = nc(extractRawFunction('Code.js', 'getDeptRequestDetail'));
+  assert.ok(/if \(!drCanAct_\(emp, row\)\)/.test(resolve) && /!drCanAct_\(emp, row\)/.test(detail), 'BOTH callers route through drCanAct_');
+  assert.ok(!/empDepartments_\(/.test(resolve) && !/empDepartments_\(/.test(detail), 'neither re-derives membership inline');
+  // (c) The detail contract.
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(detail), 'employee gate, bare {error} read shape (GATE-SHAPE)');
+  assert.strictEqual((detail.match(/return \{ error: 'Request not found\.' \}/g) || []).length, 2,
+    'a blank id, and an unknown id OR a scope refusal (one guard), all read as the same not-found');
+  assert.ok(/!row \|\| !drCanAct_\(emp, row\)\) return \{ error: 'Request not found\.' \}/.test(detail), 'the scope refusal IS the not-found');
+  assert.ok(!/waitLock/.test(detail) && !/writeAuditLog_/.test(detail), 'a read — no lock, no audit row');
+  assert.ok(/lookupEmployeeById_\(/.test(detail) && /getCallNotesSheet_\(sender\)/.test(detail) && /findCallNoteRow_\(/.test(detail) && /callNoteRowToObject_\(located\)/.test(detail),
+    'the note comes from the SENDER\'s own Sheet through the standard readers');
+  assert.ok(/base\.note = \{\s*callback: n\.callback, caller: n\.caller, relationship: n\.relationship,\s*patientAndTrx: n\.patientAndTrx, issue: n\.issue, transferredTo: n\.transferredTo,\s*resolution: n\.resolution, dateLocal: n\.dateLocal,\s*\};/.test(detail),
+    'whitelist-built note — never the raw row or subformData');
+  assert.ok(!/subformData|located\.row\b/.test(detail), 'no raw row or blob reaches the response');
+  assert.strictEqual((detail.match(/base\.reason = /g) || []).length, 4, 'every note:null path NAMES its reason (INV-187)');
+  // (d) The item + the digest + the audit trail.
+  const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/patientTrx: String\(r\[DR\.PATIENT_TRX\] \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),/.test(dr), 'the list item carries patientTrx');
+  assert.ok(!/PATIENT_TRX/.test(nc(extractRawFunction('Code.js', 'deptRequestsOverdueOpen_'))), 'the daily SLA digest stays LABEL-ONLY (never reads the patient column)');
+  const audits = code.split('\n').filter((l) => /writeAuditLog_\(/.test(l) && /PATIENT_TRX|patientTrx|patientAndTrx/.test(l));
+  assert.deepStrictEqual(audits, [], 'no audit row carries the patient & TRX');
+  // (e) Client.
+  const dsrc = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  const card = nc(extractFunction('metrics/script_deptrequests.html', 'drRequestCardHtml_'));
+  assert.ok(/item\.patientTrx \? ' <span class="dr-subj-trx">· ' \+ esc\(item\.patientTrx\) \+ '<\/span>' : ''/.test(card),
+    'subject = label · patient & TRX (escaped), label alone on a legacy row');
+  assert.ok(/class="sp-more dr-expand" data-req="' \+ esc\(item\.requestId\)/.test(card) && /aria-expanded="' \+ \(isOpen \? 'true' : 'false'\)/.test(card) && /aria-controls="' \+ detailId/.test(card),
+    'a real Expand button with aria-expanded + aria-controls (INV-173/174)');
+  assert.ok(/<div class="dr-detail" id="' \+ detailId \+ '"' \+ \(isOpen \? '' : ' hidden'\)/.test(card), 'the panel renders from STATE — hidden unless expanded');
+  const dh = nc(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'));
+  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /esc\(val\)/.test(dh), 'every detail field is escaped');
+  const ex = nc(extractFunction('metrics/script_deptrequests.html', 'drExpand_'));
+  assert.ok(/if \(st\.bodies\[id\] != null\) \{ open\(\); return; \}/.test(ex), 'a cached detail serves the second Expand with no RPC');
+  assert.ok(/currentView !== requestedView/.test(ex), 'nav-guarded');
+  assert.ok(/\.getDeptRequestDetail\(id\)/.test(ex), 'the scoped read');
+  assert.ok(/drRepaintRequest_\(id\)/.test(ex), 'a detached button falls back to the state-driven repaint');
+  assert.ok(/\.dr-detail\[hidden\] \{ display: none; \}/.test(dsrc), 'the [hidden] display companion');
+  assert.ok(/\.dr-detail-row \{ display: grid; grid-template-columns: 110px minmax\(0, 1fr\)/.test(dsrc) && /@media \(max-width: 480px\) \{\s*\.dr-detail-row \{ grid-template-columns: 1fr; \}/.test(dsrc),
+    'the fixed label track has a viewport breakpoint (A2)');
+  // (f) Fixture + scenario.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/getDeptRequestDetail: function \(id\)/.test(mock), 'the detail fixture is a FUNCTION of the id (F14)');
+  assert.ok(/patientTrx: 'Maria Delgado · TRX 48211'/.test(mock), 'rows carry patientTrx');
+  const r6 = mock.split('\n').filter((l) => /requestId: 'r6'/.test(l));
+  assert.ok(r6.length === 1 && !/patientTrx/.test(r6[0]), 'one LEGACY row (no patientTrx) stays on camera');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  assert.ok(/'deptreq-expanded-light-wide'[^\n]*drExpand_\(document\.querySelector\('\.dr-expand\[data-req\]'\)\)/.test(shoot), 'the expanded card is on camera');
+  // (g) Editor test present + registered.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/function test_deptReq_detailScoped\(/.test(tests) && /_integrationTest\('deptReq_detailScoped'/.test(tests), 'the scoped-detail editor test exists and is registered');
+});
+
+test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), qaCanReviewEmail_ admits roster managers (driven), the assign check routes through it, getAdminConfig ships the list, the Admin card + handlers, fixture, omnibus tier', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) saveQaMembers driven in a vm (the Spanish-members pin's shape).
+  const props = {};
+  const audits = [];
+  const mk = (emp) => {
+    const sbx = vm.createContext({
+      getEmployeeInfo_: () => emp,
+      PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] || '' }) },
+      writeAuditLog_: (e, action, a, b, c, d, notes) => { audits.push({ action: action, notes: notes }); },
+    });
+    vm.runInContext(extractRawFunction('Code.js', 'saveQaMembers'), sbx, { filename: 'Code.js#saveQaMembers' });
+    return sbx.saveQaMembers;
+  };
+  const nonAdmin = mk({ isAdmin: false, isManager: true, email: 'm@x.com' });
+  assert.strictEqual(nonAdmin(['a@x.com']).error, 'Admin access required.', 'admin-gated (INV-136)');
+  assert.strictEqual(props.QA_MEMBERS, undefined, 'nothing written on a gate refusal');
+  const admin = mk({ isAdmin: true, isManager: true, email: 'm@x.com' });
+  assert.ok(/Expected a list/.test(admin('a@x.com').error), 'a non-array is refused');
+  assert.ok(/Not a valid email: "nope"/.test(admin(['nope']).error), 'shape-validated, naming the offender');
+  assert.strictEqual(props.QA_MEMBERS, undefined, 'still nothing written');
+  const r = admin([' Ines@UMSupply.com ', 'ines@umsupply.com', '', 'sam@umsupply.com']);
+  assert.strictEqual(r.members.join('|'), 'ines@umsupply.com|sam@umsupply.com', 'lowercased + trimmed + deduped');
+  assert.strictEqual(props.QA_MEMBERS, 'ines@umsupply.com,sam@umsupply.com', 'written as the comma list getQaMembers_ reads');
+  assert.ok(audits.some((a) => a.action === 'AdminConfigChange' && /Updated QA reviewers \(2\)/.test(a.notes)), 'AdminConfigChange audit (INV-57 family)');
+  assert.strictEqual(admin([]).success, true, 'an EMPTY list is valid (managers only)');
+  assert.strictEqual(props.QA_MEMBERS, '', 'and clears the property');
+  const many = []; for (let i = 0; i < 31; i++) many.push('r' + i + '@x.com');
+  assert.ok(/Too many/.test(admin(many).error), 'capped at 30');
+  // (b) qaCanReviewEmail_ driven: a member, a roster manager (any case), an unlisted rep, an offboarded manager.
+  const rows = [['Email', 'Id', 'Name', '', '', '', 'IsManager'],
+    ['Mgr@x.com', 'E1', 'M', '', '', '', 'TRUE'],
+    ['rep@x.com', 'E2', 'R', '', '', '', ''],
+    ['', 'E3', 'Gone', '', '', '', 'TRUE']];
+  const sbx2 = vm.createContext({ getQaMembers_: () => ({ 'ines@x.com': true }), getEmployeeRosterRows_: () => rows,
+    empRosterEmail_: (row) => String((row && row[0]) || '').trim(), EMP: { EMAIL: 0, IS_MANAGER: 6 } });
+  vm.runInContext(extractRawFunction('Code.js', 'qaCanReviewEmail_'), sbx2, { filename: 'Code.js#qaCanReviewEmail_' });
+  const can = sbx2.qaCanReviewEmail_;
+  assert.strictEqual(can('ines@x.com'), true, 'a QA_MEMBERS entry');
+  assert.strictEqual(can('MGR@x.com'), true, 'a roster manager, case-insensitively — the note-8 case');
+  assert.strictEqual(can('rep@x.com'), false, 'a non-manager rep not listed');
+  assert.strictEqual(can(''), false, 'blank');
+  assert.strictEqual(can('nobody@x.com'), false, 'unknown');
+  const sbx3 = vm.createContext({ getQaMembers_: () => ({}), getEmployeeRosterRows_: () => { throw new Error('boom'); },
+    empRosterEmail_: () => '', EMP: { EMAIL: 0, IS_MANAGER: 6 } });
+  vm.runInContext(extractRawFunction('Code.js', 'qaCanReviewEmail_'), sbx3, { filename: 'Code.js#qaCanReviewEmail_' });
+  assert.strictEqual(sbx3.qaCanReviewEmail_('mgr@x.com'), false, 'a failed roster read falls back to the members list (never throws)');
+  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(extractRawFunction('Code.js', 'qaCanReviewEmail_')), 'roster inclusion through the ONE predicate (INV-183)');
+  // (c) The assign check.
+  const assign = nc(extractRawFunction('Code.js', 'qaAssignRecording'));
+  assert.ok(/if \(!qaCanReviewEmail_\(target\)\)/.test(assign), 'the assign target check routes through qaCanReviewEmail_');
+  assert.ok(!/getQaMembers_\(\)\[target\]/.test(assign), 'the QA_MEMBERS-only check is gone');
+  // (d) getAdminConfig ships the list.
+  assert.ok(/qaMembers: Object\.keys\(getQaMembers_\(\)\)\.sort\(\)/.test(nc(extractRawFunction('Code.js', 'getAdminConfig'))), 'getAdminConfig.qaMembers');
+  // (e) The Admin card + handlers (the Spanish card's shape).
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/id="cn-admin-qam-list" class="cn-spm-chips"/.test(cn), 'the reviewers chip list');
+  assert.ok(/cnRenderQaMemberChips_\(cfg\.qaMembers \|\| \[\]\)/.test(cn), 'rendered from getAdminConfig.qaMembers');
+  assert.ok(/\.saveQaMembers\(out\)/.test(cn), 'saves through saveQaMembers');
+  assert.ok(/uiConfirm\(\{ title: 'Clear all QA reviewers\?'/.test(cn), 'an empty save confirms');
+  const chips = nc(extractFunction('cn/script_callnotes.html', 'cnRenderQaMemberChips_'));
+  assert.ok(/esc\(m\)/.test(chips) && /aria-label="Remove ' \+ esc\(m\)/.test(chips), 'chips escape + name the remove button');
+  assert.ok(/every manager can still review/.test(chips), 'the empty state says what "no reviewers" means');
+  // (f) Fixture.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/qaMembers: \['ines@umsupply\.com'\]/.test(mock), 'the admin-config fixture ships qaMembers');
+  // (g) Tests.js: omnibus case on the ADMIN tier (F7/F9/GATE-TIER all derive from this).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['saveQaMembers',\s+function \(\) \{ return saveQaMembers\(\[\]\); \}\]/.test(tests), 'omnibus case');
+  assert.ok(/saveQaMembers: 1/.test(tests), 'on the ADMIN tier in the omnibus map');
 });
 
 // The summary prints LAST — a test block appended between the summary and

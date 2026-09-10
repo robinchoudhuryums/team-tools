@@ -2334,3 +2334,130 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'and still showing the body');
   assert.strictEqual(bodyCalls, 1, 'the re-render fetched nothing');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Operator testing notes 2026-09-10 — Batch C (DOM)
+// ═════════════════════════════════════════════════════════════════════════════
+section('Operator notes 2026-09-10 — Batch C (N4 auto-assign / N6 Dept Requests expand)');
+
+test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a cancelled confirm makes no RPC, confirm → ONE RPC → every returned claim applied in one render, the button then reads 0 and says why', async () => {
+  const pendingFixture = () => ({ pending: [
+    { threadId: 't1', requester: 'a@x.com', ageHours: 5, subject: 'Uno', snippet: 'x', permalink: 'https://mail.google.com/1', claim: null },
+    { threadId: 't2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: { by: 'sam@x.com', atMs: 1 } },
+    { threadId: 't3', requester: 'c@x.com', ageHours: 1, subject: 'Tres', snippet: 'z', permalink: 'https://mail.google.com/3', claim: null }],
+    members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false });
+  const stats = () => ({ address: 'spanishcalls@x.com', days: 30, pending: 3, resolved: 0,
+    avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 3, truncated: false });
+  // A NON-manager member never sees the button.
+  const h0 = boot();
+  h0.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h0.read('TOUR_VERSION') }));
+  h0.bootShell({ isManager: false, canSeeSpanish: true });
+  h0.run.respond('getSpanishInboxStats', stats);
+  h0.run.respond('getSpanishInboxPending', pendingFixture);
+  h0.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
+  h0.window.enterTool('metrics', 'metricsSpanish');
+  h0.flushTimers();
+  assert.ok(h0.$('.sp-task'), 'the member sees the list');
+  assert.strictEqual(h0.$('#sp-autoassign'), null, 'but no Auto-assign button (manager-only)');
+
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', stats);
+  h.run.respond('getSpanishInboxPending', pendingFixture);
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com', 'ines@x.com'], truncated: false }));
+  let rpcs = 0, rpcDays = null;
+  h.run.respond('autoAssignSpanishThreads', (days) => { rpcs++; rpcDays = days; return { success: true, unclaimed: 2, assigned: [
+    { threadId: 't1', claim: { by: 'ines@x.com', assignedBy: 'me@x.com', atMs: 2 } },
+    { threadId: 't3', claim: { by: 'sam@x.com', assignedBy: 'me@x.com', atMs: 2 } }] }; });
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const btn = () => h.$('#sp-autoassign');
+  assert.ok(btn(), 'the manager sees the button');
+  assert.strictEqual(btn().tagName, 'BUTTON', 'a real button (INV-173)');
+  assert.strictEqual(btn().disabled, false, 'enabled — two unclaimed');
+  assert.ok(/Auto-assign 2 unclaimed/.test(btn().textContent), 'counts the UNCLAIMED (2), not every pending item (3)');
+  assert.strictEqual(h.$$('.sp-claim-btn').length, 2, 'two Claim buttons on the unclaimed cards');
+  // uiConfirm is a LEXICAL binding in script_core — reassign it through the vm bridge.
+  let asked = null;
+  h.window.__stubConfirm = (opts) => { asked = opts; return Promise.resolve(false); };
+  h.read('uiConfirm = window.__stubConfirm');
+  const press = () => h.read('spanishAutoAssign_')(btn());   // jsdom never compiles an inline onclick
+  press();
+  await tick(); await tick();
+  assert.ok(asked && /Auto-assign 2 unclaimed request/.test(asked.title), 'confirmed first, naming the count');
+  assert.strictEqual(rpcs, 0, 'a cancelled confirm makes NO RPC');
+  assert.strictEqual(btn().disabled, false, 'and leaves the button enabled');
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  press();
+  await tick(); await tick();
+  assert.strictEqual(rpcs, 1, 'ONE RPC');
+  assert.strictEqual(rpcDays, 30, 'carrying the list window');
+  assert.strictEqual(h.$$('.sp-claim-btn').length, 0, 'no Claim button remains — every returned claim was applied');
+  assert.ok(btn() && btn().disabled, 'the refreshed button is disabled');
+  assert.ok(/already claimed/.test(btn().title), 'and says why');
+  assert.ok(/Auto-assign 0 unclaimed/.test(btn().textContent), 'reads 0');
+});
+
+test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; label alone on a legacy row), Expand fetches ONCE through the scoped read, Collapse hides with no RPC, a repaint keeps it open from state, note:null renders the reason', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.run.respond('getDeptRequests', () => ({ isManager: false, myDepts: [], departments: ['Billing'],
+    mine: [
+      { requestId: 'q1', toDept: 'Billing', label: 'Close Order', patientTrx: 'Ana <b>Ruiz</b> · TRX 1', createdAt: 'Sep 1, 2026 9:00 AM', byName: 'Me', status: 'open', elapsedMin: 30, elapsedWallMin: 30, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
+      { requestId: 'q2', toDept: 'Shipping', label: 'Verified Shipping', createdAt: 'Sep 1, 2026 9:00 AM', byName: 'Me', status: 'open', elapsedMin: 30, elapsedWallMin: 30, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 }],
+    incoming: [], truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 0 }));
+  let detailCalls = 0;
+  h.run.respond('getDeptRequestDetail', (id) => {
+    detailCalls++;
+    if (id === 'q2') return { requestId: 'q2', label: 'Verified Shipping', patientTrx: '', byName: 'Me', toDept: 'Shipping', note: null, reason: 'This request predates note linking.' };
+    return { requestId: 'q1', label: 'Close Order', patientTrx: 'Ana <b>Ruiz</b> · TRX 1', byName: 'Me', toDept: 'Billing', reason: '',
+      note: { callback: '555', caller: 'Ana', relationship: 'Self', patientAndTrx: 'Ana <b>Ruiz</b> · TRX 1',
+        issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated', dateLocal: '2026-09-01' } };
+  });
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
+  assert.ok(card('q1') && card('q2'), 'both cards render');
+  const subj1 = card('q1').querySelector('.sp-task-subj');
+  assert.ok(/Close Order · Ana <b>Ruiz<\/b> · TRX 1/.test(subj1.textContent), 'subject = label · patient & TRX');
+  assert.strictEqual(subj1.querySelector('b'), null, 'the patient text is escaped, never markup');
+  assert.strictEqual(card('q2').querySelector('.sp-task-subj').textContent, 'Verified Shipping', 'a legacy row renders the label alone');
+  const btn = () => card('q1').querySelector('.dr-expand');
+  assert.ok(btn() && btn().tagName === 'BUTTON', 'a real Expand button');
+  assert.strictEqual(btn().textContent, 'Expand');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
+  const panelId = btn().getAttribute('aria-controls');
+  const panel = () => h.$('#' + panelId);
+  assert.ok(panel() && panel().hidden, 'aria-controls names the panel, which starts hidden');
+  const press = (id) => h.read('drExpand_')(card(id).querySelector('.dr-expand'));   // jsdom never compiles an inline onclick
+  press('q1');
+  assert.strictEqual(detailCalls, 1, 'ONE RPC on the first Expand');
+  assert.strictEqual(btn().textContent, 'Collapse');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(panel().hidden, false);
+  assert.ok(/Escalated/.test(panel().textContent), 'the note fields render');
+  assert.strictEqual(panel().querySelector('img'), null, 'the issue text is escaped — no live element from note text');
+  assert.ok(/Bill <img src=x/.test(panel().textContent), 'and reads as text');
+  press('q1');   // Collapse
+  assert.strictEqual(detailCalls, 1, 'Collapse makes no RPC');
+  assert.strictEqual(panel().hidden, true);
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
+  press('q1');   // Expand again
+  assert.strictEqual(detailCalls, 1, 'the cached detail serves the second Expand');
+  assert.strictEqual(panel().hidden, false);
+  // A card repaint (the in-place resolve path) keeps it open — state is the source of truth.
+  h.read('drRepaintRequest_')('q1');
+  assert.strictEqual(card('q1').querySelector('.dr-expand').textContent, 'Collapse', 'still expanded after a repaint');
+  assert.ok(/Escalated/.test(card('q1').querySelector('.dr-detail').textContent), 'and the panel is rendered from state');
+  assert.strictEqual(detailCalls, 1, 'the repaint fetched nothing');
+  // A legacy row: note:null renders the server's REASON, never an empty panel.
+  press('q2');
+  assert.strictEqual(detailCalls, 2);
+  const p2 = card('q2').querySelector('.dr-detail');
+  assert.strictEqual(p2.hidden, false);
+  assert.ok(/predates note linking/.test(p2.textContent), 'the reason is stated (INV-187)');
+});

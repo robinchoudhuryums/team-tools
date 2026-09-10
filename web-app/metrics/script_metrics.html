@@ -2017,10 +2017,111 @@ function spanishHeadHtml_(d) {
       '" onclick="spanishSetTab_(\'' + key + '\')">' + label + '</button>';
   };
   var toggle =
-    '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:2px 0 10px">' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter by status">' +
       mkTab('all', 'All') + mkTab('pending', 'Pending') + mkTab('resolved', 'Resolved') +
     '</div>';
-  return note + strip + toggle;
+  // Note #4 (operator 2026-09-10): the manager's Auto-assign button rides
+  // BESIDE the filter strip (one flex row, wraps on a phone). It is rendered
+  // from state, so a head-swap (a background stats arrival) and the list
+  // renderer (spanishRefreshAutoAssign_) both keep its count honest.
+  var row = '<div class="sp-toolbar-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px">' +
+    toggle + spanishAutoAssignBtnHtml_() + '</div>';
+  return note + strip + row;
+}
+
+// ── Auto-assign (operator testing note 4, 2026-09-10) ───────────────────────
+// "Auto-assign for equal distribution" — the button first; a scheduled
+// trigger may follow (the server core is reusable for it). MANAGER-only on
+// both sides: the button renders only for a manager, and the endpoint gates
+// on isManager (a distribution decision, like Assign).
+
+/** Unclaimed pending count from STATE — null while the pending list has not
+ *  loaded, so the button can say "loading" rather than "0". */
+function spanishUnclaimedCount_() {
+  var pd = SPANISH_STATE.pendingRes;
+  if (!pd || !Array.isArray(pd.pending)) return null;
+  var n = 0;
+  pd.pending.forEach(function (p) { if (!(p && p.claim && p.claim.by)) n++; });
+  return n;
+}
+
+/** The button markup, or '' for a non-manager. Disabled — with the reason in
+ *  its title — while the list is loading, when no members are configured, and
+ *  when every pending request is already claimed (INV-187: the count it
+ *  shows is the count it will act on). */
+function spanishAutoAssignBtnHtml_() {
+  var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
+  if (!isMgr) return '';
+  var pd = SPANISH_STATE.pendingRes;
+  var n = spanishUnclaimedCount_();
+  var members = (pd && pd.members) || [];
+  var disabled, title;
+  if (n == null) { disabled = true; title = 'Pending requests are still loading'; }
+  else if (!members.length) { disabled = true; title = 'No Spanish Inbox members are configured — Manage → Admin → Config → Spanish bilingual members'; }
+  else if (!n) { disabled = true; title = 'Every pending request is already claimed'; }
+  else {
+    disabled = false;
+    title = 'Assign the ' + n + ' unclaimed request' + (n === 1 ? '' : 's') + ' across ' + members.length +
+      ' member' + (members.length === 1 ? '' : 's') + ' — fewest claims first, oldest request first';
+  }
+  return '<button type="button" class="refresh-btn sp-autoassign" id="sp-autoassign"' + (disabled ? ' disabled' : '') +
+    ' title="' + esc(title) + '" onclick="spanishAutoAssign_(this)">' + icon('headset', 12) +
+    ' Auto-assign' + (n == null ? '' : ' ' + esc(String(n)) + ' unclaimed') + '</button>';
+}
+
+/** Re-render ONLY the button in place (the outerHTML swap — the whole button
+ *  is the element, so nothing is left behind; the drRepaintKpi_ lesson). */
+function spanishRefreshAutoAssign_() {
+  var host = document.getElementById('sp-autoassign');
+  if (!host) return;
+  var html = spanishAutoAssignBtnHtml_();
+  if (html) host.outerHTML = html;
+}
+
+/** Confirm → ONE RPC → apply every returned claim to the pending payload →
+ *  ONE list render (which also refreshes the button). Nav-guarded on
+ *  currentView (the F(cycle-8 M-9) rule). */
+function spanishAutoAssign_(btn) {
+  if (!btn || btn.disabled) return;
+  var n = spanishUnclaimedCount_() || 0;
+  var members = ((SPANISH_STATE.pendingRes || {}).members || []);
+  var requestedView = currentView;
+  uiConfirm({
+    title: 'Auto-assign ' + n + ' unclaimed request' + (n === 1 ? '' : 's') + '?',
+    message: 'Each unclaimed request goes to the member with the fewest claims, oldest request first. ' +
+      'Existing claims are kept. Members: ' +
+      members.map(function (m) { return String(m).split('@')[0]; }).join(', ') + '.',
+    confirmLabel: 'Auto-assign',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.classList.add('is-busy');
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (currentView !== requestedView) return;
+        if (!r || !r.success) {
+          showToast((r && r.error) || 'Auto-assign failed', 'error');
+          spanishRefreshAutoAssign_();
+          return;
+        }
+        var pd = SPANISH_STATE.pendingRes;
+        (r.assigned || []).forEach(function (a) {
+          if (!pd || !Array.isArray(pd.pending)) return;
+          for (var i = 0; i < pd.pending.length; i++) {
+            if (pd.pending[i].threadId === a.threadId) pd.pending[i].claim = a.claim;
+          }
+        });
+        spanishRenderList_();   // ONE render — the cards' claim pills AND the button
+        var k = (r.assigned || []).length;
+        showToast(k ? ('Assigned ' + k + ' request' + (k === 1 ? '' : 's') + ' across ' + members.length + ' member' + (members.length === 1 ? '' : 's'))
+                    : 'Nothing to assign — every pending request is already claimed', 'success');
+      })
+      .withFailureHandler(function (e) {
+        if (currentView !== requestedView) return;
+        showToast((e && e.message) || 'Auto-assign failed', 'error');
+        spanishRefreshAutoAssign_();
+      })
+      .autoAssignSpanishThreads(SPANISH_STATE.days);
+  });
 }
 
 function spanishRender_(d, opts) {
@@ -2238,6 +2339,7 @@ function spanishRenderList_() {
     }
   }
   s.innerHTML = html;
+  spanishRefreshAutoAssign_();   // note #4 — the unclaimed count follows the list
 }
 
 /** Row tone for a PENDING card — warn until SPANISH_OVERDUE_HOURS, then

@@ -138,6 +138,9 @@ const SCENARIOS = [
   // full request body in place of the snippet, the button reading Collapse.
   ['spanish-expanded-light-wide', { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishExpand_(document.querySelector('.sp-more[data-thread]'))"],
   ['deptreq-light-wide',   { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
+  // Operator 2026-09-10 (note 6) — a request card EXPANDED: the source note's
+  // fields in the detail panel under a subject carrying patient & TRX.
+  ['deptreq-expanded-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],

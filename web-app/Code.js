@@ -754,12 +754,14 @@ const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED
 // IS_ADJUSTMENT(7) TRUE/FALSE — all Sheets-coerced on read (the M-3/M-4/F1 class).
 const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 };
 
-// Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
+// Inter-department request tracking (DeptRequests tab). No email body is ever
+// stored; since operator testing note 6 (2026-09-10) the row DOES carry the
+// note's patient name & TRX (PATIENT_TRX, col 13) — see that column's note.
 // NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12 };
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13 };
 // RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
 // header self-heals): HOW the row was resolved — 'email' = the recipient
 // clicked the resolve link in the department email (a real response time),
@@ -767,8 +769,19 @@ const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CR
 // NOT a response time). A blank cell is a row resolved before the source was
 // recorded, and by operator decision it is excluded from the timing stats
 // too, reported as "resolved before source tracking".
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia'];
+// PATIENT_TRX (trailing, operator testing note 6, 2026-09-10 — back-compat like
+// NOTE_ID; the header self-heals): the source note's "Patient Name & TRX" as
+// typed, capped at DR_PATIENT_TRX_MAX. This is the ONE patient-identifying
+// cell in the store, added by OPERATOR DECISION: the constructed email subject
+// is "<update type> · <patient & trx>", and a collapsed tracker card that
+// shows only the update type is unidentifiable to the desk working it. The
+// store stays inside the Workspace (the ADP sheet, or DEPT_REQUESTS_SS_ID);
+// the daily SLA reminder EMAIL and the shared AuditLog stay LABEL-ONLY —
+// `deptRequestsOverdueOpen_` deliberately never reads this column, and no
+// audit row carries it (INV-32's discipline for the shared trail).
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx'];
 const DR_RESOLVED_VIA_VALUES = ['email', 'app'];
+const DR_PATIENT_TRX_MAX = 120;
 
 /**
  * THE one reader of the DeptRequests Status cell — trimmed + lowercased, with
@@ -6115,6 +6128,7 @@ function getAdminConfig() {
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
       spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
+      qaMembers: Object.keys(getQaMembers_()).sort(),   // operator testing note 8 — the QA reviewers editor
       breakSchedules: breakSchedulesAdminView_(),
       qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA },
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
@@ -9417,8 +9431,11 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
       (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).
-    // PHI-free: the row carries the dept label + the update CATEGORY + the source
-    // noteId only; the subject (patient/TRX) and note content never enter it.
+    // The row carries the dept label + the update CATEGORY + the source noteId
+    // + (operator testing note 6, 2026-09-10) the note's patient name & TRX —
+    // the SECOND half of the constructed subject, so the tracker card is
+    // identifiable without opening the note. Note CONTENT (issue/resolution)
+    // still never enters the store; the SLA digest + AuditLog stay label-only.
     // A5: append a NEW open row ONLY when this isn't a re-send of an already-open
     // (note, dept) request — a re-send reuses the prior token (drExistingId), so
     // we skip the append and just audit the re-notification. Surfaced in
@@ -9432,6 +9449,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           // a long paste (which could carry patient identifiers) can't ride
           // into the PHI-free store / the dept inbox / the SLA digest whole.
           String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
+          '',   // ResolvedVia — written by the resolver
+          String(note.patientAndTrx || '').slice(0, DR_PATIENT_TRX_MAX),
         ]);
         drBumpCacheGen_();   // a new open request must reach the next list read
       }
@@ -15737,6 +15756,92 @@ function releaseSpanishThread(threadId) {
   } catch (err) { return { error: 'Release failed: ' + err.message }; }
 }
 
+// ── Spanish inbox — auto-assign (operator testing note 4, 2026-09-10) ───────
+// "Auto-assign for equal distribution" — the operator asked for the BUTTON
+// first; a scheduled trigger may follow. The pick is a pure, Node-pinned
+// least-loaded fold so a trigger can reuse spanishAutoAssignCore_ unchanged:
+// every UNCLAIMED pending request (voicemails included — they are worked the
+// same way) goes to the configured member with the fewest live claims,
+// oldest request first, alphabetical tie-break so two runs over the same
+// state pick the same member. Existing claims are RESPECTED as load and never
+// reassigned (a manager's deliberate Assign is not undone by a button).
+// Writes are ONE lock + ONE batched setValues over the claims tab; the audit
+// row is counts-only (thread ids and emails are internal, but the row need
+// carry neither).
+
+/** PURE (Node-pinned) — least-loaded distribution.
+ *  unclaimed: [{threadId}] in the order to assign (oldest first);
+ *  members:   [email, …] (any order; deduped/lowercased by the caller);
+ *  load:      {email: liveClaimCount} — existing claims count toward balance.
+ *  Returns [{threadId, by}]; an empty member list assigns nothing. */
+function spanishAutoAssignPick_(unclaimed, members, load) {
+  const ms = (members || []).slice().sort();
+  if (!ms.length) return [];
+  const cur = {};
+  ms.forEach(function (m) { cur[m] = Number((load || {})[m]) || 0; });
+  const out = [];
+  (unclaimed || []).forEach(function (u) {
+    const tid = String((u && u.threadId) || '').trim();
+    if (!tid) return;
+    let best = ms[0];
+    ms.forEach(function (m) { if (cur[m] < cur[best]) best = m; });
+    cur[best]++;
+    out.push({ threadId: tid, by: best });
+  });
+  return out;
+}
+
+/** The reusable body — takes the ALREADY-GATED caller so a scheduled trigger
+ *  (INV-44 gate) and the button (manager gate) share one implementation.
+ *  Returns { success, unclaimed, assigned: [{threadId, claim}] }. */
+function spanishAutoAssignCore_(emp, days) {
+  const members = Object.keys(getSpanishInboxMembers_());
+  if (!members.length) return { success: false, error: 'No Spanish Inbox members are configured (Manage → Admin → Config → Spanish bilingual members).' };
+  const pendingRes = getSpanishInboxPending(days);
+  if (!pendingRes || pendingRes.error) return { success: false, error: (pendingRes && pendingRes.error) || 'Pending read failed.' };
+  const unclaimed = (pendingRes.pending || []).filter(function (p) { return !(p && p.claim && p.claim.by); });
+  if (!unclaimed.length) return { success: true, unclaimed: 0, assigned: [] };
+  const self = String(emp.email || '').trim().toLowerCase();
+  const nowMs = Date.now();
+  const stamp = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+  let picks = [];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    // Load + the unclaimed set are re-derived from the LIVE claim map inside
+    // the lock, so a claim that landed between the read and the lock is
+    // respected rather than overwritten.
+    const live = spanishClaimsMap_();
+    const load = {};
+    Object.keys(live).forEach(function (tid) { const by = live[tid].by; if (by) load[by] = (load[by] || 0) + 1; });
+    const stillUnclaimed = unclaimed.filter(function (p) { return !live[p.threadId]; });
+    picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
+    if (picks.length) {
+      const rows = picks.map(function (pk) { return [stamp, pk.threadId, 'claim', pk.by, self, nowMs]; });
+      const sh = getOrCreateSpanishClaimsSheet_();
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+  } finally { lock.releaseLock(); }
+  writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,
+    'assigned=' + picks.length + '; members=' + members.length);
+  return {
+    success: true,
+    unclaimed: unclaimed.length,
+    assigned: picks.map(function (pk) { return { threadId: pk.threadId, claim: { by: pk.by, assignedBy: self, atMs: nowMs } }; }),
+  };
+}
+
+/** The button. MANAGER-gated (a distribution decision, like Assign — not the
+ *  canSeeSpanishInbox_ tier: a member auto-assigning the whole queue to their
+ *  teammates is the thing claims exist to prevent). Writer shape. */
+function autoAssignSpanishThreads(days) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    return spanishAutoAssignCore_(emp, days);
+  } catch (err) { return { success: false, error: 'Auto-assign failed: ' + err.message }; }
+}
+
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -15962,8 +16067,9 @@ function getOrCreateDeptRequestsSheet_() {
   let sh = ss.getSheetByName('DeptRequests');
   if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
   else if (sh.getLastColumn() < DR_HEADERS.length) {
-    // The trailing ResolvedVia column (operator 2026-09-10) — self-heal the
-    // header once (the INV-126/135 pattern); legacy rows read the cell blank.
+    // The trailing ResolvedVia + PatientTrx columns (operator 2026-09-10) —
+    // self-heal the header once (the INV-126/135 pattern); legacy rows read
+    // the cells blank.
     sh.getRange(1, 1, 1, DR_HEADERS.length).setValues([DR_HEADERS]);
   }
   return sh;
@@ -16164,31 +16270,91 @@ function markDeptRequestResolved_(token, byEmail, via) {
  *  request's CREATOR or any manager can mark it resolved from the Metrics tab —
  *  e.g. when the recipient replied "done" without clicking the email link.
  *  Rep-callable; ownership/manager-checked before the resolve. */
+/** THE one ownership rule for a DeptRequests row (operator testing note 6,
+ *  2026-09-10 — extracted from resolveDeptRequest so the scoped detail read
+ *  and the resolve write cannot disagree about who may act): the SENDER, any
+ *  MANAGER, or a member of the RECEIVING department. F(cycle-8 M-5): a
+ *  multi-dept send ("Billing, Shipping") matches on EACH component department,
+ *  not just the whole stored string. */
+function drCanAct_(emp, row) {
+  if (!emp || !row) return false;
+  if (emp.isManager) return true;
+  if (String(row[DR.BY_ID]).trim() === emp.id) return true;
+  const toDept = String(row[DR.TO_DEPT] || '').toLowerCase().trim();
+  const partsLc = {};
+  drSplitDepts_(toDept).forEach(function (d) { partsLc[d.toLowerCase()] = true; });
+  return empDepartments_(emp).some(function (d) {
+    const k = String(d).toLowerCase();
+    return k === toDept || partsLc[k];
+  });
+}
+
+/** The tracker card's EXPAND — the source note's fields for a request the
+ *  caller may act on (drCanAct_: sender / manager / receiving-dept member —
+ *  the SAME rule as resolveDeptRequest, so anyone who may close a request may
+ *  read what it was about). Read-only; no lock; no audit row (a read of the
+ *  caller's own work item). PHI posture: the note fields are PHI and are
+ *  returned ONLY to that scoped set, and a scope refusal reads as the SAME
+ *  'Request not found.' a bad id does, so existence never leaks (INV-24's
+ *  spirit). The note is fetched from the SENDER's own Sheet
+ *  (lookupEmployeeById_ → getCallNotesSheet_ → findCallNoteRow_), whitelist-
+ *  built — never the raw row. `note: null` + a named `reason` when the row
+ *  predates NoteId tracking, the sender is no longer enrolled, or the note
+ *  was deleted (INV-187 — "nothing to show" is stated, never rendered as
+ *  an empty note). Bare `{error}` read shape (the GATE-SHAPE rule). */
+function getDeptRequestDetail(requestId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const reqId = String(requestId || '').trim();
+    if (!reqId) return { error: 'Request not found.' };
+    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    let row = null;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][DR.REQ_ID]) === reqId) { row = rows[i]; break; }
+    }
+    if (!row || !drCanAct_(emp, row)) return { error: 'Request not found.' };
+    const base = {
+      requestId: reqId,
+      label: String(row[DR.LABEL] || ''),
+      patientTrx: String(row[DR.PATIENT_TRX] || '').slice(0, DR_PATIENT_TRX_MAX),
+      byName: String(row[DR.BY_NAME] || ''),
+      toDept: String(row[DR.TO_DEPT] || ''),
+      note: null,
+      reason: '',
+    };
+    const noteId = String(row[DR.NOTE_ID] || '').trim();
+    if (!noteId) { base.reason = 'This request predates note linking — open the sender\'s notes for the date instead.'; return base; }
+    const sender = lookupEmployeeById_(String(row[DR.BY_ID] || '').trim());
+    if (!sender || !sender.callNotesSheetId) { base.reason = 'The sender\'s Call Notes Sheet is not available.'; return base; }
+    let located = null;
+    try { located = findCallNoteRow_(getCallNotesSheet_(sender), noteId); }
+    catch (e) { base.reason = 'The sender\'s Call Notes Sheet could not be read.'; return base; }
+    if (!located) { base.reason = 'The linked note is no longer in the sender\'s Sheet (deleted or archived).'; return base; }
+    const n = callNoteRowToObject_(located);
+    base.note = {
+      callback: n.callback, caller: n.caller, relationship: n.relationship,
+      patientAndTrx: n.patientAndTrx, issue: n.issue, transferredTo: n.transferredTo,
+      resolution: n.resolution, dateLocal: n.dateLocal,
+    };
+    return base;
+  } catch (err) { return { error: err.message }; }
+}
+
 function resolveDeptRequest(requestId) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Your account is not registered.' };
     const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let owner = null, toDept = '';
+    let row = null;
     for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === String(requestId)) {
-        owner = String(rows[i][DR.BY_ID]).trim();
-        toDept = String(rows[i][DR.TO_DEPT] || '').toLowerCase().trim();
-        break;
-      }
+      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { row = rows[i]; break; }
     }
-    if (owner === null) return { success: false, error: 'Request not found.' };
+    if (!row) return { success: false, error: 'Request not found.' };
     // v2: a member of the RECEIVING department can also resolve in-app (the
-    // "receiving agent marks resolved" path), alongside the sender + any manager.
-    // F(cycle-8 M-5): match against each component department of a multi-dept
-    // send ("Billing, Shipping"), not just the whole stored string.
-    const partsLc = {};
-    drSplitDepts_(toDept).forEach(function (d) { partsLc[d.toLowerCase()] = true; });
-    const isDeptMember = empDepartments_(emp).some(function (d) {
-      const k = String(d).toLowerCase();
-      return k === toDept || partsLc[k];
-    });
-    if (owner !== emp.id && !emp.isManager && !isDeptMember)
+    // "receiving agent marks resolved" path), alongside the sender + any
+    // manager — the ONE rule in drCanAct_, shared with getDeptRequestDetail.
+    if (!drCanAct_(emp, row))
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '', 'app');
     if (!res.found) return { success: false, error: 'Request not found.' };
@@ -16418,6 +16584,10 @@ function getDeptRequests() {
         // the same value a padded/mixed-case cell would otherwise split.
         status: status, resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
+        // Operator testing note 6: the collapsed card's subject is
+        // "<label> · <patient & trx>" — a legacy row reads '' and renders
+        // the label alone (the client guards on it).
+        patientTrx: String(r[DR.PATIENT_TRX] || '').slice(0, DR_PATIENT_TRX_MAX),
         // `elapsedMin` is the BUSINESS figure (what the tracker and the SLA
         // read); the raw wall-clock span is kept beside it, both for the
         // "N wall-clock" secondary line and so the change is auditable.
@@ -16550,6 +16720,36 @@ function saveSpanishInboxMembers(emails) {
     PropertiesService.getScriptProperties().setProperty('SPANISH_INBOX_MEMBERS', clean.join(','));
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Spanish inbox members (' + clean.length + ')', emp.email);
+    return { success: true, members: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** The in-app QA reviewers editor (operator testing note 8, 2026-09-10 —
+ *  "where are QA agents added?": until now ONLY in Script Properties, which
+ *  the Admin tab never surfaced). The saveSpanishInboxMembers shape exactly:
+ *  admin-gated (INV-136), validates email shape, lowercases + dedupes, caps
+ *  30, writes Script Property QA_MEMBERS, AdminConfigChange audit. Managers
+ *  never need a listing (canSeeQa_ admits every manager); this list is for
+ *  NON-manager reviewers. An EMPTY list is valid = managers only. */
+function saveQaMembers(emails) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(emails)) return { success: false, error: 'Expected a list of reviewer emails.' };
+    if (emails.length > 30) return { success: false, error: 'Too many reviewers (max 30).' };
+    const seen = {};
+    const clean = [];
+    for (let i = 0; i < emails.length; i++) {
+      const e = String(emails[i] || '').trim().toLowerCase();
+      if (!e) continue;
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) {
+        return { success: false, error: 'Not a valid email: "' + e + '"' };
+      }
+      if (!seen[e]) { seen[e] = true; clean.push(e); }
+    }
+    PropertiesService.getScriptProperties().setProperty('QA_MEMBERS', clean.join(','));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated QA reviewers (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -28137,6 +28337,26 @@ function getQaMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+/** May this EMAIL review — i.e. would canSeeQa_ admit them? A QA_MEMBERS
+ *  entry, OR a roster row marked manager (found via the one inclusion
+ *  predicate, empRosterEmail_). Operator testing note 8 (2026-09-10): the
+ *  manager, who reviews without a listing, could not be ASSIGNED a recording
+ *  by another manager — the assign check consulted QA_MEMBERS alone and
+ *  refused the very people canSeeQa_ admits. Best-effort on the roster read
+ *  (a failed read falls back to the members list, the pre-fix behaviour). */
+function qaCanReviewEmail_(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  if (getQaMembers_()[e]) return true;
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (empRosterEmail_(rows[i]).toLowerCase() !== e) continue;
+      return /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim());
+    }
+  } catch (err) {}
+  return false;
+}
 function qaFolderId_() {
   try { return String(PropertiesService.getScriptProperties().getProperty('QA_RECORDINGS_FOLDER_ID') || '').trim(); }
   catch (e) { return ''; }
@@ -28422,11 +28642,12 @@ function qaAssignRecording(fileId, assigneeEmail) {
       return { success: false, error: 'Only a manager can assign someone else.' };
     }
     if (!(emp.isManager && target === self)) {
-      // The target must be someone who can actually SEE the queue (a manager
-      // self-assigning is the one exemption — managers pass canSeeQa_ without
-      // a QA_MEMBERS entry).
-      if (!getQaMembers_()[target]) {
-        return { success: false, error: 'That email is not in QA_MEMBERS — add them there first.' };
+      // The target must be someone who can actually SEE the queue — a
+      // QA_MEMBERS listing OR a roster manager (qaCanReviewEmail_ mirrors
+      // canSeeQa_; operator testing note 8 — the old QA_MEMBERS-only check
+      // refused assigning to a manager).
+      if (!qaCanReviewEmail_(target)) {
+        return { success: false, error: 'That email is not a QA reviewer — a manager, or a rep listed under Manage → Admin → Config → QA reviewers.' };
       }
     }
     if (current && current !== self && !emp.isManager) {
