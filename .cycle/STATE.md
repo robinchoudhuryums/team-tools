@@ -14,7 +14,7 @@ Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-10
+Updated: 2026-09-10 (Batch C landed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -38,16 +38,29 @@ D (note 10 — a new presence signal on the Team-right-now card).
   `manualCount` + null minutes on the resolved card + cache key v2. The pure
   harness's summary line now prints LAST (three new pins had been running
   after it, uncounted).
-- Batch C: N4 manager-only "Auto-assign N unclaimed" over SPANISH_INBOX_MEMBERS
-  (pure least-loaded picker, qaSamplePick_ precedent; a trigger may follow —
-  keep the body reusable); N6 DR trailing `PatientTrx` written at send from
-  `note.patientAndTrx`, collapsed card reads "<label> · <patient/TRX>", plus
-  Expand/Collapse through a scoped `getDeptRequestDetail(requestId)` (sender OR
-  manager OR toDept member — the resolveDeptRequest rule) resolving the stored
-  NoteId to the sender's note reference fields; N8 Admin → Config "QA reviewers"
-  chip editor (`saveQaMembers`, admin-gated → INV-136 count 49 → 50 + omnibus
-  case + doc list) and widen `qaAssignRecording`'s assignee check to any
-  `canSeeQa_` user.
+- Batch C: DONE, committed 155dd02 (+ the wrap-up commit) on
+  `claude/broad-scan-fw462g`, pushed. Block:
+  `.cycle/blocks/19-operator-batchC-broad-implement.md` (net +1 — N6's
+  unidentifiable collapsed card was operator-observed; N4 / N6-expand / N8's
+  editor are capabilities, N8's assign widening is defensive; 13 mutations /
+  13 bites across 16 harness runs; pure 784, DOM 112, visual matrix 102,
+  editor 309 expected). Shapes as planned: N4 the pure `spanishAutoAssignPick_`
+  + reusable `spanishAutoAssignCore_` (one lock, load re-derived inside it,
+  ONE batched setValues, counts-only `SpanishInboxAutoAssign` audit) behind a
+  MANAGER-gated `autoAssignSpanishThreads` (writer shape; deliberately not the
+  canSeeSpanishInbox_ tier), the button beside the filter strip rendered from
+  state and refreshed by the list renderer; N6 `DR.PATIENT_TRX:13` written at
+  send (capped 120; digest + audit stay label-only), `drCanAct_` extracted as
+  the ONE ownership rule, `getDeptRequestDetail` (bare {error} read gate,
+  not-found on scope refusal, whitelist note from the sender's Sheet, named
+  reasons on note:null), the client subject + a state-driven Expand ⇄ Collapse
+  panel; N8 `saveQaMembers` (the saveSpanishInboxMembers shape), the Admin
+  card, `getAdminConfig.qaMembers`, `qaCanReviewEmail_` (member OR roster
+  manager) behind `qaAssignRecording`'s target check; INV-136 49 → 50 at both
+  sites. Two pins rewritten in place: N3-DR (a) for the new trailing slot and
+  the cycle-17 batch-3 fixture-shape pin, whose mock-WIDE `patientTrx:` casing
+  ban was scoped to the coaching rows (the DR item's server field IS
+  `patientTrx`).
 - Batch D: N10 — per-rep per-day CacheService presence stamp (first/last seen)
   written inside the endpoints reps already hit; `getTeammateStatus` gains ONE
   additive boolean `activeNotIn` (INV-24 amendment: the boolean only, never the
@@ -64,10 +77,10 @@ D (note 10 — a new presence signal on the Team-right-now card).
   Property; the operator (a manager) already sees all four QA tabs.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Operator round: Batches A + B landed and pushed; Batches C + D unstarted.
-  Both harnesses are green (781 pure / 110 DOM), the tree is committed on
-  `claude/broad-scan-fw462g`; every change in A + B was bite-checked
-  (6 + 8 mutations, all biting).
+- Operator round: Batches A + B + C landed and pushed; Batch D unstarted.
+  Both harnesses are green (784 pure / 112 DOM), the tree is committed on
+  `claude/broad-scan-fw462g`; every change in A + B + C was bite-checked
+  (6 + 8 + 13 mutations, all biting).
 - Nothing else in flight. The four AUDIT batches were bite-checked too (20
   mutations / 20 bites across the two sessions).
 - `/sync-docs` is DONE and applied (not merely proposed): all fourteen owed
@@ -121,14 +134,18 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16) and B
-(notes 2/3, c525c89) are implemented, bite-checked, committed and pushed on
-`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged).
-Pick up with Batch C (N4 auto-assign button, N6 DR PatientTrx + scoped
-expand, N8 QA reviewers editor), then D (N10) — the shapes and the operator's
-decisions are in the section above. `/sync-docs` is owed for BOTH batches'
-documentation lists (in their blocks — B's includes the S74 rewrite and the
-harness-hazard wording) and can wait for C/D.
+Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
+(notes 2/3, c525c89) and C (notes 4/6/8, 155dd02) are implemented,
+bite-checked, committed and pushed on `claude/broad-scan-fw462g` (reset onto
+origin/main after PR #235 merged). Pick up with Batch D (N10 — the presence
+stamp + the `activeNotIn` boolean on `getTeammateStatus`, shape in the
+section above), then `/sync-docs` for ALL of A/B/C/D's documentation lists
+(in their blocks — B's includes the S74 rewrite and the harness-hazard
+wording; C's includes the INV-138 "PHI-free store" amendment, the INV-31
+manager-tier note for `autoAssignSpanishThreads`, the INV-196/S90 QA
+reviewers path, and the S74/Spanish scenario steps). The N4 scheduled
+trigger the operator said "might follow" is a logged follow-on, not part of
+D.
 Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
 `claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
 `19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
