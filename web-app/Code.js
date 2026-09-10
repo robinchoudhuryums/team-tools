@@ -12972,12 +12972,12 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
         // F(L-10): NO patientTRX here — INV-134: coaching notifications are
         // PHI-minimal (severity only, never the patient/TRX or narrative).
         // The manager opens the team-scoped Coaching tab for the detail.
-        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + '</td>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + '</td>' +
         '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
         '</tr>';
     }).join('');
     html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
-    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
   }
   html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
@@ -13120,11 +13120,11 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
       text += d.docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
     } else if (s.key === 'coaching') {
       html += table(d.coaching.map(function (oc) {
-        return row2('<strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity),
+        return row2('<strong>' + esc_(oc.empName) + '</strong> · ' + esc_(COACH_SEV_LABELS[oc.item.severity] || oc.item.severity),
           'since ' + String(oc.item.createdAt).substring(0, 10));
       }).join(''));
       text += d.coaching.map(function (oc) {
-        return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
+        return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
       }).join('\n');
     } else if (s.key === 'deptOverdue') {
       html += table(d.deptOverdue.map(function (o) {
@@ -27154,7 +27154,11 @@ function coachValidate_(payload) {
   var empId = String(payload.empId || '').trim();
   if (!empId) return { ok: false, error: 'Pick an employee.' };
   var severity = String(payload.severity || '').trim().toLowerCase();
-  if (COACH_SEVERITIES.indexOf(severity) < 0) return { ok: false, error: 'Pick a severity (praise / minor / major / critical).' };
+  if (COACH_SEVERITIES.indexOf(severity) < 0) {
+    // Operator 2026-09-10: the enum leaked here as 'major' while every card
+    // and mail says Moderate — derive the words from the ONE label map.
+    return { ok: false, error: 'Pick a severity (' + COACH_SEVERITIES.map(function (s) { return COACH_SEV_LABELS[s] || s; }).join(' / ') + ').' };
+  }
   var whatHappened = String(payload.whatHappened || '').trim();
   if (!whatHappened) return { ok: false, error: 'Describe what happened.' };
   if (whatHappened.length > COACH_TEXT_MAX) return { ok: false, error: 'What happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };

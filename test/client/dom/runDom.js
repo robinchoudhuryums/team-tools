@@ -2240,3 +2240,97 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   assert.deepStrictEqual(JSON.parse(JSON.stringify(h.window.CLK_NAV_HINT)), { source: 'coverageStrip', date: '2026-09-01', missingCount: 3 }, 'CLK_NAV_HINT parked for the Call Notes Log');
   assert.strictEqual(h.read('currentView'), 'callNotes', 'and the Log view is entered');
 });
+
+// ── Batch A (operator testing notes, 2026-09-10) ────────────────────────────
+// A7 — the quiz editor rebuilt the WHOLE modal's innerHTML on every "+ Option"
+// / "×", so adding an answer read as a modal reload (scroll to top, focus
+// lost). Now only that question's block is swapped; the count-changing
+// actions (+ Question / Remove) still take the full render by design.
+test('A7: quiz editor — "+ Option" swaps ONE question block: the modal node survives, typing elsewhere is untouched, focus lands in the new option', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.read('trainOpenQuizEditor_')(null);
+  const overlay = h.$('#train-qed-overlay');
+  assert.ok(overlay, 'the editor overlay mounted');
+  const modal = overlay.querySelector('.modal');
+  assert.ok(modal, 'with a modal inside it');
+  h.$('#tr-qed-title').value = 'HIPAA refresher';
+  h.$('[data-qed-q="0"]').value = 'Which of these is PHI?';
+  h.$('[data-qed-opt="0:0"]').value = 'A date of birth';
+  h.$('[data-qed-opt="0:1"]').value = 'A weather report';
+  assert.strictEqual(overlay.querySelectorAll('[data-qed-opt^="0:"]').length, 2, 'two options to start');
+  h.click('[data-qed-addopt="0"]');
+  assert.strictEqual(overlay.querySelector('.modal'), modal, 'the modal node SURVIVES — no whole-overlay rebuild');
+  assert.strictEqual(overlay.querySelectorAll('[data-qed-opt^="0:"]').length, 3, 'a third option row');
+  assert.strictEqual(h.$('#tr-qed-title').value, 'HIPAA refresher', 'the title field was never re-rendered');
+  assert.strictEqual(h.$('[data-qed-q="0"]').value, 'Which of these is PHI?', 'question text survives the block swap (snapshot-before-render)');
+  assert.strictEqual(h.$('[data-qed-opt="0:1"]').value, 'A weather report', 'existing option text survives');
+  assert.strictEqual(h.document.activeElement, h.$('[data-qed-opt="0:2"]'), 'focus lands in the new option input');
+  // Remove the middle option: the block re-renders alone, the count drops, the survivor renumbers with its text.
+  h.$('[data-qed-opt="0:2"]').value = 'A room number';
+  h.click('[data-qed-delopt="0:1"]');
+  assert.strictEqual(overlay.querySelector('.modal'), modal, 'still the same modal node');
+  assert.strictEqual(overlay.querySelectorAll('[data-qed-opt^="0:"]').length, 2, 'back to two options');
+  assert.strictEqual(h.$('[data-qed-opt="0:1"]').value, 'A room number', 'the surviving option renumbered with its text');
+  assert.strictEqual(h.document.activeElement, h.$('[data-qed-addopt="0"]'), 'focus on + Option after a removal');
+  // + Question still takes the full render (it renumbers every block) — and everything typed rides state into it.
+  h.click('#tr-qed-addq');
+  assert.strictEqual(overlay.querySelectorAll('[data-qed-block]').length, 2, 'two question blocks');
+  assert.strictEqual(h.$('[data-qed-q="0"]').value, 'Which of these is PHI?', 'question 1 text survives the full render');
+  const st = h.read('TRAIN_STATE').qed;
+  assert.strictEqual(JSON.stringify(st.questions[0].options), JSON.stringify(['A date of birth', 'A room number']), 'state carries the typed options');
+  assert.strictEqual(st.title, 'HIPAA refresher');
+});
+
+// A5 — Spanish Inbox: "Show full request" replaced the snippet and REMOVED
+// ITSELF, so there was no way back. Now a real Expand ⇄ Collapse toggle whose
+// state lives in SPANISH_STATE (bodies + expanded), so a list re-render keeps
+// an open card open and a second Expand costs no RPC.
+test('A5: Spanish card — Expand fetches once, Collapse restores the snippet with no RPC, a second Expand reuses the cache, a list re-render keeps it open, aria-expanded follows', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'spanishcalls@x.com', days: 30, pending: 1, resolved: 0,
+    avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 1, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ pending: [
+    { threadId: 'abc123', requester: 'm@x.com', ageHours: 3, subject: 'Ayuda', snippet: 'El paciente necesita', hasMore: true, permalink: 'https://mail.google.com/x', claim: null }],
+    members: ['me@x.com'], self: 'me@x.com', truncated: false }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
+  let bodyCalls = 0;
+  h.run.respond('getSpanishInboxThreadBody', (tid) => { bodyCalls++; return { threadId: tid, body: 'El paciente necesita ayuda con el formulario.\nGracias' }; });
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const sel = '.sp-more[data-thread="abc123"]';
+  const btn = () => h.$(sel);
+  // jsdom's outside-only mode never compiles an inline onclick (the documented
+  // trap), so press the button the way its onclick does.
+  const press = () => h.read('spanishExpand_')(btn());
+  assert.ok(btn(), 'the pending card renders an Expand button');
+  assert.strictEqual(btn().tagName, 'BUTTON', 'a real button (INV-173)');
+  assert.strictEqual(btn().textContent, 'Expand');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
+  const bodyId = btn().getAttribute('aria-controls');
+  assert.ok(bodyId && h.$('#' + bodyId), 'aria-controls names the body element it opens');
+  assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'snippet + ellipsis while collapsed');
+  press();
+  assert.strictEqual(bodyCalls, 1, 'ONE RPC on the first Expand');
+  assert.strictEqual(btn().textContent, 'Collapse');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
+  assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'the full body replaced the snippet');
+  press();   // Collapse
+  assert.strictEqual(bodyCalls, 1, 'Collapse makes no RPC');
+  assert.strictEqual(btn().textContent, 'Expand');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'the snippet is back, from the payload not the DOM');
+  press();   // Expand again
+  assert.strictEqual(bodyCalls, 1, 'the cached body serves the second Expand');
+  assert.strictEqual(btn().textContent, 'Collapse');
+  // A list re-render (a claim, a filter chip) keeps the open card open — the state is the source of truth.
+  h.read('spanishRenderList_')();
+  assert.strictEqual(btn().textContent, 'Collapse', 'still expanded after a re-render');
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
+  assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'and still showing the body');
+  assert.strictEqual(bodyCalls, 1, 'the re-render fetched nothing');
+});

@@ -832,6 +832,11 @@ function qaLatestScorecards_(cards) {
     kbAddComment: { success: true, commentId: 'c-new' },
     kbDeleteComment: { success: true },
     kbEditComment: { success: true },
+    // Expand on a pending card (operator 2026-09-10 — Expand ⇄ Collapse): the
+    // live thread body, keyed by the thread the button names.
+    getSpanishInboxThreadBody: function (threadId) {
+      return { threadId: threadId, body: 'Hola,\n\nEl paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.\n\nGracias,\nMaría' };
+    },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolveWallMinutes: 3040, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
@@ -1320,6 +1325,13 @@ function qaLatestScorecards_(cards) {
         rowIndex: 44, repId: 'E-1090', repName: 'Leo Kim' }] },
     getEnrolledCallNotesReps: { reps: [
       { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] },
+    // The Per-Rep view (operator 2026-09-10 — the Coach button had never been
+    // on camera, which is how it shipped unstyled). A FUNCTION of (repId, date):
+    // the server echoes both and names the rep (INV-185 F14).
+    managerGetCallNotes: function (repId, date) {
+      var names = { 'E-1042': 'Avery Blake', 'E-1088': 'Sam Ortiz', 'E-1090': 'Leo Kim' };
+      return { date: date, filter: '', notes: [note(0), note(1), note(2)], repName: names[repId] || 'Rep', repId: repId, timezone: 'Asia/Kolkata' };
+    },
     getCallNotesTagTaxonomy: {
       tags: [
         { tag: 'resupply', count: 41, lastSeen: daysAgo(0), archived: false },

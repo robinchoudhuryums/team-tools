@@ -836,7 +836,9 @@ const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\])
 const coachTmaxMatch = codeSrc.match(/const (COACH_TEXT_MAX\s*=\s*\d+);/);
 const coachTrxMatch = codeSrc.match(/const (COACH_TRX_MAX\s*=\s*\d+);/);
 assert.ok(coachSevMatch && coachTmaxMatch && coachTrxMatch, 'COACH_* consts found in Code.js');
-vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';', sb,
+const coachLblMatch = codeSrc.match(/const (COACH_SEV_LABELS\s*=\s*\{[^}]*\});/);
+assert.ok(coachLblMatch, 'COACH_SEV_LABELS found in Code.js (the validation message derives its words from it)');
+vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';' + coachLblMatch[1] + ';', sb,
   { filename: 'Code.js#COACH_consts' });
 vm.runInContext(extractRawFunction('Code.js', 'coachIsoDateOrBlank_'), sb, { filename: 'Code.js#coachIsoDateOrBlank_' });
 vm.runInContext(extractRawFunction('Code.js', 'coachAgeDays_'), sb, { filename: 'Code.js#coachAgeDays_' });
@@ -860,7 +862,11 @@ test('coachValidate_ allows empty whatShould (praise often has none)', () => {
 });
 test('coachValidate_ rejects missing emp / bad severity / empty narrative / oversize', () => {
   assert.strictEqual(coachValidate_({ severity: 'minor', whatHappened: 'x' }).ok, false);
-  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' }).ok, false);
+  const bad = coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' });
+  assert.strictEqual(bad.ok, false);
+  // Operator 2026-09-10: the message names the DISPLAY words — the stored enum
+  // 'major' leaked here while every card said Moderate.
+  assert.ok(/Moderate/.test(bad.error) && !/major/.test(bad.error), 'the severity list in the error reads Moderate, never major: ' + bad.error);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: '  ' }).ok, false);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x'.repeat(sb.COACH_TEXT_MAX + 1) }).ok, false);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x', patientTRX: 't'.repeat(sb.COACH_TRX_MAX + 1) }).ok, false);
@@ -16640,9 +16646,27 @@ test('PR4-3: COACH_SEV_LABELS client ↔ server byte-equal (K4 — Moderate is a
   const cs = stripJsComments_(co);
   assert.ok(/function coachSevLabel_\(sev\) \{ return COACH_SEV_LABELS\[sev\]/.test(cs) && /function coachSevChip_\(sev\) \{[^}]*coachSevLabel_\(sev\)/.test(cs), 'the chip renders the label map, never a bare severity');
   assert.ok(!/'Moderate'/.test(cs.replace(/var COACH_SEV_LABELS = \{[^}]*\};/, '')), 'the client never hand-types the display word outside the map');
-  ['coachCriticalMailHtml_', 'coachNudgeMailHtml_', 'sendCoachingRecapDigest', 'notifyManagerOfCoachingAck_'].forEach((fn) => {
+  // Operator 2026-09-10: "major" reached the training-overdue digest and the
+  // manager daily brief while every card said Moderate — the first form of
+  // this list named four sinks and missed the two that print a coaching ROW
+  // rather than a coaching MAIL. Six sinks now, plus the validation message.
+  ['coachCriticalMailHtml_', 'coachNudgeMailHtml_', 'sendCoachingRecapDigest', 'notifyManagerOfCoachingAck_',
+   'sendTrainingOverdueEmail_', 'sendManagerBriefEmail_'].forEach((fn) => {
     assert.ok(/COACH_SEV_LABELS/.test(extractRawFunction('Code.js', fn)), fn + ' labels severities through the map');
   });
+  const stripC = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['sendTrainingOverdueEmail_', 'sendManagerBriefEmail_'].forEach((fn) => {
+    const body = stripC(extractRawFunction('Code.js', fn));
+    assert.ok(!/esc_\(oc\.item\.severity\)/.test(body) && !/' · ' \+ oc\.item\.severity\b/.test(body),
+      fn + ' never prints the bare enum (html or text twin)');
+    assert.strictEqual((body.match(/COACH_SEV_LABELS\[oc\.item\.severity\]/g) || []).length, 2,
+      fn + ' labels BOTH the html row and its text twin');
+  });
+  // The validation error derives its words from the map — a hand-typed list
+  // is a third copy of the vocabulary, and it is the one that leaked.
+  const validate = stripC(extractRawFunction('Code.js', 'coachValidate_'));
+  assert.ok(/COACH_SEVERITIES\.map\(function \(s\) \{ return COACH_SEV_LABELS\[s\] \|\| s; \}\)/.test(validate), 'coachValidate_ names the severities through the map');
+  assert.ok(!/major \//.test(validate) && !/\/ major/.test(validate), 'and never hand-types the stored enum word');
 });
 
 test('PR4-4: K8 — critical-only immediate mail (operator decision 1) that carries NO narrative/TRX/note id, a retraction on a critical void, and a weekly recap that is a gated trigger which never consults the brief flag', () => {
@@ -18342,6 +18366,30 @@ test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywh
   assert.ok(/mailBcc: \{ prop: 'MAIL_BCC_ALL', enabled: true/.test(mock), 'the populated fixture puts the line on camera');
   assert.ok(/mailBcc: \{ prop: 'MAIL_BCC_ALL', enabled: false/.test(mock), 'the all-clear twin has it unset');
   assert.ok(cnCode.indexOf('cnMailBccHtml_') > 0, 'the renderer exists in the partial');
+});
+
+
+// Operator 2026-09-10 — the Team Notes "Coach" button rendered as a native
+// button: the card emitted `cn-mgr-coach-btn`, and no stylesheet defined it,
+// while its sibling Delete was styled. A class that is emitted but defined
+// nowhere is the A13 heading class in button form, so the check is the same
+// shape: DERIVE every `cn-mgr-*-btn` literal the card emits and require a rule.
+test('A9: every cn-mgr-*-btn class the Per-Rep card emits is DEFINED in a stylesheet', () => {
+  const card = extractRawFunction('cn/script_callnotes.html', 'cnMgrRenderReadonlyCard_');
+  const emitted = new Set((card.match(/cn-mgr-[a-z]+-btn/g) || []));
+  assert.ok(emitted.has('cn-mgr-coach-btn') && emitted.has('cn-mgr-del-btn'), 'the card emits both action buttons (derivation reached them)');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8') +
+              fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  emitted.forEach((c) => assert.ok(new RegExp('\\.' + c + '\\s*[,{]').test(css), c + ' is defined in a stylesheet'));
+  // The row that holds them spaces siblings apart (two bordered buttons touching read as one control).
+  assert.ok(/\.cn-mgr-card-actions \{[^}]*gap:/.test(css), '.cn-mgr-card-actions carries a gap');
+  // On camera: the Per-Rep view (where the card renders) has its own scenario
+  // behind a managerGetCallNotes fixture — the default Team Notes scenario
+  // lands on the training queue and never shows the card.
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/managerGetCallNotes: function/.test(mock), 'the mock serves managerGetCallNotes (as a FUNCTION of repId/date — INV-185 F14)');
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  assert.ok(/'cn-teamnotes-rep-light-wide'[\s\S]{0,200}cnMgrLoadRepView_\(\)/.test(shoot), 'the Per-Rep scenario opens the view through its post hook');
 });
 
 

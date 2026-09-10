@@ -1867,7 +1867,11 @@ function mClearBadge_() {
 // ════════════════════════════════════════════════════════════════════════════
 //  SPANISH INBOX — bilingual-assistance resolution time (managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var SPANISH_STATE = { days: 30, tab: 'all' };
+// `bodies` caches a loaded full request per thread (a second Expand costs no
+// RPC) and `expanded` is which cards are open — kept in STATE, not the DOM, so
+// a claim/filter re-render of the list preserves an expanded card
+// (operator 2026-09-10: "Show full request" had no way back).
+var SPANISH_STATE = { days: 30, tab: 'all', bodies: {}, expanded: {} };
 // Operator feedback 2026-08-06 — the combined Pending+Resolved list's RED
 // band: a pending request older than this many hours renders destructive-toned
 // ("overdue"), vs warn-toned pending and good-toned resolved. Client-side
@@ -2446,7 +2450,12 @@ function spanishSetClaimLocal_(tid, claim) {
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
-  var more = t.hasMore ? '<button class="sp-more" data-thread="' + esc(t.threadId) + '" onclick="spanishExpand_(this)">Show full request</button>' : '';
+  var bodyId = spanishBodyId_(t.threadId);
+  var isOpen = spanishIsExpanded_(t.threadId);
+  // Operator 2026-09-10: a real toggle — Expand ⇄ Collapse, aria-expanded kept
+  // in step (INV-174), aria-controls naming the body it opens.
+  var more = t.hasMore ? '<button type="button" class="sp-more" data-thread="' + esc(t.threadId) + '" aria-expanded="' + (isOpen ? 'true' : 'false') +
+    '" aria-controls="' + bodyId + '" onclick="spanishExpand_(this)">' + (isOpen ? 'Collapse' : 'Expand') + '</button>' : '';
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   // Operator feedback 2026-07-09 — manual mark-resolved for requests handled
   // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
@@ -2461,8 +2470,8 @@ function spanishTaskCard_(t) {
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + claimPill +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
-    '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
-    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (t.snippet || '')) + '</div>' +
+    '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
+    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (isOpen ? SPANISH_STATE.bodies[t.threadId] : t.snippet) || '') + '</div>' +
     '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + ' ' + claimCtl + '</div>' +
   '</div>';
 }
@@ -2496,24 +2505,62 @@ function spanishResolve_(btn) {
   });
 }
 
+/** The body element's id — a thread id is Gmail's hex string, but the id is
+ *  built defensively so aria-controls always names a valid id. */
+function spanishBodyId_(tid) { return 'sp-body-' + String(tid || '').replace(/[^A-Za-z0-9_-]/g, '_'); }
+function spanishIsExpanded_(tid) {
+  var st = SPANISH_STATE;
+  return !!(st.expanded && st.expanded[tid] && st.bodies && st.bodies[tid] != null);
+}
+function spanishPendingItem_(tid) {
+  var pd = SPANISH_STATE.pendingRes;
+  var list = pd && pd.pending;
+  if (!Array.isArray(list)) return null;
+  for (var i = 0; i < list.length; i++) if (list[i].threadId === tid) return list[i];
+  return null;
+}
+
+/** Expand ⇄ Collapse a pending card's request body. The first Expand fetches
+ *  the full request (getSpanishInboxThreadBody — live, never stored beyond
+ *  the request) and caches it in SPANISH_STATE.bodies; Collapse restores the
+ *  snippet from the pending payload with no RPC; a later Expand reuses the
+ *  cache. State, not the DOM, is the source of truth, so a list re-render
+ *  (claim, filter) keeps an open card open. (Before 2026-09-10 the button
+ *  replaced the snippet and REMOVED ITSELF — there was no way back.) */
 function spanishExpand_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
-  if (!card) return;
+  if (!card || !tid) return;
+  var st = SPANISH_STATE;
+  st.bodies = st.bodies || {}; st.expanded = st.expanded || {};
+  var bodyEl = card.querySelector('.sp-task-body');
+  if (st.expanded[tid]) {
+    // Collapse — the snippet comes back from the payload, never from the DOM.
+    st.expanded[tid] = false;
+    var item = spanishPendingItem_(tid);
+    if (bodyEl) bodyEl.textContent = (item ? String(item.snippet || '') : '') + (item && item.hasMore ? '…' : '');
+    btn.textContent = 'Expand'; btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  var open = function (body) {
+    st.expanded[tid] = true;
+    if (bodyEl) bodyEl.textContent = body || '(empty)';
+    btn.textContent = 'Collapse'; btn.setAttribute('aria-expanded', 'true');
+  };
+  if (st.bodies[tid] != null) { open(st.bodies[tid]); return; }   // cached — a second Expand costs no RPC
   btn.disabled = true; btn.textContent = 'Loading…';
   google.script.run
     .withSuccessHandler(function (r) {
-      btn.disabled = false; btn.textContent = 'Show full request';
-      if (!r || r.error) { showToast((r && r.error) || 'Could not load', 'error'); return; }
-      var bodyEl = card.querySelector('.sp-task-body');
-      if (bodyEl) bodyEl.textContent = r.body || '(empty)';
+      btn.disabled = false;
+      if (!r || r.error) { btn.textContent = 'Expand'; showToast((r && r.error) || 'Could not load', 'error'); return; }
+      st.bodies[tid] = String(r.body || '');
+      open(st.bodies[tid]);
       // Re-run tool suggestions now that the fuller body text is available.
       var subjEl = card.querySelector('.sp-task-subj');
       var wrap = card.querySelector('.sp-suggest-wrap');
-      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + (r.body || ''));
-      btn.remove();
+      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + st.bodies[tid]);
     })
-    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Show full request'; showToast((e && e.message) || 'Error', 'error'); })
+    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Expand'; showToast((e && e.message) || 'Error', 'error'); })
     .getSpanishInboxThreadBody(tid);
 }
 </script>

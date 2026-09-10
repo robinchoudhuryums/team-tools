@@ -1251,7 +1251,14 @@
   .rail-tag-suggest .sug-tag:hover { color: var(--accent-2); border-color: var(--accent); background: var(--accent-soft); }
 
   /* Manager per-rep card actions (item: manager delete from history) */
-  .cn-mgr-card-actions { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .cn-mgr-card-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  /* Operator 2026-09-10: the Coach button shipped with NO rule — its class was
+     emitted by the card and defined nowhere, so it rendered as a native
+     button beside the styled Delete (the .cn-act-btn-outside-.cn-card-actions
+     class). Same shape as its sibling, info-toned: it starts a coaching
+     record, a constructive act, where Delete is the destructive one. */
+  .cn-mgr-coach-btn { font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--info-deep); cursor: pointer; padding: 4px 10px; }
+  .cn-mgr-coach-btn:hover { background: var(--info-soft); border-color: var(--info-deep); }
   .cn-mgr-del-btn { font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; padding: 4px 10px; }
   .cn-mgr-del-btn:hover { background: var(--danger-soft); border-color: var(--danger-deep); }
 
