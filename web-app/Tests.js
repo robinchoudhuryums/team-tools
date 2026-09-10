@@ -7493,15 +7493,23 @@ function test_deptRequest_resolveLinkIdempotent() {
   const sh = getOrCreateDeptRequestsSheet_();
   const token = 'TESTDR-' + Utilities.getUuid();
   sh.appendRow([token, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
-    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '']);
+    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '', '']);
   try {
     const before = _countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved');
-    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL, 'email');
     _assertTrue(r1.found === true && r1.already === false, 'first resolve marks the row');
-    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    // Note #3 (2026-09-10): the resolve path RECORDS how it was resolved —
+    // only an email-link resolve is a timed reply; the in-app button passes 'app'.
+    const rowsAfter = sh.getDataRange().getValues();
+    let viaCell = null;
+    for (let i = rowsAfter.length - 1; i >= 1; i--) {
+      if (String(rowsAfter[i][DR.REQ_ID]) === token) { viaCell = drResolvedVia_(rowsAfter[i]); break; }
+    }
+    _assertEq(viaCell, 'email', 'ResolvedVia records the email-link path');
+    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL, 'email');
     _assertTrue(r2.found === true && r2.already === true, 'second resolve is idempotent (already)');
     _assertTrue(!!String(r2.resolvedAt || ''), 'already-branch returns the resolve time');
-    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL).found, false,
+    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL, 'email').found, false,
       'unknown token → not found');
     _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
       'exactly one DeptRequestResolved audit row (the already-branch writes none)');

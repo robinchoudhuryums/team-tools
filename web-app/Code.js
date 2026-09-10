@@ -759,8 +759,16 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12 };
+// RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
+// header self-heals): HOW the row was resolved — 'email' = the recipient
+// clicked the resolve link in the department email (a real response time),
+// 'app' = someone pressed "Mark resolved" in the tracker (a manual clear —
+// NOT a response time). A blank cell is a row resolved before the source was
+// recorded, and by operator decision it is excluded from the timing stats
+// too, reported as "resolved before source tracking".
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia'];
+const DR_RESOLVED_VIA_VALUES = ['email', 'app'];
 
 /**
  * THE one reader of the DeptRequests Status cell — trimmed + lowercased, with
@@ -15210,14 +15218,14 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v1:' + d + ':' + spanishCacheHash_(addr, members);
+    const ckey = 'spanish_inbox_v2:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10)
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const durations = [], bizDurations = [], pending = [];
-    let resolvedCount = 0;
+    let resolvedCount = 0, manualCount = 0;
     const nowMs = Date.now();
     threads.forEach(function (th) {
       const msgs = th.getMessages();
@@ -15235,11 +15243,19 @@ function getSpanishInboxStats(days) {
       }
       // Manual mark-resolved (handled outside the thread) counts as resolved;
       // an in-thread reply wins when both exist. max() guards a skewed stamp.
+      let wasManual = false;
       if (resolveMs == null && manual[th.getId()]) {
         resolveMs = Math.max(reqMs, manual[th.getId()].ms || reqMs);
+        wasManual = true;
       }
       if (resolveMs != null) {
         resolvedCount++;
+        // Operator 2026-09-10: a MANUAL mark-resolved counts as resolved but
+        // NEVER as a response time — the stamp is when someone pressed the
+        // button, not when the requester was answered. Counted separately so
+        // the exclusion is visible (INV-187), and OUT of both series.
+        if (wasManual) { manualCount++; }
+        else {
         durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // wall-clock minutes
         // Operator 2026-08-31 — BUSINESS minutes are the headline: nobody
         // replies overnight or at the weekend, so a Friday-evening request
@@ -15249,6 +15265,7 @@ function getSpanishInboxStats(days) {
         // differ in length — which is why each has its own count.
         const bizMin = businessMinutesBetween_(reqMs, resolveMs);
         if (bizMin != null) bizDurations.push(bizMin);
+        }
       } else {
         pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
       }
@@ -15263,6 +15280,7 @@ function getSpanishInboxStats(days) {
     const result = {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
+      manualCount: manualCount,   // marked resolved by hand — counted, never timed (operator 2026-09-10)
       avgMinutes: avg, medianMinutes: median,
       // Business-hours figures (weekends + US holidays excluded, counted only
       // within the business window). ADDITIVE — an older client keeps rendering
@@ -15428,8 +15446,10 @@ function getSpanishInboxResolved(days) {
         requester: requester,
         resolver: resolver,
         manual: wasManual,
-        resolveMinutes: businessMinutesBetween_(reqMs, resolveMs),
-        resolveWallMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
+        // A manual mark-resolved has NO response time (the stamp is the click,
+        // not the answer) — null, the voicemail shape, never a number (2026-09-10).
+        resolveMinutes: wasManual ? null : businessMinutesBetween_(reqMs, resolveMs),
+        resolveWallMinutes: wasManual ? null : Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
         resolvedAtMs: resolveMs,
         subject: req.getSubject() || '(no subject)',
         permalink: th.getPermalink(),
@@ -15941,7 +15961,20 @@ function getOrCreateDeptRequestsSheet_() {
   const ss = getDeptRequestsSS_();
   let sh = ss.getSheetByName('DeptRequests');
   if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
+  else if (sh.getLastColumn() < DR_HEADERS.length) {
+    // The trailing ResolvedVia column (operator 2026-09-10) — self-heal the
+    // header once (the INV-126/135 pattern); legacy rows read the cell blank.
+    sh.getRange(1, 1, 1, DR_HEADERS.length).setValues([DR_HEADERS]);
+  }
   return sh;
+}
+
+/** THE one reader of the DeptRequests ResolvedVia cell (the drStatus_
+ *  discipline — INV-183): trimmed + lowercased, and ONLY a known value comes
+ *  back. A blank or unknown cell reads '' = "source not recorded". */
+function drResolvedVia_(row) {
+  const v = String(row[DR.RESOLVED_VIA] == null ? '' : row[DR.RESOLVED_VIA]).trim().toLowerCase();
+  return DR_RESOLVED_VIA_VALUES.indexOf(v) >= 0 ? v : '';
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
@@ -16094,7 +16127,13 @@ function drResolveCtaHtml_(resolveUrl) {
 // auto-log path.
 
 /** Mark a request resolved (the receiver clicked the email link). Idempotent. */
-function markDeptRequestResolved_(token, byEmail) {
+function markDeptRequestResolved_(token, byEmail, via) {
+  // `via` (operator 2026-09-10): 'email' from the department email's resolve
+  // link, 'app' from the tracker's Mark-resolved button. The two paths share
+  // this writer, and until the column existed the store could not tell them
+  // apart — so every manual clear counted as a response time.
+  const viaClean = DR_RESOLVED_VIA_VALUES.indexOf(String(via || '').trim().toLowerCase()) >= 0
+    ? String(via).trim().toLowerCase() : '';
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -16110,10 +16149,11 @@ function markDeptRequestResolved_(token, byEmail) {
       sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
       sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
+      sh.getRange(i + 1, DR.RESOLVED_VIA + 1).setValue(viaClean);
       drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
       pendingTasksBust_(rows[i][DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
       try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
-        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
+        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
       return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
     }
     return { found: false };
@@ -16150,7 +16190,7 @@ function resolveDeptRequest(requestId) {
     });
     if (owner !== emp.id && !emp.isManager && !isDeptMember)
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
-    const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
+    const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '', 'app');
     if (!res.found) return { success: false, error: 'Request not found.' };
     // F4 — the writer already cleared the SENDER's cached list; a dept member
     // resolving someone else's request is the one case where the acting rep is
@@ -16179,7 +16219,7 @@ function serveResolvePage_(token) {
       heading = 'Sign in to confirm';
       msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
     } else {
-      const res = markDeptRequestResolved_(token, by);
+      const res = markDeptRequestResolved_(token, by, 'email');
       if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
       else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
       else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ').'; }
@@ -16257,6 +16297,42 @@ function drBumpCacheGen_() {
   try { CacheService.getScriptCache().put('dr_gen_v1', String(Date.now()), 21600); } catch (_) {}
 }
 
+/** PURE (Node-pinned) — the per-department aggregate over the request items
+ *  `getDeptRequests` built. Counts a multi-dept request under EACH component
+ *  department (F cycle-8 M-5). Response-time figures (avg / median) come ONLY
+ *  from rows resolved through the department email's link (`resolvedVia ===
+ *  'email'`): a tracker "Mark resolved" is a manual clear (`manualResolved`),
+ *  and a row resolved before the source was recorded (`untrackedResolved`) is
+ *  excluded by operator decision (2026-09-10) — both are REPORTED as counts,
+ *  never silently dropped (INV-187). `timed` is the sample size behind the
+ *  two figures, so a department whose every resolve was manual reads "—" with
+ *  the reason beside it. Open rows: `open` + `overdueOpen` (slaStatus). */
+function drDeptStats_(items, slaCfg) {
+  const byDept = {};
+  (items || []).forEach(function (it) {
+    const parts = drSplitDepts_(it.toDept);
+    (parts.length ? parts : [it.toDept || '—']).forEach(function (k) {
+      if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, manualResolved: 0, untrackedResolved: 0, durations: [] };
+      const b = byDept[k];
+      if (it.status === 'resolved') {
+        b.resolved++;
+        if (it.resolvedVia === 'app') b.manualResolved++;
+        else if (it.resolvedVia !== 'email') b.untrackedResolved++;
+        else if (it.elapsedMin != null) b.durations.push(it.elapsedMin);
+      } else { b.open++; if (it.slaStatus === 'overdue') b.overdueOpen++; }
+    });
+  });
+  return Object.keys(byDept).map(function (k) {
+    const b = byDept[k];
+    b.durations.sort(function (x, y) { return x - y; });
+    const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
+    const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
+    return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
+             manualResolved: b.manualResolved, untrackedResolved: b.untrackedResolved, timed: b.durations.length,
+             slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
+  }).sort(function (a, b) { return b.open - a.open; });
+}
+
 function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();
@@ -16326,6 +16402,14 @@ function getDeptRequests() {
         ? ((resolvedMs && createdMs) ? businessMinutesBetween_(createdMs, resolvedMs) : null)
         : (createdMs ? businessMinutesBetween_(createdMs, Date.now()) : null);
       const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
+      // Operator 2026-09-10: only an EMAIL-link resolution is a RESPONSE time.
+      // A tracker "Mark resolved" ('app') is a manual clear, and a row resolved
+      // before the source was recorded ('') cannot be told apart from one —
+      // both read as UNTIMED (null, INV-187), so every consumer (the per-dept
+      // fold, the client median, the card) excludes them by the same null
+      // guard. `resolvedVia` rides beside it so the exclusion is visible.
+      const resolvedVia = isResolved ? drResolvedVia_(r) : '';
+      const timed = !isResolved || resolvedVia === 'email';
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
@@ -16337,8 +16421,9 @@ function getDeptRequests() {
         // `elapsedMin` is the BUSINESS figure (what the tracker and the SLA
         // read); the raw wall-clock span is kept beside it, both for the
         // "N wall-clock" secondary line and so the change is auditable.
-        elapsedMin: (elapsedBizMin != null) ? elapsedBizMin : null,
-        elapsedWallMin: elapsedMin,
+        resolvedVia: resolvedVia,
+        elapsedMin: (timed && elapsedBizMin != null) ? elapsedBizMin : null,
+        elapsedWallMin: timed ? elapsedMin : null,
         slaHours: slaHours, slaStatus: drSlaStatus_(elapsedBizMin, slaHours),
         slaBusiness: true,
       };
@@ -16375,26 +16460,7 @@ function getDeptRequests() {
                      listCap: DR_LIST_CAP, mineTotal: mine.length,
                      incomingTotal: incoming.length };
     if (emp.isManager) {
-      const byDept = {};
-      all.forEach(function (it) {
-        // F(cycle-8 M-5): count a multi-dept request under EACH component
-        // department (it awaits each of them) instead of inventing a
-        // "Billing, Shipping" pseudo-department bucket.
-        const parts = drSplitDepts_(it.toDept);
-        (parts.length ? parts : [it.toDept || '—']).forEach(function (k) {
-          if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
-          if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
-          else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
-        });
-      });
-      result.deptStats = Object.keys(byDept).map(function (k) {
-        const b = byDept[k];
-        b.durations.sort(function (x, y) { return x - y; });
-        const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
-        const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
-        return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
-                 slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
-      }).sort(function (a, b) { return b.open - a.open; });
+      result.deptStats = drDeptStats_(all, slaCfg);
       const allOpenSorted = all.filter(function (it) { return it.status === 'open'; })
         .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); });
       result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);

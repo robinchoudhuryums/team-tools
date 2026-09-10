@@ -15150,10 +15150,13 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
   //     or the two numbers on one screen contradict each other.
   const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
                                codeSrc.indexOf('function claimSpanishThread')));
-  assert.ok(/resolveMinutes: businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
-    'the card duration is business minutes');
-  assert.ok(/resolveWallMinutes: Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
-    'the wall-clock figure rides along for the title');
+  // REWRITTEN 2026-09-10 (note #3): a MANUAL mark-resolve carries NULL minutes
+  // on both units — the stamp is when someone pressed the button, not when the
+  // requester was answered, so a duration would be a substitute (INV-187).
+  assert.ok(/resolveMinutes: wasManual \? null : businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
+    'the card duration is business minutes — null for a manual resolve');
+  assert.ok(/resolveWallMinutes: wasManual \? null : Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
+    'the wall-clock figure rides along for the title — null for a manual resolve');
 
   // (c) Dept Requests — elapsed AND the SLA bands.
   const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
@@ -18394,5 +18397,184 @@ test('A9: every cn-mgr-*-btn class the Per-Rep card emits is DEFINED in a styles
 
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
+
+// ── Operator notes 2026-09-10, Batch B (N2 + N3) ─────────────────────────────
+// N2: "confirm Dept Requests avg/median exclude weekends, holidays and
+// off-hours". They did — BIZ-2 pinned the item's elapsedMin as the business
+// figure — but the per-department fold was INLINE in getDeptRequests, so
+// nothing could DRIVE it. It is the pure `drDeptStats_` now, driven here over
+// durations the real `bizMinutesLocal_` produced.
+// N3: a request resolved with the in-app "Mark resolved" button (Dept
+// Requests) or the manual mark-resolve (Spanish Inbox) is a manual CLEAR, not
+// a timed reply — it stays a resolved COUNT but leaves every duration series,
+// and the exclusion is REPORTED (INV-187) rather than silently absorbed.
+console.log('\nOperator notes 2026-09-10 — Batch B (N2 business-hours fold, N3 manual resolves untimed)');
+
+test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves only, counts reported', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+  ['drSplitDepts_', 'getDeptRequestSla_', 'drDeptStats_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), sbx, { filename: 'Code.js#' + fn }));
+  // The Friday-16:00 → Monday-09:00 pair the operator asked about: 120
+  // BUSINESS minutes through the real core, where wall clock reads 3 days.
+  const friMon = bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-07', 9), BIZ_WIN);
+  assert.strictEqual(friMon, 120, 'fixture sanity: the core says 2 business hours');
+  const wall = Math.round((Date.UTC(2026, 8, 7, 9) - Date.UTC(2026, 8, 4, 16)) / 60000);
+  assert.strictEqual(wall, 3900, 'fixture sanity: wall clock says 65h (2d 17h)');
+  const items = [
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: friMon, elapsedWallMin: wall },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: 60,     elapsedWallMin: 60 },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'app',   elapsedMin: null,   elapsedWallMin: null },   // in-app clear
+    { toDept: 'Billing', status: 'resolved', resolvedVia: '',      elapsedMin: null,   elapsedWallMin: null },   // legacy row
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: null },                            // unusable pair → dropped
+    { toDept: 'Billing', status: 'open',     slaStatus: 'overdue', elapsedMin: 3000 },
+    { toDept: 'Billing, Shipping', status: 'open', slaStatus: 'ontime', elapsedMin: 30 },                          // counted under EACH dept
+    { toDept: 'Shipping', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
+  ];
+  const out = sbx.drDeptStats_(items, { Billing: 24 });
+  const bill = out.filter((r) => r.dept === 'Billing')[0];
+  const ship = out.filter((r) => r.dept === 'Shipping')[0];
+  assert.ok(bill && ship, 'one row per component department');
+  assert.strictEqual(bill.avgMinutes, 90, 'avg over the TWO timed email resolves: (120 + 60) / 2 — never the 3900 wall figure');
+  assert.strictEqual(bill.medianMinutes, 120, 'median from the same sample');
+  assert.strictEqual(bill.timed, 2, 'the sample size behind avg/median is reported');
+  assert.strictEqual(bill.resolved, 5, 'every resolved row still COUNTS as resolved (the unusable-pair row included)');
+  assert.strictEqual(bill.manualResolved, 1, 'the in-app clear is counted, not timed');
+  assert.strictEqual(bill.untrackedResolved, 1, 'the legacy (no ResolvedVia) row is counted, not timed');
+  assert.strictEqual(bill.open, 2, 'open rows: the single-dept + the multi-dept send');
+  assert.strictEqual(bill.overdueOpen, 1);
+  assert.strictEqual(bill.slaHours, 24, 'the per-dept SLA rides the row');
+  assert.strictEqual(ship.open, 1, 'the multi-dept send counts under Shipping too');
+  assert.strictEqual(ship.avgMinutes, null, 'a department whose ONLY resolve was manual reads null — never 0');
+  assert.strictEqual(ship.medianMinutes, null);
+  assert.strictEqual(ship.manualResolved, 1);
+  assert.strictEqual(ship.timed, 0);
+  assert.strictEqual(ship.slaHours, 48, 'default SLA');
+  assert.strictEqual(out[0].dept, 'Billing', 'sorted by open count desc');
+  assert.strictEqual(sbx.drDeptStats_([], {}).length, 0, 'empty in, empty out');
+  // Wiring: the endpoint feeds the fold with the SAME items it ships (whose
+  // elapsedMin BIZ-2 already pins as the business figure), and the old inline
+  // durations push is GONE — one fold, nothing to drift.
+  const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
+                              codeSrc.indexOf('\nfunction getDeptRequestSla()')));
+  assert.ok(/result\.deptStats = drDeptStats_\(all, slaCfg\);/.test(dr), 'deptStats comes from the pure fold over `all`');
+  assert.ok(!/durations\.push\(/.test(dr), 'no inline duration fold survives in the endpoint');
+  assert.ok(/elapsedMin: \(timed && elapsedBizMin != null\) \? elapsedBizMin : null,/.test(dr),
+    'the item elapsedMin the fold reads IS the business figure (BIZ-2), and null when untimed');
+});
+
+test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves every duration — server, client, fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(codeSrc);
+  // (a) The store: a trailing column (the CN_HEADERS back-compat posture), the
+  //     enum slot, and a header that SELF-HEALS on a pre-existing tab (INV-126).
+  assert.ok(/RESOLVED_VIA:12 \}/.test(code), 'DR.RESOLVED_VIA is the trailing slot');
+  assert.ok(/'NoteId','ResolvedVia'\]/.test(code), 'DR_HEADERS ends with ResolvedVia');
+  const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
+  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(\[DR_HEADERS\]\)/.test(mk),
+    'a short header self-heals — a tab provisioned before the column gains it in place');
+  // (b) ONE reader (the drStatus_/INV-183 discipline), driven: only the two
+  //     known values survive; anything else reads as untracked.
+  const sbx = vm.createContext({ DR: { RESOLVED_VIA: 12 }, DR_RESOLVED_VIA_VALUES: ['email', 'app'] });
+  vm.runInContext(extractRawFunction('Code.js', 'drResolvedVia_'), sbx, { filename: 'Code.js#drResolvedVia_' });
+  const row = (v) => { const r = []; r[12] = v; return r; };
+  assert.strictEqual(sbx.drResolvedVia_(row(' Email ')), 'email', 'trimmed + lowercased');
+  assert.strictEqual(sbx.drResolvedVia_(row('APP')), 'app');
+  assert.strictEqual(sbx.drResolvedVia_(row('phone')), '', 'an unknown value is untracked, never trusted');
+  assert.strictEqual(sbx.drResolvedVia_(row('')), '', 'a legacy blank is untracked');
+  assert.strictEqual(sbx.drResolvedVia_([]), '', 'a short legacy row is untracked');
+  const readerBody = nc(extractRawFunction('Code.js', 'drResolvedVia_'));
+  assert.ok(/\[DR\.RESOLVED_VIA\]/.test(readerBody), 'the reader reads the cell');
+  const outside = (code.match(/\[DR\.RESOLVED_VIA\]/g) || []).length - (readerBody.match(/\[DR\.RESOLVED_VIA\]/g) || []).length;
+  assert.strictEqual(outside, 0, 'ZERO bracketed reads outside the reader (the drStatus_ / INV-183 shape)');
+  // (c) The writer records HOW, validated against the same list, and BOTH
+  //     callers name their path — the email link is the only timed one.
+  const w = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(/function markDeptRequestResolved_\(token, byEmail, via\)/.test(w), 'the writer takes the path');
+  assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
+    'the path is validated against the shared list before the write');
+  assert.ok(/getRange\(i \+ 1, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written');
+  assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
+  assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
+    "the in-app button resolves as 'app'");
+  assert.ok(/markDeptRequestResolved_\(token, by, 'email'\)/.test(nc(extractRawFunction('Code.js', 'serveResolvePage_'))),
+    "the email link resolves as 'email'");
+  // (d) The item: untimed rows ship NULL on BOTH units, with the via beside
+  //     them so the exclusion is visible.
+  const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
+                              codeSrc.indexOf('\nfunction getDeptRequestSla()')));
+  assert.ok(/const resolvedVia = isResolved \? drResolvedVia_\(r\) : '';/.test(dr), 'via is read through the one reader');
+  assert.ok(/const timed = !isResolved \|\| resolvedVia === 'email';/.test(dr), 'only an email-link resolve is timed');
+  assert.ok(/resolvedVia: resolvedVia,/.test(dr), 'via ships on the item');
+  assert.ok(/elapsedWallMin: timed \? elapsedMin : null,/.test(dr), 'the wall figure is nulled too — no unit leaks a duration');
+  // (e) The client: the card SAYS how, the median skips app resolves, the
+  //     optimistic patch stamps the via it knows, and the manager table
+  //     REPORTS the excluded counts.
+  const drc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const card = nc(extractFunction('metrics/script_deptrequests.html', 'drCardStatusHtml_'));
+  assert.ok(/item\.resolvedVia === 'app' \? 'marked in app'/.test(card), "an in-app resolve reads 'marked in app'");
+  assert.ok(/item\.resolvedVia === 'email' && item\.elapsedMin != null/.test(card), 'a duration renders ONLY for an email resolve');
+  const kpi = nc(extractFunction('metrics/script_deptrequests.html', 'drKpiStripHtml_'));
+  assert.ok(/\.filter\(function \(r\) \{ return r\.resolvedVia !== 'app'; \}\)/.test(kpi),
+    "the median skips 'app' rows explicitly — the optimistic patch leaves the OPEN figure on the row");
+  assert.ok(/marked in app, not timed/.test(kpi), 'the strip names the excluded count');
+  const apply = nc(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
+  assert.ok(/r\.resolvedVia = 'app';/.test(apply), "the optimistic patch stamps 'app' — exactly what the next payload says");
+  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drManagerSectionHtml_'));
+  assert.ok(/drStatsNotTimedCell_\(s\)/.test(mgr) && /Not timed/.test(mgr), 'the manager table carries the Not-timed column');
+  const cellSb = vm.createContext({ esc: (x) => String(x) });
+  vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drStatsNotTimedCell_'), cellSb, { filename: 'dr#cell' });
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 3, untrackedResolved: 2 }).replace(/<[^>]+>/g, ''),
+    '5 3 in app · 2 legacy', 'both kinds reported by name');
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 0, untrackedResolved: 0 }), '0');
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ avgMinutes: 5 }), '—', 'an older server (no counts) renders an em dash, never 0');
+  // (f) The visual fixture mirrors the contract (INV-185): an 'app' row with
+  //     null minutes, an 'email' row with a duration, and the counts on deptStats.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: '[^']+', resolvedVia: 'app'/.test(mock),
+    "the fixture carries an 'app' resolve with null minutes");
+  assert.ok(/resolvedVia: 'email'/.test(mock) && /manualResolved: \d+, untrackedResolved: \d+, timed: \d+/.test(mock),
+    'the fixture carries an email resolve and the reported counts');
+});
+
+test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats, resolved list, client, fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
+                              codeSrc.indexOf('function getSpanishInboxPending')));
+  // The guard sits BETWEEN the resolved count and the duration pushes: a
+  // manual resolve increments resolvedCount, increments manualCount, and
+  // reaches NEITHER series.
+  const iCount = sp.indexOf('resolvedCount++;');
+  const iGuard = sp.indexOf('if (wasManual) { manualCount++; }');
+  const iPush = sp.indexOf('durations.push(');
+  assert.ok(iCount > -1 && iGuard > iCount && iPush > iGuard, 'count → manual guard → duration pushes, in that order');
+  assert.ok(/if \(wasManual\) \{ manualCount\+\+; \}\s*else \{/.test(sp), 'the pushes sit in the ELSE of the manual guard');
+  assert.ok(/manualCount: manualCount,/.test(sp), 'the excluded count is shipped (INV-187 — visible, not absorbed)');
+  assert.ok(/'spanish_inbox_v2:'/.test(sp) && !/'spanish_inbox_v1:'/.test(sp),
+    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median (INV-85)');
+  // The resolved-list card: null on BOTH units (BIZ-2 pins the exact literals).
+  const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
+                               codeSrc.indexOf('function claimSpanishThread')));
+  assert.ok(/manual: wasManual,/.test(res) && /resolveMinutes: wasManual \? null/.test(res) && /resolveWallMinutes: wasManual \? null/.test(res),
+    'the resolved card ships manual:true with null minutes');
+  // Client: the head note names the count; the card reads "not timed" rather
+  // than an em dash that could pass for a missing figure.
+  const mSrc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const head = nc(mSrc.slice(mSrc.indexOf('function spanishHeadHtml_'), mSrc.indexOf('function spanishRender_')));
+  assert.ok(/d\.manualCount \? \(' · ' \+ esc\(String\(d\.manualCount\)\) \+ ' marked manually, not timed'\)/.test(head),
+    'the strip note names the manual count beside the timed count');
+  const card = nc(extractFunction('metrics/script_metrics.html', 'spanishResolvedCard_'));
+  assert.ok(/var took = t\.manual \? 'not timed' : spanishFmtDur_\(t\.resolveMinutes\);/.test(card), "a manual card reads 'not timed'");
+  assert.ok(/var tookTitle = t\.manual\s*\?/.test(card), 'its title explains why');
+  // The resolver-share chart counts RESOLVERS, not durations — untouched by
+  // design, and pinned so nobody "fixes" it to drop manual resolves.
+  const share = nc(extractFunction('metrics/script_metrics.html', 'spanishResolverShares_'));
+  assert.ok(/manual/.test(share) && !/resolveMinutes/.test(share), 'the share chart attributes manual resolves and never reads a duration');
+  // Fixture (INV-185): the manual thread carries null minutes and the stats
+  // carry manualCount.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/manual: true, resolveMinutes: null, resolveWallMinutes: null/.test(mock), 'fixture: manual thread has null minutes');
+  assert.ok(/businessCount: 11, manualCount: 1,/.test(mock), 'fixture: stats carry the manual count');
+});
 
 process.exit(fail ? 1 : 0);

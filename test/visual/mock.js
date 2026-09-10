@@ -574,13 +574,17 @@ function qaLatestScorecards_(cards) {
         { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
         { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaHours: 24 },
         { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaHours: 48 },
-        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com' }],
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com', resolvedVia: 'email' },
+        // Note #3 (2026-09-10): an in-app "Mark resolved" is NOT a timed reply —
+        // the server ships null minutes + resolvedVia:'app' so the card reads
+        // "marked in app" and the KPI median skips it. On camera in deptreq-*.
+        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(5) + ' 15:02', byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
       incoming: [
         { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaHours: 24 }],
       allOpen: [
         { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaHours: 48 }],
-      truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
-      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
+      truncated: false, mineTotal: 5, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
+      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -839,7 +843,9 @@ function qaLatestScorecards_(cards) {
     },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
-      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolveWallMinutes: 3040, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      // Note #3 (2026-09-10): a MANUAL mark-resolve carries null minutes — the
+      // server never invents a reply time for a request handled outside the thread.
+      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
       // Resolution-share chart (2026-08-17): members incl. one who resolved
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
@@ -848,7 +854,7 @@ function qaLatestScorecards_(cards) {
       // Business-hours figures (operator 2026-08-31) — deliberately SMALLER
       // than the wall-clock pair beside them, which is the whole point of the
       // change and the thing a screenshot must show.
-      avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 12,
+      avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },

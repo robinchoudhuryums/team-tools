@@ -135,8 +135,16 @@ function drKpiStripHtml_(data) {
   const openAll = mineAll.filter(function (r) { return r.status !== 'resolved'; });
   const resolvedAll = mineAll.filter(function (r) { return r.status === 'resolved'; });
   const overdueCount = openAll.filter(function (r) { return r.slaStatus === 'overdue'; }).length;
-  const resolvedMins = resolvedAll.map(function (r) { return r.elapsedMin; })
+  // Operator 2026-09-10 (note #3): a request resolved with the in-app "Mark
+  // resolved" button is NOT a timed reply — the server nulls its elapsedMin,
+  // and the optimistic patch below leaves the OPEN figure on the row, so the
+  // median must skip `resolvedVia === 'app'` explicitly. Only email-link
+  // resolves (the receiver's own click) carry a resolution time.
+  const resolvedMins = resolvedAll
+    .filter(function (r) { return r.resolvedVia !== 'app'; })
+    .map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app'; }).length;
   const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
   // The id sits on the WRAPPER, not the telemetry grid: drRepaintKpi_ replaces
   // this element's outerHTML on an in-place resolve, and a note rendered as a
@@ -145,7 +153,8 @@ function drKpiStripHtml_(data) {
     '<div class="tel-cell"><div class="tel-label">Open</div><div class="tel-value ' + (openAll.length ? 'warn' : '') + '">' + openAll.length + '</div><div class="tel-sub">awaiting resolution</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">to resolve</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">' +
+      esc(manualCount ? ('to resolve · ' + manualCount + ' marked in app, not timed') : 'to resolve') + '</div></div>' +
     '</div>' + drBusinessNoteHtml_(data) + '</div>';
 }
 
@@ -284,8 +293,16 @@ function drCardStatusHtml_(item) {
   const ttl = (item.slaBusiness && item.elapsedWallMin != null)
     ? ' title="' + esc('Wall clock: ' + drFmtMin_(item.elapsedWallMin)) + '"' : '';
   if (item.status === 'resolved') {
-    return '<span class="sp-task-age" style="color:var(--success-deep)"' + ttl + '>' + icon('check', 12) + ' ' +
-      (item.elapsedMin != null ? esc(drFmtMin_(item.elapsedMin)) : 'resolved') + '</span>';
+    // Note #3 — the label says HOW it was resolved, because only an email-link
+    // resolve is a timed reply: an in-app "Mark resolved" reads "marked in app",
+    // a legacy row with no ResolvedVia reads plain "resolved", and neither
+    // shows a duration (the server ships elapsedMin null for both).
+    const via = item.resolvedVia === 'app' ? 'marked in app'
+      : (item.resolvedVia === 'email' && item.elapsedMin != null) ? drFmtMin_(item.elapsedMin)
+      : 'resolved';
+    const viaTtl = item.resolvedVia === 'app' ? ' title="Marked resolved in the app — not counted as a timed reply"' : ttl;
+    return '<span class="sp-task-age" style="color:var(--success-deep)"' + viaTtl + '>' + icon('check', 12) + ' ' +
+      esc(via) + '</span>';
   }
   const elapsed = item.elapsedMin != null ? drFmtMin_(item.elapsedMin) + ' ago' : '';
   const sla = item.slaHours ? ' · ' + item.slaHours + 'h SLA' : '';
@@ -315,6 +332,22 @@ function drRequestCardHtml_(item) {
   '</div>';
 }
 
+/** The manager table's "Not timed" cell — the resolved rows that contribute
+ *  no duration (note #3). `manualResolved` = marked in the app; `untrackedResolved`
+ *  = legacy rows resolved before ResolvedVia existed. Both are REPORTED rather
+ *  than silently absorbed into an average that would misdescribe them (INV-187);
+ *  an older server ships neither field and the cell renders an em dash. */
+function drStatsNotTimedCell_(s) {
+  const m = (s && s.manualResolved) || 0;
+  const u = (s && s.untrackedResolved) || 0;
+  if (s == null || (s.manualResolved == null && s.untrackedResolved == null)) return '—';
+  if (!m && !u) return '0';
+  const parts = [];
+  if (m) parts.push(m + ' in app');
+  if (u) parts.push(u + ' legacy');
+  return esc(String(m + u)) + ' <span class="dr-tag">' + esc(parts.join(' · ')) + '</span>';
+}
+
 function drManagerSectionHtml_(data) {
   const stats = (data.deptStats || []).filter(function (sRow) {
     return !DR_DEPT_FILTER.length || DR_DEPT_FILTER.indexOf(sRow.dept) >= 0;
@@ -330,13 +363,16 @@ function drManagerSectionHtml_(data) {
       '<td class="dr-num">' + s.resolved + '</td>' +
       '<td class="dr-num">' + (s.avgMinutes != null ? drFmtMin_(s.avgMinutes) : '—') + '</td>' +
       '<td class="dr-num">' + (s.medianMinutes != null ? drFmtMin_(s.medianMinutes) : '—') + '</td>' +
+      '<td class="dr-num">' + drStatsNotTimedCell_(s) + '</td>' +
     '</tr>';
   }).join('');
   const statTable = stats.length
     ? '<table class="dr-table"><thead><tr>' +
         '<th>Department</th><th class="dr-num">Open</th><th class="dr-num">Overdue</th><th class="dr-num">Resolved</th>' +
-        '<th class="dr-num">Avg</th><th class="dr-num">Median</th></tr></thead>' +
-        '<tbody>' + statRows + '</tbody></table>'
+        '<th class="dr-num">Avg</th><th class="dr-num">Median</th>' +
+        '<th class="dr-num" title="Resolved rows that carry no reply time: marked in the app, or logged before resolution tracking recorded how">Not timed</th></tr></thead>' +
+        '<tbody>' + statRows + '</tbody></table>' +
+        '<div style="font-size:11px;color:var(--muted-2);margin:6px 0 0">Avg and Median count email-link resolves only — a request marked resolved in the app is not a timed reply.</div>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
 
   const openAllTeam = data.allOpen || [];
@@ -397,12 +433,14 @@ function drFindItem_(id) {
  *  the card reads "✓ 2h" with no invented arithmetic. `resolvedBy` is NOT
  *  set — it is the resolver's EMAIL and the client only holds name/id, so
  *  the "Resolved by" line waits for the authoritative payload rather than
- *  showing a guess. */
+ *  showing a guess. `resolvedVia = 'app'` IS set (note #3): this button is the
+ *  in-app path, so the card reads "marked in app" and the KPI median skips
+ *  it — exactly what the server's next payload will say. */
 function drApplyResolved_(id) {
   const lists = ['mine', 'incoming', 'allOpen'];
   lists.forEach(function (k) {
     ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) {
-      if (String(r.requestId) === String(id)) r.status = 'resolved';
+      if (String(r.requestId) === String(id)) { r.status = 'resolved'; r.resolvedVia = 'app'; }
     });
   });
 }
