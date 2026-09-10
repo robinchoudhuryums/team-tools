@@ -3491,8 +3491,73 @@ function selfDeletePunch(date, time, punchType) {
   finally { lock.releaseLock(); }
 }
 
+// ── Presence signal (operator testing note 10, 2026-09-10) ──────────────────
+// "Team Right Now" flags a teammate who appears NOT clocked in but is using
+// the app. The signal is a per-rep CacheService stamp written by
+// recordPresence(), which the SHELL fires on a real user GESTURE (pointerdown /
+// keydown) at most once per 10 minutes per window — deliberately NOT from the
+// background polls reps already hit (getEmployeeState's 3-min reconcile, the
+// 60s Call Notes ambient poll): a pinned pop-out left open overnight polls all
+// night, and stamping there would read a rep as "active" at 7am before they
+// arrived — the false positive that teaches reps to ignore the chip. A gesture
+// is the one thing a left-open window cannot produce. The stamp's TTL bounds
+// the claim: "seen in the app within the last ~30 minutes".
+//
+// INV-24 amendment: getTeammateStatus carries ONE additive boolean
+// (`activeNotIn`) derived from the stamp — never the stamp's timestamp, never
+// a last-seen time — so the low-privilege view still leaks nothing a
+// teammate could not infer from the chip itself. A failed cache read yields
+// NO flags (presenceMap_ → {}): a false "active but not clocked in" is worse
+// than a missed one, the INV-190 direction for a nudge.
+//
+// v1 limits, stated on the chip's tooltip: shift hours and PTO are NOT
+// checked — a rep on a day off who opens the app reads as active, which is
+// true. Gating on the rep's schedule/PTO is a logged follow-on.
+const PRESENCE_CACHE_PREFIX = 'presence_v1:';
+const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip names
+
+/** Rep-callable, fire-and-forget: stamp the caller as active. No lock (a
+ *  CacheService put is atomic), no sheet write, no audit row — it is a
+ *  volatile signal, not a record. Never throws. */
+function recordPresence() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, '1', PRESENCE_TTL_SEC);
+    return { success: true };
+  } catch (e) {
+    return { success: false };
+  }
+}
+
+/** Best-effort: { empId: true } for every id with a live presence stamp. ONE
+ *  getAll over the roster's keys; any failure returns {} — no flags, never a
+ *  thrown error into the teammate view (a missing chip is the safe failure). */
+function presenceMap_(empIds) {
+  const out = {};
+  try {
+    const keys = (empIds || []).map(id => PRESENCE_CACHE_PREFIX + id);
+    if (!keys.length) return out;
+    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    Object.keys(hits).forEach(k => {
+      if (hits[k]) out[k.slice(PRESENCE_CACHE_PREFIX.length)] = true;
+    });
+  } catch (e) { /* best-effort — no flags */ }
+  return out;
+}
+
+/** PURE (Node-pinned): the one rule behind the chip. Self is never flagged (a
+ *  rep already knows they are using the app); a present rep is flagged only
+ *  when the punch state says they are NOT working — not clocked in yet, or
+ *  already clocked out. On lunch / clocked in are working states. */
+function teammateActiveNotIn_(isSelf, present, status) {
+  if (isSelf || !present) return false;
+  return status === 'not_in' || status === 'clocked_out';
+}
+
 /** Lightweight teammate-status view for the Clock page.
- *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
+ *  Returns name + status + the activeNotIn boolean only — no email, no
+ *  internal IDs, no last-punch detail, no presence timestamp (INV-24). */
 function getTeammateStatus() {
   try {
     // C8 (cycle 10): authenticate BEFORE evaluating the feature flag — the
@@ -3528,6 +3593,9 @@ function getTeammateStatus() {
       if (!slot.last || time > slot.last.time) slot.last = { time, type };
     }
 
+    // Presence stamps (note 10) — one getAll, best-effort, ids only.
+    const present = presenceMap_(employees.map(e => e.id));
+
     const teammates = employees.map(e => {
       const slot = todayByEmp[e.id];
       const last = slot ? slot.last : null;
@@ -3537,15 +3605,22 @@ function getTeammateStatus() {
         else if (last.type === 'LunchOut') status = 'on_lunch';
         else if (last.type === 'ClockOut') status = 'clocked_out';
       }
+      const isSelf = e.id === emp.id;
       return {
         name: e.name,
         status,
-        isSelf: e.id === emp.id,
+        isSelf,
+        // INV-24: the boolean ONLY — the stamp's time never rides the row.
+        activeNotIn: teammateActiveNotIn_(isSelf, !!present[e.id], status),
       };
     });
-    // Sort: active first, then on lunch, then idle, then done
+    // Sort: active first, then on lunch, then idle, then done — and within a
+    // status, a flagged (active-but-not-in) rep ahead of the unflagged, so the
+    // chip sits where the eye lands.
     const rank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
-    teammates.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    teammates.sort((a, b) => rank[a.status] - rank[b.status]
+      || (b.activeNotIn ? 1 : 0) - (a.activeNotIn ? 1 : 0)
+      || a.name.localeCompare(b.name));
     return { enabled: true, teammates };
   } catch (err) { return { error: err.message }; }
 }

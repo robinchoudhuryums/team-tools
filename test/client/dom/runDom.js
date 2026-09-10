@@ -2461,3 +2461,47 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
   assert.strictEqual(p2.hidden, false);
   assert.ok(/predates note linking/.test(p2.textContent), 'the reason is stated (INV-187)');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Operator notes 2026-09-10 — Batch D (N10 presence signal)');
+
+test('D-N10 DOM: Team Right Now — the chip renders only for activeNotIn === true (label per status, the v1 limit on the tooltip, a hostile name inert, the summary counts them, a field-less older-server row renders no chip); the gesture beacon stamps nothing at boot, ONE recordPresence on the first gesture, none inside the 10-min gap, one more past it', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  const slot = h.document.createElement('div');
+  h.document.body.appendChild(slot);
+  h.read('renderTeammateCard')(slot, [
+    { name: 'Avery Blake', status: 'clocked_in', isSelf: true, activeNotIn: false },
+    { name: '<img src=x onerror=alert(1)>', status: 'not_in', isSelf: false, activeNotIn: true },
+    { name: 'Sam Ortiz', status: 'clocked_out', isSelf: false, activeNotIn: true },
+    { name: 'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: false },
+    { name: 'Older Server', status: 'not_in', isSelf: false },           // no field at all (deploy skew)
+  ]);
+  const chips = Array.from(slot.querySelectorAll('.emp-active-chip'));
+  assert.strictEqual(chips.length, 2, 'exactly the two flagged rows carry a chip');
+  assert.strictEqual(chips[0].textContent, 'active · not clocked in');
+  assert.strictEqual(chips[1].textContent, 'active · clocked out');
+  assert.ok(/Shift hours and time off are not checked/.test(chips[0].getAttribute('title') || ''), 'the v1 limit is on the tooltip');
+  assert.strictEqual(slot.querySelectorAll('img').length, 0, 'the hostile name is inert');
+  assert.ok(/2 active but not in/.test(slot.querySelector('.card-label').textContent), 'the summary names the count');
+  const cards = Array.from(slot.querySelectorAll('.emp-card'));
+  assert.strictEqual(cards.length, 5);
+  assert.strictEqual(cards[3].querySelector('.emp-active-chip'), null, 'an unflagged not_in row has no chip');
+  assert.strictEqual(cards[4].querySelector('.emp-active-chip'), null, 'a field-less row (older server) has no chip');
+  h.read('renderTeammateCard')(slot, [{ name: 'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: false }]);
+  assert.ok(!/active but not in/.test(slot.textContent), 'no flagged rep → no summary suffix');
+
+  // The beacon.
+  h.run.drain();                                                        // boot noise
+  assert.strictEqual(h.run.pending('recordPresence').length, 0, 'boot alone (no gesture) stamps nothing');
+  h.document.body.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  assert.strictEqual(h.run.pending('recordPresence').length, 1, 'the first gesture sends once');
+  h.document.body.dispatchEvent(new h.window.Event('keydown', { bubbles: true }));
+  h.document.body.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  assert.strictEqual(h.run.pending('recordPresence').length, 1, 'gestures inside the gap are swallowed');
+  h.read('PRESENCE').sentAt = Date.now() - h.read('PRESENCE_MIN_GAP_MS') - 1;
+  h.document.body.dispatchEvent(new h.window.Event('keydown', { bubbles: true }));
+  assert.strictEqual(h.run.pending('recordPresence').length, 2, 'past the gap the next gesture sends again');
+});

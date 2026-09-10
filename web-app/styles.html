@@ -1676,6 +1676,22 @@
     text-transform: uppercase;
     vertical-align: 1px;
   }
+  /* Note 10 — "active · not clocked in" on the Team Right Now card. Warn-toned
+     (a nudge for the reader, not a verdict on the rep); inline so it rides the
+     status line and wraps beneath it on a narrow card. */
+  .emp-active-chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px; font-weight: 600;
+    color: var(--warning-deep);
+    background: var(--warn-soft);
+    border: 1px solid color-mix(in oklab, var(--warn), transparent 55%);
+    padding: 1px 5px; border-radius: 3px;
+    margin-left: 6px; letter-spacing: .06em;
+    text-transform: uppercase;
+    vertical-align: 1px;
+    white-space: nowrap;
+  }
 
   /* ─── CALENDAR HOURS BADGE (Time Off page worked-day overlay) ────────── */
   .cal-hrs {

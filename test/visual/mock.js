@@ -564,11 +564,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         prevUnavailable: false, alertThreshold: 85, transferTarget: 20,
         cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
+    // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
+    // Leo is using the app with no clock-in today, so the card shows the chip
+    // on camera; the others are false, the shape every row now carries.
     getTeammateStatus: { enabled: true, teammates: [
-      { name: 'Avery Blake', status: 'clocked_in', isSelf: true },
-      { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false },
-      { name: 'Nina Patel', status: 'clocked_in', isSelf: false },
-      { name: 'Leo Kim', status: 'not_in', isSelf: false }] },
+      { name: 'Avery Blake', status: 'clocked_in', isSelf: true, activeNotIn: false },
+      { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false, activeNotIn: false },
+      { name: 'Nina Patel', status: 'clocked_in', isSelf: false, activeNotIn: false },
+      { name: 'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: true }] },
     // A FUNCTION fixture (the dispatcher supports them). Shape mirrors
     // resolveDeptRequest's own return ({success, already}) AND its write:
     // the server flips the row and bumps the DR cache generation
@@ -1227,6 +1230,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // server's viewUsageAggregate_ / getViewUsageStats shapes).
     recordClientError: { success: true },
     recordViewEnter: { success: true },
+    recordPresence: { success: true },   // note 10 — the shell's gesture beacon
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },

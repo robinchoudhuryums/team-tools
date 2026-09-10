@@ -18797,6 +18797,98 @@ test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), 
   assert.ok(/saveQaMembers: 1/.test(tests), 'on the ADMIN tier in the omnibus map');
 });
 
+// ── Operator notes 2026-09-10, Batch D (N10 — the presence signal) ───────────
+test('D-N10: presence — teammateActiveNotIn_ driven (self never, working states never, absent never), presenceMap_ fails toward NO flags (driven), recordPresence rep-gated + cache-only, getTeammateStatus ships ONE boolean and no timestamp (INV-24) with C8 kept, the polls do NOT stamp, the gesture beacon is throttled/stamp-before-send/capture-passive/bound at boot, the chip renders only on strict true with the v1 limit stated, the class is defined, the fixture rows carry the server keys, the editor test exists', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const keysOf = (lit) => (lit.match(/(?:^|[{,\s])([A-Za-z_]\w*):\s/g) || []).map((m) => m.replace(/^[{,\s]+/, '').replace(/:\s$/, ''));
+  // (a) The pure rule, driven.
+  const rc = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teammateActiveNotIn_'), rc);
+  const rule = rc.teammateActiveNotIn_;
+  assert.strictEqual(rule(false, true, 'not_in'), true, 'present + not clocked in → flagged');
+  assert.strictEqual(rule(false, true, 'clocked_out'), true, 'present + clocked out → flagged');
+  assert.strictEqual(rule(false, true, 'clocked_in'), false, 'a working state is never flagged');
+  assert.strictEqual(rule(false, true, 'on_lunch'), false, 'lunch is a working state');
+  assert.strictEqual(rule(true, true, 'not_in'), false, 'self is never flagged');
+  assert.strictEqual(rule(false, false, 'not_in'), false, 'absent is never flagged');
+  assert.strictEqual(rule(false, true, 'garbage'), false, 'an unknown status is never flagged');
+  // (b) presenceMap_ driven: a blank cache value is NOT a hit; a thrown read yields {} (no flags).
+  assert.ok(/const PRESENCE_CACHE_PREFIX = 'presence_v1:';/.test(codeSrc) && /const PRESENCE_TTL_SEC = 1800;/.test(codeSrc), 'the prefix + the ~30-min TTL are the stated constants');
+  const pmSrc = "const PRESENCE_CACHE_PREFIX = 'presence_v1:';\n" + extractRawFunction('Code.js', 'presenceMap_');
+  const c1 = vm.createContext({ CacheService: { getScriptCache: () => ({ getAll: () => ({ 'presence_v1:A': '1', 'presence_v1:C': '' }) }) } });
+  vm.runInContext(pmSrc, c1);
+  assert.strictEqual(JSON.stringify(c1.presenceMap_(['A', 'B', 'C'])), '{"A":true}', 'hits map to ids; a blank value is not a hit');
+  assert.strictEqual(JSON.stringify(c1.presenceMap_([])), '{}', 'no ids → no read');
+  const c2 = vm.createContext({ CacheService: { getScriptCache: () => { throw new Error('cache down'); } } });
+  vm.runInContext(pmSrc, c2);
+  assert.strictEqual(JSON.stringify(c2.presenceMap_(['A'])), '{}', 'a failed read yields NO flags — a missed chip beats a false one');
+  // (c) recordPresence: rep-gated, cache-only, never a lock / sheet / audit.
+  const rp = nc(extractRawFunction('Code.js', 'recordPresence'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(rp) && /if \(!emp\) return \{ success: false \};/.test(rp), 'rep-gated (the recordViewEnter shape)');
+  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, '1', PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL');
+  assert.ok(!/waitLock|appendRow|writeAuditLog_|getSheetByName|setValue/.test(rp), 'no lock, no sheet write, no audit row — a volatile signal, not a record');
+  // (d) getTeammateStatus: the row literal carries EXACTLY the four keys, the flag comes from the rule, C8 holds.
+  const ts = nc(extractRawFunction('Code.js', 'getTeammateStatus'));
+  const rowLit = /return \{\s*name: e\.name,([\s\S]*?)\};/.exec(ts);
+  assert.ok(rowLit, 'the row literal is found');
+  // The literal mixes `key: value` and ES SHORTHAND (`status,` / `isSelf,`) —
+  // the colon-only keysOf above is blind to shorthand (its first write read
+  // two keys out of four), so the row keys are read per LINE: a bare
+  // identifier line is a shorthand key.
+  const rowKeys = rowLit[1].split('\n').map((l) => l.trim().replace(/,$/, ''))
+    .map((l) => (/^[A-Za-z_]\w*$/.test(l) ? l : (/^([A-Za-z_]\w*):\s/.exec(l) || [])[1]))
+    .filter(Boolean);
+  assert.strictEqual(['name'].concat(rowKeys).sort().join('|'), 'activeNotIn|isSelf|name|status', 'INV-24: name/status/isSelf + the ONE boolean, nothing else');
+  assert.ok(/activeNotIn: teammateActiveNotIn_\(isSelf, !!present\[e\.id\], status\)/.test(ts), 'the flag is the pure rule over the stamp + status');
+  assert.ok(/const present = presenceMap_\(employees\.map\(e => e\.id\)\);/.test(ts), 'ONE getAll over the roster ids');
+  assert.ok(!/lastSeen|seenAt|presenceAt|sentAt/.test(ts), 'no presence TIMESTAMP anywhere on the view');
+  assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"), 'C8: auth still precedes the flag read');
+  assert.ok(/\(b\.activeNotIn \? 1 : 0\) - \(a\.activeNotIn \? 1 : 0\)/.test(ts), 'a flagged rep sorts ahead within its status');
+  // (e) The polls reps already hit do NOT stamp — a background poll is not a gesture (the left-open pop-out class).
+  ['getEmployeeState', 'getCallNotesAmbient', 'recordViewEnter', 'getTodayPunches_'].forEach((fn) => {
+    assert.ok(!/PRESENCE_CACHE_PREFIX|recordPresence\(/.test(nc(extractRawFunction('Code.js', fn))), fn + ' does not stamp presence');
+  });
+  // (f) The shell beacon: throttled, stamps BEFORE the send, capture + passive, idempotent bind, bound at boot.
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/var PRESENCE_MIN_GAP_MS = 10 \* 60 \* 1000;/.test(core), 'one send per 10 min per window');
+  const og = nc(extractFunction('script_core.html', 'presenceOnGesture_'));
+  assert.ok(/if \(now - PRESENCE\.sentAt < PRESENCE_MIN_GAP_MS\) return;/.test(og), 'throttled on the gap');
+  assert.ok(og.indexOf('PRESENCE.sentAt = now') > 0 && og.indexOf('PRESENCE.sentAt = now') < og.indexOf('.recordPresence()'), 'the stamp lands BEFORE the send — a slow or failed RPC never double-fires');
+  assert.ok(/\.withFailureHandler\(function \(\) \{\}\)/.test(og), 'fire-and-forget — a failed send is ignored');
+  const bind = nc(extractFunction('script_core.html', 'presenceBind_'));
+  assert.ok(/if \(PRESENCE\.bound\) return;/.test(bind), 'idempotent bind');
+  assert.ok(/addEventListener\('pointerdown', presenceOnGesture_, \{ capture: true, passive: true \}\)/.test(bind), 'pointerdown, capture + passive');
+  assert.ok(/addEventListener\('keydown', presenceOnGesture_, \{ capture: true, passive: true \}\)/.test(bind), 'keydown, capture + passive');
+  assert.ok(/remindersStart_\(\);[\s\S]{0,600}presenceBind_\(\);/.test(core), 'bound at shell boot beside the reminders (a shell capability, INV-190)');
+  assert.ok(!/setInterval\([^)]*presence/i.test(core), 'no second interval — gesture-driven, never a poll');
+  // (g) The chip: strict-true only (an older server ships no field), label per status, the v1 limit on the tooltip, escaped.
+  const chip = nc(extractFunction('tc/script_clock.html', 'clkActiveNotInChipHtml_'));
+  assert.ok(/if \(!t \|\| t\.activeNotIn !== true\) return '';/.test(chip), 'renders ONLY on a strict true');
+  assert.ok(/'active · clocked out'/.test(chip) && /'active · not clocked in'/.test(chip), 'both labels');
+  assert.ok(/Shift hours and time off are not checked/.test(chip), 'the v1 limit is stated on the tooltip');
+  assert.ok(/title="' \+ esc\(tip\) \+ '"/.test(chip), 'tooltip escaped');
+  const card = nc(extractFunction('tc/script_clock.html', 'renderTeammateCard'));
+  assert.ok(/\$\{meta\.label\}\$\{clkActiveNotInChipHtml_\(t\)\}/.test(card), 'the chip rides the status line');
+  assert.ok(/if \(t\.activeNotIn === true\) activeNotIn\+\+;/.test(card), 'the summary counts strict-true only');
+  assert.ok(/active but not in/.test(card), 'the summary names the count');
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.emp-active-chip \{[^}]*color: var\(--warning-deep\)[^}]*background: var\(--warn-soft\)/.test(styles), 'chip class DEFINED (INV-184 reverse), warn-toned via the deep alias');
+  // (h) Fixture: every teammate row carries the server's exact keys (INV-185); the flagged row is on camera; the beacon has a fixture.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  const fx = /getTeammateStatus: \{ enabled: true, teammates: \[([\s\S]*?)\] \},/.exec(mock);
+  assert.ok(fx, 'teammate fixture found');
+  const rows = fx[1].split('\n').filter((l) => /name:/.test(l));
+  assert.strictEqual(rows.length, 4, 'four teammate rows');
+  rows.forEach((l) => assert.strictEqual(keysOf(l).sort().join('|'), 'activeNotIn|isSelf|name|status', 'fixture row keys == the server row keys'));
+  assert.ok(/'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: true/.test(fx[1]), 'the flagged row is on camera');
+  assert.ok(/recordPresence: \{ success: true \}/.test(mock), 'the beacon has a fixture (no missing-RPC noise in the matrix)');
+  // (i) Tests.js: the shape test admits the boolean; the presence case exists and is registered.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/ALLOWED_KEYS = \['name', 'status', 'isSelf', 'activeNotIn'\]/.test(tests), 'the shape test admits exactly the four keys');
+  assert.ok(/_assertEq\(typeof t\.activeNotIn, 'boolean'\)/.test(tests), 'and asserts it is a boolean');
+  assert.ok(/function test_presence_stampAndFlag\(/.test(tests) && /_integrationTest\('presence_stampAndFlag'/.test(tests), 'the presence editor test exists and is registered');
+});
+
 // The summary prints LAST — a test block appended between the summary and
 // the exit ran but never counted (Batch B found three such pins reporting
 // into a 778 that should have read 781).
