@@ -18396,7 +18396,6 @@ test('A9: every cn-mgr-*-btn class the Per-Rep card emits is DEFINED in a styles
 });
 
 
-console.log(`\n${pass} passed, ${fail} failed\n`);
 
 // ── Operator notes 2026-09-10, Batch B (N2 + N3) ─────────────────────────────
 // N2: "confirm Dept Requests avg/median exclude weekends, holidays and
@@ -18576,5 +18575,10 @@ test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats,
   assert.ok(/manual: true, resolveMinutes: null, resolveWallMinutes: null/.test(mock), 'fixture: manual thread has null minutes');
   assert.ok(/businessCount: 11, manualCount: 1,/.test(mock), 'fixture: stats carry the manual count');
 });
+
+// The summary prints LAST — a test block appended between the summary and
+// the exit ran but never counted (Batch B found three such pins reporting
+// into a 778 that should have read 781).
+console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
