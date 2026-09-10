@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: implement — the OPERATOR testing-notes round (see the section below; Batch A of four is done). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -14,7 +14,49 @@ Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-09
+Updated: 2026-09-10
+
+## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
+The operator posted ten testing notes (nine + a tenth in the follow-up) after
+cycle 19's four audit batches merged (PR #235). Plan agreed in chat; the
+batches are A (notes 1/5/7/9 — small client + label fixes), B (notes 2/3 —
+stats semantics), C (notes 4/6/8 — features needing the decisions below),
+D (note 10 — a new presence signal on the Team-right-now card).
+- Batch A: DONE, committed a96fe16 on `claude/broad-scan-fw462g` (the branch
+  was RESET onto origin/main first — PR #235 had merged), pushed. Block:
+  `.cycle/blocks/19-operator-batchA-broad-implement.md` (net +4 self-scored,
+  strict — all four operator-observed on the running app; 6 mutations /
+  6 bites; pure 778, DOM 110, visual matrix 101).
+- Batch B (next): N2 = VERIFIED in code, add a behavioural pin driving the
+  deptStats fold (business `elapsedMin`, null dropped); N3 = Spanish manual
+  resolves out of BOTH duration series (still counted resolved; resolved-list
+  `resolveMinutes: null`, the VM shape) + Dept Requests trailing `ResolvedVia`
+  (`email`/`app`, header self-heals, shared writer takes a `via` arg;
+  `app` AND legacy-blank rows excluded from timing stats, reported as counts).
+- Batch C: N4 manager-only "Auto-assign N unclaimed" over SPANISH_INBOX_MEMBERS
+  (pure least-loaded picker, qaSamplePick_ precedent; a trigger may follow —
+  keep the body reusable); N6 DR trailing `PatientTrx` written at send from
+  `note.patientAndTrx`, collapsed card reads "<label> · <patient/TRX>", plus
+  Expand/Collapse through a scoped `getDeptRequestDetail(requestId)` (sender OR
+  manager OR toDept member — the resolveDeptRequest rule) resolving the stored
+  NoteId to the sender's note reference fields; N8 Admin → Config "QA reviewers"
+  chip editor (`saveQaMembers`, admin-gated → INV-136 count 49 → 50 + omnibus
+  case + doc list) and widen `qaAssignRecording`'s assignee check to any
+  `canSeeQa_` user.
+- Batch D: N10 — per-rep per-day CacheService presence stamp (first/last seen)
+  written inside the endpoints reps already hit; `getTeammateStatus` gains ONE
+  additive boolean `activeNotIn` (INV-24 amendment: the boolean only, never the
+  timestamps); the card renders a warn chip "active · not clocked in"; PTO days
+  not checked in v1 (say so in the tooltip).
+
+## Decisions made in that round (operator, 2026-09-10)
+- N6: the Dept Requests store MAY carry the patient name & TRX (it stays inside
+  the Workspace). The daily SLA reminder email stays label-only unless asked.
+- N4: manager BUTTON first; the scheduled trigger may follow soon after.
+- N3: legacy Dept Requests rows with a blank `ResolvedVia` are EXCLUDED from
+  the timing stats and reported as "resolved before source tracking".
+- N8 answer given: QA access = every manager + the `QA_MEMBERS` Script
+  Property; the operator (a manager) already sees all four QA tabs.
 
 ## In progress (facts to carry forward — NOT judgments)
 - Nothing in flight. Both harnesses are green (777 pure / 108 DOM), the tree
@@ -71,7 +113,13 @@ Updated: 2026-09-09
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-All four batches are implemented, bite-checked and pushed to
+Operator testing-notes round: Batch A (notes 1/5/7/9) is implemented,
+bite-checked, committed (a96fe16) and pushed on `claude/broad-scan-fw462g`
+(reset onto origin/main after PR #235 merged). Pick up with Batch B (N2 pin +
+N3 manual-resolve exclusion on both stores), then C, then D — the shapes and
+the operator's three decisions are in the section above. `/sync-docs` is owed
+for Batch A's documentation list (in its block) and can wait for B.
+Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
 `claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
 `19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
 they owed. Nothing is half-done and no finding from the plan is outstanding.
