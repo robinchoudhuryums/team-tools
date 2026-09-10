@@ -2046,7 +2046,7 @@ function renderTeammateCard(slot, teammates) {
   // The "away" bucket is where an active-but-not-in rep hides; name the count
   // beside it so the signal is visible at card level, not only on the row.
   const summary = `${counts.clocked_in} in · ${counts.on_lunch} on lunch · ${counts.clocked_out + counts.not_in} away`
-    + (activeNotIn ? ` · ${activeNotIn} active but not in` : '');
+    + (activeNotIn ? ` · ${activeNotIn}\u00a0active\u00a0but\u00a0not\u00a0in` : '');
 
   const cardsHtml = teammates.map(t => {
     const meta = TM_STATUS[t.status] || TM_STATUS.not_in;
@@ -2064,8 +2064,8 @@ function renderTeammateCard(slot, teammates) {
   slot.innerHTML = `
     <div class="card">
       <h2 class="card-label with-count">
-        <span>Team Right Now</span>
-        <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:.04em">${summary}</span>
+        <span class="emp-team-title">Team Right Now</span>
+        <span class="emp-team-summary">${summary}</span>
       </h2>
       <div class="emp-grid">${cardsHtml}</div>
     </div>`;

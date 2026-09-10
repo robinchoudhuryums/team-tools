@@ -1676,21 +1676,44 @@
     text-transform: uppercase;
     vertical-align: 1px;
   }
+  /* Team Right Now head (note 10): the summary grew a " · N active but not in"
+     tail, and the shared `.card-label > span:first-child { flex: 1; min-width: 0 }`
+     let the TITLE shrink below min-content — "Team / Right / Now" on three lines
+     with the summary drawn over it at the 398px foot-card width (measured).
+     The title keeps one line; the summary is the flexible half and WRAPS,
+     right-aligned, so a long tail costs a second line, never the heading. */
+  /* (0,3,1) — must out-specify the shared `.card-label > span:first-child`
+     at (0,2,1), which otherwise keeps shrinking the title; measured: at
+     (0,2,0) the title still rendered 10px wide under the summary. */
+  .card-label.with-count > span.emp-team-title { flex: 0 0 auto; white-space: nowrap; }
+  .card-label.with-count > span.emp-team-summary {
+    flex: 0 1 auto; min-width: 0; text-align: right;
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--muted); text-transform: none; letter-spacing: .04em;
+    line-height: 1.4;
+  }
   /* Note 10 — "active · not clocked in" on the Team Right Now card. Warn-toned
-     (a nudge for the reader, not a verdict on the rep); inline so it rides the
-     status line and wraps beneath it on a narrow card. */
+     (a nudge for the reader, not a verdict on the rep). It sits on its OWN line
+     under the status label and is allowed to WRAP between words: the first cut
+     was an inline `white-space: nowrap` pill, and inside the shell's ≤540px
+     two-column .emp-grid (1fr tracks — min-content propagates) it pushed BOTH
+     .dash-foot cards to 412px on a 390px phone — measured, +34px of sideways
+     page scroll, invisible in the screenshot. `width: fit-content` keeps the
+     pill hugging its text; `max-width: 100%` keeps it inside the card. */
   .emp-active-chip {
-    display: inline-block;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
     font-family: var(--mono);
-    font-size: 9px; font-weight: 600;
+    font-size: 9px; font-weight: 600; line-height: 1.5;
     color: var(--warning-deep);
     background: var(--warn-soft);
     border: 1px solid color-mix(in oklab, var(--warn), transparent 55%);
     padding: 1px 5px; border-radius: 3px;
-    margin-left: 6px; letter-spacing: .06em;
+    margin-top: 3px; letter-spacing: .06em;
     text-transform: uppercase;
-    vertical-align: 1px;
-    white-space: nowrap;
+    white-space: normal;
   }
 
   /* ─── CALENDAR HOURS BADGE (Time Off page worked-day overlay) ────────── */

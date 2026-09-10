@@ -18870,9 +18870,19 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   const card = nc(extractFunction('tc/script_clock.html', 'renderTeammateCard'));
   assert.ok(/\$\{meta\.label\}\$\{clkActiveNotInChipHtml_\(t\)\}/.test(card), 'the chip rides the status line');
   assert.ok(/if \(t\.activeNotIn === true\) activeNotIn\+\+;/.test(card), 'the summary counts strict-true only');
-  assert.ok(/active but not in/.test(card), 'the summary names the count');
+  assert.ok(/active\\u00a0but\\u00a0not\\u00a0in/.test(card), 'the summary names the count (NBSP-joined — see below)');
   const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(/\.emp-active-chip \{[^}]*color: var\(--warning-deep\)[^}]*background: var\(--warn-soft\)/.test(styles), 'chip class DEFINED (INV-184 reverse), warn-toned via the deep alias');
+  // Two MEASURED layout defects the first cut shipped, pinned as the rule that fixed each:
+  // an inline nowrap pill propagated min-content through the ≤540px 1fr .emp-grid (+34px
+  // page overflow at 390); the longer summary squeezed the flex title to "Team/Right/Now"
+  // under the shared `> span:first-child { flex: 1 }` rule (a (0,2,0) fix lost to it).
+  const chipRule = /\.emp-active-chip \{([^}]*)\}/.exec(styles)[1];
+  assert.ok(/display: block;/.test(chipRule) && /white-space: normal;/.test(chipRule) && !/nowrap/.test(chipRule), 'the chip is a wrapping block, never a nowrap inline pill');
+  assert.ok(/\.card-label\.with-count > span\.emp-team-title \{ flex: 0 0 auto; white-space: nowrap; \}/.test(styles), 'the title keeps one line at (0,3,1)');
+  assert.ok(/\.card-label\.with-count > span\.emp-team-summary \{[^}]*flex: 0 1 auto; min-width: 0; text-align: right;/.test(styles), 'the summary is the flexible, wrapping half');
+  assert.ok(/<span class="emp-team-title">Team Right Now<\/span>/.test(card) && /<span class="emp-team-summary">\$\{summary\}<\/span>/.test(card), 'the card head uses the two classes');
+  assert.ok(/\\u00a0active\\u00a0but\\u00a0not\\u00a0in/.test(card), 'the tail cannot split from its count when the summary wraps');
   // (h) Fixture: every teammate row carries the server's exact keys (INV-185); the flagged row is on camera; the beacon has a fixture.
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
   const fx = /getTeammateStatus: \{ enabled: true, teammates: \[([\s\S]*?)\] \},/.exec(mock);

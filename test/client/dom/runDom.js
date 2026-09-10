@@ -2485,13 +2485,14 @@ test('D-N10 DOM: Team Right Now — the chip renders only for activeNotIn === tr
   assert.strictEqual(chips[1].textContent, 'active · clocked out');
   assert.ok(/Shift hours and time off are not checked/.test(chips[0].getAttribute('title') || ''), 'the v1 limit is on the tooltip');
   assert.strictEqual(slot.querySelectorAll('img').length, 0, 'the hostile name is inert');
-  assert.ok(/2 active but not in/.test(slot.querySelector('.card-label').textContent), 'the summary names the count');
+  const plain = (el) => String(el.textContent || '').replace(/\u00a0/g, ' ');   // the tail is NBSP-joined so it never splits from its count
+  assert.ok(/2 active but not in/.test(plain(slot.querySelector('.card-label'))), 'the summary names the count');
   const cards = Array.from(slot.querySelectorAll('.emp-card'));
   assert.strictEqual(cards.length, 5);
   assert.strictEqual(cards[3].querySelector('.emp-active-chip'), null, 'an unflagged not_in row has no chip');
   assert.strictEqual(cards[4].querySelector('.emp-active-chip'), null, 'a field-less row (older server) has no chip');
   h.read('renderTeammateCard')(slot, [{ name: 'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: false }]);
-  assert.ok(!/active but not in/.test(slot.textContent), 'no flagged rep → no summary suffix');
+  assert.ok(!/active but not in/.test(plain(slot)), 'no flagged rep → no summary suffix');
 
   // The beacon.
   h.run.drain();                                                        // boot noise
