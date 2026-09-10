@@ -14,7 +14,7 @@ Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-10 (Batch C landed)
+Updated: 2026-09-10 (Batch D landed — the operator round is fully implemented; docs owed to /sync-docs)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -61,11 +61,24 @@ D (note 10 — a new presence signal on the Team-right-now card).
   the cycle-17 batch-3 fixture-shape pin, whose mock-WIDE `patientTrx:` casing
   ban was scoped to the coaching rows (the DR item's server field IS
   `patientTrx`).
-- Batch D: N10 — per-rep per-day CacheService presence stamp (first/last seen)
-  written inside the endpoints reps already hit; `getTeammateStatus` gains ONE
-  additive boolean `activeNotIn` (INV-24 amendment: the boolean only, never the
-  timestamps); the card renders a warn chip "active · not clocked in"; PTO days
-  not checked in v1 (say so in the tooltip).
+- Batch D: DONE, committed 9176908 + 1961691 (+ the wrap-up commit) on
+  `claude/broad-scan-fw462g`, pushed. Block:
+  `.cycle/blocks/19-operator-batchD-broad-implement.md` (net 0 — N10 is a
+  capability; the two layout defects were introduced and fixed inside the
+  batch; 11 mutations / 11 bites; pure 785, DOM 113, visual matrix 102
+  unchanged, editor 310 expected). ONE deliberate deviation from the shape
+  recorded above: the stamp is NOT written inside the polls reps already hit
+  — a pinned pop-out left open overnight keeps polling and would read as
+  "active" at 7am — it is written by a GESTURE-driven shell beacon
+  (`recordPresence`, pointerdown/keydown, ≤1 send per 10 min per window,
+  stamp-before-send), TTL ~30 min. `getTeammateStatus` gains the ONE boolean
+  `activeNotIn` (self never; present AND not_in/clocked_out only; a failed
+  cache read → no flags), INV-24 + S14 amended in-batch. Measured twice
+  rather than eyeballed: the first chip (an inline nowrap pill) pushed the
+  390px page +34px sideways through the ≤540px `1fr` `.emp-grid`, and the
+  longer summary squeezed the card title to three lines under the shared
+  `> span:first-child { flex: 1 }` rule (a (0,2,0) fix LOST to it) — both
+  fixed, pinned, 0 overflow on all four Clock scenarios.
 
 ## Decisions made in that round (operator, 2026-09-10)
 - N6: the Dept Requests store MAY carry the patient name & TRX (it stays inside
@@ -77,10 +90,12 @@ D (note 10 — a new presence signal on the Team-right-now card).
   Property; the operator (a manager) already sees all four QA tabs.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Operator round: Batches A + B + C landed and pushed; Batch D unstarted.
-  Both harnesses are green (784 pure / 112 DOM), the tree is committed on
-  `claude/broad-scan-fw462g`; every change in A + B + C was bite-checked
-  (6 + 8 + 13 mutations, all biting).
+- Operator round: ALL FOUR batches (A + B + C + D) landed and pushed. Both
+  harnesses are green (785 pure / 113 DOM), the tree is committed on
+  `claude/broad-scan-fw462g`; every change was bite-checked
+  (6 + 8 + 13 + 11 mutations, all biting). The round's documentation is
+  NOT yet reconciled — each block's DOCUMENTATION UPDATES list is owed to
+  `/sync-docs` (INV-24/S14 were amended in-batch; the rest are listed).
 - Nothing else in flight. The four AUDIT batches were bite-checked too (20
   mutations / 20 bites across the two sessions).
 - `/sync-docs` is DONE and applied (not merely proposed): all fourteen owed
@@ -135,17 +150,19 @@ D (note 10 — a new presence signal on the Team-right-now card).
 
 ## Where I left off
 Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
-(notes 2/3, c525c89) and C (notes 4/6/8, 155dd02) are implemented,
-bite-checked, committed and pushed on `claude/broad-scan-fw462g` (reset onto
-origin/main after PR #235 merged). Pick up with Batch D (N10 — the presence
-stamp + the `activeNotIn` boolean on `getTeammateStatus`, shape in the
-section above), then `/sync-docs` for ALL of A/B/C/D's documentation lists
-(in their blocks — B's includes the S74 rewrite and the harness-hazard
-wording; C's includes the INV-138 "PHI-free store" amendment, the INV-31
-manager-tier note for `autoAssignSpanishThreads`, the INV-196/S90 QA
-reviewers path, and the S74/Spanish scenario steps). The N4 scheduled
-trigger the operator said "might follow" is a logged follow-on, not part of
-D.
+(notes 2/3, c525c89), C (notes 4/6/8, 155dd02) and D (note 10, 9176908 +
+1961691) are ALL implemented, bite-checked, committed and pushed on
+`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged).
+Pick up with `/sync-docs` for ALL FOUR blocks' documentation lists
+(`.cycle/blocks/19-operator-batch{A,B,C,D}-broad-implement.md` — B's
+includes the S74 rewrite and the harness-hazard wording; C's the INV-138
+"PHI-free store" amendment, the INV-31 manager-tier note for
+`autoAssignSpanishThreads`, the INV-196/S90 QA reviewers path and the
+S74/Spanish scenario steps; D's the Time Clock KDD chip note, a Common
+Gotcha for the two measured layout lessons, the operator-state entry and
+the running totals 785/113/310), then `/reflect` to close cycle 19. The N4
+scheduled trigger and the chip's schedule/PTO gating are logged
+follow-ons, not open work.
 Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
 `claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
 `19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
