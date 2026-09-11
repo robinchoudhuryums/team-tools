@@ -15423,10 +15423,11 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
   assert.deepStrictEqual(pm.LunchIn.join('|'), '12:30:00|19:00:00', 'returns accumulate');
 
   // All five builders route through it — five call sites plus the definition.
-  // 1 definition + the 5 hours builders + reportMultiBreakDays (A5), which
-  // must build the same shape or its impact figures would not match production.
+  // 1 definition + the 5 hours builders + the shared tsPunchDaysWithArchive_
+  // reader behind BOTH operator reports (A5 / BP), which must build the same
+  // shape or their impact figures would not match production.
   assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 7,
-    'punchDayAdd_ is defined once and called by the five builders plus the A5 report');
+    'punchDayAdd_ is defined once and called by the five builders plus the shared report reader');
   ['workedHoursByEmpForRange_', 'getManagerDashboard', 'getTeamCalendar',
    'buildTimesheetForEmployee_', 'buildCalendarForEmployee_'].forEach((fn) => {
     const body = extractRawFunction('Code.js', fn).replace(/^\s*\/\/.*$/gm, '');
@@ -15467,7 +15468,22 @@ test('A3: the sheet doctor stops calling a matched break pair damage', () => {
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchOut'), true, 'matched pairs are legal data');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchIn'), true, 'both break types');
   assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), false,
-    'an UNPAIRED extra is still damage — that is what the doctor exists to surface');
+    'a lone extra LEAVE beside one return is still damage — the classic double-punch, last row wins');
+  // Cycle-19 follow-on (BP): the guard is "two-plus stamps of BOTH types", not
+  // "equal counts". E4 has equal counts but pairs into one 7-hour "break"
+  // (12:00→19:00, dropping 17:00 and 11:00) — protected from the collapse AND
+  // reported by getTimesheetDoctor's `unpaired` list (BP-3). E5 has UNEQUAL
+  // counts on a real two-break day: the old equal-count rule called it a
+  // duplicate group and the collapse kept the LAST leave — deleting a real one.
+  const days2 = {
+    'E4|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['11:00:00', '19:00:00'] },
+    'E5|2026-09-01': { lo: ['12:00:00', '12:01:00', '17:00:00'], li: ['12:30:00', '19:00:00'] },
+  };
+  assert.strictEqual(legit(days2, 'E4', '2026-09-01', 'LunchOut'), true,
+    'an equal-count day that pairs badly is still off-limits to the collapse (it is REPORTED instead)');
+  assert.strictEqual(legit(days2, 'E5', '2026-09-01', 'LunchOut'), true,
+    'a two-break day with a double-punched leave is off-limits — the collapse would delete a real break');
+  assert.strictEqual(legit(days2, 'E5', '2026-09-01', 'LunchIn'), true, 'both types on that day');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'ClockIn'), false,
     'a repeated CLOCK punch is ALWAYS damage — multi-shift is not supported');
   assert.strictEqual(legit(days, 'E3', '2026-09-01', 'LunchOut'), false, 'a single pair is not a group');
@@ -15483,25 +15499,39 @@ test('A3: the sheet doctor stops calling a matched break pair damage', () => {
 });
 
 test('A5: reportMultiBreakDays is read-only, gated, and reproduces the old value through calcHours_', () => {
-  const body = extractRawFunction('Code.js', 'reportMultiBreakDays');
-  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
-  assert.ok(/assertManagerCaller_\('reportMultiBreakDays'\)/.test(stripped),
-    'it walks the roster, so it carries the MANAGER_EMAILS gate (INV-44)');
+  const strip = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  // Cycle-19 follow-on (BP): the Timesheet walk moved into the shared
+  // tsPunchDaysWithArchive_ so the two operator reports cannot read the
+  // sheet two different ways. The READ contract lives on the reader now.
+  const reader = strip(extractRawFunction('Code.js', 'tsPunchDaysWithArchive_'));
   ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange('].forEach((w) =>
-    assert.ok(!new RegExp(w.replace('(', '\\(')).test(stripped), 'READ-ONLY: no ' + w));
-  assert.ok(/getSheetByName/.test(stripped) && !/insertSheet|getOrCreate/.test(stripped),
-    'it never provisions a tab');
-  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(stripped),
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(reader), 'reader is READ-ONLY: no ' + w));
+  assert.ok(/getSheetByName/.test(reader) && !/insertSheet|getOrCreate/.test(reader),
+    'the reader never provisions a tab');
+  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(reader),
     'it reads THROUGH the archive — an aged-out day still counts (INV-153/F1)');
-  assert.ok(/liveKeys\.has\(rowKey\)/.test(stripped),
+  assert.ok(/liveKeys\.has\(rowKey\)/.test(reader),
     'a row in both tabs counts ONCE, or a duplicate fabricates a phantom pair (INV-132)');
+  assert.ok(/punchDayAdd_\(/.test(reader) && /PUNCH_LABELS_\.indexOf\(type\) < 0/.test(reader),
+    'it accumulates through punchDayAdd_ and drops a garbage COMMENTS type (C17 batch-6)');
+
+  const body = strip(extractRawFunction('Code.js', 'reportMultiBreakDays'));
+  assert.ok(/assertManagerCaller_\('reportMultiBreakDays'\)/.test(body),
+    'it walks the roster, so it carries the MANAGER_EMAILS gate (INV-44)');
+  ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange(', 'getSheetByName'].forEach((w) =>
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(body), 'READ-ONLY, through the reader: no ' + w));
+  assert.ok(/tsPunchDaysWithArchive_\(\)/.test(body), 'it reads through the SHARED reader');
   // The "old" figure comes from the SAME calcHours_ with only the last stamps —
   // never a re-implementation of the removed arithmetic, which could drift from
   // the behaviour the report exists to describe.
-  assert.ok(/lastOf\(pm\.LunchOut\), lastOf\(pm\.LunchIn\)/.test(stripped),
+  assert.ok(/lastOf\(pm\.LunchOut\), lastOf\(pm\.LunchIn\)/.test(body),
     'old hours = the same calcHours_ fed the last stamp of each type');
-  assert.strictEqual((stripped.match(/calcHours_\(/g) || []).length, 2,
+  assert.strictEqual((body.match(/calcHours_\(/g) || []).length, 2,
     'exactly two calcHours_ calls — the new value and the old one');
+  // Both reports on the ONE reader — a third report that walked the sheet
+  // itself would be the parallel-source class this refactor exists to close.
+  const twin = strip(extractRawFunction('Code.js', 'reportBreakPairingChanges'));
+  assert.ok(/tsPunchDaysWithArchive_\(\)/.test(twin), 'the pairing-changes twin reads through the same reader');
 });
 
 
@@ -19016,6 +19046,200 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
 // The summary prints LAST — a test block appended between the summary and
 // the exit ran but never counted (Batch B found three such pins reporting
 // into a 778 that should have read 781).
+
+/* ── BP: the break-pairing follow-ons (cycle-19 F1 → `/broad-implement` follow-ons) ──
+ * F1 replaced the POSITIONAL pairing with the GREEDY one and noted two gaps:
+ * nothing enumerated the historical days that moved, and the sheet doctor
+ * could not see the shape F1 now survives. NOTE the placement: ABOVE the
+ * summary line (the documented harness hazard).
+ */
+console.log('\nBP — reportBreakPairingChanges + the widened sheet doctor');
+
+test('BP-1: breakPairsPositional_ is the OLD shape — a stray early return un-pairs the day; greedy does not', () => {
+  const ctx = vm.createContext({});
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakPairsPositional_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const pos = ctx.breakPairsPositional_, greedy = ctx.breakPairs_;
+  const show = (pairs) => pairs.map((b) => b.out + '>' + b.in + '=' + b.minutes).join('|');
+  const anchor = ctx.timeToMins_('08:00:00');
+  // The F1 case: one leave, a stray return BEFORE it, then the real return.
+  assert.strictEqual(show(pos(['12:00:00'], ['11:00:00', '12:30:00'], anchor)), '',
+    'positional: outs[0]=12:00 vs ins[0]=11:00 is malformed, and the ONE slot is the whole day — ZERO pairs (the break was PAID)');
+  assert.strictEqual(show(greedy(['12:00:00'], ['11:00:00', '12:30:00'], anchor)), '12:00:00>12:30:00=30',
+    'greedy: the 11:00 is skipped ALONE and the real pair still closes');
+  // A clean day is identical under both — the report must list nothing for it.
+  const lo = ['12:00:00', '17:00:00'], li = ['12:30:00', '19:00:00'];
+  assert.strictEqual(show(pos(lo, li, anchor)), show(greedy(lo, li, anchor)), 'an ordinary two-break day pairs identically');
+  assert.strictEqual(show(pos('12:00:00', '12:30:00', anchor)), '12:00:00>12:30:00=30', 'legacy scalar params still accepted');
+  assert.strictEqual(show(pos(['12:00:00', '17:00:00'], ['12:30:00'], anchor)), '12:00:00>12:30:00=30',
+    'an unmatched trailing leave contributes nothing in either shape');
+  // It exists ONLY for the report: defined once, called once, from the twin.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.strictEqual((code.match(/breakPairsPositional_\(/g) || []).length, 2,
+    'breakPairsPositional_ is defined once and called exactly once (the report) — nothing else may reach for the old pairing');
+  assert.ok(/breakPairsPositional_\(/.test(extractRawFunction('Code.js', 'reportBreakPairingChanges')),
+    'that one caller is reportBreakPairingChanges');
+  assert.ok(!/breakPairsPositional_/.test(extractRawFunction('Code.js', 'calcHours_')),
+    'calcHours_ never consults the old pairing');
+});
+
+test('BP-2: reportBreakPairingChanges is gated, read-only, and lists ONLY days the two pairings deduct differently', () => {
+  // Behavioural: the real report driven over a stubbed reader.
+  const calls = [];
+  const ctx = vm.createContext({
+    Logger: { log: () => {} },
+    assertManagerCaller_: (label) => { calls.push(label); },
+    tsPunchDaysWithArchive_: () => ({
+      liveRows: 9, archRows: 3,
+      perDay: {
+        // The F1 day: 08:00–17:00, leave 12:00, stray return 11:00 + real return 12:30.
+        'E1|2026-08-03': { empId: 'E1', date: '2026-08-03', name: 'Ana', source: 'live',
+          pm: { ClockIn: '08:00:00', ClockOut: '17:00:00', LunchOut: ['12:00:00'], LunchIn: ['11:00:00', '12:30:00'] } },
+        // A clean two-break day — identical under both pairings.
+        'E2|2026-08-03': { empId: 'E2', date: '2026-08-03', name: 'Bo', source: 'archive',
+          pm: { ClockIn: '08:00:00', ClockOut: '21:00:00', LunchOut: ['12:00:00', '17:00:00'], LunchIn: ['12:30:00', '19:00:00'] } },
+        // Incomplete (no ClockOut) — contributes no hours under either.
+        'E3|2026-08-03': { empId: 'E3', date: '2026-08-03', name: 'Cy', source: 'live',
+          pm: { ClockIn: '08:00:00', LunchOut: ['12:00:00'], LunchIn: ['11:00:00', '12:30:00'] } },
+        // Ordinary single break.
+        'E4|2026-08-04': { empId: 'E4', date: '2026-08-04', name: 'Di', source: 'live',
+          pm: { ClockIn: '09:00:00', ClockOut: '17:00:00', LunchOut: ['12:00:00'], LunchIn: ['12:30:00'] } },
+      },
+    }),
+  });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakPairsPositional_', 'calcHours_', 'reportBreakPairingChanges']
+    .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const r = ctx.reportBreakPairingChanges();
+  assert.deepStrictEqual(calls.join('|'), 'reportBreakPairingChanges', 'the MANAGER_EMAILS gate runs first (INV-44)');
+  assert.strictEqual(r.repDays, 4, 'every rep-day the reader returned is scanned');
+  assert.strictEqual(r.liveRows, 9, 'live row count passed through');
+  assert.strictEqual(r.archiveRows, 3, 'archive row count passed through');
+  assert.strictEqual(r.affected.length, 1, 'ONLY the day the pairings disagree on is listed — never the clean, incomplete or single-break days');
+  const a = r.affected[0];
+  assert.strictEqual(a.empId + '|' + a.date, 'E1|2026-08-03', 'the F1 day');
+  assert.strictEqual(a.oldHours, 9, 'positional deducted NOTHING — the break was paid: 9.0h');
+  assert.strictEqual(a.newHours, 8.5, 'greedy deducts the real 30-minute break: 8.5h');
+  assert.strictEqual(a.deltaHours, -0.5, 'the delta is a REDUCTION');
+  assert.strictEqual(a.greedy, '12:00:00→12:30:00', 'the pairing that now applies is named');
+  assert.strictEqual(a.positional, '(none)', 'and the pairing that used to apply');
+  assert.strictEqual(r.totalDeltaHours, -0.5, 'the total is the sum of the deltas');
+
+  // Source contract — the twin of A5's.
+  const body = extractRawFunction('Code.js', 'reportBreakPairingChanges')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/assertManagerCaller_\('reportBreakPairingChanges'\)/.test(body), 'gate by name');
+  ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange(', 'getSheetByName', 'insertSheet'].forEach((w) =>
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(body), 'READ-ONLY, through the shared reader: no ' + w));
+  assert.strictEqual((body.match(/calcHours_\(/g) || []).length, 1,
+    'exactly ONE calcHours_ call — the old figure is new + the difference in deducted minutes, never a second arithmetic');
+  assert.ok(/diffMin \/ 60/.test(body), 'the old figure is derived from the minute difference between the two pairings');
+  assert.ok(/breakPairs_\(pm\.LunchOut, pm\.LunchIn, inMins\)/.test(body) && /breakPairsPositional_\(pm\.LunchOut, pm\.LunchIn, inMins\)/.test(body),
+    'both pairings are fed the SAME stamps and the same anchor');
+  assert.ok(/if \(diffMin === 0\) return;/.test(body), 'a day the pairings agree on is dropped BEFORE any arithmetic');
+});
+
+test('BP-3: getTimesheetDoctor REPORTS an unpairable stamp on a protected multi-break day, and never guesses which half is real', () => {
+  const scan = {
+    byKey: {
+      // E4 — equal counts, pairs badly (12:00→19:00; 17:00 and 11:00 dropped). Protected from the collapse.
+      'E4|2026-09-01|LunchOut': { rows: [5, 9], times: ['12:00:00', '17:00:00'], empId: 'E4', date: '2026-09-01', type: 'LunchOut', name: 'Ed' },
+      'E4|2026-09-01|LunchIn':  { rows: [7, 11], times: ['11:00:00', '19:00:00'], empId: 'E4', date: '2026-09-01', type: 'LunchIn', name: 'Ed' },
+      // E1 — a clean two-break day. Protected AND nothing to report.
+      'E1|2026-09-01|LunchOut': { rows: [3, 12], times: ['12:00:00', '17:00:00'], empId: 'E1', date: '2026-09-01', type: 'LunchOut', name: 'Ana' },
+      'E1|2026-09-01|LunchIn':  { rows: [4, 13], times: ['12:30:00', '19:00:00'], empId: 'E1', date: '2026-09-01', type: 'LunchIn', name: 'Ana' },
+      // E2 — one leave, two returns: counts DISAGREE, so it is the classic duplicate group (last row wins).
+      'E2|2026-09-02|LunchIn':  { rows: [20, 21], times: ['11:00:00', '12:30:00'], empId: 'E2', date: '2026-09-02', type: 'LunchIn', name: 'Bo' },
+    },
+    days: {
+      'E4|2026-09-01': { in: ['08:00:00'], out: ['21:00:00'], lo: ['12:00:00', '17:00:00'], li: ['11:00:00', '19:00:00'], name: 'Ed', empId: 'E4', date: '2026-09-01' },
+      'E1|2026-09-01': { in: ['08:00:00'], out: ['21:00:00'], lo: ['12:00:00', '17:00:00'], li: ['12:30:00', '19:00:00'], name: 'Ana', empId: 'E1', date: '2026-09-01' },
+      'E2|2026-09-02': { in: ['08:00:00'], out: ['17:00:00'], lo: ['12:00:00'], li: ['11:00:00', '12:30:00'], name: 'Bo', empId: 'E2', date: '2026-09-02' },
+    },
+  };
+  const mk = (isManager) => {
+    const ctx = vm.createContext({
+      TS_DOCTOR_WINDOW_DAYS: 92, TS_DOCTOR_MAX_GROUPS: 200, TS_DOCTOR_FIX_MAX_ROWS: 200,
+      getEmployeeInfo_: () => ({ isManager: isManager }),
+      tsDoctorScan_: () => scan,
+    });
+    ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'tsDoctorLegitBreaks_', 'getTimesheetDoctor']
+      .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+    return ctx.getTimesheetDoctor();
+  };
+  assert.strictEqual(mk(false).error, 'Manager access required.', 'read gate (INV-02)');
+  const r = mk(true);
+  assert.ok(!r.error, 'no error: ' + r.error);
+  assert.strictEqual(r.unpaired.length, 1, 'exactly one unpaired finding');
+  const u = r.unpaired[0];
+  assert.strictEqual(u.empId + '|' + u.date + '|' + u.kind, 'E4|2026-09-01|unpaired', 'the badly-pairing equal-count day');
+  assert.strictEqual(u.pairs.join('|'), '12:00:00→19:00:00', 'the pairing greedy actually produced — a 7-hour "break"');
+  assert.strictEqual(u.dropped.slice().sort().join('|'), 'leave 17:00:00|return 11:00:00',
+    'the two stamps greedy dropped are NAMED — the doctor never picks which half is real');
+  assert.strictEqual(u.lunchOut.join('|'), '12:00:00|17:00:00', 'leaves listed sorted');
+  assert.strictEqual(u.lunchIn.join('|'), '11:00:00|19:00:00', 'returns listed sorted');
+  assert.strictEqual(r.totalUnpaired, 1, 'honest total (INV-169)');
+  assert.strictEqual(r.truncated, false, 'nothing capped');
+  // The clean day is silent everywhere; the count-disagreeing day stays a
+  // DUPLICATE group (the classic path) and is never double-reported.
+  assert.ok(!r.unpaired.some((x) => x.empId === 'E1'), 'a clean two-break day raises nothing');
+  assert.ok(!r.duplicates.some((x) => x.empId === 'E1' || x.empId === 'E4'), 'protected days are never duplicate groups');
+  assert.strictEqual(r.duplicates.map((d) => d.empId + ':' + d.type).join('|'), 'E2:LunchIn',
+    'one leave + two returns is the classic double-punch group, not an unpaired finding');
+  assert.ok(!r.unpaired.some((x) => x.empId === 'E2'), 'never double-reported');
+  assert.ok(!r.inverted.length, 'none of these is an inverted pair — the shape the old detector could not see');
+
+  // The finding is REPORT-ONLY: the collapse consults the same guard (A3) and
+  // its body never reads the unpaired list.
+  assert.ok(!/unpaired/.test(extractRawFunction('Code.js', 'fixTimesheetDuplicates')), 'the collapse never acts on an unpaired finding');
+  const det = extractRawFunction('Code.js', 'getTimesheetDoctor').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/if \(!lunchInverted && d\.lo\.length > 1 && d\.li\.length > 1\)/.test(det),
+    'the unpaired scan runs ONLY on days the collapse guard protects, and one finding per day');
+  assert.ok(/totalUnpaired > unpaired\.length/.test(det), 'the cap is reported through `truncated` like the other two lists');
+});
+
+test('BP-4: the manager card renders unpaired findings, counts them, and an older server reads as zero', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const load = extractFunction('tc/script_manager.html', 'loadSheetDoctor_').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\(!res\.unpaired \|\| !res\.unpaired\.length\)/.test(load),
+    'the all-clear check consults the unpaired list — a day with only unpaired findings is NOT "all clear"');
+  assert.ok(/res\.totalUnpaired != null\) \? res\.totalUnpaired : \(res\.unpaired \|\| \[\]\)\.length/.test(load),
+    'the summary count prefers the honest total and reads an absent field as zero');
+  assert.ok(/' unpaired'/.test(load), 'the Periodic summary line names the unpaired count');
+
+  // Behavioural render.
+  const out = [];
+  const ctx = vm.createContext({
+    esc: (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: (n) => '<i data-icon="' + n + '"></i>',
+  });
+  vm.runInContext(extractFunction('tc/script_manager.html', 'renderSheetDoctorCard_'), ctx, { filename: 'mgr#renderSheetDoctorCard_' });
+  const html = ctx.renderSheetDoctorCard_({
+    duplicates: [], inverted: [], windowDays: 92, fixMaxRows: 200,
+    unpaired: [{ kind: 'unpaired', empId: 'E4', name: '<b>Ed</b>', date: '2026-09-01',
+      lunchOut: ['12:00:00', '17:00:00'], lunchIn: ['11:00:00', '19:00:00'],
+      pairs: ['12:00:00→19:00:00'], dropped: ['leave 17:00:00', 'return 11:00:00'] }],
+    totalUnpaired: 3, truncated: true,
+  });
+  assert.ok(html.indexOf('Unpaired break stamps') >= 0, 'the section renders');
+  assert.ok(html.indexOf('&lt;b&gt;Ed&lt;/b&gt;') >= 0 && html.indexOf('<b>Ed</b>') < 0, 'the rep name is escaped');
+  assert.ok(html.indexOf('unpaired: leave 17:00:00, return 11:00:00') >= 0, 'the dropped stamps are named');
+  assert.ok(html.indexOf('paired as 12:00:00→19:00:00') >= 0, 'the pairing greedy produced is shown beside them');
+  assert.ok(/count-pill warn">3</.test(html), 'the pill counts the honest TOTAL, not the payload length');
+  assert.ok(/1 of 3 unpaired day\(s\)/.test(html), 'the truncation note covers the third list');
+  assert.ok(html.indexOf('Collapse') < 0, 'no collapse button — there is nothing to collapse, the finding is report-only');
+  const clean = ctx.renderSheetDoctorCard_({ duplicates: [{ empId: 'E9', name: 'Zo', date: '2026-09-01', type: 'ClockIn', count: 2, times: ['08:00:00', '08:05:00'] }],
+    inverted: [], windowDays: 92, totalDuplicateRows: 1 });
+  assert.ok(clean.indexOf('Unpaired break stamps') < 0 && /count-pill warn">1</.test(clean),
+    'an older server (no unpaired field) renders exactly the pre-BP card');
+
+  // The fixture carries the new fields (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/getTimesheetDoctor: \{ duplicates: \[\], inverted: \[\], unpaired: \[\], totalUnpaired: 0, windowDays: 92 \}/.test(mock),
+    'the visual fixture ships the additive fields the client now reads');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

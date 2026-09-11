@@ -2785,7 +2785,16 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   if (type !== 'LunchOut' && type !== 'LunchIn') return false;
   const d = days[empId + '|' + date];
   if (!d) return false;
-  return d.lo.length > 1 && d.lo.length === d.li.length;
+  // Cycle-19 follow-on: ANY day carrying two-plus stamps of BOTH break types
+  // is off-limits to the collapse, whether or not the counts agree. The old
+  // equal-count test let a day like leaves [12:00, 17:00] / returns [11:00,
+  // 19:00] read as legal while the pairing silently produced ONE 7-hour
+  // "break" — and once the counts disagreed on such a day (a double-punched
+  // leave on a two-break day) the collapse would have kept the LAST leave and
+  // deleted a real one. Those days are REPORTED instead (getTimesheetDoctor's
+  // `unpaired` list — Day Edit is the fix); a day with at most one stamp of
+  // the other type keeps the classic double-punch semantics (last row wins).
+  return d.lo.length > 1 && d.li.length > 1;
 }
 
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
@@ -2825,13 +2834,13 @@ function getTimesheetDoctor() {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const scan = tsDoctorScan_();
-    const duplicates = [], inverted = [];
+    const duplicates = [], inverted = [], unpaired = [];
     // F2 (cycle 12): count EVERY finding, not just the ones that fit the
     // payload cap — the old silent truncation made a 512-group backlog read as
     // exactly 200, and the card ("Scan of the last 92 days" + a count) looked
     // complete. Every sibling bounded reader returns a truncation signal
     // (getCallNotesAuditLog, getAdminSheetView, getStorageHealth's kbEmbeds).
-    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0;
+    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0, totalUnpaired = 0;
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
       if (tsDoctorLegitBreaks_(scan.days, g.empId, g.date, g.type)) return;   // legal multi-break, not damage
@@ -2860,25 +2869,55 @@ function getTimesheetDoctor() {
       // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
       // before the lunch LEAVE — the same mis-keyed AM/PM class. Last-return
       // vs first-leave, so a legitimate multi-lunch day never false-flags.
+      let lunchInverted = false;
       if (d.lo.length && d.li.length) {
         const firstLo = d.lo.slice().sort()[0];
         const lastLi = d.li.slice().sort()[d.li.length - 1];
         if (lastLi <= firstLo) {
+          lunchInverted = true;
           totalInverted++;
           if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
             inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
           }
         }
       }
+      // Cycle-19 follow-on — UNPAIRABLE break stamps on a multi-break day. The
+      // greedy pairing (breakPairs_, INV-176) DROPS a leave with no later
+      // return or a return that precedes every open leave; on a day carrying
+      // two-plus stamps of BOTH types that drop is invisible everywhere else:
+      // the inverted test above passes it (leaves [12:00, 17:00] / returns
+      // [11:00, 19:00] reads as one 7-hour break), and the collapse never
+      // sees it because tsDoctorLegitBreaks_ protects such days. Report-only
+      // — the stamps it names are the ones Day Edit should fix; the doctor
+      // must never guess which half is real. Skipped when the day is already
+      // listed as inverted (one finding per day).
+      if (!lunchInverted && d.lo.length > 1 && d.li.length > 1) {
+        const anchor = d.in.length ? timeToMins_(d.in.slice().sort()[0]) : null;
+        const pairs = breakPairs_(d.lo, d.li, anchor);
+        const used = {};
+        pairs.forEach(function (b) { used['o' + b.out] = (used['o' + b.out] || 0) + 1; used['i' + b.in] = (used['i' + b.in] || 0) + 1; });
+        const dropped = [];
+        d.lo.forEach(function (t) { if (used['o' + t] > 0) used['o' + t]--; else dropped.push('leave ' + t); });
+        d.li.forEach(function (t) { if (used['i' + t] > 0) used['i' + t]--; else dropped.push('return ' + t); });
+        if (dropped.length) {
+          totalUnpaired++;
+          if (unpaired.length < TS_DOCTOR_MAX_GROUPS) {
+            unpaired.push({ kind: 'unpaired', empId: d.empId, name: d.name, date: d.date,
+              lunchOut: d.lo.slice().sort(), lunchIn: d.li.slice().sort(),
+              pairs: pairs.map(function (b) { return b.out + '\u2192' + b.in; }), dropped: dropped });
+          }
+        }
+      }
     });
     duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS,
+    unpaired.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    return { duplicates: duplicates, inverted: inverted, unpaired: unpaired, windowDays: TS_DOCTOR_WINDOW_DAYS,
       // F2: honest totals + the per-run collapse bound, so the client can say
       // "showing 200 of 512" and "collapses up to 200 rows per run".
-      totalDuplicates: totalDuplicates, totalInverted: totalInverted,
+      totalDuplicates: totalDuplicates, totalInverted: totalInverted, totalUnpaired: totalUnpaired,
       totalDuplicateRows: totalDuplicateRows,
-      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length),
+      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length) || (totalUnpaired > unpaired.length),
       fixMaxRows: TS_DOCTOR_FIX_MAX_ROWS };
   } catch (err) { return { error: err.message }; }
 }
@@ -2949,14 +2988,19 @@ function fixTimesheetDuplicates(empIdFilter) {
  *  report cannot drift from the behaviour it is describing.
  *
  *  Every listed day gets SHORTER: the earlier breaks were being paid. */
-function reportMultiBreakDays() {
-  assertManagerCaller_('reportMultiBreakDays');
+/** READ-ONLY shared reader for the two break-impact reports: every rep-day's
+ *  punches from the live Timesheet PLUS TimesheetArchive (INV-153/F1 — an
+ *  aged-out day still counts), accumulated through punchDayAdd_ so the
+ *  reports see exactly the shape the hours builders see. A row present in
+ *  BOTH tabs (a mid-run archive duplicate) is counted ONCE — the INV-132
+ *  duplicate-not-lose rule the accrual index already applies; without it a
+ *  duplicated LunchOut/LunchIn fabricates a phantom pair and puts a day on a
+ *  report that never changes. Writes nothing; never provisions a tab.
+ *  Returns { perDay: { 'empId|date': {empId, date, name, pm, source} },
+ *            liveRows, archRows }. */
+function tsPunchDaysWithArchive_() {
   const ss = getAdpSS_();
   const perDay = {};      // 'empId|date' -> { name, pm }
-  // A row present in BOTH tabs (a mid-run archive duplicate) must be counted
-  // ONCE — the INV-132 duplicate-not-lose rule the accrual index already
-  // applies. Without it a duplicated LunchOut/LunchIn would fabricate a phantom
-  // second pair and put a day on this report that never changes.
   const liveKeys = new Set();
   const readTab = (tabName, label) => {
     const sh = ss.getSheetByName(tabName);
@@ -2984,6 +3028,93 @@ function reportMultiBreakDays() {
   };
   const liveRows = readTab(CONFIG.ADP_TAB, 'live');
   const archRows = readTab(TIMESHEET_ARCHIVE_TAB, 'archive');
+  return { perDay: perDay, liveRows: liveRows, archRows: archRows };
+}
+
+/** The break pairing EXACTLY as it stood before cycle-19 F1 (commit 760c029
+ *  replaced it) — kept ONLY so reportBreakPairingChanges can reproduce the old
+ *  figure. Both lists walked on ONE index: outs[i] pairs with ins[i] when the
+ *  return follows the leave, else the slot is dropped. That is the shape a
+ *  single stray early LunchIn defeated — it shifted every later `in` one
+ *  slot and un-paired the whole day, PAYING every real break. Never call it
+ *  from anything but the report. */
+function breakPairsPositional_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const list = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null)
+    .sort((a, b) => a.mins - b.mins);
+  const outs = list(lunchOut), ins = list(lunchIn);
+  const pairs = [];
+  for (let i = 0; i < Math.min(outs.length, ins.length); i++) {
+    if (ins[i].mins <= outs[i].mins) continue;             // malformed: in at/before out
+    pairs.push({ out: outs[i].raw, in: ins[i].raw, minutes: ins[i].mins - outs[i].mins });
+  }
+  return pairs;
+}
+
+/** READ-ONLY operator report (cycle-19 F1 follow-on): which historical days
+ *  change when breakPairs_ moved from the POSITIONAL pairing to the GREEDY
+ *  one — each `out` takes the earliest `in` that can close it, and an `in`
+ *  that cannot close the current `out` is skipped ALONE.
+ *
+ *  The twin of reportMultiBreakDays: same shared reader (live + archive,
+ *  duplicates counted once), writes nothing, manager-gated because it walks
+ *  the whole Timesheet. The old figure comes from the SAME calcHours_ plus the
+ *  difference in deducted break minutes between the two pairings — the clock
+ *  arithmetic is never re-implemented, only the removed pairing is (verbatim,
+ *  in breakPairsPositional_). A day is listed only when the two pairings
+ *  deduct different minutes; on every such day the greedy figure is LOWER —
+ *  the old pairing had left a real break paid. */
+function reportBreakPairingChanges() {
+  assertManagerCaller_('reportBreakPairingChanges');
+  const read = tsPunchDaysWithArchive_();
+  const perDay = read.perDay;
+  const sumMin = (pairs) => pairs.reduce((acc, b) => acc + b.minutes, 0);
+  const affected = [];
+  let totalDelta = 0;
+  Object.keys(perDay).forEach((key) => {
+    const d = perDay[key], pm = d.pm;
+    if (!pm.ClockIn || !pm.ClockOut) return;              // incomplete days contribute no hours either way
+    const inMins = timeToMins_(pm.ClockIn);
+    const greedy = breakPairs_(pm.LunchOut, pm.LunchIn, inMins);
+    const positional = breakPairsPositional_(pm.LunchOut, pm.LunchIn, inMins);
+    const diffMin = sumMin(greedy) - sumMin(positional);
+    if (diffMin === 0) return;
+    const newH = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut, pm.LunchIn);
+    if (newH === null) return;
+    const oldH = newH + diffMin / 60;                      // the positional pairing deducted diffMin fewer minutes
+    const delta = +(newH - oldH).toFixed(2);
+    if (delta === 0) return;
+    totalDelta += delta;
+    affected.push({ empId: d.empId, name: d.name, date: d.date, source: d.source,
+      oldHours: +oldH.toFixed(2), newHours: +newH.toFixed(2), deltaHours: delta,
+      greedy: greedy.map((b) => b.out + '\u2192' + b.in).join(', ') || '(none)',
+      positional: positional.map((b) => b.out + '\u2192' + b.in).join(', ') || '(none)' });
+  });
+  affected.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name) : a.date.localeCompare(b.date)));
+
+  Logger.log('=== Break-pairing impact report (positional → greedy, cycle-19 F1) ===');
+  Logger.log('Scanned ' + read.liveRows + ' live + ' + read.archRows + ' archived punch rows across '
+    + Object.keys(perDay).length + ' rep-days.');
+  if (!affected.length) {
+    Logger.log('NO historical day changes — both pairings deduct the same minutes on every completed day.');
+  } else {
+    Logger.log(affected.length + ' day(s) change; total ' + totalDelta.toFixed(2) + ' hours (always a reduction —'
+      + ' the positional pairing had left a real break paid).');
+    affected.forEach((a) => Logger.log('  ' + a.date + '  ' + a.name + ' (' + a.empId + ')  ['
+      + a.source + ']  was: ' + a.positional + '  now: ' + a.greedy + '  ' + a.oldHours + 'h -> ' + a.newHours + 'h  ('
+      + a.deltaHours.toFixed(2) + ')'));
+  }
+  return { liveRows: read.liveRows, archiveRows: read.archRows, repDays: Object.keys(perDay).length,
+    affected: affected, totalDeltaHours: +totalDelta.toFixed(2) };
+}
+
+function reportMultiBreakDays() {
+  assertManagerCaller_('reportMultiBreakDays');
+  const read = tsPunchDaysWithArchive_();   // live + archive, duplicates counted once (INV-132/153)
+  const perDay = read.perDay;
+  const liveRows = read.liveRows, archRows = read.archRows;
 
   const lastOf = (v) => (Array.isArray(v) ? (v.length ? v.slice().sort()[v.length - 1] : null) : (v || null));
   const affected = [];

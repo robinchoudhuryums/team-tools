@@ -369,12 +369,17 @@ function loadSheetDoctor_() {
       // C17-7 — same failed-vs-clean split as loadPtoReconciliation_.
       if (res && res.error) { s.innerHTML = errorStateHtml_('Timesheet doctor scan could not run — this is a failed check, not a clean result. (' + res.error + ')'); mgrSetSummary_('mgr-sum-doctor', 'scan failed', 'warn'); return; }
       if (!res ||
-          ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length))) {
+          ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length) &&
+           (!res.unpaired || !res.unpaired.length))) {
         s.innerHTML = ''; mgrSetSummary_('mgr-sum-doctor', 'all clear', 'ok'); return;   // M5 — state, never silence
       }
       var nd = (res.totalDuplicates != null) ? res.totalDuplicates : (res.duplicates || []).length;
       var ni = (res.totalInverted != null) ? res.totalInverted : (res.inverted || []).length;
-      mgrSetSummary_('mgr-sum-doctor', (nd ? nd + ' duplicate' : '') + (nd && ni ? ' · ' : '') + (ni ? ni + ' inverted' : ''), 'warn');
+      // Cycle-19 follow-on: unpairable break stamps (report-only) — an older
+      // server ships no `unpaired`, which reads as zero.
+      var nu = (res.totalUnpaired != null) ? res.totalUnpaired : (res.unpaired || []).length;
+      mgrSetSummary_('mgr-sum-doctor', [nd ? nd + ' duplicate' : '', ni ? ni + ' inverted' : '', nu ? nu + ' unpaired' : '']
+        .filter(function (x) { return x; }).join(' · '), 'warn');
       s.innerHTML = renderSheetDoctorCard_(res);
     })
     .withFailureHandler(function (err) {
@@ -403,13 +408,25 @@ function renderSheetDoctorCard_(res) {
       '<span style="font-weight:600;color:var(--ink)">' + esc(v.name || v.empId) + '</span> · ' +
       esc(v.date) + ' · ' + detail + '</div>';
   }).join('');
+  // Cycle-19 follow-on — unpairable break stamps on a multi-break day: the
+  // greedy pairing dropped a leave/return, and the collapse deliberately
+  // never touches such a day. Names the dropped stamps; Day Edit is the fix.
+  const unp = (res.unpaired || []).map(function (u) {
+    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="font-weight:600;color:var(--ink)">' + esc(u.name || u.empId) + '</span> · ' +
+      esc(u.date) + ' · leaves ' + (u.lunchOut || []).map(esc).join(', ') + ' · returns ' + (u.lunchIn || []).map(esc).join(', ') +
+      ' <span style="color:var(--warning-deep)">unpaired: ' + (u.dropped || []).map(esc).join(', ') +
+      ' — paired as ' + ((u.pairs || []).length ? (u.pairs || []).map(esc).join(', ') : 'nothing') + '; fix via Day Edit</span></div>';
+  }).join('');
   // F2 (cycle 12): report the REAL totals, not the payload-capped list length,
   // and label the button with what the server will actually do this run.
   const shownDup = (res.duplicates || []).length;
   const shownInv = (res.inverted || []).length;
+  const shownUnp = (res.unpaired || []).length;
   const totDup = (res.totalDuplicates != null) ? res.totalDuplicates : shownDup;
   const totInv = (res.totalInverted != null) ? res.totalInverted : shownInv;
-  const total = totDup + totInv;
+  const totUnp = (res.totalUnpaired != null) ? res.totalUnpaired : shownUnp;
+  const total = totDup + totInv + totUnp;
   const fixCap = res.fixMaxRows || 0;
   const dupRows = (res.totalDuplicateRows != null) ? res.totalDuplicateRows : shownDup;
   const willFix = (fixCap && dupRows > fixCap) ? fixCap : dupRows;
@@ -417,7 +434,8 @@ function renderSheetDoctorCard_(res) {
     ? '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:8px">' +
         icon('warning', 11) + ' Showing ' + esc(String(shownDup)) + ' of ' + esc(String(totDup)) +
         ' duplicate group(s) and ' + esc(String(shownInv)) + ' of ' + esc(String(totInv)) +
-        ' inverted pair(s) — fix these, then re-run to see the rest.</div>'
+        ' inverted pair(s)' + (totUnp ? ' and ' + esc(String(shownUnp)) + ' of ' + esc(String(totUnp)) + ' unpaired day(s)' : '') +
+        ' — fix these, then re-run to see the rest.</div>'
     : '';
   return '<div class="card" style="border-color:var(--warn)">' +
     '<h2 class="card-label with-count"><span>Timesheet Doctor</span>' +
@@ -425,7 +443,7 @@ function renderSheetDoctorCard_(res) {
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scan of the last ' +
       esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
       'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
-      'Inverted in/out pairs are report-only — correct them via Day Edit.</div>' +
+      'Inverted in/out pairs and unpaired break stamps are report-only — correct them via Day Edit.</div>' +
     truncNote +
     (dups ? '<h2 class="card-label" style="margin:6px 0 2px">Duplicate punches</h2>' + dups : '') +
     (dupRows
@@ -435,6 +453,7 @@ function renderSheetDoctorCard_(res) {
           '</button></div>'
       : '') +
     (invs ? '<h2 class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</h2>' + invs : '') +
+    (unp ? '<h2 class="card-label" style="margin:10px 0 2px">Unpaired break stamps</h2>' + unp : '') +
   '</div>';
 }
 

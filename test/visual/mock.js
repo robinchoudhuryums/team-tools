@@ -1208,7 +1208,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       }
       return { month: month, days: days, holidays: {}, rosterCount: 4, adjustWindowDays: 30, archiveNote: false };
     },
-    getTimesheetDoctor: { duplicates: [], inverted: [], windowDays: 92 },
+    getTimesheetDoctor: { duplicates: [], inverted: [], unpaired: [], totalUnpaired: 0, windowDays: 92 },
     getReferenceTree: { isManager: true, isAdmin: true, items: [
       { id: 'kb-1', department: 'Billing', title: 'HIPAA refresher', type: 'article', status: 'published', sortOrder: 1 },
       { id: 'kb-2', department: 'Billing', title: 'OOP payment policy', type: 'article', status: 'published', sortOrder: 2 },
