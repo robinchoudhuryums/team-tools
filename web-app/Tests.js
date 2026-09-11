@@ -1294,6 +1294,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
+  _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
@@ -4416,6 +4417,16 @@ function test_triggerGate_qaReviewPurge_nonManagerThrows() {
 function test_triggerGate_coachingRecap_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCoachingRecapDigest(); });
+  }, 'manager access required');
+}
+
+// Cycle-18 F11 follow-on (2026-09-11) — the diagnostics retention purge
+// (ViewUsage + ClientErrors) is a trigger handler reachable via
+// google.script.run, so it carries the MANAGER_EMAILS gate (INV-44). A
+// non-manager must throw BEFORE any window read or sheet touch.
+function test_triggerGate_diagnosticsPurge_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeOldDiagnostics(); });
   }, 'manager access required');
 }
 

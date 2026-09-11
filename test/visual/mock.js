@@ -1499,6 +1499,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       archiveDays: { value: 0, source: 'default' },
       retentionDays: { value: 0, source: 'default' },
       archiveRetentionDays: { value: 0, source: 'default' },
+      // Cycle-18 F11 follow-on — the two diagnostics windows (field names
+      // mirror getRetentionConfig's return site, INV-185).
+      viewUsageDays: { value: 0, source: 'default' },
+      clientErrDays: { value: 0, source: 'default' },
       warnings: [], archiveTab: 'NotesArchive',
     },
     getCallNotesEnrollment: { enrolled: [
@@ -1624,7 +1628,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return {
         configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
         stores: [
-          store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept', 'ADP_SS_ID'),
+          store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', 'ADP_SS_ID'),
           store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID'),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
@@ -1787,7 +1791,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
       stores: [
-        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID',
+        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', prop: 'ADP_SS_ID',
           source: 'Script Property', note: '', configured: true, reachable: true, name: 'ADP (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
         { label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs', cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID',
           source: 'Script Property', note: '', configured: true, reachable: true, name: 'KB (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },

@@ -32,6 +32,18 @@ const CONFIG = {
   // step, not a code default, because the purge is irreversible. Enforced by the
   // daily purgeExpiredFormData trigger (must be installed).
   FORM_DATA_RETENTION_DAYS: 0,
+  // Cycle-18 F11 follow-on (2026-09-11): the two append-only DIAGNOSTICS tabs
+  // on the ADP spreadsheet — ViewUsage (feature-usage telemetry) and
+  // ClientErrors (the client error beacon) — were the only growing stores with
+  // no retention tier; "trim manually" was an operator obligation nobody was
+  // reminded of. Two INDEPENDENT windows in days; 0 = DISABLED (the safe
+  // committed default). Script Properties VIEW_USAGE_RETENTION_DAYS /
+  // CLIENT_ERR_RETENTION_DAYS override without a redeploy; the Admin → Config →
+  // Retention panel edits them. Both tabs are PHI-free by construction
+  // (INV-150 / the observability KDD), so the delete is irreversible but never
+  // a PHI question. Enforced by the daily purgeOldDiagnostics trigger.
+  VIEW_USAGE_RETENTION_DAYS: 0,
+  CLIENT_ERR_RETENTION_DAYS: 0,
 
   // #7 (INV-153) — Timesheet cold-archive window: rows whose DATE is older than
   // this many days MOVE to a TimesheetArchive tab in the same ADP spreadsheet
@@ -6254,10 +6266,15 @@ function getRetentionConfig() {
       return (cfgVal && cfgVal > 0) ? 'CONFIG' : 'default';
     };
     const a = getNoteArchiveDays_(), r = getNoteRetentionDays_(), ar = getArchiveRetentionDays_();
+    // Cycle-18 F11 follow-on: the two PHI-free diagnostics windows ride the
+    // same panel (additive fields — an older client ignores them).
+    const vu = viewUsageRetentionDays_(), ce = clientErrRetentionDays_();
     return {
       archiveDays:          { value: a,  source: srcOf('CN_NOTE_ARCHIVE_DAYS', CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS) },
       retentionDays:        { value: r,  source: srcOf('CN_NOTE_RETENTION_DAYS', CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS) },
       archiveRetentionDays: { value: ar, source: srcOf('CN_ARCHIVE_RETENTION_DAYS', CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS) },
+      viewUsageDays:        { value: vu, source: srcOf(VIEW_USAGE_RETENTION_PROP, CONFIG.VIEW_USAGE_RETENTION_DAYS) },
+      clientErrDays:        { value: ce, source: srcOf(CLIENT_ERR_RETENTION_PROP, CONFIG.CLIENT_ERR_RETENTION_DAYS) },
       warnings: retentionWarnings_(a, r, ar),
       archiveTab: CONFIG.CALL_NOTES.ARCHIVE_TAB,
     };
@@ -6286,12 +6303,25 @@ function saveRetentionConfig(settings) {
     if (a === null || r === null || ar === null) {
       return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
     }
+    // Cycle-18 F11 follow-on: the two diagnostics windows are OPTIONAL in the
+    // payload — written only when the client sent them, so a client that
+    // predates them (or omits them) can never silently reset a window to 0.
+    const hasVu = Object.prototype.hasOwnProperty.call(settings, 'viewUsageDays');
+    const hasCe = Object.prototype.hasOwnProperty.call(settings, 'clientErrDays');
+    const vu = hasVu ? parse(settings.viewUsageDays) : 0, ce = hasCe ? parse(settings.clientErrDays) : 0;
+    if (vu === null || ce === null) {
+      return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
+    }
     const props = PropertiesService.getScriptProperties();
     props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
     props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
     props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
+    if (hasVu) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(vu));
+    if (hasCe) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ce));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)', callerEmp.email);
+      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)' +
+      (hasVu || hasCe ? '; diagnostics (viewUsage=' + (hasVu ? vu + 'd' : 'unchanged') + ', clientErrors=' + (hasCe ? ce + 'd' : 'unchanged') + ')' : ''),
+      callerEmp.email);
     return { success: true, warnings: retentionWarnings_(a, r, ar) };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -7066,6 +7096,146 @@ function clientErrorsSummary_(mgrTz) {
   return out;
 }
 
+// ── Diagnostics retention (cycle-18 F11 follow-on, 2026-09-11) ─────────────
+// ViewUsage + ClientErrors were the ONLY two growing stores with no retention
+// tier — append-only diagnostics that nothing aged out, and neither surfaced
+// in Storage Health, so the "trim manually" obligation lived only in CLAUDE.md.
+// Two independent windows (Script Property first, then CONFIG — the
+// FORM_DATA_RETENTION_DAYS shape), both DISABLED by default, a single daily
+// trigger. The rows are PHI-free by construction (INV-150 / the observability
+// KDD): the delete is irreversible, never a PHI question — but it is still a
+// top-level trigger handler reachable via google.script.run, so it carries the
+// INV-44 gate, the INV-01 lock, and a counts-only audit row (the INV-161
+// liveness heartbeat). It reads with getSheetByName (never provisions — a
+// missing tab means nothing was ever recorded) and is bounded per run so a
+// large first enable drains over successive nights (the INV-153/F3 bound).
+const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS';
+const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';
+const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across BOTH tabs, oldest first
+
+/** Shared window resolver: Script Property first (non-empty wins), else the
+ *  CONFIG fallback. 0 / negative / unparseable → 0 (disabled — never NaN). */
+function retentionWindowDays_(propName, cfgVal) {
+  const prop = PropertiesService.getScriptProperties().getProperty(propName);
+  const raw = (prop != null && prop !== '') ? prop : (cfgVal || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+function viewUsageRetentionDays_() { return retentionWindowDays_(VIEW_USAGE_RETENTION_PROP, CONFIG.VIEW_USAGE_RETENTION_DAYS); }
+function clientErrRetentionDays_() { return retentionWindowDays_(CLIENT_ERR_RETENTION_PROP, CONFIG.CLIENT_ERR_RETENTION_DAYS); }
+
+/** The one-line summary Storage Health shows on the ADP store row, so the two
+ *  windows are visible where every other store's policy is (INV-186: unset is
+ *  a FACT — "kept" — never a warning). */
+function diagRetentionText_() {
+  const vu = viewUsageRetentionDays_(), ce = clientErrRetentionDays_();
+  return 'diagnostics tabs — ViewUsage ' + (vu > 0 ? vu + 'd purge' : 'kept') +
+    ' · ClientErrors ' + (ce > 0 ? ce + 'd purge' : 'kept');
+}
+
+/** Epoch ms of a diagnostics Timestamp cell. Both tabs are written
+ *  'yyyy-MM-dd HH:mm:ss' in CONFIG.TIMEZONE (recordClientError /
+ *  recordViewEnter); Sheets coerces the cell to a Date on read, which
+ *  normalizeAuditTs_ recovers in the sheet's own tz. NULL on a blank or
+ *  unparseable cell — such a row is never "old" and is NEVER deleted (the
+ *  parseRetentionDateMs_ fail-safe). */
+function diagTsMs_(cell) {
+  const s = normalizeAuditTs_(cell);
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return null;
+  try { return Utilities.parseDate(s, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); }
+  catch (e) { return null; }
+}
+
+/** PURE (Node-pinned): 1-based sheet row indices, any order, duplicates
+ *  tolerated → contiguous runs [{start, count}] sorted DESCENDING by start, so
+ *  deleting them in order never shifts a run still to be deleted. One
+ *  deleteRows per run instead of one deleteRow per row: the tabs are
+ *  append-only, so the purgeable rows are one long prefix and a 2000-row run
+ *  is ONE call (~0.5s per row otherwise — the INV-153 lock-starvation class). */
+function contiguousRowRunsDesc_(rowIdxs) {
+  const seen = {};
+  const sorted = (rowIdxs || []).map(Number).filter(function (n) {
+    if (!isFinite(n) || n < 1 || seen[n]) return false;
+    seen[n] = true; return true;
+  }).sort(function (a, b) { return a - b; });
+  const runs = [];
+  sorted.forEach(function (n) {
+    const last = runs[runs.length - 1];
+    if (last && n === last.start + last.count) last.count++;
+    else runs.push({ start: n, count: 1 });
+  });
+  return runs.reverse();
+}
+
+/** Delete rows of `sheet` whose column-A stamp is older than cutoffMs —
+ *  OLDEST first (append order), at most `budget` rows. Returns
+ *  {removed, hitCap}. Caller holds the lock. */
+function diagPurgeTab_(sheet, cutoffMs, budget) {
+  const out = { removed: 0, hitCap: false };
+  if (!sheet || !(budget > 0)) return out;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return out;
+  const col = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const idx = [];
+  for (let i = 0; i < col.length && idx.length < budget; i++) {
+    const ms = diagTsMs_(col[i][0]);
+    if (ms !== null && ms < cutoffMs) idx.push(i + 2);
+  }
+  if (!idx.length) return out;
+  // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
+  // delete all non-frozen rows" — the archive mover's spare-row guard and the
+  // _clearTestCallNotes lesson). A window that covers the whole tab would
+  // throw on the last run; keep one spare row so the final delete is never
+  // "all non-frozen rows".
+  if (idx.length >= sheet.getMaxRows() - 1) sheet.insertRowAfter(sheet.getMaxRows());
+  contiguousRowRunsDesc_(idx).forEach(function (r) { sheet.deleteRows(r.start, r.count); });
+  out.removed = idx.length;
+  out.hitCap = idx.length >= budget;
+  return out;
+}
+
+/** Daily diagnostics purge (trigger #20). No-ops while BOTH windows are 0
+ *  (the default) — the early return precedes the lock, so installing the
+ *  trigger is harmless. Counts-only audit on every enabled run; a thrown run
+ *  stamps AUTOMATION_LAST_ERRORS (a handler that only RETURNS reaches nobody —
+ *  the F4 rule) and a clean one clears it. */
+function purgeOldDiagnostics() {
+  assertManagerCaller_('purgeOldDiagnostics');
+  try {
+    const vuDays = viewUsageRetentionDays_(), ceDays = clientErrRetentionDays_();
+    if (!vuDays && !ceDays) {
+      Logger.log('purgeOldDiagnostics: both windows disabled (VIEW_USAGE_RETENTION_DAYS=0, CLIENT_ERR_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const ss = getAdpSS_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false };
+    try {
+      let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
+      if (vuDays) {
+        vu = diagPurgeTab_(ss.getSheetByName(VIEW_USAGE_TAB), Date.now() - vuDays * 86400000, budget);
+        budget -= vu.removed;
+      }
+      if (ceDays) {
+        ce = diagPurgeTab_(ss.getSheetByName(CLIENT_ERRORS_TAB), Date.now() - ceDays * 86400000, budget);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    const capped = vu.hitCap || ce.hitCap;
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
+      `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}` +
+      (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
+    clearAutomationError_('DiagnosticsPurge');
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors row(s)` +
+      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + '.');
+  } catch (err) {
+    stampAutomationError_('DiagnosticsPurge', err.message);
+    Logger.log('purgeOldDiagnostics failed: ' + err.message);
+  }
+}
+
 // ── Automation Health (Admin tab) ────────────────────────────────────────
 // Operationalizes the "monitor AuditLog for PersonalSheetSyncFail" gotcha and
 // the silent-degradation posture: one manager-gated, read-only aggregate that
@@ -7081,7 +7251,7 @@ function clientErrorsSummary_(mgrTz) {
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
   'CallNotesArchive', 'CallNotesArchivePurge', 'TimesheetArchive',
-  'PtoAccrualCredit', 'QaReviewPurge',
+  'PtoAccrualCredit', 'QaReviewPurge', 'DiagnosticsPurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -7126,6 +7296,9 @@ const AUTOMATION_JOB_CHECKS = [
   { action: 'QaReviewPurge', label: 'QA review-record retention purge',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return qaReviewRetentionDays_() > 0 && qaStoreConfigured_(); } },
+  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors)',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return viewUsageRetentionDays_() > 0 || clientErrRetentionDays_() > 0; } },
 ];
 
 /** Is any roster row carrying a column-Q accrual rate? Decides whether the
@@ -7867,7 +8040,7 @@ function getStorageHealth(opts) {
     const adpProp = props.getProperty('ADP_SS_ID');
     const adpId = adpProp || (isPlaceholder(CONFIG.ADP_SS_ID) ? '' : CONFIG.ADP_SS_ID);
     stores.push(probe({ label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust',
-      cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', id: adpId,
+      cls: 'Payroll', retention: 'Kept · ' + diagRetentionText_(), prop: 'ADP_SS_ID', id: adpId,
       source: adpProp ? 'Script Property' : (adpId ? 'CONFIG' : 'unset'),
       note: adpId ? '' : 'Set ADP_SS_ID — the app fails on first sheet open without it.' }));
 
@@ -12121,6 +12294,7 @@ function installAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -12176,6 +12350,13 @@ function installAutomationTriggers() {
   // QA_REVIEW_RETENTION_DAYS=0 (the default) or QA_SS_ID is unset, so
   // installing it is harmless.
   ScriptApp.newTrigger('purgeOldQaReviews')
+    .timeBased().atHour(2).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Diagnostics retention purge (cycle-18 F11 follow-on) — ViewUsage +
+  // ClientErrors rows past their windows. No-ops while BOTH
+  // VIEW_USAGE_RETENTION_DAYS and CLIENT_ERR_RETENTION_DAYS are 0 (the
+  // default), so installing it is harmless. Same 2am slot as the other purges.
+  ScriptApp.newTrigger('purgeOldDiagnostics')
     .timeBased().atHour(2).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
@@ -12310,6 +12491,7 @@ function removeAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);

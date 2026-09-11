@@ -9059,6 +9059,16 @@ function cnRenderRetentionHtml_(res) {
     cnRetentionRowHtml_('purge', 'Purge live after — delete from the live Notes tab', res.retentionDays, true) +
     cnRetentionRowHtml_('archpurge', 'Purge cold after — delete from the archive tab', res.archiveRetentionDays, true) +
     warnHtml +
+    // Cycle-18 F11 follow-on: the two PHI-free diagnostics tabs (ViewUsage +
+    // ClientErrors) gained a retention tier — the ONLY two growing stores that
+    // had none. Rendered only when the server ships the fields (an older
+    // server = the three call-note rows exactly as before).
+    (res.viewUsageDays || res.clientErrDays
+      ? '<div class="day-section-label" style="margin:14px 0 4px">' + icon('chart', 14) + ' Diagnostics tabs (PHI-free)</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">The <em>ViewUsage</em> (feature-usage telemetry) and <em>ClientErrors</em> (client error beacon) tabs on the ADP spreadsheet grow one row per event and nothing else ages them out. Both windows are independent (days; 0 = keep forever). The rows carry no patient or note content — the delete is irreversible but never a PHI question. Runs with the 2am purge trigger, oldest rows first, bounded per night.</div>' +
+        cnRetentionRowHtml_('viewusage', 'Purge ViewUsage rows after', res.viewUsageDays, true) +
+        cnRetentionRowHtml_('clienterr', 'Purge ClientErrors rows after', res.clientErrDays, true)
+      : '') +
     '<div style="display:flex;align-items:center;gap:12px;margin-top:12px">' +
       '<button class="btn-modal-ok" id="cn-ret-save" style="margin:0" onclick="cnSaveRetention_()">Save retention</button>' +
       '<span style="font-size:11px;color:var(--muted)">Takes effect on the next nightly run. Re-run <code>installAutomationTriggers()</code> once if you have not yet.</span>' +
@@ -9068,6 +9078,11 @@ function cnRenderRetentionHtml_(res) {
 function cnSaveRetention_() {
   var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
   var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
+  // The diagnostics windows are sent ONLY when their rows rendered (the server
+  // shipped the fields) — an absent key leaves that window untouched server-side.
+  var prevCfg = CN_STATE.retentionCfg || {};
+  if (prevCfg.viewUsageDays && document.getElementById('cn-ret-viewusage')) payload.viewUsageDays = rd('viewusage');
+  if (prevCfg.clientErrDays && document.getElementById('cn-ret-clienterr')) payload.clientErrDays = rd('clienterr');
   var prev = CN_STATE.retentionCfg || {};
   var prevPurge = (prev.retentionDays && prev.retentionDays.value) || 0;
   var prevCold  = (prev.archiveRetentionDays && prev.archiveRetentionDays.value) || 0;
@@ -9799,6 +9814,7 @@ var CN_HEALTH_RUN_LABELS = {
   TimesheetArchive:     { label: 'Timesheet cold-archive',     expect: 'daily 6pm — writes a row only when TIMESHEET_ARCHIVE_DAYS is set' },
   PtoAccrualCredit:     { label: 'PTO accrual credit',         expect: 'monthly (on/after the 1st) per accruing rep — never seen = no column-Q rates set, or no month boundary yet' },
   QaReviewPurge:        { label: 'QA review-record purge',     expect: 'daily 2am — writes a row only when QA_REVIEW_RETENTION_DAYS is set' },
+  DiagnosticsPurge:     { label: 'Diagnostics retention purge', expect: 'daily 2am — writes a row only when a ViewUsage / ClientErrors window is set' },
 };
 
 // §7c/#4 — compact "System status" cards atop the Admin Overview, summarizing

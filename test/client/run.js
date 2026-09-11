@@ -18899,6 +18899,120 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   assert.ok(/function test_presence_stampAndFlag\(/.test(tests) && /_integrationTest\('presence_stampAndFlag'/.test(tests), 'the presence editor test exists and is registered');
 });
 
+
+/* ── Cycle-19 follow-ons (2026-09-11): the diagnostics retention tier ──────
+ * ViewUsage + ClientErrors were the only two growing stores with no purge
+ * (cycle-18 F11). The pin drives the pure pieces and holds the purge's
+ * contract in the same shape the QA-18 pin holds purgeOldQaReviews.
+ */
+console.log('\nCode.js — RT-1: diagnostics retention tier (ViewUsage / ClientErrors)');
+test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // (a) Getter behavioural — property wins, CONFIG 0 = disabled, garbage → 0,
+  // and the two windows are INDEPENDENT (one set does not enable the other).
+  const mk = (props, cfg) => {
+    const ctx = {
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] == null ? null : props[k]) }) },
+      CONFIG: Object.assign({ VIEW_USAGE_RETENTION_DAYS: 0, CLIENT_ERR_RETENTION_DAYS: 0 }, cfg || {}),
+      parseInt: parseInt, isNaN: isNaN,
+    };
+    vm.createContext(ctx);
+    ['retentionWindowDays_', 'viewUsageRetentionDays_', 'clientErrRetentionDays_', 'diagRetentionText_'].forEach((fn) =>
+      vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+    vm.runInContext("const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS'; const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';", ctx);
+    return ctx;
+  };
+  let c = mk({});
+  assert.strictEqual(c.viewUsageRetentionDays_(), 0, 'unset + CONFIG 0 → disabled');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0);
+  c = mk({ VIEW_USAGE_RETENTION_DAYS: '180' });
+  assert.strictEqual(c.viewUsageRetentionDays_(), 180, 'property wins');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0, 'the sibling window is untouched — independent');
+  assert.strictEqual(c.diagRetentionText_(), 'diagnostics tabs — ViewUsage 180d purge · ClientErrors kept',
+    'Storage Health reads the live window; an unset one is the FACT "kept" (INV-186)');
+  c = mk({ CLIENT_ERR_RETENTION_DAYS: '-5' }, { VIEW_USAGE_RETENTION_DAYS: 90 });
+  assert.strictEqual(c.viewUsageRetentionDays_(), 90, 'CONFIG fallback when the property is unset');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0, 'negative → disabled');
+  assert.strictEqual(mk({ VIEW_USAGE_RETENTION_DAYS: 'soon' }).viewUsageRetentionDays_(), 0, 'garbage → 0, never NaN');
+  // (b) Run grouping behavioural: one deleteRows per contiguous run,
+  // descending, duplicates + junk dropped. Append-only tabs make the purgeable
+  // set one prefix, so a 2000-row night is ONE call rather than 2000.
+  const g = vm.createContext({ isFinite: isFinite, Number: Number });
+  vm.runInContext(extractRawFunction('Code.js', 'contiguousRowRunsDesc_'), g);
+  const runs = (a) => g.contiguousRowRunsDesc_(a).map((r) => r.start + 'x' + r.count).join('|');
+  assert.strictEqual(runs([2, 3, 4, 5]), '2x4', 'a prefix is one run');
+  assert.strictEqual(runs([9, 2, 3, 7, 8, 3, 'x', 0]), '7x3|2x2', 'descending runs; duplicates, junk and row 0 dropped');
+  assert.strictEqual(runs([]), '', 'nothing to delete');
+  // (c) Timestamp parse fail-safe: a blank/garbage cell is null, never "old".
+  const t = vm.createContext({
+    normalizeAuditTs_: (v) => (v instanceof Date ? 'DATE' : String(v == null ? '' : v).trim()),
+    Utilities: { parseDate: (s) => ({ getTime: () => 1000 }) }, CONFIG: { TIMEZONE: 'Asia/Kolkata' },
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'diagTsMs_'), t);
+  assert.strictEqual(t.diagTsMs_('2026-09-11 10:00:00'), 1000, 'the writer form parses in CONFIG.TIMEZONE');
+  assert.strictEqual(t.diagTsMs_(''), null, 'blank → null (never deleted)');
+  assert.strictEqual(t.diagTsMs_('Wed Jul 15 2026'), null, 'a hand-mangled cell → null (never deleted)');
+  // (d) The purge contract, comment-stripped (its own comments name the things
+  // it must not do — the INV-188 family).
+  const raw = extractRawFunction('Code.js', 'purgeOldDiagnostics');
+  const f = nc(raw);
+  assert.ok(/assertManagerCaller_\('purgeOldDiagnostics'\)/.test(f), 'INV-44 gate — reachable via google.script.run');
+  const lockIdx = f.indexOf('waitLock(15000)');
+  assert.ok(lockIdx > 0 && f.indexOf('if (!vuDays && !ceDays)') > -1 && f.indexOf('if (!vuDays && !ceDays)') < lockIdx,
+    'the both-disabled return precedes the lock — installing the trigger is harmless');
+  assert.ok(/releaseLock\(\)/.test(f) && /finally/.test(f), 'INV-01 finally-release');
+  assert.ok(/getSheetByName\(VIEW_USAGE_TAB\)/.test(f) && /getSheetByName\(CLIENT_ERRORS_TAB\)/.test(f) && !/getOrCreate|insertSheet/.test(f),
+    'reads with getSheetByName — never provisions a tab (a missing tab = nothing recorded)');
+  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the two diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
+  assert.ok(/stampAutomationError_\('DiagnosticsPurge'/.test(f) && /clearAutomationError_\('DiagnosticsPurge'\)/.test(f),
+    'a thrown run stamps AUTOMATION_LAST_ERRORS and a clean run clears it (F4 — a returned error reaches nobody)');
+  const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
+  assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}/.test(call),
+    'counts-only audit note on every enabled run (the INV-161 heartbeat)');
+  assert.ok(/hitPerRunCap=/.test(call), 'a capped run says so in its audit row (the INV-153/F3 shape)');
+  const tab = nc(extractRawFunction('Code.js', 'diagPurgeTab_'));
+  assert.ok(/ms !== null && ms < cutoffMs/.test(tab), 'a null stamp is never deleted');
+  assert.ok(/idx\.length < budget/.test(tab), 'bounded per run, oldest first');
+  assert.ok(/insertRowAfter\(sheet\.getMaxRows\(\)\)/.test(tab) && tab.indexOf('insertRowAfter') < tab.indexOf('deleteRows('),
+    'the spare-row guard runs BEFORE the deletes — Sheets refuses to delete every non-frozen row');
+  assert.ok(/contiguousRowRunsDesc_\(idx\)/.test(tab) && !/deleteRow\(/.test(tab), 'deletes contiguous runs, never row by row');
+  // (e) Liveness: the job row is gated on EITHER window (INV-186 — a
+  // deployment with both off is never checked), and the action is registered
+  // in the audit-action list + the client's label map (the ⊇ couplings hold
+  // it, this names the row).
+  const jobRow = codeSrc.slice(codeSrc.indexOf("{ action: 'DiagnosticsPurge'"), codeSrc.indexOf("{ action: 'DiagnosticsPurge'") + 400);
+  assert.ok(/enabled: function \(\) \{ return viewUsageRetentionDays_\(\) > 0 \|\| clientErrRetentionDays_\(\) > 0; \}/.test(jobRow),
+    'AUTOMATION_JOB_CHECKS row gated on either window > 0');
+  assert.ok(/'QaReviewPurge', 'DiagnosticsPurge',/.test(codeSrc), 'registered in AUTOMATION_AUDIT_ACTIONS');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/DiagnosticsPurge:\s+\{ label: 'Diagnostics retention purge'/.test(cn), 'CN_HEALTH_RUN_LABELS carries the panel label');
+  // (f) The Retention panel round trip: both fields ship from
+  // getRetentionConfig, the save writes each ONLY when the client sent it (an
+  // older client can never reset a window), the client renders the rows only
+  // when the server shipped the fields, and the fixture mirrors the shape.
+  const get = nc(extractRawFunction('Code.js', 'getRetentionConfig'));
+  assert.ok(/viewUsageDays:\s+\{ value: vu, source: srcOf\(VIEW_USAGE_RETENTION_PROP/.test(get) &&
+            /clientErrDays:\s+\{ value: ce, source: srcOf\(CLIENT_ERR_RETENTION_PROP/.test(get), 'both windows ride the read');
+  const save = nc(extractRawFunction('Code.js', 'saveRetentionConfig'));
+  assert.ok(/hasOwnProperty\.call\(settings, 'viewUsageDays'\)/.test(save) && /if \(hasVu\) props\.setProperty\(VIEW_USAGE_RETENTION_PROP/.test(save) &&
+            /if \(hasCe\) props\.setProperty\(CLIENT_ERR_RETENTION_PROP/.test(save), 'a window is written only when the payload carries it');
+  assert.ok(/props\.setProperty\('CN_NOTE_ARCHIVE_DAYS', String\(a\)\)/.test(save), 'the three call-note windows still write unconditionally');
+  assert.ok(/res\.viewUsageDays \|\| res\.clientErrDays\s*\?/.test(cn) && /cnRetentionRowHtml_\('viewusage'/.test(cn) && /cnRetentionRowHtml_\('clienterr'/.test(cn),
+    'the panel renders the two rows only when the server shipped the fields');
+  assert.ok(/if \(prevCfg\.viewUsageDays && document\.getElementById\('cn-ret-viewusage'\)\) payload\.viewUsageDays = rd\('viewusage'\)/.test(cn),
+    'the save sends a diagnostics window only when its row rendered');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/viewUsageDays: \{ value: 0, source: 'default' \}/.test(mock) && /clientErrDays: \{ value: 0, source: 'default' \}/.test(mock),
+    'the visual fixture carries both fields (INV-185)');
+  assert.ok(/retention: 'Kept · ' \+ diagRetentionText_\(\)/.test(codeSrc), 'Storage Health shows the windows on the ADP store row');
+  // The trigger-wiring/gate-type nets cover TARGETS + the gate (derived); the
+  // editor gate test exists and is registered.
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/function test_triggerGate_diagnosticsPurge_nonManagerThrows\(/.test(testsSrc) &&
+            /_integrationTest\('triggerGate_diagnosticsPurge_nonManagerThrows'/.test(testsSrc), 'editor gate test exists and is registered');
+});
+
 // The summary prints LAST — a test block appended between the summary and
 // the exit ran but never counted (Batch B found three such pins reporting
 // into a 778 that should have read 781).
