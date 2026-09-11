@@ -836,7 +836,9 @@ const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\])
 const coachTmaxMatch = codeSrc.match(/const (COACH_TEXT_MAX\s*=\s*\d+);/);
 const coachTrxMatch = codeSrc.match(/const (COACH_TRX_MAX\s*=\s*\d+);/);
 assert.ok(coachSevMatch && coachTmaxMatch && coachTrxMatch, 'COACH_* consts found in Code.js');
-vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';', sb,
+const coachLblMatch = codeSrc.match(/const (COACH_SEV_LABELS\s*=\s*\{[^}]*\});/);
+assert.ok(coachLblMatch, 'COACH_SEV_LABELS found in Code.js (the validation message derives its words from it)');
+vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';' + coachLblMatch[1] + ';', sb,
   { filename: 'Code.js#COACH_consts' });
 vm.runInContext(extractRawFunction('Code.js', 'coachIsoDateOrBlank_'), sb, { filename: 'Code.js#coachIsoDateOrBlank_' });
 vm.runInContext(extractRawFunction('Code.js', 'coachAgeDays_'), sb, { filename: 'Code.js#coachAgeDays_' });
@@ -860,7 +862,11 @@ test('coachValidate_ allows empty whatShould (praise often has none)', () => {
 });
 test('coachValidate_ rejects missing emp / bad severity / empty narrative / oversize', () => {
   assert.strictEqual(coachValidate_({ severity: 'minor', whatHappened: 'x' }).ok, false);
-  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' }).ok, false);
+  const bad = coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' });
+  assert.strictEqual(bad.ok, false);
+  // Operator 2026-09-10: the message names the DISPLAY words — the stored enum
+  // 'major' leaked here while every card said Moderate.
+  assert.ok(/Moderate/.test(bad.error) && !/major/.test(bad.error), 'the severity list in the error reads Moderate, never major: ' + bad.error);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: '  ' }).ok, false);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x'.repeat(sb.COACH_TEXT_MAX + 1) }).ok, false);
   assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x', patientTRX: 't'.repeat(sb.COACH_TRX_MAX + 1) }).ok, false);
@@ -7097,7 +7103,11 @@ test('batch-4: fillable switch + CN disclosures expose real semantics', () => {
 // found — each meant a screenshot state the server cannot produce.
 test('batch-3: visual-fixture payload shapes match the server field names', () => {
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
-  assert.ok(/patientTRX: 'TRX-/.test(mock) && !/patientTrx:/.test(mock),
+  // Scoped to the COACHING rows (Batch C, operator note 6): the Dept Requests
+  // item's server field is spelled `patientTrx`, so a mock-wide ban on that
+  // casing would now fail on a fixture that mirrors its server correctly.
+  const coachRows = mock.split('\n').filter((l) => /coachId/.test(l));
+  assert.ok(coachRows.length && /patientTRX: 'TRX-/.test(mock) && coachRows.every((l) => !/patientTrx:/.test(l)),
     'coaching fixture rows carry patientTRX (server casing) — the lowercase drift hid the TRX chip from every shot');
   const rd = /kbGetReviewDue:\s*\{[^\n]*\}/.exec(mock);
   assert.ok(rd && /views:/.test(rd[0]) && !/usage30/.test(rd[0]) && /total:/.test(rd[0]),
@@ -15144,10 +15154,13 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
   //     or the two numbers on one screen contradict each other.
   const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
                                codeSrc.indexOf('function claimSpanishThread')));
-  assert.ok(/resolveMinutes: businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
-    'the card duration is business minutes');
-  assert.ok(/resolveWallMinutes: Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
-    'the wall-clock figure rides along for the title');
+  // REWRITTEN 2026-09-10 (note #3): a MANUAL mark-resolve carries NULL minutes
+  // on both units — the stamp is when someone pressed the button, not when the
+  // requester was answered, so a duration would be a substitute (INV-187).
+  assert.ok(/resolveMinutes: wasManual \? null : businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
+    'the card duration is business minutes — null for a manual resolve');
+  assert.ok(/resolveWallMinutes: wasManual \? null : Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
+    'the wall-clock figure rides along for the title — null for a manual resolve');
 
   // (c) Dept Requests — elapsed AND the SLA bands.
   const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
@@ -16640,9 +16653,27 @@ test('PR4-3: COACH_SEV_LABELS client ↔ server byte-equal (K4 — Moderate is a
   const cs = stripJsComments_(co);
   assert.ok(/function coachSevLabel_\(sev\) \{ return COACH_SEV_LABELS\[sev\]/.test(cs) && /function coachSevChip_\(sev\) \{[^}]*coachSevLabel_\(sev\)/.test(cs), 'the chip renders the label map, never a bare severity');
   assert.ok(!/'Moderate'/.test(cs.replace(/var COACH_SEV_LABELS = \{[^}]*\};/, '')), 'the client never hand-types the display word outside the map');
-  ['coachCriticalMailHtml_', 'coachNudgeMailHtml_', 'sendCoachingRecapDigest', 'notifyManagerOfCoachingAck_'].forEach((fn) => {
+  // Operator 2026-09-10: "major" reached the training-overdue digest and the
+  // manager daily brief while every card said Moderate — the first form of
+  // this list named four sinks and missed the two that print a coaching ROW
+  // rather than a coaching MAIL. Six sinks now, plus the validation message.
+  ['coachCriticalMailHtml_', 'coachNudgeMailHtml_', 'sendCoachingRecapDigest', 'notifyManagerOfCoachingAck_',
+   'sendTrainingOverdueEmail_', 'sendManagerBriefEmail_'].forEach((fn) => {
     assert.ok(/COACH_SEV_LABELS/.test(extractRawFunction('Code.js', fn)), fn + ' labels severities through the map');
   });
+  const stripC = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['sendTrainingOverdueEmail_', 'sendManagerBriefEmail_'].forEach((fn) => {
+    const body = stripC(extractRawFunction('Code.js', fn));
+    assert.ok(!/esc_\(oc\.item\.severity\)/.test(body) && !/' · ' \+ oc\.item\.severity\b/.test(body),
+      fn + ' never prints the bare enum (html or text twin)');
+    assert.strictEqual((body.match(/COACH_SEV_LABELS\[oc\.item\.severity\]/g) || []).length, 2,
+      fn + ' labels BOTH the html row and its text twin');
+  });
+  // The validation error derives its words from the map — a hand-typed list
+  // is a third copy of the vocabulary, and it is the one that leaked.
+  const validate = stripC(extractRawFunction('Code.js', 'coachValidate_'));
+  assert.ok(/COACH_SEVERITIES\.map\(function \(s\) \{ return COACH_SEV_LABELS\[s\] \|\| s; \}\)/.test(validate), 'coachValidate_ names the severities through the map');
+  assert.ok(!/major \//.test(validate) && !/\/ major/.test(validate), 'and never hand-types the stored enum word');
 });
 
 test('PR4-4: K8 — critical-only immediate mail (operator decision 1) that carries NO narrative/TRX/note id, a retraction on a critical void, and a weekly recap that is a gated trigger which never consults the brief flag', () => {
@@ -18345,6 +18376,532 @@ test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywh
 });
 
 
+// Operator 2026-09-10 — the Team Notes "Coach" button rendered as a native
+// button: the card emitted `cn-mgr-coach-btn`, and no stylesheet defined it,
+// while its sibling Delete was styled. A class that is emitted but defined
+// nowhere is the A13 heading class in button form, so the check is the same
+// shape: DERIVE every `cn-mgr-*-btn` literal the card emits and require a rule.
+test('A9: every cn-mgr-*-btn class the Per-Rep card emits is DEFINED in a stylesheet', () => {
+  const card = extractRawFunction('cn/script_callnotes.html', 'cnMgrRenderReadonlyCard_');
+  const emitted = new Set((card.match(/cn-mgr-[a-z]+-btn/g) || []));
+  assert.ok(emitted.has('cn-mgr-coach-btn') && emitted.has('cn-mgr-del-btn'), 'the card emits both action buttons (derivation reached them)');
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8') +
+              fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  emitted.forEach((c) => assert.ok(new RegExp('\\.' + c + '\\s*[,{]').test(css), c + ' is defined in a stylesheet'));
+  // The row that holds them spaces siblings apart (two bordered buttons touching read as one control).
+  assert.ok(/\.cn-mgr-card-actions \{[^}]*gap:/.test(css), '.cn-mgr-card-actions carries a gap');
+  // On camera: the Per-Rep view (where the card renders) has its own scenario
+  // behind a managerGetCallNotes fixture — the default Team Notes scenario
+  // lands on the training queue and never shows the card.
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/managerGetCallNotes: function/.test(mock), 'the mock serves managerGetCallNotes (as a FUNCTION of repId/date — INV-185 F14)');
+  const shoot = fs.readFileSync(path.join(__dirname, '../../test/visual/shoot.mjs'), 'utf8');
+  assert.ok(/'cn-teamnotes-rep-light-wide'[\s\S]{0,200}cnMgrLoadRepView_\(\)/.test(shoot), 'the Per-Rep scenario opens the view through its post hook');
+});
+
+
+
+// ── Operator notes 2026-09-10, Batch B (N2 + N3) ─────────────────────────────
+// N2: "confirm Dept Requests avg/median exclude weekends, holidays and
+// off-hours". They did — BIZ-2 pinned the item's elapsedMin as the business
+// figure — but the per-department fold was INLINE in getDeptRequests, so
+// nothing could DRIVE it. It is the pure `drDeptStats_` now, driven here over
+// durations the real `bizMinutesLocal_` produced.
+// N3: a request resolved with the in-app "Mark resolved" button (Dept
+// Requests) or the manual mark-resolve (Spanish Inbox) is a manual CLEAR, not
+// a timed reply — it stays a resolved COUNT but leaves every duration series,
+// and the exclusion is REPORTED (INV-187) rather than silently absorbed.
+console.log('\nOperator notes 2026-09-10 — Batch B (N2 business-hours fold, N3 manual resolves untimed)');
+
+test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves only, counts reported', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+  ['drSplitDepts_', 'getDeptRequestSla_', 'drDeptStats_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), sbx, { filename: 'Code.js#' + fn }));
+  // The Friday-16:00 → Monday-09:00 pair the operator asked about: 120
+  // BUSINESS minutes through the real core, where wall clock reads 3 days.
+  const friMon = bizMinutesLocal_(bizAt('2026-09-04', 16), bizAt('2026-09-07', 9), BIZ_WIN);
+  assert.strictEqual(friMon, 120, 'fixture sanity: the core says 2 business hours');
+  const wall = Math.round((Date.UTC(2026, 8, 7, 9) - Date.UTC(2026, 8, 4, 16)) / 60000);
+  assert.strictEqual(wall, 3900, 'fixture sanity: wall clock says 65h (2d 17h)');
+  const items = [
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: friMon, elapsedWallMin: wall },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: 60,     elapsedWallMin: 60 },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'app',   elapsedMin: null,   elapsedWallMin: null },   // in-app clear
+    { toDept: 'Billing', status: 'resolved', resolvedVia: '',      elapsedMin: null,   elapsedWallMin: null },   // legacy row
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'email', elapsedMin: null },                            // unusable pair → dropped
+    { toDept: 'Billing', status: 'open',     slaStatus: 'overdue', elapsedMin: 3000 },
+    { toDept: 'Billing, Shipping', status: 'open', slaStatus: 'ontime', elapsedMin: 30 },                          // counted under EACH dept
+    { toDept: 'Shipping', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
+  ];
+  const out = sbx.drDeptStats_(items, { Billing: 24 });
+  const bill = out.filter((r) => r.dept === 'Billing')[0];
+  const ship = out.filter((r) => r.dept === 'Shipping')[0];
+  assert.ok(bill && ship, 'one row per component department');
+  assert.strictEqual(bill.avgMinutes, 90, 'avg over the TWO timed email resolves: (120 + 60) / 2 — never the 3900 wall figure');
+  assert.strictEqual(bill.medianMinutes, 120, 'median from the same sample');
+  assert.strictEqual(bill.timed, 2, 'the sample size behind avg/median is reported');
+  assert.strictEqual(bill.resolved, 5, 'every resolved row still COUNTS as resolved (the unusable-pair row included)');
+  assert.strictEqual(bill.manualResolved, 1, 'the in-app clear is counted, not timed');
+  assert.strictEqual(bill.untrackedResolved, 1, 'the legacy (no ResolvedVia) row is counted, not timed');
+  assert.strictEqual(bill.open, 2, 'open rows: the single-dept + the multi-dept send');
+  assert.strictEqual(bill.overdueOpen, 1);
+  assert.strictEqual(bill.slaHours, 24, 'the per-dept SLA rides the row');
+  assert.strictEqual(ship.open, 1, 'the multi-dept send counts under Shipping too');
+  assert.strictEqual(ship.avgMinutes, null, 'a department whose ONLY resolve was manual reads null — never 0');
+  assert.strictEqual(ship.medianMinutes, null);
+  assert.strictEqual(ship.manualResolved, 1);
+  assert.strictEqual(ship.timed, 0);
+  assert.strictEqual(ship.slaHours, 48, 'default SLA');
+  assert.strictEqual(out[0].dept, 'Billing', 'sorted by open count desc');
+  assert.strictEqual(sbx.drDeptStats_([], {}).length, 0, 'empty in, empty out');
+  // Wiring: the endpoint feeds the fold with the SAME items it ships (whose
+  // elapsedMin BIZ-2 already pins as the business figure), and the old inline
+  // durations push is GONE — one fold, nothing to drift.
+  const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
+                              codeSrc.indexOf('\nfunction getDeptRequestSla()')));
+  assert.ok(/result\.deptStats = drDeptStats_\(all, slaCfg\);/.test(dr), 'deptStats comes from the pure fold over `all`');
+  assert.ok(!/durations\.push\(/.test(dr), 'no inline duration fold survives in the endpoint');
+  assert.ok(/elapsedMin: \(timed && elapsedBizMin != null\) \? elapsedBizMin : null,/.test(dr),
+    'the item elapsedMin the fold reads IS the business figure (BIZ-2), and null when untimed');
+});
+
+test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves every duration — server, client, fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(codeSrc);
+  // (a) The store: a trailing column (the CN_HEADERS back-compat posture), the
+  //     enum slot, and a header that SELF-HEALS on a pre-existing tab (INV-126).
+  // (Batch C, operator note 6, appended PATIENT_TRX:13 after it — rewritten in place.)
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx trails it since note 6)');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
+  const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
+  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(\[DR_HEADERS\]\)/.test(mk),
+    'a short header self-heals — a tab provisioned before the column gains it in place');
+  // (b) ONE reader (the drStatus_/INV-183 discipline), driven: only the two
+  //     known values survive; anything else reads as untracked.
+  const sbx = vm.createContext({ DR: { RESOLVED_VIA: 12 }, DR_RESOLVED_VIA_VALUES: ['email', 'app'] });
+  vm.runInContext(extractRawFunction('Code.js', 'drResolvedVia_'), sbx, { filename: 'Code.js#drResolvedVia_' });
+  const row = (v) => { const r = []; r[12] = v; return r; };
+  assert.strictEqual(sbx.drResolvedVia_(row(' Email ')), 'email', 'trimmed + lowercased');
+  assert.strictEqual(sbx.drResolvedVia_(row('APP')), 'app');
+  assert.strictEqual(sbx.drResolvedVia_(row('phone')), '', 'an unknown value is untracked, never trusted');
+  assert.strictEqual(sbx.drResolvedVia_(row('')), '', 'a legacy blank is untracked');
+  assert.strictEqual(sbx.drResolvedVia_([]), '', 'a short legacy row is untracked');
+  const readerBody = nc(extractRawFunction('Code.js', 'drResolvedVia_'));
+  assert.ok(/\[DR\.RESOLVED_VIA\]/.test(readerBody), 'the reader reads the cell');
+  const outside = (code.match(/\[DR\.RESOLVED_VIA\]/g) || []).length - (readerBody.match(/\[DR\.RESOLVED_VIA\]/g) || []).length;
+  assert.strictEqual(outside, 0, 'ZERO bracketed reads outside the reader (the drStatus_ / INV-183 shape)');
+  // (c) The writer records HOW, validated against the same list, and BOTH
+  //     callers name their path — the email link is the only timed one.
+  const w = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(/function markDeptRequestResolved_\(token, byEmail, via\)/.test(w), 'the writer takes the path');
+  assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
+    'the path is validated against the shared list before the write');
+  assert.ok(/getRange\(i \+ 1, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written');
+  assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
+  assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
+    "the in-app button resolves as 'app'");
+  assert.ok(/markDeptRequestResolved_\(token, by, 'email'\)/.test(nc(extractRawFunction('Code.js', 'serveResolvePage_'))),
+    "the email link resolves as 'email'");
+  // (d) The item: untimed rows ship NULL on BOTH units, with the via beside
+  //     them so the exclusion is visible.
+  const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
+                              codeSrc.indexOf('\nfunction getDeptRequestSla()')));
+  assert.ok(/const resolvedVia = isResolved \? drResolvedVia_\(r\) : '';/.test(dr), 'via is read through the one reader');
+  assert.ok(/const timed = !isResolved \|\| resolvedVia === 'email';/.test(dr), 'only an email-link resolve is timed');
+  assert.ok(/resolvedVia: resolvedVia,/.test(dr), 'via ships on the item');
+  assert.ok(/elapsedWallMin: timed \? elapsedMin : null,/.test(dr), 'the wall figure is nulled too — no unit leaks a duration');
+  // (e) The client: the card SAYS how, the median skips app resolves, the
+  //     optimistic patch stamps the via it knows, and the manager table
+  //     REPORTS the excluded counts.
+  const drc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const card = nc(extractFunction('metrics/script_deptrequests.html', 'drCardStatusHtml_'));
+  assert.ok(/item\.resolvedVia === 'app' \? 'marked in app'/.test(card), "an in-app resolve reads 'marked in app'");
+  assert.ok(/item\.resolvedVia === 'email' && item\.elapsedMin != null/.test(card), 'a duration renders ONLY for an email resolve');
+  const kpi = nc(extractFunction('metrics/script_deptrequests.html', 'drKpiStripHtml_'));
+  assert.ok(/\.filter\(function \(r\) \{ return r\.resolvedVia !== 'app'; \}\)/.test(kpi),
+    "the median skips 'app' rows explicitly — the optimistic patch leaves the OPEN figure on the row");
+  assert.ok(/marked in app, not timed/.test(kpi), 'the strip names the excluded count');
+  const apply = nc(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
+  assert.ok(/r\.resolvedVia = 'app';/.test(apply), "the optimistic patch stamps 'app' — exactly what the next payload says");
+  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drManagerSectionHtml_'));
+  assert.ok(/drStatsNotTimedCell_\(s\)/.test(mgr) && /Not timed/.test(mgr), 'the manager table carries the Not-timed column');
+  const cellSb = vm.createContext({ esc: (x) => String(x) });
+  vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drStatsNotTimedCell_'), cellSb, { filename: 'dr#cell' });
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 3, untrackedResolved: 2 }).replace(/<[^>]+>/g, ''),
+    '5 3 in app · 2 legacy', 'both kinds reported by name');
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 0, untrackedResolved: 0 }), '0');
+  assert.strictEqual(cellSb.drStatsNotTimedCell_({ avgMinutes: 5 }), '—', 'an older server (no counts) renders an em dash, never 0');
+  // (f) The visual fixture mirrors the contract (INV-185): an 'app' row with
+  //     null minutes, an 'email' row with a duration, and the counts on deptStats.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: '[^']+', resolvedVia: 'app'/.test(mock),
+    "the fixture carries an 'app' resolve with null minutes");
+  assert.ok(/resolvedVia: 'email'/.test(mock) && /manualResolved: \d+, untrackedResolved: \d+, timed: \d+/.test(mock),
+    'the fixture carries an email resolve and the reported counts');
+});
+
+test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats, resolved list, client, fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
+                              codeSrc.indexOf('function getSpanishInboxPending')));
+  // The guard sits BETWEEN the resolved count and the duration pushes: a
+  // manual resolve increments resolvedCount, increments manualCount, and
+  // reaches NEITHER series.
+  const iCount = sp.indexOf('resolvedCount++;');
+  const iGuard = sp.indexOf('if (wasManual) { manualCount++; }');
+  const iPush = sp.indexOf('durations.push(');
+  assert.ok(iCount > -1 && iGuard > iCount && iPush > iGuard, 'count → manual guard → duration pushes, in that order');
+  assert.ok(/if \(wasManual\) \{ manualCount\+\+; \}\s*else \{/.test(sp), 'the pushes sit in the ELSE of the manual guard');
+  assert.ok(/manualCount: manualCount,/.test(sp), 'the excluded count is shipped (INV-187 — visible, not absorbed)');
+  assert.ok(/'spanish_inbox_v2:'/.test(sp) && !/'spanish_inbox_v1:'/.test(sp),
+    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median (INV-85)');
+  // The resolved-list card: null on BOTH units (BIZ-2 pins the exact literals).
+  const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
+                               codeSrc.indexOf('function claimSpanishThread')));
+  assert.ok(/manual: wasManual,/.test(res) && /resolveMinutes: wasManual \? null/.test(res) && /resolveWallMinutes: wasManual \? null/.test(res),
+    'the resolved card ships manual:true with null minutes');
+  // Client: the head note names the count; the card reads "not timed" rather
+  // than an em dash that could pass for a missing figure.
+  const mSrc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const head = nc(mSrc.slice(mSrc.indexOf('function spanishHeadHtml_'), mSrc.indexOf('function spanishRender_')));
+  assert.ok(/d\.manualCount \? \(' · ' \+ esc\(String\(d\.manualCount\)\) \+ ' marked manually, not timed'\)/.test(head),
+    'the strip note names the manual count beside the timed count');
+  const card = nc(extractFunction('metrics/script_metrics.html', 'spanishResolvedCard_'));
+  assert.ok(/var took = t\.manual \? 'not timed' : spanishFmtDur_\(t\.resolveMinutes\);/.test(card), "a manual card reads 'not timed'");
+  assert.ok(/var tookTitle = t\.manual\s*\?/.test(card), 'its title explains why');
+  // The resolver-share chart counts RESOLVERS, not durations — untouched by
+  // design, and pinned so nobody "fixes" it to drop manual resolves.
+  const share = nc(extractFunction('metrics/script_metrics.html', 'spanishResolverShares_'));
+  assert.ok(/manual/.test(share) && !/resolveMinutes/.test(share), 'the share chart attributes manual resolves and never reads a duration');
+  // Fixture (INV-185): the manual thread carries null minutes and the stats
+  // carry manualCount.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/manual: true, resolveMinutes: null, resolveWallMinutes: null/.test(mock), 'fixture: manual thread has null minutes');
+  assert.ok(/businessCount: 11, manualCount: 1,/.test(mock), 'fixture: stats carry the manual count');
+});
+
+// ---------------------------------------------------------------------------
+// Operator testing notes 2026-09-10 — Batch C (N4 auto-assign / N6 Dept
+// Requests patient & TRX + expand / N8 QA reviewers editor).
+console.log('\nOperator notes 2026-09-10 — Batch C (N4 auto-assign, N6 DR detail, N8 QA reviewers)');
+
+test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFORE the core, one lock + batched rows, counts-only audit, the client button/refresh/confirm, the fixture calls the verbatim pick', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) The pick, driven.
+  const sbx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'spanishAutoAssignPick_'), sbx, { filename: 'Code.js#spanishAutoAssignPick_' });
+  const pick = sbx.spanishAutoAssignPick_;
+  const ids = (out) => out.map((o) => o.threadId + '>' + o.by).join('|');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }, { threadId: 'c' }], ['sam@x', 'ines@x', 'avery@x'], {})),
+    'a>avery@x|b>ines@x|c>sam@x', 'round-robins alphabetically from an even load');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }], ['sam@x', 'ines@x', 'avery@x'], { 'avery@x': 2, 'ines@x': 1 })),
+    'a>sam@x|b>ines@x', 'existing claims count as load — the least-loaded member goes first');
+  assert.strictEqual(ids(pick([{ threadId: 'a' }, { threadId: 'b' }, { threadId: 'c' }, { threadId: 'd' }], ['b@x', 'a@x'], { 'a@x': 1 })),
+    'a>b@x|b>a@x|c>b@x|d>a@x', 'balances as it goes — each pick raises that member\'s load');
+  assert.strictEqual(pick([{ threadId: 'a' }], [], {}).length, 0, 'no members → nothing assigned');
+  assert.strictEqual(pick([], ['a@x'], {}).length, 0, 'nothing unclaimed → nothing assigned');
+  assert.strictEqual(pick([{ threadId: '' }, { threadId: 'z' }], ['a@x'], {}).length, 1, 'a blank thread id is skipped');
+  // (b) The endpoint: manager gate FIRST, then the core; writer shape.
+  const ep = nc(extractRawFunction('Code.js', 'autoAssignSpanishThreads'));
+  assert.ok(/if \(!emp \|\| !emp\.isManager\) return \{ success: false, error: 'Manager access required\.' \};/.test(ep),
+    'MANAGER-gated, writer shape (not the canSeeSpanishInbox_ tier)');
+  assert.ok(ep.indexOf('emp.isManager') < ep.indexOf('spanishAutoAssignCore_('), 'the gate precedes the core');
+  // (c) The core: unclaimed from the pending read, load re-derived from the
+  //     LIVE map inside the lock, one batched write, counts-only audit.
+  const core = nc(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(/getSpanishInboxPending\(days\)/.test(core), 'reuses the pending read (one scope rule, one voicemail fold)');
+  assert.ok(!/\bkind\b/.test(core), 'voicemails are NOT filtered out — they are worked the same way');
+  assert.ok(/lock\.waitLock\(15000\)/.test(core) && /finally \{ lock\.releaseLock\(\); \}/.test(core), 'locked (INV-01)');
+  const lockAt = core.indexOf('waitLock(15000)');
+  assert.ok(lockAt > 0 && core.indexOf('spanishClaimsMap_()') > lockAt, 'the load + still-unclaimed set are re-derived from the LIVE map INSIDE the lock');
+  assert.ok(core.indexOf('spanishAutoAssignPick_(') > lockAt, 'the pick runs inside the lock too');
+  assert.ok(/\.setValues\(rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
+  assert.ok(/'claim', pk\.by, self, nowMs\]/.test(core), 'each row is a claim by the pick, assigned by the caller (the row shape spanishClaimsFold_ reads)');
+  const auditIdx = core.indexOf("writeAuditLog_(emp, 'SpanishInboxAutoAssign'");
+  assert.ok(auditIdx > core.indexOf('lock.releaseLock()'), 'the audit row lands after the lock releases');
+  const auditCall = core.slice(auditIdx, core.indexOf(');', auditIdx));
+  assert.ok(/'assigned=' \+ picks\.length \+ '; members=' \+ members\.length/.test(auditCall), 'counts-only audit row');
+  assert.ok(!/threadId|\.by\b/.test(auditCall), 'no thread id or email in the audit row');
+  assert.ok(/No Spanish Inbox members are configured/.test(core), 'an empty member list is refused by name');
+  // (d) The client.
+  const btn = nc(extractFunction('metrics/script_metrics.html', 'spanishAutoAssignBtnHtml_'));
+  assert.ok(/if \(!isMgr\) return '';/.test(btn), 'the button renders for a manager only');
+  assert.ok(/<button type="button"/.test(btn) && /id="sp-autoassign"/.test(btn), 'a real button (INV-173) with the id the refresher swaps');
+  assert.ok(/still loading/.test(btn) && /No Spanish Inbox members/.test(btn) && /already claimed/.test(btn),
+    'disabled with the REASON in the title for each of the three inert states');
+  assert.ok(/spanishAutoAssignBtnHtml_\(\)/.test(extractFunction('metrics/script_metrics.html', 'spanishHeadHtml_')), 'rendered from the head (state-driven)');
+  assert.ok(/spanishRefreshAutoAssign_\(\);/.test(extractFunction('metrics/script_metrics.html', 'spanishRenderList_')), 'the list renderer refreshes the count');
+  const go = nc(extractFunction('metrics/script_metrics.html', 'spanishAutoAssign_'));
+  assert.ok(/uiConfirm\(\{/.test(go) && go.indexOf('uiConfirm(') < go.indexOf('autoAssignSpanishThreads('), 'confirm BEFORE the RPC');
+  assert.ok(/\.autoAssignSpanishThreads\(SPANISH_STATE\.days\)/.test(go), 'the RPC carries the window the list was read with');
+  assert.ok(/currentView !== requestedView/.test(go), 'nav-guarded (the F(cycle-8 M-9) rule)');
+  assert.strictEqual((go.match(/spanishRenderList_\(\)/g) || []).length, 1, 'ONE list render after applying every returned claim');
+  assert.ok(go.indexOf('pd.pending[i].claim = a.claim') < go.indexOf('spanishRenderList_()'), 'claims applied to STATE before the render');
+  // (e) The fixture calls the VERBATIM pick (INV-185) and updates its own claims.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/autoAssignSpanishThreads: function/.test(mock), 'fixture present');
+  assert.ok(/const picks = spanishAutoAssignPick_\(unclaimed, pd\.members/.test(mock), 'the fixture routes through the verbatim server pick');
+  assert.ok(mock.indexOf('function spanishAutoAssignPick_(') < mock.indexOf('end verbatim copies'), 'the copy sits inside the DO-NOT-EDIT region the F4 mirror pin derives from');
+  // (f) The omnibus carries the MANAGER-tier case (F9 needs it; GATE-TIER must NOT see it in ADMIN_GATED).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['autoAssignSpanishThreads',\s+function \(\) \{ return autoAssignSpanishThreads\(30\); \}\]/.test(tests), 'omnibus case');
+  assert.ok(!/autoAssignSpanishThreads: 1/.test(tests), 'not on the admin tier');
+});
+
+test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE ownership rule, the scoped detail read, the SLA digest + audit stay label-only, client expand/escape/CSS, fixture + scenario + editor test', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(codeSrc);
+  // (a) Store.
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.PATIENT_TRX is the trailing slot');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS ends with PatientTrx');
+  assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
+  const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\);/.test(send),
+    'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX as the LAST cell');
+  // (b) ONE ownership rule, driven.
+  const sbx = vm.createContext({
+    DR: { BY_ID: 1, TO_DEPT: 4 },
+    drSplitDepts_: (s) => String(s).split(/[,;]/).map((x) => x.trim()).filter((x) => x && x.toLowerCase() !== 'other'),
+    empDepartments_: (emp) => (emp && emp.depts) || [],
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'drCanAct_'), sbx, { filename: 'Code.js#drCanAct_' });
+  const row = []; row[1] = 'E1'; row[4] = 'Billing, Shipping';
+  assert.strictEqual(sbx.drCanAct_({ id: 'E1' }, row), true, 'the sender may act');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', isManager: true }, row), true, 'a manager may act');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', depts: ['Shipping'] }, row), true, 'a member of ANY component dept may act (M-5)');
+  assert.strictEqual(sbx.drCanAct_({ id: 'E9', depts: ['Resupply'] }, row), false, 'an unrelated rep may not');
+  assert.strictEqual(sbx.drCanAct_(null, row), false, 'no caller → no');
+  const resolve = nc(extractRawFunction('Code.js', 'resolveDeptRequest'));
+  const detail = nc(extractRawFunction('Code.js', 'getDeptRequestDetail'));
+  assert.ok(/if \(!drCanAct_\(emp, row\)\)/.test(resolve) && /!drCanAct_\(emp, row\)/.test(detail), 'BOTH callers route through drCanAct_');
+  assert.ok(!/empDepartments_\(/.test(resolve) && !/empDepartments_\(/.test(detail), 'neither re-derives membership inline');
+  // (c) The detail contract.
+  assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(detail), 'employee gate, bare {error} read shape (GATE-SHAPE)');
+  assert.strictEqual((detail.match(/return \{ error: 'Request not found\.' \}/g) || []).length, 2,
+    'a blank id, and an unknown id OR a scope refusal (one guard), all read as the same not-found');
+  assert.ok(/!row \|\| !drCanAct_\(emp, row\)\) return \{ error: 'Request not found\.' \}/.test(detail), 'the scope refusal IS the not-found');
+  assert.ok(!/waitLock/.test(detail) && !/writeAuditLog_/.test(detail), 'a read — no lock, no audit row');
+  assert.ok(/lookupEmployeeById_\(/.test(detail) && /getCallNotesSheet_\(sender\)/.test(detail) && /findCallNoteRow_\(/.test(detail) && /callNoteRowToObject_\(located\)/.test(detail),
+    'the note comes from the SENDER\'s own Sheet through the standard readers');
+  assert.ok(/base\.note = \{\s*callback: n\.callback, caller: n\.caller, relationship: n\.relationship,\s*patientAndTrx: n\.patientAndTrx, issue: n\.issue, transferredTo: n\.transferredTo,\s*resolution: n\.resolution, dateLocal: n\.dateLocal,\s*\};/.test(detail),
+    'whitelist-built note — never the raw row or subformData');
+  assert.ok(!/subformData|located\.row\b/.test(detail), 'no raw row or blob reaches the response');
+  assert.strictEqual((detail.match(/base\.reason = /g) || []).length, 4, 'every note:null path NAMES its reason (INV-187)');
+  // (d) The item + the digest + the audit trail.
+  const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/patientTrx: String\(r\[DR\.PATIENT_TRX\] \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),/.test(dr), 'the list item carries patientTrx');
+  assert.ok(!/PATIENT_TRX/.test(nc(extractRawFunction('Code.js', 'deptRequestsOverdueOpen_'))), 'the daily SLA digest stays LABEL-ONLY (never reads the patient column)');
+  const audits = code.split('\n').filter((l) => /writeAuditLog_\(/.test(l) && /PATIENT_TRX|patientTrx|patientAndTrx/.test(l));
+  assert.deepStrictEqual(audits, [], 'no audit row carries the patient & TRX');
+  // (e) Client.
+  const dsrc = nc(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  const card = nc(extractFunction('metrics/script_deptrequests.html', 'drRequestCardHtml_'));
+  assert.ok(/item\.patientTrx \? ' <span class="dr-subj-trx">· ' \+ esc\(item\.patientTrx\) \+ '<\/span>' : ''/.test(card),
+    'subject = label · patient & TRX (escaped), label alone on a legacy row');
+  assert.ok(/class="sp-more dr-expand" data-req="' \+ esc\(item\.requestId\)/.test(card) && /aria-expanded="' \+ \(isOpen \? 'true' : 'false'\)/.test(card) && /aria-controls="' \+ detailId/.test(card),
+    'a real Expand button with aria-expanded + aria-controls (INV-173/174)');
+  assert.ok(/<div class="dr-detail" id="' \+ detailId \+ '"' \+ \(isOpen \? '' : ' hidden'\)/.test(card), 'the panel renders from STATE — hidden unless expanded');
+  const dh = nc(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'));
+  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /esc\(val\)/.test(dh), 'every detail field is escaped');
+  const ex = nc(extractFunction('metrics/script_deptrequests.html', 'drExpand_'));
+  assert.ok(/if \(st\.bodies\[id\] != null\) \{ open\(\); return; \}/.test(ex), 'a cached detail serves the second Expand with no RPC');
+  assert.ok(/currentView !== requestedView/.test(ex), 'nav-guarded');
+  assert.ok(/\.getDeptRequestDetail\(id\)/.test(ex), 'the scoped read');
+  assert.ok(/drRepaintRequest_\(id\)/.test(ex), 'a detached button falls back to the state-driven repaint');
+  assert.ok(/\.dr-detail\[hidden\] \{ display: none; \}/.test(dsrc), 'the [hidden] display companion');
+  assert.ok(/\.dr-detail-row \{ display: grid; grid-template-columns: 110px minmax\(0, 1fr\)/.test(dsrc) && /@media \(max-width: 480px\) \{\s*\.dr-detail-row \{ grid-template-columns: 1fr; \}/.test(dsrc),
+    'the fixed label track has a viewport breakpoint (A2)');
+  // (f) Fixture + scenario.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/getDeptRequestDetail: function \(id\)/.test(mock), 'the detail fixture is a FUNCTION of the id (F14)');
+  assert.ok(/patientTrx: 'Maria Delgado · TRX 48211'/.test(mock), 'rows carry patientTrx');
+  const r6 = mock.split('\n').filter((l) => /requestId: 'r6'/.test(l));
+  assert.ok(r6.length === 1 && !/patientTrx/.test(r6[0]), 'one LEGACY row (no patientTrx) stays on camera');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  assert.ok(/'deptreq-expanded-light-wide'[^\n]*drExpand_\(document\.querySelector\('\.dr-expand\[data-req\]'\)\)/.test(shoot), 'the expanded card is on camera');
+  // (g) Editor test present + registered.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/function test_deptReq_detailScoped\(/.test(tests) && /_integrationTest\('deptReq_detailScoped'/.test(tests), 'the scoped-detail editor test exists and is registered');
+});
+
+test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), qaCanReviewEmail_ admits roster managers (driven), the assign check routes through it, getAdminConfig ships the list, the Admin card + handlers, fixture, omnibus tier', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // (a) saveQaMembers driven in a vm (the Spanish-members pin's shape).
+  const props = {};
+  const audits = [];
+  const mk = (emp) => {
+    const sbx = vm.createContext({
+      getEmployeeInfo_: () => emp,
+      PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] || '' }) },
+      writeAuditLog_: (e, action, a, b, c, d, notes) => { audits.push({ action: action, notes: notes }); },
+    });
+    vm.runInContext(extractRawFunction('Code.js', 'saveQaMembers'), sbx, { filename: 'Code.js#saveQaMembers' });
+    return sbx.saveQaMembers;
+  };
+  const nonAdmin = mk({ isAdmin: false, isManager: true, email: 'm@x.com' });
+  assert.strictEqual(nonAdmin(['a@x.com']).error, 'Admin access required.', 'admin-gated (INV-136)');
+  assert.strictEqual(props.QA_MEMBERS, undefined, 'nothing written on a gate refusal');
+  const admin = mk({ isAdmin: true, isManager: true, email: 'm@x.com' });
+  assert.ok(/Expected a list/.test(admin('a@x.com').error), 'a non-array is refused');
+  assert.ok(/Not a valid email: "nope"/.test(admin(['nope']).error), 'shape-validated, naming the offender');
+  assert.strictEqual(props.QA_MEMBERS, undefined, 'still nothing written');
+  const r = admin([' Ines@UMSupply.com ', 'ines@umsupply.com', '', 'sam@umsupply.com']);
+  assert.strictEqual(r.members.join('|'), 'ines@umsupply.com|sam@umsupply.com', 'lowercased + trimmed + deduped');
+  assert.strictEqual(props.QA_MEMBERS, 'ines@umsupply.com,sam@umsupply.com', 'written as the comma list getQaMembers_ reads');
+  assert.ok(audits.some((a) => a.action === 'AdminConfigChange' && /Updated QA reviewers \(2\)/.test(a.notes)), 'AdminConfigChange audit (INV-57 family)');
+  assert.strictEqual(admin([]).success, true, 'an EMPTY list is valid (managers only)');
+  assert.strictEqual(props.QA_MEMBERS, '', 'and clears the property');
+  const many = []; for (let i = 0; i < 31; i++) many.push('r' + i + '@x.com');
+  assert.ok(/Too many/.test(admin(many).error), 'capped at 30');
+  // (b) qaCanReviewEmail_ driven: a member, a roster manager (any case), an unlisted rep, an offboarded manager.
+  const rows = [['Email', 'Id', 'Name', '', '', '', 'IsManager'],
+    ['Mgr@x.com', 'E1', 'M', '', '', '', 'TRUE'],
+    ['rep@x.com', 'E2', 'R', '', '', '', ''],
+    ['', 'E3', 'Gone', '', '', '', 'TRUE']];
+  const sbx2 = vm.createContext({ getQaMembers_: () => ({ 'ines@x.com': true }), getEmployeeRosterRows_: () => rows,
+    empRosterEmail_: (row) => String((row && row[0]) || '').trim(), EMP: { EMAIL: 0, IS_MANAGER: 6 } });
+  vm.runInContext(extractRawFunction('Code.js', 'qaCanReviewEmail_'), sbx2, { filename: 'Code.js#qaCanReviewEmail_' });
+  const can = sbx2.qaCanReviewEmail_;
+  assert.strictEqual(can('ines@x.com'), true, 'a QA_MEMBERS entry');
+  assert.strictEqual(can('MGR@x.com'), true, 'a roster manager, case-insensitively — the note-8 case');
+  assert.strictEqual(can('rep@x.com'), false, 'a non-manager rep not listed');
+  assert.strictEqual(can(''), false, 'blank');
+  assert.strictEqual(can('nobody@x.com'), false, 'unknown');
+  const sbx3 = vm.createContext({ getQaMembers_: () => ({}), getEmployeeRosterRows_: () => { throw new Error('boom'); },
+    empRosterEmail_: () => '', EMP: { EMAIL: 0, IS_MANAGER: 6 } });
+  vm.runInContext(extractRawFunction('Code.js', 'qaCanReviewEmail_'), sbx3, { filename: 'Code.js#qaCanReviewEmail_' });
+  assert.strictEqual(sbx3.qaCanReviewEmail_('mgr@x.com'), false, 'a failed roster read falls back to the members list (never throws)');
+  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(extractRawFunction('Code.js', 'qaCanReviewEmail_')), 'roster inclusion through the ONE predicate (INV-183)');
+  // (c) The assign check.
+  const assign = nc(extractRawFunction('Code.js', 'qaAssignRecording'));
+  assert.ok(/if \(!qaCanReviewEmail_\(target\)\)/.test(assign), 'the assign target check routes through qaCanReviewEmail_');
+  assert.ok(!/getQaMembers_\(\)\[target\]/.test(assign), 'the QA_MEMBERS-only check is gone');
+  // (d) getAdminConfig ships the list.
+  assert.ok(/qaMembers: Object\.keys\(getQaMembers_\(\)\)\.sort\(\)/.test(nc(extractRawFunction('Code.js', 'getAdminConfig'))), 'getAdminConfig.qaMembers');
+  // (e) The Admin card + handlers (the Spanish card's shape).
+  const cn = nc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/id="cn-admin-qam-list" class="cn-spm-chips"/.test(cn), 'the reviewers chip list');
+  assert.ok(/cnRenderQaMemberChips_\(cfg\.qaMembers \|\| \[\]\)/.test(cn), 'rendered from getAdminConfig.qaMembers');
+  assert.ok(/\.saveQaMembers\(out\)/.test(cn), 'saves through saveQaMembers');
+  assert.ok(/uiConfirm\(\{ title: 'Clear all QA reviewers\?'/.test(cn), 'an empty save confirms');
+  const chips = nc(extractFunction('cn/script_callnotes.html', 'cnRenderQaMemberChips_'));
+  assert.ok(/esc\(m\)/.test(chips) && /aria-label="Remove ' \+ esc\(m\)/.test(chips), 'chips escape + name the remove button');
+  assert.ok(/every manager can still review/.test(chips), 'the empty state says what "no reviewers" means');
+  // (f) Fixture.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/qaMembers: \['ines@umsupply\.com'\]/.test(mock), 'the admin-config fixture ships qaMembers');
+  // (g) Tests.js: omnibus case on the ADMIN tier (F7/F9/GATE-TIER all derive from this).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/\['saveQaMembers',\s+function \(\) \{ return saveQaMembers\(\[\]\); \}\]/.test(tests), 'omnibus case');
+  assert.ok(/saveQaMembers: 1/.test(tests), 'on the ADMIN tier in the omnibus map');
+});
+
+// ── Operator notes 2026-09-10, Batch D (N10 — the presence signal) ───────────
+test('D-N10: presence — teammateActiveNotIn_ driven (self never, working states never, absent never), presenceMap_ fails toward NO flags (driven), recordPresence rep-gated + cache-only, getTeammateStatus ships ONE boolean and no timestamp (INV-24) with C8 kept, the polls do NOT stamp, the gesture beacon is throttled/stamp-before-send/capture-passive/bound at boot, the chip renders only on strict true with the v1 limit stated, the class is defined, the fixture rows carry the server keys, the editor test exists', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const keysOf = (lit) => (lit.match(/(?:^|[{,\s])([A-Za-z_]\w*):\s/g) || []).map((m) => m.replace(/^[{,\s]+/, '').replace(/:\s$/, ''));
+  // (a) The pure rule, driven.
+  const rc = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teammateActiveNotIn_'), rc);
+  const rule = rc.teammateActiveNotIn_;
+  assert.strictEqual(rule(false, true, 'not_in'), true, 'present + not clocked in → flagged');
+  assert.strictEqual(rule(false, true, 'clocked_out'), true, 'present + clocked out → flagged');
+  assert.strictEqual(rule(false, true, 'clocked_in'), false, 'a working state is never flagged');
+  assert.strictEqual(rule(false, true, 'on_lunch'), false, 'lunch is a working state');
+  assert.strictEqual(rule(true, true, 'not_in'), false, 'self is never flagged');
+  assert.strictEqual(rule(false, false, 'not_in'), false, 'absent is never flagged');
+  assert.strictEqual(rule(false, true, 'garbage'), false, 'an unknown status is never flagged');
+  // (b) presenceMap_ driven: a blank cache value is NOT a hit; a thrown read yields {} (no flags).
+  assert.ok(/const PRESENCE_CACHE_PREFIX = 'presence_v1:';/.test(codeSrc) && /const PRESENCE_TTL_SEC = 1800;/.test(codeSrc), 'the prefix + the ~30-min TTL are the stated constants');
+  const pmSrc = "const PRESENCE_CACHE_PREFIX = 'presence_v1:';\n" + extractRawFunction('Code.js', 'presenceMap_');
+  const c1 = vm.createContext({ CacheService: { getScriptCache: () => ({ getAll: () => ({ 'presence_v1:A': '1', 'presence_v1:C': '' }) }) } });
+  vm.runInContext(pmSrc, c1);
+  assert.strictEqual(JSON.stringify(c1.presenceMap_(['A', 'B', 'C'])), '{"A":true}', 'hits map to ids; a blank value is not a hit');
+  assert.strictEqual(JSON.stringify(c1.presenceMap_([])), '{}', 'no ids → no read');
+  const c2 = vm.createContext({ CacheService: { getScriptCache: () => { throw new Error('cache down'); } } });
+  vm.runInContext(pmSrc, c2);
+  assert.strictEqual(JSON.stringify(c2.presenceMap_(['A'])), '{}', 'a failed read yields NO flags — a missed chip beats a false one');
+  // (c) recordPresence: rep-gated, cache-only, never a lock / sheet / audit.
+  const rp = nc(extractRawFunction('Code.js', 'recordPresence'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(rp) && /if \(!emp\) return \{ success: false \};/.test(rp), 'rep-gated (the recordViewEnter shape)');
+  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, '1', PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL');
+  assert.ok(!/waitLock|appendRow|writeAuditLog_|getSheetByName|setValue/.test(rp), 'no lock, no sheet write, no audit row — a volatile signal, not a record');
+  // (d) getTeammateStatus: the row literal carries EXACTLY the four keys, the flag comes from the rule, C8 holds.
+  const ts = nc(extractRawFunction('Code.js', 'getTeammateStatus'));
+  const rowLit = /return \{\s*name: e\.name,([\s\S]*?)\};/.exec(ts);
+  assert.ok(rowLit, 'the row literal is found');
+  // The literal mixes `key: value` and ES SHORTHAND (`status,` / `isSelf,`) —
+  // the colon-only keysOf above is blind to shorthand (its first write read
+  // two keys out of four), so the row keys are read per LINE: a bare
+  // identifier line is a shorthand key.
+  const rowKeys = rowLit[1].split('\n').map((l) => l.trim().replace(/,$/, ''))
+    .map((l) => (/^[A-Za-z_]\w*$/.test(l) ? l : (/^([A-Za-z_]\w*):\s/.exec(l) || [])[1]))
+    .filter(Boolean);
+  assert.strictEqual(['name'].concat(rowKeys).sort().join('|'), 'activeNotIn|isSelf|name|status', 'INV-24: name/status/isSelf + the ONE boolean, nothing else');
+  assert.ok(/activeNotIn: teammateActiveNotIn_\(isSelf, !!present\[e\.id\], status\)/.test(ts), 'the flag is the pure rule over the stamp + status');
+  assert.ok(/const present = presenceMap_\(employees\.map\(e => e\.id\)\);/.test(ts), 'ONE getAll over the roster ids');
+  assert.ok(!/lastSeen|seenAt|presenceAt|sentAt/.test(ts), 'no presence TIMESTAMP anywhere on the view');
+  assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"), 'C8: auth still precedes the flag read');
+  assert.ok(/\(b\.activeNotIn \? 1 : 0\) - \(a\.activeNotIn \? 1 : 0\)/.test(ts), 'a flagged rep sorts ahead within its status');
+  // (e) The polls reps already hit do NOT stamp — a background poll is not a gesture (the left-open pop-out class).
+  ['getEmployeeState', 'getCallNotesAmbient', 'recordViewEnter', 'getTodayPunches_'].forEach((fn) => {
+    assert.ok(!/PRESENCE_CACHE_PREFIX|recordPresence\(/.test(nc(extractRawFunction('Code.js', fn))), fn + ' does not stamp presence');
+  });
+  // (f) The shell beacon: throttled, stamps BEFORE the send, capture + passive, idempotent bind, bound at boot.
+  const core = nc(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(/var PRESENCE_MIN_GAP_MS = 10 \* 60 \* 1000;/.test(core), 'one send per 10 min per window');
+  const og = nc(extractFunction('script_core.html', 'presenceOnGesture_'));
+  assert.ok(/if \(now - PRESENCE\.sentAt < PRESENCE_MIN_GAP_MS\) return;/.test(og), 'throttled on the gap');
+  assert.ok(og.indexOf('PRESENCE.sentAt = now') > 0 && og.indexOf('PRESENCE.sentAt = now') < og.indexOf('.recordPresence()'), 'the stamp lands BEFORE the send — a slow or failed RPC never double-fires');
+  assert.ok(/\.withFailureHandler\(function \(\) \{\}\)/.test(og), 'fire-and-forget — a failed send is ignored');
+  const bind = nc(extractFunction('script_core.html', 'presenceBind_'));
+  assert.ok(/if \(PRESENCE\.bound\) return;/.test(bind), 'idempotent bind');
+  assert.ok(/addEventListener\('pointerdown', presenceOnGesture_, \{ capture: true, passive: true \}\)/.test(bind), 'pointerdown, capture + passive');
+  assert.ok(/addEventListener\('keydown', presenceOnGesture_, \{ capture: true, passive: true \}\)/.test(bind), 'keydown, capture + passive');
+  assert.ok(/remindersStart_\(\);[\s\S]{0,600}presenceBind_\(\);/.test(core), 'bound at shell boot beside the reminders (a shell capability, INV-190)');
+  assert.ok(!/setInterval\([^)]*presence/i.test(core), 'no second interval — gesture-driven, never a poll');
+  // (g) The chip: strict-true only (an older server ships no field), label per status, the v1 limit on the tooltip, escaped.
+  const chip = nc(extractFunction('tc/script_clock.html', 'clkActiveNotInChipHtml_'));
+  assert.ok(/if \(!t \|\| t\.activeNotIn !== true\) return '';/.test(chip), 'renders ONLY on a strict true');
+  assert.ok(/'active · clocked out'/.test(chip) && /'active · not clocked in'/.test(chip), 'both labels');
+  assert.ok(/Shift hours and time off are not checked/.test(chip), 'the v1 limit is stated on the tooltip');
+  assert.ok(/title="' \+ esc\(tip\) \+ '"/.test(chip), 'tooltip escaped');
+  const card = nc(extractFunction('tc/script_clock.html', 'renderTeammateCard'));
+  assert.ok(/\$\{meta\.label\}\$\{clkActiveNotInChipHtml_\(t\)\}/.test(card), 'the chip rides the status line');
+  assert.ok(/if \(t\.activeNotIn === true\) activeNotIn\+\+;/.test(card), 'the summary counts strict-true only');
+  assert.ok(/active\\u00a0but\\u00a0not\\u00a0in/.test(card), 'the summary names the count (NBSP-joined — see below)');
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.emp-active-chip \{[^}]*color: var\(--warning-deep\)[^}]*background: var\(--warn-soft\)/.test(styles), 'chip class DEFINED (INV-184 reverse), warn-toned via the deep alias');
+  // Two MEASURED layout defects the first cut shipped, pinned as the rule that fixed each:
+  // an inline nowrap pill propagated min-content through the ≤540px 1fr .emp-grid (+34px
+  // page overflow at 390); the longer summary squeezed the flex title to "Team/Right/Now"
+  // under the shared `> span:first-child { flex: 1 }` rule (a (0,2,0) fix lost to it).
+  const chipRule = /\.emp-active-chip \{([^}]*)\}/.exec(styles)[1];
+  assert.ok(/display: block;/.test(chipRule) && /white-space: normal;/.test(chipRule) && !/nowrap/.test(chipRule), 'the chip is a wrapping block, never a nowrap inline pill');
+  assert.ok(/\.card-label\.with-count > span\.emp-team-title \{ flex: 0 0 auto; white-space: nowrap; \}/.test(styles), 'the title keeps one line at (0,3,1)');
+  assert.ok(/\.card-label\.with-count > span\.emp-team-summary \{[^}]*flex: 0 1 auto; min-width: 0; text-align: right;/.test(styles), 'the summary is the flexible, wrapping half');
+  assert.ok(/<span class="emp-team-title">Team Right Now<\/span>/.test(card) && /<span class="emp-team-summary">\$\{summary\}<\/span>/.test(card), 'the card head uses the two classes');
+  assert.ok(/\\u00a0active\\u00a0but\\u00a0not\\u00a0in/.test(card), 'the tail cannot split from its count when the summary wraps');
+  // (h) Fixture: every teammate row carries the server's exact keys (INV-185); the flagged row is on camera; the beacon has a fixture.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  const fx = /getTeammateStatus: \{ enabled: true, teammates: \[([\s\S]*?)\] \},/.exec(mock);
+  assert.ok(fx, 'teammate fixture found');
+  const rows = fx[1].split('\n').filter((l) => /name:/.test(l));
+  assert.strictEqual(rows.length, 4, 'four teammate rows');
+  rows.forEach((l) => assert.strictEqual(keysOf(l).sort().join('|'), 'activeNotIn|isSelf|name|status', 'fixture row keys == the server row keys'));
+  assert.ok(/'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: true/.test(fx[1]), 'the flagged row is on camera');
+  assert.ok(/recordPresence: \{ success: true \}/.test(mock), 'the beacon has a fixture (no missing-RPC noise in the matrix)');
+  // (i) Tests.js: the shape test admits the boolean; the presence case exists and is registered.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/ALLOWED_KEYS = \['name', 'status', 'isSelf', 'activeNotIn'\]/.test(tests), 'the shape test admits exactly the four keys');
+  assert.ok(/_assertEq\(typeof t\.activeNotIn, 'boolean'\)/.test(tests), 'and asserts it is a boolean');
+  assert.ok(/function test_presence_stampAndFlag\(/.test(tests) && /_integrationTest\('presence_stampAndFlag'/.test(tests), 'the presence editor test exists and is registered');
+});
+
+// The summary prints LAST — a test block appended between the summary and
+// the exit ran but never counted (Batch B found three such pins reporting
+// into a 778 that should have read 781).
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

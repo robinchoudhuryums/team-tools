@@ -75,6 +75,11 @@ const SCENARIOS = [
   ['intake-pmd-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', ''],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
   ['cn-teamnotes-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', ''],
+  // Operator 2026-09-10 — the Per-Rep view: the read-only card with its
+  // Coach / Delete actions had never been on camera (the default Team Notes
+  // scenario lands on the training queue), which is how Coach shipped as an
+  // unstyled native button beside a styled Delete.
+  ['cn-teamnotes-rep-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', '', 'cnMgrLoadRepView_()'],
   ['intake-dark-wide',      { tool: 'intake',    tab: null },         WIDE, 'dark',  ''],
   ['reference-light-wide',  { tool: 'reference', tab: null },         WIDE, 'light', ''],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],
@@ -129,7 +134,13 @@ const SCENARIOS = [
   // color-coded lists): fixtures cover all four DR tones + an overdue Spanish
   // pending card, so the tone vocabulary itself is on camera.
   ['spanish-light-wide',   { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', ''],
+  // Operator 2026-09-10 — a pending card EXPANDED (Expand ⇄ Collapse): the
+  // full request body in place of the snippet, the button reading Collapse.
+  ['spanish-expanded-light-wide', { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishExpand_(document.querySelector('.sp-more[data-thread]'))"],
   ['deptreq-light-wide',   { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
+  // Operator 2026-09-10 (note 6) — a request card EXPANDED: the source note's
+  // fields in the detail panel under a subject carrying patient & TRX.
+  ['deptreq-expanded-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],

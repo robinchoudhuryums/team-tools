@@ -2016,6 +2016,22 @@ function loadTeammateStatus() {
     .getTeammateStatus();
 }
 
+// Note 10 (operator 2026-09-10): the warn chip for a teammate the server says
+// is USING THE APP (a gesture stamp within ~30 min — the presence beacon in
+// script_core) while their punch state says they are not working. The server
+// ships ONE boolean (`activeNotIn`, INV-24 amendment) and this is its only
+// consumer; an older server ships no field and the chip simply never renders.
+// The tooltip states the v1 limit out loud: shift hours and PTO are NOT
+// checked, so a rep on a day off who opens the app is (truthfully) flagged.
+function clkActiveNotInChipHtml_(t) {
+  if (!t || t.activeNotIn !== true) return '';
+  const label = t.status === 'clocked_out' ? 'active · clocked out' : 'active · not clocked in';
+  const tip = 'Seen using the app within the last 30 minutes'
+    + (t.status === 'clocked_out' ? ' after clocking out.' : ' with no clock-in today.')
+    + ' Shift hours and time off are not checked — they may be off shift or on PTO.';
+  return ' <span class="emp-active-chip" title="' + esc(tip) + '">' + label + '</span>';
+}
+
 function renderTeammateCard(slot, teammates) {
   if (!teammates || teammates.length === 0) { slot.innerHTML = ''; return; }
   const TM_STATUS = {
@@ -2025,8 +2041,12 @@ function renderTeammateCard(slot, teammates) {
     not_in:      { label:'—',      avCls:'av-idle'   },
   };
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
-  teammates.forEach(t => { counts[t.status]++; });
-  const summary = `${counts.clocked_in} in · ${counts.on_lunch} on lunch · ${counts.clocked_out + counts.not_in} away`;
+  let activeNotIn = 0;
+  teammates.forEach(t => { counts[t.status]++; if (t.activeNotIn === true) activeNotIn++; });
+  // The "away" bucket is where an active-but-not-in rep hides; name the count
+  // beside it so the signal is visible at card level, not only on the row.
+  const summary = `${counts.clocked_in} in · ${counts.on_lunch} on lunch · ${counts.clocked_out + counts.not_in} away`
+    + (activeNotIn ? ` · ${activeNotIn}\u00a0active\u00a0but\u00a0not\u00a0in` : '');
 
   const cardsHtml = teammates.map(t => {
     const meta = TM_STATUS[t.status] || TM_STATUS.not_in;
@@ -2037,15 +2057,15 @@ function renderTeammateCard(slot, teammates) {
         <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
         <div class="emp-name">${esc(t.name)}${youTag}</div>
       </div>
-      <div class="emp-status-line">${meta.label}</div>
+      <div class="emp-status-line">${meta.label}${clkActiveNotInChipHtml_(t)}</div>
     </div>`;
   }).join('');
 
   slot.innerHTML = `
     <div class="card">
       <h2 class="card-label with-count">
-        <span>Team Right Now</span>
-        <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:.04em">${summary}</span>
+        <span class="emp-team-title">Team Right Now</span>
+        <span class="emp-team-summary">${summary}</span>
       </h2>
       <div class="emp-grid">${cardsHtml}</div>
     </div>`;

@@ -1202,6 +1202,10 @@ function _runAllTests() {
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
+  // ── Operator testing note 6: the Expand detail is scoped like resolve ─────
+  _integrationTest('deptReq_detailScoped',                    test_deptReq_detailScoped);
+  // ── Operator testing note 10: presence stamp + activeNotIn (INV-24 amendment)
+  _integrationTest('presence_stampAndFlag',                   test_presence_stampAndFlag);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
   // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
@@ -3095,7 +3099,9 @@ function test_managerSubmitTimeOff_writesAudit() {
 
 function test_getTeammateStatus_shapeRestricted() {
   // Critical privacy check: response must NOT carry email, ID, last-punch time,
-  // or timezone for non-managers. Only { name, status, isSelf } per row.
+  // or timezone for non-managers. Only { name, status, isSelf, activeNotIn }
+  // per row — the fourth is the note-10 presence BOOLEAN (INV-24 amendment,
+  // 2026-09-10); the presence stamp's TIME never rides the row.
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = getTeammateStatus();
     if (r.error) throw new Error('Unexpected error: ' + r.error);
@@ -3103,7 +3109,7 @@ function test_getTeammateStatus_shapeRestricted() {
     _assertTrue(Array.isArray(r.teammates), 'teammates is an array');
     _assertTrue(r.teammates.length > 0, 'teammates non-empty');
 
-    const ALLOWED_KEYS = ['name', 'status', 'isSelf'];
+    const ALLOWED_KEYS = ['name', 'status', 'isSelf', 'activeNotIn'];
     const ALLOWED_STATUS = ['clocked_in', 'on_lunch', 'not_in', 'clocked_out'];
     r.teammates.forEach(t => {
       Object.keys(t).forEach(k => {
@@ -3114,6 +3120,7 @@ function test_getTeammateStatus_shapeRestricted() {
         `Invalid status "${t.status}"`);
       _assertEq(typeof t.name, 'string');
       _assertEq(typeof t.isSelf, 'boolean');
+      _assertEq(typeof t.activeNotIn, 'boolean');
     });
 
     const selfCount = r.teammates.filter(t => t.isSelf).length;
@@ -5345,6 +5352,7 @@ function test_managerGates_rejectNonManager() {
     ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
     ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
     ['saveSpanishInboxMembers',        function () { return saveSpanishInboxMembers([]); }],
+    ['saveQaMembers',                  function () { return saveQaMembers([]); }],   // operator testing note 8
     // Break-schedule editor (operator 2026-08-27) — gate precedes any
     // property write; an empty payload could never write regardless.
     ['saveBreakSchedules',             function () { return saveBreakSchedules({ reminderMin: 10, schedules: {} }); }],
@@ -5445,6 +5453,7 @@ function test_managerGates_rejectNonManager() {
     // Design handoff PR 5 (Q4) — exemptions are a MANAGER decision (a QA
     // member reviews; a manager decides who may skip a period).
     ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],
+    ['autoAssignSpanishThreads',       function () { return autoAssignSpanishThreads(30); }],   // operator testing note 4 — MANAGER tier, not canSeeSpanishInbox_
   ];
   // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
   // non-admin caller — incl. this non-manager — gets 'Admin access required.').
@@ -5455,7 +5464,7 @@ function test_managerGates_rejectNonManager() {
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
     getDeptRequestSla: 1, saveDeptRequestSla: 1, saveSpanishInboxMembers: 1,
     saveBreakSchedules: 1, getBreakCoverage: 1,
-    saveQaScorecardCriteria: 1,
+    saveQaScorecardCriteria: 1, saveQaMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -5632,6 +5641,90 @@ function test_deptReq_incomingAndMemberResolve() {
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
     drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
+  }
+}
+
+// Operator testing note 6 (2026-09-10) — getDeptRequestDetail is scoped by the
+// SAME rule as resolve (drCanAct_: sender / manager / receiving-dept member),
+// a scope refusal reads as not-found, and a request whose sender is not a
+// roster employee returns the base (label + patient & TRX) with note:null and
+// a NAMED reason rather than an empty note (INV-187). Same fixture shape as
+// the incoming test above, plus the two trailing columns.
+function test_deptReq_detailScoped() {
+  const deptKeys = Object.keys(getDepartmentEmails_() || {});
+  if (!deptKeys.length) { _skipTest('no departments configured'); }
+  const dept = deptKeys[0];
+  const ss = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const roster = ss.getDataRange().getValues();
+  let empRow = -1;
+  for (let i = 1; i < roster.length; i++) {
+    if (String(roster[i][EMP.ID]).trim() === _TEST_INDIA_ID) { empRow = i + 1; break; }
+  }
+  if (empRow < 0) { _skipTest('India test emp not on roster'); }
+  const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  try {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
+    invalidateRosterCache_();
+    sh.appendRow(['TEST_DR_DET', 'TEST_OTHER_SENDER', 'Other', 'o@x.com', dept, 'x.com',
+      drNowTs_(), 'open', '', '', 'detail-test', 'TEST_DR_NOTE_DET', '', 'Test Patient · TRX 1']);
+    SpreadsheetApp.flush();
+    let res; _asUser(_TEST_INDIA_EMAIL, function () { res = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(res && !res.error), 'a receiving-dept member may read the detail');
+    _assertEq(res.patientTrx, 'Test Patient · TRX 1', 'the stored patient & TRX rides back');
+    _assertTrue(res.note === null, 'no note when the sender is not a roster employee');
+    _assertTrue(!!res.reason, 'the missing note is explained by name (INV-187)');
+    let other; _asUser(_TEST_PH_EMAIL, function () { other = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(other && other.error), 'an unrelated rep is refused');
+    _assertContains(other.error, 'Request not found', 'a scope refusal reads as not-found (existence never leaks)');
+    let mgr; _asUser(_TEST_MGR_EMAIL, function () { mgr = getDeptRequestDetail('TEST_DR_DET'); });
+    _assertTrue(!!(mgr && !mgr.error), 'a manager may read any request');
+    let bad; _asUser(_TEST_MGR_EMAIL, function () { bad = getDeptRequestDetail('TEST_DR_NOPE'); });
+    _assertContains((bad && bad.error) || '', 'Request not found', 'an unknown id reads exactly like a scope refusal');
+  } finally {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
+    invalidateRosterCache_();
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+    drBumpCacheGen_();
+  }
+}
+
+// Operator testing note 10 (2026-09-10): the presence stamp + the activeNotIn
+// boolean. recordPresence is rep-gated and writes ONLY a CacheService stamp;
+// getTeammateStatus folds it into ONE boolean per row and never a timestamp
+// (INV-24 amendment); self is never flagged; a working state (clocked in / on
+// lunch) is never flagged even when present.
+function test_presence_stampAndFlag() {
+  const nobody = _asUser('do-not-send-nobody@example.invalid', function () { return recordPresence(); });
+  _assertEq(nobody.success, false, 'an unregistered caller writes no stamp');
+  const cache = CacheService.getScriptCache();
+  const key = PRESENCE_CACHE_PREFIX + _TEST_INDIA_ID;
+  try {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () { return recordPresence(); });
+    _assertEq(r.success, true, 'an employee stamp is accepted');
+    _assertEq(cache.get(key), '1', 'the stamp lands under the prefixed key');
+    _assertTrue(!!teammateActiveNotIn_(false, true, 'not_in'), 'present + not_in → flagged');
+    _assertTrue(!!teammateActiveNotIn_(false, true, 'clocked_out'), 'present + clocked_out → flagged');
+    _assertEq(teammateActiveNotIn_(false, true, 'clocked_in'), false, 'a working state is never flagged');
+    _assertEq(teammateActiveNotIn_(true, true, 'not_in'), false, 'self is never flagged');
+    _assertEq(teammateActiveNotIn_(false, false, 'not_in'), false, 'absent → not flagged');
+    const view = _asUser(_TEST_PH_EMAIL, function () { return getTeammateStatus(); });
+    if (view.error) throw new Error('Unexpected error: ' + view.error);
+    if (!view.enabled) { _skipTest('showTeammateStatus is off — the flag rides that view'); return; }
+    const india = view.teammates.filter(function (t) { return t.name === _TEST_INDIA_NAME; })[0];
+    _assertTrue(!!india, 'the stamped rep is on the view');
+    const expected = india.status === 'not_in' || india.status === 'clocked_out';
+    _assertEq(india.activeNotIn, expected, 'flag = stamped AND not working (whatever today\'s fixture punches say)');
+    const self = view.teammates.filter(function (t) { return t.isSelf; })[0];
+    _assertEq(self.activeNotIn, false, 'the viewer is never flagged on their own card');
+    Object.keys(india).forEach(function (k) {
+      _assertTrue(['name', 'status', 'isSelf', 'activeNotIn'].indexOf(k) >= 0,
+        'no presence timestamp rides the row (INV-24): ' + k);
+    });
+  } finally {
+    cache.remove(key);
   }
 }
 
@@ -7493,15 +7586,23 @@ function test_deptRequest_resolveLinkIdempotent() {
   const sh = getOrCreateDeptRequestsSheet_();
   const token = 'TESTDR-' + Utilities.getUuid();
   sh.appendRow([token, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
-    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '']);
+    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '', '']);
   try {
     const before = _countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved');
-    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL, 'email');
     _assertTrue(r1.found === true && r1.already === false, 'first resolve marks the row');
-    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    // Note #3 (2026-09-10): the resolve path RECORDS how it was resolved —
+    // only an email-link resolve is a timed reply; the in-app button passes 'app'.
+    const rowsAfter = sh.getDataRange().getValues();
+    let viaCell = null;
+    for (let i = rowsAfter.length - 1; i >= 1; i--) {
+      if (String(rowsAfter[i][DR.REQ_ID]) === token) { viaCell = drResolvedVia_(rowsAfter[i]); break; }
+    }
+    _assertEq(viaCell, 'email', 'ResolvedVia records the email-link path');
+    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL, 'email');
     _assertTrue(r2.found === true && r2.already === true, 'second resolve is idempotent (already)');
     _assertTrue(!!String(r2.resolvedAt || ''), 'already-branch returns the resolve time');
-    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL).found, false,
+    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL, 'email').found, false,
       'unknown token → not found');
     _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
       'exactly one DeptRequestResolved audit row (the already-branch writes none)');

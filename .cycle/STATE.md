@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: docs reconciled — ready for `/reflect`. The OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -14,12 +14,90 @@ Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-09
+Updated: 2026-09-11 (/sync-docs applied for Batches A–D — CLAUDE.md, README, this file; nothing owed but /reflect)
+
+## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
+The operator posted ten testing notes (nine + a tenth in the follow-up) after
+cycle 19's four audit batches merged (PR #235). Plan agreed in chat; the
+batches are A (notes 1/5/7/9 — small client + label fixes), B (notes 2/3 —
+stats semantics), C (notes 4/6/8 — features needing the decisions below),
+D (note 10 — a new presence signal on the Team-right-now card).
+- Batch A: DONE, committed a96fe16 on `claude/broad-scan-fw462g` (the branch
+  was RESET onto origin/main first — PR #235 had merged), pushed. Block:
+  `.cycle/blocks/19-operator-batchA-broad-implement.md` (net +4 self-scored,
+  strict — all four operator-observed on the running app; 6 mutations /
+  6 bites; pure 778, DOM 110, visual matrix 101).
+- Batch B: DONE, committed c525c89 (+ the wrap-up commit) on
+  `claude/broad-scan-fw462g`, pushed. Block:
+  `.cycle/blocks/19-operator-batchB-broad-implement.md` (net +2 — N3 on both
+  surfaces operator-observed; N2 was a verification, scored 0; 8 mutations /
+  8 bites; pure 781, DOM 110, visual matrix 101). Shapes as planned: the pure
+  `drDeptStats_` fold; DR trailing `ResolvedVia` (`email`/`app`, one reader
+  `drResolvedVia_`, writer takes `via`, app + legacy-blank untimed and
+  REPORTED as `manualResolved`/`untrackedResolved`/`timed`); Spanish
+  `manualCount` + null minutes on the resolved card + cache key v2. The pure
+  harness's summary line now prints LAST (three new pins had been running
+  after it, uncounted).
+- Batch C: DONE, committed 155dd02 (+ the wrap-up commit) on
+  `claude/broad-scan-fw462g`, pushed. Block:
+  `.cycle/blocks/19-operator-batchC-broad-implement.md` (net +1 — N6's
+  unidentifiable collapsed card was operator-observed; N4 / N6-expand / N8's
+  editor are capabilities, N8's assign widening is defensive; 13 mutations /
+  13 bites across 16 harness runs; pure 784, DOM 112, visual matrix 102,
+  editor 309 expected). Shapes as planned: N4 the pure `spanishAutoAssignPick_`
+  + reusable `spanishAutoAssignCore_` (one lock, load re-derived inside it,
+  ONE batched setValues, counts-only `SpanishInboxAutoAssign` audit) behind a
+  MANAGER-gated `autoAssignSpanishThreads` (writer shape; deliberately not the
+  canSeeSpanishInbox_ tier), the button beside the filter strip rendered from
+  state and refreshed by the list renderer; N6 `DR.PATIENT_TRX:13` written at
+  send (capped 120; digest + audit stay label-only), `drCanAct_` extracted as
+  the ONE ownership rule, `getDeptRequestDetail` (bare {error} read gate,
+  not-found on scope refusal, whitelist note from the sender's Sheet, named
+  reasons on note:null), the client subject + a state-driven Expand ⇄ Collapse
+  panel; N8 `saveQaMembers` (the saveSpanishInboxMembers shape), the Admin
+  card, `getAdminConfig.qaMembers`, `qaCanReviewEmail_` (member OR roster
+  manager) behind `qaAssignRecording`'s target check; INV-136 49 → 50 at both
+  sites. Two pins rewritten in place: N3-DR (a) for the new trailing slot and
+  the cycle-17 batch-3 fixture-shape pin, whose mock-WIDE `patientTrx:` casing
+  ban was scoped to the coaching rows (the DR item's server field IS
+  `patientTrx`).
+- Batch D: DONE, committed 9176908 + 1961691 (+ the wrap-up commit) on
+  `claude/broad-scan-fw462g`, pushed. Block:
+  `.cycle/blocks/19-operator-batchD-broad-implement.md` (net 0 — N10 is a
+  capability; the two layout defects were introduced and fixed inside the
+  batch; 11 mutations / 11 bites; pure 785, DOM 113, visual matrix 102
+  unchanged, editor 310 expected). ONE deliberate deviation from the shape
+  recorded above: the stamp is NOT written inside the polls reps already hit
+  — a pinned pop-out left open overnight keeps polling and would read as
+  "active" at 7am — it is written by a GESTURE-driven shell beacon
+  (`recordPresence`, pointerdown/keydown, ≤1 send per 10 min per window,
+  stamp-before-send), TTL ~30 min. `getTeammateStatus` gains the ONE boolean
+  `activeNotIn` (self never; present AND not_in/clocked_out only; a failed
+  cache read → no flags), INV-24 + S14 amended in-batch. Measured twice
+  rather than eyeballed: the first chip (an inline nowrap pill) pushed the
+  390px page +34px sideways through the ≤540px `1fr` `.emp-grid`, and the
+  longer summary squeezed the card title to three lines under the shared
+  `> span:first-child { flex: 1 }` rule (a (0,2,0) fix LOST to it) — both
+  fixed, pinned, 0 overflow on all four Clock scenarios.
+
+## Decisions made in that round (operator, 2026-09-10)
+- N6: the Dept Requests store MAY carry the patient name & TRX (it stays inside
+  the Workspace). The daily SLA reminder email stays label-only unless asked.
+- N4: manager BUTTON first; the scheduled trigger may follow soon after.
+- N3: legacy Dept Requests rows with a blank `ResolvedVia` are EXCLUDED from
+  the timing stats and reported as "resolved before source tracking".
+- N8 answer given: QA access = every manager + the `QA_MEMBERS` Script
+  Property; the operator (a manager) already sees all four QA tabs.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in flight. Both harnesses are green (777 pure / 108 DOM), the tree
-  is committed on `claude/broad-scan-fw462g`, and every change in all four
-  batches was bite-checked (20 mutations / 20 bites across the two sessions).
+- Operator round: ALL FOUR batches (A + B + C + D) landed and pushed. Both
+  harnesses are green (785 pure / 113 DOM), the tree is committed on
+  `claude/broad-scan-fw462g`; every change was bite-checked
+  (6 + 8 + 13 + 11 mutations, all biting). The round's documentation is
+  NOT yet reconciled — each block's DOCUMENTATION UPDATES list is owed to
+  `/sync-docs` (INV-24/S14 were amended in-batch; the rest are listed).
+- Nothing else in flight. The four AUDIT batches were bite-checked too (20
+  mutations / 20 bites across the two sessions).
 - `/sync-docs` is DONE and applied (not merely proposed): all fourteen owed
   updates plus three drifts the four checks turned up on their own. The next
   concrete step is `/reflect` to close cycle 19.
@@ -47,6 +125,8 @@ Updated: 2026-09-09
   net 0), so the reflection has honest inputs to start from.
 - The ONE deploy owed for PRs #230/#232/#233 now also carries all four
   batches AND these doc changes; nothing here reaches production without it.
+- The operator testing-notes round (Batches A–D + this /sync-docs pass) rides
+  that SAME deploy; post-deploy `runAllTests()` expects **310**.
 
 ## Open follow-on items
 - web-app/Code.js — a `reportBreakPairingChanges()` twin of `reportMultiBreakDays()` would enumerate the historical days whose hours move under F1. Not written (out of scope); F1's shape is rarer than the multi-break one, and no existing report finds it.
@@ -71,7 +151,27 @@ Updated: 2026-09-09
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-All four batches are implemented, bite-checked and pushed to
+Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
+(notes 2/3, c525c89), C (notes 4/6/8, 155dd02) and D (note 10, 9176908 +
+1961691) are ALL implemented, bite-checked, committed and pushed on
+`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged),
+and `/sync-docs` (2026-09-11) has applied every documentation update the four
+blocks owed: INV-31 (expand toggle, manual resolves untimed,
+`autoAssignSpanishThreads` on the MANAGER tier), INV-138 (`ResolvedVia`,
+`PatientTrx` — the store is no longer PHI-free, `drCanAct_`,
+`getDeptRequestDetail`), INV-196 + the QA operator-state entry (`saveQaMembers`,
+`qaCanReviewEmail_`), INV-134 (six sinks + the derived message), the T2 /
+Coach-button / Spanish / Dept Requests / business-hours / Time Clock KDDs, a
+new Common Gotcha (the two measured layout lessons), the manager-gated list
+gotcha, the 2026-09-10 Operator State entry, the running totals
+785 / 113 / 102 / 310 + the harness-hazard wording, scenarios
+S26/S68/S74/S80/S90/S93/S101 and the new S105, and two README lines. The
+pure harness was re-run after the doc edits (785 / 0) because its F7 and
+VIS-COVER pins read CLAUDE.md. Pick up with `/reflect` to close cycle 19 —
+the four operator blocks' self-reported nets are the inputs. The N4
+scheduled trigger and the chip's schedule/PTO gating are logged follow-ons,
+not open work.
+Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
 `claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
 `19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
 they owed. Nothing is half-done and no finding from the plan is outstanding.

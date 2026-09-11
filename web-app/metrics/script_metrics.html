@@ -1867,7 +1867,11 @@ function mClearBadge_() {
 // ════════════════════════════════════════════════════════════════════════════
 //  SPANISH INBOX — bilingual-assistance resolution time (managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var SPANISH_STATE = { days: 30, tab: 'all' };
+// `bodies` caches a loaded full request per thread (a second Expand costs no
+// RPC) and `expanded` is which cards are open — kept in STATE, not the DOM, so
+// a claim/filter re-render of the list preserves an expanded card
+// (operator 2026-09-10: "Show full request" had no way back).
+var SPANISH_STATE = { days: 30, tab: 'all', bodies: {}, expanded: {} };
 // Operator feedback 2026-08-06 — the combined Pending+Resolved list's RED
 // band: a pending request older than this many hours renders destructive-toned
 // ("overdue"), vs warn-toned pending and good-toned resolved. Client-side
@@ -1999,7 +2003,11 @@ function spanishHeadHtml_(d) {
     var win = (bh.startMin != null && bh.endMin != null) ? (hrLabel(bh.startMin) + '–' + hrLabel(bh.endMin) + ' ') : '';
     strip += '<div style="font-size:11px;color:var(--muted-2);margin:-8px 0 14px">Response times count ' + esc(win) +
       'business hours only — weekends and US holidays excluded' +
-      (d.businessCount != null ? (' · ' + esc(String(d.businessCount)) + ' timed') : '') + '</div>';
+      (d.businessCount != null ? (' · ' + esc(String(d.businessCount)) + ' timed') : '') +
+      // Note #3 (operator 2026-09-10): a request marked resolved by hand was
+      // handled OUTSIDE the thread, so its resolve time is unknown — it counts
+      // as resolved but never enters Avg / Median. Say so beside the count.
+      (d.manualCount ? (' · ' + esc(String(d.manualCount)) + ' marked manually, not timed') : '') + '</div>';
   }
   // Operator feedback 2026-08-06 — ONE combined list, color-coded by status,
   // with filter chips instead of separate Pending/Resolved sub-tabs. The chips
@@ -2009,10 +2017,111 @@ function spanishHeadHtml_(d) {
       '" onclick="spanishSetTab_(\'' + key + '\')">' + label + '</button>';
   };
   var toggle =
-    '<div class="toolbar-tabs" role="group" aria-label="Filter by status" style="margin:2px 0 10px">' +
+    '<div class="toolbar-tabs" role="group" aria-label="Filter by status">' +
       mkTab('all', 'All') + mkTab('pending', 'Pending') + mkTab('resolved', 'Resolved') +
     '</div>';
-  return note + strip + toggle;
+  // Note #4 (operator 2026-09-10): the manager's Auto-assign button rides
+  // BESIDE the filter strip (one flex row, wraps on a phone). It is rendered
+  // from state, so a head-swap (a background stats arrival) and the list
+  // renderer (spanishRefreshAutoAssign_) both keep its count honest.
+  var row = '<div class="sp-toolbar-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px">' +
+    toggle + spanishAutoAssignBtnHtml_() + '</div>';
+  return note + strip + row;
+}
+
+// ── Auto-assign (operator testing note 4, 2026-09-10) ───────────────────────
+// "Auto-assign for equal distribution" — the button first; a scheduled
+// trigger may follow (the server core is reusable for it). MANAGER-only on
+// both sides: the button renders only for a manager, and the endpoint gates
+// on isManager (a distribution decision, like Assign).
+
+/** Unclaimed pending count from STATE — null while the pending list has not
+ *  loaded, so the button can say "loading" rather than "0". */
+function spanishUnclaimedCount_() {
+  var pd = SPANISH_STATE.pendingRes;
+  if (!pd || !Array.isArray(pd.pending)) return null;
+  var n = 0;
+  pd.pending.forEach(function (p) { if (!(p && p.claim && p.claim.by)) n++; });
+  return n;
+}
+
+/** The button markup, or '' for a non-manager. Disabled — with the reason in
+ *  its title — while the list is loading, when no members are configured, and
+ *  when every pending request is already claimed (INV-187: the count it
+ *  shows is the count it will act on). */
+function spanishAutoAssignBtnHtml_() {
+  var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
+  if (!isMgr) return '';
+  var pd = SPANISH_STATE.pendingRes;
+  var n = spanishUnclaimedCount_();
+  var members = (pd && pd.members) || [];
+  var disabled, title;
+  if (n == null) { disabled = true; title = 'Pending requests are still loading'; }
+  else if (!members.length) { disabled = true; title = 'No Spanish Inbox members are configured — Manage → Admin → Config → Spanish bilingual members'; }
+  else if (!n) { disabled = true; title = 'Every pending request is already claimed'; }
+  else {
+    disabled = false;
+    title = 'Assign the ' + n + ' unclaimed request' + (n === 1 ? '' : 's') + ' across ' + members.length +
+      ' member' + (members.length === 1 ? '' : 's') + ' — fewest claims first, oldest request first';
+  }
+  return '<button type="button" class="refresh-btn sp-autoassign" id="sp-autoassign"' + (disabled ? ' disabled' : '') +
+    ' title="' + esc(title) + '" onclick="spanishAutoAssign_(this)">' + icon('headset', 12) +
+    ' Auto-assign' + (n == null ? '' : ' ' + esc(String(n)) + ' unclaimed') + '</button>';
+}
+
+/** Re-render ONLY the button in place (the outerHTML swap — the whole button
+ *  is the element, so nothing is left behind; the drRepaintKpi_ lesson). */
+function spanishRefreshAutoAssign_() {
+  var host = document.getElementById('sp-autoassign');
+  if (!host) return;
+  var html = spanishAutoAssignBtnHtml_();
+  if (html) host.outerHTML = html;
+}
+
+/** Confirm → ONE RPC → apply every returned claim to the pending payload →
+ *  ONE list render (which also refreshes the button). Nav-guarded on
+ *  currentView (the F(cycle-8 M-9) rule). */
+function spanishAutoAssign_(btn) {
+  if (!btn || btn.disabled) return;
+  var n = spanishUnclaimedCount_() || 0;
+  var members = ((SPANISH_STATE.pendingRes || {}).members || []);
+  var requestedView = currentView;
+  uiConfirm({
+    title: 'Auto-assign ' + n + ' unclaimed request' + (n === 1 ? '' : 's') + '?',
+    message: 'Each unclaimed request goes to the member with the fewest claims, oldest request first. ' +
+      'Existing claims are kept. Members: ' +
+      members.map(function (m) { return String(m).split('@')[0]; }).join(', ') + '.',
+    confirmLabel: 'Auto-assign',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.classList.add('is-busy');
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (currentView !== requestedView) return;
+        if (!r || !r.success) {
+          showToast((r && r.error) || 'Auto-assign failed', 'error');
+          spanishRefreshAutoAssign_();
+          return;
+        }
+        var pd = SPANISH_STATE.pendingRes;
+        (r.assigned || []).forEach(function (a) {
+          if (!pd || !Array.isArray(pd.pending)) return;
+          for (var i = 0; i < pd.pending.length; i++) {
+            if (pd.pending[i].threadId === a.threadId) pd.pending[i].claim = a.claim;
+          }
+        });
+        spanishRenderList_();   // ONE render — the cards' claim pills AND the button
+        var k = (r.assigned || []).length;
+        showToast(k ? ('Assigned ' + k + ' request' + (k === 1 ? '' : 's') + ' across ' + members.length + ' member' + (members.length === 1 ? '' : 's'))
+                    : 'Nothing to assign — every pending request is already claimed', 'success');
+      })
+      .withFailureHandler(function (e) {
+        if (currentView !== requestedView) return;
+        showToast((e && e.message) || 'Auto-assign failed', 'error');
+        spanishRefreshAutoAssign_();
+      })
+      .autoAssignSpanishThreads(SPANISH_STATE.days);
+  });
 }
 
 function spanishRender_(d, opts) {
@@ -2230,6 +2339,7 @@ function spanishRenderList_() {
     }
   }
   s.innerHTML = html;
+  spanishRefreshAutoAssign_();   // note #4 — the unclaimed count follows the list
 }
 
 /** Row tone for a PENDING card — warn until SPANISH_OVERDUE_HOURS, then
@@ -2242,8 +2352,13 @@ function spanishResolvedCard_(t) {
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   // Business-hours duration (operator 2026-08-31); the wall-clock figure rides
   // in the title so a reader can still see the calendar gap.
-  var took = spanishFmtDur_(t.resolveMinutes);
-  var tookTitle = (t.resolveWallMinutes != null && t.resolveMinutes != null)
+  // A manual mark-resolve carries NO duration (note #3 — the server ships null
+  // minutes for it): the chip reads "not timed" rather than an em dash that
+  // could be mistaken for a missing figure.
+  var took = t.manual ? 'not timed' : spanishFmtDur_(t.resolveMinutes);
+  var tookTitle = t.manual
+    ? 'Marked resolved by hand — handled outside the thread, so the reply time is unknown and not counted'
+    : (t.resolveWallMinutes != null && t.resolveMinutes != null)
     ? ('Business hours: ' + spanishFmtDur_(t.resolveMinutes) + ' · wall clock: ' + spanishFmtDur_(t.resolveWallMinutes)) : '';
   var when = spanishFmtDateTime_(t.resolvedAtMs);
   return '<div class="sp-task st-resolved">' +
@@ -2446,7 +2561,12 @@ function spanishSetClaimLocal_(tid, claim) {
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
-  var more = t.hasMore ? '<button class="sp-more" data-thread="' + esc(t.threadId) + '" onclick="spanishExpand_(this)">Show full request</button>' : '';
+  var bodyId = spanishBodyId_(t.threadId);
+  var isOpen = spanishIsExpanded_(t.threadId);
+  // Operator 2026-09-10: a real toggle — Expand ⇄ Collapse, aria-expanded kept
+  // in step (INV-174), aria-controls naming the body it opens.
+  var more = t.hasMore ? '<button type="button" class="sp-more" data-thread="' + esc(t.threadId) + '" aria-expanded="' + (isOpen ? 'true' : 'false') +
+    '" aria-controls="' + bodyId + '" onclick="spanishExpand_(this)">' + (isOpen ? 'Collapse' : 'Expand') + '</button>' : '';
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   // Operator feedback 2026-07-09 — manual mark-resolved for requests handled
   // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
@@ -2461,8 +2581,8 @@ function spanishTaskCard_(t) {
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + claimPill +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
-    '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
-    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (t.snippet || '')) + '</div>' +
+    '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
+    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (isOpen ? SPANISH_STATE.bodies[t.threadId] : t.snippet) || '') + '</div>' +
     '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + ' ' + claimCtl + '</div>' +
   '</div>';
 }
@@ -2496,24 +2616,62 @@ function spanishResolve_(btn) {
   });
 }
 
+/** The body element's id — a thread id is Gmail's hex string, but the id is
+ *  built defensively so aria-controls always names a valid id. */
+function spanishBodyId_(tid) { return 'sp-body-' + String(tid || '').replace(/[^A-Za-z0-9_-]/g, '_'); }
+function spanishIsExpanded_(tid) {
+  var st = SPANISH_STATE;
+  return !!(st.expanded && st.expanded[tid] && st.bodies && st.bodies[tid] != null);
+}
+function spanishPendingItem_(tid) {
+  var pd = SPANISH_STATE.pendingRes;
+  var list = pd && pd.pending;
+  if (!Array.isArray(list)) return null;
+  for (var i = 0; i < list.length; i++) if (list[i].threadId === tid) return list[i];
+  return null;
+}
+
+/** Expand ⇄ Collapse a pending card's request body. The first Expand fetches
+ *  the full request (getSpanishInboxThreadBody — live, never stored beyond
+ *  the request) and caches it in SPANISH_STATE.bodies; Collapse restores the
+ *  snippet from the pending payload with no RPC; a later Expand reuses the
+ *  cache. State, not the DOM, is the source of truth, so a list re-render
+ *  (claim, filter) keeps an open card open. (Before 2026-09-10 the button
+ *  replaced the snippet and REMOVED ITSELF — there was no way back.) */
 function spanishExpand_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
-  if (!card) return;
+  if (!card || !tid) return;
+  var st = SPANISH_STATE;
+  st.bodies = st.bodies || {}; st.expanded = st.expanded || {};
+  var bodyEl = card.querySelector('.sp-task-body');
+  if (st.expanded[tid]) {
+    // Collapse — the snippet comes back from the payload, never from the DOM.
+    st.expanded[tid] = false;
+    var item = spanishPendingItem_(tid);
+    if (bodyEl) bodyEl.textContent = (item ? String(item.snippet || '') : '') + (item && item.hasMore ? '…' : '');
+    btn.textContent = 'Expand'; btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  var open = function (body) {
+    st.expanded[tid] = true;
+    if (bodyEl) bodyEl.textContent = body || '(empty)';
+    btn.textContent = 'Collapse'; btn.setAttribute('aria-expanded', 'true');
+  };
+  if (st.bodies[tid] != null) { open(st.bodies[tid]); return; }   // cached — a second Expand costs no RPC
   btn.disabled = true; btn.textContent = 'Loading…';
   google.script.run
     .withSuccessHandler(function (r) {
-      btn.disabled = false; btn.textContent = 'Show full request';
-      if (!r || r.error) { showToast((r && r.error) || 'Could not load', 'error'); return; }
-      var bodyEl = card.querySelector('.sp-task-body');
-      if (bodyEl) bodyEl.textContent = r.body || '(empty)';
+      btn.disabled = false;
+      if (!r || r.error) { btn.textContent = 'Expand'; showToast((r && r.error) || 'Could not load', 'error'); return; }
+      st.bodies[tid] = String(r.body || '');
+      open(st.bodies[tid]);
       // Re-run tool suggestions now that the fuller body text is available.
       var subjEl = card.querySelector('.sp-task-subj');
       var wrap = card.querySelector('.sp-suggest-wrap');
-      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + (r.body || ''));
-      btn.remove();
+      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + st.bodies[tid]);
     })
-    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Show full request'; showToast((e && e.message) || 'Error', 'error'); })
+    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Expand'; showToast((e && e.message) || 'Error', 'error'); })
     .getSpanishInboxThreadBody(tid);
 }
 </script>

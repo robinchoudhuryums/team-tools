@@ -1251,7 +1251,14 @@
   .rail-tag-suggest .sug-tag:hover { color: var(--accent-2); border-color: var(--accent); background: var(--accent-soft); }
 
   /* Manager per-rep card actions (item: manager delete from history) */
-  .cn-mgr-card-actions { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .cn-mgr-card-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  /* Operator 2026-09-10: the Coach button shipped with NO rule — its class was
+     emitted by the card and defined nowhere, so it rendered as a native
+     button beside the styled Delete (the .cn-act-btn-outside-.cn-card-actions
+     class). Same shape as its sibling, info-toned: it starts a coaching
+     record, a constructive act, where Delete is the destructive one. */
+  .cn-mgr-coach-btn { font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--info-deep); cursor: pointer; padding: 4px 10px; }
+  .cn-mgr-coach-btn:hover { background: var(--info-soft); border-color: var(--info-deep); }
   .cn-mgr-del-btn { font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; padding: 4px 10px; }
   .cn-mgr-del-btn:hover { background: var(--danger-soft); border-color: var(--danger-deep); }
 
@@ -11612,6 +11619,20 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // QA reviewers (operator testing note 8, 2026-09-10 — "where are QA
+    // agents added?"): the in-app editor for Script Property QA_MEMBERS,
+    // which the Admin tab never surfaced. The Spanish-members card's shape.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('headset', 14) + ' QA reviewers</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">The reps who review call recordings: they get the QA tool (Recordings / Stats / Log) and can be assigned recordings. <strong>Every manager can already review</strong> without being listed — add only non-manager reviewers here. Use each rep’s login email exactly as on the roster; changes take effect on their next page load.</div>' +
+      '<div id="cn-admin-qam-list" class="cn-spm-chips">' + cnRenderQaMemberChips_(cfg.qaMembers || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        '<input type="email" id="cn-admin-qam-add" placeholder="rep@umsupply.com" aria-label="Reviewer email to add" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:220px">' +
+        '<button class="refresh-btn" id="cn-admin-qam-addbtn" type="button">' + icon('plus', 12) + ' Add</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-qam-save" style="margin:0">Save reviewers</button>' +
+      '</div>' +
+    '</div>' +
+
     // Phase A — KB AI guidance settings (cap + model; the on/off switch is
     // the kbAiGuidance feature toggle above; the API key stays editor-only).
     (kbAi ?
@@ -12003,6 +12024,63 @@ function cnRenderAdminBody_(cfg) {
     } else { doSave(); }
   });
 
+  // QA reviewers (operator testing note 8, 2026-09-10): the Spanish-members
+  // handlers' shape — chips are the working list, Add validates shape +
+  // dedupes client-side (the server re-validates), an EMPTY save confirms
+  // (it revokes every non-manager reviewer's QA access at once).
+  var qamAdd = function () {
+    var inp = document.getElementById('cn-admin-qam-add');
+    var list = document.getElementById('cn-admin-qam-list');
+    if (!inp || !list) return;
+    var e = (inp.value || '').trim().toLowerCase();
+    if (!e) return;
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) { showToast('Enter a valid email address', 'toast-warn'); return; }
+    var chips = list.querySelectorAll('.cn-spm-chip');
+    for (var i = 0; i < chips.length; i++) {
+      if (chips[i].getAttribute('data-email') === e) { showToast('Already in the list', 'toast-info'); inp.value = ''; return; }
+    }
+    var none = list.querySelector('.cn-spm-none');
+    if (none) none.remove();
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cnRenderQaMemberChips_([e]);
+    list.appendChild(wrap.firstElementChild);
+    inp.value = ''; inp.focus();
+  };
+  var qamAddBtn = document.getElementById('cn-admin-qam-addbtn');
+  if (qamAddBtn) qamAddBtn.addEventListener('click', qamAdd);
+  var qamInput = document.getElementById('cn-admin-qam-add');
+  if (qamInput) qamInput.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); qamAdd(); }
+  });
+  var qamSaveBtn = document.getElementById('cn-admin-qam-save');
+  if (qamSaveBtn) qamSaveBtn.addEventListener('click', function () {
+    var btn = this;
+    var chips = document.querySelectorAll('#cn-admin-qam-list .cn-spm-chip');
+    var out = [];
+    for (var i = 0; i < chips.length; i++) out.push(chips[i].getAttribute('data-email'));
+    var doSave = function () {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false; btn.textContent = 'Save reviewers';
+          if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+          showToast('QA reviewers saved (' + res.members.length + ')', 'toast-success');
+          var list = document.getElementById('cn-admin-qam-list');
+          if (list) list.innerHTML = cnRenderQaMemberChips_(res.members);
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false; btn.textContent = 'Save reviewers';
+          showToast((err && err.message) || 'Save failed', 'toast-error');
+        })
+        .saveQaMembers(out);
+    };
+    if (!out.length) {
+      uiConfirm({ title: 'Clear all QA reviewers?',
+        message: 'Every non-manager reviewer loses the QA tool on their next page load. Managers keep it.',
+        confirmLabel: 'Clear reviewers', tone: 'danger' }).then(function (ok) { if (ok) doSave(); });
+    } else { doSave(); }
+  });
+
   // Break schedules (operator 2026-08-27): sections + rows are created
   // dynamically, so the section-level controls are DELEGATED on the editor
   // container (which the save re-render replaces the CONTENTS of, never the
@@ -12234,6 +12312,19 @@ function cnRenderLinkRow_(l) {
 function cnRenderSpanishMemberChips_(members) {
   if (!members || !members.length) {
     return '<div class="cn-spm-none" style="font-size:12px;color:var(--warning-deep)">No members configured — any reply counts as resolved, and only managers see the Spanish Inbox.</div>';
+  }
+  return members.map(function (m) {
+    return '<span class="cn-spm-chip" data-email="' + esc(m) + '">' + esc(m) +
+      '<button type="button" aria-label="Remove ' + esc(m) + '" onclick="this.closest(\'.cn-spm-chip\').remove()">' + icon('x', 11) + '</button></span>';
+  }).join('');
+}
+
+/** The QA reviewers card's chips (operator testing note 8) — the Spanish
+ *  chips' markup, so the two lists look and behave identically; the empty
+ *  text says what "no reviewers" MEANS (managers still review). */
+function cnRenderQaMemberChips_(members) {
+  if (!members || !members.length) {
+    return '<div class="cn-spm-none" style="font-size:12px;color:var(--muted)">No QA reviewers listed — every manager can still review; add a rep here to give them the QA tool.</div>';
   }
   return members.map(function (m) {
     return '<span class="cn-spm-chip" data-email="' + esc(m) + '">' + esc(m) +

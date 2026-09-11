@@ -754,13 +754,34 @@ const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED
 // IS_ADJUSTMENT(7) TRUE/FALSE — all Sheets-coerced on read (the M-3/M-4/F1 class).
 const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 };
 
-// Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
+// Inter-department request tracking (DeptRequests tab). No email body is ever
+// stored; since operator testing note 6 (2026-09-10) the row DOES carry the
+// note's patient name & TRX (PATIENT_TRX, col 13) — see that column's note.
 // NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13 };
+// RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
+// header self-heals): HOW the row was resolved — 'email' = the recipient
+// clicked the resolve link in the department email (a real response time),
+// 'app' = someone pressed "Mark resolved" in the tracker (a manual clear —
+// NOT a response time). A blank cell is a row resolved before the source was
+// recorded, and by operator decision it is excluded from the timing stats
+// too, reported as "resolved before source tracking".
+// PATIENT_TRX (trailing, operator testing note 6, 2026-09-10 — back-compat like
+// NOTE_ID; the header self-heals): the source note's "Patient Name & TRX" as
+// typed, capped at DR_PATIENT_TRX_MAX. This is the ONE patient-identifying
+// cell in the store, added by OPERATOR DECISION: the constructed email subject
+// is "<update type> · <patient & trx>", and a collapsed tracker card that
+// shows only the update type is unidentifiable to the desk working it. The
+// store stays inside the Workspace (the ADP sheet, or DEPT_REQUESTS_SS_ID);
+// the daily SLA reminder EMAIL and the shared AuditLog stay LABEL-ONLY —
+// `deptRequestsOverdueOpen_` deliberately never reads this column, and no
+// audit row carries it (INV-32's discipline for the shared trail).
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx'];
+const DR_RESOLVED_VIA_VALUES = ['email', 'app'];
+const DR_PATIENT_TRX_MAX = 120;
 
 /**
  * THE one reader of the DeptRequests Status cell — trimmed + lowercased, with
@@ -3470,8 +3491,73 @@ function selfDeletePunch(date, time, punchType) {
   finally { lock.releaseLock(); }
 }
 
+// ── Presence signal (operator testing note 10, 2026-09-10) ──────────────────
+// "Team Right Now" flags a teammate who appears NOT clocked in but is using
+// the app. The signal is a per-rep CacheService stamp written by
+// recordPresence(), which the SHELL fires on a real user GESTURE (pointerdown /
+// keydown) at most once per 10 minutes per window — deliberately NOT from the
+// background polls reps already hit (getEmployeeState's 3-min reconcile, the
+// 60s Call Notes ambient poll): a pinned pop-out left open overnight polls all
+// night, and stamping there would read a rep as "active" at 7am before they
+// arrived — the false positive that teaches reps to ignore the chip. A gesture
+// is the one thing a left-open window cannot produce. The stamp's TTL bounds
+// the claim: "seen in the app within the last ~30 minutes".
+//
+// INV-24 amendment: getTeammateStatus carries ONE additive boolean
+// (`activeNotIn`) derived from the stamp — never the stamp's timestamp, never
+// a last-seen time — so the low-privilege view still leaks nothing a
+// teammate could not infer from the chip itself. A failed cache read yields
+// NO flags (presenceMap_ → {}): a false "active but not clocked in" is worse
+// than a missed one, the INV-190 direction for a nudge.
+//
+// v1 limits, stated on the chip's tooltip: shift hours and PTO are NOT
+// checked — a rep on a day off who opens the app reads as active, which is
+// true. Gating on the rep's schedule/PTO is a logged follow-on.
+const PRESENCE_CACHE_PREFIX = 'presence_v1:';
+const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip names
+
+/** Rep-callable, fire-and-forget: stamp the caller as active. No lock (a
+ *  CacheService put is atomic), no sheet write, no audit row — it is a
+ *  volatile signal, not a record. Never throws. */
+function recordPresence() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, '1', PRESENCE_TTL_SEC);
+    return { success: true };
+  } catch (e) {
+    return { success: false };
+  }
+}
+
+/** Best-effort: { empId: true } for every id with a live presence stamp. ONE
+ *  getAll over the roster's keys; any failure returns {} — no flags, never a
+ *  thrown error into the teammate view (a missing chip is the safe failure). */
+function presenceMap_(empIds) {
+  const out = {};
+  try {
+    const keys = (empIds || []).map(id => PRESENCE_CACHE_PREFIX + id);
+    if (!keys.length) return out;
+    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    Object.keys(hits).forEach(k => {
+      if (hits[k]) out[k.slice(PRESENCE_CACHE_PREFIX.length)] = true;
+    });
+  } catch (e) { /* best-effort — no flags */ }
+  return out;
+}
+
+/** PURE (Node-pinned): the one rule behind the chip. Self is never flagged (a
+ *  rep already knows they are using the app); a present rep is flagged only
+ *  when the punch state says they are NOT working — not clocked in yet, or
+ *  already clocked out. On lunch / clocked in are working states. */
+function teammateActiveNotIn_(isSelf, present, status) {
+  if (isSelf || !present) return false;
+  return status === 'not_in' || status === 'clocked_out';
+}
+
 /** Lightweight teammate-status view for the Clock page.
- *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
+ *  Returns name + status + the activeNotIn boolean only — no email, no
+ *  internal IDs, no last-punch detail, no presence timestamp (INV-24). */
 function getTeammateStatus() {
   try {
     // C8 (cycle 10): authenticate BEFORE evaluating the feature flag — the
@@ -3507,6 +3593,9 @@ function getTeammateStatus() {
       if (!slot.last || time > slot.last.time) slot.last = { time, type };
     }
 
+    // Presence stamps (note 10) — one getAll, best-effort, ids only.
+    const present = presenceMap_(employees.map(e => e.id));
+
     const teammates = employees.map(e => {
       const slot = todayByEmp[e.id];
       const last = slot ? slot.last : null;
@@ -3516,15 +3605,22 @@ function getTeammateStatus() {
         else if (last.type === 'LunchOut') status = 'on_lunch';
         else if (last.type === 'ClockOut') status = 'clocked_out';
       }
+      const isSelf = e.id === emp.id;
       return {
         name: e.name,
         status,
-        isSelf: e.id === emp.id,
+        isSelf,
+        // INV-24: the boolean ONLY — the stamp's time never rides the row.
+        activeNotIn: teammateActiveNotIn_(isSelf, !!present[e.id], status),
       };
     });
-    // Sort: active first, then on lunch, then idle, then done
+    // Sort: active first, then on lunch, then idle, then done — and within a
+    // status, a flagged (active-but-not-in) rep ahead of the unflagged, so the
+    // chip sits where the eye lands.
     const rank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
-    teammates.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    teammates.sort((a, b) => rank[a.status] - rank[b.status]
+      || (b.activeNotIn ? 1 : 0) - (a.activeNotIn ? 1 : 0)
+      || a.name.localeCompare(b.name));
     return { enabled: true, teammates };
   } catch (err) { return { error: err.message }; }
 }
@@ -6107,6 +6203,7 @@ function getAdminConfig() {
       externalLinks: getExternalLinks_(),
       autoTagRules: getAutoTagRules_(),
       spanishMembers: Object.keys(getSpanishInboxMembers_()).sort(),
+      qaMembers: Object.keys(getQaMembers_()).sort(),   // operator testing note 8 — the QA reviewers editor
       breakSchedules: breakSchedulesAdminView_(),
       qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA },
       deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
@@ -9409,8 +9506,11 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
       (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).
-    // PHI-free: the row carries the dept label + the update CATEGORY + the source
-    // noteId only; the subject (patient/TRX) and note content never enter it.
+    // The row carries the dept label + the update CATEGORY + the source noteId
+    // + (operator testing note 6, 2026-09-10) the note's patient name & TRX —
+    // the SECOND half of the constructed subject, so the tracker card is
+    // identifiable without opening the note. Note CONTENT (issue/resolution)
+    // still never enters the store; the SLA digest + AuditLog stay label-only.
     // A5: append a NEW open row ONLY when this isn't a re-send of an already-open
     // (note, dept) request — a re-send reuses the prior token (drExistingId), so
     // we skip the append and just audit the re-notification. Surfaced in
@@ -9424,6 +9524,8 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           // a long paste (which could carry patient identifiers) can't ride
           // into the PHI-free store / the dept inbox / the SLA digest whole.
           String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
+          '',   // ResolvedVia — written by the resolver
+          String(note.patientAndTrx || '').slice(0, DR_PATIENT_TRX_MAX),
         ]);
         drBumpCacheGen_();   // a new open request must reach the next list read
       }
@@ -12972,12 +13074,12 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
         // F(L-10): NO patientTRX here — INV-134: coaching notifications are
         // PHI-minimal (severity only, never the patient/TRX or narrative).
         // The manager opens the team-scoped Coaching tab for the detail.
-        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + '</td>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + '</td>' +
         '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
         '</tr>';
     }).join('');
     html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
-    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
   }
   html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
@@ -13120,11 +13222,11 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
       text += d.docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
     } else if (s.key === 'coaching') {
       html += table(d.coaching.map(function (oc) {
-        return row2('<strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity),
+        return row2('<strong>' + esc_(oc.empName) + '</strong> · ' + esc_(COACH_SEV_LABELS[oc.item.severity] || oc.item.severity),
           'since ' + String(oc.item.createdAt).substring(0, 10));
       }).join(''));
       text += d.coaching.map(function (oc) {
-        return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
+        return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
       }).join('\n');
     } else if (s.key === 'deptOverdue') {
       html += table(d.deptOverdue.map(function (o) {
@@ -15210,14 +15312,14 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v1:' + d + ':' + spanishCacheHash_(addr, members);
+    const ckey = 'spanish_inbox_v2:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10)
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const durations = [], bizDurations = [], pending = [];
-    let resolvedCount = 0;
+    let resolvedCount = 0, manualCount = 0;
     const nowMs = Date.now();
     threads.forEach(function (th) {
       const msgs = th.getMessages();
@@ -15235,11 +15337,19 @@ function getSpanishInboxStats(days) {
       }
       // Manual mark-resolved (handled outside the thread) counts as resolved;
       // an in-thread reply wins when both exist. max() guards a skewed stamp.
+      let wasManual = false;
       if (resolveMs == null && manual[th.getId()]) {
         resolveMs = Math.max(reqMs, manual[th.getId()].ms || reqMs);
+        wasManual = true;
       }
       if (resolveMs != null) {
         resolvedCount++;
+        // Operator 2026-09-10: a MANUAL mark-resolved counts as resolved but
+        // NEVER as a response time — the stamp is when someone pressed the
+        // button, not when the requester was answered. Counted separately so
+        // the exclusion is visible (INV-187), and OUT of both series.
+        if (wasManual) { manualCount++; }
+        else {
         durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // wall-clock minutes
         // Operator 2026-08-31 — BUSINESS minutes are the headline: nobody
         // replies overnight or at the weekend, so a Friday-evening request
@@ -15249,6 +15359,7 @@ function getSpanishInboxStats(days) {
         // differ in length — which is why each has its own count.
         const bizMin = businessMinutesBetween_(reqMs, resolveMs);
         if (bizMin != null) bizDurations.push(bizMin);
+        }
       } else {
         pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
       }
@@ -15263,6 +15374,7 @@ function getSpanishInboxStats(days) {
     const result = {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
+      manualCount: manualCount,   // marked resolved by hand — counted, never timed (operator 2026-09-10)
       avgMinutes: avg, medianMinutes: median,
       // Business-hours figures (weekends + US holidays excluded, counted only
       // within the business window). ADDITIVE — an older client keeps rendering
@@ -15428,8 +15540,10 @@ function getSpanishInboxResolved(days) {
         requester: requester,
         resolver: resolver,
         manual: wasManual,
-        resolveMinutes: businessMinutesBetween_(reqMs, resolveMs),
-        resolveWallMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
+        // A manual mark-resolved has NO response time (the stamp is the click,
+        // not the answer) — null, the voicemail shape, never a number (2026-09-10).
+        resolveMinutes: wasManual ? null : businessMinutesBetween_(reqMs, resolveMs),
+        resolveWallMinutes: wasManual ? null : Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
         resolvedAtMs: resolveMs,
         subject: req.getSubject() || '(no subject)',
         permalink: th.getPermalink(),
@@ -15717,6 +15831,92 @@ function releaseSpanishThread(threadId) {
   } catch (err) { return { error: 'Release failed: ' + err.message }; }
 }
 
+// ── Spanish inbox — auto-assign (operator testing note 4, 2026-09-10) ───────
+// "Auto-assign for equal distribution" — the operator asked for the BUTTON
+// first; a scheduled trigger may follow. The pick is a pure, Node-pinned
+// least-loaded fold so a trigger can reuse spanishAutoAssignCore_ unchanged:
+// every UNCLAIMED pending request (voicemails included — they are worked the
+// same way) goes to the configured member with the fewest live claims,
+// oldest request first, alphabetical tie-break so two runs over the same
+// state pick the same member. Existing claims are RESPECTED as load and never
+// reassigned (a manager's deliberate Assign is not undone by a button).
+// Writes are ONE lock + ONE batched setValues over the claims tab; the audit
+// row is counts-only (thread ids and emails are internal, but the row need
+// carry neither).
+
+/** PURE (Node-pinned) — least-loaded distribution.
+ *  unclaimed: [{threadId}] in the order to assign (oldest first);
+ *  members:   [email, …] (any order; deduped/lowercased by the caller);
+ *  load:      {email: liveClaimCount} — existing claims count toward balance.
+ *  Returns [{threadId, by}]; an empty member list assigns nothing. */
+function spanishAutoAssignPick_(unclaimed, members, load) {
+  const ms = (members || []).slice().sort();
+  if (!ms.length) return [];
+  const cur = {};
+  ms.forEach(function (m) { cur[m] = Number((load || {})[m]) || 0; });
+  const out = [];
+  (unclaimed || []).forEach(function (u) {
+    const tid = String((u && u.threadId) || '').trim();
+    if (!tid) return;
+    let best = ms[0];
+    ms.forEach(function (m) { if (cur[m] < cur[best]) best = m; });
+    cur[best]++;
+    out.push({ threadId: tid, by: best });
+  });
+  return out;
+}
+
+/** The reusable body — takes the ALREADY-GATED caller so a scheduled trigger
+ *  (INV-44 gate) and the button (manager gate) share one implementation.
+ *  Returns { success, unclaimed, assigned: [{threadId, claim}] }. */
+function spanishAutoAssignCore_(emp, days) {
+  const members = Object.keys(getSpanishInboxMembers_());
+  if (!members.length) return { success: false, error: 'No Spanish Inbox members are configured (Manage → Admin → Config → Spanish bilingual members).' };
+  const pendingRes = getSpanishInboxPending(days);
+  if (!pendingRes || pendingRes.error) return { success: false, error: (pendingRes && pendingRes.error) || 'Pending read failed.' };
+  const unclaimed = (pendingRes.pending || []).filter(function (p) { return !(p && p.claim && p.claim.by); });
+  if (!unclaimed.length) return { success: true, unclaimed: 0, assigned: [] };
+  const self = String(emp.email || '').trim().toLowerCase();
+  const nowMs = Date.now();
+  const stamp = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+  let picks = [];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    // Load + the unclaimed set are re-derived from the LIVE claim map inside
+    // the lock, so a claim that landed between the read and the lock is
+    // respected rather than overwritten.
+    const live = spanishClaimsMap_();
+    const load = {};
+    Object.keys(live).forEach(function (tid) { const by = live[tid].by; if (by) load[by] = (load[by] || 0) + 1; });
+    const stillUnclaimed = unclaimed.filter(function (p) { return !live[p.threadId]; });
+    picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
+    if (picks.length) {
+      const rows = picks.map(function (pk) { return [stamp, pk.threadId, 'claim', pk.by, self, nowMs]; });
+      const sh = getOrCreateSpanishClaimsSheet_();
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+  } finally { lock.releaseLock(); }
+  writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,
+    'assigned=' + picks.length + '; members=' + members.length);
+  return {
+    success: true,
+    unclaimed: unclaimed.length,
+    assigned: picks.map(function (pk) { return { threadId: pk.threadId, claim: { by: pk.by, assignedBy: self, atMs: nowMs } }; }),
+  };
+}
+
+/** The button. MANAGER-gated (a distribution decision, like Assign — not the
+ *  canSeeSpanishInbox_ tier: a member auto-assigning the whole queue to their
+ *  teammates is the thing claims exist to prevent). Writer shape. */
+function autoAssignSpanishThreads(days) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    return spanishAutoAssignCore_(emp, days);
+  } catch (err) { return { success: false, error: 'Auto-assign failed: ' + err.message }; }
+}
+
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -15941,7 +16141,21 @@ function getOrCreateDeptRequestsSheet_() {
   const ss = getDeptRequestsSS_();
   let sh = ss.getSheetByName('DeptRequests');
   if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
+  else if (sh.getLastColumn() < DR_HEADERS.length) {
+    // The trailing ResolvedVia + PatientTrx columns (operator 2026-09-10) —
+    // self-heal the header once (the INV-126/135 pattern); legacy rows read
+    // the cells blank.
+    sh.getRange(1, 1, 1, DR_HEADERS.length).setValues([DR_HEADERS]);
+  }
   return sh;
+}
+
+/** THE one reader of the DeptRequests ResolvedVia cell (the drStatus_
+ *  discipline — INV-183): trimmed + lowercased, and ONLY a known value comes
+ *  back. A blank or unknown cell reads '' = "source not recorded". */
+function drResolvedVia_(row) {
+  const v = String(row[DR.RESOLVED_VIA] == null ? '' : row[DR.RESOLVED_VIA]).trim().toLowerCase();
+  return DR_RESOLVED_VIA_VALUES.indexOf(v) >= 0 ? v : '';
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
@@ -16094,7 +16308,13 @@ function drResolveCtaHtml_(resolveUrl) {
 // auto-log path.
 
 /** Mark a request resolved (the receiver clicked the email link). Idempotent. */
-function markDeptRequestResolved_(token, byEmail) {
+function markDeptRequestResolved_(token, byEmail, via) {
+  // `via` (operator 2026-09-10): 'email' from the department email's resolve
+  // link, 'app' from the tracker's Mark-resolved button. The two paths share
+  // this writer, and until the column existed the store could not tell them
+  // apart — so every manual clear counted as a response time.
+  const viaClean = DR_RESOLVED_VIA_VALUES.indexOf(String(via || '').trim().toLowerCase()) >= 0
+    ? String(via).trim().toLowerCase() : '';
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -16110,10 +16330,11 @@ function markDeptRequestResolved_(token, byEmail) {
       sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
       sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
+      sh.getRange(i + 1, DR.RESOLVED_VIA + 1).setValue(viaClean);
       drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
       pendingTasksBust_(rows[i][DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
       try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
-        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
+        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
       return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
     }
     return { found: false };
@@ -16124,33 +16345,93 @@ function markDeptRequestResolved_(token, byEmail) {
  *  request's CREATOR or any manager can mark it resolved from the Metrics tab —
  *  e.g. when the recipient replied "done" without clicking the email link.
  *  Rep-callable; ownership/manager-checked before the resolve. */
+/** THE one ownership rule for a DeptRequests row (operator testing note 6,
+ *  2026-09-10 — extracted from resolveDeptRequest so the scoped detail read
+ *  and the resolve write cannot disagree about who may act): the SENDER, any
+ *  MANAGER, or a member of the RECEIVING department. F(cycle-8 M-5): a
+ *  multi-dept send ("Billing, Shipping") matches on EACH component department,
+ *  not just the whole stored string. */
+function drCanAct_(emp, row) {
+  if (!emp || !row) return false;
+  if (emp.isManager) return true;
+  if (String(row[DR.BY_ID]).trim() === emp.id) return true;
+  const toDept = String(row[DR.TO_DEPT] || '').toLowerCase().trim();
+  const partsLc = {};
+  drSplitDepts_(toDept).forEach(function (d) { partsLc[d.toLowerCase()] = true; });
+  return empDepartments_(emp).some(function (d) {
+    const k = String(d).toLowerCase();
+    return k === toDept || partsLc[k];
+  });
+}
+
+/** The tracker card's EXPAND — the source note's fields for a request the
+ *  caller may act on (drCanAct_: sender / manager / receiving-dept member —
+ *  the SAME rule as resolveDeptRequest, so anyone who may close a request may
+ *  read what it was about). Read-only; no lock; no audit row (a read of the
+ *  caller's own work item). PHI posture: the note fields are PHI and are
+ *  returned ONLY to that scoped set, and a scope refusal reads as the SAME
+ *  'Request not found.' a bad id does, so existence never leaks (INV-24's
+ *  spirit). The note is fetched from the SENDER's own Sheet
+ *  (lookupEmployeeById_ → getCallNotesSheet_ → findCallNoteRow_), whitelist-
+ *  built — never the raw row. `note: null` + a named `reason` when the row
+ *  predates NoteId tracking, the sender is no longer enrolled, or the note
+ *  was deleted (INV-187 — "nothing to show" is stated, never rendered as
+ *  an empty note). Bare `{error}` read shape (the GATE-SHAPE rule). */
+function getDeptRequestDetail(requestId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const reqId = String(requestId || '').trim();
+    if (!reqId) return { error: 'Request not found.' };
+    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    let row = null;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][DR.REQ_ID]) === reqId) { row = rows[i]; break; }
+    }
+    if (!row || !drCanAct_(emp, row)) return { error: 'Request not found.' };
+    const base = {
+      requestId: reqId,
+      label: String(row[DR.LABEL] || ''),
+      patientTrx: String(row[DR.PATIENT_TRX] || '').slice(0, DR_PATIENT_TRX_MAX),
+      byName: String(row[DR.BY_NAME] || ''),
+      toDept: String(row[DR.TO_DEPT] || ''),
+      note: null,
+      reason: '',
+    };
+    const noteId = String(row[DR.NOTE_ID] || '').trim();
+    if (!noteId) { base.reason = 'This request predates note linking — open the sender\'s notes for the date instead.'; return base; }
+    const sender = lookupEmployeeById_(String(row[DR.BY_ID] || '').trim());
+    if (!sender || !sender.callNotesSheetId) { base.reason = 'The sender\'s Call Notes Sheet is not available.'; return base; }
+    let located = null;
+    try { located = findCallNoteRow_(getCallNotesSheet_(sender), noteId); }
+    catch (e) { base.reason = 'The sender\'s Call Notes Sheet could not be read.'; return base; }
+    if (!located) { base.reason = 'The linked note is no longer in the sender\'s Sheet (deleted or archived).'; return base; }
+    const n = callNoteRowToObject_(located);
+    base.note = {
+      callback: n.callback, caller: n.caller, relationship: n.relationship,
+      patientAndTrx: n.patientAndTrx, issue: n.issue, transferredTo: n.transferredTo,
+      resolution: n.resolution, dateLocal: n.dateLocal,
+    };
+    return base;
+  } catch (err) { return { error: err.message }; }
+}
+
 function resolveDeptRequest(requestId) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Your account is not registered.' };
     const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let owner = null, toDept = '';
+    let row = null;
     for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === String(requestId)) {
-        owner = String(rows[i][DR.BY_ID]).trim();
-        toDept = String(rows[i][DR.TO_DEPT] || '').toLowerCase().trim();
-        break;
-      }
+      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { row = rows[i]; break; }
     }
-    if (owner === null) return { success: false, error: 'Request not found.' };
+    if (!row) return { success: false, error: 'Request not found.' };
     // v2: a member of the RECEIVING department can also resolve in-app (the
-    // "receiving agent marks resolved" path), alongside the sender + any manager.
-    // F(cycle-8 M-5): match against each component department of a multi-dept
-    // send ("Billing, Shipping"), not just the whole stored string.
-    const partsLc = {};
-    drSplitDepts_(toDept).forEach(function (d) { partsLc[d.toLowerCase()] = true; });
-    const isDeptMember = empDepartments_(emp).some(function (d) {
-      const k = String(d).toLowerCase();
-      return k === toDept || partsLc[k];
-    });
-    if (owner !== emp.id && !emp.isManager && !isDeptMember)
+    // "receiving agent marks resolved" path), alongside the sender + any
+    // manager — the ONE rule in drCanAct_, shared with getDeptRequestDetail.
+    if (!drCanAct_(emp, row))
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
-    const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
+    const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '', 'app');
     if (!res.found) return { success: false, error: 'Request not found.' };
     // F4 — the writer already cleared the SENDER's cached list; a dept member
     // resolving someone else's request is the one case where the acting rep is
@@ -16179,7 +16460,7 @@ function serveResolvePage_(token) {
       heading = 'Sign in to confirm';
       msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
     } else {
-      const res = markDeptRequestResolved_(token, by);
+      const res = markDeptRequestResolved_(token, by, 'email');
       if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
       else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
       else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ').'; }
@@ -16257,6 +16538,42 @@ function drBumpCacheGen_() {
   try { CacheService.getScriptCache().put('dr_gen_v1', String(Date.now()), 21600); } catch (_) {}
 }
 
+/** PURE (Node-pinned) — the per-department aggregate over the request items
+ *  `getDeptRequests` built. Counts a multi-dept request under EACH component
+ *  department (F cycle-8 M-5). Response-time figures (avg / median) come ONLY
+ *  from rows resolved through the department email's link (`resolvedVia ===
+ *  'email'`): a tracker "Mark resolved" is a manual clear (`manualResolved`),
+ *  and a row resolved before the source was recorded (`untrackedResolved`) is
+ *  excluded by operator decision (2026-09-10) — both are REPORTED as counts,
+ *  never silently dropped (INV-187). `timed` is the sample size behind the
+ *  two figures, so a department whose every resolve was manual reads "—" with
+ *  the reason beside it. Open rows: `open` + `overdueOpen` (slaStatus). */
+function drDeptStats_(items, slaCfg) {
+  const byDept = {};
+  (items || []).forEach(function (it) {
+    const parts = drSplitDepts_(it.toDept);
+    (parts.length ? parts : [it.toDept || '—']).forEach(function (k) {
+      if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, manualResolved: 0, untrackedResolved: 0, durations: [] };
+      const b = byDept[k];
+      if (it.status === 'resolved') {
+        b.resolved++;
+        if (it.resolvedVia === 'app') b.manualResolved++;
+        else if (it.resolvedVia !== 'email') b.untrackedResolved++;
+        else if (it.elapsedMin != null) b.durations.push(it.elapsedMin);
+      } else { b.open++; if (it.slaStatus === 'overdue') b.overdueOpen++; }
+    });
+  });
+  return Object.keys(byDept).map(function (k) {
+    const b = byDept[k];
+    b.durations.sort(function (x, y) { return x - y; });
+    const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
+    const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
+    return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
+             manualResolved: b.manualResolved, untrackedResolved: b.untrackedResolved, timed: b.durations.length,
+             slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
+  }).sort(function (a, b) { return b.open - a.open; });
+}
+
 function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();
@@ -16326,6 +16643,14 @@ function getDeptRequests() {
         ? ((resolvedMs && createdMs) ? businessMinutesBetween_(createdMs, resolvedMs) : null)
         : (createdMs ? businessMinutesBetween_(createdMs, Date.now()) : null);
       const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
+      // Operator 2026-09-10: only an EMAIL-link resolution is a RESPONSE time.
+      // A tracker "Mark resolved" ('app') is a manual clear, and a row resolved
+      // before the source was recorded ('') cannot be told apart from one —
+      // both read as UNTIMED (null, INV-187), so every consumer (the per-dept
+      // fold, the client median, the card) excludes them by the same null
+      // guard. `resolvedVia` rides beside it so the exclusion is visible.
+      const resolvedVia = isResolved ? drResolvedVia_(r) : '';
+      const timed = !isResolved || resolvedVia === 'email';
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
@@ -16334,11 +16659,16 @@ function getDeptRequests() {
         // the same value a padded/mixed-case cell would otherwise split.
         status: status, resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
+        // Operator testing note 6: the collapsed card's subject is
+        // "<label> · <patient & trx>" — a legacy row reads '' and renders
+        // the label alone (the client guards on it).
+        patientTrx: String(r[DR.PATIENT_TRX] || '').slice(0, DR_PATIENT_TRX_MAX),
         // `elapsedMin` is the BUSINESS figure (what the tracker and the SLA
         // read); the raw wall-clock span is kept beside it, both for the
         // "N wall-clock" secondary line and so the change is auditable.
-        elapsedMin: (elapsedBizMin != null) ? elapsedBizMin : null,
-        elapsedWallMin: elapsedMin,
+        resolvedVia: resolvedVia,
+        elapsedMin: (timed && elapsedBizMin != null) ? elapsedBizMin : null,
+        elapsedWallMin: timed ? elapsedMin : null,
         slaHours: slaHours, slaStatus: drSlaStatus_(elapsedBizMin, slaHours),
         slaBusiness: true,
       };
@@ -16375,26 +16705,7 @@ function getDeptRequests() {
                      listCap: DR_LIST_CAP, mineTotal: mine.length,
                      incomingTotal: incoming.length };
     if (emp.isManager) {
-      const byDept = {};
-      all.forEach(function (it) {
-        // F(cycle-8 M-5): count a multi-dept request under EACH component
-        // department (it awaits each of them) instead of inventing a
-        // "Billing, Shipping" pseudo-department bucket.
-        const parts = drSplitDepts_(it.toDept);
-        (parts.length ? parts : [it.toDept || '—']).forEach(function (k) {
-          if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
-          if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
-          else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
-        });
-      });
-      result.deptStats = Object.keys(byDept).map(function (k) {
-        const b = byDept[k];
-        b.durations.sort(function (x, y) { return x - y; });
-        const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
-        const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
-        return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
-                 slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
-      }).sort(function (a, b) { return b.open - a.open; });
+      result.deptStats = drDeptStats_(all, slaCfg);
       const allOpenSorted = all.filter(function (it) { return it.status === 'open'; })
         .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); });
       result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);
@@ -16484,6 +16795,36 @@ function saveSpanishInboxMembers(emails) {
     PropertiesService.getScriptProperties().setProperty('SPANISH_INBOX_MEMBERS', clean.join(','));
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Spanish inbox members (' + clean.length + ')', emp.email);
+    return { success: true, members: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** The in-app QA reviewers editor (operator testing note 8, 2026-09-10 —
+ *  "where are QA agents added?": until now ONLY in Script Properties, which
+ *  the Admin tab never surfaced). The saveSpanishInboxMembers shape exactly:
+ *  admin-gated (INV-136), validates email shape, lowercases + dedupes, caps
+ *  30, writes Script Property QA_MEMBERS, AdminConfigChange audit. Managers
+ *  never need a listing (canSeeQa_ admits every manager); this list is for
+ *  NON-manager reviewers. An EMPTY list is valid = managers only. */
+function saveQaMembers(emails) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(emails)) return { success: false, error: 'Expected a list of reviewer emails.' };
+    if (emails.length > 30) return { success: false, error: 'Too many reviewers (max 30).' };
+    const seen = {};
+    const clean = [];
+    for (let i = 0; i < emails.length; i++) {
+      const e = String(emails[i] || '').trim().toLowerCase();
+      if (!e) continue;
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) {
+        return { success: false, error: 'Not a valid email: "' + e + '"' };
+      }
+      if (!seen[e]) { seen[e] = true; clean.push(e); }
+    }
+    PropertiesService.getScriptProperties().setProperty('QA_MEMBERS', clean.join(','));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated QA reviewers (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -27154,7 +27495,11 @@ function coachValidate_(payload) {
   var empId = String(payload.empId || '').trim();
   if (!empId) return { ok: false, error: 'Pick an employee.' };
   var severity = String(payload.severity || '').trim().toLowerCase();
-  if (COACH_SEVERITIES.indexOf(severity) < 0) return { ok: false, error: 'Pick a severity (praise / minor / major / critical).' };
+  if (COACH_SEVERITIES.indexOf(severity) < 0) {
+    // Operator 2026-09-10: the enum leaked here as 'major' while every card
+    // and mail says Moderate — derive the words from the ONE label map.
+    return { ok: false, error: 'Pick a severity (' + COACH_SEVERITIES.map(function (s) { return COACH_SEV_LABELS[s] || s; }).join(' / ') + ').' };
+  }
   var whatHappened = String(payload.whatHappened || '').trim();
   if (!whatHappened) return { ok: false, error: 'Describe what happened.' };
   if (whatHappened.length > COACH_TEXT_MAX) return { ok: false, error: 'What happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };
@@ -28067,6 +28412,26 @@ function getQaMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+/** May this EMAIL review — i.e. would canSeeQa_ admit them? A QA_MEMBERS
+ *  entry, OR a roster row marked manager (found via the one inclusion
+ *  predicate, empRosterEmail_). Operator testing note 8 (2026-09-10): the
+ *  manager, who reviews without a listing, could not be ASSIGNED a recording
+ *  by another manager — the assign check consulted QA_MEMBERS alone and
+ *  refused the very people canSeeQa_ admits. Best-effort on the roster read
+ *  (a failed read falls back to the members list, the pre-fix behaviour). */
+function qaCanReviewEmail_(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  if (getQaMembers_()[e]) return true;
+  try {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (empRosterEmail_(rows[i]).toLowerCase() !== e) continue;
+      return /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim());
+    }
+  } catch (err) {}
+  return false;
+}
 function qaFolderId_() {
   try { return String(PropertiesService.getScriptProperties().getProperty('QA_RECORDINGS_FOLDER_ID') || '').trim(); }
   catch (e) { return ''; }
@@ -28352,11 +28717,12 @@ function qaAssignRecording(fileId, assigneeEmail) {
       return { success: false, error: 'Only a manager can assign someone else.' };
     }
     if (!(emp.isManager && target === self)) {
-      // The target must be someone who can actually SEE the queue (a manager
-      // self-assigning is the one exemption — managers pass canSeeQa_ without
-      // a QA_MEMBERS entry).
-      if (!getQaMembers_()[target]) {
-        return { success: false, error: 'That email is not in QA_MEMBERS — add them there first.' };
+      // The target must be someone who can actually SEE the queue — a
+      // QA_MEMBERS listing OR a roster manager (qaCanReviewEmail_ mirrors
+      // canSeeQa_; operator testing note 8 — the old QA_MEMBERS-only check
+      // refused assigning to a manager).
+      if (!qaCanReviewEmail_(target)) {
+        return { success: false, error: 'That email is not a QA reviewer — a manager, or a rep listed under Manage → Admin → Config → QA reviewers.' };
       }
     }
     if (current && current !== self && !emp.isManager) {

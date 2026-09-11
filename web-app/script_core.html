@@ -355,6 +355,10 @@ window.addEventListener('load', () => {
       // Break / clock-out reminders run at the SHELL level so they reach the
       // pinned Call Notes pop-out, not only the Clock tab (operator 2026-08-11).
       remindersStart_();
+      // Presence beacon (note 10) — gesture-driven, so it is also a shell
+      // capability: the pop-out a rep works in all shift must count as "using
+      // the app", and only a real gesture there proves it.
+      presenceBind_();
       // #4 — in the compact pop-out, persist the window's size/position so the
       // rep's manual resize/reposition sticks across launches.
       popoutPersistGeometryInit_();
@@ -2147,6 +2151,40 @@ function tzMismatchCheck_() {
       'ask your manager to set it to ' + anchor + ' (Manage → Admin → Team Members, or the Employees sheet).',
       'toast-warn', { sticky: true });
   } catch (e) { /* advisory only — never break boot */ }
+}
+
+// ── Presence beacon (operator testing note 10, 2026-09-10) ──────────────────
+// Stamps the caller as "active" on the server (recordPresence → a ~30-min
+// CacheService stamp read by getTeammateStatus's `activeNotIn`). Fired on a
+// real user GESTURE — pointerdown / keydown — and throttled to one send per
+// PRESENCE_MIN_GAP_MS per window, so an active rep costs at most one tiny RPC
+// every 10 minutes and an idle or left-open window costs NOTHING. That is the
+// whole reason this is gesture-driven rather than piggybacked on the polls
+// the shell already runs: a pinned pop-out left open overnight keeps polling,
+// and a stamp written from a poll would read that rep as "active but not
+// clocked in" at 7am before they arrived. A gesture is the one signal a
+// left-open window cannot fake. Fire-and-forget: a failed send is ignored and
+// the next gesture past the gap retries. View-as previews still stamp — the
+// admin IS the one interacting, under their own id.
+var PRESENCE_MIN_GAP_MS = 10 * 60 * 1000;
+var PRESENCE = { sentAt: 0, bound: false };
+function presenceOnGesture_() {
+  try {
+    var now = Date.now();
+    if (now - PRESENCE.sentAt < PRESENCE_MIN_GAP_MS) return;
+    PRESENCE.sentAt = now;                         // stamp BEFORE the send — a slow/failed RPC never double-fires
+    google.script.run
+      .withSuccessHandler(function () {})
+      .withFailureHandler(function () {})
+      .recordPresence();
+  } catch (e) { /* never break input handling */ }
+}
+function presenceBind_() {
+  if (PRESENCE.bound) return;                     // idempotent (the shell may re-render)
+  PRESENCE.bound = true;
+  // Capture + passive: sees every gesture without delaying or altering it.
+  document.addEventListener('pointerdown', presenceOnGesture_, { capture: true, passive: true });
+  document.addEventListener('keydown', presenceOnGesture_, { capture: true, passive: true });
 }
 
 function remindersStart_() {

@@ -882,20 +882,7 @@ function trainRenderQuizEditor_(overlay) {
     '<div class="field"><label for="tr-qed-title">Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
     '<div class="field"><label for="tr-qed-pass">Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
     '<div class="field"><label>Linked Reference item (optional — shown as "review the material")</label>' + kbSel + '</div>';
-  st.questions.forEach(function (q, qi) {
-    h += '<div class="tr-qed-q"><div class="qhead"><span class="qn">Question ' + (qi + 1) + '</span>' +
-      (st.questions.length > 1 ? '<button class="tr-revoke-btn" data-qed-delq="' + qi + '">Remove</button>' : '') + '</div>' +
-      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text" aria-label="Question text">' + esc(q.q) + '</textarea></div>';
-    q.options.forEach(function (opt, oi) {
-      h += '<div class="opt-row">' +
-        '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +
-        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" aria-label="Answer option ' + (oi + 1) + '" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
-        (q.options.length > 2 ? '<button class="tr-revoke-btn" data-qed-delopt="' + qi + ':' + oi + '">×</button>' : '') +
-        '</div>';
-    });
-    if (q.options.length < 6) h += '<button class="kb-btn" data-qed-addopt="' + qi + '">+ Option</button>';
-    h += '<div class="tr-qed-hint">Pick the radio next to the correct option. Reps never see which it is.</div></div>';
-  });
+  h += st.questions.map(function (q, qi) { return trainQedQuestionHtml_(q, qi, st.questions.length); }).join('');
   h += (st.questions.length < 50 ? '<button class="kb-btn" id="tr-qed-addq">+ Question</button>' : '') +
     '</div><div class="foot">' +
     '<button class="kb-btn" onclick="trainCloseQuizEditor_()">Cancel</button>' +
@@ -918,15 +905,20 @@ function trainRenderQuizEditor_(overlay) {
       var t;
       if ((t = e.target.closest('[data-qed-addopt]'))) {
         trainQedSnapshot_();
-        TRAIN_STATE.qed.questions[Number(t.getAttribute('data-qed-addopt'))].options.push('');
-        trainRenderQuizEditor_();
+        var qa = Number(t.getAttribute('data-qed-addopt'));
+        var qAdd = TRAIN_STATE.qed.questions[qa];
+        qAdd.options.push('');
+        // Operator 2026-09-10: re-render THIS question's block only, and land
+        // focus in the option the click was reaching for — the whole-modal
+        // rebuild read as a reload on every "+ Option".
+        trainQedRerenderQuestion_(qa, '[data-qed-opt="' + qa + ':' + (qAdd.options.length - 1) + '"]');
       } else if ((t = e.target.closest('[data-qed-delopt]'))) {
         trainQedSnapshot_();
         var p = t.getAttribute('data-qed-delopt').split(':');
         var qq = TRAIN_STATE.qed.questions[Number(p[0])];
         qq.options.splice(Number(p[1]), 1);
         if (qq.correct >= qq.options.length) qq.correct = 0;
-        trainRenderQuizEditor_();
+        trainQedRerenderQuestion_(Number(p[0]), '[data-qed-addopt="' + p[0] + '"]');
       } else if ((t = e.target.closest('[data-qed-delq]'))) {
         trainQedSnapshot_();
         TRAIN_STATE.qed.questions.splice(Number(t.getAttribute('data-qed-delq')), 1);
@@ -934,6 +926,45 @@ function trainRenderQuizEditor_(overlay) {
       }
     });
   }
+}
+
+/** ONE question block of the quiz editor — the full render and the per-block
+ *  re-render both call this, so the two cannot drift (one renderer, two
+ *  callers). `data-qed-block` is the swap target: the block is the WHOLE unit
+ *  this function emits, so an outerHTML replacement leaves no sibling behind
+ *  (the drRepaintKpi_ rule). */
+function trainQedQuestionHtml_(q, qi, total) {
+  var h = '<div class="tr-qed-q" data-qed-block="' + qi + '"><div class="qhead"><span class="qn">Question ' + (qi + 1) + '</span>' +
+    (total > 1 ? '<button class="tr-revoke-btn" data-qed-delq="' + qi + '">Remove</button>' : '') + '</div>' +
+    '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text" aria-label="Question text">' + esc(q.q) + '</textarea></div>';
+  q.options.forEach(function (opt, oi) {
+    h += '<div class="opt-row">' +
+      '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +
+      '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" aria-label="Answer option ' + (oi + 1) + '" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
+      (q.options.length > 2 ? '<button class="tr-revoke-btn" data-qed-delopt="' + qi + ':' + oi + '">×</button>' : '') +
+      '</div>';
+  });
+  if (q.options.length < 6) h += '<button class="kb-btn" data-qed-addopt="' + qi + '">+ Option</button>';
+  h += '<div class="tr-qed-hint">Pick the radio next to the correct option. Reps never see which it is.</div></div>';
+  return h;
+}
+
+/** Operator 2026-09-10: adding or removing an OPTION rebuilt the whole
+ *  modal's innerHTML — a visible reload, scroll to the top, focus lost, on
+ *  every click. Re-render ONLY that question's block and put focus where the
+ *  click was heading. The delegated click listener lives on the overlay, so a
+ *  swapped block needs no rebinding. Changing the question COUNT (+ Question /
+ *  Remove) still takes the full render: it renumbers every block. Callers
+ *  snapshot the DOM into state FIRST (trainQedSnapshot_) — the rule the full
+ *  render already follows. */
+function trainQedRerenderQuestion_(qi, focusSel) {
+  var st = TRAIN_STATE.qed;
+  var overlay = document.getElementById('train-qed-overlay');
+  if (!st || !overlay || !st.questions[qi]) return;
+  var blk = overlay.querySelector('[data-qed-block="' + qi + '"]');
+  if (!blk) { trainRenderQuizEditor_(overlay); return; }   // never rendered yet — the full render is the only correct fallback
+  blk.outerHTML = trainQedQuestionHtml_(st.questions[qi], qi, st.questions.length);
+  if (focusSel) { var f = overlay.querySelector(focusSel); if (f && typeof f.focus === 'function') f.focus(); }
 }
 
 /** Snapshot the editor DOM into state before any structural re-render so

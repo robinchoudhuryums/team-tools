@@ -242,6 +242,25 @@ function qaLatestScorecards_(cards) {
   }
   return Object.keys(latest).map(function (k) { return latest[k]; });
 }
+// Operator testing note 4 (2026-09-10) — the least-loaded auto-assign pick;
+// the autoAssignSpanishThreads fixture below runs it over the pending fixture
+// so the Spanish scenario's Auto-assign button acts exactly as the server does.
+function spanishAutoAssignPick_(unclaimed, members, load) {
+  const ms = (members || []).slice().sort();
+  if (!ms.length) return [];
+  const cur = {};
+  ms.forEach(function (m) { cur[m] = Number((load || {})[m]) || 0; });
+  const out = [];
+  (unclaimed || []).forEach(function (u) {
+    const tid = String((u && u.threadId) || '').trim();
+    if (!tid) return;
+    let best = ms[0];
+    ms.forEach(function (m) { if (cur[m] < cur[best]) best = m; });
+    cur[best]++;
+    out.push({ threadId: tid, by: best });
+  });
+  return out;
+}
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -545,11 +564,14 @@ function qaLatestScorecards_(cards) {
         prevUnavailable: false, alertThreshold: 85, transferTarget: 20,
         cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
+    // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
+    // Leo is using the app with no clock-in today, so the card shows the chip
+    // on camera; the others are false, the shape every row now carries.
     getTeammateStatus: { enabled: true, teammates: [
-      { name: 'Avery Blake', status: 'clocked_in', isSelf: true },
-      { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false },
-      { name: 'Nina Patel', status: 'clocked_in', isSelf: false },
-      { name: 'Leo Kim', status: 'not_in', isSelf: false }] },
+      { name: 'Avery Blake', status: 'clocked_in', isSelf: true, activeNotIn: false },
+      { name: 'Sam Ortiz', status: 'on_lunch', isSelf: false, activeNotIn: false },
+      { name: 'Nina Patel', status: 'clocked_in', isSelf: false, activeNotIn: false },
+      { name: 'Leo Kim', status: 'not_in', isSelf: false, activeNotIn: true }] },
     // A FUNCTION fixture (the dispatcher supports them). Shape mirrors
     // resolveDeptRequest's own return ({success, already}) AND its write:
     // the server flips the row and bumps the DR cache generation
@@ -569,18 +591,39 @@ function qaLatestScorecards_(cards) {
       });
       return { success: true, already: false };
     },
+    // Operator testing note 6 (2026-09-10): the Expand detail — the SOURCE
+    // NOTE's fields, keyed by the request the button names (a FUNCTION of the
+    // id, the F14 rule). r6 is a LEGACY row with no NoteId, so the server
+    // returns note:null + a named reason — that state is on camera too.
+    getDeptRequestDetail: function (id) {
+      const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || []);
+      const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];
+      if (!r) return { error: 'Request not found.' };
+      const base = { requestId: r.requestId, label: r.label, patientTrx: r.patientTrx || '', byName: r.byName, toDept: r.toDept, note: null, reason: '' };
+      if (!r.patientTrx) { base.reason = 'This request predates note linking — open the sender\'s notes for the date instead.'; return base; }
+      base.note = { callback: '(555) 201-4477', caller: 'Rosa Delgado', relationship: 'Daughter',
+        patientAndTrx: r.patientTrx, issue: 'Patient has not received the replacement cushion ordered on the 2nd; tracking shows delivered.',
+        transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and re-ship if not located by Friday.',
+        dateLocal: daysAgo(1) };
+      return base;
+    },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
-        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
-        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaHours: 24 },
-        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaHours: 48 },
-        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com' }],
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaHours: 24 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'K. Osei · TRX 48044', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaHours: 48 },
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', patientTrx: 'L. Chen · TRX 47502', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com', resolvedVia: 'email' },
+        // Note #3 (2026-09-10): an in-app "Mark resolved" is NOT a timed reply —
+        // the server ships null minutes + resolvedVia:'app' so the card reads
+        // "marked in app" and the KPI median skips it. On camera in deptreq-*.
+        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
       incoming: [
-        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaHours: 24 }],
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaHours: 24 }],
       allOpen: [
+        // r6 is a LEGACY row (no patientTrx) — the subject renders the label alone.
         { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaHours: 48 }],
-      truncated: false, mineTotal: 4, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
-      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220 }] },
+      truncated: false, mineTotal: 5, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
+      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -832,9 +875,36 @@ function qaLatestScorecards_(cards) {
     kbAddComment: { success: true, commentId: 'c-new' },
     kbDeleteComment: { success: true },
     kbEditComment: { success: true },
+    // Expand on a pending card (operator 2026-09-10 — Expand ⇄ Collapse): the
+    // live thread body, keyed by the thread the button names.
+    getSpanishInboxThreadBody: function (threadId) {
+      return { threadId: threadId, body: 'Hola,\n\nEl paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.\n\nGracias,\nMaría' };
+    },
+    // Operator testing note 4 (2026-09-10) — the manager Auto-assign button.
+    // Shape mirrors spanishAutoAssignCore_'s return ({success, unclaimed,
+    // assigned:[{threadId, claim}]}) AND its write: the pick is the VERBATIM
+    // server fold above (INV-185), run over this fixture's pending list with
+    // the live claims as load, and the fixture's claims are updated so the
+    // next pending read reflects it.
+    autoAssignSpanishThreads: function () {
+      const pd = FIXTURES.getSpanishInboxPending;
+      const unclaimed = (pd.pending || []).filter(function (p) { return !(p.claim && p.claim.by); });
+      const load = {};
+      (pd.pending || []).forEach(function (p) { if (p.claim && p.claim.by) load[p.claim.by] = (load[p.claim.by] || 0) + 1; });
+      const picks = spanishAutoAssignPick_(unclaimed, pd.members || [], load);
+      const now = Date.now();
+      const assigned = picks.map(function (pk) {
+        const claim = { by: pk.by, assignedBy: pd.self, atMs: now };
+        (pd.pending || []).forEach(function (p) { if (p.threadId === pk.threadId) p.claim = claim; });
+        return { threadId: pk.threadId, claim: claim };
+      });
+      return { success: true, unclaimed: unclaimed.length, assigned: assigned };
+    },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
-      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: 260, resolveWallMinutes: 3040, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      // Note #3 (2026-09-10): a MANUAL mark-resolve carries null minutes — the
+      // server never invents a reply time for a request handled outside the thread.
+      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
       // Resolution-share chart (2026-08-17): members incl. one who resolved
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
@@ -843,7 +913,7 @@ function qaLatestScorecards_(cards) {
       // Business-hours figures (operator 2026-08-31) — deliberately SMALLER
       // than the wall-clock pair beside them, which is the whole point of the
       // change and the thing a screenshot must show.
-      avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 12,
+      avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
@@ -1160,6 +1230,7 @@ function qaLatestScorecards_(cards) {
     // server's viewUsageAggregate_ / getViewUsageStats shapes).
     recordClientError: { success: true },
     recordViewEnter: { success: true },
+    recordPresence: { success: true },   // note 10 — the shell's gesture beacon
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },
@@ -1243,6 +1314,9 @@ function qaLatestScorecards_(cards) {
       emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
       externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
       deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      // QA reviewers editor (operator testing note 8, 2026-09-10) — the sorted
+      // QA_MEMBERS list getAdminConfig ships; one non-manager reviewer on camera.
+      qaMembers: ['ines@umsupply.com'],
       // Break-schedule editor (operator 2026-08-27) — shape mirrors
       // breakSchedulesAdminView_'s return (INV-185): DEFAULT first, one
       // CUSTOM per-tz section (editable rows on camera) + one inherited.
@@ -1320,6 +1394,13 @@ function qaLatestScorecards_(cards) {
         rowIndex: 44, repId: 'E-1090', repName: 'Leo Kim' }] },
     getEnrolledCallNotesReps: { reps: [
       { id: 'E-1042', name: 'Avery Blake' }, { id: 'E-1088', name: 'Sam Ortiz' }, { id: 'E-1090', name: 'Leo Kim' }] },
+    // The Per-Rep view (operator 2026-09-10 — the Coach button had never been
+    // on camera, which is how it shipped unstyled). A FUNCTION of (repId, date):
+    // the server echoes both and names the rep (INV-185 F14).
+    managerGetCallNotes: function (repId, date) {
+      var names = { 'E-1042': 'Avery Blake', 'E-1088': 'Sam Ortiz', 'E-1090': 'Leo Kim' };
+      return { date: date, filter: '', notes: [note(0), note(1), note(2)], repName: names[repId] || 'Rep', repId: repId, timezone: 'Asia/Kolkata' };
+    },
     getCallNotesTagTaxonomy: {
       tags: [
         { tag: 'resupply', count: 41, lastSeen: daysAgo(0), archived: false },
