@@ -19338,6 +19338,137 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
     'the editor suite pins the gate');
 });
 
+
+/* ── TW: two derived tripwires from the cycle-19 findings (F5 / F7 shapes) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nTW — derived tripwires: numeric-guard width (F5) + colour-literal-vs-token (F7)');
+
+test('TW-A: every "is this numeric?" guard accepts exactly what Number() parses — never a narrower regex (the F5 shape)', () => {
+  // F5 (cycle 19): qaOptionIsNumeric_ asked a decimal regex while every
+  // consumer asked Number(), so "4.", "0x5" and "1e0" slipped through as
+  // dropdown OPTIONS and folded into the scale averages. The rule is about the
+  // SHAPE of a guard, so the set is DERIVED by name (INV-179): any function
+  // whose name says it decides numeric-ness must use the consumers' own test.
+  const sources = [['Code.js', fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')]]
+    .concat(A11Y_SCAN_PARTIALS.map((f) => [f, fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8')]));
+  const found = [];
+  sources.forEach(([file, src]) => {
+    const stripped = src.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+    const re = /function\s+([A-Za-z_$][\w$]*(?:Numeric|IsNumber|isNumber|LooksNumeric)[\w$]*)\s*\(/g;
+    let m;
+    while ((m = re.exec(stripped))) {
+      const name = m[1];
+      // Balanced-brace body extraction from the match point.
+      const open = stripped.indexOf('{', m.index);
+      let depth = 0, i = open;
+      for (; i < stripped.length; i++) { if (stripped[i] === '{') depth++; else if (stripped[i] === '}' && --depth === 0) break; }
+      const body = stripped.slice(open, i + 1);
+      found.push(file + '#' + name);
+      assert.ok(/isFinite\(Number\(/.test(body), file + '#' + name + ': decides via isFinite(Number(…)) — the parse its consumers apply');
+      assert.ok(!/\/[^\/\n]*\\d[^\/\n]*\/\.test\(/.test(body) && !/\\d/.test(body),
+        file + '#' + name + ': carries NO digit-regex — a regex accept-set is narrower than Number() (F5)');
+    }
+  });
+  assert.ok(found.indexOf('Code.js#qaOptionIsNumeric_') >= 0, 'the derivation reaches the guard F5 fixed (else the scan is empty by accident): ' + found.join(', '));
+});
+
+test('TW-B: a chromatic colour literal in a partial never duplicates a design token (the F7 shape), and the rest is ratcheted', () => {
+  // F7 (cycle 19): the PAP purple bypassed --intake-pap in four literal values
+  // across two partials, so the tint and the pill were a DIFFERENT purple from
+  // the ring and changing it took five edits in three files. RULE 1: a hex
+  // literal that EQUALS a token's declared value is banned outside two named
+  // categories. RULE 2: every other chromatic literal is a two-sided per-file
+  // RATCHET (the A14 shape) with the reason recorded beside each baseline.
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+  const strip = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const norm = (hex) => {
+    let h = hex.toLowerCase();
+    if (h.length === 4) h = '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+    return h.length === 7 ? h : null;                       // 8-digit (alpha) hexes are never token values here
+  };
+  // Every hex value the tokens partial declares, across every palette × mode.
+  const tokenSrc = strip(read('styles_design_tokens.html'));
+  const tokenValues = {};
+  let tm; const tre = /(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b/g;
+  while ((tm = tre.exec(tokenSrc))) { const v = norm(tm[2]); if (v) (tokenValues[v] = tokenValues[v] || []).push(tm[1]); }
+  assert.ok(Object.keys(tokenValues).length > 40, 'the token value set was derived (' + Object.keys(tokenValues).length + ')');
+  const consoleLight = {};                                   // the FIRST declaration of each token = Console light
+  let cm; const cre = /(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b/g;
+  while ((cm = cre.exec(tokenSrc))) { if (!consoleLight[cm[1]]) consoleLight[cm[1]] = norm(cm[2]); }
+
+  // The scanned set: every JS-bearing partial + the shared stylesheet, MINUS
+  // the tokens partial (the canonical home) and form_public.html (a standalone
+  // page shipping its own inline palette — the INV-128 exemption).
+  const files = A11Y_SCAN_PARTIALS.concat(['styles.html'])
+    .filter((f) => f !== 'form_public.html' && f !== 'styles_design_tokens.html');
+  const isNeutral = (h) => /^#(?:f{3}|f{6}|0{3}|0{6})$/i.test(h);
+
+  // RULE 1 — categories. (a) A canvas cannot read a CSS variable at paint time,
+  // so the token IS read first and the literal is the no-stylesheet fallback
+  // (a harness page): it must EQUAL that token's Console-light value, so a
+  // palette change fails here until the fallback moves with it (the swatch
+  // pin's construction). (b) INV-166: a fixed-palette surface takes a fixed
+  // colour; where that colour happens to coincide with a token it is a
+  // deliberate FREEZE, named here with its reason.
+  const CANVAS_FALLBACK = /getPropertyValue\('(--[\w-]+)'\)(?:\s*\|\|\s*''\)?)?(?:\.trim\(\))?\s*\|\|\s*'(#[0-9a-fA-F]{3,6})'/g;
+  const FROZEN = [
+    { file: 'styles.html', selector: '.instance-banner', hex: '#8a4500',
+      reason: 'INV-166 / C17 batch-4: the DEV banner takes a FIXED amber that reads in both themes; it coincides with the light --warning-deep on purpose' },
+  ];
+  // RULE 2 — the ratchet. Counts are of chromatic literals that match NO
+  // token (hex, rgb(), hsl()), after the RULE 1 categories are removed.
+  const RATCHET = {
+    'styles.html': { count: 8, reason: '.viewas-banner fixed blue (INV-166) · one box-shadow tint · the six @media print neutral overrides (the print gotcha)' },
+    'tc/script_clock.html': { count: 23, reason: 'the fixed-palette clock card (INV-166): sky-gradient stops ×16, .clk-sky base, the state-line scrim, two state dots, and the ribbon/legend colour-mix FALLBACK pairs (rgba twins of --accent/--warn for pre-color-mix browsers — a token candidate, see follow-ons)' },
+    'metrics/script_metrics.html': { count: 4, reason: 'hsl() from mQueueHue_ — the deterministic per-queue hue hash (INV-181)' },
+  };
+
+  const report = [];
+  files.forEach((f) => {
+    const src = strip(read(f));
+    const canvas = {};
+    let km; CANVAS_FALLBACK.lastIndex = 0;
+    while ((km = CANVAS_FALLBACK.exec(src))) {
+      const tok = km[1], hex = norm(km[2]);
+      assert.strictEqual(hex, consoleLight[tok], f + ': canvas fallback for ' + tok + ' must equal that token\'s Console-light value (got ' + km[2] + ', token is ' + consoleLight[tok] + ')');
+      canvas[hex] = (canvas[hex] || 0) + 1;
+    }
+    let other = 0;
+    const re = /(^|[^&\w])(#[0-9a-fA-F]{3,8})\b|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+|hsla?\(/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const tok = m[2] ? m[2] : m[0];
+      if (m[2]) {
+        if (isNeutral(tok)) continue;
+        const h = norm(tok);
+        if (h && tokenValues[h]) {
+          if (canvas[h]) { canvas[h]--; continue; }
+          const frozen = FROZEN.find((x) => x.file === f && x.hex === h);
+          assert.ok(frozen, f + ': ' + tok + ' duplicates token ' + tokenValues[h].join('/') + ' — use var(' + tokenValues[h][0] + ') (F7), or name the freeze in FROZEN with its INV-166 reason');
+          // The freeze covers ONE copy, inside its selector — a second copy
+          // elsewhere in the file would otherwise ride the banner's reason.
+          const block = new RegExp(frozen.selector.replace(/\./g, '\\.') + '\\s*\\{[^}]*' + h).test(src);
+          const copies = (src.match(new RegExp(h, 'gi')) || []).length;
+          assert.ok(block && copies === 1, f + ': the frozen ' + h + ' must appear exactly once, inside ' + frozen.selector + ' (found ' + copies + ')');
+          continue;
+        }
+        other++;
+      } else {
+        if (/^rgba?\(\s*(0\s*,\s*0\s*,\s*0|255\s*,\s*255\s*,\s*255)/.test(tok)) continue;   // scrims / white tints (the token-partial rule)
+        other++;
+      }
+    }
+    const base = RATCHET[f] ? RATCHET[f].count : 0;
+    if (other !== base) report.push(f + ': ' + other + ' chromatic literal(s), ratchet says ' + base);
+  });
+  assert.strictEqual(report.join('\n'), '',
+    'RATCHET is two-sided: a new literal needs a token (or a recorded reason); a removed one lowers the baseline:\n' + report.join('\n'));
+  // The three canvas fallbacks the tripwire found stale are the category's whole membership today.
+  const canvasCount = files.reduce((n, f) => { const s = strip(read(f)); CANVAS_FALLBACK.lastIndex = 0; let c = 0; while (CANVAS_FALLBACK.exec(s)) c++; return n + c; }, 0);
+  assert.strictEqual(canvasCount, 4, 'four canvas fallbacks (qa ×2, empdocs ×2) — each pinned equal to its token above');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

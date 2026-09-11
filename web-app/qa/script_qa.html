@@ -1258,8 +1258,8 @@ function qaDrawWaveOn_(wave, peaks, playedFrac) {
     if (!g) return;
     const W = wave.width, H = wave.height;
     const cs = getComputedStyle(document.documentElement);
-    const accent = (cs.getPropertyValue('--accent') || '').trim() || '#0b6e40';
-    const muted = (cs.getPropertyValue('--muted-3') || '').trim() || '#9aa3b2';
+    const accent = (cs.getPropertyValue('--accent') || '').trim() || '#0f8a52';
+    const muted = (cs.getPropertyValue('--muted-3') || '').trim() || '#a5acb8';
     g.clearRect(0, 0, W, H);
     const frac = Math.max(0, Math.min(1, Number(playedFrac) || 0));
     const barW = W / peaks.length;
