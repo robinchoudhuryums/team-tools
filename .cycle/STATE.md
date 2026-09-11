@@ -5,15 +5,17 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — the `/broad-implement` follow-ons round (retention tier + suggestion follow-ons, 2026-09-11) is LANDED on the branch (5 commits, bite-checked) and `/sync-docs` has applied its documentation (2026-09-11); `/reflect` is next. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). Before that: the follow-ons round's branch is unmerged and undeployed. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
   `/reflect`.
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
-  seams audit; cycle 19 is the first subsystem cycle after it)
+Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
+  seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
+  2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
+  moved 1 → 2 at that reflection)
 Updated: 2026-09-11 (the follow-ons round RT/BP/SA/TW/DR landed — `.cycle/blocks/19-followons-retention-broad-implement.md`; its docs are owed to /sync-docs, then /reflect)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
