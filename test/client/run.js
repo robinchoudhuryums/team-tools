@@ -16786,7 +16786,11 @@ test('PR4-4: K8 — critical-only immediate mail (operator decision 1) that carr
   assert.strictEqual((recap.match(/stampDigestLastRun_\('coachingRecap'\)/g) || []).length, 2, 'heartbeat on the store-unavailable exit AND the normal exit');
   assert.ok(!/managerDailyBrief|managerBriefSuppressionActive_|getFlag_/.test(recap), 'an AGENT-facing mail never consults the manager brief flag (INV-151)');
   assert.ok(/CONFIG\.COACHING_RECAP_DAYS/.test(recap) && /COACHING_RECAP_DAYS: 7/.test(codeSrc), 'the lookback is a read CONFIG key');
-  assert.ok(/onWeekDay\(ScriptApp\.WeekDay\.FRIDAY\)/.test(codeSrc.slice(codeSrc.indexOf("newTrigger('sendCoachingRecapDigest')"), codeSrc.indexOf("newTrigger('sendCoachingRecapDigest')") + 400)), 'Friday cadence, one constant away from a change');
+  // Since 2026-09-11 (the trigger quota) the recap rides the WEEKLY dispatcher,
+  // so the Friday cadence lives on runWeeklyDigests' trigger.
+  const wkAt = codeSrc.indexOf("newTrigger('runWeeklyDigests')");
+  assert.ok(wkAt >= 0 && /onWeekDay\(ScriptApp\.WeekDay\.FRIDAY\)/.test(codeSrc.slice(wkAt, wkAt + 400)), 'Friday cadence, one constant away from a change');
+  assert.ok(/runWeeklyDigests:\s*\[[^\]]*'sendCoachingRecapDigest'/.test(codeSrc), 'the recap runs inside the runWeeklyDigests group (TRIGGER_GROUPS)');
   assert.ok(/coachingRecap: 192/.test(codeSrc), 'the heartbeat has a weekly staleness window (the `weekly` precedent)');
   assert.ok(/coachRowToObj_\(rows\[i\], ssTz\)/.test(recap) && /empRosterEmail_\(roster\[r\]\)/.test(recap), 'reads through the typed row builder + the roster inclusion predicate (INV-183)');
   // coachRecapBuckets_ behavioural: non-critical, non-void, inside the window, grouped by agent.
@@ -19366,9 +19370,13 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
   assert.ok(/spanishAutoAssign: 2 \}/.test(codeStripped), 'the heartbeat has an HOURLY staleness window (the eod precedent)');
   assert.ok(/const digestHealth = Object\.keys\(DIGEST_STALE_HOURS\)\.map\(/.test(codeStripped),
     'the reported digest set is DERIVED from the staleness map (INV-179)');
-  assert.strictEqual((codeStripped.match(/'autoAssignSpanishThreadsScheduled',/g) || []).length, 2,
-    'in BOTH install and remove TARGETS');
-  assert.ok(/newTrigger\('autoAssignSpanishThreadsScheduled'\)\s*\.timeBased\(\)\.everyHours\(1\)\.create\(\)/.test(codeStripped),
+  // Since 2026-09-11 (the trigger quota) it runs inside the HOURLY dispatcher
+  // and owns no trigger of its own; the dispatcher's trigger is the hourly one.
+  assert.ok(/runHourlyJobs:\s*\[[^\]]*'autoAssignSpanishThreadsScheduled'/.test(codeStripped),
+    'runs inside the runHourlyJobs group (TRIGGER_GROUPS)');
+  assert.strictEqual((codeStripped.match(/'autoAssignSpanishThreadsScheduled',/g) || []).length, 0,
+    'in NEITHER TARGETS list — it owns no trigger of its own');
+  assert.ok(/newTrigger\('runHourlyJobs'\)\s*\.timeBased\(\)\.everyHours\(1\)\.create\(\)/.test(codeStripped),
     'an HOURLY trigger — the business-hours gate, not the schedule, decides when it acts');
   // The button and the trigger are one code path.
   assert.ok(/return spanishAutoAssignCore_\(emp, days\)/.test(extractRawFunction('Code.js', 'autoAssignSpanishThreads')),
@@ -19579,6 +19587,161 @@ test('DR-1: drFindRowByReqId_ scans the RequestId column and fetches ONE row at 
   const helper = extractRawFunction('Code.js', 'drFindRowByReqId_');
   assert.ok(/getRange\(2, DR\.REQ_ID \+ 1, lastRow - 1, 1\)/.test(helper) && /getRange\(rowIndex, 1, 1, DR_HEADERS\.length\)/.test(helper),
     'column-then-row, header width (the findFormTokenRow_ shape) — not getLastColumn()');
+});
+
+
+console.log('\nTQ — automation trigger quota: a trigger per SLOT, fail-closed pre-flight (operator 2026-09-11)');
+// The operator's installAutomationTriggers() threw "This script has too many
+// triggers" on the 21st create — AFTER the dedupe loop had deleted every
+// existing trigger — and left the deployment with no PTO accrual trigger.
+// Apps Script caps installable triggers at 20 per user per script; nothing in
+// the code or the pins knew. Three pins: the source contract (TQ-1), the group
+// runner driven behaviourally (TQ-2), the installer driven against a stubbed
+// ScriptApp through the refusal, the repair and the mid-creation throw (TQ-3).
+test('TQ-1: the installer stays under the quota WITH headroom, refuses BEFORE deleting, and TRIGGER_GROUPS is the one source', () => {
+  const strip = stripJsComments_;
+  const quotaM = codeSrc.match(/const AUTOMATION_TRIGGER_QUOTA = (\d+);/);
+  assert.ok(quotaM, 'the quota is a named constant');
+  const QUOTA = Number(quotaM[1]);
+  assert.strictEqual(QUOTA, 20, 'Apps Script allows 20 installable triggers per user per script');
+  assert.ok(installTargets.length <= QUOTA - 1,
+    'the installer creates ' + installTargets.length + ' triggers — it must stay at or under ' + (QUOTA - 1) +
+    ' (the quota minus one of headroom). Adding a trigger? Fold the job into a same-slot dispatcher (TRIGGER_GROUPS) ' +
+    'instead — the 2026-09-11 install hit the cap on the LAST create, after deleting every existing trigger');
+  const gm = codeSrc.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/);
+  assert.ok(gm, 'TRIGGER_GROUPS found');
+  const groups = {};
+  [...gm[1].matchAll(/(\w+):\s*\[([^\]]*)\]/g)].forEach((x) => { groups[x[1]] = [...x[2].matchAll(/'([^']+)'/g)].map((y) => y[1]); });
+  const dispatchers = Object.keys(groups).sort();
+  assert.deepStrictEqual(dispatchers, ['runHourlyJobs', 'runNightlyPurges', 'runWeeklyDigests'], 'the three same-slot dispatchers');
+  const grouped = dispatchers.reduce((a, k) => a.concat(groups[k]), []);
+  assert.strictEqual(grouped.length, 8, 'eight jobs run inside dispatchers');
+  assert.strictEqual(new Set(grouped).size, grouped.length, 'no job is in two groups');
+  assert.ok(/const RETIRED_TRIGGER_HANDLERS = Object\.keys\(TRIGGER_GROUPS\)/.test(strip(codeSrc)),
+    'RETIRED_TRIGGER_HANDLERS is DERIVED from TRIGGER_GROUPS — never a second literal list');
+  grouped.forEach((h) => {
+    assert.ok(installTargets.indexOf(h) < 0, h + ' runs inside a dispatcher, so it must NOT also own a trigger (TARGETS)');
+    const body = strip(extractRawFunction('Code.js', h));
+    assert.ok(body.length > 0, h + ' is a defined top-level function');
+    assert.ok(/assertManagerCaller_\s*\(/.test(body), h + ' keeps its own MANAGER_EMAILS gate — it is still reachable via google.script.run (INV-44)');
+  });
+  dispatchers.forEach((d) => {
+    assert.ok(installTargets.indexOf(d) >= 0 && newTriggerHandlers.indexOf(d) >= 0, d + ' owns a trigger');
+    const body = strip(extractRawFunction('Code.js', d));
+    assertBefore(body, "assertManagerCaller_('" + d + "')", "runTriggerGroup_('" + d + "')", d + ': gates by name BEFORE it runs a single job, and runs its OWN group key');
+  });
+  const np = groups.runNightlyPurges;
+  assert.strictEqual(np[0], 'purgeOldDiagnostics', 'the bounded (2000-row) purge runs first');
+  assert.strictEqual(np[np.length - 1], 'purgeArchivedCallNotes', 'the cross-rep NotesArchive walk runs LAST, so a long run cannot starve the bounded purges');
+  // The reasoned stand-alones stay stand-alone.
+  ['sendManagerDailyBrief', 'archiveOldTimesheetRows', 'creditMonthlyPtoAccruals', 'archiveOldCallNotes', 'purgeOldCallNotes'].forEach((h) => {
+    assert.ok(grouped.indexOf(h) < 0 && installTargets.indexOf(h) >= 0,
+      h + ' keeps its OWN trigger (the brief: managerBriefSuppressionActive_ keys on its name; the 18:00 pair + the row-movers: lock + ordering)');
+  });
+  const inst = strip(extractRawFunction('Code.js', 'installAutomationTriggers'));
+  assertBefore(inst, 'foreign.length + TARGETS.length > AUTOMATION_TRIGGER_QUOTA', 'ScriptApp.deleteTrigger(t)',
+    'the quota pre-flight runs BEFORE any trigger is deleted');
+  assert.ok(/NOTHING was deleted/.test(inst), 'the refusal says so');
+  assert.ok(/RETIRED_TRIGGER_HANDLERS\.indexOf\(h\) >= 0/.test(inst), 'the install delete loop also removes the retired standalone triggers');
+  assert.ok(/const missing = TARGETS\.filter/.test(inst) && /NOT installed: /.test(inst), 'a throw mid-creation rethrows NAMING the handlers not installed');
+  assert.ok(/TRIGGER_GROUPS\[t\]/.test(inst), 'the confirmation email lists each dispatcher\'s jobs from TRIGGER_GROUPS, not a hand list');
+  const rem = strip(extractRawFunction('Code.js', 'removeAutomationTriggers'));
+  assert.ok(/RETIRED_TRIGGER_HANDLERS\.indexOf\(h\) >= 0/.test(rem), 'the remove loop also removes the retired standalone triggers');
+  const hour = (h) => { const m = new RegExp("newTrigger\\('" + h + "'\\)\\s*\\.timeBased\\(\\)\\.atHour\\((\\d+)\\)").exec(inst); return m ? Number(m[1]) : null; };
+  assert.strictEqual(hour('runNightlyPurges'), 2, 'purges at 2am');
+  assert.strictEqual(hour('archiveOldCallNotes'), 3, 'the archive MOVE at 3am, after the purges');
+  assert.strictEqual(hour('purgeOldCallNotes'), 4, 'the live purge at 4am, after the archive — archive-first holds');
+  assert.ok(/newTrigger\('runHourlyJobs'\)\s*\.timeBased\(\)\.everyHours\(1\)\.create\(\)/.test(inst), 'the hourly dispatcher is hourly');
+  assert.ok(/newTrigger\('runWeeklyDigests'\)\s*\.timeBased\(\)\.onWeekDay\(ScriptApp\.WeekDay\.FRIDAY\)\.atHour\(8\)/.test(inst), 'the weekly dispatcher is Friday 8am');
+});
+
+test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the JOB name and the jobs after it still run; a clean run clears; an undefined job is named', () => {
+  const mk = (groupSrc) => {
+    const log = { stamped: [], cleared: [], ran: [] };
+    const ctx = vm.createContext({
+      Logger: { log: () => {} },
+      stampAutomationError_: (j, m) => log.stamped.push(j + ':' + m),
+      clearAutomationError_: (j) => log.cleared.push(j),
+      jobA: () => { log.ran.push('A'); return 'a'; },
+      jobB: () => { log.ran.push('B'); throw new Error('boom'); },
+      jobC: () => { log.ran.push('C'); return { success: true }; },
+    });
+    vm.runInContext(groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });
+    return { ctx, log };
+  };
+  let t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobB', 'jobNope', 'jobC'] };");
+  const r = t.ctx.runTriggerGroup_('g');
+  assert.strictEqual(t.log.ran.join(''), 'ABC', 'C ran AFTER B threw — one job never starves the next');
+  assert.strictEqual(r.success, false, 'the group reports failure when any job failed');
+  assert.strictEqual(r.results.length, 4, 'one result per job, the undefined one included');
+  assert.strictEqual(r.results[1].ok, false); assert.strictEqual(r.results[1].error, 'boom');
+  assert.strictEqual(r.results[2].job, 'jobNope'); assert.strictEqual(r.results[2].ok, false);
+  assert.strictEqual(t.log.stamped.filter((x) => x.indexOf('jobB:boom') === 0).length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
+  assert.ok(t.log.stamped.some((x) => /^jobNope:.*not a defined top-level function/.test(x)), 'a typo in TRIGGER_GROUPS is stamped BY NAME, never silently skipped');
+  assert.strictEqual(t.log.cleared.join('|'), 'jobA|jobC', 'each clean job clears its own stamp');
+  t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobC'] };");
+  const ok = t.ctx.runTriggerGroup_('g');
+  assert.strictEqual(ok.success, true); assert.strictEqual(t.log.stamped.length, 0, 'a clean group stamps nothing');
+  assert.strictEqual(t.ctx.runTriggerGroup_('unknownGroup').results.length, 0, 'an unknown group key runs nothing rather than throwing');
+});
+
+test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quota would be exceeded, repairs the 2026-09-11 half-installed state, and names what a mid-creation throw left out', () => {
+  const consts = codeSrc.slice(codeSrc.indexOf('const AUTOMATION_TRIGGER_QUOTA'), codeSrc.indexOf('function runTriggerGroup_'));
+  const drive = (existing, failAt) => {
+    const state = { existing: existing.slice(), deleted: [], created: [], mail: null };
+    const trig = (h) => ({ getHandlerFunction: () => h });
+    const builder = (h) => {
+      const b = { timeBased: () => b, atHour: () => b, everyDays: () => b, everyHours: () => b, onWeekDay: () => b, inTimezone: () => b,
+        create: () => { if (failAt === h) throw new Error('This script has too many triggers. Triggers must be deleted from the script before more can be added.'); state.created.push(h); state.existing.push(h); return {}; } };
+      return b;
+    };
+    const ctx = vm.createContext({
+      CONFIG: { AUTO_MISSED_ALERT_HOUR_IST: 6, AUTO_EXPORT_HOUR_IST: 12, TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      ScriptApp: {
+        WeekDay: { FRIDAY: 'FRIDAY' },
+        getProjectTriggers: () => state.existing.map(trig),
+        deleteTrigger: (t) => { const h = t.getHandlerFunction(); state.deleted.push(h); state.existing.splice(state.existing.indexOf(h), 1); },
+        newTrigger: builder,
+      },
+      getActiveUserEmail_: () => 'mgr@x.com', getManagerEmails_: () => ['mgr@x.com'],
+      appSendMail_: (o) => { state.mail = o; }, Logger: { log: () => {} },
+    });
+    vm.runInContext(consts + '\n' + extractRawFunction('Code.js', 'installAutomationTriggers'), ctx, { filename: 'Code.js#installAutomationTriggers' });
+    let err = null;
+    try { ctx.installAutomationTriggers(); } catch (e) { err = e; }
+    // A verbatim `const` is a LEXICAL binding in the context, not a ctx property (the documented vm trap) — read it back in-context.
+    return { state, err, retired: vm.runInContext('RETIRED_TRIGGER_HANDLERS.slice()', ctx) };
+  };
+  const ours = installTargets.slice();
+  const probe = drive([]);
+  const retired = probe.retired;
+  assert.strictEqual(retired.length, 8, 'eight retired standalone handlers');
+  const foreign = (n) => Array.from({ length: n }, (_, i) => 'someoneElsesJob' + i);
+  // (a) would not fit → refuse, touch nothing.
+  let r = drive(ours.concat(retired, foreign(5)));
+  assert.ok(r.err && /Refusing to install/.test(r.err.message), 'refused: 16 + 5 foreign = 21 > 20');
+  assert.ok(/someoneElsesJob0/.test(r.err.message) && /NOTHING was deleted/.test(r.err.message), 'the refusal names the foreign triggers and says nothing was deleted');
+  assert.strictEqual(r.state.deleted.length, 0, 'NOTHING deleted'); assert.strictEqual(r.state.created.length, 0, 'nothing created');
+  // (b) exactly at the quota with 4 foreign → proceeds; ours + retired deleted, the foreign kept.
+  r = drive(ours.concat(retired, foreign(4)));
+  assert.strictEqual(r.err, null, 'fits: 16 + 4 = 20');
+  assert.strictEqual(r.state.deleted.length, ours.length + retired.length, 'every trigger of ours AND every retired standalone one is deleted');
+  assert.ok(r.state.deleted.indexOf('someoneElsesJob0') < 0, 'a foreign trigger is never touched');
+  assert.deepStrictEqual(r.state.created.slice().sort(), ours.slice().sort(), 'exactly the TARGETS set is created');
+  assert.ok(r.state.mail && /runNightlyPurges → runs purgeOldDiagnostics/.test(r.state.mail.body), 'the confirmation email lists each dispatcher\'s jobs');
+  // (c) the 2026-09-11 live shape: the OLD 21-set minus the accrual (20 standalone triggers) → repaired to 16 incl. the accrual.
+  const oldSet = ours.filter((h) => !/^run(HourlyJobs|WeeklyDigests|NightlyPurges)$/.test(h)).concat(retired);
+  assert.strictEqual(oldSet.length, 21, 'the pre-fix installer created 21');
+  r = drive(oldSet.filter((h) => h !== 'creditMonthlyPtoAccruals'));
+  assert.strictEqual(r.err, null, 'the repair install fits');
+  assert.strictEqual(r.state.existing.length, ours.length, 'afterwards exactly the 16 exist');
+  assert.ok(r.state.created.indexOf('creditMonthlyPtoAccruals') >= 0, 'the accrual trigger is back');
+  retired.forEach((h) => assert.ok(r.state.existing.indexOf(h) < 0, h + ': the standalone trigger is gone'));
+  // (d) a throw mid-creation names what was left out.
+  r = drive([], 'sendManagerDailyBrief');
+  assert.ok(r.err && /FAILED part-way: 12 of 16 installed/.test(r.err.message), 'says how many landed: ' + (r.err && r.err.message));
+  assert.ok(/NOT installed: sendManagerDailyBrief, archiveOldTimesheetRows, runNightlySelfTest, creditMonthlyPtoAccruals\./.test(r.err.message), 'and NAMES the four that did not');
+  assert.ok(/re-run installAutomationTriggers\(\)/.test(r.err.message), 'and says the re-run is safe');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

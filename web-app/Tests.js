@@ -1346,6 +1346,9 @@ function _runAllTests() {
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
   _integrationTest('triggerGate_spanishAutoAssign_nonManagerThrows', test_triggerGate_spanishAutoAssign_nonManagerThrows);
+  _integrationTest('triggerGate_hourlyJobs_nonManagerThrows', test_triggerGate_hourlyJobs_nonManagerThrows);
+  _integrationTest('triggerGate_weeklyDigests_nonManagerThrows', test_triggerGate_weeklyDigests_nonManagerThrows);
+  _integrationTest('triggerGate_nightlyPurges_nonManagerThrows', test_triggerGate_nightlyPurges_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
@@ -4489,6 +4492,29 @@ function test_triggerGate_spanishAutoAssign_nonManagerThrows() {
 function test_triggerGate_diagnosticsPurge_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeOldDiagnostics(); });
+  }, 'manager access required');
+}
+
+// Operator 2026-09-11 — the three same-slot DISPATCHERS (runHourlyJobs /
+// runWeeklyDigests / runNightlyPurges) own the triggers their eight jobs used
+// to (Apps Script caps installable triggers at 20 per user per script; the
+// installer had reached 21 and threw on the last create). Each dispatcher is a
+// top-level trigger handler reachable via google.script.run, so it carries
+// the MANAGER_EMAILS gate (INV-44) BEFORE it runs a single job — a
+// non-manager must throw here, never reach the jobs' own gates.
+function test_triggerGate_hourlyJobs_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runHourlyJobs(); });
+  }, 'manager access required');
+}
+function test_triggerGate_weeklyDigests_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runWeeklyDigests(); });
+  }, 'manager access required');
+}
+function test_triggerGate_nightlyPurges_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runNightlyPurges(); });
   }, 'manager access required');
 }
 

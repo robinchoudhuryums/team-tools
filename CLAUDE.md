@@ -1033,7 +1033,14 @@ this section before touching the relevant area.
   ClientErrors diagnostics-retention purge, both windows default OFF —
   2026-09-11) and `autoAssignSpanishThreadsScheduled` (the hourly Spanish
   Inbox auto-assign behind the `spanishAutoAssign` toggle, default OFF —
-  2026-09-11) — are top-level (required: Apps Script
+  2026-09-11) — plus the three same-slot DISPATCHERS `runHourlyJobs`,
+  `runWeeklyDigests` and `runNightlyPurges` (operator 2026-09-11: Apps
+  Script caps installable triggers at **20 per user per script**, the
+  installer had reached 21 and threw on the LAST create after deleting every
+  existing trigger; a trigger now belongs to a SLOT, and eight of the
+  handlers above run inside a dispatcher instead of owning a trigger — see
+  the trigger list in the Operator State Checklist) — are top-level
+  (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -7081,6 +7088,30 @@ manually for a fresh deploy or environment:
   Expand reads one column + one row instead of the whole tab (no visible
   change). **Post-deploy: run `runAllTests()`** — expect **312** (the two new
   trigger-gate cases). **THIS IS THE FIGURE FOR THE WHOLE BACKLOG.**
+- **The 2026-09-11 trigger-quota round (the operator's `installAutomationTriggers()`
+  threw `This script has too many triggers`) adds NO operator state to SET UP —
+  but re-run `installAutomationTriggers()` ONCE after the `clasp push`, and
+  understand what the failed run left behind.** Apps Script allows 20
+  installable triggers per user per script; the follow-ons round had taken the
+  installer to 21 and the throw came on the LAST create — AFTER the dedupe loop
+  had deleted every existing trigger — so the deployment holds 20 triggers and
+  NO `creditMonthlyPtoAccruals` until the re-install (August's credit landed on
+  Sept 1; the next is due on/after Oct 1 and the col-R stamp catches up, so
+  nothing is lost by re-installing before then, and even a later re-install
+  credits in arrears). The re-install on the fixed code deletes all 20 (the
+  eight retired standalone triggers included, via `RETIRED_TRIGGER_HANDLERS`)
+  and creates SIXTEEN — three dispatchers (`runHourlyJobs`, `runWeeklyDigests`,
+  `runNightlyPurges`) plus the thirteen stand-alones — and the confirmation
+  email lists each dispatcher's jobs. Behaviour changes to expect: (a) the
+  editor's Triggers panel shows 16 rows, not 21, and the eight grouped
+  handlers no longer appear there by name; (b) `purgeExpiredFormData` runs at
+  2am instead of 3am (inside the purge dispatcher; it no-ops while
+  `FORM_DATA_RETENTION_DAYS` is unset); (c) a future install that would
+  exceed the quota REFUSES with nothing deleted, naming the foreign triggers
+  to remove; (d) if a dispatcher's job ever throws, Admin → System shows it
+  under the JOB's name. **Post-deploy: `clasp push -f`, re-run
+  `installAutomationTriggers()` once (expect the "16 of the 20" log line),
+  then `runAllTests()` — expect **315** (three dispatcher gate tests).**
 - **The 2026-09-11 post-push `runAllTests()` read 302/312 — ten `Admin access
   required.` failures — and the cause was OPERATOR STATE, not the round.**
   `ADMIN_EMAILS` is SET on this deployment (the Admin tier narrowed to the
@@ -8757,8 +8788,48 @@ manually for a fresh deploy or environment:
   email, keeps the name + history — the documented roster convention). The
   manual sheet-edit path still works; the panel is the recommended one.
 - **Daily automation triggers** must be installed by a manager
-  account via `installAutomationTriggers()` from the editor. The
-  installer now wires twenty-one triggers:
+  account via `installAutomationTriggers()` from the editor. **The
+  installer wires SIXTEEN triggers for twenty-four handlers — a trigger per
+  SLOT, never per job (operator 2026-09-11).** Apps Script allows at most
+  `AUTOMATION_TRIGGER_QUOTA` = **20 installable triggers per user per
+  script**; the follow-ons round had taken the installer to 21, and the
+  operator's install threw `This script has too many triggers` on the LAST
+  create — AFTER the dedupe loop had deleted every existing trigger — so
+  the deployment sat with 20 of 21 and NO `creditMonthlyPtoAccruals` until
+  the re-install. Same-slot jobs now run inside one of three DISPATCHERS
+  driven by `TRIGGER_GROUPS` (the ONE source for the dispatcher bodies, the
+  derived `RETIRED_TRIGGER_HANDLERS` dedupe list, the install email and the
+  TQ pins): `runHourlyJobs` (hourly → `sendCallNotesEodDigest`,
+  `autoAssignSpanishThreadsScheduled`), `runWeeklyDigests` (Friday
+  manager-tz 8am → `sendCallNotesWeeklyDigests`, `sendCoachingRecapDigest`)
+  and `runNightlyPurges` (daily manager-tz 2am → `purgeOldDiagnostics`,
+  `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes` — the
+  four DELETE-ONLY retention purges, bounded first, cross-rep walk last).
+  `runTriggerGroup_` runs each job in its own try/catch (a throw is stamped
+  under the JOB name into `AUTOMATION_LAST_ERRORS`, a clean run clears it,
+  a typo'd name is stamped by name), and every grouped handler keeps its
+  own `assertManagerCaller_` gate, audit rows and heartbeat, so Automation
+  Health's per-job liveness is UNCHANGED. **Known limit: a group shares one
+  six-minute execution** — all eight grouped jobs are cheap by default (the
+  purges no-op while their windows are 0), but a purge enabled against a
+  large backlog that runs long is killed WITH the jobs after it; their own
+  liveness rows then read stale, which is the signal to re-order or split.
+  The installer is FAIL-CLOSED now: it counts its own set plus any other
+  trigger this account owns BEFORE the delete loop and refuses with
+  nothing touched when the total would exceed the quota; a throw mid-
+  creation rethrows naming the handlers NOT installed. **The TQ-1 pin holds
+  the created count at ≤ 19 (quota minus one) — adding a trigger fails CI
+  until the job is folded into a same-slot dispatcher.** Three handlers
+  deliberately keep their OWN trigger for stated reasons: `sendManagerDailyBrief`
+  (`managerBriefSuppressionActive_({checkTrigger:true})` looks for a live
+  trigger on THAT name — folding it in would silently un-suppress the
+  digests it replaces), and the 18:00 pair `archiveOldTimesheetRows` +
+  `creditMonthlyPtoAccruals` (both hold the ONE project lock and either can
+  run long on the night that matters; a shared execution would raise the
+  duplicate-append hazard cycle-12 F3 exists to prevent); the two
+  row-MOVING retention jobs (`archiveOldCallNotes` 3am, `purgeOldCallNotes`
+  4am) keep theirs because their ORDER after the 2am purges is load-bearing
+  (archive-first). The handlers, by trigger:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm — since cycle-8 M-1 the
       automated exports fire the morning AFTER the period completes: biweekly
@@ -8767,11 +8838,14 @@ manually for a fresh deploy or environment:
       and silently omitted the final day's afternoon punches; the export email
       now arrives ~a day later but complete. `isLastBusinessDayOfMonth_` was
       removed with the old gate)
-    - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
-    - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
+    - `runHourlyJobs` (hourly — the dispatcher for the two hourly jobs below)
+    - `sendCallNotesEodDigest` (call-notes, hourly INSIDE `runHourlyJobs` since 2026-09-11 — emails each rep at their local EOD hour)
+    - `runWeeklyDigests` (Friday manager-tz 8am — the dispatcher for the two weekly digests)
+    - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am INSIDE `runWeeklyDigests` since 2026-09-11)
     - `sendCallNotesUrgentDigest` (call-notes, daily manager-tz 8am — recent urgent-flagged notes; sends nothing when none)
-    - `purgeArchivedCallNotes` (call-notes, daily manager-tz 2am — 3rd tier: irreversibly deletes `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS`; the ONLY deleter of archived notes; read-only re tab existence; no-ops while archive retention is disabled)
-    - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
+    - `runNightlyPurges` (daily manager-tz 2am — the dispatcher for the four delete-only retention purges, in this order: `purgeOldDiagnostics`, `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes`; every window defaults to 0, so installing it changes nothing)
+    - `purgeArchivedCallNotes` (call-notes, daily manager-tz 2am INSIDE `runNightlyPurges` — 3rd tier: irreversibly deletes `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS`; the ONLY deleter of archived notes; read-only re tab existence; no-ops while archive retention is disabled)
+    - `purgeExpiredFormData` (forms, daily manager-tz **2am INSIDE `runNightlyPurges`** since 2026-09-11 — was its own 3am trigger; the hour was never load-bearing — no-ops while retention is disabled)
     - `archiveOldCallNotes` (call-notes, daily manager-tz 3am — SAFE cold-archive tier: moves notes older than `CN_NOTE_ARCHIVE_DAYS` to a `NotesArchive` tab in the same per-rep Sheet, data preserved; runs BEFORE the 4am purge so archive-first ordering holds; no-ops while archival is disabled)
     - `purgeOldCallNotes` (call-notes, daily manager-tz 4am — no-ops while note retention is disabled)
     - `reconcileCallNotes` (call-notes, daily manager-tz 5am — two-way Sheets back-fill of NoteId/Timestamp/DateLocal on rows added directly in a rep's Sheet; non-destructive + idempotent, so it's harmless to run daily)
@@ -8782,13 +8856,15 @@ manually for a fresh deploy or environment:
     - `archiveOldTimesheetRows` (Timesheet cold-archive, daily manager-tz **6pm** — moved off 1am in cycle 8: 1am CT is mid-shift for IST/PHT and the move holds the global ScriptLock, so a large first run could starve offshore punches; 6pm CT is the all-team quiet window. MOVES Timesheet rows older than `TIMESHEET_ARCHIVE_DAYS` to a `TimesheetArchive` tab in the same ADP spreadsheet; NEVER deletes (payroll is keep-forever — no purge tier exists for it); sub-floor windows clamp UP to `TIMESHEET_ARCHIVE_MIN_DAYS` (120); no-ops while the window is 0 (the default). INV-153)
     - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on a confirmed dev instance (`isDevInstance_()` — BOTH `INSTANCE_LABEL` set and `INSTANCE_IS_PROD` explicitly not 'true'; unset = prod, A5). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
     - `creditMonthlyPtoAccruals` (PTO accrual, daily manager-tz **18:00**, alongside the Timesheet cold-archive — NOT 6am (cycle-18 F10): 6am CT is ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of the month this run holds the ONE project ScriptLock through a full Timesheet read, the exact starvation reasoning that moved `archiveOldTimesheetRows` off 1am (INV-153). The daily-with-idempotence cadence is unchanged, so a missed run still catches up via the col-R stamp — credits each accruing rep the PTO they EARNED from hours actually worked in each completed month (column-Q rate per `CONFIG.PTO_ACCRUAL_BASIS_HOURS` worked, converted to days by `CONFIG.PTO_HOURS_PER_DAY`) into the column-I balance IN ARREARS, idempotent via the column-R stamp; daily-with-idempotence rather than a monthly trigger so a missed 1st catches up instead of silently losing the month. Hours come from ONE range-wide, archive-aware Timesheet index — never a per-rep read inside the lock. No-ops for reps with no rate, so installing it is harmless. Audit row `PtoAccrualCredit` per credited rep (incl. zero-hour months). INV-194)
-    - `purgeOldQaReviews` (QA review-record retention, daily manager-tz 2am beside the CN 3rd-tier purge — irreversibly deletes `QaComments` + `QaScorecards` rows older than `QA_REVIEW_RETENTION_DAYS` (Script Property → `CONFIG.QA_REVIEW_RETENTION_DAYS`, default **0 = disabled**); the `QaRecordings` INDEX and the Drive audio files are NEVER touched — the operator manages recordings in Drive. A 0/garbage `CreatedMs` stamp is never deleted (fail-safe), the disabled/unconfigured early-returns precede the lock, and every enabled run writes a counts-only `QaReviewPurge` audit row (the job-liveness heartbeat; its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND `QA_SS_ID` set, INV-186). No-ops entirely while the window is 0 or the QA store is unset, so installing it is harmless. INV-196)
-    - `sendCoachingRecapDigest` (coaching, **Friday** manager-tz 8am — design handoff PR 4, operator decision 1: ONE branded recap per AGENT listing the non-critical coaching (minor / moderate / praise) logged for them in the trailing `CONFIG.COACHING_RECAP_DAYS` (7) — severity label, date, who logged it, acknowledged-or-not, any revisit date — with NO narrative and NO patient/TRX (the detail lives behind the login). Critical items are emailed immediately at create instead and never appear here. Heartbeat `coachingRecap` (stale > 192h, the `weekly` window) stamped on BOTH exits; the digest is agent-facing so it NEVER consults the `managerDailyBrief` flag (INV-151). Silent for an agent with nothing logged in the window. The cadence is one line away from a change — the `onWeekDay(FRIDAY)` call in `installAutomationTriggers`)
-    - `purgeOldDiagnostics` (diagnostics retention, daily manager-tz 2am beside the other purges — cycle-18 F11's follow-on, 2026-09-11: irreversibly deletes `ViewUsage` and `ClientErrors` rows whose column-A timestamp is older than `VIEW_USAGE_RETENTION_DAYS` / `CLIENT_ERR_RETENTION_DAYS` (Script Property → CONFIG, BOTH default **0 = disabled**; edited in Manage → Admin → Config → Retention under "Diagnostics tabs (PHI-free)"). A timestamp that cannot be parsed is NEVER deleted (fail-safe); rows go as CONTIGUOUS bottom-up `deleteRows` runs under a 2000-row per-run budget (the ONE project lock — INV-153/INV-159's starvation reasoning) with the spare-row guard against Sheets' "cannot delete all non-frozen rows" refusal; the counts-only `DiagnosticsPurge` audit row is the job-liveness heartbeat, and its `AUTOMATION_JOB_CHECKS` row is gated on a window being set (INV-186). A failed run stamps `AUTOMATION_LAST_ERRORS` and a clean one clears it. Both early-returns precede the lock, so installing it changes nothing)
-    - `autoAssignSpanishThreadsScheduled` (Spanish Inbox, **hourly** — operator note 4's "a scheduled trigger might follow", shipped 2026-09-11 behind the `spanishAutoAssign` feature toggle, server scope, default **OFF**. It heartbeats `spanishAutoAssign` BEFORE the flag check (INV-151 — liveness observable while off), acts ONLY inside business hours through `businessMinutesBetween_` (a null window reads as NOT inside), runs the SAME `spanishAutoAssignCore_` as the manager button — one scope rule, one voicemail fold, one picker, one claim-row shape — with the installer's roster row as the actor and the SYSTEM placeholder as the fallback (the reconcile precedent), and stamps a refused run (no members configured, a Gmail read that threw) into `AUTOMATION_LAST_ERRORS`. PTO-blind like the button: a member on approved leave can be handed claims — a logged follow-on)
-  The install + remove TARGETS arrays both list all twenty-one, so re-running
-  install dedupes cleanly (a missing entry would silently duplicate that
-  trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
+    - `purgeOldQaReviews` (QA review-record retention, daily manager-tz 2am INSIDE `runNightlyPurges` since 2026-09-11 — irreversibly deletes `QaComments` + `QaScorecards` rows older than `QA_REVIEW_RETENTION_DAYS` (Script Property → `CONFIG.QA_REVIEW_RETENTION_DAYS`, default **0 = disabled**); the `QaRecordings` INDEX and the Drive audio files are NEVER touched — the operator manages recordings in Drive. A 0/garbage `CreatedMs` stamp is never deleted (fail-safe), the disabled/unconfigured early-returns precede the lock, and every enabled run writes a counts-only `QaReviewPurge` audit row (the job-liveness heartbeat; its `AUTOMATION_JOB_CHECKS` row is gated on window>0 AND `QA_SS_ID` set, INV-186). No-ops entirely while the window is 0 or the QA store is unset, so installing it is harmless. INV-196)
+    - `sendCoachingRecapDigest` (coaching, **Friday** manager-tz 8am INSIDE `runWeeklyDigests` since 2026-09-11 — design handoff PR 4, operator decision 1: ONE branded recap per AGENT listing the non-critical coaching (minor / moderate / praise) logged for them in the trailing `CONFIG.COACHING_RECAP_DAYS` (7) — severity label, date, who logged it, acknowledged-or-not, any revisit date — with NO narrative and NO patient/TRX (the detail lives behind the login). Critical items are emailed immediately at create instead and never appear here. Heartbeat `coachingRecap` (stale > 192h, the `weekly` window) stamped on BOTH exits; the digest is agent-facing so it NEVER consults the `managerDailyBrief` flag (INV-151). Silent for an agent with nothing logged in the window. The cadence is one line away from a change — the `onWeekDay(FRIDAY)` call on `runWeeklyDigests`' trigger in `installAutomationTriggers`, which moves BOTH weekly digests)
+    - `purgeOldDiagnostics` (diagnostics retention, daily manager-tz 2am — FIRST inside `runNightlyPurges` since 2026-09-11, being the bounded one — cycle-18 F11's follow-on, 2026-09-11: irreversibly deletes `ViewUsage` and `ClientErrors` rows whose column-A timestamp is older than `VIEW_USAGE_RETENTION_DAYS` / `CLIENT_ERR_RETENTION_DAYS` (Script Property → CONFIG, BOTH default **0 = disabled**; edited in Manage → Admin → Config → Retention under "Diagnostics tabs (PHI-free)"). A timestamp that cannot be parsed is NEVER deleted (fail-safe); rows go as CONTIGUOUS bottom-up `deleteRows` runs under a 2000-row per-run budget (the ONE project lock — INV-153/INV-159's starvation reasoning) with the spare-row guard against Sheets' "cannot delete all non-frozen rows" refusal; the counts-only `DiagnosticsPurge` audit row is the job-liveness heartbeat, and its `AUTOMATION_JOB_CHECKS` row is gated on a window being set (INV-186). A failed run stamps `AUTOMATION_LAST_ERRORS` and a clean one clears it. Both early-returns precede the lock, so installing it changes nothing)
+    - `autoAssignSpanishThreadsScheduled` (Spanish Inbox, **hourly** INSIDE `runHourlyJobs` since 2026-09-11 — operator note 4's "a scheduled trigger might follow", shipped 2026-09-11 behind the `spanishAutoAssign` feature toggle, server scope, default **OFF**. It heartbeats `spanishAutoAssign` BEFORE the flag check (INV-151 — liveness observable while off), acts ONLY inside business hours through `businessMinutesBetween_` (a null window reads as NOT inside), runs the SAME `spanishAutoAssignCore_` as the manager button — one scope rule, one voicemail fold, one picker, one claim-row shape — with the installer's roster row as the actor and the SYSTEM placeholder as the fallback (the reconcile precedent), and stamps a refused run (no members configured, a Gmail read that threw) into `AUTOMATION_LAST_ERRORS`. PTO-blind like the button: a member on approved leave can be handed claims — a logged follow-on)
+  The install + remove TARGETS arrays both list all sixteen (pinned equal to
+  the `newTrigger` set), and BOTH delete loops also consult the derived
+  `RETIRED_TRIGGER_HANDLERS`, so re-running install dedupes cleanly AND
+  removes the eight standalone triggers an older install created (a missing
+  entry would silently duplicate that trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
   reminder about the cross-account trigger-ownership pitfall: Apps
   Script's `ScriptApp.getProjectTriggers()` only returns triggers
@@ -8865,7 +8941,8 @@ manually for a fresh deploy or environment:
   ENABLES or RAISES one of the two irreversible purge windows. Takes effect on the
   next nightly run (re-run `installAutomationTriggers()` once if not yet done).
 - **Form-data retention is OFF by default.** `purgeExpiredFormData`
-  (daily trigger) deletes `FormSubmissions` (responses + signatures) and
+  (daily manager-tz 2am, inside the `runNightlyPurges` dispatcher since
+  2026-09-11) deletes `FormSubmissions` (responses + signatures) and
   `FormTokens` (recipient + prefill data) rows older than
   `FORM_DATA_RETENTION_DAYS` — Script Property first, then
   `CONFIG.FORM_DATA_RETENTION_DAYS` (default **0 = disabled**, nothing is
@@ -10777,7 +10854,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send. **AMENDMENT (operator 2026-08-25): the composer's Note Reference is EDITABLE, and Preview COMMITS those edits BEFORE rendering** — so the previewed body, and therefore the hash the send is checked against, is always built from the note as it will be sent (a failed save aborts the chain rather than previewing unsaved text; previewing first would have hashed the STALE stored note and silently emailed the un-corrected text). The editable fields exist on the FORM step ONLY, so editing between Preview and Send remains impossible — that is this guard working, not a gap. See the two-stage-email Key Design Decision; pinned by CMP-1..4 + the two composer DOM tests | Subsystem: Server
 INV-42 | `emailFromCallNote` sends first (via `sendRepEmail_` — the rep-identity wrapper over MailApp/GmailApp since pilot round 1; wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The twenty-one trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`, `purgeOldDiagnostics`, `autoAssignSpanishThreadsScheduled`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` / `purgeOldDiagnostics` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, QA review records, and ViewUsage/ClientErrors diagnostics rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge; `test_triggerGate_diagnosticsPurge_nonManagerThrows` + `test_triggerGate_spanishAutoAssign_nonManagerThrows` cover the two 2026-09-11 handlers, and the derived TARGETS/gate-type nets generated a Node test each the moment they entered the arrays) | Subsystem: Server
+INV-44 | The twenty-four trigger-handler endpoints — the three same-slot DISPATCHERS `runHourlyJobs` / `runWeeklyDigests` / `runNightlyPurges` (operator 2026-09-11: Apps Script caps installable triggers at `AUTOMATION_TRIGGER_QUOTA` = 20 per user per script, so a trigger belongs to a SLOT; `TRIGGER_GROUPS` is the one source for which handler runs inside which dispatcher, `RETIRED_TRIGGER_HANDLERS` is DERIVED from it and consulted by both delete loops, the installer COUNTS before it deletes and refuses with nothing touched when the quota would be exceeded, a throw mid-creation rethrows naming what was NOT installed, and the TQ-1 pin holds the created count at ≤ 19) and the twenty-one job handlers (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`, `purgeOldDiagnostics`, `autoAssignSpanishThreadsScheduled` — eight of which own no trigger of their own any more and run inside a dispatcher, each STILL carrying its own gate) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code, and TQ-1 asserts the same of every grouped handler — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` / `purgeOldDiagnostics` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, QA review records, and ViewUsage/ClientErrors diagnostics rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge; `test_triggerGate_diagnosticsPurge_nonManagerThrows` + `test_triggerGate_spanishAutoAssign_nonManagerThrows` cover the two 2026-09-11 handlers, `test_triggerGate_hourlyJobs_` / `_weeklyDigests_` / `_nightlyPurges_nonManagerThrows` cover the three dispatchers, and the derived TARGETS/gate-type nets generated a Node test each the moment they entered the arrays; TQ-2 drives `runTriggerGroup_` behaviourally and TQ-3 drives the installer's refusal, the repair of the half-installed state and the mid-creation rethrow against a stubbed ScriptApp) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — **but since cycle-17 C17-6 it no longer "skips that rep" silently either (that clause described the defect, the same INV-52 correction cycle-16 F1 made): the skipped set rides the response (`skippedReps`, additive), the audit row (`skippedReps=N (ids) — INCOMPLETE`), and a client warn toast, and an all-skipped run returns a read-failure error instead of "No notes found" — a PHI export can never read as complete when it isn't (INV-187).** Pinned by the C17-6 pin | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server

@@ -12396,6 +12396,91 @@ function reconcileCallNotes() {
 //  AUTOMATION
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── Automation trigger quota + same-slot dispatchers (operator 2026-09-11) ──
+// Apps Script allows at most AUTOMATION_TRIGGER_QUOTA installable triggers per
+// USER per SCRIPT. The follow-ons round took this installer to 21, and the
+// operator's install threw "This script has too many triggers" on the LAST
+// create — AFTER the dedupe loop had deleted every existing trigger — so the
+// deployment was left with 20 of 21 and NO creditMonthlyPtoAccruals. Two
+// fixes: (a) a trigger per SLOT rather than per job — same-slot jobs run
+// inside one of the dispatchers below, driven by TRIGGER_GROUPS (the ONE
+// source for the dispatcher bodies, the retired-handler dedupe list, the
+// install email and the Node pins); (b) the installer COUNTS before it
+// deletes and refuses when the total would exceed the quota, so a future
+// overflow fails with nothing removed.
+const AUTOMATION_TRIGGER_QUOTA = 20;
+// Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
+// defined top-level function that carries its own assertManagerCaller_ gate
+// (INV-44) — each stays reachable via google.script.run and keeps its own
+// audit rows / heartbeats, so Automation Health's per-job liveness is
+// unchanged. Order inside a group: the cheapest / bounded jobs first, the
+// cross-rep walk last, so a job that runs long cannot starve the others.
+const TRIGGER_GROUPS = {
+  runHourlyJobs:    ['sendCallNotesEodDigest', 'autoAssignSpanishThreadsScheduled'],
+  runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
+  runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
+};
+// Handlers that USED to own a trigger of their own. Both delete loops consult
+// this list so a re-install removes the standalone triggers a previous install
+// created (the 2026-09-11 deployment holds eight of them). DERIVED from the
+// groups — never a second list. A name here is never also in TARGETS (pinned).
+const RETIRED_TRIGGER_HANDLERS = Object.keys(TRIGGER_GROUPS)
+  .reduce(function (acc, k) { return acc.concat(TRIGGER_GROUPS[k]); }, []);
+// Runs a dispatcher's jobs one after another, each in its own try/catch, so a
+// job that throws never starves the ones after it. The jobs already catch
+// their own failures and stamp / audit them; this backstop only catches a
+// throw none of them expected, and stamps it under the JOB's name so the
+// health dot + failure digest see it (INV-161) — a clean run clears it.
+// KNOWN LIMIT: the group shares ONE six-minute execution. All eight grouped
+// jobs are cheap by default (the purges no-op while their windows are 0), but
+// a purge enabled against a large backlog that runs long is killed by the
+// execution limit WITH the jobs after it — each job's own liveness row then
+// reads stale on Automation Health, which is the signal to re-order or split.
+function runTriggerGroup_(label) {
+  const jobs = TRIGGER_GROUPS[label] || [];
+  const results = [];
+  jobs.forEach(function (name) {
+    const fn = globalThis[name];
+    if (typeof fn !== 'function') {
+      results.push({ job: name, ok: false, error: 'not a defined function' });
+      stampAutomationError_(name, label + ': "' + name + '" is not a defined top-level function');
+      return;
+    }
+    try {
+      const r = fn();
+      clearAutomationError_(name);
+      results.push({ job: name, ok: true, result: r });
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      Logger.log(label + ': ' + name + ' threw: ' + msg);
+      stampAutomationError_(name, msg);
+      results.push({ job: name, ok: false, error: msg });
+    }
+  });
+  return { success: results.every(function (r) { return r.ok; }), label: label, results: results };
+}
+// Hourly: the Call Notes EOD reminder (matches each rep's local EOD hour) and
+// the flag-gated Spanish Inbox auto-assign (business hours only).
+function runHourlyJobs() {
+  assertManagerCaller_('runHourlyJobs');
+  return runTriggerGroup_('runHourlyJobs');
+}
+// Friday manager-tz 8am: the manager training/review digests and the agent
+// coaching recap. Agent-facing mail never consults the manager brief flag.
+function runWeeklyDigests() {
+  assertManagerCaller_('runWeeklyDigests');
+  return runTriggerGroup_('runWeeklyDigests');
+}
+// Daily manager-tz 2am, BEFORE the 3am cold-archive: the four delete-only
+// retention purges (diagnostics, QA review records, form PHI, archived call
+// notes). Every window defaults to 0, so each no-ops before its lock; the
+// row-MOVING archive (3am) and the live-notes purge (4am) keep their own
+// triggers because their ORDER after this slot is load-bearing (archive-first).
+function runNightlyPurges() {
+  assertManagerCaller_('runNightlyPurges');
+  return runTriggerGroup_('runNightlyPurges');
+}
+
 function installAutomationTriggers() {
   // Use getActiveUserEmail_() so test impersonation via _TEST_OVERRIDE_EMAIL
   // is respected, and getManagerEmails_() so the Script-Properties override
@@ -12407,14 +12492,17 @@ function installAutomationTriggers() {
     throw new Error('Only managers (per MANAGER_EMAILS) can install triggers. ' +
                     `Current user: ${userEmail || '<unknown>'}`);
   }
+  // ONE trigger per SLOT. Same-slot jobs run inside the three dispatchers
+  // (TRIGGER_GROUPS); the handlers they run are in RETIRED_TRIGGER_HANDLERS,
+  // never here. TARGETS.length is the number of triggers this install creates
+  // (pinned equal to the newTrigger set), which the quota pre-flight relies on.
   const TARGETS = [
     'sendDailyMissedPunchAlerts',
     'runDailyExportCheck',
-    'sendCallNotesEodDigest',
-    'sendCallNotesWeeklyDigests',
+    'runHourlyJobs',
+    'runWeeklyDigests',
     'sendCallNotesUrgentDigest',
-    'purgeExpiredFormData',
-    'purgeArchivedCallNotes',
+    'runNightlyPurges',
     'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
@@ -12425,160 +12513,177 @@ function installAutomationTriggers() {
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
-    'purgeOldQaReviews',
-    'sendCoachingRecapDigest',
-    'autoAssignSpanishThreadsScheduled',
-    'purgeOldDiagnostics',
   ];
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  // QUOTA PRE-FLIGHT — BEFORE anything is deleted. Apps Script caps installable
+  // triggers per user per script; the 2026-09-11 install hit the cap on the
+  // last create after the dedupe loop had removed every existing trigger, and
+  // left the deployment with no accrual trigger. Count what would exist after
+  // this run (our set + any trigger this account owns that is not ours) and
+  // refuse with nothing touched when it would not fit.
+  const existing = ScriptApp.getProjectTriggers();
+  const isOurs = function (h) {
+    return TARGETS.indexOf(h) >= 0 || RETIRED_TRIGGER_HANDLERS.indexOf(h) >= 0;
+  };
+  const foreign = existing.filter(function (t) { return !isOurs(t.getHandlerFunction()); });
+  if (foreign.length + TARGETS.length > AUTOMATION_TRIGGER_QUOTA) {
+    throw new Error(
+      'Refusing to install: ' + TARGETS.length + ' automation trigger(s) plus ' + foreign.length +
+      ' other trigger(s) this account owns on this script (' +
+      foreign.map(function (t) { return t.getHandlerFunction(); }).join(', ') +
+      ') would exceed Apps Script\'s limit of ' + AUTOMATION_TRIGGER_QUOTA +
+      ' per user per script. NOTHING was deleted. Remove the other trigger(s) in the ' +
+      'editor\'s Triggers panel, or fold a job into a same-slot dispatcher (TRIGGER_GROUPS), then re-run.');
+  }
+  existing.forEach(function (t) {
+    if (isOurs(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('sendDailyMissedPunchAlerts')
-    .timeBased().atHour(CONFIG.AUTO_MISSED_ALERT_HOUR_IST).everyDays(1)
-    .inTimezone(CONFIG.TIMEZONE).create();
-  ScriptApp.newTrigger('runDailyExportCheck')
-    .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
-    .inTimezone(CONFIG.TIMEZONE).create();
-  // Call Notes EOD warning — G4: runs HOURLY. The handler walks the roster
-  // and emails each enrolled rep only during the run that lands in their
-  // LOCAL EOD hour (CONFIG.CALL_NOTES.EOD_WARNING_HOUR). An hourly cadence +
-  // per-rep local-hour match means a single trigger reliably reaches reps in
-  // every timezone — the prior once-at-manager-5pm trigger silently skipped
-  // offshore reps (IST/PHT) whose local 5pm never coincided with the
-  // manager's. Most hourly runs send nothing (no reps at their EOD hour with
-  // unresolved flags), so the cost is just a cached roster walk.
-  ScriptApp.newTrigger('sendCallNotesEodDigest')
-    .timeBased().everyHours(1).create();
-  // Weekly manager digests for training queue + review candidates
-  // Weekday is HARDCODED here on purpose. Two CONFIG knobs (TRAINING_/
-  // REVIEW_DIGEST_WEEKDAY) used to imply it was configurable while being read
-  // nowhere — editing them was a silent no-op — so they were removed (F1).
-  // To move the digest, change the day here and re-run installAutomationTriggers().
-  ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // K8 (design handoff, operator decision 1) — the weekly per-AGENT recap of
-  // non-critical coaching, in the same Friday-8am slot as the weekly manager
-  // digests. Agent-facing: never consults the manager-brief flag (INV-151).
-  ScriptApp.newTrigger('sendCoachingRecapDigest')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Scheduled Spanish Inbox auto-assign (operator note 4 follow-on): hourly,
-  // acts only inside business hours and only while the `spanishAutoAssign`
-  // flag is on (default OFF) — installing it is harmless; it heartbeats
-  // regardless so the trigger's liveness shows on Automation Health.
-  ScriptApp.newTrigger('autoAssignSpanishThreadsScheduled')
-    .timeBased().everyHours(1).create();
-  // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
-  ScriptApp.newTrigger('sendCallNotesUrgentDigest')
-    .timeBased().atHour(8).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Daily PHI-retention purge of FormSubmissions + FormTokens. No-ops while
-  // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
-  // it only deletes once the operator sets a positive retention window.
-  ScriptApp.newTrigger('purgeExpiredFormData')
-    .timeBased().atHour(3).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // 3rd-tier cold-store purge — irreversibly deletes NotesArchive rows past the
-  // archive-retention window. No-ops while CN_ARCHIVE_RETENTION_DAYS=0 (the
-  // default). Staggered to 2am, BEFORE the 3am archive, so it operates on the
-  // settled cold store from prior runs.
-  ScriptApp.newTrigger('purgeArchivedCallNotes')
-    .timeBased().atHour(2).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // QA review-record retention purge (Phase-3 follow-on) — no-ops while
-  // QA_REVIEW_RETENTION_DAYS=0 (the default) or QA_SS_ID is unset, so
-  // installing it is harmless.
-  ScriptApp.newTrigger('purgeOldQaReviews')
-    .timeBased().atHour(2).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Diagnostics retention purge (cycle-18 F11 follow-on) — ViewUsage +
-  // ClientErrors rows past their windows. No-ops while BOTH
-  // VIEW_USAGE_RETENTION_DAYS and CLIENT_ERR_RETENTION_DAYS are 0 (the
-  // default), so installing it is harmless. Same 2am slot as the other purges.
-  ScriptApp.newTrigger('purgeOldDiagnostics')
-    .timeBased().atHour(2).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
-  // (data preserved, live tab bounded). No-ops while CN_NOTE_ARCHIVE_DAYS=0 (the
-  // default), so installing it is harmless. Staggered to 3am, BEFORE the 4am
-  // purge, so if both are enabled the safe archive-first ordering holds.
-  ScriptApp.newTrigger('archiveOldCallNotes')
-    .timeBased().atHour(3).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
-  // (the default), so installing it is harmless. Staggered to 4am so the two
-  // destructive purges don't overlap.
-  ScriptApp.newTrigger('purgeOldCallNotes')
-    .timeBased().atHour(4).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Two-way Sheets reconcile (item 8) — back-fills NoteId/Timestamp/DateLocal on
-  // rows added directly in a rep's Sheet outside the app. Non-destructive (never
-  // touches content cells) + idempotent (skips rows already stamped), so the
-  // daily run is harmless. Staggered to 5am, after the purges.
-  ScriptApp.newTrigger('reconcileCallNotes')
-    .timeBased().atHour(5).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Training & Employee Docs overdue digest (T4) — daily manager-tz 7am.
-  // Org-wide overdue training + per-manager team-scoped overdue unsigned docs.
-  // Sends nothing to a manager with nothing overdue in their scope.
-  ScriptApp.newTrigger('sendTrainingOverdueDigest')
-    .timeBased().atHour(7).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Automation-FAILURE push (manager-tz 9am, AFTER the nightly jobs + digests so
-  // the report reflects their latest runs). Emails MANAGER_EMAILS ONLY when a
-  // check is failing (stale heartbeat / stale reconcile / sync-fails / CDR down);
-  // silent when healthy. Turns a silently-dead nightly trigger (the F1 class)
-  // into a push instead of relying on a manager opening the Health panel.
-  ScriptApp.newTrigger('sendAutomationHealthDigest')
-    .timeBased().atHour(9).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // DeptRequests v2 — daily manager-tz 10am reminder of OPEN dept requests past
-  // their SLA (manager summary; silent when none).
-  ScriptApp.newTrigger('sendDeptRequestReminderDigest')
-    .timeBased().atHour(10).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Consolidated manager daily brief (#2, INV-151) — daily manager-tz 8am.
-  // No-ops (heartbeat only) while the managerDailyBrief flag is off, so
-  // installing it is harmless; when the flag is on it replaces the separate
-  // daily manager emails those handlers suppress.
-  ScriptApp.newTrigger('sendManagerDailyBrief')
-    .timeBased().atHour(8).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Timesheet cold-archive (#7, INV-153) — daily manager-tz 6pm. F(cycle-8):
-  // moved OFF the 1am slot — 1am CT is ~11:30am IST / ~2pm PHT, the middle of
-  // both offshore shifts, and the move holds the global ScriptLock while it
-  // deletes rows one at a time (a large first enabled run could starve
-  // concurrent recordPunch calls past their 15s waitLock). 6pm CT sits in the
-  // all-team quiet window (CST shift ended; offshore shifts not yet started).
-  // MOVES (never deletes) Timesheet rows older than TIMESHEET_ARCHIVE_DAYS to
-  // the TimesheetArchive tab; no-ops while the window is 0 (the default), so
-  // installing it is harmless.
-  ScriptApp.newTrigger('archiveOldTimesheetRows')
-    .timeBased().atHour(18).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Nightly self-test (K-A alternative) — daily manager-tz 1am. Smoke-only on
-  // prod (no writes, no locks); the FULL suite only on the DEV instance.
-  ScriptApp.newTrigger('runNightlySelfTest')
-    .timeBased().atHour(1).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 18:00,
-  // alongside the Timesheet cold-archive. NOT 6am (F10, cycle 18): 6am CT is
-  // ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of
-  // the month this run holds the ONE project ScriptLock through a full
-  // Timesheet read — the exact starvation reasoning that moved
-  // archiveOldTimesheetRows off 1am (INV-153). "Both take the lock briefly"
-  // was true on 29 days a month and false on the one that matters. 18:00 CT is
-  // the all-team quiet window; the daily-with-idempotence cadence is unchanged,
-  // so a missed run still catches up via the col-R stamp.
-  // Daily-with-idempotence rather than a monthly trigger: if the 1st's run is
-  // missed (dead trigger, quota), the next day's run catches up via the col-R
-  // stamp instead of silently losing the month. No-ops for reps with a blank
-  // column-Q rate, so installing it is harmless on a roster with no accruers.
-  ScriptApp.newTrigger('creditMonthlyPtoAccruals')
-    .timeBased().atHour(18).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  Logger.log('Automation triggers installed by ' + userEmail + '.');
+  try {
+    ScriptApp.newTrigger('sendDailyMissedPunchAlerts')
+      .timeBased().atHour(CONFIG.AUTO_MISSED_ALERT_HOUR_IST).everyDays(1)
+      .inTimezone(CONFIG.TIMEZONE).create();
+    ScriptApp.newTrigger('runDailyExportCheck')
+      .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
+      .inTimezone(CONFIG.TIMEZONE).create();
+    // HOURLY dispatcher — sendCallNotesEodDigest (G4: the handler walks the
+    // roster and emails each enrolled rep only during the run that lands in
+    // their LOCAL EOD hour, so one hourly trigger reaches every timezone; most
+    // runs send nothing) + autoAssignSpanishThreadsScheduled (acts only inside
+    // business hours and only while the `spanishAutoAssign` flag is on,
+    // default OFF — it heartbeats regardless so its liveness shows on
+    // Automation Health). Both ran on their own hourly trigger until
+    // 2026-09-11 (the quota).
+    ScriptApp.newTrigger('runHourlyJobs')
+      .timeBased().everyHours(1).create();
+    // WEEKLY dispatcher, Friday manager-tz 8am — sendCallNotesWeeklyDigests
+    // (the manager training-queue + review-candidate digests) and
+    // sendCoachingRecapDigest (K8 — the per-AGENT recap of non-critical
+    // coaching; agent-facing, never consults the manager-brief flag, INV-151).
+    // Weekday is HARDCODED here on purpose. Two CONFIG knobs (TRAINING_/
+    // REVIEW_DIGEST_WEEKDAY) used to imply it was configurable while being read
+    // nowhere — editing them was a silent no-op — so they were removed (F1).
+    // To move BOTH digests, change the day here and re-run installAutomationTriggers().
+    ScriptApp.newTrigger('runWeeklyDigests')
+      .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
+    ScriptApp.newTrigger('sendCallNotesUrgentDigest')
+      .timeBased().atHour(8).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // NIGHTLY PURGES dispatcher, manager-tz 2am — the four DELETE-ONLY
+    // retention purges: purgeOldDiagnostics (ViewUsage + ClientErrors past
+    // VIEW_USAGE_/CLIENT_ERR_RETENTION_DAYS), purgeOldQaReviews (QaComments +
+    // QaScorecards past QA_REVIEW_RETENTION_DAYS; the recordings index + Drive
+    // never touched), purgeExpiredFormData (FormSubmissions + FormTokens past
+    // FORM_DATA_RETENTION_DAYS — ran at 3am until 2026-09-11; the hour was
+    // never load-bearing) and purgeArchivedCallNotes (the 3rd-tier cold-store
+    // purge past CN_ARCHIVE_RETENTION_DAYS). EVERY window defaults to 0, so
+    // each no-ops before its lock — installing this is harmless. 2am is BEFORE
+    // the 3am archive so the cold-store purge operates on the settled cold
+    // store from prior runs.
+    ScriptApp.newTrigger('runNightlyPurges')
+      .timeBased().atHour(2).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
+    // (data preserved, live tab bounded). No-ops while CN_NOTE_ARCHIVE_DAYS=0 (the
+    // default), so installing it is harmless. Staggered to 3am, AFTER the 2am
+    // purges and BEFORE the 4am live purge, so if both are enabled the safe
+    // archive-first ordering holds. Keeps its OWN trigger: it MOVES rows
+    // (append-then-delete), and its place in the order is load-bearing.
+    ScriptApp.newTrigger('archiveOldCallNotes')
+      .timeBased().atHour(3).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
+    // (the default), so installing it is harmless. Staggered to 4am, after the
+    // archive, so the live purge never runs ahead of the move. Own trigger for
+    // the same ordering reason.
+    ScriptApp.newTrigger('purgeOldCallNotes')
+      .timeBased().atHour(4).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Two-way Sheets reconcile (item 8) — back-fills NoteId/Timestamp/DateLocal on
+    // rows added directly in a rep's Sheet outside the app. Non-destructive (never
+    // touches content cells) + idempotent (skips rows already stamped), so the
+    // daily run is harmless. Staggered to 5am, after the purges.
+    ScriptApp.newTrigger('reconcileCallNotes')
+      .timeBased().atHour(5).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Training & Employee Docs overdue digest (T4) — daily manager-tz 7am.
+    // Org-wide overdue training + per-manager team-scoped overdue unsigned docs.
+    // Sends nothing to a manager with nothing overdue in their scope.
+    ScriptApp.newTrigger('sendTrainingOverdueDigest')
+      .timeBased().atHour(7).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Automation-FAILURE push (manager-tz 9am, AFTER the nightly jobs + digests so
+    // the report reflects their latest runs). Emails MANAGER_EMAILS ONLY when a
+    // check is failing (stale heartbeat / stale reconcile / sync-fails / CDR down);
+    // silent when healthy. Turns a silently-dead nightly trigger (the F1 class)
+    // into a push instead of relying on a manager opening the Health panel.
+    ScriptApp.newTrigger('sendAutomationHealthDigest')
+      .timeBased().atHour(9).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // DeptRequests v2 — daily manager-tz 10am reminder of OPEN dept requests past
+    // their SLA (manager summary; silent when none).
+    ScriptApp.newTrigger('sendDeptRequestReminderDigest')
+      .timeBased().atHour(10).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Consolidated manager daily brief (#2, INV-151) — daily manager-tz 8am.
+    // No-ops (heartbeat only) while the managerDailyBrief flag is off, so
+    // installing it is harmless; when the flag is on it replaces the separate
+    // daily manager emails those handlers suppress. Keeps its OWN trigger:
+    // managerBriefSuppressionActive_({checkTrigger:true}) looks for a live
+    // trigger on THIS handler name, so folding it into a dispatcher would
+    // silently un-suppress the digests it replaces.
+    ScriptApp.newTrigger('sendManagerDailyBrief')
+      .timeBased().atHour(8).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Timesheet cold-archive (#7, INV-153) — daily manager-tz 6pm. F(cycle-8):
+    // moved OFF the 1am slot — 1am CT is ~11:30am IST / ~2pm PHT, the middle of
+    // both offshore shifts, and the move holds the global ScriptLock while it
+    // deletes rows one at a time (a large first enabled run could starve
+    // concurrent recordPunch calls past their 15s waitLock). 6pm CT sits in the
+    // all-team quiet window (CST shift ended; offshore shifts not yet started).
+    // MOVES (never deletes) Timesheet rows older than TIMESHEET_ARCHIVE_DAYS to
+    // the TimesheetArchive tab; no-ops while the window is 0 (the default), so
+    // installing it is harmless. NOT folded into a dispatcher with the accrual
+    // credit below: both hold the ONE project lock and either can run long on
+    // the night that matters, and a shared six-minute execution would raise
+    // the duplicate-append hazard F3 (cycle 12) exists to prevent.
+    ScriptApp.newTrigger('archiveOldTimesheetRows')
+      .timeBased().atHour(18).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Nightly self-test (K-A alternative) — daily manager-tz 1am. Smoke-only on
+    // prod (no writes, no locks); the FULL suite only on the DEV instance.
+    ScriptApp.newTrigger('runNightlySelfTest')
+      .timeBased().atHour(1).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    // Monthly PTO accrual credit (operator 2026-08-18) — daily manager-tz 18:00,
+    // alongside the Timesheet cold-archive. NOT 6am (F10, cycle 18): 6am CT is
+    // ~4:30pm IST / 7pm PHT, the tail of the offshore shift, and on the 1st of
+    // the month this run holds the ONE project ScriptLock through a full
+    // Timesheet read — the exact starvation reasoning that moved
+    // archiveOldTimesheetRows off 1am (INV-153). "Both take the lock briefly"
+    // was true on 29 days a month and false on the one that matters. 18:00 CT is
+    // the all-team quiet window; the daily-with-idempotence cadence is unchanged,
+    // so a missed run still catches up via the col-R stamp.
+    // Daily-with-idempotence rather than a monthly trigger: if the 1st's run is
+    // missed (dead trigger, quota), the next day's run catches up via the col-R
+    // stamp instead of silently losing the month. No-ops for reps with a blank
+    // column-Q rate, so installing it is harmless on a roster with no accruers.
+    ScriptApp.newTrigger('creditMonthlyPtoAccruals')
+      .timeBased().atHour(18).everyDays(1)
+      .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  } catch (e) {
+    // A throw here lands AFTER the dedupe loop deleted the previous set, so say
+    // exactly what is and is not installed instead of leaving the operator to
+    // count the Triggers panel (the 2026-09-11 shape: 20 of 21, accrual missing).
+    const installed = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+    const missing = TARGETS.filter(function (t) { return installed.indexOf(t) < 0; });
+    throw new Error('Trigger install FAILED part-way: ' + (TARGETS.length - missing.length) + ' of ' +
+      TARGETS.length + ' installed; NOT installed: ' + (missing.join(', ') || '(none)') +
+      '. Cause: ' + ((e && e.message) ? e.message : String(e)) +
+      '. Fix the cause and re-run installAutomationTriggers() — the dedupe loop makes a re-run safe.');
+  }
+  Logger.log('Automation triggers installed by ' + userEmail + ' (' + TARGETS.length + ' of the ' +
+             AUTOMATION_TRIGGER_QUOTA + ' Apps Script allows).');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
   // installing user, and ScriptApp.getProjectTriggers() only returns triggers
@@ -12594,8 +12699,11 @@ function installAutomationTriggers() {
         subject: `UMS Team Tools — automation triggers installed by ${userEmail}`,
         body:
           `installAutomationTriggers() ran as ${userEmail}.\n\n` +
-          `Triggers installed:\n` +
-          TARGETS.map(function (t) { return '  • ' + t; }).join('\n') + '\n\n' +
+          `Triggers installed (${TARGETS.length} of the ${AUTOMATION_TRIGGER_QUOTA} Apps Script allows):\n` +
+          TARGETS.map(function (t) {
+            const grp = TRIGGER_GROUPS[t];
+            return '  • ' + t + (grp ? ' → runs ' + grp.join(', ') : '');
+          }).join('\n') + '\n\n' +
           `Reminder: time-based triggers are owned by the installing user, and ` +
           `Apps Script's getProjectTriggers() only returns triggers owned by ` +
           `the current user. If a different account previously installed these ` +
@@ -12611,14 +12719,16 @@ function installAutomationTriggers() {
 
 function removeAutomationTriggers() {
   assertManagerCaller_('removeAutomationTriggers');
+  // Mirrors the install TARGETS (pinned equal); RETIRED_TRIGGER_HANDLERS covers
+  // the standalone triggers an older install created for jobs that now run
+  // inside a dispatcher.
   const TARGETS = [
     'sendDailyMissedPunchAlerts',
     'runDailyExportCheck',
-    'sendCallNotesEodDigest',
-    'sendCallNotesWeeklyDigests',
+    'runHourlyJobs',
+    'runWeeklyDigests',
     'sendCallNotesUrgentDigest',
-    'purgeExpiredFormData',
-    'purgeArchivedCallNotes',
+    'runNightlyPurges',
     'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
@@ -12629,13 +12739,10 @@ function removeAutomationTriggers() {
     'archiveOldTimesheetRows',
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
-    'purgeOldQaReviews',
-    'sendCoachingRecapDigest',
-    'autoAssignSpanishThreadsScheduled',
-    'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    const h = t.getHandlerFunction();
+    if (TARGETS.indexOf(h) >= 0 || RETIRED_TRIGGER_HANDLERS.indexOf(h) >= 0) ScriptApp.deleteTrigger(t);
   });
   Logger.log('Automation triggers removed.');
 }
