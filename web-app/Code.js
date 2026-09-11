@@ -7790,14 +7790,16 @@ function computeAutomationHealth_(opts) {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest', 'coachingRecap'].map(function (k) {
+    // The reported set is DERIVED from the staleness map (INV-179) — a
+    // heartbeat with a window but no row here would be stamped and never read.
+    const digestHealth = Object.keys(DIGEST_STALE_HOURS).map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -12425,6 +12427,7 @@ function installAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'autoAssignSpanishThreadsScheduled',
     'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
@@ -12460,6 +12463,12 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendCoachingRecapDigest')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Scheduled Spanish Inbox auto-assign (operator note 4 follow-on): hourly,
+  // acts only inside business hours and only while the `spanishAutoAssign`
+  // flag is on (default OFF) — installing it is harmless; it heartbeats
+  // regardless so the trigger's liveness shows on Automation Health.
+  ScriptApp.newTrigger('autoAssignSpanishThreadsScheduled')
+    .timeBased().everyHours(1).create();
   // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
   ScriptApp.newTrigger('sendCallNotesUrgentDigest')
     .timeBased().atHour(8).everyDays(1)
@@ -12622,6 +12631,7 @@ function removeAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'autoAssignSpanishThreadsScheduled',
     'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
@@ -14394,6 +14404,9 @@ const FEATURE_FLAGS = [
     default: false, scope: 'both' },
   { key: 'managerDailyBrief', label: 'Consolidated manager daily brief',
     description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
+    default: false, scope: 'server' },
+  { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
+    description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
@@ -16228,6 +16241,57 @@ function autoAssignSpanishThreads(days) {
     if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
     return spanishAutoAssignCore_(emp, days);
   } catch (err) { return { success: false, error: 'Auto-assign failed: ' + err.message }; }
+}
+
+/** The SCHEDULED twin of the button (operator testing note 4's "might follow",
+ *  2026-09-11): an hourly trigger that runs the SAME spanishAutoAssignCore_
+ *  — one scope rule, one voicemail fold, one picker, one claim-row shape —
+ *  behind the `spanishAutoAssign` feature flag (server scope, default OFF,
+ *  the managerDailyBrief posture), so a fresh deploy is a behavioural no-op
+ *  and the operator turns it on from Manage → Admin → Feature Toggles.
+ *
+ *  Trigger handler: top-level, MANAGER_EMAILS-gated (INV-44), heartbeat
+ *  `spanishAutoAssign` stamped BEFORE the flag check so the trigger's
+ *  liveness stays observable while the feature is off (INV-151). It acts
+ *  ONLY inside business hours — the ONE definition the app has
+ *  (`businessMinutesBetween_`: the Coverage window, weekdays, US holidays),
+ *  never a second weekday/hour arithmetic — because a request auto-assigned
+ *  at 2am sits on somebody's plate all night reading as "claimed", which is
+ *  worse than unclaimed. The actor is the INSTALLER's roster row (the
+ *  claim's `assignedBy` and the audit actor), falling back to the SYSTEM
+ *  placeholder when the installer is not on the roster (the
+ *  reconcileCallNotes precedent). A failed run — no members configured, a
+ *  Gmail read that threw — is stamped into AUTOMATION_LAST_ERRORS (the F4
+ *  rule: a handler that merely RETURNS an error reaches nobody) and cleared
+ *  on the next clean run. The core's own audit row (`SpanishInboxAutoAssign`,
+ *  counts only) is written only when something was unclaimed, so an idle
+ *  hour adds nothing to the bounded AuditLog tail scans. */
+const SPANISH_AUTO_ASSIGN_DAYS = 7;   // the pending window the button uses by default
+function autoAssignSpanishThreadsScheduled() {
+  assertManagerCaller_('autoAssignSpanishThreadsScheduled');  // see sendDailyMissedPunchAlerts note
+  try {
+    stampDigestLastRun_('spanishAutoAssign');
+    if (!getFlag_('spanishAutoAssign')) { Logger.log('spanishAutoAssign flag is off — nothing assigned.'); return; }
+    const nowMs = Date.now();
+    // Inside the business window iff the next minute counts as a business
+    // minute — the same helper that times every request, so "working hour"
+    // has exactly one meaning. null (unusable input) reads as NOT inside.
+    const bizMin = businessMinutesBetween_(nowMs, nowMs + 60000);
+    if (!(bizMin > 0)) { Logger.log('spanishAutoAssign: outside business hours — nothing assigned.'); return; }
+    const emp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
+    const r = spanishAutoAssignCore_(emp, SPANISH_AUTO_ASSIGN_DAYS);
+    if (!r || !r.success) {
+      const why = (r && r.error) || 'auto-assign failed';
+      Logger.log('spanishAutoAssign: ' + why);
+      stampAutomationError_('SpanishAutoAssign', why);
+      return;
+    }
+    clearAutomationError_('SpanishAutoAssign');
+    Logger.log('spanishAutoAssign: ' + (r.assigned || []).length + ' assigned of ' + (r.unclaimed || 0) + ' unclaimed.');
+  } catch (err) {
+    Logger.log('autoAssignSpanishThreadsScheduled failed: ' + err.message);
+    stampAutomationError_('SpanishAutoAssign', err.message);
+  }
 }
 
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────

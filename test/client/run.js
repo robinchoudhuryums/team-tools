@@ -19240,6 +19240,104 @@ test('BP-4: the manager card renders unpaired findings, counts them, and an olde
     'the visual fixture ships the additive fields the client now reads');
 });
 
+
+/* ── SA: the scheduled Spanish auto-assign (operator testing note 4 follow-on) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nSA — scheduled Spanish auto-assign trigger');
+
+test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-gated, business-hours-gated, one core', () => {
+  const strip = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const raw = extractRawFunction('Code.js', 'autoAssignSpanishThreadsScheduled');
+  const body = strip(raw);
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeStripped = strip(codeSrc);
+
+  // Behavioural: the real handler over stubs. Every decision it makes is a
+  // gate, so each gate is driven from both sides.
+  const drive = (opts) => {
+    const log = { heartbeat: [], core: [], stamped: [], cleared: [], gate: [] };
+    const ctx = vm.createContext({
+      Logger: { log: () => {} },
+      Date: Date,
+      _SYSTEM_AUDIT_EMP_: { id: 'SYSTEM', name: 'Automation', email: 'automation@system' },
+      assertManagerCaller_: (l) => { log.gate.push(l); },
+      stampDigestLastRun_: (k) => { log.heartbeat.push(k); },
+      getFlag_: (k) => (k === 'spanishAutoAssign' ? !!opts.flag : false),
+      businessMinutesBetween_: () => opts.biz,
+      getEmployeeInfo_: () => opts.emp,
+      spanishAutoAssignCore_: (emp, days) => { log.core.push({ emp: emp, days: days }); return opts.core; },
+      stampAutomationError_: (j, m) => { log.stamped.push(j + ':' + m); },
+      clearAutomationError_: (j) => { log.cleared.push(j); },
+    });
+    vm.runInContext('const SPANISH_AUTO_ASSIGN_DAYS = 7;\n' + raw, ctx, { filename: 'Code.js#autoAssignSpanishThreadsScheduled' });
+    ctx.autoAssignSpanishThreadsScheduled();
+    return log;
+  };
+  const mgr = { id: 'M1', email: 'mgr@x.com', isManager: true };
+  let l = drive({ flag: false, biz: 1, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.gate.join('|'), 'autoAssignSpanishThreadsScheduled', 'the MANAGER_EMAILS gate runs by name (INV-44)');
+  assert.strictEqual(l.heartbeat.join('|'), 'spanishAutoAssign', 'the heartbeat is stamped even while the flag is OFF (INV-151 — liveness is observable)');
+  assert.strictEqual(l.core.length, 0, 'flag off → the core never runs');
+  l = drive({ flag: true, biz: 0, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core.length, 0, 'outside business hours (0 business minutes) → nothing assigned');
+  l = drive({ flag: true, biz: null, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core.length, 0, 'an UNKNOWN business window (null) reads as NOT inside — never as "go ahead"');
+  l = drive({ flag: true, biz: 1, emp: mgr, core: { success: true, assigned: [{}, {}], unclaimed: 3 } });
+  assert.strictEqual(l.core.length, 1, 'flag on + inside business hours → the core runs ONCE');
+  assert.strictEqual(l.core[0].days, 7, 'over the same 7-day pending window the button defaults to');
+  assert.strictEqual(l.core[0].emp.email, 'mgr@x.com', 'the installer is the actor (assignedBy + audit)');
+  assert.strictEqual(l.cleared.join('|'), 'SpanishAutoAssign', 'a clean run clears the automation-error stamp');
+  assert.strictEqual(l.stamped.length, 0, 'and stamps nothing');
+  l = drive({ flag: true, biz: 1, emp: null, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core[0].emp.email, 'automation@system', 'a non-roster installer falls back to the SYSTEM actor (the reconcile precedent) rather than throwing');
+  l = drive({ flag: true, biz: 1, emp: mgr, core: { success: false, error: 'No Spanish Inbox members are configured' } });
+  assert.strictEqual(l.stamped.join('|'), 'SpanishAutoAssign:No Spanish Inbox members are configured',
+    'a refused run is STAMPED into AUTOMATION_LAST_ERRORS (a returned error reaches nobody — the F4 rule)');
+  assert.strictEqual(l.cleared.length, 0, 'and not cleared');
+
+  // Source contract.
+  assert.ok(/assertManagerCaller_\('autoAssignSpanishThreadsScheduled'\)/.test(body), 'gate by name');
+  assertBefore(body, "stampDigestLastRun_('spanishAutoAssign')", "getFlag_('spanishAutoAssign')",
+    'the heartbeat is stamped BEFORE the flag check');
+  assertBefore(body, "getFlag_('spanishAutoAssign')", 'businessMinutesBetween_(', 'the flag check precedes the window check');
+  assertBefore(body, 'businessMinutesBetween_(', 'spanishAutoAssignCore_(', 'the window check precedes the core');
+  assert.ok(/spanishAutoAssignCore_\(emp, SPANISH_AUTO_ASSIGN_DAYS\)/.test(body), 'the ONE core, over the named window — no second scope rule, picker or claim shape');
+  assert.ok(!/getDay\(|'u'\)|'EEE'\)|COVERAGE_BUSINESS_START_HOUR|getUsHolidays_/.test(body),
+    'no second weekday/hour arithmetic — businessMinutesBetween_ is the ONE definition of a working hour');
+  assert.ok(!/waitLock|GmailApp|spanishClaimsMap_|getOrCreateSpanishClaimsSheet_/.test(body),
+    'the handler holds no lock and touches no store itself — that is the core\'s job');
+  assert.ok(/stampAutomationError_\('SpanishAutoAssign'/.test(body) && /clearAutomationError_\('SpanishAutoAssign'\)/.test(body),
+    'stamped on failure, cleared on success');
+
+  // Registry + wiring.
+  const m = codeSrc.match(/key:\s*'spanishAutoAssign'[\s\S]*?scope:\s*'(\w+)'/);
+  assert.ok(m, 'spanishAutoAssign is in the FEATURE_FLAGS registry');
+  assert.strictEqual(m[1], 'server', 'server scope — it gates a trigger, never a client control');
+  assert.ok(/key:\s*'spanishAutoAssign'[\s\S]{0,900}?default:\s*false/.test(codeSrc), 'defaults OFF — a fresh deploy is a behavioural no-op');
+  assert.ok(/spanishAutoAssign: 2 \}/.test(codeStripped), 'the heartbeat has an HOURLY staleness window (the eod precedent)');
+  assert.ok(/const digestHealth = Object\.keys\(DIGEST_STALE_HOURS\)\.map\(/.test(codeStripped),
+    'the reported digest set is DERIVED from the staleness map (INV-179)');
+  assert.strictEqual((codeStripped.match(/'autoAssignSpanishThreadsScheduled',/g) || []).length, 2,
+    'in BOTH install and remove TARGETS');
+  assert.ok(/newTrigger\('autoAssignSpanishThreadsScheduled'\)\s*\.timeBased\(\)\.everyHours\(1\)\.create\(\)/.test(codeStripped),
+    'an HOURLY trigger — the business-hours gate, not the schedule, decides when it acts');
+  // The button and the trigger are one code path.
+  assert.ok(/return spanishAutoAssignCore_\(emp, days\)/.test(extractRawFunction('Code.js', 'autoAssignSpanishThreads')),
+    'the button still delegates to the same core');
+
+  // Client labels (both maps), mock fixture, editor gate test.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/spanishAutoAssign: 'Spanish Inbox auto-assign'/.test(cn), 'CN_DIGEST_LABELS_ names the heartbeat');
+  assert.ok(/spanishAutoAssign: \{ label: 'Spanish Inbox auto-assign', expect: 'hourly/.test(cn), 'DIGEST_LABELS carries the cadence');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.strictEqual((mock.match(/key: 'spanishAutoAssign'/g) || []).length, 2, 'both Automation Health fixtures carry the heartbeat row');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/autoAssignSpanishThreadsScheduled\(\); \}\);\n  \}, 'manager access required'\);/.test(tests)
+    && /_integrationTest\('triggerGate_spanishAutoAssign_nonManagerThrows'/.test(tests),
+    'the editor suite pins the gate');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

@@ -10469,6 +10469,7 @@ var CN_DIGEST_LABELS_ = {
   trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
   managerBrief: 'Manager daily brief', selfTest: 'Nightly self-test',
   coachingRecap: 'Weekly coaching recap',
+  spanishAutoAssign: 'Spanish Inbox auto-assign',
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
 
@@ -10764,6 +10765,7 @@ function cnRenderHealthPanel_(res) {
     managerBrief: { label: 'Manager daily brief', expect: 'daily 8am — heartbeats even while the managerDailyBrief toggle is off' },
     selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
     coachingRecap: { label: 'Weekly coaching recap', expect: 'Friday 8am — agent-facing recap of non-critical coaching; stale past 8d' },
+    spanishAutoAssign: { label: 'Spanish Inbox auto-assign', expect: 'hourly — assigns unclaimed requests in business hours while the spanishAutoAssign toggle is on; heartbeats even while off; stale past 2h' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

@@ -1295,6 +1295,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
+  _integrationTest('triggerGate_spanishAutoAssign_nonManagerThrows', test_triggerGate_spanishAutoAssign_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
@@ -4417,6 +4418,17 @@ function test_triggerGate_qaReviewPurge_nonManagerThrows() {
 function test_triggerGate_coachingRecap_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCoachingRecapDigest(); });
+  }, 'manager access required');
+}
+
+// Operator testing note 4 follow-on (2026-09-11) — the scheduled Spanish
+// auto-assign is a trigger handler reachable via google.script.run and it
+// WRITES claim rows for the whole queue, so it carries the MANAGER_EMAILS
+// gate (INV-44). The gate fires before the flag check and before any Gmail
+// read, so this rejection is observable with the flag off and no members.
+function test_triggerGate_spanishAutoAssign_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { autoAssignSpanishThreadsScheduled(); });
   }, 'manager access required');
 }
 
