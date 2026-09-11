@@ -74,6 +74,10 @@ const _TEST_DATE_VERY_OLD = (() => {
 var _TEST_OVERRIDE_EMAIL = null;   // consumed by Code.gs:getActiveUserEmail_
 var _TEST_STATE = null;
 var _SMOKE_ONLY = false;
+// Batch S (S2): while non-null, _smokeTest / _integrationTest RECORD the
+// registration name here instead of running the test — how
+// _expectedTestCount_ derives the expected figure from the list itself.
+var _TEST_COUNTING = null;
 
 function _resetState() {
   _TEST_STATE = { results: [], pass: 0, fail: 0, skip: 0, start: new Date() };
@@ -114,9 +118,13 @@ function _skipTest(reason) {
   throw e;
 }
 
-function _smokeTest(name, fn) { _test(name, fn); }
+function _smokeTest(name, fn) {
+  if (_TEST_COUNTING) { _TEST_COUNTING.push(name); return; }
+  _test(name, fn);
+}
 
 function _integrationTest(name, fn) {
+  if (_TEST_COUNTING) { _TEST_COUNTING.push(name); return; }
   if (_SMOKE_ONLY) {
     _TEST_STATE.results.push({ name, status: 'SKIP', ms: 0 });
     _TEST_STATE.skip++;
@@ -357,7 +365,71 @@ function _assertThrows(fn, errSubstring, msg) {
 //  SETUP / TEARDOWN
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Batch S (S3): LOG — never fail on — every deployment setting the suite's
+ *  outcome depends on, at the top of the run. The 2026-09-11 post-push run
+ *  read 302/312 because ADMIN_EMAILS was narrowed on the deployment and the
+ *  suite silently assumed it unset: the first failure was test #97 and the
+ *  cause was a Script Property nobody had printed. Everything here is a READ;
+ *  a failed read prints itself as unknown. The S4 pin derives the property
+ *  set from every `getProperty('…')` literal in this file and requires each
+ *  name to appear below, so a new property the suite starts reading is
+ *  reported here the day it lands. */
+function _suiteEnvCheck_() {
+  const lines = [];
+  const props = (function () { try { return PropertiesService.getScriptProperties(); } catch (e) { return null; } })();
+  const get = function (k) { try { return props ? props.getProperty(k) : null; } catch (e) { return undefined; } };
+  const setOrNot = function (k, note) {
+    const v = get(k);
+    return k + ': ' + (v === undefined ? 'UNREADABLE' : (v === null || String(v).trim() === '') ? 'unset' : 'set') + (note ? ' — ' + note : '');
+  };
+  // Instance markers (isDevInstance_ needs BOTH; unset INSTANCE_IS_PROD = prod).
+  const label = get('INSTANCE_LABEL'), isProd = get('INSTANCE_IS_PROD');
+  let inst;
+  try { inst = isDevInstance_() ? 'DEV (full suite allowed nightly)' : (isProdInstance_() ? 'PROD (runAllTests REFUSES)' : 'UNMARKED (treated as prod; runAllTests still allowed)'); }
+  catch (e) { inst = 'unknown'; }
+  lines.push('INSTANCE_LABEL: ' + (label ? JSON.stringify(String(label)) : 'unset') + ' · INSTANCE_IS_PROD: ' + (isProd == null || String(isProd).trim() === '' ? 'unset' : JSON.stringify(String(isProd))) + ' → ' + inst);
+  // The gates the suite impersonates through.
+  const adminRaw = get('ADMIN_EMAILS');
+  const adminSplit = _testAdminEmailsSplit_(adminRaw === undefined ? null : adminRaw);
+  lines.push('ADMIN_EMAILS: ' + (adminRaw === undefined ? 'UNREADABLE' : (adminRaw === null || !String(adminRaw).trim()) ? 'unset (admin == manager)'
+    : adminSplit.real.length + ' real address(es)' + (adminSplit.test.length ? ' + ' + adminSplit.test.length + ' test residue' : '') + ' — narrowed; setup appends the test manager for this run'));
+  const mgrRaw = get('MANAGER_EMAILS');
+  const mgrList = String(mgrRaw || '').split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+  lines.push('MANAGER_EMAILS: ' + (mgrRaw === undefined ? 'UNREADABLE' : mgrList.length ? mgrList.length + ' address(es)' + (mgrList.indexOf(_TEST_MGR_EMAIL.toLowerCase()) >= 0 ? ' (test manager listed)' : ' (test manager NOT listed — the trigger-gate tests append it per test)') : 'unset — NO manager passes assertManagerCaller_'));
+  // Fixture stores (created on first use; a stale id re-provisions).
+  ['TEST_CDR_SS_ID', 'TEST_INTAKE_SS_ID', 'TEST_KB_SS_ID', 'TEST_HRDOCS_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
+  // Properties individual tests save/override/restore — a value left behind by
+  // a killed run is visible here rather than as a surprise mid-suite.
+  lines.push(setOrNot('CN_FEATURE_FLAGS', 'tests override + restore it'));
+  lines.push(setOrNot('TIMESHEET_ARCHIVE_DAYS', 'the archive test sets + restores it'));
+  lines.push(setOrNot('WHATSNEW_KB_ID', 'the What\'s-new test sets + restores it'));
+  // Store resolution the fixtures ride on.
+  lines.push(setOrNot('FORMS_SS_ID', 'unset = the ADP sheet (back-compat)'));
+  lines.push(setOrNot('KB_SS_ID', 'KB tests run against the TEST_KB fixture'));
+  lines.push(setOrNot('HR_DOCS_SS_ID', 'docs/coaching tests run against the TEST_HRDOCS fixture'));
+  lines.push(setOrNot('QA_SS_ID', 'the QA gate test needs no store'));
+  // The TEST roster rows: present / onboarded / fixture timezone.
+  try {
+    const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
+    const want = {};
+    want[_TEST_INDIA_ID] = { email: _TEST_INDIA_EMAIL, tz: 'Asia/Kolkata' };
+    want[_TEST_PH_ID]    = { email: _TEST_PH_EMAIL,    tz: 'Asia/Manila' };
+    want[_TEST_MGR_ID]   = { email: _TEST_MGR_EMAIL,   tz: 'America/Chicago' };
+    Object.keys(want).forEach(function (id) {
+      let found = null;
+      for (let i = 1; i < rows.length; i++) if (String(rows[i][EMP.ID]).trim() === id) { found = rows[i]; break; }
+      if (!found) { lines.push(id + ': absent (setup appends it)'); return; }
+      const email = String(found[EMP.EMAIL] || '').trim().toLowerCase();
+      const tz = String(found[EMP.TIMEZONE] || '').trim();
+      lines.push(id + ': ' + (email === want[id].email.toLowerCase() ? 'onboarded' : email ? 'email DIFFERS (setup restores it)' : 'offboarded (setup re-onboards it)')
+        + ', tz ' + (tz === want[id].tz ? 'fixture' : JSON.stringify(tz) + ' (setup restores ' + want[id].tz + ')'));
+    });
+  } catch (e) { lines.push('TEST roster rows: unreadable — ' + e.message); }
+  Logger.log('── Suite environment ──\n  ' + lines.join('\n  '));
+}
+
 function setupTestEnvironment() {
+  try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
@@ -921,6 +993,13 @@ function runAllTests() {
   // Blue-green guard: refuse on the PROD instance (INSTANCE_IS_PROD='true') so
   // TEST_ rows never land in the team's live payroll/PHI. No-op until set — run
   // the full suite on the DEV project. runSmokeTests (pure logic) stays unguarded.
+  // Batch S (2026-09-11): the registration list is SHARDED into a smoke list
+  // and two integration halves (see _runAllTests). This entry point still runs
+  // ALL of them in ONE execution — `runNightlySelfTest` calls it on the dev
+  // instance, where the quiet-window runtime (~6 min) sits far under the
+  // 30-minute Workspace ceiling. runAllTestsPartA / runAllTestsPartB exist for
+  // a mid-shift MANUAL run (the last prod run took 17 min against live lock
+  // traffic) and for the day the suite outgrows one execution.
   assertNotProdInstance_('runAllTests');
   _resetState();
   _SMOKE_ONLY = false;
@@ -933,7 +1012,39 @@ function runAllTests() {
     try { cleanupTestData(); } catch (e) { Logger.log('Cleanup error: ' + e.message); }
     _TEST_OVERRIDE_EMAIL = null;
   }
-  _printSummary();
+  _printSummary(_expectedTestCount_(['smoke', 'A', 'B']));
+}
+
+/** Batch S (S1): one HALF of the full suite — the smoke list plus integration
+ *  half A — with its own setup + cleanup, so it stands alone. Run Part A and
+ *  Part B as two editor executions when one execution would run too long
+ *  (a mid-shift run contends for the ONE project ScriptLock with live punches);
+ *  together they are exactly `runAllTests` (the S4 pin holds the two halves
+ *  disjoint and their union equal to the registration list). */
+function runAllTestsPartA() {
+  _runSuitePart_('A', ['smoke', 'A'], function () { _registerSmokeTests_(); _registerIntegrationA_(); });
+}
+
+/** Batch S (S1): the other half — integration half B alone (the smoke list
+ *  rides Part A; it is cheap and pure, so it is never the reason to split). */
+function runAllTestsPartB() {
+  _runSuitePart_('B', ['B'], function () { _registerIntegrationB_(); });
+}
+
+function _runSuitePart_(label, parts, registerFn) {
+  assertNotProdInstance_('runAllTestsPart' + label);
+  _resetState();
+  _SMOKE_ONLY = false;
+  Logger.log('═══ UMS TIME CLOCK TEST SUITE — PART ' + label + ' ═══');
+  Logger.log('Mode: FULL, part ' + label + ' of A/B (integration tests will write to the spreadsheet)');
+  try {
+    setupTestEnvironment();
+    registerFn();
+  } finally {
+    try { cleanupTestData(); } catch (e) { Logger.log('Cleanup error: ' + e.message); }
+    _TEST_OVERRIDE_EMAIL = null;
+  }
+  _printSummary(_expectedTestCount_(parts));
 }
 
 function runSmokeTests() {
@@ -942,7 +1053,9 @@ function runSmokeTests() {
   Logger.log('═══ UMS TIME CLOCK SMOKE TESTS ═══');
   Logger.log('Mode: SMOKE (pure logic only — no spreadsheet writes)');
   _runAllTests();
-  _printSummary();
+  // Every registration is COUNTED in smoke mode too — the integration ones
+  // land as SKIP — so the expected figure is the whole list.
+  _printSummary(_expectedTestCount_(['smoke', 'A', 'B']));
 }
 
 function runSingleTest(name) {
@@ -960,14 +1073,60 @@ function runSingleTest(name) {
   _printSummary();
 }
 
-function _printSummary() {
+/** Batch S (S2): the number of tests the run SHOULD have recorded, DERIVED
+ *  from the registration list itself rather than typed into a doc. Walks the
+ *  requested shards with `_TEST_COUNTING` set, so `_smokeTest` /
+ *  `_integrationTest` record the name instead of running anything, and reports
+ *  duplicate registration NAMES (the class that hid the shadowed
+ *  sendCallNotesWeeklyDigests gate for a day: two functions of one name, the
+ *  later one winning, both registrations running it, and 315 reading as 315).
+ *  @param {string[]} parts — any of 'smoke' | 'A' | 'B'
+ *  @return {{total:number, smoke:number, A:number, B:number, duplicates:string[]}} */
+function _expectedTestCount_(parts) {
+  const register = { smoke: _registerSmokeTests_, A: _registerIntegrationA_, B: _registerIntegrationB_ };
+  const out = { total: 0, smoke: 0, A: 0, B: 0, duplicates: [] };
+  const seen = {};
+  const prevCounting = _TEST_COUNTING;
+  try {
+    (parts || []).forEach(function (p) {
+      if (!register[p]) return;
+      _TEST_COUNTING = [];
+      register[p]();
+      out[p] = _TEST_COUNTING.length;
+      out.total += _TEST_COUNTING.length;
+      _TEST_COUNTING.forEach(function (name) {
+        if (seen[name] && out.duplicates.indexOf(name) < 0) out.duplicates.push(name);
+        seen[name] = true;
+      });
+    });
+  } finally {
+    _TEST_COUNTING = prevCounting;
+  }
+  return out;
+}
+
+function _printSummary(expected) {
   const totalMs = new Date() - _TEST_STATE.start;
+  const total = _TEST_STATE.pass + _TEST_STATE.fail + _TEST_STATE.skip;
   Logger.log('');
   Logger.log('═══ SUMMARY ═══');
   Logger.log(`Passed:  ${_TEST_STATE.pass}`);
   Logger.log(`Failed:  ${_TEST_STATE.fail}`);
   Logger.log(`Skipped: ${_TEST_STATE.skip}`);
-  Logger.log(`Total:   ${_TEST_STATE.pass + _TEST_STATE.fail + _TEST_STATE.skip} tests in ${totalMs}ms`);
+  Logger.log(`Total:   ${total} tests in ${totalMs}ms`);
+  if (expected) {
+    // S2: the expected count comes from the registration list, so no doc has
+    // to carry the number — read it here, not from CLAUDE.md.
+    const partsNote = ['smoke', 'A', 'B'].filter(function (p) { return expected[p] > 0; })
+      .map(function (p) { return expected[p] + ' ' + (p === 'smoke' ? 'smoke' : 'integration-' + p); }).join(' · ');
+    Logger.log(`Expected: ${expected.total} registrations (${partsNote})`);
+    if (total !== expected.total) {
+      Logger.log(`⚠ Recorded ${total} of ${expected.total} registered tests — a killed execution or a registration that threw before its result landed.`);
+    }
+    if (expected.duplicates.length) {
+      Logger.log(`⚠ Duplicate registration name(s): ${expected.duplicates.join(', ')} — a later function of the same name SHADOWS the earlier one, so one test is running twice and another not at all.`);
+    }
+  }
   if (_TEST_STATE.fail > 0) {
     Logger.log('');
     Logger.log('--- FAILURES ---');
@@ -980,7 +1139,22 @@ function _printSummary() {
   }
 }
 
+/** The whole registration list, in one execution: the smoke shard, then
+ *  integration half A, then half B. Batch S (S1) split the former single
+ *  list into three register functions; ORDER within each shard is unchanged
+ *  and every test clears its own fixture state (`_clearTestState` /
+ *  `_clearTestCallNotes`), which is what lets the halves run alone. A NEW test
+ *  goes into exactly ONE of the three (the S4 pin derives the union from the
+ *  file and refuses a registration outside them, a duplicate name, or a test
+ *  function defined twice). */
 function _runAllTests() {
+  _registerSmokeTests_();
+  _registerIntegrationA_();
+  _registerIntegrationB_();
+}
+
+/** Smoke shard — pure logic, no Sheet writes; runs in every mode. */
+function _registerSmokeTests_() {
   // ── Pure logic (smoke-safe) ─────────────────────────────────────────────
   _smokeTest('leaveDeduction_sick',                test_leaveDeduction_sick);
   _smokeTest('leaveDeduction_halfDayMorning',      test_leaveDeduction_halfDayMorning);
@@ -1034,6 +1208,95 @@ function _runAllTests() {
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
 
+  // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
+  // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
+  _smokeTest('cn_enrolledSheetId_trimsAndNullGuards', test_cn_enrolledSheetId_trimsAndNullGuards);
+  _smokeTest('cn_appendBounded_capsAndRollsBack',     test_cn_appendBounded_capsAndRollsBack);
+  _smokeTest('cn_sanitizeFlagType_valid',          test_cn_sanitizeFlagType_valid);
+  _smokeTest('cn_sanitizeFlagType_invalidCoerces', test_cn_sanitizeFlagType_invalidCoerces);
+  _smokeTest('cn_sanitizeFlagType_caseInsensitive',test_cn_sanitizeFlagType_caseInsensitive);
+  _smokeTest('cn_sanitizeFlagType_nullish',        test_cn_sanitizeFlagType_nullish);
+  _smokeTest('cn_sanitizePayload_trims',           test_cn_sanitizePayload_trims);
+  _smokeTest('cn_sanitizePayload_nullishToEmpty',  test_cn_sanitizePayload_nullishToEmpty);
+  _smokeTest('cn_sanitizePayload_acceptsCamelAlias', test_cn_sanitizePayload_acceptsCamelAlias);
+  _smokeTest('cn_validatePayload_rejectsEmpty',    test_cn_validatePayload_rejectsEmpty);
+  _smokeTest('cn_validatePayload_acceptsAnyField', test_cn_validatePayload_acceptsAnyField);
+  _smokeTest('cn_validatePayload_rejectsBadFlag',  test_cn_validatePayload_rejectsBadFlag);
+  _smokeTest('cn_matchesFilter_all',               test_cn_matchesFilter_all);
+  _smokeTest('cn_matchesFilter_actionTrainingReview', test_cn_matchesFilter_actionTrainingReview);
+  _smokeTest('cn_matchesFilter_unresolved',        test_cn_matchesFilter_unresolved);
+  _smokeTest('cn_matchesFilter_unsent',            test_cn_matchesFilter_unsent);
+  _smokeTest('cn_updateInfoToSubformKey',          test_cn_updateInfoToSubformKey);
+  _smokeTest('cn_formatPhoneNumber_basic',         test_cn_formatPhoneNumber_basic);
+  _smokeTest('cn_formatPhoneNumber_extension',     test_cn_formatPhoneNumber_extension);
+  _smokeTest('cn_formatPhoneNumber_passthroughShort', test_cn_formatPhoneNumber_passthroughShort);
+  _smokeTest('cn_formatPhoneNumber_empty',         test_cn_formatPhoneNumber_empty);
+  _smokeTest('cn_formatProviderPhone_basic',       test_cn_formatProviderPhone_basic);
+  _smokeTest('cn_formatProviderPhone_countryCode', test_cn_formatProviderPhone_countryCode);
+  _smokeTest('cn_buildEmailSubject_basicUpdate',   test_cn_buildEmailSubject_basicUpdate);
+  _smokeTest('cn_buildEmailSubject_titlecasesCanon', test_cn_buildEmailSubject_titlecasesCanon);
+  _smokeTest('cn_buildEmailSubject_repeatResupplyEnriched', test_cn_buildEmailSubject_repeatResupplyEnriched);
+  _smokeTest('cn_buildEmailSubject_repeatResupplyOtherCategory', test_cn_buildEmailSubject_repeatResupplyOtherCategory);
+  _smokeTest('cn_generateOOPResolutionText_collected', test_cn_generateOOPResolutionText_collected);
+  _smokeTest('cn_generateOOPResolutionText_needCollect', test_cn_generateOOPResolutionText_needCollect);
+  _smokeTest('cn_resolveRecipients_simpleDept',    test_cn_resolveRecipients_simpleDept);
+  _smokeTest('cn_resolveRecipients_otherUsesIndividual', test_cn_resolveRecipients_otherUsesIndividual);
+  _smokeTest('cn_resolveRecipients_unknownDeptErrors', test_cn_resolveRecipients_unknownDeptErrors);
+  _smokeTest('cn_validateEmailSelections_requiresDept', test_cn_validateEmailSelections_requiresDept);
+  _smokeTest('cn_validateEmailSelections_otherRequiresEmail', test_cn_validateEmailSelections_otherRequiresEmail);
+  _smokeTest('cn_validateEmailSelections_requiresUpdateInfo', test_cn_validateEmailSelections_requiresUpdateInfo);
+  _smokeTest('cn_callDataFromNote_selfNumberPrepended', test_cn_callDataFromNote_selfNumberPrepended);
+  _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
+  _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
+  _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
+  _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
+  _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
+  _smokeTest('automationDetectorLiveness',      test_automationDetectorLiveness);
+  _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
+  _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
+  _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
+  _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
+  _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
+  _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
+
+  // ── Intake — PPD recommendation engine (smoke-safe; pure) ──────────────
+  _smokeTest('intake_engine_standardOnly',         test_intake_engine_standardOnly);
+  _smokeTest('intake_engine_mobileHomeRestriction', test_intake_engine_mobileHomeRestriction);
+  _smokeTest('intake_engine_neuroUpgradeAndSubs',  test_intake_engine_neuroUpgradeAndSubs);
+  _smokeTest('intake_engine_weightCap',            test_intake_engine_weightCap);
+  _smokeTest('intake_engine_oxygenExcludesK0837',  test_intake_engine_oxygenExcludesK0837);
+  _smokeTest('intake_engine_emptySafe',            test_intake_engine_emptySafe);
+  _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
+  _smokeTest('intake_buildAcctBody_escapesAnswers', test_intake_buildAcctBody_escapesAnswers);
+  _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
+  _smokeTest('intake_resolveRecipient_customValidation', test_intake_resolveRecipient_customValidation);
+
+  // ── Forms hardening — submission integrity hash (smoke-safe; pure) ──────
+  _smokeTest('form_submissionHash_deterministicAndTamperEvident', test_form_submissionHash_deterministicAndTamperEvident);
+
+  // ── Call Notes — tag taxonomy admin (F4 / INV-82) ────────────────────────
+  _smokeTest('cn_normalizeTagForAdmin_rules',                test_cn_normalizeTagForAdmin_rules);
+
+  // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
+  _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
+  _smokeTest('metrics_cnNoteCoverage_zeroNotes',        test_metrics_cnNoteCoverage_zeroNotes);
+  _smokeTest('metrics_cnNoteCoverage_noDenominator',    test_metrics_cnNoteCoverage_noDenominator);
+  _smokeTest('metrics_cdrParseHms_hms',                 test_metrics_cdrParseHms_hms);
+  _smokeTest('metrics_cdrParseHms_mmAndBare',           test_metrics_cdrParseHms_mmAndBare);
+  _smokeTest('metrics_cdrParseHms_emptyAndNull',        test_metrics_cdrParseHms_emptyAndNull);
+  _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
+  _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
+  _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
+  _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
+  _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
+  _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
+  _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
+  _smokeTest('metrics_cnCountNotesResult_noSheetReturnsZero', test_metrics_cnCountNotesResult_noSheetReturnsZero);
+}
+
+/** Integration half A — Time Clock: punches, adjustments, PTO, the adjust
+ *  queue, manager Day Edit. Own setup + cleanup when run as Part A. */
+function _registerIntegrationA_() {
   // ── Integration (sheet-touching) ────────────────────────────────────────
   _integrationTest('findExistingPunch_match',           test_findExistingPunch_match);
   _integrationTest('findExistingPunch_noMatch',         test_findExistingPunch_noMatch);
@@ -1146,74 +1409,12 @@ function _runAllTests() {
   _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
   _integrationTest('managerSaveDay_reasonRequiredBeyondWindow',test_managerSaveDay_reasonRequiredBeyondWindow);
   _integrationTest('managerSaveDay_invalidTimeFormatRejected', test_managerSaveDay_invalidTimeFormatRejected);
-
-  // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
-  // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
-  _smokeTest('cn_enrolledSheetId_trimsAndNullGuards', test_cn_enrolledSheetId_trimsAndNullGuards);
-  _smokeTest('cn_appendBounded_capsAndRollsBack',     test_cn_appendBounded_capsAndRollsBack);
-  _smokeTest('cn_sanitizeFlagType_valid',          test_cn_sanitizeFlagType_valid);
-  _smokeTest('cn_sanitizeFlagType_invalidCoerces', test_cn_sanitizeFlagType_invalidCoerces);
-  _smokeTest('cn_sanitizeFlagType_caseInsensitive',test_cn_sanitizeFlagType_caseInsensitive);
-  _smokeTest('cn_sanitizeFlagType_nullish',        test_cn_sanitizeFlagType_nullish);
-  _smokeTest('cn_sanitizePayload_trims',           test_cn_sanitizePayload_trims);
-  _smokeTest('cn_sanitizePayload_nullishToEmpty',  test_cn_sanitizePayload_nullishToEmpty);
-  _smokeTest('cn_sanitizePayload_acceptsCamelAlias', test_cn_sanitizePayload_acceptsCamelAlias);
-  _smokeTest('cn_validatePayload_rejectsEmpty',    test_cn_validatePayload_rejectsEmpty);
-  _smokeTest('cn_validatePayload_acceptsAnyField', test_cn_validatePayload_acceptsAnyField);
-  _smokeTest('cn_validatePayload_rejectsBadFlag',  test_cn_validatePayload_rejectsBadFlag);
-  _smokeTest('cn_matchesFilter_all',               test_cn_matchesFilter_all);
-  _smokeTest('cn_matchesFilter_actionTrainingReview', test_cn_matchesFilter_actionTrainingReview);
-  _smokeTest('cn_matchesFilter_unresolved',        test_cn_matchesFilter_unresolved);
-  _smokeTest('cn_matchesFilter_unsent',            test_cn_matchesFilter_unsent);
-  _smokeTest('cn_updateInfoToSubformKey',          test_cn_updateInfoToSubformKey);
-  _smokeTest('cn_formatPhoneNumber_basic',         test_cn_formatPhoneNumber_basic);
-  _smokeTest('cn_formatPhoneNumber_extension',     test_cn_formatPhoneNumber_extension);
-  _smokeTest('cn_formatPhoneNumber_passthroughShort', test_cn_formatPhoneNumber_passthroughShort);
-  _smokeTest('cn_formatPhoneNumber_empty',         test_cn_formatPhoneNumber_empty);
-  _smokeTest('cn_formatProviderPhone_basic',       test_cn_formatProviderPhone_basic);
-  _smokeTest('cn_formatProviderPhone_countryCode', test_cn_formatProviderPhone_countryCode);
-  _smokeTest('cn_buildEmailSubject_basicUpdate',   test_cn_buildEmailSubject_basicUpdate);
-  _smokeTest('cn_buildEmailSubject_titlecasesCanon', test_cn_buildEmailSubject_titlecasesCanon);
-  _smokeTest('cn_buildEmailSubject_repeatResupplyEnriched', test_cn_buildEmailSubject_repeatResupplyEnriched);
-  _smokeTest('cn_buildEmailSubject_repeatResupplyOtherCategory', test_cn_buildEmailSubject_repeatResupplyOtherCategory);
-  _smokeTest('cn_generateOOPResolutionText_collected', test_cn_generateOOPResolutionText_collected);
-  _smokeTest('cn_generateOOPResolutionText_needCollect', test_cn_generateOOPResolutionText_needCollect);
-  _smokeTest('cn_resolveRecipients_simpleDept',    test_cn_resolveRecipients_simpleDept);
-  _smokeTest('cn_resolveRecipients_otherUsesIndividual', test_cn_resolveRecipients_otherUsesIndividual);
-  _smokeTest('cn_resolveRecipients_unknownDeptErrors', test_cn_resolveRecipients_unknownDeptErrors);
-  _smokeTest('cn_validateEmailSelections_requiresDept', test_cn_validateEmailSelections_requiresDept);
-  _smokeTest('cn_validateEmailSelections_otherRequiresEmail', test_cn_validateEmailSelections_otherRequiresEmail);
-  _smokeTest('cn_validateEmailSelections_requiresUpdateInfo', test_cn_validateEmailSelections_requiresUpdateInfo);
-  _smokeTest('cn_callDataFromNote_selfNumberPrepended', test_cn_callDataFromNote_selfNumberPrepended);
-  _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
-  _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
-  _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
-  _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
-  _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
-  _smokeTest('automationDetectorLiveness',      test_automationDetectorLiveness);
   _integrationTest('perRepSchedule_overrideAndFallback', test_perRepSchedule_overrideAndFallback);
-  _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
-  _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
-  _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
-  _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
-  _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
-  _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
+}
 
-  // ── Intake — PPD recommendation engine (smoke-safe; pure) ──────────────
-  _smokeTest('intake_engine_standardOnly',         test_intake_engine_standardOnly);
-  _smokeTest('intake_engine_mobileHomeRestriction', test_intake_engine_mobileHomeRestriction);
-  _smokeTest('intake_engine_neuroUpgradeAndSubs',  test_intake_engine_neuroUpgradeAndSubs);
-  _smokeTest('intake_engine_weightCap',            test_intake_engine_weightCap);
-  _smokeTest('intake_engine_oxygenExcludesK0837',  test_intake_engine_oxygenExcludesK0837);
-  _smokeTest('intake_engine_emptySafe',            test_intake_engine_emptySafe);
-  _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
-  _smokeTest('intake_buildAcctBody_escapesAnswers', test_intake_buildAcctBody_escapesAnswers);
-  _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
-  _smokeTest('intake_resolveRecipient_customValidation', test_intake_resolveRecipient_customValidation);
-
-  // ── Forms hardening — submission integrity hash (smoke-safe; pure) ──────
-  _smokeTest('form_submissionHash_deterministicAndTamperEvident', test_form_submissionHash_deterministicAndTamperEvident);
-
+/** Integration half B — Call Notes, forms, metrics/CDR, KB, training +
+ *  employee docs, intake, the trigger gates, audit rows. Part B alone. */
+function _registerIntegrationB_() {
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
   _integrationTest('cn_submitCallNote_basic',                test_cn_submitCallNote_basic);
   _integrationTest('cn_submitCallNote_withFlag',             test_cn_submitCallNote_withFlag);
@@ -1238,9 +1439,6 @@ function _runAllTests() {
   _integrationTest('cn_emailFromCallNote_rejectsMissingHash',       test_cn_emailFromCallNote_rejectsMissingHash);
   _integrationTest('cn_emailFromCallNote_rejectsStaleHash',         test_cn_emailFromCallNote_rejectsStaleHash);
   _integrationTest('cn_submitCallNote_doesNotStampEmailedAt',       test_cn_submitCallNote_doesNotStampEmailedAt);
-
-  // ── Call Notes — tag taxonomy admin (F4 / INV-82) ────────────────────────
-  _smokeTest('cn_normalizeTagForAdmin_rules',                test_cn_normalizeTagForAdmin_rules);
   _integrationTest('cn_tagAdmin_nonManagerRejected',          test_cn_tagAdmin_nonManagerRejected);
   _integrationTest('cn_renameCallNoteTag_managerRewritesTag', test_cn_renameCallNoteTag_managerRewritesTag);
   _integrationTest('cn_archiveCallNoteTag_roundTrip',         test_cn_archiveCallNoteTag_roundTrip);
@@ -1306,22 +1504,6 @@ function _runAllTests() {
   _integrationTest('intake_previewAcct_requiresPatientAndAuth', test_intake_previewAcct_requiresPatientAndAuth);
   _integrationTest('intake_send_unauthorizedRejected',          test_intake_send_unauthorizedRejected);
   _integrationTest('intake_sentViewer_callerScopedAndManager',  test_intake_sentViewer_callerScopedAndManager);
-
-  // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
-  _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
-  _smokeTest('metrics_cnNoteCoverage_zeroNotes',        test_metrics_cnNoteCoverage_zeroNotes);
-  _smokeTest('metrics_cnNoteCoverage_noDenominator',    test_metrics_cnNoteCoverage_noDenominator);
-  _smokeTest('metrics_cdrParseHms_hms',                 test_metrics_cdrParseHms_hms);
-  _smokeTest('metrics_cdrParseHms_mmAndBare',           test_metrics_cdrParseHms_mmAndBare);
-  _smokeTest('metrics_cdrParseHms_emptyAndNull',        test_metrics_cdrParseHms_emptyAndNull);
-  _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
-  _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
-  _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
-  _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
-  _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
-  _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
-  _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
-  _smokeTest('metrics_cnCountNotesResult_noSheetReturnsZero', test_metrics_cnCountNotesResult_noSheetReturnsZero);
   _integrationTest('metrics_cnCountNotesResult_countsToday',  test_metrics_cnCountNotesResult_countsToday);
 
   // ── Automation trigger gates (INV-44) ──────────────────────────────────
@@ -1347,7 +1529,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
   _integrationTest('triggerGate_spanishAutoAssign_nonManagerThrows', test_triggerGate_spanishAutoAssign_nonManagerThrows);
   _integrationTest('triggerGate_hourlyJobs_nonManagerThrows', test_triggerGate_hourlyJobs_nonManagerThrows);
-  _integrationTest('triggerGate_weeklyDigests_nonManagerThrows', test_triggerGate_weeklyDigests_nonManagerThrows);
+  _integrationTest('triggerGate_runWeeklyDigests_nonManagerThrows', test_triggerGate_runWeeklyDigests_nonManagerThrows);
   _integrationTest('triggerGate_nightlyPurges_nonManagerThrows', test_triggerGate_nightlyPurges_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
@@ -4507,7 +4689,12 @@ function test_triggerGate_hourlyJobs_nonManagerThrows() {
     _asUser(_TEST_INDIA_EMAIL, function () { runHourlyJobs(); });
   }, 'manager access required');
 }
-function test_triggerGate_weeklyDigests_nonManagerThrows() {
+// Batch S: this was `test_triggerGate_weeklyDigests_nonManagerThrows` — the
+// SAME name as the sendCallNotesWeeklyDigests gate test above it, so as the
+// later declaration it silently SHADOWED that one: both registrations ran
+// this body and the digest's own gate went unverified while the count read
+// 315. The S4 pin now fails CI on a test function defined twice.
+function test_triggerGate_runWeeklyDigests_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runWeeklyDigests(); });
   }, 'manager access required');

@@ -166,7 +166,15 @@ re-copy the creds; nothing is lost, it's all in git or Google).
   functional — emails send (to you), notes/intake write (to dev copies). Nothing
   reaches the team.
 - **Run the full test suite on dev**, never prod: `runAllTests()` from the dev
-  editor. (On prod it now refuses — see the guard below.)
+  editor. (On prod it now refuses — see the guard below.) The runbook is
+  **smoke on prod, full on dev nightly** — `runNightlySelfTest` runs the full
+  suite on dev every night once the triggers are installed there; `runAllTests`
+  on prod is the exception, not the routine. A full run that must be split (a
+  mid-shift manual run contends for the one project ScriptLock) is
+  `runAllTestsPartA()` then `runAllTestsPartB()` — together exactly
+  `runAllTests`. The summary's `Expected: N registrations` line is derived from
+  the registration list, and the `── Suite environment ──` block at the top of
+  the log names every deployment setting the run depends on.
 
 ## Promote to prod
 

@@ -8040,6 +8040,10 @@ function runNightlySelfTest() {
         pass: 0, fail: 0, skip: 0,
       }));
     } catch (e) {}
+    // Batch S: runAllTests runs the sharded list (smoke, then integration A,
+    // then B) SEQUENTIALLY in this one execution — the ~6-min quiet-window
+    // runtime sits far under the 30-min ceiling; the Part A/B entry points
+    // exist for a mid-shift manual run, not for the nightly.
     if (isDev) runAllTests(); else runSmokeTests();
     const res = {
       date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),

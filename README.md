@@ -154,7 +154,10 @@ A first-load onboarding tour (hand-rolled coach-marks in
 it auto-starts once and is replayable from the Call Notes **?** menu.
 
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
-(`runSmokeTests()` / `runAllTests()`). Client-side helpers have two
+(`runSmokeTests()` / `runAllTests()`; `runAllTestsPartA()` + `PartB()` split a
+full run across two executions). Smoke on prod, full on dev nightly —
+`runAllTests` on prod is the exception, not the routine; the summary prints
+the expected count derived from the registration list. Client-side helpers have two
 off-editor harnesses (both outside `web-app/`, so `clasp` never pushes
 them): a **dependency-free** pure-helper + parse-guard harness
 (`node test/client/run.js`, zero install) and a **DOM-lifecycle** harness

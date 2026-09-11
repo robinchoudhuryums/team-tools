@@ -19766,6 +19766,139 @@ test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quot
   assert.ok(/re-run installAutomationTriggers\(\)/.test(r.err.message), 'and says the re-run is safe');
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Batch S (2026-09-11) — SUITE OPERABILITY. The editor suite's registration
+// list is sharded into a smoke list + two integration halves, the summary
+// prints an expected count DERIVED from the list, and setup logs every
+// deployment setting the outcome depends on. Every assertion below is DERIVED
+// from Tests.js (INV-179): the shard set, the registration set, the
+// test-function definitions and the Script-Property literals are all read
+// out of the file, never hand-listed here.
+// NOTE the placement: ABOVE the summary line (the documented harness hazard).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nBatch S — suite operability (sharded registration, derived expected count, env check)');
+test('S1/S4: the shards are disjoint, kind-pure, and their union IS the registration list; every test function is defined exactly once', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const src = stripJsComments_(raw);
+  const regRe = /_(smokeTest|integrationTest)\('([^']+)',\s*(test_[A-Za-z0-9_]+)\)/g;
+  const regsIn = (fnName) => {
+    const body = stripJsComments_(extractRawFunction('Tests.js', fnName));
+    const out = []; let m; const re = new RegExp(regRe.source, 'g');
+    while ((m = re.exec(body))) out.push({ kind: m[1], name: m[2], fn: m[3] });
+    return out;
+  };
+  const smoke = regsIn('_registerSmokeTests_'), A = regsIn('_registerIntegrationA_'), B = regsIn('_registerIntegrationB_');
+  assert.ok(smoke.length >= 100 && A.length >= 50 && B.length >= 50, 'each shard is populated: ' + [smoke.length, A.length, B.length]);
+  // Kind-pure: the smoke shard carries only _smokeTest, the halves only _integrationTest —
+  // a smoke test registered in a half would be SKIPPED by runSmokeTests, and an
+  // integration test in the smoke shard would write to a sheet in smoke mode.
+  smoke.forEach((r) => assert.strictEqual(r.kind, 'smokeTest', r.name + ': the smoke shard holds only _smokeTest registrations'));
+  A.concat(B).forEach((r) => assert.strictEqual(r.kind, 'integrationTest', r.name + ': an integration half holds only _integrationTest registrations'));
+  // The union equals EVERY registration in the file — a registration outside
+  // the three shards would run in neither Part and only in _runAllTests if at all.
+  const all = []; let m; const re = new RegExp(regRe.source, 'g');
+  while ((m = re.exec(src))) all.push(m[2]);
+  const union = smoke.concat(A, B);
+  assert.strictEqual(union.length, all.length, 'every registration in Tests.js lives inside one of the three shards (' + union.length + ' vs ' + all.length + ')');
+  // Disjoint + unique NAMES and unique FUNCTIONS: a duplicate name is how the
+  // sendCallNotesWeeklyDigests gate went unverified for a day (two functions of
+  // one name; the later shadowed the earlier; both registrations ran the same body).
+  const names = new Set(), fns = new Set();
+  union.forEach((r) => {
+    assert.ok(!names.has(r.name), r.name + ': registered twice'); names.add(r.name);
+    assert.ok(!fns.has(r.fn), r.fn + ': the same test function is registered twice'); fns.add(r.fn);
+  });
+  // Every registered function exists EXACTLY once in the file (the shadowing class).
+  union.forEach((r) => {
+    const defs = (src.match(new RegExp('^function ' + r.fn + '\\(', 'gm')) || []).length;
+    assert.strictEqual(defs, 1, r.fn + ': defined ' + defs + ' time(s) — a second declaration of the same name silently shadows the first');
+  });
+  // _runAllTests is exactly the three shards, in order; the Parts split them.
+  const runAll = stripJsComments_(extractRawFunction('Tests.js', '_runAllTests'));
+  assert.ok(/_registerSmokeTests_\(\);\s*_registerIntegrationA_\(\);\s*_registerIntegrationB_\(\);/.test(runAll), '_runAllTests runs smoke, then A, then B');
+  assert.ok(!/_(smokeTest|integrationTest)\(/.test(runAll), '_runAllTests registers nothing directly');
+  const partA = stripJsComments_(extractRawFunction('Tests.js', 'runAllTestsPartA'));
+  const partB = stripJsComments_(extractRawFunction('Tests.js', 'runAllTestsPartB'));
+  assert.ok(/_runSuitePart_\('A',\s*\['smoke',\s*'A'\]/.test(partA) && /_registerSmokeTests_\(\);\s*_registerIntegrationA_\(\);/.test(partA), 'Part A = smoke + integration A');
+  assert.ok(/_runSuitePart_\('B',\s*\['B'\]/.test(partB) && /_registerIntegrationB_\(\);/.test(partB) && !/_registerIntegrationA_|_registerSmokeTests_/.test(partB), 'Part B = integration B alone');
+  const part = stripJsComments_(extractRawFunction('Tests.js', '_runSuitePart_'));
+  assert.ok(/assertNotProdInstance_\(/.test(part), 'a Part refuses on prod like runAllTests (the INSTANCE guard)');
+  assert.ok(/try \{\s*setupTestEnvironment\(\);\s*registerFn\(\);\s*\} finally \{\s*try \{ cleanupTestData\(\); \}/.test(part), 'each Part owns its setup and cleans up in finally');
+});
+
+test('S2: the summary\'s expected count is DERIVED by walking the shards in counting mode — no test runs, duplicates are reported, a short run is flagged', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const src = stripJsComments_(raw);
+  // Source shape: the counting flag short-circuits BOTH registrars before any
+  // _test call, and no entry point carries a typed-in count.
+  ['_smokeTest', '_integrationTest'].forEach((f) => {
+    const b = stripJsComments_(extractRawFunction('Tests.js', f));
+    assert.ok(/if \(_TEST_COUNTING\) \{ _TEST_COUNTING\.push\(name\); return; \}/.test(b) && b.indexOf('_TEST_COUNTING') < b.indexOf('_test('), f + ': counting mode returns before running');
+  });
+  ['runAllTests', 'runAllTestsPartA', 'runAllTestsPartB', 'runSmokeTests', '_printSummary', '_runSuitePart_'].forEach((f) => {
+    const b = stripJsComments_(extractRawFunction('Tests.js', f));
+    assert.ok(!/\b\d{3}\b/.test(b), f + ': carries no hand-typed test count');
+  });
+  assert.ok(/_printSummary\(_expectedTestCount_\(\['smoke', 'A', 'B'\]\)\)/.test(stripJsComments_(extractRawFunction('Tests.js', 'runAllTests'))), 'runAllTests expects all three shards');
+  assert.ok(/_printSummary\(_expectedTestCount_\(\['smoke', 'A', 'B'\]\)\)/.test(stripJsComments_(extractRawFunction('Tests.js', 'runSmokeTests'))), 'runSmokeTests expects the whole list too (integration lands as SKIP)');
+  // Behavioural: drive the REAL registrars + counter in a vm where every
+  // test function THROWS if called — counting must touch none of them.
+  const regRe = /_(smokeTest|integrationTest)\('([^']+)',\s*(test_[A-Za-z0-9_]+)\)/g;
+  const fnNames = new Set(); let m;
+  while ((m = regRe.exec(src))) fnNames.add(m[3]);
+  const logs = [];
+  const ctx = { String, RegExp, Array, Object, Date, JSON, Logger: { log: (s) => logs.push(String(s)) }, _TEST_COUNTING: null, _SMOKE_ONLY: false };
+  fnNames.forEach((f) => { ctx[f] = () => { throw new Error('counting mode ran ' + f); }; });
+  vm.createContext(ctx);
+  ['_test', '_smokeTest', '_integrationTest', '_registerSmokeTests_', '_registerIntegrationA_', '_registerIntegrationB_', '_expectedTestCount_', '_printSummary']
+    .forEach((f) => vm.runInContext(extractRawFunction('Tests.js', f), ctx, { filename: 'Tests.js#' + f }));
+  const expectedAll = (src.match(new RegExp(regRe.source, 'g')) || []).length;
+  const exp = JSON.parse(JSON.stringify(vm.runInContext("_expectedTestCount_(['smoke','A','B'])", ctx)));
+  assert.strictEqual(exp.total, expectedAll, 'the derived total equals the registration count in the file');
+  assert.strictEqual(exp.smoke + exp.A + exp.B, exp.total, 'per-shard figures sum to the total');
+  assert.deepStrictEqual(exp.duplicates, [], 'no duplicate registration names today');
+  assert.strictEqual(vm.runInContext('_TEST_COUNTING', ctx), null, 'the counting flag is restored afterwards');
+  const expA = JSON.parse(JSON.stringify(vm.runInContext("_expectedTestCount_(['smoke','A'])", ctx)));
+  assert.strictEqual(expA.total, exp.smoke + exp.A, 'Part A expects smoke + A only');
+  // A duplicate NAME is reported by name (the shadowing class, at runtime).
+  vm.runInContext("_registerIntegrationB_ = function () { _integrationTest('dupName', test_x); _integrationTest('dupName', test_y); }; var test_x = function(){}, test_y = function(){};", ctx);
+  const dup = JSON.parse(JSON.stringify(vm.runInContext("_expectedTestCount_(['B'])", ctx)));
+  assert.deepStrictEqual(dup.duplicates, ['dupName'], 'a repeated registration name is named');
+  // The summary prints the expected line and FLAGS a run that recorded fewer.
+  vm.runInContext('_TEST_STATE = { pass: 3, fail: 0, skip: 1, start: new Date(), results: [] };', ctx);
+  vm.runInContext("_printSummary({ total: 5, smoke: 2, A: 3, B: 0, duplicates: ['dupName'] })", ctx);
+  assert.ok(logs.some((l) => /^Expected: 5 registrations \(2 smoke · 3 integration-A\)$/.test(l)), 'the Expected line names the total and the shards: ' + logs.join(' | '));
+  assert.ok(logs.some((l) => /Recorded 4 of 5 registered tests/.test(l)), 'a short run is flagged, never silently green');
+  assert.ok(logs.some((l) => /Duplicate registration name\(s\): dupName/.test(l)), 'duplicates are printed by name');
+  logs.length = 0;
+  vm.runInContext('_TEST_STATE = { pass: 5, fail: 0, skip: 0, start: new Date(), results: [] };', ctx);
+  vm.runInContext("_printSummary({ total: 5, smoke: 2, A: 3, B: 0, duplicates: [] })", ctx);
+  assert.ok(!logs.some((l) => /⚠/.test(l)), 'a complete run prints no warning');
+  logs.length = 0;
+  vm.runInContext('_printSummary()', ctx);
+  assert.ok(!logs.some((l) => /Expected:/.test(l)), 'runSingleTest (no expectation) prints no Expected line');
+});
+
+test('S3: _suiteEnvCheck_ names every Script Property the suite reads (derived from getProperty literals), runs FIRST in setup, and only ever reads', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const check = stripJsComments_(extractRawFunction('Tests.js', '_suiteEnvCheck_'));
+  const rest = stripJsComments_(raw).replace(check, '');
+  const props = new Set(); let m; const re = /getProperty\('([A-Z_]+)'\)/g;
+  while ((m = re.exec(rest))) props.add(m[1]);
+  assert.ok(props.size >= 8, 'the suite reads a real property set: ' + [...props].join(', '));
+  props.forEach((p) => assert.ok(check.indexOf("'" + p + "'") >= 0, p + ': read somewhere in the suite but not reported by _suiteEnvCheck_'));
+  ['INSTANCE_LABEL', 'INSTANCE_IS_PROD'].forEach((p) => assert.ok(check.indexOf("'" + p + "'") >= 0, p + ': the instance markers are reported'));
+  assert.ok(/isDevInstance_\(\)/.test(check) && /isProdInstance_\(\)/.test(check), 'the instance VERDICT comes from the app\'s own predicates, not a re-derivation');
+  assert.ok(/_testAdminEmailsSplit_\(/.test(check), 'ADMIN_EMAILS is classified through the one predicate setup and cleanup use');
+  assert.ok(!/setProperty\(|deleteProperty\(|setValue\(|appendRow\(|deleteRow\(/.test(check), 'the check never writes anything');
+  assert.ok(!/\bthrow\b/.test(check), 'the check never throws (a failed read prints as unknown)');
+  assert.ok(/Logger\.log\('── Suite environment ──/.test(check), 'it prints one labelled block');
+  const setup = stripJsComments_(extractRawFunction('Tests.js', 'setupTestEnvironment'));
+  const at = setup.indexOf('_suiteEnvCheck_();'), guard = setup.indexOf("assertNotProdInstance_('setupTestEnvironment')");
+  assert.ok(at > 0 && guard > at, 'the env check runs at the TOP of setup, before the prod guard can throw');
+  assert.ok(/try \{ _suiteEnvCheck_\(\); \} catch/.test(setup), 'and is itself try/caught');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
