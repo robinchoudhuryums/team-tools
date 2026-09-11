@@ -46,6 +46,10 @@ try {
   const invCount = cfg ? (cfg.match(/^INV-\d+\s*\|/gm) || []).length : 0;
   if (invCount) out.push(`\nInvariant library: ${invCount} invariants (see ${hasCfg ? '.cycle/config.md' : 'CLAUDE.md'}). Carry these forward; re-derive audit findings with fresh eyes.`);
 
+  // Batch P (cycle 19): five consecutive reflections (13, 16, 18, 19pre, 19)
+  // had no estimate inputs because nobody wrote one down BEFORE the first
+  // edit. Say it every session, where the plan message gets written.
+  out.push('\nEstimates: record S/M/L + hours for EACH batch in its plan message BEFORE the first edit; carry `Estimate: S/M/L (h)` + `Actual:` into the implement block and STATE.md\'s `Estimates:` line, so /reflect can fill .cycle/estimates.csv.');
   out.push('\nSubstrate above carries forward; a new audit uses fresh eyes. Run /cycle-status for the full picture, /cycle-resume to continue in-progress work.');
   out.push('=== END WORKFLOW CONTEXT ===');
   process.stdout.write(out.join('\n') + '\n');
