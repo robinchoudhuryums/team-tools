@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) is the post-merge follow-up; expect 312/312 on the re-run. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -21,7 +21,7 @@ Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
   moved 1 → 2 at that reflection)
-Updated: 2026-09-11 (Batch P landed — d111b10; earlier the same day: post-merge of #237: the `ADMIN_EMAILS` suite accommodation — `setupTestEnvironment` appends the test manager to a narrowed list, `cleanupTestData` strips it; the 302/312 post-push run explained; expect 312/312 on the re-run)
+Updated: 2026-09-11 (operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -149,17 +149,21 @@ D (note 10 — a new presence signal on the Team-right-now card).
   install threw on the LAST create after the dedupe loop deleted everything, leaving the deployment
   with NO `creditMonthlyPtoAccruals`. Now 16 triggers for 24 handlers via three same-slot dispatchers
   (`TRIGGER_GROUPS` the one source), a fail-closed pre-flight, a naming rethrow, TQ-1..3 (7/7 bites),
-  three editor gate tests (expect 315). OPERATOR: `clasp push -f`, re-run `installAutomationTriggers()`
-  ONCE (restores the accrual trigger; 16 rows in the Triggers panel), then `runAllTests()` → 315.
-- OPERATOR (Batch 0 of the next-steps plan, in this order — 0a is DONE, 312/312 on 2026-09-11; 0c was BLOCKED by the quota until the fix above is pushed): (0a) `clasp push -f`
+  three editor gate tests (expect 315). MERGED as PR #239; the operator's post-push `runAllTests()`
+  read 315/315 (2026-09-11 — CONFIRMED). Still to confirm from the operator: the ONE
+  `installAutomationTriggers()` re-run on the fixed code (expect the "16 of the 20" log line and
+  `creditMonthlyPtoAccruals` back in the Triggers panel — nothing is lost if it lands before Oct 1).
+- OPERATOR (Batch 0 of the next-steps plan, in this order — 0a is DONE: 312/312, then 315/315 after #239, both on 2026-09-11; 0c was BLOCKED by the quota until #239 — now unblocked, re-run pending confirmation): (0a) `clasp push -f`
   + `runAllTests()` alone → expect 312/312, keep `ADMIN_EMAILS`; (0b) Drive
   re-auth as the deploying account — article images have never rendered;
   (0c) `installAutomationTriggers()` for #20/#21; (0d) `reportBreakPairingChanges()`
   once; (0e) read the mail-routing line on Admin → System; (0f) stand up the DEV
   instance per docs/deployment.md and set `INSTANCE_IS_PROD=true` on prod AFTER
   0a, so the full suite runs nightly on dev and never by hand on prod again.
-- The New version deploy carrying #236 + #237 (+ #238's Tests.js, which needs
-  only the push). Nothing in those PRs reaches production without it.
+- The New version deploy carrying #236 + #237 + #239 + #240 (+ #238's Tests.js,
+  which needs only the push). The 315/315 run proves the `clasp push` of #239's
+  Code.js + Tests.js happened; whether a New VERSION was cut afterwards is
+  unconfirmed from here — until it is, open windows still run the pre-#236 client.
 
 ## Next-steps plan (post-cycle-19, 2026-09-11)
 Full text + measurements + rationale: `.cycle/blocks/19-next-steps-plan.md`. This is the sequence.
@@ -241,7 +245,18 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-Batch P is DONE (2026-09-11, d111b10 + the checkpoint commit, PR to follow on
+STOPPING POINT (2026-09-11, end of session): the tree is clean, every commit is
+in `origin/main` (PR #240 was the last merge; `origin/main` = 6667223), and the
+GitHub branch `claude/broad-scan-fw462g` was deleted at that merge — the next
+session restarts it from `origin/main` (`git checkout -B claude/broad-scan-fw462g
+origin/main`). The operator's post-deploy `runAllTests()` read 315/315, which
+closes the trigger-quota round's documented check. Nothing is half-done. NEXT is
+`/broad-implement S` (suite operability) — see the paragraph below for its
+Batch 0f dependency; the estimates.csv row for Batch P (S 2 h vs ~0.6 h actual)
+is still owed by the next `/reflect`. One small logged follow-on stays open:
+the Admin → System findings read `e.error` where `stampAutomationError_` writes
+`message`, so a stamped automation failure renders "unknown error".
+Batch P is DONE (2026-09-11, d111b10 + the checkpoint commit, MERGED as PR #240 on
 `claude/broad-scan-fw462g` restarted from origin/main after #239 merged):
 P1 the estimate convention (hook + template + this file's `Estimates:` line),
 P2 the TW-B ratchet retired + `--warn-glow` + the ribbon fallbacks on the glow
@@ -325,9 +340,10 @@ Batch 0 as a code batch; the operator does it, then `/broad-implement P`.
 Trigger-quota fix (2026-09-11, after the operator reported 312/312 and then
 `This script has too many triggers` from `installAutomationTriggers()`): landed
 on the branch as 114a16e + the docs commit; block at
-`.cycle/blocks/19-trigger-quota-broad-implement.md`. NOT yet in a PR — the
-operator's next step is `clasp push -f` + one `installAutomationTriggers()`
-re-run (restores the missing accrual trigger) + `runAllTests()` → 315. The
+`.cycle/blocks/19-trigger-quota-broad-implement.md`. MERGED as PR #239; the
+operator's `runAllTests()` → 315/315 is CONFIRMED (2026-09-11); the one
+`installAutomationTriggers()` re-run (restores the missing accrual trigger) is
+the piece still awaiting the operator's word. The
 one logged follow-on worth doing next: the Admin → System findings read
 `e.error` where the stamp writes `message` (every stamped automation failure
 renders "unknown error").
