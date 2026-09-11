@@ -5842,7 +5842,7 @@ function setArchivedTagsSet_(setObj) {
   if (arr.length === 0) {
     props.deleteProperty(CN_ARCHIVED_TAGS_PROP);
   } else {
-    props.setProperty(CN_ARCHIVED_TAGS_PROP, JSON.stringify(arr));
+    propSetBounded_(CN_ARCHIVED_TAGS_PROP, JSON.stringify(arr), { hint: 'unarchive a tag' });
   }
 }
 
@@ -6353,6 +6353,8 @@ function getAdminConfig() {
                  targets: getDeptRequestSlaConfig_(),
                  departments: Object.keys(getDepartmentEmails_() || {}) },
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
+      propBudget: propBudgetsFor_(ADMIN_PROP_KEYS_),   // Q2 — "N of 9,000 bytes" per editor, from the STORED value
+      propValueMax: PROP_VALUE_MAX,
       kbAi: (function () {
         const c = getKbAiConfig_();
         // Never the key itself — only whether one is set.
@@ -6494,7 +6496,7 @@ function saveFeatureFlags(flagMap) {
       if (v !== true && v !== false) return { success: false, error: 'Flag "' + k + '" must be true or false.' };
       clean[k] = v;
     }
-    PropertiesService.getScriptProperties().setProperty('CN_FEATURE_FLAGS', JSON.stringify(clean));
+    propSetBounded_('CN_FEATURE_FLAGS', JSON.stringify(clean), { hint: 'the registry is bounded — this cannot happen' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated feature toggles: ' + keys.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
       callerEmp.email);
@@ -6511,7 +6513,7 @@ function saveUpdateSuggestions(suggestionsJson) {
     for (var i = 0; i < keys.length; i++) {
       if (!Array.isArray(suggestionsJson[keys[i]])) return { success: false, error: 'Each department must map to an array of suggestions.' };
     }
-    PropertiesService.getScriptProperties().setProperty('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson));
+    propSetBounded_('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson), { hint: 'remove some suggestions' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated update-type suggestions', callerEmp.email);
     return { success: true };
@@ -6546,7 +6548,9 @@ function saveEmailTemplates(templates) {
       }
       clean.push({ name: name, recipientType: rt, body: body });
     }
-    PropertiesService.getScriptProperties().setProperty('CN_EMAIL_TEMPLATES', JSON.stringify(clean));
+    // Q2: the count cap x the body cap advertises ~200KB, but the platform
+    // enforces the SERIALIZED size (~9KB), so that is what is checked here.
+    propSetBounded_('CN_EMAIL_TEMPLATES', JSON.stringify(clean), { hint: 'shorten or remove a template' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated email templates (' + clean.length + ')', callerEmp.email);
     return { success: true };
@@ -6578,7 +6582,7 @@ function saveExternalLinks(links) {
         category: CN_EXTERNAL_LINK_CATEGORIES.indexOf(cat) >= 0 ? cat : 'other',
       });
     }
-    PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
+    propSetBounded_('CN_EXTERNAL_LINKS', JSON.stringify(clean), { hint: 'remove a link' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated external quick links (' + clean.length + ')', callerEmp.email);
     return { success: true };
@@ -6620,7 +6624,7 @@ function saveAutoTagRules(rules) {
       if (!kws.length) return { success: false, error: 'Tag "' + tag + '" needs at least one keyword.' };
       clean.push({ tag: tag, keywords: kws });
     }
-    PropertiesService.getScriptProperties().setProperty('CN_AUTO_TAG_RULES', JSON.stringify(clean));
+    propSetBounded_('CN_AUTO_TAG_RULES', JSON.stringify(clean), { hint: 'remove a rule or some keywords' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated auto-tag rules (' + clean.length + ')', callerEmp.email);
     return { success: true };
@@ -6675,7 +6679,7 @@ function saveDepartmentEmails(deptJson) {
       var email = String(deptJson[keys[i]] || '').trim();
       if (!email || email.indexOf('@') < 1) return { success: false, error: 'Invalid email for ' + keys[i] + ': ' + email };
     }
-    PropertiesService.getScriptProperties().setProperty('CN_DEPARTMENT_EMAILS', JSON.stringify(deptJson));
+    propSetBounded_('CN_DEPARTMENT_EMAILS', JSON.stringify(deptJson), { hint: 'remove a department' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated department emails (' + keys.length + ' depts)', callerEmp.email);
     return { success: true };
@@ -6692,7 +6696,7 @@ function saveStateTaxRates(ratesJson) {
       var rate = parseFloat(ratesJson[keys[i]]);
       if (isNaN(rate) || rate < 0 || rate > 1) return { success: false, error: 'Invalid rate for ' + keys[i] + ': must be 0–1.' };
     }
-    PropertiesService.getScriptProperties().setProperty('CN_STATE_TAX_RATES', JSON.stringify(ratesJson));
+    propSetBounded_('CN_STATE_TAX_RATES', JSON.stringify(ratesJson), { hint: 'remove a state' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated state tax rates (' + keys.length + ' states)', callerEmp.email);
     return { success: true };
@@ -7458,7 +7462,7 @@ function stampAutomationError_(job, message) {
     if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
     map[job] = { at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
                  message: String(message || '').slice(0, 300) };
-    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+    propSetBounded_(AUTOMATION_ERROR_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });   // Q1 — drops the OLDEST stamped job first
   } catch (e) { /* best-effort — never break the job's own error path */ }
 }
 function clearAutomationError_(job) {
@@ -7468,7 +7472,7 @@ function clearAutomationError_(job) {
     try { map = JSON.parse(props.getProperty(AUTOMATION_ERROR_PROP)) || {}; } catch (_) {}
     if (!map || typeof map !== 'object' || Array.isArray(map) || !map[job]) return;
     delete map[job];
-    props.setProperty(AUTOMATION_ERROR_PROP, JSON.stringify(map));
+    propSetBounded_(AUTOMATION_ERROR_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });
   } catch (e) { /* best-effort */ }
 }
 function readAutomationErrors_() {
@@ -8034,11 +8038,11 @@ function runNightlySelfTest() {
     // Stamping {running:true} first means a killed run leaves the sentinel
     // behind, and automationProblems_ treats a STALE one as a failure.
     try {
-      props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify({
+      propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify({
         running: true, startedAt: Date.now(), mode: mode,
         date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
         pass: 0, fail: 0, skip: 0,
-      }));
+      }), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) });
     } catch (e) {}
     // Batch S: runAllTests runs the sharded list (smoke, then integration A,
     // then B) SEQUENTIALLY in this one execution — the ~6-min quiet-window
@@ -8050,7 +8054,7 @@ function runNightlySelfTest() {
       mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
       note: note,   // A5 — surfaced in the Admin panel; '' on a settled instance
     };
-    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
     if (res.fail > 0) {
       const names = (_TEST_STATE.results || [])
         .filter(function (r) { return r.status === 'FAIL'; })
@@ -8065,7 +8069,7 @@ function runNightlySelfTest() {
       mode: 'error', pass: 0, fail: 1, skip: 0,
       error: String(err && err.message || err).substring(0, 300),
     };
-    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
     selfTestFailureEmail_('error', res, [res.error]);
     Logger.log('runNightlySelfTest failed: ' + (err && err.message));
   }
@@ -8303,8 +8307,13 @@ function getStorageHealth(opts) {
     // no probe, so it rides every call (unlike the Drive check).
     let mailBcc = null;
     try { mailBcc = mailBccStatus_(); } catch (e) { mailBcc = null; }
+    // Q3 — the THIRD app-wide fact no store row can see: the Script Property
+    // store itself (a 500KB store, 9KB per value — every operator blob lives
+    // there). One read, values counted and never returned.
+    let propStore = null;
+    try { propStore = scriptPropertiesStatus_(); } catch (e) { propStore = null; }
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
-             drive: drive, mailBcc: mailBcc };
+             drive: drive, mailBcc: mailBcc, propStore: propStore };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9615,6 +9624,164 @@ function mailBccAll_() {
  *  sends every message, so there is no second copy of the org domain to
  *  drift from doGet's own check. `external` is null when that account cannot
  *  be read: unknown, never "all clear". */
+// ════════════════════════════════════════════════════════════════════════════
+//  SCRIPT PROPERTY SIZE GUARD (Batch Q, 2026-09-11)
+//  Apps Script caps a Script Property VALUE at 9KB and the whole store at
+//  500KB, and until this batch no code or doc accounted for either: the email
+//  template caps alone (CN_EMAIL_TEMPLATE_LIMIT × CN_EMAIL_TEMPLATE_BODY_MAX)
+//  admit ~200KB, so a validator could pass a blob the platform then refused
+//  with an opaque "Argument too large" — after the audit row, or mid-write.
+//  ONE writer for every JSON-blob property: `propSetBounded_`. Operator-edited
+//  blobs REFUSE by name with nothing written (the INV-96 posture); auto-managed
+//  blobs DEGRADE by name through a caller-supplied shrinker (a cache resets on
+//  BYTES, a stamp map drops its oldest entry). Scalar writers (a day count,
+//  a model key, a folder id, a generation counter) stay on setProperty and are
+//  allowlisted BY NAME in the Q-1 pin with a reason each.
+// ════════════════════════════════════════════════════════════════════════════
+const PROP_VALUE_MAX = 9000;         // bytes — under the platform's 9KB per-value cap
+const PROP_STORE_MAX = 500 * 1024;   // bytes — the platform's per-store cap
+const PROP_WARN_PCT = 80;            // Storage Health warns past this share of either cap
+
+/** UTF-8 byte length of a string — the unit the platform caps in, which a
+ *  `.length` in UTF-16 code units under-counts for anything non-ASCII. Pure. */
+function utf8Len_(str) {
+  const s = String(str == null ? '' : str);
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xFC00) === 0xDC00) { n += 4; i++; }
+    else n += 3;
+  }
+  return n;
+}
+
+/** Pure — the serialized budget of one value: {key, bytes, max, pct}. */
+function propValueBudget_(key, value) {
+  const bytes = utf8Len_(value);
+  return { key: String(key), bytes: bytes, max: PROP_VALUE_MAX, pct: Math.round(bytes * 100 / PROP_VALUE_MAX) };
+}
+
+/** The ONE writer for a JSON-blob Script Property.
+ *  opts.mode: 'refuse' (default — operator-edited: throw a NAMED error, write
+ *  nothing) | 'degrade' (auto-managed: apply opts.shrink(str) → str | null
+ *  until the value fits; null = delete the property and log why).
+ *  opts.hint: what the operator can do about a refusal ("shorten or remove a
+ *  template"). Returns the value's byte count that was written (0 on delete).
+ *  A refusal is an Error whose message names the key, the size and the cap,
+ *  so every admin save endpoint's catch turns it into {success:false, error}. */
+function propSetBounded_(key, value, opts) {
+  const o = opts || {};
+  const props = PropertiesService.getScriptProperties();
+  let str = String(value == null ? '' : value);
+  let bytes = utf8Len_(str);
+  if (bytes <= PROP_VALUE_MAX) { props.setProperty(key, str); return bytes; }
+  if (o.mode !== 'degrade' || typeof o.shrink !== 'function') {
+    throw new Error(key + ' would be ' + bytes.toLocaleString() + ' bytes; Script Properties hold ~' +
+      PROP_VALUE_MAX.toLocaleString() + ' per value — ' + (o.hint || 'shorten or remove an entry') + '. Nothing was saved.');
+  }
+  for (let i = 0; i < 50 && bytes > PROP_VALUE_MAX; i++) {
+    const next = o.shrink(str, PROP_VALUE_MAX);
+    if (next == null) {
+      try { props.deleteProperty(key); } catch (_) {}
+      Logger.log('propSetBounded_: ' + key + ' could not be shrunk under ' + PROP_VALUE_MAX + ' bytes (' + bytes + ') — property cleared.');
+      return 0;
+    }
+    str = String(next);
+    bytes = utf8Len_(str);
+  }
+  if (bytes > PROP_VALUE_MAX) {
+    try { props.deleteProperty(key); } catch (_) {}
+    Logger.log('propSetBounded_: ' + key + ' still ' + bytes + ' bytes after shrinking — property cleared.');
+    return 0;
+  }
+  Logger.log('propSetBounded_: ' + key + ' degraded to fit (' + bytes + ' bytes).');
+  props.setProperty(key, str);
+  return bytes;
+}
+
+/** Shrinker for a {name: {at: 'yyyy-MM-dd HH:mm:ss', …}} or {name: 'stamp'}
+ *  map: drops the entry with the OLDEST stamp (insertion order when no `at`);
+ *  null once the map is empty. Pure. */
+function propShrinkDropOldest_(str, max) {
+  let map;
+  try { map = JSON.parse(str); } catch (_) { return null; }
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const stampOf = function (k) { const v = map[k]; return typeof v === 'string' ? v : (v && typeof v.at === 'string') ? v.at : ''; };
+  // Oldest first — the NEWEST stamp is the one worth keeping. Drop until it
+  // FITS rather than one-per-call: a caller's retry loop is a safety net, not
+  // the mechanism (a 400-entry blob would exhaust it and clear the property).
+  const order = Object.keys(map).sort(function (a, b) {
+    const sa = stampOf(a), sb = stampOf(b);
+    return sa < sb ? -1 : sa > sb ? 1 : (a < b ? -1 : 1);
+  });
+  const cap = (typeof max === 'number' && max > 0) ? max : PROP_VALUE_MAX;
+  for (let i = 0; i < order.length; i++) {
+    delete map[order[i]];
+    if (!Object.keys(map).length) return null;
+    const next = JSON.stringify(map);
+    if (utf8Len_(next) <= cap) return next;
+  }
+  return null;
+}
+
+/** Shrinker that strips the named free-text fields from a fixed-shape object;
+ *  null once none of them is left to strip. Pure. */
+function propShrinkStripFields_(fields) {
+  return function (str) {
+    let o;
+    try { o = JSON.parse(str); } catch (_) { return null; }
+    if (!o || typeof o !== 'object') return null;
+    let stripped = false;
+    (fields || []).forEach(function (f) { if (o[f] != null && o[f] !== '') { delete o[f]; stripped = true; } });
+    return stripped ? JSON.stringify(o) : null;
+  };
+}
+
+/** The operator-edited JSON-blob properties whose editors show a budget —
+ *  every key here is written through propSetBounded_ in refuse mode. */
+const ADMIN_PROP_KEYS_ = ['CN_DEPARTMENT_EMAILS', 'CN_STATE_TAX_RATES', 'CN_UPDATE_SUGGESTIONS', 'CN_EMAIL_TEMPLATES',
+  'CN_EXTERNAL_LINKS', 'CN_AUTO_TAG_RULES', 'DR_SLA_TARGETS', 'SPANISH_INBOX_MEMBERS', 'SHIFT_BREAK_SCHEDULES',
+  'QA_SCORECARD_CRITERIA', 'QA_MEMBERS', 'CN_FEATURE_FLAGS', 'CN_ARCHIVED_TAGS'];
+
+/** {key: {bytes, max, pct, set}} for the STORED values of the given keys —
+ *  the "N of 9,000 bytes" badge every Admin editor shows. One read. */
+function propBudgetsFor_(keys) {
+  const out = {};
+  let props = null;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) { props = null; }
+  (keys || []).forEach(function (k) {
+    let v = null;
+    try { v = props ? props.getProperty(k) : null; } catch (e) { v = null; }
+    const b = propValueBudget_(k, v == null ? '' : v);
+    b.set = v != null && v !== '';
+    out[k] = b;
+  });
+  return out;
+}
+
+/** Storage Health's Script Properties line (Q3): bytes used of the 500KB
+ *  store and the largest value against the 9KB per-value cap. READ-ONLY;
+ *  `bytes: null` means the store could not be read (unknown, never OK —
+ *  INV-187). Values are counted, never returned. */
+function scriptPropertiesStatus_() {
+  const out = { valueMax: PROP_VALUE_MAX, storeMax: PROP_STORE_MAX, warnPct: PROP_WARN_PCT,
+                count: null, bytes: null, largestKey: '', largestBytes: null, error: '' };
+  try {
+    const all = PropertiesService.getScriptProperties().getProperties() || {};
+    const keys = Object.keys(all);
+    let total = 0, bigKey = '', big = 0;
+    keys.forEach(function (k) {
+      const vb = utf8Len_(all[k]);
+      total += utf8Len_(k) + vb;
+      if (vb > big) { big = vb; bigKey = k; }
+    });
+    out.count = keys.length; out.bytes = total; out.largestKey = bigKey; out.largestBytes = keys.length ? big : 0;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+}
+
 function mailBccStatus_() {
   const list = mailBccAll_();
   const out = { prop: 'MAIL_BCC_ALL', enabled: list.length > 0, addresses: list, external: null, ownDomain: '' };
@@ -13054,7 +13221,7 @@ function stampDigestLastRun_(key) {
     try { map = JSON.parse(props.getProperty(DIGEST_LAST_RUN_PROP)) || {}; } catch (_) {}
     if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
     map[key] = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    props.setProperty(DIGEST_LAST_RUN_PROP, JSON.stringify(map));
+    propSetBounded_(DIGEST_LAST_RUN_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });   // Q1 — a fixed key set; the oldest heartbeat goes first
   } catch (e) { /* heartbeat is best-effort */ }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
@@ -16807,25 +16974,26 @@ function markDeptRequestResolved_(token, byEmail, via) {
   lock.waitLock(15000);
   try {
     const sh = getOrCreateDeptRequestsSheet_();
-    const rows = sh.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) !== String(token)) continue;
-      if (drStatus_(rows[i]) === 'resolved') {
-        return { found: true, already: true, dept: rows[i][DR.TO_DEPT],
-                 resolvedAt: formTokenIsoString_(rows[i][DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
-                 resolvedBy: String(rows[i][DR.RESOLVED_BY] || '') };
-      }
-      sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
-      sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
-      sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
-      sh.getRange(i + 1, DR.RESOLVED_VIA + 1).setValue(viaClean);
-      drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
-      pendingTasksBust_(rows[i][DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
-      try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
-        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
-      return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
+    // Q5 (Batch Q, 2026-09-11) — the bounded RequestId-column lookup the
+    // detail read already used; this path read the WHOLE tab (every
+    // PatientTrx cell included) on every resolve click and every email link.
+    const hit = drFindRowByReqId_(sh, token);
+    if (!hit) return { found: false };
+    const row = hit.row, rowIndex = hit.rowIndex;
+    if (drStatus_(row) === 'resolved') {
+      return { found: true, already: true, dept: row[DR.TO_DEPT],
+               resolvedAt: formTokenIsoString_(row[DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
+               resolvedBy: String(row[DR.RESOLVED_BY] || '') };
     }
-    return { found: false };
+    sh.getRange(rowIndex, DR.STATUS + 1).setValue('resolved');
+    sh.getRange(rowIndex, DR.RESOLVED_AT + 1).setValue(drNowTs_());
+    sh.getRange(rowIndex, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
+    sh.getRange(rowIndex, DR.RESOLVED_VIA + 1).setValue(viaClean);
+    drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
+    pendingTasksBust_(row[DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
+    try { writeAuditLog_({ id: row[DR.BY_ID], name: row[DR.BY_NAME] }, 'DeptRequestResolved',
+      '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
+    return { found: true, already: false, dept: row[DR.TO_DEPT] };
   } finally { lock.releaseLock(); }
 }
 
@@ -16929,11 +17097,9 @@ function resolveDeptRequest(requestId) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Your account is not registered.' };
-    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let row = null;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { row = rows[i]; break; }
-    }
+    // Q5 — bounded lookup (the detail read's shape), not a whole-tab read.
+    const hit = drFindRowByReqId_(getOrCreateDeptRequestsSheet_(), requestId);
+    const row = hit ? hit.row : null;
     if (!row) return { success: false, error: 'Request not found.' };
     // v2: a member of the RECEIVING department can also resolve in-app (the
     // "receiving agent marks resolved" path), alongside the sender + any
@@ -17266,7 +17432,7 @@ function saveDeptRequestSla(map) {
       if (h === def) continue;                        // equals default → omit (lean map)
       clean[canon] = h;
     }
-    PropertiesService.getScriptProperties().setProperty('DR_SLA_TARGETS', JSON.stringify(clean));
+    propSetBounded_('DR_SLA_TARGETS', JSON.stringify(clean), { hint: 'remove an override' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
     return { success: true, targets: clean };
@@ -17301,7 +17467,7 @@ function saveSpanishInboxMembers(emails) {
       }
       if (!seen[e]) { seen[e] = true; clean.push(e); }
     }
-    PropertiesService.getScriptProperties().setProperty('SPANISH_INBOX_MEMBERS', clean.join(','));
+    propSetBounded_('SPANISH_INBOX_MEMBERS', clean.join(','), { hint: 'remove a member' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Spanish inbox members (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
@@ -17331,7 +17497,7 @@ function saveQaMembers(emails) {
       }
       if (!seen[e]) { seen[e] = true; clean.push(e); }
     }
-    PropertiesService.getScriptProperties().setProperty('QA_MEMBERS', clean.join(','));
+    propSetBounded_('QA_MEMBERS', clean.join(','), { hint: 'remove a reviewer' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated QA reviewers (' + clean.length + ')', emp.email);
     return { success: true, members: clean };
@@ -17651,7 +17817,7 @@ function saveBreakSchedules(payload) {
       const blob = { schedules: schedules };
       if (empCount > 0) blob.employees = employees;   // absent when empty — a pre-existing blob stays byte-identical
       blob.reminderMin = rm;                          // key order mirrors breakSchedSanitize_ so read ≡ write byte-for-byte
-      props.setProperty('SHIFT_BREAK_SCHEDULES', JSON.stringify(blob));
+      propSetBounded_('SHIFT_BREAK_SCHEDULES', JSON.stringify(blob), { hint: 'remove a customized section or per-agent schedule' });
     }
     _breakSchedulesCache = undefined;   // re-read within this execution
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
@@ -18711,7 +18877,7 @@ function writeWitnessAuditLog_(targetEmp, action, punchDate, punchTime, isAdjust
     rec.count = (Number(rec.count) || 0) + 1;
     rec.lastAt = Date.now();
     rec.lastAction = String(action || '');
-    props.setProperty('WITNESS_AUDIT_FAILS', JSON.stringify(rec));
+    propSetBounded_('WITNESS_AUDIT_FAILS', JSON.stringify(rec), { mode: 'degrade', shrink: propShrinkStripFields_(['lastAction']) });
   } catch (e) { console.error('WITNESS_AUDIT_FAILS stamp failed: ' + e.message); }
   console.error('WITNESS audit row lost after retry: ' + action);
   return false;
@@ -23392,7 +23558,7 @@ function kbExpandSynonymTokens_(tokens) {
 function kbGetSearchConfig() {
   const emp = getEmployeeInfo_();
   if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
-  return { synonyms: getKbSearchSynonyms_() };
+  return { synonyms: getKbSearchSynonyms_(), propBudget: propBudgetsFor_([KB_SYNONYMS_PROP]), propValueMax: PROP_VALUE_MAX };
 }
 function kbSaveSearchConfig(groups) {
   const lock = LockService.getScriptLock();
@@ -23412,7 +23578,7 @@ function kbSaveSearchConfig(groups) {
       }
       if (terms.length >= 2) clean.push(terms);   // a group needs ≥2 terms to be meaningful
     }
-    PropertiesService.getScriptProperties().setProperty(KB_SYNONYMS_PROP, JSON.stringify(clean));
+    propSetBounded_(KB_SYNONYMS_PROP, JSON.stringify(clean), { hint: 'remove a synonym group' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0, 'KB search synonyms: ' + clean.length + ' group(s)', emp.email);
     return { success: true, synonyms: clean };
   } catch (err) { return { success: false, error: err.message }; }
@@ -25237,7 +25403,12 @@ function kbMapDistances(query, addresses) {
     if (dirty) {
       try {
         if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
-        props.setProperty(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache));
+        // Q1 — and the cache self-resets on BYTES, not only on entry count: 200
+        // entries of {lat,lng} keyed by hash sit on the order of the 9KB cap.
+        // Over the cap it falls back to THIS article's warehouses, then to nothing.
+        const freshStr = JSON.stringify(fresh);
+        propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache), { mode: 'degrade',
+          shrink: function (str) { return str !== freshStr && Object.keys(fresh).length ? freshStr : null; } });
       } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
     }
     // The QUERY geocode: computed, used, returned — deliberately never stored.
@@ -25411,7 +25582,7 @@ function kbAiApplySpend_(usdDelta, callDelta) {
     const s = kbAiReadSpend_();
     s.usd = Math.max(0, s.usd + usdDelta);
     s.calls += (callDelta || 0);
-    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+    propSetBounded_(KB_AI_SPEND_PROP, JSON.stringify(s), { mode: 'degrade', shrink: function () { return null; } });   // Q1 — a three-field counter; unreachable, so a reset is the only degrade
   } catch (e) {
     // F2 — surface the degradation: if this write fails the daily spend
     // counter freezes while real spend continues (the soft cap stops
@@ -25440,7 +25611,7 @@ function kbAiTryReserveSpend_(cap, reserve) {
     const s = kbAiReadSpend_();
     if (s.usd >= cap) return false;
     s.usd += reserve;
-    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+    propSetBounded_(KB_AI_SPEND_PROP, JSON.stringify(s), { mode: 'degrade', shrink: function () { return null; } });
     return true;
   } catch (_) { return true; }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
@@ -29590,7 +29761,7 @@ function saveQaScorecardCriteria(list) {
     if (JSON.stringify(clean) === JSON.stringify(QA_SCORECARD_CRITERIA)) {
       props.deleteProperty('QA_SCORECARD_CRITERIA');   // back to the CONFIG seed entirely
     } else {
-      props.setProperty('QA_SCORECARD_CRITERIA', JSON.stringify(clean));
+      propSetBounded_('QA_SCORECARD_CRITERIA', JSON.stringify(clean), { hint: 'remove a criterion or shorten its options' });
     }
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'qaScorecardCriteria; count=' + clean.length, emp.email);

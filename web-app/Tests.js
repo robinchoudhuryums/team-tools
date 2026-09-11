@@ -401,6 +401,7 @@ function _suiteEnvCheck_() {
   // Properties individual tests save/override/restore — a value left behind by
   // a killed run is visible here rather than as a surprise mid-suite.
   lines.push(setOrNot('CN_FEATURE_FLAGS', 'tests override + restore it'));
+  lines.push(setOrNot('CN_EMAIL_TEMPLATES', 'the Q size-guard test saves + restores it'));
   lines.push(setOrNot('TIMESHEET_ARCHIVE_DAYS', 'the archive test sets + restores it'));
   lines.push(setOrNot('WHATSNEW_KB_ID', 'the What\'s-new test sets + restores it'));
   // Store resolution the fixtures ride on.
@@ -1484,6 +1485,7 @@ function _registerIntegrationB_() {
   _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
   _integrationTest('kb_draftLifecycleAndRevisions',              test_kb_draftLifecycleAndRevisions);
   _integrationTest('adminEmails_subsetOfManagersEnforced',       test_adminEmails_subsetOfManagersEnforced);
+  _integrationTest('adminConfig_propertySizeGuardRefusesOversize', test_adminConfig_propertySizeGuardRefusesOversize);
 
   // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
   _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
@@ -6366,6 +6368,50 @@ function test_adminEmails_subsetOfManagersEnforced() {
     else props.setProperty('ADMIN_EMAILS', prev);
     invalidateRosterCache_();
   }
+}
+
+
+/** Batch Q — the Script Property SIZE guard, end to end through a real save.
+ *  CN_EMAIL_TEMPLATE_LIMIT (50) x CN_EMAIL_TEMPLATE_BODY_MAX (4000) advertises
+ *  ~200 KB, while Apps Script holds ~9 KB per VALUE — so a payload that passes
+ *  every field validator can still be refused by the platform, previously AFTER
+ *  the audit row. propSetBounded_ refuses FIRST, by name, writing nothing; the
+ *  endpoint's catch turns the throw into {success:false,error} the editor shows.
+ *  Verified against the live store, then restored. */
+function test_adminConfig_propertySizeGuardRefusesOversize() {
+  const props = PropertiesService.getScriptProperties();
+  const prev = props.getProperty('CN_EMAIL_TEMPLATES');
+  try {
+    // Five maximum-length bodies: every field is legal, the blob is not.
+    const fat = [];
+    for (let i = 0; i < 5; i++) {
+      fat.push({ name: 'T' + i, recipientType: 'any', body: _repeatStr_('x', CN_EMAIL_TEMPLATE_BODY_MAX) });
+    }
+    const refused = _asUser(_TEST_MGR_EMAIL, function () { return saveEmailTemplates(fat); });
+    _assertFalse(refused && refused.success === true, 'an over-cap blob is REFUSED, not written');
+    _assertContains(String(refused && refused.error), 'CN_EMAIL_TEMPLATES', 'the refusal names the key');
+    _assertContains(String(refused && refused.error), 'Nothing was saved', 'and says nothing was written');
+    _assertEq(props.getProperty('CN_EMAIL_TEMPLATES'), prev, 'the stored value is untouched by the refusal');
+    // A small payload still saves, and the budget rides getAdminConfig.
+    const ok = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveEmailTemplates([{ name: 'TEST_Q_TEMPLATE', recipientType: 'any', body: 'Hello {name}' }]);
+    });
+    _assertTrue(ok && ok.success, 'a payload under the cap saves: ' + JSON.stringify(ok).slice(0, 160));
+    const cfg = _asUser(_TEST_MGR_EMAIL, function () { return getAdminConfig(); });
+    _assertTrue(cfg && cfg.propValueMax > 0, 'getAdminConfig ships the per-value cap');
+    const b = cfg && cfg.propBudget && cfg.propBudget.CN_EMAIL_TEMPLATES;
+    _assertNotNull(b, 'and a budget for the key just written');
+    _assertTrue(b.bytes > 0 && b.bytes <= b.max, 'the budget reports real bytes under the cap: ' + JSON.stringify(b));
+  } finally {
+    if (prev === null) props.deleteProperty('CN_EMAIL_TEMPLATES');
+    else props.setProperty('CN_EMAIL_TEMPLATES', prev);
+  }
+}
+
+function _repeatStr_(ch, n) {
+  let out = '';
+  for (let i = 0; i < n; i++) out += ch;
+  return out;
 }
 
 

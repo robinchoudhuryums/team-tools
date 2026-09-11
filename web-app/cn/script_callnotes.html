@@ -506,6 +506,13 @@
     padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px; }
   .cn-drive-line svg { flex: 0 0 auto; margin-top: 2px; }
   .cn-drive-line code { font-family: var(--mono); font-size: 11px; word-break: break-all; }
+  /* Q2 — the per-editor serialized-size badge (Script Properties cap a value
+     at ~9KB; the advertised entry caps alone admit far more than that). */
+  .cn-prop-budget { font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+    text-transform: uppercase; margin-bottom: 10px; }
+  .cn-prop-budget-ok { color: var(--muted-2); }
+  .cn-prop-budget-warn { color: var(--warning-deep); }
+  .cn-prop-budget-danger { color: var(--danger-deep); }
   .cn-drive-ok { background: var(--accent-soft); color: var(--success-deep); }
   .cn-drive-warn { background: var(--warn-soft); color: var(--warning-deep); }
   .cn-drive-danger { background: var(--danger-soft); color: var(--danger-deep); }
@@ -10054,6 +10061,7 @@ function cnRenderStoragePanel_(res) {
   return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
     '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
     cnDriveAccessHtml_(res && res.drive) + cnMailBccHtml_(res && res.mailBcc) +
+    cnPropStoreHtml_(res && res.propStore) +
     hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
 }
@@ -10114,6 +10122,36 @@ function cnMailBccHtml_(mb) {
   }
   return '<div class="cn-drive-line cn-drive-' + tone + '">' +
     icon('warning', 12) + '<span>' + body + '</span></div>';
+}
+
+/** The Script Property store (Q3, Batch Q 2026-09-11) — the THIRD app-wide
+ *  capability no STORE row can see, and the one every operator blob actually
+ *  lives in: a 500KB store with a ~9KB per-value cap. An `ok` FACT normally
+ *  (INV-186 — the tab must still reach "Nothing needs attention"); warn past
+ *  80% of either cap; a failed read reads as UNKNOWN, never as fine (INV-187).
+ *  Renders nothing when the server shipped no figure (deploy skew). */
+function cnPropStoreHtml_(ps) {
+  if (!ps) return '';
+  var tone, body;
+  var pctOf = function (a, b) { return Math.round((Number(a) || 0) * 100 / (Number(b) || 1)); };
+  if (ps.bytes === null || ps.bytes === undefined) {
+    tone = 'warn';
+    body = '<strong>Script Properties could not be read</strong> — ' + esc(ps.error || 'unknown error') +
+      '. Treat the store\u2019s size as unknown, not as fine.';
+  } else {
+    var storePct = pctOf(ps.bytes, ps.storeMax), valuePct = pctOf(ps.largestBytes, ps.valueMax);
+    var warnAt = Number(ps.warnPct) || 80;
+    var over = storePct >= warnAt || valuePct >= warnAt;
+    tone = over ? 'warn' : 'ok';
+    body = (over ? '<strong>Script Properties are filling up.</strong> ' : '<strong>Script Properties.</strong> ') +
+      esc(Number(ps.bytes).toLocaleString()) + ' of ' + esc(Number(ps.storeMax).toLocaleString()) + ' bytes across ' +
+      esc(String(ps.count)) + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + storePct + '%)' +
+      (ps.largestKey ? ' · largest <code>' + esc(ps.largestKey) + '</code> at ' + esc(Number(ps.largestBytes).toLocaleString()) +
+        ' of ' + esc(Number(ps.valueMax).toLocaleString()) + ' bytes per value (' + valuePct + '%)' : '') + '.' +
+      (over ? ' A save past the per-value cap is refused by name — shorten or remove entries in the editor that writes it.' : '');
+  }
+  return '<div class="cn-drive-line cn-drive-' + tone + '">' +
+    icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
 }
 
 /** Expand/collapse an mtRenderTable_ detail row from its disclosure button/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
@@ -10415,6 +10453,31 @@ function cnHealthFindings_(health, storage) {
       }
     } else if (mb) {
       add('mailBcc', 'storage', 'ok', 'Outgoing email copies', 'no blanket BCC configured');
+    }
+    // (Batch Q, 2026-09-11) The Script Property store — where every operator
+    // blob lives, capped at ~9KB per value and 500KB overall, and reported
+    // nowhere until now. An ok FACT on a normal deployment (INV-186).
+    var ps = storage.propStore;
+    if (ps) {
+      var pOf = function (a, b) { return Math.round((Number(a) || 0) * 100 / (Number(b) || 1)); };
+      if (ps.bytes === null || ps.bytes === undefined) {
+        add('propStore', 'storage', 'warn', 'Script Properties could not be read',
+          ps.error || 'the store could not be listed',
+          'Retry from the Admin tab — until it reads, the store\u2019s size is unknown rather than fine.');
+      } else {
+        var sPct = pOf(ps.bytes, ps.storeMax), vPct = pOf(ps.largestBytes, ps.valueMax);
+        var warnAt = Number(ps.warnPct) || 80;
+        var detail = Number(ps.bytes).toLocaleString() + ' of ' + Number(ps.storeMax).toLocaleString() +
+          ' bytes across ' + ps.count + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + sPct + '%)' +
+          (ps.largestKey ? '; largest ' + ps.largestKey + ' at ' + Number(ps.largestBytes).toLocaleString() +
+            ' of ' + Number(ps.valueMax).toLocaleString() + ' per value (' + vPct + '%)' : '');
+        if (sPct >= warnAt || vPct >= warnAt) {
+          add('propStore', 'storage', 'warn', 'Script Properties are filling up', detail,
+            'Shorten or remove entries in the Admin editor that writes the largest value — a save past the cap is refused by name, nothing is written.');
+        } else {
+          add('propStore', 'storage', 'ok', 'Script Properties', detail);
+        }
+      }
     }
     // (operator 2026-09-09) Drive capability — the one thing the store rows
     // above structurally cannot see. null = not probed on this path.
@@ -11494,6 +11557,25 @@ function cnAdminProvision_(empId, empName, btn) {
   });
 }
 
+/** Q2 (Batch Q, 2026-09-11) — the serialized budget of ONE Script Property,
+ *  shown on the editor that writes it. Script Properties cap a value at ~9KB
+ *  and the advertised caps could not all fit (the email-template count × body
+ *  caps admit ~200KB), so a save could pass every validator and then be
+ *  refused by the platform. The server refuses by name now; this is the
+ *  editor saying how close it is BEFORE the operator gets there. Renders
+ *  nothing when the server did not ship a budget (deploy skew, INV-187 —
+ *  never a fabricated 0%). */
+function cnPropBudgetHtml_(cfg, key) {
+  var b = (cfg && cfg.propBudget && cfg.propBudget[key]) || null;
+  if (!b) return '';
+  var pct = Math.max(0, Math.min(100, Number(b.pct) || 0));
+  var tone = pct >= 90 ? 'danger' : (pct >= 80 ? 'warn' : 'ok');
+  return '<div class="cn-prop-budget cn-prop-budget-' + tone + '" title="' + esc(key) +
+    ' — Script Properties hold about ' + Number(b.max).toLocaleString() + ' bytes per value">' +
+    esc(Number(b.bytes).toLocaleString()) + ' of ' + esc(Number(b.max).toLocaleString()) + ' bytes used' +
+    (pct >= 80 ? ' · ' + pct + '%' : '') + '</div>';
+}
+
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');
   if (!body) return;
@@ -11528,7 +11610,8 @@ function cnRenderAdminBody_(cfg) {
       '<div id="cn-admin-dept-list">' + deptRows + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-dept">' + icon('plus', 12) + ' Add Department</button>' +
-        '<button class="btn-modal-ok" id="cn-admin-save-depts" style="margin:0">Save Departments</button>' +
+        cnPropBudgetHtml_(cfg, 'CN_DEPARTMENT_EMAILS') +
+      '<button class="btn-modal-ok" id="cn-admin-save-depts" style="margin:0">Save Departments</button>' +
       '</div>' +
     '</div>' +
 
@@ -11539,6 +11622,7 @@ function cnRenderAdminBody_(cfg) {
       '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto;margin-bottom:10px">' +
         cnRenderRateRows_(cfg.stateTaxRates) +
       '</div>' +
+      cnPropBudgetHtml_(cfg, 'CN_STATE_TAX_RATES') +
       '<button class="btn-modal-ok" id="cn-admin-save-rates" style="margin:0">Save Tax Rates</button>' +
     '</div>' +
 
@@ -11547,6 +11631,7 @@ function cnRenderAdminBody_(cfg) {
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Per-department datalist suggestions shown in the email composer. Comma-separated. "Always shown" entries appear for every department.</div>' +
       '<div style="margin-bottom:8px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase">Always shown: ' + esc((cfg.defaultSuggestions || []).join(', ')) + '</div>' +
       '<div id="cn-admin-sug-list">' + cnRenderSuggestionRows_(cfg.updateSuggestions || {}) + '</div>' +
+      cnPropBudgetHtml_(cfg, 'CN_UPDATE_SUGGESTIONS') +
       '<button class="btn-modal-ok" id="cn-admin-save-sugs" style="margin:0;margin-top:10px">Save Suggestions</button>' +
     '</div>' +
 
@@ -11557,7 +11642,8 @@ function cnRenderAdminBody_(cfg) {
       '<div id="cn-admin-tmpl-list">' + cnRenderTemplateRows_(cfg.emailTemplates || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-tmpl">' + icon('plus', 12) + ' Add Template</button>' +
-        '<button class="btn-modal-ok" id="cn-admin-save-tmpls" style="margin:0">Save Templates</button>' +
+        cnPropBudgetHtml_(cfg, 'CN_EMAIL_TEMPLATES') +
+      '<button class="btn-modal-ok" id="cn-admin-save-tmpls" style="margin:0">Save Templates</button>' +
       '</div>' +
     '</div>' +
 
@@ -11568,7 +11654,8 @@ function cnRenderAdminBody_(cfg) {
       '<div id="cn-admin-link-list">' + cnRenderLinkRows_(cfg.externalLinks || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-link">' + icon('plus', 12) + ' Add Link</button>' +
-        '<button class="btn-modal-ok" id="cn-admin-save-links" style="margin:0">Save Links</button>' +
+        cnPropBudgetHtml_(cfg, 'CN_EXTERNAL_LINKS') +
+      '<button class="btn-modal-ok" id="cn-admin-save-links" style="margin:0">Save Links</button>' +
       '</div>' +
     '</div>' +
 
@@ -11584,7 +11671,8 @@ function cnRenderAdminBody_(cfg) {
       '<div id="cn-admin-atag-list" class="cn-atag-list">' + cnRenderAutoTagRows_(cfg.autoTagRules || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-atag">' + icon('plus', 12) + ' Add Rule</button>' +
-        '<button class="btn-modal-ok" id="cn-admin-save-atags" style="margin:0">Save Rules</button>' +
+        cnPropBudgetHtml_(cfg, 'CN_AUTO_TAG_RULES') +
+      '<button class="btn-modal-ok" id="cn-admin-save-atags" style="margin:0">Save Rules</button>' +
       '</div>' +
     '</div>' +
 
@@ -11594,6 +11682,7 @@ function cnRenderAdminBody_(cfg) {
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Resolution-time target (hours) per department for the Dept Requests tracker. Blank = the default (' +
         esc(String((cfg.deptSla && cfg.deptSla.defaultHours) || 48)) + 'h). A request past its SLA shows “Overdue” on the tracker and is counted in the daily manager digest.</div>' +
       '<div id="cn-admin-sla-list">' + cnRenderDeptSlaRows_(cfg.deptSla || {}) + '</div>' +
+      cnPropBudgetHtml_(cfg, 'DR_SLA_TARGETS') +
       '<button class="btn-modal-ok" id="cn-admin-save-sla" style="margin:0;margin-top:10px">Save SLA targets</button>' +
     '</div>' +
 
@@ -11608,6 +11697,7 @@ function cnRenderAdminBody_(cfg) {
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
         '<input type="email" id="cn-admin-spm-add" placeholder="rep@umsupply.com" aria-label="Member email to add" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:220px">' +
         '<button class="refresh-btn" id="cn-admin-spm-addbtn" type="button">' + icon('plus', 12) + ' Add</button>' +
+        cnPropBudgetHtml_(cfg, 'SPANISH_INBOX_MEMBERS') +
         '<button class="btn-modal-ok" id="cn-admin-spm-save" style="margin:0">Save Members</button>' +
       '</div>' +
     '</div>' +
@@ -11620,7 +11710,8 @@ function cnRenderAdminBody_(cfg) {
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('clock', 14) + ' Break schedules</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Scheduled breaks drive the Clock tab’s “Next break” chip and the break reminder (chime + toast) in every open window, including the pinned pop-out. <strong>Default</strong> applies to every timezone without its own schedule; Customize a timezone to give it different breaks. <strong>Per-agent</strong> schedules below win over both, so breaks can be staggered and the whole team is never away at once. Times are in each rep’s <strong>own roster</strong> timezone (CST for everyone under the all-CST policy — a row that disagrees is flagged). Shift start/end times are separate (per-timezone in the app configuration; per-rep via roster column O) — this edits breaks only. Reps pick changes up on their next state refresh (page load or within ~10 minutes).</div>' +
       '<div id="cn-admin-brk-editor">' + cnRenderBreakSchedEditor_(cfg.breakSchedules || {}) + '</div>' +
-      '<button class="btn-modal-ok" id="cn-admin-brk-save" style="margin:10px 0 0">Save break schedules</button>' +
+      cnPropBudgetHtml_(cfg, 'SHIFT_BREAK_SCHEDULES') +
+        '<button class="btn-modal-ok" id="cn-admin-brk-save" style="margin:10px 0 0">Save break schedules</button>' +
     '</div>' +
 
     // QA scorecard criteria (Phase-3 follow-on, 2026-08-28) — the in-app
@@ -11633,6 +11724,7 @@ function cnRenderAdminBody_(cfg) {
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
         '<button class="refresh-btn" id="cn-admin-qacrit-add" type="button">' + icon('plus', 12) + ' Add criterion</button>' +
         '<button class="refresh-btn" id="cn-admin-qacrit-reset" type="button">Reset to app default</button>' +
+        cnPropBudgetHtml_(cfg, 'QA_SCORECARD_CRITERIA') +
         '<button class="btn-modal-ok" id="cn-admin-qacrit-save" style="margin:0">Save criteria</button>' +
       '</div>' +
     '</div>' +
@@ -11647,6 +11739,7 @@ function cnRenderAdminBody_(cfg) {
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
         '<input type="email" id="cn-admin-qam-add" placeholder="rep@umsupply.com" aria-label="Reviewer email to add" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);color:var(--ink);min-width:220px">' +
         '<button class="refresh-btn" id="cn-admin-qam-addbtn" type="button">' + icon('plus', 12) + ' Add</button>' +
+        cnPropBudgetHtml_(cfg, 'QA_MEMBERS') +
         '<button class="btn-modal-ok" id="cn-admin-qam-save" style="margin:0">Save reviewers</button>' +
       '</div>' +
     '</div>' +

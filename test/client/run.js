@@ -9519,12 +9519,14 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   // THE PRIVACY CONTRACT: warehouse geocodes persist (operator-owned, static);
   // the rep's QUERY never does — a looked-up address may be a patient's.
   // (a) the only property write is the warehouse-coordinate cache;
-  const setCalls = f.match(/props\.setProperty\([^)]*\)/g) || [];
+  // Batch Q routed this through propSetBounded_ — the contract is "exactly ONE
+  // property write", whichever writer it goes through, so count both forms.
+  const setCalls = f.match(/props\.setProperty\([^)]*\)|propSetBounded_\([^,]*/g) || [];
   assert.strictEqual(setCalls.length, 1, 'exactly one property write');
   assert.ok(/KB_MAP_GEOCODE_CACHE_PROP/.test(setCalls[0]), 'and it is the coordinate cache');
   // (b) that write happens BEFORE the query is even geocoded, so the query
   //     value cannot be in the serialized blob;
-  const writeAt = f.indexOf('props.setProperty');
+  const writeAt = f.indexOf('propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP');
   const qGeoAt = f.indexOf('kbGeocodeOne_(query)');
   assert.ok(writeAt > 0 && qGeoAt > writeAt, 'cache write precedes the query geocode');
   // (c) cache keys are address HASHES via kbMapCacheKey_, never raw strings;
@@ -10369,6 +10371,7 @@ test('Spanish members Admin editor: validated save, dual-duty copy, empty-list c
     writeAuditLog_: () => {},
   };
   vm.createContext(ctx);
+  loadPropGuard_(ctx);   // Batch Q — the save writes through propSetBounded_
   vm.runInContext(extractRawFunction('Code.js', 'saveSpanishInboxMembers'), ctx);
   const bad = ctx.saveSpanishInboxMembers(['not-an-email']);
   assert.ok(!bad.success && /Not a valid email/.test(bad.error), 'shape-rejects before any write');
@@ -13789,6 +13792,7 @@ test('BRK-3: saveBreakSchedules behavioral — gate, named errors, canonical wri
       getEmployeeRosterRows_: () => [['h'], ['a@x', 'E-1042', 'Avery Blake'], ['', 'E-OLD', 'Gone Person']],
     };
     vm.createContext(ctx);
+    loadPropGuard_(ctx);
     vm.runInContext('const BREAK_EMP_KEY_RE = /^[A-Za-z0-9_\\-]{1,40}$/; const BREAK_EMP_MAX_KEYS = 200;\n' +
       extractRawFunction('Code.js', 'breakListSanitize_') + '\n' + extractRawFunction('Code.js', 'breakListValidate_') + '\n' +
       extractRawFunction('Code.js', 'breakSchedSanitize_') + '\n' + extractRawFunction('Code.js', 'saveBreakSchedules'), ctx);
@@ -14029,8 +14033,8 @@ test('BRK-4: wiring — memoized single-read getter, memo reset on save, adminVi
     'memoized per execution — getShiftSchedule_ runs per-rep-per-day in the coverage walks');
   const save = nc(extractRawFunction('Code.js', 'saveBreakSchedules'));
   assert.ok(/_breakSchedulesCache = undefined/.test(save), 'save resets the memo (a same-execution read sees the new value)');
-  assert.ok(/deleteProperty\('SHIFT_BREAK_SCHEDULES'\)/.test(save) && /setProperty\('SHIFT_BREAK_SCHEDULES'/.test(save),
-    'save owns both write directions');
+  assert.ok(/deleteProperty\('SHIFT_BREAK_SCHEDULES'\)/.test(save) && /propSetBounded_\('SHIFT_BREAK_SCHEDULES'/.test(save),
+    'save owns both write directions (the write goes through the Batch-Q size guard)');
   // The merge consults the property with `!== undefined` (explicit-empty
   // contract) and tz before DEFAULT.
   const sched = nc(extractRawFunction('Code.js', 'getShiftSchedule_'));
@@ -14513,6 +14517,7 @@ test('QA-15: saveQaScorecardCriteria behavioral — gate, named errors, delete-o
       JSON: JSON,
     };
     vm.createContext(ctx);
+    loadPropGuard_(ctx);
     vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40;", ctx);
     ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
     vm.runInContext(extractRawFunction('Code.js', 'qaCriteriaSanitize_'), ctx);
@@ -16399,6 +16404,7 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnPropStoreHtml_');     // Q3 sibling
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -17335,9 +17341,9 @@ test('F4: every completing flow drops the rep cached Needs-you list', () => {
   // the SENDER's list; the in-app path also clears the RESOLVER's (the one
   // case where the acting rep is not the owner).
   const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
-  assert.ok(/pendingTasksBust_\(rows\[i\]\[DR\.BY_ID\]\)/.test(mark),
+  assert.ok(/pendingTasksBust_\(row\[DR\.BY_ID\]\)/.test(mark),
     'resolving clears the SENDER list — by emp id, never an email');
-  assertBefore(mark, 'drBumpCacheGen_()', 'pendingTasksBust_(rows[i][DR.BY_ID])',
+  assertBefore(mark, 'drBumpCacheGen_()', 'pendingTasksBust_(row[DR.BY_ID])',
     'the bust sits with the other cache invalidation, after the status write');
   assert.ok(/pendingTasksBust_\(emp\.id\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
     'the in-app path also clears the resolver own incoming row');
@@ -17763,6 +17769,7 @@ test('QA-24: criterion types — canonical shape, non-numeric option rule, the n
     QA_SCORECARD_CRITERIA: [{ key: 'greeting', label: 'Greeting' }],
   };
   vm.createContext(sctx);
+  loadPropGuard_(sctx);
   vm.runInContext("const QA_CRITERION_TYPES = ['scale', 'check', 'choice']; const QA_CHOICE_OPTIONS_MIN = 2; const QA_CHOICE_OPTIONS_MAX = 12; const QA_CHOICE_OPTION_MAX_CHARS = 40;", sctx);
   ['qaCritType_', 'qaChoiceOptionsSanitize_', 'qaOptionIsNumeric_', 'qaCriteriaSanitize_', 'getQaScorecardCriteria_', 'saveQaScorecardCriteria'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), sctx));
   const S = sctx.saveQaScorecardCriteria;
@@ -18579,7 +18586,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/function markDeptRequestResolved_\(token, byEmail, via\)/.test(w), 'the writer takes the path');
   assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
     'the path is validated against the shared list before the write');
-  assert.ok(/getRange\(i \+ 1, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written');
+  assert.ok(/getRange\(rowIndex, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written (Q5 — at the row the bounded lookup located)');
   assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
   assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
     "the in-app button resolves as 'app'");
@@ -18818,6 +18825,7 @@ test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), 
       PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] || '' }) },
       writeAuditLog_: (e, action, a, b, c, d, notes) => { audits.push({ action: action, notes: notes }); },
     });
+    loadPropGuard_(sbx);
     vm.runInContext(extractRawFunction('Code.js', 'saveQaMembers'), sbx, { filename: 'Code.js#saveQaMembers' });
     return sbx.saveQaMembers;
   };
@@ -19897,6 +19905,285 @@ test('S3: _suiteEnvCheck_ names every Script Property the suite reads (derived f
   const at = setup.indexOf('_suiteEnvCheck_();'), guard = setup.indexOf("assertNotProdInstance_('setupTestEnvironment')");
   assert.ok(at > 0 && guard > at, 'the env check runs at the TOP of setup, before the prod guard can throw');
   assert.ok(/try \{ _suiteEnvCheck_\(\); \} catch/.test(setup), 'and is itself try/caught');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Batch Q (2026-09-11) — SCRIPT PROPERTY SIZE GUARD. Apps Script caps a
+// property VALUE at 9KB and the store at 500KB; no code or doc accounted for
+// either, while the advertised entry caps admitted far more (the email
+// templates alone: 50 × 4,000 chars ≈ 200KB). Every JSON-blob write now goes
+// through propSetBounded_ — operator blobs REFUSE by name with nothing
+// written, auto-managed ones DEGRADE by name through a shrinker.
+// NOTE the placement: ABOVE the summary line (the documented harness hazard).
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nBatch Q — Script Property size guard');
+
+/** Batch Q — load the Script-Property size guard into a vm sandbox. Every
+ *  behavioural save-endpoint pin drives a REAL save endpoint, and every save
+ *  now writes through propSetBounded_, so each sandbox needs the guard and its
+ *  deps. NOTE the `var`: a `const` inside vm.runInContext is a LEXICAL
+ *  binding, not a context property, so the sandbox's functions cannot see it. */
+function loadPropGuard_(ctx) {
+  if (!ctx.Logger) ctx.Logger = { log: () => {} };
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  ['PROP_VALUE_MAX', 'PROP_STORE_MAX', 'PROP_WARN_PCT'].forEach((c) => {
+    const m = code.match(new RegExp('^const ' + c + ' = ([^;]+);', 'm'));
+    assert.ok(m, c + ' declared in Code.js');
+    vm.runInContext('var ' + c + ' = ' + m[1] + ';', ctx);
+  });
+  ['utf8Len_', 'propSetBounded_', 'propShrinkDropOldest_', 'propShrinkStripFields_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'Code.js#' + f }));
+  return ctx;
+}
+
+// The scalar writers that legitimately stay on setProperty, each with its
+// reason. A blob property must NOT appear here — that is the whole point.
+const Q_SCALAR_WRITERS = {
+  'CN_NOTE_ARCHIVE_DAYS': 'a day count (≤4 chars)',
+  'CN_NOTE_RETENTION_DAYS': 'a day count',
+  'CN_ARCHIVE_RETENTION_DAYS': 'a day count',
+  'VIEW_USAGE_RETENTION_PROP': 'a day count',
+  'CLIENT_ERR_RETENTION_PROP': 'a day count',
+  'KB_AI_DAILY_CAP': 'a dollar cap',
+  'KB_AI_MODEL': 'one model key from KB_AI_MODEL_PRICES',
+  'KB_AI_GEN_PROP': 'a monotonic integer',
+  'KB_IMAGES_FOLDER_PROP': 'one Drive folder id',
+};
+
+test('Q-1: every JSON-blob property is written through propSetBounded_ — the scalar writers are allowlisted BY NAME, and no blob key is', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const helper = extractRawFunction('Code.js', 'propSetBounded_');
+  // Every setProperty OUTSIDE the helper writes an allowlisted scalar.
+  const outside = src.replace(helper, '');
+  const calls = outside.match(/setProperty\(\s*([A-Za-z_$][\w$]*|'[^']+')/g) || [];
+  assert.ok(calls.length >= 9, 'the scalar writers are still there: ' + calls.length);
+  calls.forEach((c) => {
+    const key = c.replace(/^setProperty\(\s*/, '').replace(/'/g, '');
+    assert.ok(Object.prototype.hasOwnProperty.call(Q_SCALAR_WRITERS, key),
+      key + ': writes a Script Property directly — route it through propSetBounded_, or add it to Q_SCALAR_WRITERS with a reason if it is a bounded scalar');
+  });
+  // And every blob key the app owns IS written through the helper.
+  const bounded = (src.match(/propSetBounded_\(\s*([A-Za-z_$][\w$]*|'[^']+')/g) || [])
+    .map((c) => c.replace(/^propSetBounded_\(\s*/, '').replace(/'/g, ''));
+  ['CN_EMAIL_TEMPLATES', 'CN_EXTERNAL_LINKS', 'CN_AUTO_TAG_RULES', 'CN_UPDATE_SUGGESTIONS',
+   'CN_DEPARTMENT_EMAILS', 'CN_STATE_TAX_RATES', 'CN_FEATURE_FLAGS', 'DR_SLA_TARGETS',
+   'SPANISH_INBOX_MEMBERS', 'QA_MEMBERS', 'QA_SCORECARD_CRITERIA', 'SHIFT_BREAK_SCHEDULES',
+   'CN_ARCHIVED_TAGS_PROP', 'KB_SYNONYMS_PROP', 'AUTOMATION_ERROR_PROP', 'DIGEST_LAST_RUN_PROP',
+   'SELF_TEST_RESULT_PROP', 'WITNESS_AUDIT_FAILS', 'KB_MAP_GEOCODE_CACHE_PROP', 'KB_AI_SPEND_PROP',
+  ].forEach((k) => assert.ok(bounded.indexOf(k) >= 0, k + ': a JSON-blob property must be written through propSetBounded_'));
+  // The operator-edited set REFUSES (default mode); the auto-managed ones DEGRADE.
+  const modeOf = (key) => {
+    // A literal key is quoted in the source; a CONSTANT key is not.
+    const at = Math.max(src.indexOf("propSetBounded_('" + key + "'"), src.indexOf('propSetBounded_(' + key + ','));
+    assert.ok(at > 0, key + ' write not found');
+    const call = src.slice(at, src.indexOf(';', at));
+    return /mode: 'degrade'/.test(call) ? 'degrade' : 'refuse';
+  };
+  ['CN_EMAIL_TEMPLATES', 'CN_EXTERNAL_LINKS', 'CN_AUTO_TAG_RULES', 'DR_SLA_TARGETS',
+   'QA_SCORECARD_CRITERIA', 'SHIFT_BREAK_SCHEDULES', 'KB_SYNONYMS_PROP']
+    .forEach((k) => assert.strictEqual(modeOf(k), 'refuse', k + ': an operator-edited blob must REFUSE (nothing written), never silently drop their entries'));
+  ['AUTOMATION_ERROR_PROP', 'DIGEST_LAST_RUN_PROP', 'SELF_TEST_RESULT_PROP', 'WITNESS_AUDIT_FAILS',
+   'KB_MAP_GEOCODE_CACHE_PROP', 'KB_AI_SPEND_PROP']
+    .forEach((k) => assert.strictEqual(modeOf(k), 'degrade', k + ': an auto-managed blob must DEGRADE — a throw here would break the job whose error path it is'));
+  // Each refusing call NAMES a remedy (the message the operator reads).
+  ['CN_EMAIL_TEMPLATES', 'CN_EXTERNAL_LINKS', 'DR_SLA_TARGETS', 'QA_SCORECARD_CRITERIA']
+    .forEach((k) => {
+      const at = Math.max(src.indexOf("propSetBounded_('" + k + "'"), src.indexOf('propSetBounded_(' + k + ','));
+      assert.ok(/hint: '[^']{10,}'/.test(src.slice(at, src.indexOf(';', at))), k + ': the refusal must name what the operator can do about it');
+    });
+  // The geocode cache self-resets on BYTES, not only on entry count — 200
+  // {lat,lng} entries sit on the order of the cap (the documented residual).
+  const map = stripJsComments_(extractRawFunction('Code.js', 'kbMapDistances'));
+  assert.ok(/KB_MAP_GEOCODE_CACHE_MAX/.test(map) && /propSetBounded_\(KB_MAP_GEOCODE_CACHE_PROP[\s\S]{0,400}mode: 'degrade'/.test(map),
+    'the geocode cache keeps its entry-count reset AND degrades on bytes');
+  // …and the privacy contract is untouched: still exactly one property write
+  // in that function, still before the query geocode (the INV-119 posture).
+  assert.strictEqual((map.match(/propSetBounded_\(|setProperty\(/g) || []).length, 1, 'kbMapDistances still makes exactly ONE property write');
+});
+
+test('Q-1b: propSetBounded_ + its shrinkers, driven — refuse writes NOTHING and names the key/size/cap; degrade shrinks then clears; utf8Len_ counts BYTES', () => {
+  const ctx = { String, JSON, Number, Math, Object, Array, RegExp, Error, Logger: { log: () => {} } };
+  const store = {};
+  let sets = 0, deletes = 0;
+  ctx.PropertiesService = { getScriptProperties: () => ({
+    setProperty: (k, v) => { sets++; store[k] = v; },
+    deleteProperty: (k) => { deletes++; delete store[k]; },
+    getProperty: (k) => (k in store ? store[k] : null),
+  }) };
+  vm.createContext(ctx);
+  loadPropGuard_(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'propValueBudget_'), ctx, { filename: 'Code.js#propValueBudget_' });
+  // utf8Len_ counts BYTES, which a .length in UTF-16 units under-counts.
+  assert.strictEqual(ctx.utf8Len_('abc'), 3, 'ASCII');
+  assert.strictEqual(ctx.utf8Len_('é'), 2, 'a 2-byte char is 2, not 1');
+  assert.strictEqual(ctx.utf8Len_('…'), 3, 'a 3-byte char is 3');
+  assert.strictEqual(ctx.utf8Len_('😀'), 4, 'a surrogate PAIR is 4 bytes, not 6');
+  assert.strictEqual(ctx.utf8Len_(null), 0, 'null is 0');
+  const MAX = ctx.PROP_VALUE_MAX;
+  assert.ok(MAX > 0 && MAX <= 9216, 'the cap sits under the platform 9KB: ' + MAX);
+  // A value that FITS is written verbatim.
+  const small = JSON.stringify({ a: 1 });
+  assert.strictEqual(ctx.propSetBounded_('K_OK', small), ctx.utf8Len_(small), 'returns the byte count written');
+  assert.strictEqual(store.K_OK, small, 'written verbatim');
+  // REFUSE: throws, names key + size + cap + the hint, and writes NOTHING.
+  const big = JSON.stringify({ body: 'x'.repeat(MAX + 500) });
+  const setsBefore = sets;
+  let err = null;
+  try { ctx.propSetBounded_('CN_EMAIL_TEMPLATES', big, { hint: 'shorten or remove a template' }); } catch (e) { err = e; }
+  assert.ok(err, 'an over-cap operator blob throws');
+  assert.ok(/CN_EMAIL_TEMPLATES/.test(err.message), 'names the key');
+  assert.ok(/Script Properties hold/.test(err.message) && new RegExp(String(MAX).replace(/(\d)(?=(\d{3})+$)/g, '$1,')).test(err.message), 'names the cap: ' + err.message);
+  assert.ok(/shorten or remove a template/.test(err.message), 'names the remedy');
+  assert.ok(/Nothing was saved/.test(err.message), 'says nothing was written');
+  assert.strictEqual(sets, setsBefore, 'and nothing WAS written');
+  assert.ok(!('CN_EMAIL_TEMPLATES' in store), 'the key is absent');
+  // DEGRADE via drop-oldest: shrinks until it fits, keeping the NEWEST.
+  const map = {};
+  for (let i = 0; i < 400; i++) map['job' + i] = { at: '2026-01-' + String((i % 28) + 1).padStart(2, '0') + ' 00:00:00', message: 'e'.repeat(40) };
+  map.newest = { at: '2026-12-31 23:59:59', message: 'latest' };
+  const wrote = ctx.propSetBounded_('AUTOMATION_LAST_ERRORS', JSON.stringify(map), { mode: 'degrade', shrink: ctx.propShrinkDropOldest_ });
+  assert.ok(wrote > 0 && wrote <= MAX, 'degraded under the cap: ' + wrote);
+  const kept = JSON.parse(store.AUTOMATION_LAST_ERRORS);
+  assert.ok(kept.newest, 'the NEWEST stamp survives the shrink');
+  assert.ok(Object.keys(kept).length < 401, 'entries were dropped');
+  // A single entry that cannot fit at all: the property is CLEARED, not left stale.
+  const delsBefore = deletes;
+  assert.strictEqual(ctx.propSetBounded_('DIGEST_LAST_RUNS', JSON.stringify({ only: 'z'.repeat(MAX + 100) }), { mode: 'degrade', shrink: ctx.propShrinkDropOldest_ }), 0,
+    'an unshrinkable degrade returns 0');
+  assert.strictEqual(deletes, delsBefore + 1, 'and deletes the property rather than leaving a stale value');
+  // strip-fields shrinker: drops the named free text, then gives up.
+  const strip = ctx.propShrinkStripFields_(['note', 'error']);
+  const r1 = JSON.parse(strip(JSON.stringify({ pass: 1, note: 'n', error: 'e' })));
+  assert.deepStrictEqual(Object.keys(r1).sort(), ['pass'], 'the free-text fields go, the figures stay');
+  assert.strictEqual(strip(JSON.stringify({ pass: 1 })), null, 'nothing left to strip → null');
+  assert.strictEqual(ctx.propShrinkDropOldest_('not json'), null, 'garbage → null, never a throw');
+  assert.strictEqual(ctx.propShrinkDropOldest_('{}'), null, 'an empty map → null');
+  // The budget helper is pure and reports the same unit.
+  const b = ctx.propValueBudget_('K', 'é'.repeat(100));
+  assert.strictEqual(b.bytes, 200, 'budget counts bytes');
+  assert.strictEqual(b.max, MAX);
+  assert.strictEqual(b.pct, Math.round(200 * 100 / MAX));
+});
+
+test('Q-2: every Admin save endpoint routes its write through the guard and its editor shows the budget; the worst-case advertised caps are stated', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = stripJsComments_(code);
+  // Each save endpoint's write is the bounded one, INSIDE the try whose catch
+  // turns the thrown refusal into {success:false, error} for the client.
+  [['saveEmailTemplates', 'CN_EMAIL_TEMPLATES'], ['saveExternalLinks', 'CN_EXTERNAL_LINKS'],
+   ['saveAutoTagRules', 'CN_AUTO_TAG_RULES'], ['saveUpdateSuggestions', 'CN_UPDATE_SUGGESTIONS'],
+   ['saveDepartmentEmails', 'CN_DEPARTMENT_EMAILS'], ['saveStateTaxRates', 'CN_STATE_TAX_RATES'],
+   ['saveFeatureFlags', 'CN_FEATURE_FLAGS'], ['saveDeptRequestSla', 'DR_SLA_TARGETS'],
+   ['saveSpanishInboxMembers', 'SPANISH_INBOX_MEMBERS'], ['saveQaMembers', 'QA_MEMBERS'],
+   ['saveQaScorecardCriteria', 'QA_SCORECARD_CRITERIA'], ['saveBreakSchedules', 'SHIFT_BREAK_SCHEDULES'],
+   ['kbSaveSearchConfig', 'KB_SYNONYMS_PROP'], ['setArchivedTagsSet_', 'CN_ARCHIVED_TAGS_PROP'],
+  ].forEach(([fn, key]) => {
+    const body = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(new RegExp("propSetBounded_\\('?" + key + "[',]").test(body), fn + ': writes ' + key + ' through the guard');
+    assert.ok(!/[^_]setProperty\(/.test(body), fn + ': no raw setProperty left');
+    if (fn !== 'setArchivedTagsSet_') {
+      assert.ok(/catch \(err\) \{ return \{ success: false, error: err\.message \}/.test(body),
+        fn + ': the catch turns the guard\'s thrown refusal into a named {success:false} the editor shows');
+    }
+  });
+  // The budget rides getAdminConfig (one read) + the synonyms read.
+  const cfg = stripJsComments_(extractRawFunction('Code.js', 'getAdminConfig'));
+  assert.ok(/propBudget: propBudgetsFor_\(ADMIN_PROP_KEYS_\)/.test(cfg) && /propValueMax: PROP_VALUE_MAX/.test(cfg), 'getAdminConfig ships the budgets');
+  assert.ok(/propBudget: propBudgetsFor_\(\[KB_SYNONYMS_PROP\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'kbGetSearchConfig'))), 'kbGetSearchConfig ships its own');
+  // ADMIN_PROP_KEYS_ covers every key an Admin editor writes.
+  const keysDecl = code.match(/const ADMIN_PROP_KEYS_ = \[([\s\S]*?)\];/);
+  assert.ok(keysDecl, 'ADMIN_PROP_KEYS_ declared');
+  const declared = (keysDecl[1].match(/'([^']+)'/g) || []).map((x) => x.replace(/'/g, ''));
+  ['CN_EMAIL_TEMPLATES', 'CN_EXTERNAL_LINKS', 'CN_AUTO_TAG_RULES', 'CN_UPDATE_SUGGESTIONS',
+   'CN_DEPARTMENT_EMAILS', 'CN_STATE_TAX_RATES', 'DR_SLA_TARGETS', 'SPANISH_INBOX_MEMBERS',
+   'QA_MEMBERS', 'QA_SCORECARD_CRITERIA', 'SHIFT_BREAK_SCHEDULES']
+    .forEach((k) => assert.ok(declared.indexOf(k) >= 0, k + ': in ADMIN_PROP_KEYS_, so its editor gets a budget'));
+  // The client: one badge builder, used by every bounded editor, guarded on
+  // the field's presence (deploy skew — never a fabricated 0%).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/function cnPropBudgetHtml_\(cfg, key\)/.test(cn), 'one budget builder');
+  const builder = extractFunction('cn/script_callnotes.html', 'cnPropBudgetHtml_');
+  assert.ok(/if \(!b\) return '';/.test(builder), 'renders NOTHING without a server budget');
+  assert.ok(/pct >= 90 \? 'danger'/.test(builder) && /pct >= 80 \? 'warn'/.test(builder), 'toned by share of the cap');
+  declared.filter((k) => k !== 'CN_FEATURE_FLAGS' && k !== 'CN_ARCHIVED_TAGS').forEach((k) =>
+    assert.ok(new RegExp("cnPropBudgetHtml_\\(cfg, '" + k + "'\\)").test(cn), k + ': its editor shows the budget'));
+  ['cn-prop-budget', 'cn-prop-budget-ok', 'cn-prop-budget-warn', 'cn-prop-budget-danger'].forEach((c) =>
+    assert.ok(new RegExp('\\.' + c + '\\s*[,{]').test(cn), c + ' is defined in a stylesheet'));
+  // The KB synonyms editor shows its own.
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/res\.propBudget/.test(kb) && /bytes used/.test(kb), 'the synonyms modal shows its budget');
+  // WORST-CASE ARITHMETIC: the advertised caps that cannot fit are the reason
+  // the serialized check exists — assert the arithmetic, so a raised entry cap
+  // reads as the over-budget it is rather than passing silently.
+  const n = (name) => { const m = code.match(new RegExp('^const ' + name + ' = (\\d+)', 'm')); assert.ok(m, name); return Number(m[1]); };
+  const worstTemplates = n('CN_EMAIL_TEMPLATE_LIMIT') * n('CN_EMAIL_TEMPLATE_BODY_MAX');
+  const maxM = code.match(/^const PROP_VALUE_MAX = (\d+)/m);
+  assert.ok(worstTemplates > Number(maxM[1]),
+    'the email-template caps still admit more than one property can hold (' + worstTemplates + ' > ' + maxM[1] + ') — which is why the SERIALIZED size is checked at the write');
+});
+
+test('Q-3: Storage Health reports the Script Property store — read-only, unknown-not-OK, an ok FACT when comfortable', () => {
+  const st = stripJsComments_(extractRawFunction('Code.js', 'scriptPropertiesStatus_'));
+  assert.ok(!/setProperty\(|deleteProperty\(|setValue\(/.test(st), 'read-only');
+  assert.ok(/bytes: null/.test(st) && /largestBytes: null/.test(st), 'a failed read is null (unknown), never 0');
+  assert.ok(!/out\.values|return all|JSON\.stringify\(all\)/.test(st), 'values are counted, never returned');
+  const gs = stripJsComments_(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/propStore: propStore/.test(gs) && /try \{ propStore = scriptPropertiesStatus_\(\); \} catch/.test(gs),
+    'getStorageHealth ships it defensively');
+  // Driven: a comfortable store, a full one, an unreadable one.
+  const ctx = { String, JSON, Number, Math, Object, Array, RegExp, Error };
+  vm.createContext(ctx);
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  loadPropGuard_(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x'.repeat(100), BB: 'y'.repeat(4000) }) }) };
+  const ok = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
+  assert.strictEqual(ok.count, 2);
+  assert.strictEqual(ok.largestKey, 'BB');
+  assert.strictEqual(ok.largestBytes, 4000);
+  assert.strictEqual(ok.bytes, 100 + 1 + 4000 + 2, 'keys count toward the store total too');
+  assert.strictEqual(ok.error, '');
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => { throw new Error('store unavailable'); } }) };
+  const bad = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
+  assert.strictEqual(bad.bytes, null, 'an unreadable store is UNKNOWN, never 0 bytes used');
+  assert.ok(/store unavailable/.test(bad.error), 'and says why');
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({}) }) };
+  const empty = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
+  assert.strictEqual(empty.bytes, 0); assert.strictEqual(empty.largestBytes, 0);
+  // Client: the line + the finding, both tone-correct and both absent without data.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const line = extractFunction('cn/script_callnotes.html', 'cnPropStoreHtml_');
+  assert.ok(/if \(!ps\) return '';/.test(line), 'renders nothing without the field (deploy skew)');
+  assert.ok(/ps\.bytes === null[\s\S]{0,120}tone = 'warn'/.test(line), 'an unreadable store reads WARN, not ok');
+  assert.ok(/tone = over \? 'warn' : 'ok'/.test(line), 'comfortable is the ok FACT (INV-186)');
+  assert.ok(/cnPropStoreHtml_\(res && res\.propStore\)/.test(cn), 'wired into the storage panel');
+  const find = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnHealthFindings_'));
+  assert.ok(/add\('propStore', 'storage', 'ok'/.test(find), 'a comfortable store is an ok item, so the tab still reaches "Nothing needs attention"');
+  assert.ok(/add\('propStore', 'storage', 'warn', 'Script Properties could not be read'/.test(find), 'an unreadable store is a WARN finding');
+  assert.ok(/add\('propStore', 'storage', 'warn', 'Script Properties are filling up'/.test(find), 'past the threshold it warns');
+  // The fixtures carry the field (INV-185) so the System scenarios shoot it.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.strictEqual((mock.match(/propStore: \{ valueMax: 9000/g) || []).length, 2, 'both getStorageHealth fixtures carry propStore');
+  assert.ok(/propBudget: \(function \(\)/.test(mock) && /propValueMax: 9000/.test(mock), 'the getAdminConfig fixture carries the per-editor budgets');
+});
+
+test('Q-5: both DeptRequests resolve paths use the bounded RequestId lookup — no whole-tab read of a PHI-bearing store per click', () => {
+  const mark = stripJsComments_(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  const inApp = stripJsComments_(extractRawFunction('Code.js', 'resolveDeptRequest'));
+  [['markDeptRequestResolved_', mark], ['resolveDeptRequest', inApp]].forEach(([name, body]) => {
+    assert.ok(/drFindRowByReqId_\(/.test(body), name + ': locates the row through the bounded reader');
+    assert.ok(!/getDataRange\(\)/.test(body), name + ': no whole-tab read remains');
+  });
+  // The write still targets the row the lookup returned (a stale index here
+  // would resolve the WRONG request), and every contract the callers rely on
+  // survives: already-resolved shape, the four cell writes, the cache busts.
+  assert.ok(/const row = hit\.row, rowIndex = hit\.rowIndex;/.test(mark), 'the row and its index come from the same hit');
+  ['DR.STATUS', 'DR.RESOLVED_AT', 'DR.RESOLVED_BY', 'DR.RESOLVED_VIA'].forEach((c) =>
+    assert.ok(new RegExp('getRange\\(rowIndex, ' + c.replace('.', '\\.') + ' \\+ 1\\)\\.setValue').test(mark), c + ' is written at the located row index'));
+  assert.ok(/already: true[\s\S]{0,200}formTokenIsoString_\(row\[DR\.RESOLVED_AT\]\)/.test(mark), 'the already-resolved reply keeps its coercion-safe stamp');
+  assert.ok(/drBumpCacheGen_\(\)/.test(mark) && /pendingTasksBust_\(row\[DR\.BY_ID\]\)/.test(mark), 'both cache busts survive');
+  assert.ok(/if \(!hit\) return \{ found: false \}/.test(mark), 'an unknown token is still not-found');
+  assert.ok(/drCanAct_\(emp, row\)/.test(inApp), 'the in-app path still scope-checks the located row');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
