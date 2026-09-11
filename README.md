@@ -47,7 +47,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
     Metrics" (the team aggregate for everyone; the per-rep table
     and diagnostics stay manager-only — date-range and preset
     chips), "Spanish Inbox" (bilingual-assistance request
-    tracking with a per-member resolution-share chart), and "Dept
+    tracking with a per-member resolution-share chart and a manager
+    auto-assign of unclaimed requests), and "Dept
     Requests" (inter-department request tracking with SLA status).
     CDR metrics also enrich the Call Notes Stats tab via a
     best-effort overlay.
@@ -98,7 +99,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (severity-graded, rep-acknowledged) with a team-scoped manager
     dashboard and analytics (ack-rate, median time-to-acknowledge,
     overdue, per-rep) — kept in the same HR store, never purged.
-  - **QA** — call-recording review for managers plus listed QA members
+  - **QA** — call-recording review for managers plus the QA reviewers listed in
+    Admin → Config
     (currently hidden from other reps by operator decision). The
     operator drops recordings into one Drive folder; an idempotent
     "Sync from Drive" indexes them into a dedicated QA spreadsheet

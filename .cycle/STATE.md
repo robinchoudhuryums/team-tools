@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — the OPERATOR testing-notes round (see the section below; Batches A and B of four are done). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: docs reconciled — ready for `/reflect`. The OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -14,7 +14,7 @@ Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-10 (Batch D landed — the operator round is fully implemented; docs owed to /sync-docs)
+Updated: 2026-09-11 (/sync-docs applied for Batches A–D — CLAUDE.md, README, this file; nothing owed but /reflect)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -125,6 +125,8 @@ D (note 10 — a new presence signal on the Team-right-now card).
   net 0), so the reflection has honest inputs to start from.
 - The ONE deploy owed for PRs #230/#232/#233 now also carries all four
   batches AND these doc changes; nothing here reaches production without it.
+- The operator testing-notes round (Batches A–D + this /sync-docs pass) rides
+  that SAME deploy; post-deploy `runAllTests()` expects **310**.
 
 ## Open follow-on items
 - web-app/Code.js — a `reportBreakPairingChanges()` twin of `reportMultiBreakDays()` would enumerate the historical days whose hours move under F1. Not written (out of scope); F1's shape is rarer than the multi-break one, and no existing report finds it.
@@ -152,17 +154,23 @@ D (note 10 — a new presence signal on the Team-right-now card).
 Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
 (notes 2/3, c525c89), C (notes 4/6/8, 155dd02) and D (note 10, 9176908 +
 1961691) are ALL implemented, bite-checked, committed and pushed on
-`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged).
-Pick up with `/sync-docs` for ALL FOUR blocks' documentation lists
-(`.cycle/blocks/19-operator-batch{A,B,C,D}-broad-implement.md` — B's
-includes the S74 rewrite and the harness-hazard wording; C's the INV-138
-"PHI-free store" amendment, the INV-31 manager-tier note for
-`autoAssignSpanishThreads`, the INV-196/S90 QA reviewers path and the
-S74/Spanish scenario steps; D's the Time Clock KDD chip note, a Common
-Gotcha for the two measured layout lessons, the operator-state entry and
-the running totals 785/113/310), then `/reflect` to close cycle 19. The N4
-scheduled trigger and the chip's schedule/PTO gating are logged
-follow-ons, not open work.
+`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged),
+and `/sync-docs` (2026-09-11) has applied every documentation update the four
+blocks owed: INV-31 (expand toggle, manual resolves untimed,
+`autoAssignSpanishThreads` on the MANAGER tier), INV-138 (`ResolvedVia`,
+`PatientTrx` — the store is no longer PHI-free, `drCanAct_`,
+`getDeptRequestDetail`), INV-196 + the QA operator-state entry (`saveQaMembers`,
+`qaCanReviewEmail_`), INV-134 (six sinks + the derived message), the T2 /
+Coach-button / Spanish / Dept Requests / business-hours / Time Clock KDDs, a
+new Common Gotcha (the two measured layout lessons), the manager-gated list
+gotcha, the 2026-09-10 Operator State entry, the running totals
+785 / 113 / 102 / 310 + the harness-hazard wording, scenarios
+S26/S68/S74/S80/S90/S93/S101 and the new S105, and two README lines. The
+pure harness was re-run after the doc edits (785 / 0) because its F7 and
+VIS-COVER pins read CLAUDE.md. Pick up with `/reflect` to close cycle 19 —
+the four operator blocks' self-reported nets are the inputs. The N4
+scheduled trigger and the chip's schedule/PTO gating are logged follow-ons,
+not open work.
 Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
 `claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
 `19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
