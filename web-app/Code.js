@@ -16741,6 +16741,27 @@ function drCanAct_(emp, row) {
   });
 }
 
+/** Bounded single-request lookup (cycle-19 follow-on — the findFormTokenRow_ /
+ *  findCallNoteRow_ shape): scan ONLY the RequestId column to locate the row,
+ *  then fetch that ONE row at DR_HEADERS width (the header self-heals to it,
+ *  so a legacy narrow row reads its trailing cells as ''). RequestIds are
+ *  UUIDs, so the first match is the row. Returns { rowIndex, row } or null;
+ *  a blank id costs no read at all. */
+function drFindRowByReqId_(sheet, reqId) {
+  const id = String(reqId || '').trim();
+  if (!id) return null;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const ids = sheet.getRange(2, DR.REQ_ID + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === id) {
+      const rowIndex = i + 2;
+      return { rowIndex: rowIndex, row: sheet.getRange(rowIndex, 1, 1, DR_HEADERS.length).getValues()[0] };
+    }
+  }
+  return null;
+}
+
 /** The tracker card's EXPAND — the source note's fields for a request the
  *  caller may act on (drCanAct_: sender / manager / receiving-dept member —
  *  the SAME rule as resolveDeptRequest, so anyone who may close a request may
@@ -16760,11 +16781,11 @@ function getDeptRequestDetail(requestId) {
     if (!emp) return { error: 'Not authorized.' };
     const reqId = String(requestId || '').trim();
     if (!reqId) return { error: 'Request not found.' };
-    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let row = null;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === reqId) { row = rows[i]; break; }
-    }
+    // Bounded (cycle-19 follow-on): the RequestId column, then ONE row — this
+    // fires per Expand click on a rep-facing list and used to read the whole
+    // tab, every request's PatientTrx cell included, to find one row.
+    const hit = drFindRowByReqId_(getOrCreateDeptRequestsSheet_(), reqId);
+    const row = hit ? hit.row : null;
     if (!row || !drCanAct_(emp, row)) return { error: 'Request not found.' };
     const base = {
       requestId: reqId,

@@ -19469,6 +19469,70 @@ test('TW-B: a chromatic colour literal in a partial never duplicates a design to
   assert.strictEqual(canvasCount, 4, 'four canvas fallbacks (qa ×2, empdocs ×2) — each pinned equal to its token above');
 });
 
+
+/* ── DR: the bounded getDeptRequestDetail read (cycle-19 follow-on) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nDR — getDeptRequestDetail reads one column, then one row');
+
+test('DR-1: drFindRowByReqId_ scans the RequestId column and fetches ONE row at DR_HEADERS width; the detail routes through it', () => {
+  const ctx = vm.createContext({});
+  ['DR', 'DR_HEADERS'].forEach((k) => {
+    const m = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(new RegExp('^const ' + k + ' = (.*);$', 'm'));
+    vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx, { filename: 'Code.js#' + k });   // var — a lexical const is not a context property
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'drFindRowByReqId_'), ctx, { filename: 'Code.js#drFindRowByReqId_' });
+  // A stub sheet that RECORDS every range it is asked for. 3 data rows, a
+  // grid wider than the header (an operator note column) so a width taken
+  // from getLastColumn() is distinguishable from DR_HEADERS.length.
+  const grid = [
+    ['RequestId', 'CreatedById'],
+    ['r-aaa', 'E1', 'Ana', 'ana@x', 'Billing', 'x.com', '2026-09-01T09:00:00', 'open', '', '', 'Close order', 'n-1', '', 'Jane Doe · TRX 42', 'operator note'],
+    [' r-bbb ', 'E2', 'Bo', 'bo@x', 'Shipping', 'x.com', '2026-09-01T10:00:00', 'resolved', '', '', 'Ship', 'n-2', 'email', '', ''],
+    ['r-ccc', 'E3', 'Cy', 'cy@x', 'Power', 'x.com', '2026-09-02T09:00:00', 'open', '', '', 'Power', '', '', '', ''],
+  ];
+  const mk = () => {
+    const calls = [];
+    const sheet = {
+      getLastRow: () => grid.length,
+      getLastColumn: () => 20,
+      getRange: (r, c, nr, nc) => {
+        calls.push([r, c, nr, nc].join(','));
+        return { getValues: () => grid.slice(r - 1, r - 1 + nr).map((row) => { const out = []; for (let k = 0; k < nc; k++) out.push(row[c - 1 + k] === undefined ? '' : row[c - 1 + k]); return out; }) };
+      },
+    };
+    return { sheet: sheet, calls: calls };
+  };
+  let s = mk();
+  const hit = ctx.drFindRowByReqId_(s.sheet, 'r-ccc');
+  assert.ok(hit && hit.rowIndex === 4, 'the third data row (sheet row 4)');
+  assert.strictEqual(hit.row[ctx.DR.LABEL], 'Power', 'the full row comes back');
+  assert.strictEqual(hit.row.length, ctx.DR_HEADERS.length, 'exactly DR_HEADERS wide — never the operator note column beyond it');
+  assert.deepStrictEqual(s.calls.join(' | '), '2,1,3,1 | 4,1,1,' + ctx.DR_HEADERS.length,
+    'ONE column read (RequestId, all data rows) then ONE row read at header width — never getDataRange()');
+  s = mk();
+  const padded = ctx.drFindRowByReqId_(s.sheet, 'r-bbb');
+  assert.ok(padded && padded.rowIndex === 3, 'a whitespace-padded cell still matches (trimmed at the one read)');
+  s = mk();
+  assert.strictEqual(ctx.drFindRowByReqId_(s.sheet, 'r-zzz'), null, 'an unknown id is null');
+  assert.strictEqual(s.calls.length, 1, 'a miss costs exactly the column read');
+  s = mk();
+  assert.strictEqual(ctx.drFindRowByReqId_(s.sheet, '  '), null, 'a blank id is null');
+  assert.strictEqual(s.calls.length, 0, 'and costs NO read');
+  const empty = { getLastRow: () => 1, getLastColumn: () => 14, getRange: () => { throw new Error('must not read an empty tab'); } };
+  assert.strictEqual(ctx.drFindRowByReqId_(empty, 'r-aaa'), null, 'a header-only tab is null without a read');
+
+  // The detail routes through it; the C-N6 contract (bare read gate, the ONE
+  // not-found for unknown + out-of-scope, drCanAct_ on the row) is unchanged.
+  const detail = extractRawFunction('Code.js', 'getDeptRequestDetail').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/drFindRowByReqId_\(getOrCreateDeptRequestsSheet_\(\), reqId\)/.test(detail), 'the detail locates the row through the bounded reader');
+  assert.ok(!/getDataRange\(\)/.test(detail), 'no whole-tab read remains in the detail');
+  assert.ok(/!row \|\| !drCanAct_\(emp, row\)\) return \{ error: 'Request not found\.' \}/.test(detail), 'the scope refusal is still the not-found');
+  const helper = extractRawFunction('Code.js', 'drFindRowByReqId_');
+  assert.ok(/getRange\(2, DR\.REQ_ID \+ 1, lastRow - 1, 1\)/.test(helper) && /getRange\(rowIndex, 1, 1, DR_HEADERS\.length\)/.test(helper),
+    'column-then-row, header width (the findFormTokenRow_ shape) — not getLastColumn()');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
