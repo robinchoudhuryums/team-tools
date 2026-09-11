@@ -19429,13 +19429,22 @@ test('TW-A: every "is this numeric?" guard accepts exactly what Number() parses 
   assert.ok(found.indexOf('Code.js#qaOptionIsNumeric_') >= 0, 'the derivation reaches the guard F5 fixed (else the scan is empty by accident): ' + found.join(', '));
 });
 
-test('TW-B: a chromatic colour literal in a partial never duplicates a design token (the F7 shape), and the rest is ratcheted', () => {
+test('TW-B: a chromatic hex literal in a partial never duplicates a design token (the F7 shape)', () => {
   // F7 (cycle 19): the PAP purple bypassed --intake-pap in four literal values
   // across two partials, so the tint and the pill were a DIFFERENT purple from
-  // the ring and changing it took five edits in three files. RULE 1: a hex
+  // the ring and changing it took five edits in three files. THE RULE: a hex
   // literal that EQUALS a token's declared value is banned outside two named
-  // categories. RULE 2: every other chromatic literal is a two-sided per-file
-  // RATCHET (the A14 shape) with the reason recorded beside each baseline.
+  // categories — (a) a canvas fallback, which must EQUAL the token it shadows,
+  // and (b) a named INV-166 freeze.
+  // The two-sided per-file RATCHET this pin carried at birth — a hand-reasoned
+  // count of every OTHER chromatic literal per file — was RETIRED in Batch P
+  // (2026-09-11): cycle 19's reflection named it should-have-been-deferred, a
+  // maintenance obligation on every colour edit in exchange for guarding
+  // literals that fire on no real page. The one token candidate it had recorded
+  // (the clock ribbon's rgba twins of --accent / --warn) rides --accent-glow /
+  // --warn-glow now — the P2 pin below — so nothing it guarded is unguarded:
+  // a literal that DUPLICATES a token, the case the ratchet was actually for,
+  // still fails here.
   const read = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
   const strip = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
   const norm = (hex) => {
@@ -19460,7 +19469,7 @@ test('TW-B: a chromatic colour literal in a partial never duplicates a design to
     .filter((f) => f !== 'form_public.html' && f !== 'styles_design_tokens.html');
   const isNeutral = (h) => /^#(?:f{3}|f{6}|0{3}|0{6})$/i.test(h);
 
-  // RULE 1 — categories. (a) A canvas cannot read a CSS variable at paint time,
+  // The two categories. (a) A canvas cannot read a CSS variable at paint time,
   // so the token IS read first and the literal is the no-stylesheet fallback
   // (a harness page): it must EQUAL that token's Console-light value, so a
   // palette change fails here until the fallback moves with it (the swatch
@@ -19472,15 +19481,7 @@ test('TW-B: a chromatic colour literal in a partial never duplicates a design to
     { file: 'styles.html', selector: '.instance-banner', hex: '#8a4500',
       reason: 'INV-166 / C17 batch-4: the DEV banner takes a FIXED amber that reads in both themes; it coincides with the light --warning-deep on purpose' },
   ];
-  // RULE 2 — the ratchet. Counts are of chromatic literals that match NO
-  // token (hex, rgb(), hsl()), after the RULE 1 categories are removed.
-  const RATCHET = {
-    'styles.html': { count: 8, reason: '.viewas-banner fixed blue (INV-166) · one box-shadow tint · the six @media print neutral overrides (the print gotcha)' },
-    'tc/script_clock.html': { count: 23, reason: 'the fixed-palette clock card (INV-166): sky-gradient stops ×16, .clk-sky base, the state-line scrim, two state dots, and the ribbon/legend colour-mix FALLBACK pairs (rgba twins of --accent/--warn for pre-color-mix browsers — a token candidate, see follow-ons)' },
-    'metrics/script_metrics.html': { count: 4, reason: 'hsl() from mQueueHue_ — the deterministic per-queue hue hash (INV-181)' },
-  };
 
-  const report = [];
   files.forEach((f) => {
     const src = strip(read(f));
     const canvas = {};
@@ -19490,39 +19491,60 @@ test('TW-B: a chromatic colour literal in a partial never duplicates a design to
       assert.strictEqual(hex, consoleLight[tok], f + ': canvas fallback for ' + tok + ' must equal that token\'s Console-light value (got ' + km[2] + ', token is ' + consoleLight[tok] + ')');
       canvas[hex] = (canvas[hex] || 0) + 1;
     }
-    let other = 0;
-    const re = /(^|[^&\w])(#[0-9a-fA-F]{3,8})\b|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+|hsla?\(/g;
+    const re = /(^|[^&\w])(#[0-9a-fA-F]{3,8})\b/g;
     let m;
     while ((m = re.exec(src))) {
-      const tok = m[2] ? m[2] : m[0];
-      if (m[2]) {
-        if (isNeutral(tok)) continue;
-        const h = norm(tok);
-        if (h && tokenValues[h]) {
-          if (canvas[h]) { canvas[h]--; continue; }
-          const frozen = FROZEN.find((x) => x.file === f && x.hex === h);
-          assert.ok(frozen, f + ': ' + tok + ' duplicates token ' + tokenValues[h].join('/') + ' — use var(' + tokenValues[h][0] + ') (F7), or name the freeze in FROZEN with its INV-166 reason');
-          // The freeze covers ONE copy, inside its selector — a second copy
-          // elsewhere in the file would otherwise ride the banner's reason.
-          const block = new RegExp(frozen.selector.replace(/\./g, '\\.') + '\\s*\\{[^}]*' + h).test(src);
-          const copies = (src.match(new RegExp(h, 'gi')) || []).length;
-          assert.ok(block && copies === 1, f + ': the frozen ' + h + ' must appear exactly once, inside ' + frozen.selector + ' (found ' + copies + ')');
-          continue;
-        }
-        other++;
-      } else {
-        if (/^rgba?\(\s*(0\s*,\s*0\s*,\s*0|255\s*,\s*255\s*,\s*255)/.test(tok)) continue;   // scrims / white tints (the token-partial rule)
-        other++;
-      }
+      const tok = m[2];
+      if (isNeutral(tok)) continue;
+      const h = norm(tok);
+      if (!h || !tokenValues[h]) continue;                 // not a token's value — not this pin's business
+      if (canvas[h]) { canvas[h]--; continue; }
+      const frozen = FROZEN.find((x) => x.file === f && x.hex === h);
+      assert.ok(frozen, f + ': ' + tok + ' duplicates token ' + tokenValues[h].join('/') + ' — use var(' + tokenValues[h][0] + ') (F7), or name the freeze in FROZEN with its INV-166 reason');
+      // The freeze covers ONE copy, inside its selector — a second copy
+      // elsewhere in the file would otherwise ride the banner's reason.
+      const block = new RegExp(frozen.selector.replace(/\./g, '\\.') + '\\s*\\{[^}]*' + h).test(src);
+      const copies = (src.match(new RegExp(h, 'gi')) || []).length;
+      assert.ok(block && copies === 1, f + ': the frozen ' + h + ' must appear exactly once, inside ' + frozen.selector + ' (found ' + copies + ')');
     }
-    const base = RATCHET[f] ? RATCHET[f].count : 0;
-    if (other !== base) report.push(f + ': ' + other + ' chromatic literal(s), ratchet says ' + base);
   });
-  assert.strictEqual(report.join('\n'), '',
-    'RATCHET is two-sided: a new literal needs a token (or a recorded reason); a removed one lowers the baseline:\n' + report.join('\n'));
   // The three canvas fallbacks the tripwire found stale are the category's whole membership today.
   const canvasCount = files.reduce((n, f) => { const s = strip(read(f)); CANVAS_FALLBACK.lastIndex = 0; let c = 0; while (CANVAS_FALLBACK.exec(s)) c++; return n + c; }, 0);
   assert.strictEqual(canvasCount, 4, 'four canvas fallbacks (qa ×2, empdocs ×2) — each pinned equal to its token above');
+});
+
+test('P2: the clock ribbon fallbacks ride --accent-glow / --warn-glow, and --warn-glow lives in the two base blocks only', () => {
+  // Batch P (2026-09-11): the ribbon's pre-color-mix fallbacks were Console-only
+  // rgba twins of --accent / --warn — the one token candidate the retired TW-B
+  // ratchet had recorded, and wrong on every other palette. --warn-glow is
+  // --accent-glow's warn-family sibling; a palette never redefines a SEMANTIC
+  // colour (the palette contract's rule 1), so it is declared in the base light
+  // + base dark blocks and in no palette block. The color-mix line stays and
+  // sets the real strength, so the render is byte-identical (re-shot and
+  // pixel-compared against the pre-edit baseline).
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+  const strip = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const { blocks } = tokenBlocks();
+  const has = (id) => blocks.find((b) => b.id === id).body.includes('--warn-glow');
+  assert.ok(has('console/light') && has('console/dark'), '--warn-glow declared in the base light AND base dark blocks');
+  blocks.filter((b) => b.palette !== 'console').forEach((b) =>
+    assert.ok(!b.body.includes('--warn-glow'), b.id + ' redefines --warn-glow — a palette never redefines a semantic colour'));
+  const toks = strip(read('styles_design_tokens.html'));
+  assert.strictEqual((toks.match(/--warn-glow\s*:/g) || []).length, 2, 'exactly two --warn-glow declarations in the file');
+  assert.strictEqual((toks.match(/--accent-glow\s*:/g) || []).length, 10, '--accent-glow stays declared per palette × mode (5 × 2) — it IS accent-family');
+
+  const clock = strip(read('tc/script_clock.html'));
+  const hbar = clock.match(/\.ribbon-hist \.hbar \{[^}]*\}/);
+  assert.ok(hbar && /background: var\(--accent-glow\); background: color-mix\(in oklch, var\(--accent\) 34%, transparent\)/.test(hbar[0]),
+    'the note-volume bars: glow-token fallback FIRST, then the 34% color-mix that sets the strength');
+  const brk = clock.match(/\.r-break \{[^}]*\}/);
+  assert.ok(brk && /background: var\(--warn-glow\); background: color-mix\(in oklch, var\(--warn\) 20%, transparent\)/.test(brk[0]),
+    'the break band: --warn-glow fallback FIRST, then the 20% color-mix');
+  assert.ok(/background:var\(--accent-glow\);background:color-mix\(in oklch,var\(--accent\) 16%,transparent\)/.test(clock),
+    'the legend Notes swatch rides --accent-glow under its 16% color-mix');
+  // No Console-only rgba twin of --accent / --warn survives anywhere in the partial.
+  assert.ok(!/rgba\(\s*15\s*,\s*138\s*,\s*82/.test(clock) && !/rgba\(\s*183\s*,\s*121\s*,\s*31/.test(clock),
+    'no rgba twin of --accent / --warn remains in the clock partial (they were Console-only)');
 });
 
 

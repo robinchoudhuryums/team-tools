@@ -12,6 +12,11 @@ Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0
   `/reflect`.
 Scope: broad
 Test Command: manual
+Estimates: Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit
+  (P1's own rule, applied to itself; the plan's figure). The remaining
+  batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
+  S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
+  · F1 — S (~2 h) · F2 — L (~2 days).
 Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter

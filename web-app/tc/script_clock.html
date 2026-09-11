@@ -149,12 +149,16 @@
   .ribbon-hist { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
   /* Per-hour note-volume bars behind the shift bar (the in-ribbon "coverage"
      view — replaces the old separate donut strip). Prominent enough to read as
-     a background histogram of when the rep logged notes. */
+     a background histogram of when the rep logged notes.
+     Each rule below declares `background` TWICE: the first is the pre-color-mix
+     fallback and rides the palette-aware glow token (Batch P — it used to be a
+     Console-only rgba twin of the token, wrong on every other palette); the
+     color-mix line wins in every current browser and sets the real strength. */
   .ribbon-hist .hbar { position: absolute; bottom: 0; width: 7px; transform: translateX(-50%); border-radius: 2px 2px 0 0;
-    background: rgba(15, 138, 82, .34); background: color-mix(in oklch, var(--accent) 34%, transparent); }
+    background: var(--accent-glow); background: color-mix(in oklch, var(--accent) 34%, transparent); }
   /* Scheduled break bands (amber) drawn over the work segments. */
   .r-break { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--warn);
-    background: rgba(183, 121, 31, .22); background: color-mix(in oklch, var(--warn) 20%, transparent); }
+    background: var(--warn-glow); background: color-mix(in oklch, var(--warn) 20%, transparent); }
 
   /* Lunch / clock action colors (mirror the ribbon lunch = warn). */
   .actions .prime.prime-warn { background: var(--warn); border-color: var(--warn); color: var(--paper); }
@@ -1757,7 +1761,7 @@ function renderDayRibbon_(punches, stats, tz) {
       <span class="r-leg-item"><span class="swatch lunch"></span>Lunch</span>
       <span class="r-leg-item"><span class="swatch sched"></span>Scheduled</span>
       ${breakHtml ? `<span class="r-leg-item"><span class="swatch" style="background:var(--warn)"></span>Break</span>` : ''}
-      <span class="r-leg-item"><span class="swatch" style="background:rgba(15,138,82,.16);background:color-mix(in oklch,var(--accent) 16%,transparent)"></span>Notes</span>
+      <span class="r-leg-item"><span class="swatch" style="background:var(--accent-glow);background:color-mix(in oklch,var(--accent) 16%,transparent)"></span>Notes</span>
       ${isActive ? `<span class="r-leg-item"><span class="swatch now"></span>Now</span>` : ''}
     </div>
   </div>`;

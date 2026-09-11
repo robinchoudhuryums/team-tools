@@ -1737,12 +1737,22 @@ this section before touching the relevant area.
   literal that EQUALS a declared token value anywhere in a scanned partial
   outside two named categories (those canvas fallbacks and INV-166 freezes
   listed with their reason — `.instance-banner` `#8a4500`, exactly once,
-  inside its selector), and holds every other chromatic literal (hex / rgb /
-  hsl; neutrals and scrims excluded) under a two-sided per-file RATCHET with
-  the reason recorded beside each baseline (the A14 shape) — a new literal
-  fails until its line is raised on purpose, and a literal replaced by a token
-  fails until the line is LOWERED. `form_public.html` is excluded (the INV-128
-  standalone-palette exemption).
+  inside its selector). `form_public.html` is excluded (the INV-128
+  standalone-palette exemption). **Its third half — a two-sided per-file
+  RATCHET counting every OTHER chromatic literal (hex / rgb / hsl) against a
+  hand-reasoned baseline — was RETIRED in Batch P (2026-09-11):** cycle 19's
+  reflection named it should-have-been-deferred, a maintenance obligation on
+  every colour edit in exchange for guarding literals that fire on no real
+  page. The one token candidate it had recorded — the clock ribbon's rgba
+  fallback twins of `--accent`/`--warn` under their `color-mix` declarations,
+  CONSOLE-ONLY, so a Sage/Plum browser without `color-mix` drew the wrong hue —
+  rides `--accent-glow` and its new warn-family sibling `--warn-glow` now
+  (declared in the two BASE blocks only: a palette never redefines a semantic
+  colour), with the `color-mix` line still setting the real strength, so the
+  render is byte-identical (re-shot and pixel-compared against the pre-edit
+  baseline). Pinned by the P2 ribbon-token pin; the token-equality ban still
+  catches a literal that duplicates a token, which is the case the ratchet was
+  actually for. See INV-200.
 - **Text on a FIXED-palette surface must use a fixed colour, not a theme token
   (V-2, cycle-12 visual audit — FIXED).** The clock card's sky gradient does not
   flip with the theme, but `styles.html`'s
@@ -9628,10 +9638,20 @@ carries the same number. `/cycle-status` surfaces it.
   `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
   Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
+  **Its inputs are the implement blocks' `Estimate:` / `Actual:` lines and
+  STATE.md's `Estimates:` line (Batch P, 2026-09-11)** — written BEFORE the
+  first edit, so the row is a measurement rather than a memory. Five consecutive
+  reflections (13, 16, 18, 19pre, 19) skipped the calibration row for want of
+  exactly that line; the SessionStart hook now says so on every session.
 - `.cycle/blocks/` — **the verbatim handoff blocks** (template R19, adopted
   2026-07-27). The three implement commands and `/reflect` write their summary
   block here at CHECKPOINT: `<cycle>-<version-or-scope>-broad-implement.md`,
   `…-targeted-implement.md`, `…-implement.md`, `<cycle>-<letter>-reflect.md`.
+  **Every implement block carries `Estimate: S/M/L (h)` and `Actual:` lines
+  directly under `Files modified` (Batch P)** — the estimate as it stood in the
+  plan message, never reconstructed afterwards; the command template's block
+  shape is untouched (it is synced byte-identical), so this is a project
+  convention the hook reminds you of, not a template field.
   It exists because the blocks previously lived ONLY in chat scrollback while
   STATE.md carried prose *about* them — a Verification Pass or Health Synthesis
   runs in a FRESH session with none of that context, so a block that never
@@ -9683,7 +9703,9 @@ Fully optional + additive: with no `.cycle/`, every command behaves as before
 (emit the handoff/summary block in chat). `scripts/cycle-context.mjs` IS
 installed here and wired as a **SessionStart hook** via `.claude/settings.json`
 — it auto-loads the substrate (STATE Current / Where-I-left-off / Pending +
-PROJECT_HEALTH Current Standing + invariant count) into each new session
+PROJECT_HEALTH Current Standing + invariant count) into each new session, and
+since Batch P prints the estimate reminder (record S/M/L + hours per batch
+BEFORE the first edit) beneath it
 (fail-safe: prints nothing without `.cycle/`, never throws). The
 `scripts/render-metrics.mjs` trend-report helper from workflow-tools is NOT
 copied — add it if you want the metrics sparkline report.
@@ -9698,6 +9720,7 @@ Cycle: [N — single source of truth; increments only when a new audit cycle beg
 Phase: [audit | plan | implement | regression | verify | reflect | idle]
 Scope: [subsystem(s) or "broad"]
 Test Command: [from Cycle Workflow Config]
+Estimates: [per batch — "P: S (~2 h) · S: M (~4 h)" — written BEFORE the first edit; /reflect copies estimate vs actual into estimates.csv]
 Subsystem cycles since last Seams audit: [K — /reflect increments, a Seams audit resets to 0]
 Updated: [date]
 
@@ -10453,7 +10476,7 @@ names the dropped stamps, the duplicate group stays a duplicate group), BP-4
 gate, the refused run stamped, registry/wiring/labels/mock asserts), TW-A (the
 derived numeric-guard-width scan), TW-B (the token value set derived from the
 tokens partial; canvas fallbacks pinned EQUAL; the frozen-literal list; the
-two-sided per-file ratchet), DR-1 (a recording stub sheet asserts the
+two-sided per-file ratchet — RETIRED in Batch P the same day, below), DR-1 (a recording stub sheet asserts the
 column-then-row read shape `'2,1,3,1 | 4,1,1,14'`, a padded id matches, a miss
 costs one read, a blank id none) — plus TWO auto-generated by the derived
 TARGETS/gate-type nets when `purgeOldDiagnostics` and
@@ -10466,6 +10489,18 @@ failed and `git checkout` of the whole file was the recovery, which is exactly
 the hazard the commit-first rule exists for), and a `const` inside
 `vm.runInContext` is a lexical binding, not a context property — declare
 sandbox globals with `var`.
+**Batch P (2026-09-11, the first batch of the post-cycle-19 next-steps plan)
+REWROTE TW-B in place** — the per-file ratchet half is gone, the token-equality
+ban / FROZEN list / canvas-fallback rule stay (a re-added token-equal literal
+and a moved canvas fallback both still bite) — and added ONE pin, P2 (the
+ribbon's three fallbacks ride `--accent-glow` / `--warn-glow`, the new token
+declared in exactly the two base blocks and in no palette block, `--accent-glow`
+still 5 × 2, and no Console-only rgba twin left in the clock partial), verified
+by a pixel-compare of `clock-light-wide` + `clock-dark-wide` against the
+pre-edit baseline rather than by eye. The pure total is read off the run's
+summary line from here on (795 → 796 for this batch; the trigger-quota round's
+derived gate tests had already moved it 797 → 795 without a doc edit) — Batch C
+of the plan derives every such number, which is why none is hand-carried here.
 The split-day punch repair (operator 2026-09-03, the same afternoon) added two
 more → **752** (TZR-3 — `splitDayRepairPlan_` driven behaviourally: the kept
 row is the earliest TIME, not the last APPENDED row (the sheet doctor's rule,
@@ -11032,6 +11067,7 @@ INV-196 | **The QA module is a THIRD gate tier, a dedicated store, and a Drive b
 INV-197 | **Drive is ONE grant, and the app REPORTS whether it has it (operator 2026-09-09).** Every Drive call in the project — the KB image export and paste-upload, the KB embed reachability scan, `kbGetImageData`, `kbIngestFile`'s REST upload, QA recording playback — rides the DEPLOYING account's token, because the web app is `executeAs: USER_DEPLOYING`. `appsscript.json` declares no `oauthScopes`, so the required set is auto-detected and includes `/auth/drive` (the code calls `createFolder`/`createFile`/`setSharing`); a `clasp push` + New version never re-prompts, so a deploy that widens that set leaves the running grant short and every Drive call fails with Apps Script's missing-SCOPE refusal — see the Common Gotcha for how that differs from an admin block and from a sharing/DLP restriction. **THREE rules.** (a) `driveScopeError_` is the ONE shared shape rule for that refusal, so the folder helper and the Admin diagnostic cannot disagree about what a scope error looks like; it must NOT match a Drive-SIDE failure (a quota, a missing file), because appending "re-authorize" to those would misdiagnose them. (b) `driveAccessStatus_` is SIDE-EFFECT FREE BY CONSTRUCTION — it introspects the OAuth token (`ScriptApp.getOAuthToken()` → the tokeninfo endpoint, the token in the POST BODY, never a logged query string) instead of attempting a write, and probes the KB Images folder with `getFolderById` on the STORED id, **never `getOrCreateKbImagesFolder_`**, which would provision a folder as a side effect of opening the Admin tab. `granted:null` means the PROBE failed and is reported as unknown, never as OK (INV-187); an unprovisioned folder is `folderOk:null`, never `false` — "not created yet" is not "broken" (INV-186), and it is created on the first image export. Only a fully-clean round is cached (INV-129), so the panel updates while an operator is fixing the grant. It rides `getStorageHealth` behind `checkDrive` (default on) and `getDeployReadiness` opts OUT, keeping that endpoint's documented composes-never-scans property. (c) A FAILED Drive call NAMES what failed: `getOrCreateKbImagesFolder_` carries the stored-folder open reason into its throw (it used to swallow it, so the caller's warning could only ever report the CREATE error while saying "open or create"), says by name when the property is simply unset, and appends the re-auth hint only when (a) recognises a scope error. **The general lesson is about test coverage, not Drive: `Tests.js` makes ZERO `DriveApp` calls, so a green `runAllTests()` vouched for nothing here and the gap sat unnoticed for weeks — a suite vouches only for what it calls, which is why this capability needed a REPORTED signal rather than a test.** Verify: DRV-1 (the shape rule, incl. a Gmail/Docs scope error and a Drive-side failure staying false), DRV-2 (behavioural: unset property vs unopenable stored folder, the hint only on a scope error, the replacement path preserved, and a good stored id creating nothing), DRV-3 (behavioural: granted/denied/unknown, the folder states, side-effect freedom asserted on the DEAD-folder path — the create count, since the thrown message carries the open reason and a reason check alone passes the mutation — the clean-round-only cache, the token never in the URL, and the deploy-readiness opt-out), DRV-4 (the finding severities, an absent field raising nothing, escaping, and the `?drive=denied` scenarios) | Subsystem: Server + Client (Call Notes views)
 INV-198 | **Reopening a closed day CONVERTS its ClockOut into a break — it never deletes it, so the away gap is unpaid (Workstream B3, operator 2026-09-01; proposed by the 19pre reflection, written 2026-09-11).** Validated at SUBMIT and RE-VALIDATED at approval (the day can be edited while the request waits, and converting a punch that is gone leaves an unpaired half the arithmetic silently drops); a refused resume never marks the request Approved. Every surface — the rep's confirm, the pending chip, the manager queue row, the decision email — states the EFFECT rather than naming the punch it consumes. A genuine second SHIFT on one date is still not modelled. Verify: the three B3 pins (convert-not-delete with a `deleteRow` ban, dual-side validation, back-compat on the trailing `Action` column across all four readers; every surface's wording), the three DOM tests, `test_punchAdjust_resumeConvertsClockOut` | Subsystem: Server + Client (Time Clock views)
 INV-199 | **A coverage marker is only as fine-grained as the unit it enumerates (proposed by the 19pre reflection, written 2026-09-11).** VIS-COVER works at TAB granularity, so five Admin panes hid behind one covered tab for three weeks — long enough for a table header to ship stacked in a meaningless column above its own rows. A tab that hosts sub-panes owes a scan that DERIVES the pane set from the client's own render site (INV-179 applied one level down) and requires a scenario per pane. Ask the same of any surface whose unit of coverage is coarser than its unit of failure (a modal state, a fixture-driven empty state, a browser timezone — each of which now has its own scenario dimension). Verify: VIS-ADMIN (pane set derived from the `tab('key','Label')` call sites, one mobile scenario per pane, bite-checked with a sixth pane landing uncovered) alongside VIS-COVER | Subsystem: Test Suite
+INV-200 | **A colour a `<canvas>` reads through `getPropertyValue('--t') || '#hex'` is a second source of truth, and the fallback must EQUAL the token's Console-light value; a hex literal equal to a declared token value is banned everywhere else outside a named INV-166 freeze (proposed by the cycle-19 reflection, written in Batch P 2026-09-11).** A canvas cannot read `var(--x)` at paint time, so the QA waveform and the EmpDocs signature pad read the token first and fall back to a literal on a page with no stylesheet — and writing the scan found all THREE stale (`--accent` falling back to `--accent-2`'s value; two values no token declares). The reflection's proposal also carried a two-sided per-file RATCHET over every other chromatic literal; Batch P RETIRED that half before recording the invariant — it was a hand-reasoned baseline to maintain on every colour edit, guarding literals that fire on no real page, and its one recorded token candidate (the clock ribbon's Console-only rgba fallback twins) rides `--accent-glow` / `--warn-glow` now, the color-mix line still setting the strength so the render is byte-identical. The rule that survives is the F7 shape: ONE home per colour. Verify: TW-B (derived token set, the canvas regex incl. the `(… || '').trim()` shape, the FROZEN exactly-once-inside-its-selector — a re-added token-equal literal and a moved canvas fallback both bite) + P2 (the three ribbon fallbacks on the glow tokens; `--warn-glow` in exactly the two base blocks and in no palette block; no rgba twin left in the partial; pixel-compared) | Subsystem: Client (shell) + Client (Time Clock views) + Test Suite
 
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)

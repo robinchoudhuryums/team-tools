@@ -54,6 +54,14 @@
 
     --warn:         #b7791f;
     --warn-soft:    #fbf1d9;
+    /* `--warn-glow` is `--accent-glow`'s warn-family sibling — the same
+       16% / 22% tint the focus rings use. Declared ONLY in the two BASE
+       blocks: a palette redefines neutrals + the accent family, never a
+       semantic colour (the palette contract, rule 1). Consumer: the clock
+       ribbon's break band, as the fallback under its color-mix declaration
+       (Batch P, 2026-09-11 — the rgba twin it replaced was Console-only, so a
+       Sage/Plum browser without color-mix drew the wrong hue). */
+    --warn-glow:    rgba(183, 121, 31, 0.16);
     --destructive:      #c13030;
     --destructive-soft: #fce5e5;
 
@@ -190,6 +198,7 @@
 
     --warn:         #ffb547;
     --warn-soft:    rgba(255, 181, 71, 0.14);
+    --warn-glow:    rgba(255, 181, 71, 0.22);
     --destructive:  #ff6679;
     --destructive-soft: rgba(255, 102, 121, 0.14);
 
