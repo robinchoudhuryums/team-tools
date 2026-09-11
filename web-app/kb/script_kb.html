@@ -2259,22 +2259,21 @@ function kbOpenSynonyms_() {
       var body = document.getElementById('kb-syn-body'); if (!body) return;
       if (!res || res.error) { body.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load synonyms'); return; }   // A12
       var lines = (res.synonyms || []).map(function (g) { return g.join(', '); }).join('\n');
+      // kbGetSearchConfig ships a budget map holding exactly ONE key (its own
+      // property). Read the sole VALUE rather than naming the key: the name is
+      // a server constant, and mirroring it here would be a second source to
+      // keep in step for no gain.
+      var synBudget = null;
+      try { var bk = Object.keys(res.propBudget || {}); if (bk.length) synBudget = res.propBudget[bk[0]]; } catch (e) {}
       body.innerHTML =
         '<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">One synonym group per line, terms comma-separated. A search for any term in a group also matches the others.<br>e.g. <code>cpap, pap</code> &nbsp; <code>power chair, pmd, power wheelchair</code></div>' +
         '<textarea id="kb-syn-ta" aria-label="Synonym groups, one per line" style="width:100%;min-height:180px;font:inherit;box-sizing:border-box">' + esc(lines) + '</textarea>' +
-        // Q2 (Batch Q) — the serialized budget of KB_SEARCH_SYNONYMS. Script
-        // Properties cap a value at ~9KB; the server refuses a save past it by
-        // name, and this is the editor saying how close it is. Nothing renders
-        // when the server shipped no budget (deploy skew — never a fake 0%).
-        (res.propBudget && res.propBudget[Object.keys(res.propBudget)[0]]
-          ? (function (b) {
-              var pct = Math.max(0, Math.min(100, Number(b.pct) || 0));
-              return '<div style="font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;margin-top:6px;color:' +
-                (pct >= 90 ? 'var(--danger-deep)' : pct >= 80 ? 'var(--warning-deep)' : 'var(--muted-2)') + '">' +
-                esc(Number(b.bytes).toLocaleString()) + ' of ' + esc(Number(b.max).toLocaleString()) + ' bytes used' +
-                (pct >= 80 ? ' · ' + pct + '%' : '') + '</div>';
-            })(res.propBudget[Object.keys(res.propBudget)[0]])
-          : '') +
+        // Q2 (Batch Q) — the serialized budget of KB_SEARCH_SYNONYMS, through
+        // the SHARED builder: Script Properties cap a value at ~9KB, the server
+        // refuses a save past it by name, and this is the editor saying how
+        // close it is. A second tone rule here would be the parallel-source
+        // class the codebase bans. Nothing renders without a server budget.
+        propBudgetHtml_(synBudget, 'margin-top:6px;margin-bottom:0') +
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
         '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })

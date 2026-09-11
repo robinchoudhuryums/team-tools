@@ -506,13 +506,6 @@
     padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px; }
   .cn-drive-line svg { flex: 0 0 auto; margin-top: 2px; }
   .cn-drive-line code { font-family: var(--mono); font-size: 11px; word-break: break-all; }
-  /* Q2 — the per-editor serialized-size badge (Script Properties cap a value
-     at ~9KB; the advertised entry caps alone admit far more than that). */
-  .cn-prop-budget { font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
-    text-transform: uppercase; margin-bottom: 10px; }
-  .cn-prop-budget-ok { color: var(--muted-2); }
-  .cn-prop-budget-warn { color: var(--warning-deep); }
-  .cn-prop-budget-danger { color: var(--danger-deep); }
   .cn-drive-ok { background: var(--accent-soft); color: var(--success-deep); }
   .cn-drive-warn { background: var(--warn-soft); color: var(--warning-deep); }
   .cn-drive-danger { background: var(--danger-soft); color: var(--danger-deep); }
@@ -11566,15 +11559,12 @@ function cnAdminProvision_(empId, empName, btn) {
  *  nothing when the server did not ship a budget (deploy skew, INV-187 —
  *  never a fabricated 0%). */
 function cnPropBudgetHtml_(cfg, key) {
-  var b = (cfg && cfg.propBudget && cfg.propBudget[key]) || null;
-  if (!b) return '';
-  var pct = Math.max(0, Math.min(100, Number(b.pct) || 0));
-  var tone = pct >= 90 ? 'danger' : (pct >= 80 ? 'warn' : 'ok');
-  return '<div class="cn-prop-budget cn-prop-budget-' + tone + '" title="' + esc(key) +
-    ' — Script Properties hold about ' + Number(b.max).toLocaleString() + ' bytes per value">' +
-    esc(Number(b.bytes).toLocaleString()) + ' of ' + esc(Number(b.max).toLocaleString()) + ' bytes used' +
-    (pct >= 80 ? ' · ' + pct + '%' : '') + '</div>';
+  // A key LOOKUP only — the tone rule and the markup live in the shared
+  // propBudgetHtml_ (script_core), so this editor and the Reference synonyms
+  // modal cannot drift apart.
+  return propBudgetHtml_(cfg && cfg.propBudget && cfg.propBudget[key]);
 }
+
 
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');

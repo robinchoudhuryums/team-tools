@@ -529,6 +529,25 @@ function renderError(msg) {
  *  existing safety: the per-session cap, per-message dedupe, server rate cap,
  *  and the closed PHI-free payload shape — so a render loop cannot flood
  *  anything, and the helper's return value is unchanged. */
+/** Batch Q — the ONE serialized-size badge for a Script-Property editor.
+ *  Takes the budget OBJECT the server shipped ({bytes, max, pct}); renders
+ *  NOTHING without one, so an older server degrades to no badge rather than a
+ *  fabricated 0%. The tone rule lives here and nowhere else: a second copy in
+ *  a tool partial is the parallel-source class this codebase bans (INV-200's
+ *  "one home per colour"), and the KB synonyms modal had one for exactly one
+ *  batch before it was folded in. */
+function propBudgetHtml_(b, extraStyle) {
+  if (!b) return '';
+  var pct = Math.max(0, Math.min(100, Number(b.pct) || 0));
+  var tone = pct >= 90 ? 'danger' : (pct >= 80 ? 'warn' : 'ok');
+  var max = Number(b.max) || 0;
+  return '<div class="prop-budget prop-budget-' + tone + '"' +
+    (extraStyle ? ' style="' + extraStyle + '"' : '') +
+    ' title="Script Properties hold about ' + max.toLocaleString() + ' bytes per value">' +
+    esc(Number(b.bytes).toLocaleString()) + ' of ' + esc(max.toLocaleString()) + ' bytes used' +
+    (pct >= 80 ? ' \u00b7 ' + pct + '%' : '') + '</div>';
+}
+
 function errorStateHtml_(msg) {
   try { if (typeof errBeaconSend_ === 'function') errBeaconSend_(String(msg || ''), '', 'errorState'); } catch (e) {}
   return '<div class="error-state" role="alert">' + icon('warning', 16) +

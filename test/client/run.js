@@ -20101,17 +20101,40 @@ test('Q-2: every Admin save endpoint routes its write through the guard and its 
   // The client: one badge builder, used by every bounded editor, guarded on
   // the field's presence (deploy skew — never a fabricated 0%).
   const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
-  assert.ok(/function cnPropBudgetHtml_\(cfg, key\)/.test(cn), 'one budget builder');
-  const builder = extractFunction('cn/script_callnotes.html', 'cnPropBudgetHtml_');
+  // The builder lives ONCE, in the shared shell — the Admin editors and the
+  // Reference synonyms modal both render through it, so the tone rule cannot
+  // drift between them (the parallel-source class the codebase bans). The CN
+  // helper is a key LOOKUP that delegates.
+  const builder = extractFunction('script_core.html', 'propBudgetHtml_');
   assert.ok(/if \(!b\) return '';/.test(builder), 'renders NOTHING without a server budget');
   assert.ok(/pct >= 90 \? 'danger'/.test(builder) && /pct >= 80 \? 'warn'/.test(builder), 'toned by share of the cap');
+  assert.ok(/function cnPropBudgetHtml_\(cfg, key\)/.test(cn), 'the CN lookup shim');
+  const shim = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnPropBudgetHtml_'));
+  assert.ok(/return propBudgetHtml_\(/.test(shim) && !/pct >=/.test(shim), 'the shim delegates and carries NO tone rule of its own');
+  // Derived: no scanned partial may re-implement the tone rule or the markup.
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const body = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/', f), 'utf8'));
+    assert.ok(!/bytes used/.test(body) || /propBudgetHtml_\(/.test(body),
+      f + ': renders a byte-budget line — it must go through propBudgetHtml_, not a second copy');
+    if (f !== 'script_core.html') {
+      assert.ok(!/pct >= 90 \? '?(var\(--)?danger/.test(body), f + ': a second budget tone rule — the shared builder owns it');
+    }
+  });
+  // And the shared CSS lives in the shared stylesheet, not a tool partial.
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  ['prop-budget', 'prop-budget-ok', 'prop-budget-warn', 'prop-budget-danger'].forEach((c) =>
+    assert.ok(new RegExp('\\.' + c + ' ?\\{').test(styles), c + ': defined in the shared stylesheet'));
+  assert.ok(!/cn-prop-budget/.test(cn), 'the CN-local class is retired (INV-184)');
   declared.filter((k) => k !== 'CN_FEATURE_FLAGS' && k !== 'CN_ARCHIVED_TAGS').forEach((k) =>
     assert.ok(new RegExp("cnPropBudgetHtml_\\(cfg, '" + k + "'\\)").test(cn), k + ': its editor shows the budget'));
-  ['cn-prop-budget', 'cn-prop-budget-ok', 'cn-prop-budget-warn', 'cn-prop-budget-danger'].forEach((c) =>
-    assert.ok(new RegExp('\\.' + c + '\\s*[,{]').test(cn), c + ' is defined in a stylesheet'));
   // The KB synonyms editor shows its own.
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
-  assert.ok(/res\.propBudget/.test(kb) && /bytes used/.test(kb), 'the synonyms modal shows its budget');
+  assert.ok(/res\.propBudget/.test(kb) && /propBudgetHtml_\(synBudget/.test(kb),
+    'the synonyms modal shows its budget THROUGH the shared builder');
+  // INV-188: scan the comment-STRIPPED view for the ban — the line's own
+  // comment names the property it must not hardcode.
+  assert.ok(!/KB_SEARCH_SYNONYMS/.test(stripJsComments_(kb)),
+    'and reads the sole budget VALUE — it never mirrors the server property name');
   // WORST-CASE ARITHMETIC: the advertised caps that cannot fit are the reason
   // the serialized check exists — assert the arithmetic, so a raised entry cap
   // reads as the over-budget it is rather than passing silently.
