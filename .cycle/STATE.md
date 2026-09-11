@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — the `/broad-implement` follow-ons round (retention tier + suggestion follow-ons, 2026-09-11) is LANDED on the branch (5 commits, bite-checked) and awaits `/sync-docs` for its documentation, then `/reflect`. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: implement — the `/broad-implement` follow-ons round (retention tier + suggestion follow-ons, 2026-09-11) is LANDED on the branch (5 commits, bite-checked) and `/sync-docs` has applied its documentation (2026-09-11); `/reflect` is next. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
