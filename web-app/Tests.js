@@ -471,18 +471,34 @@ function setupTestEnvironment() {
   // test_adminEmails_subsetOfManagersEnforced — the second run captured the
   // first run's TEMPORARY test address as "previous value" and its finally
   // "restored" ADMIN_EMAILS to do-not-send-india@example.invalid. The suite
-  // assumes ADMIN_EMAILS is UNSET (admin == manager), so every admin-gated
+  // assumed ADMIN_EMAILS is UNSET (admin == manager), so every admin-gated
   // endpoint then rejected the TEST manager and ten tests failed on
   // "Admin access required." — and each later run's adminEmails test put the
-  // residue straight back. Setup now deletes the property when it holds a
-  // test address (never a real one — that is the operator's decision), the
-  // same self-heal it already applies to the test accounts' emails.
+  // residue straight back. Setup deletes a property that holds ONLY test
+  // addresses (residue of an overlapping or killed run).
+  //
+  // Operator 2026-09-11 (post-push run, 302/312): the SAME ten failures with a
+  // REAL address in ADMIN_EMAILS — the operator had narrowed the Admin tier to
+  // themselves, exactly as the ADMIN_EMAILS operator entry invites, and the
+  // self-heal above correctly refused to touch a real address. The suite
+  // cannot pass on a deployment whose admin tier is narrowed unless its own
+  // manager is IN the list, so setup now APPENDS _TEST_MGR_EMAIL to a real
+  // list for the run's duration and cleanupTestData strips it back out — the
+  // re-onboard/re-offboard symmetry the roster rows already have (INV-21).
+  // A real address is never removed here; an unset property stays unset
+  // (admin == manager, so the test manager is already an admin).
   try {
     const adminProps = PropertiesService.getScriptProperties();
     const adminRaw = adminProps.getProperty('ADMIN_EMAILS');
-    if (adminRaw && adminRaw.split(',').every(e => /@example\.invalid$/i.test(e.trim()) || !e.trim())) {
-      adminProps.deleteProperty('ADMIN_EMAILS');
-      Logger.log('setupTestEnvironment: ADMIN_EMAILS held only test addresses (' + adminRaw + ') — deleted (residue of an overlapping run).');
+    const adminSplit = _testAdminEmailsSplit_(adminRaw);
+    if (adminRaw !== null && adminRaw !== undefined) {
+      if (!adminSplit.real.length) {
+        adminProps.deleteProperty('ADMIN_EMAILS');
+        Logger.log('setupTestEnvironment: ADMIN_EMAILS held only test addresses (' + adminRaw + ') — deleted (residue of an overlapping run).');
+      } else if (adminSplit.real.map(x => x.toLowerCase()).indexOf(_TEST_MGR_EMAIL.toLowerCase()) < 0) {
+        adminProps.setProperty('ADMIN_EMAILS', adminSplit.real.concat([_TEST_MGR_EMAIL]).join(','));
+        Logger.log('setupTestEnvironment: ADMIN_EMAILS is narrowed (' + adminSplit.real.length + ' real address(es)) — test manager appended for this run; cleanupTestData removes it.');
+      }
     }
   } catch (e) { Logger.log('setupTestEnvironment: ADMIN_EMAILS residue check skipped: ' + e.message); }
   invalidateRosterCache_();
@@ -813,8 +829,42 @@ function cleanupTestData() {
     if (offboarded) Logger.log('cleanupTestData: ' + offboarded + ' test account(s) re-offboarded (emails cleared).');
   } catch (e) { Logger.log('cleanupTestData: test-account offboard skipped: ' + e.message); }
 
+  // The admin-tier twin of the re-offboard (operator 2026-09-11): setup may
+  // have APPENDED the test manager to a narrowed ADMIN_EMAILS so the admin
+  // endpoints accept it during the run. Strip every test address back out —
+  // and ONLY test addresses; the operator's real list is never touched — so a
+  // non-routable @example.invalid identity never holds admin between runs. A
+  // list that is empty after the strip is deleted (unset ⇒ admin == manager,
+  // the state the suite has always assumed).
+  try {
+    const adminProps = PropertiesService.getScriptProperties();
+    const adminRaw = adminProps.getProperty('ADMIN_EMAILS');
+    if (adminRaw !== null && adminRaw !== undefined) {
+      const adminSplit = _testAdminEmailsSplit_(adminRaw);
+      if (adminSplit.test.length) {
+        if (adminSplit.real.length) adminProps.setProperty('ADMIN_EMAILS', adminSplit.real.join(','));
+        else adminProps.deleteProperty('ADMIN_EMAILS');
+        Logger.log('cleanupTestData: ' + adminSplit.test.length + ' test address(es) removed from ADMIN_EMAILS' + (adminSplit.real.length ? ' (real list kept).' : ' (property deleted — nothing real remained).'));
+      }
+    }
+  } catch (e) { Logger.log('cleanupTestData: ADMIN_EMAILS strip skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
+}
+
+/** ONE predicate for "which ADMIN_EMAILS entries belong to the suite" — the
+ *  setup append and the cleanup strip both read it, so the two sides can never
+ *  disagree about what counts as a test address (the one-reader rule the
+ *  roster columns follow). Blank entries are dropped on both sides. */
+function _testAdminEmailsSplit_(raw) {
+  const out = { real: [], test: [] };
+  String(raw || '').split(',').forEach(function (e) {
+    const t = String(e).trim();
+    if (!t) return;
+    if (/@example\.invalid$/i.test(t)) out.test.push(t); else out.real.push(t);
+  });
+  return out;
 }
 
 function _cleanupRowsByPrefix(sheet, prefix, colIdx, firstDataRow) {
