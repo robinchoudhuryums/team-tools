@@ -21,7 +21,7 @@ Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
   moved 1 → 2 at that reflection)
-Updated: 2026-09-11 (operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
+Updated: 2026-09-11 (Batch S landed — 84379ee on `claude/adoring-einstein-b3vs6c`; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -134,13 +134,17 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - TW | test/client/run.js, web-app/qa/script_qa.html, web-app/train/script_empdocs.html | two derived tripwires: TW-A (every function named as a numeric guard uses `isFinite(Number())` and no digit regex — the F5 shape; ≥1 required) and TW-B (a hex literal EQUAL to a declared token value is banned outside canvas fallbacks — which must equal the token they shadow, Console-light — and named INV-166 freezes with a reason; everything else chromatic is a two-sided per-file ratchet with the reason recorded). Writing TW-B found the three canvas fallbacks STALE (qa `--accent` fell back to `--accent-2`'s value; empdocs `--ink` and qa `--muted-3` to values no token declares) — aligned.
 - DR | web-app/Code.js, test/client/run.js | `drFindRowByReqId_` (RequestId column scan + ONE row at `DR_HEADERS` width — the `findFormTokenRow_` shape) behind `getDeptRequestDetail`, which fired per Expand click and read the whole tab incl. every request's PatientTrx cell. Scope, gate and the single not-found unchanged (C-N6 holds). DR-1.
 - P1 | scripts/cycle-context.mjs, CLAUDE.md, .cycle/STATE.md | estimates in the process — the SessionStart hook reminds, the STATE template carries `Estimates:`, every implement block carries `Estimate:` + `Actual:`; Batch P's own estimate recorded before its first edit.
+- S1–S5 + FIX | web-app/Tests.js, web-app/Code.js (comment), test/client/run.js, CLAUDE.md, docs/deployment.md, README.md | the editor suite sharded into smoke + integration A/B (`runAllTestsPartA/B`, `runAllTests` still one execution), `_expectedTestCount_` + the derived `Expected: N registrations` line, `_suiteEnvCheck_` at the top of setup, three derived pins (8/8 bites), the runbook sentence; and the shadowed `sendCallNotesWeeklyDigests` gate test restored (the #239 dispatcher test had the same name). Commit 84379ee. Block: `.cycle/blocks/19-batchS-broad-implement.md`. Estimate M (4 h) vs Actual ~1.3 h.
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- (DONE 2026-09-11) BATCH S of the next-steps plan — `.cycle/blocks/19-batchS-broad-implement.md`;
+  net 1 − 0 = 1 (the shadowed gate test); Estimate M (4 h) vs Actual ~1.3 h. On branch
+  `claude/adoring-einstein-b3vs6c` (84379ee), NOT yet merged. The "full on dev nightly" half of
+  its runbook sentence becomes TRUE only once the operator's Batch 0f (the DEV instance) exists.
+  NEXT in the plan: Batch Q (the Script Property size guard — the one latent DEFECT).
 - (DONE 2026-09-11) BATCH P of the next-steps plan — `.cycle/blocks/19-batchP-broad-implement.md`;
   net 0 − 0 = 0 (both items defensive/structural by design); Estimate S (2 h) vs Actual ~0.6 h.
-  NEXT in the plan: Batch S (suite operability), whose posture needs the operator's Batch 0f
-  (the DEV instance) — see the plan block for the order 0 → P → S → Q → C → D1 → D2 → F1 → F2.
 - NOTHING from cycle 19's IMPLEMENTATION BATCH PLAN, the operator testing-notes
   round, or the follow-ons round: all landed, documented, reflected, and MERGED
   (PRs #235, #236, #237) plus the post-merge suite accommodation (#238).
@@ -245,6 +249,16 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+Batch S is DONE (2026-09-11, 84379ee on `claude/adoring-einstein-b3vs6c`, pushed, not yet
+merged): the editor suite is three registrars behind `runAllTests` / `runAllTestsPartA` /
+`runAllTestsPartB`, the summary prints the DERIVED `Expected: N registrations` line, setup
+logs the `── Suite environment ──` block, and the S4 pins (799 pure / 113 DOM, 8/8 bites)
+hold it — writing them found that #239's dispatcher gate test had SHADOWED the
+`sendCallNotesWeeklyDigests` gate test by name (both now distinct; 315 registrations).
+`/sync-docs` owes the KDD + gotcha + S1/S2 scenario text the block lists; `/reflect` owes
+the estimates.csv rows for P (S 2 h / ~0.6 h) and S (M 4 h / ~1.3 h). NEXT:
+`/broad-implement Q`. Operator: on the next editor run, read the env block at the top and
+the Expected line at the bottom; the previous note below still holds for 0f.
 STOPPING POINT (2026-09-11, end of session): the tree is clean, every commit is
 in `origin/main` (PR #240 was the last merge; `origin/main` = 6667223), and the
 GitHub branch `claude/broad-scan-fw462g` was deleted at that merge — the next
