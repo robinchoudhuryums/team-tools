@@ -10188,6 +10188,54 @@ test('test accounts: setup re-onboards, cleanup re-offboards (the INV-183 coroll
   assert.ok(off >= 0 && inval > off, 'the roster cache is invalidated AFTER the re-offboard');
 });
 
+test('test accounts: a narrowed ADMIN_EMAILS gets the test manager appended by setup and stripped by cleanup (operator 2026-09-11)', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  // The post-push runAllTests read 302/312: ten "Admin access required."
+  // failures, every one an admin-tier endpoint called as the TEST manager,
+  // because the deployment's ADMIN_EMAILS is SET to the operator's real
+  // address (narrowing Admin to themselves — the property entry invites it)
+  // and the suite silently assumed it unset. The 2026-09-04 residue self-heal
+  // correctly refuses to touch a real address, so the accommodation is the
+  // roster rows' own symmetry: setup APPENDS the fixture manager for the run,
+  // cleanup STRIPS every test address back out, ONE predicate on both sides.
+  const ctx = { String, RegExp, Array, Object };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_testAdminEmailsSplit_'), ctx, { filename: 'Tests.js#_testAdminEmailsSplit_' });
+  const split = (raw) => JSON.parse(JSON.stringify(ctx._testAdminEmailsSplit_(raw)));   // vm-realm prototypes: compare by value
+  assert.deepStrictEqual(split('ops@umsupply.com, do-not-send-mgr@example.invalid ,, bob@umsupply.com'),
+    { real: ['ops@umsupply.com', 'bob@umsupply.com'], test: ['do-not-send-mgr@example.invalid'] },
+    'real and test entries split, blanks dropped, trimming applied');
+  assert.deepStrictEqual(split('DO-NOT-SEND-INDIA@EXAMPLE.INVALID'), { real: [], test: ['DO-NOT-SEND-INDIA@EXAMPLE.INVALID'] },
+    'the test-domain match is case-insensitive');
+  assert.deepStrictEqual(split(null), { real: [], test: [] }, 'null/unset reads as empty on both sides');
+  assert.deepStrictEqual(split('robin@example.invalid.com'), { real: ['robin@example.invalid.com'], test: [] },
+    'only a TRAILING @example.invalid is a test address — a real domain that merely contains it stays real');
+
+  const setup = nc(extractRawFunction('Tests.js', 'setupTestEnvironment'));
+  const cleanup = nc(extractRawFunction('Tests.js', 'cleanupTestData'));
+  assert.ok(/_testAdminEmailsSplit_\(adminRaw\)/.test(setup) && /_testAdminEmailsSplit_\(adminRaw\)/.test(cleanup),
+    'BOTH sides classify the list through the one predicate (the DR.STATUS / INV-183 one-reader shape)');
+  // Setup: the delete survives ONLY for an all-test list; a real list gets the
+  // fixture manager APPENDED (never replaced), and only when it is absent.
+  const setupAdmin = setup.slice(setup.indexOf("getProperty('ADMIN_EMAILS')"), setup.indexOf('invalidateRosterCache_();', setup.indexOf("getProperty('ADMIN_EMAILS')")));
+  assert.ok(/if \(!adminSplit\.real\.length\) \{\s*adminProps\.deleteProperty\('ADMIN_EMAILS'\)/.test(setupAdmin),
+    'setup deletes ADMIN_EMAILS ONLY when no real address remains (a real list is the operator\'s decision)');
+  assert.ok(/indexOf\(_TEST_MGR_EMAIL\.toLowerCase\(\)\) < 0\) \{\s*adminProps\.setProperty\('ADMIN_EMAILS', adminSplit\.real\.concat\(\[_TEST_MGR_EMAIL\]\)\.join\(','\)\)/.test(setupAdmin),
+    'setup APPENDS the test manager to a real list (concat, never a replacement) and only when it is not already listed');
+  assert.ok(setupAdmin.indexOf("setProperty('ADMIN_EMAILS'") >= 0 && setupAdmin.indexOf('adminSplit.real.concat') >= 0,
+    'the only setup write to ADMIN_EMAILS is the concat form — nothing here can drop a real address');
+  // Cleanup: strips test entries, keeps the real list, deletes only an empty
+  // remainder, and runs BEFORE the final roster-cache invalidation so a
+  // cached isAdmin cannot outlive the property write.
+  const cleanupAdmin = cleanup.slice(cleanup.indexOf("getProperty('ADMIN_EMAILS')"));
+  assert.ok(/if \(adminSplit\.test\.length\) \{\s*if \(adminSplit\.real\.length\) adminProps\.setProperty\('ADMIN_EMAILS', adminSplit\.real\.join\(','\)\);\s*else adminProps\.deleteProperty\('ADMIN_EMAILS'\);/.test(cleanupAdmin),
+    'cleanup rewrites the list WITHOUT its test entries and deletes the property only when nothing real remains');
+  assert.ok(cleanupAdmin.indexOf('_TEST_MGR_EMAIL') < 0, 'cleanup never ADDS the test manager — it only removes test addresses');
+  const stripAt = cleanup.indexOf("_testAdminEmailsSplit_(adminRaw)");
+  const invalAt = cleanup.lastIndexOf('invalidateRosterCache_();');
+  assert.ok(stripAt >= 0 && invalAt > stripAt, 'the ADMIN_EMAILS strip precedes the final roster-cache invalidation');
+});
+
 test('reminders dedupe across windows via the shared localStorage fired-set', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   // Behavioral: drive remindOnce_ + remindFiredShared_ in a vm with a stubbed

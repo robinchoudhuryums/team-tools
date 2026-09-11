@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). Before that: the follow-ons round's branch is unmerged and undeployed. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) is the post-merge follow-up; expect 312/312 on the re-run. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -16,7 +16,7 @@ Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
   moved 1 → 2 at that reflection)
-Updated: 2026-09-11 (the follow-ons round RT/BP/SA/TW/DR landed — `.cycle/blocks/19-followons-retention-broad-implement.md`; its docs are owed to /sync-docs, then /reflect)
+Updated: 2026-09-11 (post-merge of #237: the `ADMIN_EMAILS` suite accommodation — `setupTestEnvironment` appends the test manager to a narrowed list, `cleanupTestData` strips it; the 302/312 post-push run explained; expect 312/312 on the re-run)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -183,6 +183,20 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+Post-merge follow-up (2026-09-11, after PR #237 merged and the operator
+pushed): the post-push `runAllTests` read 302/312 — all ten failures
+`Admin access required.` from admin-tier endpoints called as the manager
+fixture (`kbSaveItem` behind the four "…created" ones). Diagnosis: the
+deployment's `ADMIN_EMAILS` is SET to a real address (the operator narrowed
+Admin to themselves — the property entry invites it) and the suite assumed it
+unset; no commit in #236/#237 touched a gate. Fix landed on the branch:
+`setupTestEnvironment` appends `_TEST_MGR_EMAIL` to a real list for the run,
+`cleanupTestData` strips `@example.invalid` entries back out, ONE predicate
+`_testAdminEmailsSplit_` on both sides; CLAUDE.md (residue gotcha, INV-21,
+the `ADMIN_EMAILS` entry, a dated operator entry) + a run.js pin. NEXT for the
+operator: `clasp push -f`, re-run `runAllTests()` alone, expect 312/312, keep
+`ADMIN_EMAILS` as is. Cycle 19 stays closed in substance; the next
+`/broad-scan` opens cycle 20 and moves this block to HISTORY.md.
 Follow-ons round (2026-09-11): RT / BP / SA / TW / DR are implemented,
 bite-checked (26 mutations, 26 bites, every one against a committed tree),
 committed on `claude/broad-scan-fw462g` and pushed; harnesses 796 pure /
