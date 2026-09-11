@@ -21,7 +21,7 @@ Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
   moved 1 → 2 at that reflection)
-Updated: 2026-09-11 (Batch S landed — 84379ee on `claude/adoring-einstein-b3vs6c`; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
+Updated: 2026-09-11 (Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -135,14 +135,19 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - DR | web-app/Code.js, test/client/run.js | `drFindRowByReqId_` (RequestId column scan + ONE row at `DR_HEADERS` width — the `findFormTokenRow_` shape) behind `getDeptRequestDetail`, which fired per Expand click and read the whole tab incl. every request's PatientTrx cell. Scope, gate and the single not-found unchanged (C-N6 holds). DR-1.
 - P1 | scripts/cycle-context.mjs, CLAUDE.md, .cycle/STATE.md | estimates in the process — the SessionStart hook reminds, the STATE template carries `Estimates:`, every implement block carries `Estimate:` + `Actual:`; Batch P's own estimate recorded before its first edit.
 - S1–S5 + FIX | web-app/Tests.js, web-app/Code.js (comment), test/client/run.js, CLAUDE.md, docs/deployment.md, README.md | the editor suite sharded into smoke + integration A/B (`runAllTestsPartA/B`, `runAllTests` still one execution), `_expectedTestCount_` + the derived `Expected: N registrations` line, `_suiteEnvCheck_` at the top of setup, three derived pins (8/8 bites), the runbook sentence; and the shadowed `sendCallNotesWeeklyDigests` gate test restored (the #239 dispatcher test had the same name). Commit 84379ee. Block: `.cycle/blocks/19-batchS-broad-implement.md`. Estimate M (4 h) vs Actual ~1.3 h.
+- Q1–Q5 | web-app/Code.js, web-app/Tests.js, web-app/script_core.html, web-app/styles.html, web-app/cn/script_callnotes.html, web-app/kb/script_kb.html, test/client/run.js, test/visual/mock.js | the Script Property SIZE guard: `propSetBounded_` is the ONE writer for every JSON-blob property (14 operator blobs REFUSE by name with nothing written; 6 auto-managed ones DEGRADE through a named shrinker and CLEAR rather than leave a stale value; 9 scalar writers allowlisted BY NAME with a reason each), `utf8Len_` counts the BYTES the platform caps in, every Admin editor + the Reference synonyms modal show the serialized budget through ONE shared builder (`propBudgetHtml_` + `.prop-budget` in the shared stylesheet — the KB modal had its own tone rule for one commit before it was folded in), Storage Health carries a Script Properties line (ok FACT while comfortable — INV-186), and BOTH DeptRequests resolve paths use the bounded `drFindRowByReqId_` instead of reading the whole PHI-bearing tab per click. Five pins (Q-1/Q-1b/Q-2/Q-3/Q-5), 9 mutations / 8 bites + 1 documented equivalent mutant, an editor-suite over-size case (316 registrations). Commits 3ab7018 + 3afeea6. Block: `.cycle/blocks/19-batchQ-broad-implement.md`. Estimate M (5 h) vs Actual ~2.5 h.
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- (DONE 2026-09-11) BATCH Q of the next-steps plan — `.cycle/blocks/19-batchQ-broad-implement.md`;
+  net 0 − 0 = 0, PREVENTIVE by construction (the plan classified it as the one latent DEFECT, and a
+  latent defect has by definition not fired). Estimate M (5 h) vs Actual ~2.5 h. On branch
+  `claude/adoring-einstein-b3vs6c` (3ab7018 + 3afeea6), NOT yet merged.
+  NEXT in the plan: Batch C (derived counts).
 - (DONE 2026-09-11) BATCH S of the next-steps plan — `.cycle/blocks/19-batchS-broad-implement.md`;
   net 1 − 0 = 1 (the shadowed gate test); Estimate M (4 h) vs Actual ~1.3 h. On branch
   `claude/adoring-einstein-b3vs6c` (84379ee), NOT yet merged. The "full on dev nightly" half of
   its runbook sentence becomes TRUE only once the operator's Batch 0f (the DEV instance) exists.
-  NEXT in the plan: Batch Q (the Script Property size guard — the one latent DEFECT).
 - (DONE 2026-09-11) BATCH P of the next-steps plan — `.cycle/blocks/19-batchP-broad-implement.md`;
   net 0 − 0 = 0 (both items defensive/structural by design); Estimate S (2 h) vs Actual ~0.6 h.
 - NOTHING from cycle 19's IMPLEMENTATION BATCH PLAN, the operator testing-notes
@@ -218,6 +223,19 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
   question, not a batch.
 
 ## Open follow-on items
+- Drive access finding may be a FALSE POSITIVE (operator report 2026-09-11, mid Batch Q) —
+  `driveAccessStatus_` introspects the RUNNING EXECUTION's OAuth token. If the runtime mints
+  it with only the scopes that execution exercises, a Storage Health run that never touches
+  DriveApp reports "not granted" while Drive works. Fits this deployment (`KB_IMAGES_FOLDER_ID`
+  unset → the probe's own getFolderById is skipped; the embed scan touches Drive only when the
+  KB store is reachable AND has embeds). The 5-minute cache is NOT the cause (a not-granted
+  round is never cached). Decisive test + the suggested fix (attempt a read-only DriveApp call
+  and classify through `driveScopeError_`, still side-effect free so DRV-3 holds) are in
+  `.cycle/blocks/19-batchQ-broad-implement.md`. Also fits: Google's granular consent screen lets
+  a user untick Drive, leaving a grant that exists but is short — no NEW prompt appears; revoking
+  at myaccount.google.com → Third-party apps forces a fresh screen.
+- `getDeptRequests` still reads the whole DeptRequests tab (it must — it lists). Noted so Q5 is
+  not read as "the DeptRequests store is fully bounded".
 - (CLOSED 2026-09-11, BP) `reportBreakPairingChanges()` exists; the doctor REPORTS the protected multi-break days whose greedy pairing drops a stamp. RESIDUAL: the one-leave / two-return shape (outs [12:00], ins [11:00, 12:30]) is a classic DUPLICATE LunchIn group, and the collapse keeps the LAST APPENDED row (INV-155's rule) — which is the stray 11:00 if it was appended later. The doctor cannot tell which return is real; Day Edit is the fix, and the `unpaired` report deliberately does not double-report count-disagreeing days.
 - (FOLDED INTO BATCH Q5 of the next-steps plan) web-app/Code.js (resolveDeptRequest, markDeptRequestResolved_) — still whole-tab reads by RequestId; DR bounded only the detail read (the per-click one). The same `drFindRowByReqId_` fits both; not done here (scope).
 - web-app/Code.js (resolveDeptRequest) — F4 residual: another member of the same receiving desk keeps a resolved request in their incoming list for ≤120s. Closing it needs a generation salt (too blunt — it would evict every rep's entry on every resolve).
@@ -249,16 +267,29 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-Batch S is DONE (2026-09-11, 84379ee on `claude/adoring-einstein-b3vs6c`, pushed, not yet
-merged): the editor suite is three registrars behind `runAllTests` / `runAllTestsPartA` /
-`runAllTestsPartB`, the summary prints the DERIVED `Expected: N registrations` line, setup
-logs the `── Suite environment ──` block, and the S4 pins (799 pure / 113 DOM, 8/8 bites)
-hold it — writing them found that #239's dispatcher gate test had SHADOWED the
-`sendCallNotesWeeklyDigests` gate test by name (both now distinct; 315 registrations).
-`/sync-docs` owes the KDD + gotcha + S1/S2 scenario text the block lists; `/reflect` owes
-the estimates.csv rows for P (S 2 h / ~0.6 h) and S (M 4 h / ~1.3 h). NEXT:
-`/broad-implement Q`. Operator: on the next editor run, read the env block at the top and
-the Expected line at the bottom; the previous note below still holds for 0f.
+Batch Q is DONE (2026-09-11, 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`, pushed,
+not yet merged) and Batch S before it (84379ee). Q: `propSetBounded_` is the ONE writer for
+every JSON-blob Script Property — 14 operator blobs refuse by name with nothing written, 6
+auto-managed ones degrade through a named shrinker and clear rather than leave a stale value,
+9 scalar writers are allowlisted by name; every Admin editor and the Reference synonyms modal
+render the serialized budget through ONE shared builder; Storage Health carries a Script
+Properties line; both DeptRequests resolve paths use the bounded RequestId lookup. 804 pure /
+113 DOM, 9 mutations with 8 bites (the 9th an equivalent mutant, re-run as bypass+allowlist,
+which bit), the affected visual scenarios re-shot clean and the badge tones MEASURED in
+Chromium. Registration count 315 → 316; the summary prints the derived expectation, so no
+doc number needs hand-carrying. `/sync-docs` owes the Batch S text AND Batch Q's (a Common
+Gotchas entry, a KDD for the one-home badge, a new INV for the guard, the 316 count, and the
+S51/S56/S97 scenario extensions). `/reflect` owes estimates.csv rows for P (S 2 h / ~0.6 h),
+S (M 4 h / ~1.3 h) and Q (M 5 h / ~2.5 h). NEXT: `/broad-implement C` (derived counts).
+OPERATOR, mid-session report worth acting on before 0b: the Drive finding may be a FALSE
+POSITIVE — they redeployed, ran a function in the editor and got NO re-auth prompt, which
+usually means the grant already covers /auth/drive. `driveAccessStatus_` introspects the
+RUNNING EXECUTION's token, and a Storage Health run that never touches DriveApp (this
+deployment: `KB_IMAGES_FOLDER_ID` unset, so the probe's own getFolderById is skipped) can
+yield a token without the scope while Drive works. The decisive one-paste test and the
+suggested fix (probe by attempting a read-only DriveApp call and classifying through the
+existing `driveScopeError_` — still side-effect free, so DRV-3 holds) are in the Batch Q
+block's follow-ons. Out of Batch Q's scope; logged, not fixed.
 STOPPING POINT (2026-09-11, end of session): the tree is clean, every commit is
 in `origin/main` (PR #240 was the last merge; `origin/main` = 6667223), and the
 GitHub branch `claude/broad-scan-fw462g` was deleted at that merge — the next
