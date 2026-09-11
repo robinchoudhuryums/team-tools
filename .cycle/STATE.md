@@ -281,3 +281,13 @@ version owed for PRs #230/#232/#233 now also carries all four batches; after
 deploying, open Manage → Admin → System to learn whether MAIL_BCC_ALL is
 actually set on this deployment — nothing in the container can read a live
 Script Property, so that one look is the only way to settle it.
+
+`/broad-implement Batch 0` was invoked on 2026-09-11 (post-plan) and found
+NOTHING to implement: Batch 0 is the operator batch, "no code" by its own
+heading, and none of 0a–0f can run from the container (no clasp, no Apps
+Script auth, no Google account). Every precondition was VERIFIED on the branch
+instead — #238 merged, the accommodation in Tests.js, triggers #20/#21 in
+`installAutomationTriggers`, `reportBreakPairingChanges()`, `mailBccStatus_`,
+the dev-setup doc — and both Node harnesses are green on HEAD (797 / 113). The
+record is `.cycle/blocks/19-batch0-operator-broad-implement.md`. Do NOT re-run
+Batch 0 as a code batch; the operator does it, then `/broad-implement P`.
