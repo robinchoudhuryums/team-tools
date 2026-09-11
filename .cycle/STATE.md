@@ -130,36 +130,73 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - DR | web-app/Code.js, test/client/run.js | `drFindRowByReqId_` (RequestId column scan + ONE row at `DR_HEADERS` width — the `findFormTokenRow_` shape) behind `getDeptRequestDetail`, which fired per Expand click and read the whole tab incl. every request's PatientTrx cell. Scope, gate and the single not-found unchanged (C-N6 holds). DR-1.
 
 ## Pending / not yet done
-- Nothing from the IMPLEMENTATION BATCH PLAN. All four batches are landed,
-  and their documentation is reconciled.
-- The audit's own IMPLEMENTATION BATCH PLAN was produced in chat and is NOT
-  on disk — it exists only in this session's transcript.
-- `/reflect` has not been run; cycle 19 is still OPEN. Its per-batch nets are
-  already derived strictly in the two blocks (Batches 1+2 net +1, Batches 3+4
-  net 0), so the reflection has honest inputs to start from.
-- The ONE deploy owed for PRs #230/#232/#233 now also carries all four
-  batches AND these doc changes; nothing here reaches production without it.
-- The operator testing-notes round (Batches A–D + this /sync-docs pass) rides
-  that SAME deploy; post-deploy `runAllTests()` expects **312** (310 + the
-  two follow-ons-round trigger-gate tests).
-- The follow-ons round's DOCUMENTATION UPDATES (listed in
-  `.cycle/blocks/19-followons-retention-broad-implement.md`) are owed to
-  `/sync-docs` — CLAUDE.md still says "nineteen triggers" (it is twenty-one),
-  INV-44's handler list lacks the two new handlers, the ViewUsage /
-  ClientErrors operator-state entries still say "no retention tier", INV-176
-  still calls the doctor gap "a logged follow-on", INV-31 (iii) still calls
-  the scheduled trigger "a logged follow-on", the harness totals read
-  785 / 113 / 102 / 310, and README's matrix count (99) has been stale since
-  before this round (102 real).
-- The round's branch is NOT yet in a PR (this invocation did not ask for
-  one); `git push -u origin claude/broad-scan-fw462g` carries it.
+- NOTHING from cycle 19's IMPLEMENTATION BATCH PLAN, the operator testing-notes
+  round, or the follow-ons round: all landed, documented, reflected, and MERGED
+  (PRs #235, #236, #237) plus the post-merge suite accommodation (#238).
+- OPERATOR (Batch 0 of the next-steps plan, in this order): (0a) `clasp push -f`
+  + `runAllTests()` alone → expect 312/312, keep `ADMIN_EMAILS`; (0b) Drive
+  re-auth as the deploying account — article images have never rendered;
+  (0c) `installAutomationTriggers()` for #20/#21; (0d) `reportBreakPairingChanges()`
+  once; (0e) read the mail-routing line on Admin → System; (0f) stand up the DEV
+  instance per docs/deployment.md and set `INSTANCE_IS_PROD=true` on prod AFTER
+  0a, so the full suite runs nightly on dev and never by hand on prod again.
+- The New version deploy carrying #236 + #237 (+ #238's Tests.js, which needs
+  only the push). Nothing in those PRs reaches production without it.
+
+## Next-steps plan (post-cycle-19, 2026-09-11)
+Full text + measurements + rationale: `.cycle/blocks/19-next-steps-plan.md`. This is the sequence.
+SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch one
+`/broad-implement`, independently shippable, estimates recorded in the block.
+- **0 OPERATOR** (~1 h + dev setup): the six actions above. 0f is the
+  precondition for S.
+- **P PROCESS** (S, ~2 h): estimates reminder in the SessionStart hook + an
+  `Estimates:` line per batch; retire TW-B's per-file RATCHET half (keep the
+  token-equality ban, FROZEN, the canvas rule) and land the `--accent-glow` /
+  `--warn-glow` pair that retires the clock ribbon's rgba fallbacks.
+- **S SUITE OPERABILITY** (M, ~4 h): shard `_runAllTests` into editor entry
+  points A/B (one execution still runs all); `_printSummary` prints the
+  DERIVED expected count; `_suiteEnvCheck_()` logs every deployment setting the
+  suite depends on (today's class, visible at the top of the log); pins;
+  runbook says "smoke on prod, full on dev nightly".
+- **Q SCRIPT PROPERTY SIZE GUARD** (M, ~5 h) — the one latent DEFECT:
+  `propSetBounded_` (refuse by name at ~9,000 chars for operator blobs;
+  degrade by name for auto-managed ones — the geocode cache self-resets on
+  BYTES); validators + editors show the serialized budget (templates alone
+  admit 200KB today); a Storage Health "Script Properties" line; derived
+  every-writer-routes-through-the-helper pin + worst-case arithmetic pins;
+  also carries the logged DR whole-tab-read follow-on (`drFindRowByReqId_` in
+  both resolve paths).
+- **C DERIVED COUNTS** (S–M, ~3 h; after S): `scripts/counts.mjs` derives every
+  number the docs carry; ONE generated block in CLAUDE.md between COUNTS
+  markers; the 53 "expect N" sentences rewritten to point at it; the guard pin
+  + CI `--check` land WITH the rewrite.
+- **D1 CLAUDE.md STRUCTURAL MOVES** (M, ~6 h; after C): Cycle Workflow Config →
+  `.cycle/config.md` (the hook already prefers it; CLAUDE.md keeps a pointer
+  stub for the 16 template commands); KDDs → `docs/design-decisions.md` + a
+  one-line index; the 53 dated operator entries → `docs/operator-log.md`; a
+  Doc-map section at the top; the three CLAUDE.md-reading pins repointed.
+- **D2 CLAUDE.md REWRITES + CEILING** (M, ~6 h; after D1): gotchas → rule +
+  trigger + verify pointer, RANKED by hit likelihood (≤600 lines); Projects →
+  a module map table; the Test Command narrative → test/client/README.md; then
+  the one-sided LINE-COUNT CEILING pin. Target ≤3,000 lines from 12,311.
+- **F1 HARNESS SHIM** (S, ~2 h; before F2, its own commit): `serverSource()`
+  from `.clasp.json` `filePushOrder`; `extractRawFunction('Code.js',…)` resolves
+  through it (586 pins untouched), the 69 direct reads + mock's F4 mirror + CI
+  `node --check` follow; a byte-equal pin proves the no-op; a load-order vm pin.
+- **F2 Code.js SPLIT** (L, ~2 days): `00_config.js` first in `filePushOrder`,
+  then a MOVE-ONLY split by prefix into ~13 files (sizes measured in the block);
+  a pin that the function-name set and every body are byte-equal to the
+  pre-split tag; Tests.js/DevTools.js unchanged; smoke on dev before prod.
+- Rationale for the order and the measurements every estimate rests on are in
+  the block. Suggestion #5 (a dedicated deploying account) stays an operator
+  question, not a batch.
 
 ## Open follow-on items
 - (CLOSED 2026-09-11, BP) `reportBreakPairingChanges()` exists; the doctor REPORTS the protected multi-break days whose greedy pairing drops a stamp. RESIDUAL: the one-leave / two-return shape (outs [12:00], ins [11:00, 12:30]) is a classic DUPLICATE LunchIn group, and the collapse keeps the LAST APPENDED row (INV-155's rule) — which is the stray 11:00 if it was appended later. The doctor cannot tell which return is real; Day Edit is the fix, and the `unpaired` report deliberately does not double-report count-disagreeing days.
-- web-app/Code.js (resolveDeptRequest, markDeptRequestResolved_) — still whole-tab reads by RequestId; DR bounded only the detail read (the per-click one). The same `drFindRowByReqId_` fits both; not done here (scope).
+- (FOLDED INTO BATCH Q5 of the next-steps plan) web-app/Code.js (resolveDeptRequest, markDeptRequestResolved_) — still whole-tab reads by RequestId; DR bounded only the detail read (the per-click one). The same `drFindRowByReqId_` fits both; not done here (scope).
 - web-app/Code.js (resolveDeptRequest) — F4 residual: another member of the same receiving desk keeps a resolved request in their incoming list for ≤120s. Closing it needs a generation salt (too blunt — it would evict every rep's entry on every resolve).
 - web-app/Code.js (submitCallNote) — deliberately NOT hooked into F4: the notes row derives from getMyMetrics' own 5-minute cache, so busting the pending-tasks key alone cannot change the answer.
-- (CLOSED 2026-09-11, TW) both Stage-3 tripwire promotions are written (TW-A, TW-B). RESIDUALS the TW-B ratchet records rather than fixes: the clock ribbon's two `rgba(15,138,82,…)` / `rgba(183,121,31,…)` colour-mix FALLBACK pairs duplicate `--accent` / `--warn` in rgb form (a `--accent-glow`-style token would retire them); `styles.html`'s one `rgba(15,23,42,.04)` box-shadow tint.
+- (CLOSED 2026-09-11, TW; the RESIDUALS below are FOLDED INTO BATCH P2, which also retires the ratchet half) both Stage-3 tripwire promotions are written (TW-A, TW-B). RESIDUALS the TW-B ratchet records rather than fixes: the clock ribbon's two `rgba(15,138,82,…)` / `rgba(183,121,31,…)` colour-mix FALLBACK pairs duplicate `--accent` / `--warn` in rgb form (a `--accent-glow`-style token would retire them); `styles.html`'s one `rgba(15,23,42,.04)` box-shadow tint.
 - web-app/Code.js (autoAssignSpanishThreadsScheduled) — the business-hours gate covers hours, weekdays and US holidays; it does NOT consult a member's approved PTO, so with the flag ON a member on leave can be handed claims (the button has the same limit). A PTO-aware picker is an operator decision (the same class as the presence chip's schedule/PTO gating).
 - web-app/Code.js (mailMergeBcc_) — `mailBccStatus_` REPORTS an off-domain BCC; it does not block one. Making it enforce is a deliberate policy change and an operator decision, not a defect.
 - The audit's Deferred set is untouched EXCEPT the diagnostics retention tier (now RT); the rest remain operator/feature decisions: agent-visible QA reviews, the blocked external form route, a per-rep working-days source, a manager pay-statement export. Also deliberately NOT implemented in the follow-ons round, as operator decisions: presence-chip schedule/PTO gating, BLOCKING an off-domain `MAIL_BCC_ALL`, the `getTeammateStatus` full-Timesheet read, the `dept_req_v1` cache-key bump, the quiz editor's "+ Question" per-block append.
@@ -183,6 +220,12 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+Next-steps plan written (2026-09-11, `.cycle/blocks/19-next-steps-plan.md`;
+the sequence is in the section above): 0 → P → S → Q → C → D1 → D2 → F1 → F2.
+Pick up with Batch 0 (operator) and then `/broad-implement P` — the process
+batch is two hours and its estimate rule applies to everything after it. Batch
+Q is the only latent DEFECT in the set (Script Properties cap values at ~9KB;
+the template caps admit 200KB) and should not slip behind the doc work.
 Post-merge follow-up (2026-09-11, after PR #237 merged and the operator
 pushed): the post-push `runAllTests` read 302/312 — all ten failures
 `Admin access required.` from admin-tier endpoints called as the manager
