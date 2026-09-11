@@ -133,7 +133,14 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - NOTHING from cycle 19's IMPLEMENTATION BATCH PLAN, the operator testing-notes
   round, or the follow-ons round: all landed, documented, reflected, and MERGED
   (PRs #235, #236, #237) plus the post-merge suite accommodation (#238).
-- OPERATOR (Batch 0 of the next-steps plan, in this order): (0a) `clasp push -f`
+- (DONE 2026-09-11, the operator's 0c blocker) the TRIGGER QUOTA fix — `.cycle/blocks/19-trigger-quota-broad-implement.md`:
+  Apps Script caps installable triggers at 20/user/script; the installer had 21 and the operator's
+  install threw on the LAST create after the dedupe loop deleted everything, leaving the deployment
+  with NO `creditMonthlyPtoAccruals`. Now 16 triggers for 24 handlers via three same-slot dispatchers
+  (`TRIGGER_GROUPS` the one source), a fail-closed pre-flight, a naming rethrow, TQ-1..3 (7/7 bites),
+  three editor gate tests (expect 315). OPERATOR: `clasp push -f`, re-run `installAutomationTriggers()`
+  ONCE (restores the accrual trigger; 16 rows in the Triggers panel), then `runAllTests()` → 315.
+- OPERATOR (Batch 0 of the next-steps plan, in this order — 0a is DONE, 312/312 on 2026-09-11; 0c was BLOCKED by the quota until the fix above is pushed): (0a) `clasp push -f`
   + `runAllTests()` alone → expect 312/312, keep `ADMIN_EMAILS`; (0b) Drive
   re-auth as the deploying account — article images have never rendered;
   (0c) `installAutomationTriggers()` for #20/#21; (0d) `reportBreakPairingChanges()`
@@ -291,3 +298,13 @@ instead — #238 merged, the accommodation in Tests.js, triggers #20/#21 in
 the dev-setup doc — and both Node harnesses are green on HEAD (797 / 113). The
 record is `.cycle/blocks/19-batch0-operator-broad-implement.md`. Do NOT re-run
 Batch 0 as a code batch; the operator does it, then `/broad-implement P`.
+
+Trigger-quota fix (2026-09-11, after the operator reported 312/312 and then
+`This script has too many triggers` from `installAutomationTriggers()`): landed
+on the branch as 114a16e + the docs commit; block at
+`.cycle/blocks/19-trigger-quota-broad-implement.md`. NOT yet in a PR — the
+operator's next step is `clasp push -f` + one `installAutomationTriggers()`
+re-run (restores the missing accrual trigger) + `runAllTests()` → 315. The
+one logged follow-on worth doing next: the Admin → System findings read
+`e.error` where the stamp writes `message` (every stamped automation failure
+renders "unknown error").
