@@ -96,7 +96,7 @@ function edInitSigPad_(canvas, placeholderEl) {
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#101418';
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#0f1623';
   }
   resizeCanvas();
   function getPos(e) {
@@ -144,7 +144,7 @@ function edInitSigPad_(canvas, placeholderEl) {
       size = Math.max(14, Math.floor(size * (w - 24) / tw));
       ctx.font = face.replace('{s}', size);
     }
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#101418';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#0f1623';
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 12, 70);
     hasDrawn = true;

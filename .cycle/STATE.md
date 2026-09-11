@@ -5,16 +5,18 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: docs reconciled — ready for `/reflect`. The OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). Before that: the follow-ons round's branch is unmerged and undeployed. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
   `/reflect`.
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 1 (cycle 18's F1–F5 round WAS the
-  seams audit; cycle 19 is the first subsystem cycle after it)
-Updated: 2026-09-11 (/sync-docs applied for Batches A–D — CLAUDE.md, README, this file; nothing owed but /reflect)
+Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
+  seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
+  2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
+  moved 1 → 2 at that reflection)
+Updated: 2026-09-11 (the follow-ons round RT/BP/SA/TW/DR landed — `.cycle/blocks/19-followons-retention-broad-implement.md`; its docs are owed to /sync-docs, then /reflect)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -98,9 +100,16 @@ D (note 10 — a new presence signal on the Team-right-now card).
   `/sync-docs` (INV-24/S14 were amended in-batch; the rest are listed).
 - Nothing else in flight. The four AUDIT batches were bite-checked too (20
   mutations / 20 bites across the two sessions).
-- `/sync-docs` is DONE and applied (not merely proposed): all fourteen owed
-  updates plus three drifts the four checks turned up on their own. The next
-  concrete step is `/reflect` to close cycle 19.
+- `/sync-docs` is DONE and applied for the operator round (all fourteen owed
+  updates plus three drifts the four checks turned up on their own).
+- The FOLLOW-ONS round (`/broad-implement retention tier for ViewUsage and
+  ClientErrors tabs, suggestion follow-ons`, 2026-09-11) is landed: RT
+  (b9c0e9b), BP (dab2999), SA (cafae41), TW (e5576da), DR (cd94af3) — all
+  on `claude/broad-scan-fw462g`, every pin bite-checked against a committed
+  tree (6 + 6 + 5 + 6 + 3 mutations, all biting). Harnesses: pure 796 / DOM
+  113; editor suite now expects 312 (two new trigger-gate tests). Its
+  DOCUMENTATION UPDATES list (in the block) is owed to `/sync-docs`; the
+  next concrete step after that is `/reflect`.
 
 ## Completed this cycle
 - (template sync) | .claude/commands/{broad-scan,cycle-init,reflect,setup-cycle}.md, CLAUDE.md | synced to claude-workflow-tools v1.33.0; `Client (QA views)` added to the Deploy Command map. Commit 53b1f44.
@@ -114,6 +123,11 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - F8 | web-app/Code.js, web-app/intake/script_intake.html, test/client/run.js | a failed intake-feedback read is NAMED (`feedbackUnavailable` → `errorStateHtml_`) instead of rendering as "nobody has said anything" — the reading the data cannot support.
 - D1 | CLAUDE.md | visual-matrix running total corrected 99→101 to 97→99 and annotated that `shoot.mjs`'s SCENARIOS list is the authority. The S103/S104 half was resolved by construction when STATE.md was reset for cycle 19.
 - /sync-docs | CLAUDE.md, README.md, web-app/Code.js | all fourteen owed updates APPLIED (the user's argument overrode the skill's approval gate), plus three the four checks found on their own: `test/visual/fold-measure.mjs` was missing from the Test Suite subsystem list while CLAUDE.md's own PR6 text tells a reader to run it; the README's visual-matrix count had drifted 67 vs the 99 `shoot.mjs` runs; and the README described Intake as three forms (it has five tabs — Sent and Catalog were missing) and still called the QA sampler "Sample 3 for me", which PR 5 renamed. The literally-stale "Pairing is then positional" sentence turned out to live in a **Code.js doc comment**, not in INV-176 — the invariant needed the greedy rule ADDED, the comment needed it CORRECTED; both were done. Scenario coverage followed the fixes rather than only the prose: S95 gained the in-direction break case with its arithmetic (8.5h, not 9.0), S101 the unset-store silence and the completes-and-refreshes step, S97 the two capability lines and all three mail states, S59 the feedback block's third state.
+- RT | web-app/Code.js, web-app/cn/script_callnotes.html, web-app/Tests.js, test/client/run.js, test/visual/mock.js | the diagnostics retention tier: `purgeOldDiagnostics` (trigger #20, daily 2am, INV-44 gate, locked, default OFF on BOTH windows — `VIEW_USAGE_RETENTION_DAYS` / `CLIENT_ERR_RETENTION_DAYS`, Script Property first then CONFIG), contiguous bottom-up `deleteRows` runs under a 2000-row budget, the spare-row guard, a fail-safe null timestamp never deleted, a counts-only `DiagnosticsPurge` audit row that is the `AUTOMATION_JOB_CHECKS` heartbeat (enabled only while a window is set — INV-186), `stampAutomationError_` on failure; Admin → Config → Retention gains two "Diagnostics tabs (PHI-free)" rows whose keys are sent only when present (an older client cannot reset a window); Storage Health's ADP row names the live windows. RT-1 pin; `test_triggerGate_diagnosticsPurge_nonManagerThrows`.
+- BP | web-app/Code.js, web-app/tc/script_manager.html, test/client/run.js, test/visual/mock.js | `reportBreakPairingChanges()` — the twin of `reportMultiBreakDays()` over the SHARED `tsPunchDaysWithArchive_` reader (live + archive, duplicates counted once, extracted so both reports read the sheet one way), reproducing the pre-F1 figure through the verbatim `breakPairsPositional_` (called exactly once, from the report) + ONE `calcHours_`; the sheet doctor's collapse guard widened from equal-counts to "two-plus stamps of BOTH lunch types" (a double-punched leave on a two-break day would have had a REAL break deleted), and `getTimesheetDoctor` now REPORTS such days whose greedy pairing drops a stamp (`unpaired` + totals + truncated, the dropped stamps NAMED, Day Edit the fix) with the manager card rendering the list. A5 rewritten onto the reader, A2/A3 extended, BP-1..4.
+- SA | web-app/Code.js, web-app/cn/script_callnotes.html, web-app/Tests.js, test/client/run.js, test/visual/mock.js | `autoAssignSpanishThreadsScheduled` (trigger #21, hourly) behind the new `spanishAutoAssign` feature flag (server scope, default OFF): the SAME `spanishAutoAssignCore_` as the button, heartbeat `spanishAutoAssign` stamped BEFORE the flag check (INV-151), acts only inside business hours through `businessMinutesBetween_` (the one definition of a working hour), installer as actor with the SYSTEM fallback, failures stamped into `AUTOMATION_LAST_ERRORS`. `DIGEST_STALE_HOURS.spanishAutoAssign: 2` and the reported digest set is now DERIVED from that map (INV-179); both client label maps + both mock fixtures + `test_triggerGate_spanishAutoAssign_nonManagerThrows`. SA-1 (+1 auto-generated by the derived trigger nets).
+- TW | test/client/run.js, web-app/qa/script_qa.html, web-app/train/script_empdocs.html | two derived tripwires: TW-A (every function named as a numeric guard uses `isFinite(Number())` and no digit regex — the F5 shape; ≥1 required) and TW-B (a hex literal EQUAL to a declared token value is banned outside canvas fallbacks — which must equal the token they shadow, Console-light — and named INV-166 freezes with a reason; everything else chromatic is a two-sided per-file ratchet with the reason recorded). Writing TW-B found the three canvas fallbacks STALE (qa `--accent` fell back to `--accent-2`'s value; empdocs `--ink` and qa `--muted-3` to values no token declares) — aligned.
+- DR | web-app/Code.js, test/client/run.js | `drFindRowByReqId_` (RequestId column scan + ONE row at `DR_HEADERS` width — the `findFormTokenRow_` shape) behind `getDeptRequestDetail`, which fired per Expand click and read the whole tab incl. every request's PatientTrx cell. Scope, gate and the single not-found unchanged (C-N6 holds). DR-1.
 
 ## Pending / not yet done
 - Nothing from the IMPLEMENTATION BATCH PLAN. All four batches are landed,
@@ -126,16 +140,29 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - The ONE deploy owed for PRs #230/#232/#233 now also carries all four
   batches AND these doc changes; nothing here reaches production without it.
 - The operator testing-notes round (Batches A–D + this /sync-docs pass) rides
-  that SAME deploy; post-deploy `runAllTests()` expects **310**.
+  that SAME deploy; post-deploy `runAllTests()` expects **312** (310 + the
+  two follow-ons-round trigger-gate tests).
+- The follow-ons round's DOCUMENTATION UPDATES (listed in
+  `.cycle/blocks/19-followons-retention-broad-implement.md`) are owed to
+  `/sync-docs` — CLAUDE.md still says "nineteen triggers" (it is twenty-one),
+  INV-44's handler list lacks the two new handlers, the ViewUsage /
+  ClientErrors operator-state entries still say "no retention tier", INV-176
+  still calls the doctor gap "a logged follow-on", INV-31 (iii) still calls
+  the scheduled trigger "a logged follow-on", the harness totals read
+  785 / 113 / 102 / 310, and README's matrix count (99) has been stale since
+  before this round (102 real).
+- The round's branch is NOT yet in a PR (this invocation did not ask for
+  one); `git push -u origin claude/broad-scan-fw462g` carries it.
 
 ## Open follow-on items
-- web-app/Code.js — a `reportBreakPairingChanges()` twin of `reportMultiBreakDays()` would enumerate the historical days whose hours move under F1. Not written (out of scope); F1's shape is rarer than the multi-break one, and no existing report finds it.
-- web-app/Code.js (tsDoctorScan_) — the sheet doctor's inverted-lunch test (`last LunchIn <= first LunchOut`) does not detect F1's shape, so the damaged data F1 now survives is still invisible to the doctor.
+- (CLOSED 2026-09-11, BP) `reportBreakPairingChanges()` exists; the doctor REPORTS the protected multi-break days whose greedy pairing drops a stamp. RESIDUAL: the one-leave / two-return shape (outs [12:00], ins [11:00, 12:30]) is a classic DUPLICATE LunchIn group, and the collapse keeps the LAST APPENDED row (INV-155's rule) — which is the stray 11:00 if it was appended later. The doctor cannot tell which return is real; Day Edit is the fix, and the `unpaired` report deliberately does not double-report count-disagreeing days.
+- web-app/Code.js (resolveDeptRequest, markDeptRequestResolved_) — still whole-tab reads by RequestId; DR bounded only the detail read (the per-click one). The same `drFindRowByReqId_` fits both; not done here (scope).
 - web-app/Code.js (resolveDeptRequest) — F4 residual: another member of the same receiving desk keeps a resolved request in their incoming list for ≤120s. Closing it needs a generation salt (too blunt — it would evict every rep's entry on every resolve).
 - web-app/Code.js (submitCallNote) — deliberately NOT hooked into F4: the notes row derives from getMyMetrics' own 5-minute cache, so busting the pending-tasks key alone cannot change the answer.
-- test/client/run.js — the audit's two Stage-3 tripwire promotions are now cheap, because F5 and F7 each landed the instance to derive from: (a) a validator-vs-consumer WIDTH scan (a numeric guard must not be narrower than the parse its consumers run); (b) a colour-literal-vs-token scan for values duplicating a token the tokens partial already defines. Neither written — a rule with one instance is worth deriving, but it is its own batch.
+- (CLOSED 2026-09-11, TW) both Stage-3 tripwire promotions are written (TW-A, TW-B). RESIDUALS the TW-B ratchet records rather than fixes: the clock ribbon's two `rgba(15,138,82,…)` / `rgba(183,121,31,…)` colour-mix FALLBACK pairs duplicate `--accent` / `--warn` in rgb form (a `--accent-glow`-style token would retire them); `styles.html`'s one `rgba(15,23,42,.04)` box-shadow tint.
+- web-app/Code.js (autoAssignSpanishThreadsScheduled) — the business-hours gate covers hours, weekdays and US holidays; it does NOT consult a member's approved PTO, so with the flag ON a member on leave can be handed claims (the button has the same limit). A PTO-aware picker is an operator decision (the same class as the presence chip's schedule/PTO gating).
 - web-app/Code.js (mailMergeBcc_) — `mailBccStatus_` REPORTS an off-domain BCC; it does not block one. Making it enforce is a deliberate policy change and an operator decision, not a defect.
-- The audit's Deferred set is untouched and remains operator/feature decisions: agent-visible QA reviews, the blocked external form route, a retention tier for `ViewUsage`/`ClientErrors`, a per-rep working-days source, a manager pay-statement export.
+- The audit's Deferred set is untouched EXCEPT the diagnostics retention tier (now RT); the rest remain operator/feature decisions: agent-visible QA reviews, the blocked external form route, a per-rep working-days source, a manager pay-statement export. Also deliberately NOT implemented in the follow-ons round, as operator decisions: presence-chip schedule/PTO gating, BLOCKING an off-domain `MAIL_BCC_ALL`, the `getTeammateStatus` full-Timesheet read, the `dept_req_v1` cache-key bump, the quiz editor's "+ Question" per-block append.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - F1's pairing is GREEDY, not positional: each `out` takes the earliest `in` that can close it, so an unpairable `in` is dropped ALONE. Greedy is also the conservative reading (the shortest break that can be attributed).
@@ -148,10 +175,27 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - F3 derives the org domain from `Session.getEffectiveUser()` (the account that owns every store and sends every message), NOT a second `@umsupply.com` literal and NOT by touching doGet's access gate — so there is no copy of the domain to drift.
 - F7 uses `var(--intake-pap)` directly rather than a new `--intake-pap-deep` alias: the alias was built and REJECTED by measurement (the dark card-mix regressed 7.69 → 4.04).
 - REFLECT was scored strictly again — Batches 1+2 net +1, Batches 3+4 net 0. Batch 3+4 contains no fix that fired in production this month; F3 is a Medium for what it GUARDS, not for what it was doing.
+- Follow-ons round (2026-09-11): RT purges by CONTIGUOUS bottom-up `deleteRows` runs under a per-run budget rather than row-by-row (the ONE project lock; INV-153's reasoning), and both windows default 0 — installing trigger #20 changes nothing until an operator sets a window from Admin → Config → Retention (danger-confirmed like the CN purges).
+- BP reproduces the OLD hours as `new + diffMin/60` from the verbatim pre-F1 pairing, never a second arithmetic; the doctor's widened guard REPORTS a protected day's dropped stamps and never picks which half is real (Day Edit decides).
+- SA is the SAME core as the button behind a server-scope flag, default OFF, gated on `businessMinutesBetween_` (no second weekday/hour arithmetic), heartbeat before the flag check; PTO is deliberately not consulted (the button's own limit).
+- TW-B's canvas-fallback category REQUIRES the literal to equal the token it shadows (the swatch pin's construction) rather than allowlisting the three stale values it found — so a palette change fails CI until the fallbacks move with it.
+- DR bounded only the per-click detail read; the two resolve-path whole-tab reads are a logged follow-on, not silently widened into this batch.
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
+Follow-ons round (2026-09-11): RT / BP / SA / TW / DR are implemented,
+bite-checked (26 mutations, 26 bites, every one against a committed tree),
+committed on `claude/broad-scan-fw462g` and pushed; harnesses 796 pure /
+113 DOM; the summary block is at
+`.cycle/blocks/19-followons-retention-broad-implement.md`. NEXT: `/sync-docs`
+for that block's DOCUMENTATION UPDATES (the trigger count is twenty-one now,
+INV-44's list, the diagnostics-tab entries, INV-176/159/155/138/31 amendments,
+the harness totals, README's matrix count), then `/reflect` to close cycle 19
+with SIX blocks as inputs (batch 1+2, batch 3+4, operator A–D, this one).
+Post-deploy `runAllTests()` expects **312**; `installAutomationTriggers()`
+must be re-run once for triggers #20/#21; `reportBreakPairingChanges()`
+should be run once from the editor (read-only).
+Earlier: Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
 (notes 2/3, c525c89), C (notes 4/6/8, 155dd02) and D (note 10, 9176908 +
 1961691) are ALL implemented, bite-checked, committed and pushed on
 `claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged),

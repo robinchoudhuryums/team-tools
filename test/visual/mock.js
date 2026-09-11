@@ -1208,7 +1208,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       }
       return { month: month, days: days, holidays: {}, rosterCount: 4, adjustWindowDays: 30, archiveNote: false };
     },
-    getTimesheetDoctor: { duplicates: [], inverted: [], windowDays: 92 },
+    getTimesheetDoctor: { duplicates: [], inverted: [], unpaired: [], totalUnpaired: 0, windowDays: 92 },
     getReferenceTree: { isManager: true, isAdmin: true, items: [
       { id: 'kb-1', department: 'Billing', title: 'HIPAA refresher', type: 'article', status: 'published', sortOrder: 1 },
       { id: 'kb-2', department: 'Billing', title: 'OOP payment policy', type: 'article', status: 'published', sortOrder: 2 },
@@ -1499,6 +1499,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       archiveDays: { value: 0, source: 'default' },
       retentionDays: { value: 0, source: 'default' },
       archiveRetentionDays: { value: 0, source: 'default' },
+      // Cycle-18 F11 follow-on — the two diagnostics windows (field names
+      // mirror getRetentionConfig's return site, INV-185).
+      viewUsageDays: { value: 0, source: 'default' },
+      clientErrDays: { value: 0, source: 'default' },
       warnings: [], archiveTab: 'NotesArchive',
     },
     getCallNotesEnrollment: { enrolled: [
@@ -1578,7 +1582,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
         { key: 'managerBrief', last: null, stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
-        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
       cdr: {
         ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
         transferColumnWarning: null,
@@ -1624,7 +1629,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return {
         configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
         stores: [
-          store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept', 'ADP_SS_ID'),
+          store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', 'ADP_SS_ID'),
           store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID'),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
@@ -1772,7 +1777,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'deptReqReminder', last: daysAgo(0) + ' 10:00:14', stale: false },
         { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
-        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false }],
+        { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
       cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
         unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
         queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,
@@ -1787,7 +1793,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
       stores: [
-        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID',
+        { label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog', cls: 'Payroll', retention: 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', prop: 'ADP_SS_ID',
           source: 'Script Property', note: '', configured: true, reachable: true, name: 'ADP (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },
         { label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs', cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID',
           source: 'Script Property', note: '', configured: true, reachable: true, name: 'KB (live)', tz: 'Asia/Kolkata', tzMatch: true, locale: 'en_US', url: 'https://docs.google.com/spreadsheets/d/example' },

@@ -15423,10 +15423,11 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
   assert.deepStrictEqual(pm.LunchIn.join('|'), '12:30:00|19:00:00', 'returns accumulate');
 
   // All five builders route through it — five call sites plus the definition.
-  // 1 definition + the 5 hours builders + reportMultiBreakDays (A5), which
-  // must build the same shape or its impact figures would not match production.
+  // 1 definition + the 5 hours builders + the shared tsPunchDaysWithArchive_
+  // reader behind BOTH operator reports (A5 / BP), which must build the same
+  // shape or their impact figures would not match production.
   assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 7,
-    'punchDayAdd_ is defined once and called by the five builders plus the A5 report');
+    'punchDayAdd_ is defined once and called by the five builders plus the shared report reader');
   ['workedHoursByEmpForRange_', 'getManagerDashboard', 'getTeamCalendar',
    'buildTimesheetForEmployee_', 'buildCalendarForEmployee_'].forEach((fn) => {
     const body = extractRawFunction('Code.js', fn).replace(/^\s*\/\/.*$/gm, '');
@@ -15467,7 +15468,22 @@ test('A3: the sheet doctor stops calling a matched break pair damage', () => {
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchOut'), true, 'matched pairs are legal data');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchIn'), true, 'both break types');
   assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), false,
-    'an UNPAIRED extra is still damage — that is what the doctor exists to surface');
+    'a lone extra LEAVE beside one return is still damage — the classic double-punch, last row wins');
+  // Cycle-19 follow-on (BP): the guard is "two-plus stamps of BOTH types", not
+  // "equal counts". E4 has equal counts but pairs into one 7-hour "break"
+  // (12:00→19:00, dropping 17:00 and 11:00) — protected from the collapse AND
+  // reported by getTimesheetDoctor's `unpaired` list (BP-3). E5 has UNEQUAL
+  // counts on a real two-break day: the old equal-count rule called it a
+  // duplicate group and the collapse kept the LAST leave — deleting a real one.
+  const days2 = {
+    'E4|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['11:00:00', '19:00:00'] },
+    'E5|2026-09-01': { lo: ['12:00:00', '12:01:00', '17:00:00'], li: ['12:30:00', '19:00:00'] },
+  };
+  assert.strictEqual(legit(days2, 'E4', '2026-09-01', 'LunchOut'), true,
+    'an equal-count day that pairs badly is still off-limits to the collapse (it is REPORTED instead)');
+  assert.strictEqual(legit(days2, 'E5', '2026-09-01', 'LunchOut'), true,
+    'a two-break day with a double-punched leave is off-limits — the collapse would delete a real break');
+  assert.strictEqual(legit(days2, 'E5', '2026-09-01', 'LunchIn'), true, 'both types on that day');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'ClockIn'), false,
     'a repeated CLOCK punch is ALWAYS damage — multi-shift is not supported');
   assert.strictEqual(legit(days, 'E3', '2026-09-01', 'LunchOut'), false, 'a single pair is not a group');
@@ -15483,25 +15499,39 @@ test('A3: the sheet doctor stops calling a matched break pair damage', () => {
 });
 
 test('A5: reportMultiBreakDays is read-only, gated, and reproduces the old value through calcHours_', () => {
-  const body = extractRawFunction('Code.js', 'reportMultiBreakDays');
-  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
-  assert.ok(/assertManagerCaller_\('reportMultiBreakDays'\)/.test(stripped),
-    'it walks the roster, so it carries the MANAGER_EMAILS gate (INV-44)');
+  const strip = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  // Cycle-19 follow-on (BP): the Timesheet walk moved into the shared
+  // tsPunchDaysWithArchive_ so the two operator reports cannot read the
+  // sheet two different ways. The READ contract lives on the reader now.
+  const reader = strip(extractRawFunction('Code.js', 'tsPunchDaysWithArchive_'));
   ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange('].forEach((w) =>
-    assert.ok(!new RegExp(w.replace('(', '\\(')).test(stripped), 'READ-ONLY: no ' + w));
-  assert.ok(/getSheetByName/.test(stripped) && !/insertSheet|getOrCreate/.test(stripped),
-    'it never provisions a tab');
-  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(stripped),
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(reader), 'reader is READ-ONLY: no ' + w));
+  assert.ok(/getSheetByName/.test(reader) && !/insertSheet|getOrCreate/.test(reader),
+    'the reader never provisions a tab');
+  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(reader),
     'it reads THROUGH the archive — an aged-out day still counts (INV-153/F1)');
-  assert.ok(/liveKeys\.has\(rowKey\)/.test(stripped),
+  assert.ok(/liveKeys\.has\(rowKey\)/.test(reader),
     'a row in both tabs counts ONCE, or a duplicate fabricates a phantom pair (INV-132)');
+  assert.ok(/punchDayAdd_\(/.test(reader) && /PUNCH_LABELS_\.indexOf\(type\) < 0/.test(reader),
+    'it accumulates through punchDayAdd_ and drops a garbage COMMENTS type (C17 batch-6)');
+
+  const body = strip(extractRawFunction('Code.js', 'reportMultiBreakDays'));
+  assert.ok(/assertManagerCaller_\('reportMultiBreakDays'\)/.test(body),
+    'it walks the roster, so it carries the MANAGER_EMAILS gate (INV-44)');
+  ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange(', 'getSheetByName'].forEach((w) =>
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(body), 'READ-ONLY, through the reader: no ' + w));
+  assert.ok(/tsPunchDaysWithArchive_\(\)/.test(body), 'it reads through the SHARED reader');
   // The "old" figure comes from the SAME calcHours_ with only the last stamps —
   // never a re-implementation of the removed arithmetic, which could drift from
   // the behaviour the report exists to describe.
-  assert.ok(/lastOf\(pm\.LunchOut\), lastOf\(pm\.LunchIn\)/.test(stripped),
+  assert.ok(/lastOf\(pm\.LunchOut\), lastOf\(pm\.LunchIn\)/.test(body),
     'old hours = the same calcHours_ fed the last stamp of each type');
-  assert.strictEqual((stripped.match(/calcHours_\(/g) || []).length, 2,
+  assert.strictEqual((body.match(/calcHours_\(/g) || []).length, 2,
     'exactly two calcHours_ calls — the new value and the old one');
+  // Both reports on the ONE reader — a third report that walked the sheet
+  // itself would be the parallel-source class this refactor exists to close.
+  const twin = strip(extractRawFunction('Code.js', 'reportBreakPairingChanges'));
+  assert.ok(/tsPunchDaysWithArchive_\(\)/.test(twin), 'the pairing-changes twin reads through the same reader');
 });
 
 
@@ -18899,9 +18929,610 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   assert.ok(/function test_presence_stampAndFlag\(/.test(tests) && /_integrationTest\('presence_stampAndFlag'/.test(tests), 'the presence editor test exists and is registered');
 });
 
+
+/* ── Cycle-19 follow-ons (2026-09-11): the diagnostics retention tier ──────
+ * ViewUsage + ClientErrors were the only two growing stores with no purge
+ * (cycle-18 F11). The pin drives the pure pieces and holds the purge's
+ * contract in the same shape the QA-18 pin holds purgeOldQaReviews.
+ */
+console.log('\nCode.js — RT-1: diagnostics retention tier (ViewUsage / ClientErrors)');
+test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // (a) Getter behavioural — property wins, CONFIG 0 = disabled, garbage → 0,
+  // and the two windows are INDEPENDENT (one set does not enable the other).
+  const mk = (props, cfg) => {
+    const ctx = {
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] == null ? null : props[k]) }) },
+      CONFIG: Object.assign({ VIEW_USAGE_RETENTION_DAYS: 0, CLIENT_ERR_RETENTION_DAYS: 0 }, cfg || {}),
+      parseInt: parseInt, isNaN: isNaN,
+    };
+    vm.createContext(ctx);
+    ['retentionWindowDays_', 'viewUsageRetentionDays_', 'clientErrRetentionDays_', 'diagRetentionText_'].forEach((fn) =>
+      vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+    vm.runInContext("const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS'; const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';", ctx);
+    return ctx;
+  };
+  let c = mk({});
+  assert.strictEqual(c.viewUsageRetentionDays_(), 0, 'unset + CONFIG 0 → disabled');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0);
+  c = mk({ VIEW_USAGE_RETENTION_DAYS: '180' });
+  assert.strictEqual(c.viewUsageRetentionDays_(), 180, 'property wins');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0, 'the sibling window is untouched — independent');
+  assert.strictEqual(c.diagRetentionText_(), 'diagnostics tabs — ViewUsage 180d purge · ClientErrors kept',
+    'Storage Health reads the live window; an unset one is the FACT "kept" (INV-186)');
+  c = mk({ CLIENT_ERR_RETENTION_DAYS: '-5' }, { VIEW_USAGE_RETENTION_DAYS: 90 });
+  assert.strictEqual(c.viewUsageRetentionDays_(), 90, 'CONFIG fallback when the property is unset');
+  assert.strictEqual(c.clientErrRetentionDays_(), 0, 'negative → disabled');
+  assert.strictEqual(mk({ VIEW_USAGE_RETENTION_DAYS: 'soon' }).viewUsageRetentionDays_(), 0, 'garbage → 0, never NaN');
+  // (b) Run grouping behavioural: one deleteRows per contiguous run,
+  // descending, duplicates + junk dropped. Append-only tabs make the purgeable
+  // set one prefix, so a 2000-row night is ONE call rather than 2000.
+  const g = vm.createContext({ isFinite: isFinite, Number: Number });
+  vm.runInContext(extractRawFunction('Code.js', 'contiguousRowRunsDesc_'), g);
+  const runs = (a) => g.contiguousRowRunsDesc_(a).map((r) => r.start + 'x' + r.count).join('|');
+  assert.strictEqual(runs([2, 3, 4, 5]), '2x4', 'a prefix is one run');
+  assert.strictEqual(runs([9, 2, 3, 7, 8, 3, 'x', 0]), '7x3|2x2', 'descending runs; duplicates, junk and row 0 dropped');
+  assert.strictEqual(runs([]), '', 'nothing to delete');
+  // (c) Timestamp parse fail-safe: a blank/garbage cell is null, never "old".
+  const t = vm.createContext({
+    normalizeAuditTs_: (v) => (v instanceof Date ? 'DATE' : String(v == null ? '' : v).trim()),
+    Utilities: { parseDate: (s) => ({ getTime: () => 1000 }) }, CONFIG: { TIMEZONE: 'Asia/Kolkata' },
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'diagTsMs_'), t);
+  assert.strictEqual(t.diagTsMs_('2026-09-11 10:00:00'), 1000, 'the writer form parses in CONFIG.TIMEZONE');
+  assert.strictEqual(t.diagTsMs_(''), null, 'blank → null (never deleted)');
+  assert.strictEqual(t.diagTsMs_('Wed Jul 15 2026'), null, 'a hand-mangled cell → null (never deleted)');
+  // (d) The purge contract, comment-stripped (its own comments name the things
+  // it must not do — the INV-188 family).
+  const raw = extractRawFunction('Code.js', 'purgeOldDiagnostics');
+  const f = nc(raw);
+  assert.ok(/assertManagerCaller_\('purgeOldDiagnostics'\)/.test(f), 'INV-44 gate — reachable via google.script.run');
+  const lockIdx = f.indexOf('waitLock(15000)');
+  assert.ok(lockIdx > 0 && f.indexOf('if (!vuDays && !ceDays)') > -1 && f.indexOf('if (!vuDays && !ceDays)') < lockIdx,
+    'the both-disabled return precedes the lock — installing the trigger is harmless');
+  assert.ok(/releaseLock\(\)/.test(f) && /finally/.test(f), 'INV-01 finally-release');
+  assert.ok(/getSheetByName\(VIEW_USAGE_TAB\)/.test(f) && /getSheetByName\(CLIENT_ERRORS_TAB\)/.test(f) && !/getOrCreate|insertSheet/.test(f),
+    'reads with getSheetByName — never provisions a tab (a missing tab = nothing recorded)');
+  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the two diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
+  assert.ok(/stampAutomationError_\('DiagnosticsPurge'/.test(f) && /clearAutomationError_\('DiagnosticsPurge'\)/.test(f),
+    'a thrown run stamps AUTOMATION_LAST_ERRORS and a clean run clears it (F4 — a returned error reaches nobody)');
+  const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
+  assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}/.test(call),
+    'counts-only audit note on every enabled run (the INV-161 heartbeat)');
+  assert.ok(/hitPerRunCap=/.test(call), 'a capped run says so in its audit row (the INV-153/F3 shape)');
+  const tab = nc(extractRawFunction('Code.js', 'diagPurgeTab_'));
+  assert.ok(/ms !== null && ms < cutoffMs/.test(tab), 'a null stamp is never deleted');
+  assert.ok(/idx\.length < budget/.test(tab), 'bounded per run, oldest first');
+  assert.ok(/insertRowAfter\(sheet\.getMaxRows\(\)\)/.test(tab) && tab.indexOf('insertRowAfter') < tab.indexOf('deleteRows('),
+    'the spare-row guard runs BEFORE the deletes — Sheets refuses to delete every non-frozen row');
+  assert.ok(/contiguousRowRunsDesc_\(idx\)/.test(tab) && !/deleteRow\(/.test(tab), 'deletes contiguous runs, never row by row');
+  // (e) Liveness: the job row is gated on EITHER window (INV-186 — a
+  // deployment with both off is never checked), and the action is registered
+  // in the audit-action list + the client's label map (the ⊇ couplings hold
+  // it, this names the row).
+  const jobRow = codeSrc.slice(codeSrc.indexOf("{ action: 'DiagnosticsPurge'"), codeSrc.indexOf("{ action: 'DiagnosticsPurge'") + 400);
+  assert.ok(/enabled: function \(\) \{ return viewUsageRetentionDays_\(\) > 0 \|\| clientErrRetentionDays_\(\) > 0; \}/.test(jobRow),
+    'AUTOMATION_JOB_CHECKS row gated on either window > 0');
+  assert.ok(/'QaReviewPurge', 'DiagnosticsPurge',/.test(codeSrc), 'registered in AUTOMATION_AUDIT_ACTIONS');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/DiagnosticsPurge:\s+\{ label: 'Diagnostics retention purge'/.test(cn), 'CN_HEALTH_RUN_LABELS carries the panel label');
+  // (f) The Retention panel round trip: both fields ship from
+  // getRetentionConfig, the save writes each ONLY when the client sent it (an
+  // older client can never reset a window), the client renders the rows only
+  // when the server shipped the fields, and the fixture mirrors the shape.
+  const get = nc(extractRawFunction('Code.js', 'getRetentionConfig'));
+  assert.ok(/viewUsageDays:\s+\{ value: vu, source: srcOf\(VIEW_USAGE_RETENTION_PROP/.test(get) &&
+            /clientErrDays:\s+\{ value: ce, source: srcOf\(CLIENT_ERR_RETENTION_PROP/.test(get), 'both windows ride the read');
+  const save = nc(extractRawFunction('Code.js', 'saveRetentionConfig'));
+  assert.ok(/hasOwnProperty\.call\(settings, 'viewUsageDays'\)/.test(save) && /if \(hasVu\) props\.setProperty\(VIEW_USAGE_RETENTION_PROP/.test(save) &&
+            /if \(hasCe\) props\.setProperty\(CLIENT_ERR_RETENTION_PROP/.test(save), 'a window is written only when the payload carries it');
+  assert.ok(/props\.setProperty\('CN_NOTE_ARCHIVE_DAYS', String\(a\)\)/.test(save), 'the three call-note windows still write unconditionally');
+  assert.ok(/res\.viewUsageDays \|\| res\.clientErrDays\s*\?/.test(cn) && /cnRetentionRowHtml_\('viewusage'/.test(cn) && /cnRetentionRowHtml_\('clienterr'/.test(cn),
+    'the panel renders the two rows only when the server shipped the fields');
+  assert.ok(/if \(prevCfg\.viewUsageDays && document\.getElementById\('cn-ret-viewusage'\)\) payload\.viewUsageDays = rd\('viewusage'\)/.test(cn),
+    'the save sends a diagnostics window only when its row rendered');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/viewUsageDays: \{ value: 0, source: 'default' \}/.test(mock) && /clientErrDays: \{ value: 0, source: 'default' \}/.test(mock),
+    'the visual fixture carries both fields (INV-185)');
+  assert.ok(/retention: 'Kept · ' \+ diagRetentionText_\(\)/.test(codeSrc), 'Storage Health shows the windows on the ADP store row');
+  // The trigger-wiring/gate-type nets cover TARGETS + the gate (derived); the
+  // editor gate test exists and is registered.
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/function test_triggerGate_diagnosticsPurge_nonManagerThrows\(/.test(testsSrc) &&
+            /_integrationTest\('triggerGate_diagnosticsPurge_nonManagerThrows'/.test(testsSrc), 'editor gate test exists and is registered');
+});
+
 // The summary prints LAST — a test block appended between the summary and
 // the exit ran but never counted (Batch B found three such pins reporting
 // into a 778 that should have read 781).
+
+/* ── BP: the break-pairing follow-ons (cycle-19 F1 → `/broad-implement` follow-ons) ──
+ * F1 replaced the POSITIONAL pairing with the GREEDY one and noted two gaps:
+ * nothing enumerated the historical days that moved, and the sheet doctor
+ * could not see the shape F1 now survives. NOTE the placement: ABOVE the
+ * summary line (the documented harness hazard).
+ */
+console.log('\nBP — reportBreakPairingChanges + the widened sheet doctor');
+
+test('BP-1: breakPairsPositional_ is the OLD shape — a stray early return un-pairs the day; greedy does not', () => {
+  const ctx = vm.createContext({});
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakPairsPositional_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const pos = ctx.breakPairsPositional_, greedy = ctx.breakPairs_;
+  const show = (pairs) => pairs.map((b) => b.out + '>' + b.in + '=' + b.minutes).join('|');
+  const anchor = ctx.timeToMins_('08:00:00');
+  // The F1 case: one leave, a stray return BEFORE it, then the real return.
+  assert.strictEqual(show(pos(['12:00:00'], ['11:00:00', '12:30:00'], anchor)), '',
+    'positional: outs[0]=12:00 vs ins[0]=11:00 is malformed, and the ONE slot is the whole day — ZERO pairs (the break was PAID)');
+  assert.strictEqual(show(greedy(['12:00:00'], ['11:00:00', '12:30:00'], anchor)), '12:00:00>12:30:00=30',
+    'greedy: the 11:00 is skipped ALONE and the real pair still closes');
+  // A clean day is identical under both — the report must list nothing for it.
+  const lo = ['12:00:00', '17:00:00'], li = ['12:30:00', '19:00:00'];
+  assert.strictEqual(show(pos(lo, li, anchor)), show(greedy(lo, li, anchor)), 'an ordinary two-break day pairs identically');
+  assert.strictEqual(show(pos('12:00:00', '12:30:00', anchor)), '12:00:00>12:30:00=30', 'legacy scalar params still accepted');
+  assert.strictEqual(show(pos(['12:00:00', '17:00:00'], ['12:30:00'], anchor)), '12:00:00>12:30:00=30',
+    'an unmatched trailing leave contributes nothing in either shape');
+  // It exists ONLY for the report: defined once, called once, from the twin.
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.strictEqual((code.match(/breakPairsPositional_\(/g) || []).length, 2,
+    'breakPairsPositional_ is defined once and called exactly once (the report) — nothing else may reach for the old pairing');
+  assert.ok(/breakPairsPositional_\(/.test(extractRawFunction('Code.js', 'reportBreakPairingChanges')),
+    'that one caller is reportBreakPairingChanges');
+  assert.ok(!/breakPairsPositional_/.test(extractRawFunction('Code.js', 'calcHours_')),
+    'calcHours_ never consults the old pairing');
+});
+
+test('BP-2: reportBreakPairingChanges is gated, read-only, and lists ONLY days the two pairings deduct differently', () => {
+  // Behavioural: the real report driven over a stubbed reader.
+  const calls = [];
+  const ctx = vm.createContext({
+    Logger: { log: () => {} },
+    assertManagerCaller_: (label) => { calls.push(label); },
+    tsPunchDaysWithArchive_: () => ({
+      liveRows: 9, archRows: 3,
+      perDay: {
+        // The F1 day: 08:00–17:00, leave 12:00, stray return 11:00 + real return 12:30.
+        'E1|2026-08-03': { empId: 'E1', date: '2026-08-03', name: 'Ana', source: 'live',
+          pm: { ClockIn: '08:00:00', ClockOut: '17:00:00', LunchOut: ['12:00:00'], LunchIn: ['11:00:00', '12:30:00'] } },
+        // A clean two-break day — identical under both pairings.
+        'E2|2026-08-03': { empId: 'E2', date: '2026-08-03', name: 'Bo', source: 'archive',
+          pm: { ClockIn: '08:00:00', ClockOut: '21:00:00', LunchOut: ['12:00:00', '17:00:00'], LunchIn: ['12:30:00', '19:00:00'] } },
+        // Incomplete (no ClockOut) — contributes no hours under either.
+        'E3|2026-08-03': { empId: 'E3', date: '2026-08-03', name: 'Cy', source: 'live',
+          pm: { ClockIn: '08:00:00', LunchOut: ['12:00:00'], LunchIn: ['11:00:00', '12:30:00'] } },
+        // Ordinary single break.
+        'E4|2026-08-04': { empId: 'E4', date: '2026-08-04', name: 'Di', source: 'live',
+          pm: { ClockIn: '09:00:00', ClockOut: '17:00:00', LunchOut: ['12:00:00'], LunchIn: ['12:30:00'] } },
+      },
+    }),
+  });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakPairsPositional_', 'calcHours_', 'reportBreakPairingChanges']
+    .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const r = ctx.reportBreakPairingChanges();
+  assert.deepStrictEqual(calls.join('|'), 'reportBreakPairingChanges', 'the MANAGER_EMAILS gate runs first (INV-44)');
+  assert.strictEqual(r.repDays, 4, 'every rep-day the reader returned is scanned');
+  assert.strictEqual(r.liveRows, 9, 'live row count passed through');
+  assert.strictEqual(r.archiveRows, 3, 'archive row count passed through');
+  assert.strictEqual(r.affected.length, 1, 'ONLY the day the pairings disagree on is listed — never the clean, incomplete or single-break days');
+  const a = r.affected[0];
+  assert.strictEqual(a.empId + '|' + a.date, 'E1|2026-08-03', 'the F1 day');
+  assert.strictEqual(a.oldHours, 9, 'positional deducted NOTHING — the break was paid: 9.0h');
+  assert.strictEqual(a.newHours, 8.5, 'greedy deducts the real 30-minute break: 8.5h');
+  assert.strictEqual(a.deltaHours, -0.5, 'the delta is a REDUCTION');
+  assert.strictEqual(a.greedy, '12:00:00→12:30:00', 'the pairing that now applies is named');
+  assert.strictEqual(a.positional, '(none)', 'and the pairing that used to apply');
+  assert.strictEqual(r.totalDeltaHours, -0.5, 'the total is the sum of the deltas');
+
+  // Source contract — the twin of A5's.
+  const body = extractRawFunction('Code.js', 'reportBreakPairingChanges')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  assert.ok(/assertManagerCaller_\('reportBreakPairingChanges'\)/.test(body), 'gate by name');
+  ['setValue', 'appendRow', 'writeAuditLog_', 'deleteRow', 'getRange(', 'getSheetByName', 'insertSheet'].forEach((w) =>
+    assert.ok(!new RegExp(w.replace('(', '\\(')).test(body), 'READ-ONLY, through the shared reader: no ' + w));
+  assert.strictEqual((body.match(/calcHours_\(/g) || []).length, 1,
+    'exactly ONE calcHours_ call — the old figure is new + the difference in deducted minutes, never a second arithmetic');
+  assert.ok(/diffMin \/ 60/.test(body), 'the old figure is derived from the minute difference between the two pairings');
+  assert.ok(/breakPairs_\(pm\.LunchOut, pm\.LunchIn, inMins\)/.test(body) && /breakPairsPositional_\(pm\.LunchOut, pm\.LunchIn, inMins\)/.test(body),
+    'both pairings are fed the SAME stamps and the same anchor');
+  assert.ok(/if \(diffMin === 0\) return;/.test(body), 'a day the pairings agree on is dropped BEFORE any arithmetic');
+});
+
+test('BP-3: getTimesheetDoctor REPORTS an unpairable stamp on a protected multi-break day, and never guesses which half is real', () => {
+  const scan = {
+    byKey: {
+      // E4 — equal counts, pairs badly (12:00→19:00; 17:00 and 11:00 dropped). Protected from the collapse.
+      'E4|2026-09-01|LunchOut': { rows: [5, 9], times: ['12:00:00', '17:00:00'], empId: 'E4', date: '2026-09-01', type: 'LunchOut', name: 'Ed' },
+      'E4|2026-09-01|LunchIn':  { rows: [7, 11], times: ['11:00:00', '19:00:00'], empId: 'E4', date: '2026-09-01', type: 'LunchIn', name: 'Ed' },
+      // E1 — a clean two-break day. Protected AND nothing to report.
+      'E1|2026-09-01|LunchOut': { rows: [3, 12], times: ['12:00:00', '17:00:00'], empId: 'E1', date: '2026-09-01', type: 'LunchOut', name: 'Ana' },
+      'E1|2026-09-01|LunchIn':  { rows: [4, 13], times: ['12:30:00', '19:00:00'], empId: 'E1', date: '2026-09-01', type: 'LunchIn', name: 'Ana' },
+      // E2 — one leave, two returns: counts DISAGREE, so it is the classic duplicate group (last row wins).
+      'E2|2026-09-02|LunchIn':  { rows: [20, 21], times: ['11:00:00', '12:30:00'], empId: 'E2', date: '2026-09-02', type: 'LunchIn', name: 'Bo' },
+    },
+    days: {
+      'E4|2026-09-01': { in: ['08:00:00'], out: ['21:00:00'], lo: ['12:00:00', '17:00:00'], li: ['11:00:00', '19:00:00'], name: 'Ed', empId: 'E4', date: '2026-09-01' },
+      'E1|2026-09-01': { in: ['08:00:00'], out: ['21:00:00'], lo: ['12:00:00', '17:00:00'], li: ['12:30:00', '19:00:00'], name: 'Ana', empId: 'E1', date: '2026-09-01' },
+      'E2|2026-09-02': { in: ['08:00:00'], out: ['17:00:00'], lo: ['12:00:00'], li: ['11:00:00', '12:30:00'], name: 'Bo', empId: 'E2', date: '2026-09-02' },
+    },
+  };
+  const mk = (isManager) => {
+    const ctx = vm.createContext({
+      TS_DOCTOR_WINDOW_DAYS: 92, TS_DOCTOR_MAX_GROUPS: 200, TS_DOCTOR_FIX_MAX_ROWS: 200,
+      getEmployeeInfo_: () => ({ isManager: isManager }),
+      tsDoctorScan_: () => scan,
+    });
+    ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'tsDoctorLegitBreaks_', 'getTimesheetDoctor']
+      .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+    return ctx.getTimesheetDoctor();
+  };
+  assert.strictEqual(mk(false).error, 'Manager access required.', 'read gate (INV-02)');
+  const r = mk(true);
+  assert.ok(!r.error, 'no error: ' + r.error);
+  assert.strictEqual(r.unpaired.length, 1, 'exactly one unpaired finding');
+  const u = r.unpaired[0];
+  assert.strictEqual(u.empId + '|' + u.date + '|' + u.kind, 'E4|2026-09-01|unpaired', 'the badly-pairing equal-count day');
+  assert.strictEqual(u.pairs.join('|'), '12:00:00→19:00:00', 'the pairing greedy actually produced — a 7-hour "break"');
+  assert.strictEqual(u.dropped.slice().sort().join('|'), 'leave 17:00:00|return 11:00:00',
+    'the two stamps greedy dropped are NAMED — the doctor never picks which half is real');
+  assert.strictEqual(u.lunchOut.join('|'), '12:00:00|17:00:00', 'leaves listed sorted');
+  assert.strictEqual(u.lunchIn.join('|'), '11:00:00|19:00:00', 'returns listed sorted');
+  assert.strictEqual(r.totalUnpaired, 1, 'honest total (INV-169)');
+  assert.strictEqual(r.truncated, false, 'nothing capped');
+  // The clean day is silent everywhere; the count-disagreeing day stays a
+  // DUPLICATE group (the classic path) and is never double-reported.
+  assert.ok(!r.unpaired.some((x) => x.empId === 'E1'), 'a clean two-break day raises nothing');
+  assert.ok(!r.duplicates.some((x) => x.empId === 'E1' || x.empId === 'E4'), 'protected days are never duplicate groups');
+  assert.strictEqual(r.duplicates.map((d) => d.empId + ':' + d.type).join('|'), 'E2:LunchIn',
+    'one leave + two returns is the classic double-punch group, not an unpaired finding');
+  assert.ok(!r.unpaired.some((x) => x.empId === 'E2'), 'never double-reported');
+  assert.ok(!r.inverted.length, 'none of these is an inverted pair — the shape the old detector could not see');
+
+  // The finding is REPORT-ONLY: the collapse consults the same guard (A3) and
+  // its body never reads the unpaired list.
+  assert.ok(!/unpaired/.test(extractRawFunction('Code.js', 'fixTimesheetDuplicates')), 'the collapse never acts on an unpaired finding');
+  const det = extractRawFunction('Code.js', 'getTimesheetDoctor').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/if \(!lunchInverted && d\.lo\.length > 1 && d\.li\.length > 1\)/.test(det),
+    'the unpaired scan runs ONLY on days the collapse guard protects, and one finding per day');
+  assert.ok(/totalUnpaired > unpaired\.length/.test(det), 'the cap is reported through `truncated` like the other two lists');
+});
+
+test('BP-4: the manager card renders unpaired findings, counts them, and an older server reads as zero', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const load = extractFunction('tc/script_manager.html', 'loadSheetDoctor_').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/\(!res\.unpaired \|\| !res\.unpaired\.length\)/.test(load),
+    'the all-clear check consults the unpaired list — a day with only unpaired findings is NOT "all clear"');
+  assert.ok(/res\.totalUnpaired != null\) \? res\.totalUnpaired : \(res\.unpaired \|\| \[\]\)\.length/.test(load),
+    'the summary count prefers the honest total and reads an absent field as zero');
+  assert.ok(/' unpaired'/.test(load), 'the Periodic summary line names the unpaired count');
+
+  // Behavioural render.
+  const out = [];
+  const ctx = vm.createContext({
+    esc: (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: (n) => '<i data-icon="' + n + '"></i>',
+  });
+  vm.runInContext(extractFunction('tc/script_manager.html', 'renderSheetDoctorCard_'), ctx, { filename: 'mgr#renderSheetDoctorCard_' });
+  const html = ctx.renderSheetDoctorCard_({
+    duplicates: [], inverted: [], windowDays: 92, fixMaxRows: 200,
+    unpaired: [{ kind: 'unpaired', empId: 'E4', name: '<b>Ed</b>', date: '2026-09-01',
+      lunchOut: ['12:00:00', '17:00:00'], lunchIn: ['11:00:00', '19:00:00'],
+      pairs: ['12:00:00→19:00:00'], dropped: ['leave 17:00:00', 'return 11:00:00'] }],
+    totalUnpaired: 3, truncated: true,
+  });
+  assert.ok(html.indexOf('Unpaired break stamps') >= 0, 'the section renders');
+  assert.ok(html.indexOf('&lt;b&gt;Ed&lt;/b&gt;') >= 0 && html.indexOf('<b>Ed</b>') < 0, 'the rep name is escaped');
+  assert.ok(html.indexOf('unpaired: leave 17:00:00, return 11:00:00') >= 0, 'the dropped stamps are named');
+  assert.ok(html.indexOf('paired as 12:00:00→19:00:00') >= 0, 'the pairing greedy produced is shown beside them');
+  assert.ok(/count-pill warn">3</.test(html), 'the pill counts the honest TOTAL, not the payload length');
+  assert.ok(/1 of 3 unpaired day\(s\)/.test(html), 'the truncation note covers the third list');
+  assert.ok(html.indexOf('Collapse') < 0, 'no collapse button — there is nothing to collapse, the finding is report-only');
+  const clean = ctx.renderSheetDoctorCard_({ duplicates: [{ empId: 'E9', name: 'Zo', date: '2026-09-01', type: 'ClockIn', count: 2, times: ['08:00:00', '08:05:00'] }],
+    inverted: [], windowDays: 92, totalDuplicateRows: 1 });
+  assert.ok(clean.indexOf('Unpaired break stamps') < 0 && /count-pill warn">1</.test(clean),
+    'an older server (no unpaired field) renders exactly the pre-BP card');
+
+  // The fixture carries the new fields (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/getTimesheetDoctor: \{ duplicates: \[\], inverted: \[\], unpaired: \[\], totalUnpaired: 0, windowDays: 92 \}/.test(mock),
+    'the visual fixture ships the additive fields the client now reads');
+});
+
+
+/* ── SA: the scheduled Spanish auto-assign (operator testing note 4 follow-on) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nSA — scheduled Spanish auto-assign trigger');
+
+test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-gated, business-hours-gated, one core', () => {
+  const strip = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const raw = extractRawFunction('Code.js', 'autoAssignSpanishThreadsScheduled');
+  const body = strip(raw);
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeStripped = strip(codeSrc);
+
+  // Behavioural: the real handler over stubs. Every decision it makes is a
+  // gate, so each gate is driven from both sides.
+  const drive = (opts) => {
+    const log = { heartbeat: [], core: [], stamped: [], cleared: [], gate: [] };
+    const ctx = vm.createContext({
+      Logger: { log: () => {} },
+      Date: Date,
+      _SYSTEM_AUDIT_EMP_: { id: 'SYSTEM', name: 'Automation', email: 'automation@system' },
+      assertManagerCaller_: (l) => { log.gate.push(l); },
+      stampDigestLastRun_: (k) => { log.heartbeat.push(k); },
+      getFlag_: (k) => (k === 'spanishAutoAssign' ? !!opts.flag : false),
+      businessMinutesBetween_: () => opts.biz,
+      getEmployeeInfo_: () => opts.emp,
+      spanishAutoAssignCore_: (emp, days) => { log.core.push({ emp: emp, days: days }); return opts.core; },
+      stampAutomationError_: (j, m) => { log.stamped.push(j + ':' + m); },
+      clearAutomationError_: (j) => { log.cleared.push(j); },
+    });
+    vm.runInContext('const SPANISH_AUTO_ASSIGN_DAYS = 7;\n' + raw, ctx, { filename: 'Code.js#autoAssignSpanishThreadsScheduled' });
+    ctx.autoAssignSpanishThreadsScheduled();
+    return log;
+  };
+  const mgr = { id: 'M1', email: 'mgr@x.com', isManager: true };
+  let l = drive({ flag: false, biz: 1, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.gate.join('|'), 'autoAssignSpanishThreadsScheduled', 'the MANAGER_EMAILS gate runs by name (INV-44)');
+  assert.strictEqual(l.heartbeat.join('|'), 'spanishAutoAssign', 'the heartbeat is stamped even while the flag is OFF (INV-151 — liveness is observable)');
+  assert.strictEqual(l.core.length, 0, 'flag off → the core never runs');
+  l = drive({ flag: true, biz: 0, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core.length, 0, 'outside business hours (0 business minutes) → nothing assigned');
+  l = drive({ flag: true, biz: null, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core.length, 0, 'an UNKNOWN business window (null) reads as NOT inside — never as "go ahead"');
+  l = drive({ flag: true, biz: 1, emp: mgr, core: { success: true, assigned: [{}, {}], unclaimed: 3 } });
+  assert.strictEqual(l.core.length, 1, 'flag on + inside business hours → the core runs ONCE');
+  assert.strictEqual(l.core[0].days, 7, 'over the same 7-day pending window the button defaults to');
+  assert.strictEqual(l.core[0].emp.email, 'mgr@x.com', 'the installer is the actor (assignedBy + audit)');
+  assert.strictEqual(l.cleared.join('|'), 'SpanishAutoAssign', 'a clean run clears the automation-error stamp');
+  assert.strictEqual(l.stamped.length, 0, 'and stamps nothing');
+  l = drive({ flag: true, biz: 1, emp: null, core: { success: true, assigned: [], unclaimed: 0 } });
+  assert.strictEqual(l.core[0].emp.email, 'automation@system', 'a non-roster installer falls back to the SYSTEM actor (the reconcile precedent) rather than throwing');
+  l = drive({ flag: true, biz: 1, emp: mgr, core: { success: false, error: 'No Spanish Inbox members are configured' } });
+  assert.strictEqual(l.stamped.join('|'), 'SpanishAutoAssign:No Spanish Inbox members are configured',
+    'a refused run is STAMPED into AUTOMATION_LAST_ERRORS (a returned error reaches nobody — the F4 rule)');
+  assert.strictEqual(l.cleared.length, 0, 'and not cleared');
+
+  // Source contract.
+  assert.ok(/assertManagerCaller_\('autoAssignSpanishThreadsScheduled'\)/.test(body), 'gate by name');
+  assertBefore(body, "stampDigestLastRun_('spanishAutoAssign')", "getFlag_('spanishAutoAssign')",
+    'the heartbeat is stamped BEFORE the flag check');
+  assertBefore(body, "getFlag_('spanishAutoAssign')", 'businessMinutesBetween_(', 'the flag check precedes the window check');
+  assertBefore(body, 'businessMinutesBetween_(', 'spanishAutoAssignCore_(', 'the window check precedes the core');
+  assert.ok(/spanishAutoAssignCore_\(emp, SPANISH_AUTO_ASSIGN_DAYS\)/.test(body), 'the ONE core, over the named window — no second scope rule, picker or claim shape');
+  assert.ok(!/getDay\(|'u'\)|'EEE'\)|COVERAGE_BUSINESS_START_HOUR|getUsHolidays_/.test(body),
+    'no second weekday/hour arithmetic — businessMinutesBetween_ is the ONE definition of a working hour');
+  assert.ok(!/waitLock|GmailApp|spanishClaimsMap_|getOrCreateSpanishClaimsSheet_/.test(body),
+    'the handler holds no lock and touches no store itself — that is the core\'s job');
+  assert.ok(/stampAutomationError_\('SpanishAutoAssign'/.test(body) && /clearAutomationError_\('SpanishAutoAssign'\)/.test(body),
+    'stamped on failure, cleared on success');
+
+  // Registry + wiring.
+  const m = codeSrc.match(/key:\s*'spanishAutoAssign'[\s\S]*?scope:\s*'(\w+)'/);
+  assert.ok(m, 'spanishAutoAssign is in the FEATURE_FLAGS registry');
+  assert.strictEqual(m[1], 'server', 'server scope — it gates a trigger, never a client control');
+  assert.ok(/key:\s*'spanishAutoAssign'[\s\S]{0,900}?default:\s*false/.test(codeSrc), 'defaults OFF — a fresh deploy is a behavioural no-op');
+  assert.ok(/spanishAutoAssign: 2 \}/.test(codeStripped), 'the heartbeat has an HOURLY staleness window (the eod precedent)');
+  assert.ok(/const digestHealth = Object\.keys\(DIGEST_STALE_HOURS\)\.map\(/.test(codeStripped),
+    'the reported digest set is DERIVED from the staleness map (INV-179)');
+  assert.strictEqual((codeStripped.match(/'autoAssignSpanishThreadsScheduled',/g) || []).length, 2,
+    'in BOTH install and remove TARGETS');
+  assert.ok(/newTrigger\('autoAssignSpanishThreadsScheduled'\)\s*\.timeBased\(\)\.everyHours\(1\)\.create\(\)/.test(codeStripped),
+    'an HOURLY trigger — the business-hours gate, not the schedule, decides when it acts');
+  // The button and the trigger are one code path.
+  assert.ok(/return spanishAutoAssignCore_\(emp, days\)/.test(extractRawFunction('Code.js', 'autoAssignSpanishThreads')),
+    'the button still delegates to the same core');
+
+  // Client labels (both maps), mock fixture, editor gate test.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/spanishAutoAssign: 'Spanish Inbox auto-assign'/.test(cn), 'CN_DIGEST_LABELS_ names the heartbeat');
+  assert.ok(/spanishAutoAssign: \{ label: 'Spanish Inbox auto-assign', expect: 'hourly/.test(cn), 'DIGEST_LABELS carries the cadence');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.strictEqual((mock.match(/key: 'spanishAutoAssign'/g) || []).length, 2, 'both Automation Health fixtures carry the heartbeat row');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/autoAssignSpanishThreadsScheduled\(\); \}\);\n  \}, 'manager access required'\);/.test(tests)
+    && /_integrationTest\('triggerGate_spanishAutoAssign_nonManagerThrows'/.test(tests),
+    'the editor suite pins the gate');
+});
+
+
+/* ── TW: two derived tripwires from the cycle-19 findings (F5 / F7 shapes) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nTW — derived tripwires: numeric-guard width (F5) + colour-literal-vs-token (F7)');
+
+test('TW-A: every "is this numeric?" guard accepts exactly what Number() parses — never a narrower regex (the F5 shape)', () => {
+  // F5 (cycle 19): qaOptionIsNumeric_ asked a decimal regex while every
+  // consumer asked Number(), so "4.", "0x5" and "1e0" slipped through as
+  // dropdown OPTIONS and folded into the scale averages. The rule is about the
+  // SHAPE of a guard, so the set is DERIVED by name (INV-179): any function
+  // whose name says it decides numeric-ness must use the consumers' own test.
+  const sources = [['Code.js', fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')]]
+    .concat(A11Y_SCAN_PARTIALS.map((f) => [f, fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8')]));
+  const found = [];
+  sources.forEach(([file, src]) => {
+    const stripped = src.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+    const re = /function\s+([A-Za-z_$][\w$]*(?:Numeric|IsNumber|isNumber|LooksNumeric)[\w$]*)\s*\(/g;
+    let m;
+    while ((m = re.exec(stripped))) {
+      const name = m[1];
+      // Balanced-brace body extraction from the match point.
+      const open = stripped.indexOf('{', m.index);
+      let depth = 0, i = open;
+      for (; i < stripped.length; i++) { if (stripped[i] === '{') depth++; else if (stripped[i] === '}' && --depth === 0) break; }
+      const body = stripped.slice(open, i + 1);
+      found.push(file + '#' + name);
+      assert.ok(/isFinite\(Number\(/.test(body), file + '#' + name + ': decides via isFinite(Number(…)) — the parse its consumers apply');
+      assert.ok(!/\/[^\/\n]*\\d[^\/\n]*\/\.test\(/.test(body) && !/\\d/.test(body),
+        file + '#' + name + ': carries NO digit-regex — a regex accept-set is narrower than Number() (F5)');
+    }
+  });
+  assert.ok(found.indexOf('Code.js#qaOptionIsNumeric_') >= 0, 'the derivation reaches the guard F5 fixed (else the scan is empty by accident): ' + found.join(', '));
+});
+
+test('TW-B: a chromatic colour literal in a partial never duplicates a design token (the F7 shape), and the rest is ratcheted', () => {
+  // F7 (cycle 19): the PAP purple bypassed --intake-pap in four literal values
+  // across two partials, so the tint and the pill were a DIFFERENT purple from
+  // the ring and changing it took five edits in three files. RULE 1: a hex
+  // literal that EQUALS a token's declared value is banned outside two named
+  // categories. RULE 2: every other chromatic literal is a two-sided per-file
+  // RATCHET (the A14 shape) with the reason recorded beside each baseline.
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+  const strip = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
+  const norm = (hex) => {
+    let h = hex.toLowerCase();
+    if (h.length === 4) h = '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+    return h.length === 7 ? h : null;                       // 8-digit (alpha) hexes are never token values here
+  };
+  // Every hex value the tokens partial declares, across every palette × mode.
+  const tokenSrc = strip(read('styles_design_tokens.html'));
+  const tokenValues = {};
+  let tm; const tre = /(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b/g;
+  while ((tm = tre.exec(tokenSrc))) { const v = norm(tm[2]); if (v) (tokenValues[v] = tokenValues[v] || []).push(tm[1]); }
+  assert.ok(Object.keys(tokenValues).length > 40, 'the token value set was derived (' + Object.keys(tokenValues).length + ')');
+  const consoleLight = {};                                   // the FIRST declaration of each token = Console light
+  let cm; const cre = /(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b/g;
+  while ((cm = cre.exec(tokenSrc))) { if (!consoleLight[cm[1]]) consoleLight[cm[1]] = norm(cm[2]); }
+
+  // The scanned set: every JS-bearing partial + the shared stylesheet, MINUS
+  // the tokens partial (the canonical home) and form_public.html (a standalone
+  // page shipping its own inline palette — the INV-128 exemption).
+  const files = A11Y_SCAN_PARTIALS.concat(['styles.html'])
+    .filter((f) => f !== 'form_public.html' && f !== 'styles_design_tokens.html');
+  const isNeutral = (h) => /^#(?:f{3}|f{6}|0{3}|0{6})$/i.test(h);
+
+  // RULE 1 — categories. (a) A canvas cannot read a CSS variable at paint time,
+  // so the token IS read first and the literal is the no-stylesheet fallback
+  // (a harness page): it must EQUAL that token's Console-light value, so a
+  // palette change fails here until the fallback moves with it (the swatch
+  // pin's construction). (b) INV-166: a fixed-palette surface takes a fixed
+  // colour; where that colour happens to coincide with a token it is a
+  // deliberate FREEZE, named here with its reason.
+  const CANVAS_FALLBACK = /getPropertyValue\('(--[\w-]+)'\)(?:\s*\|\|\s*''\)?)?(?:\.trim\(\))?\s*\|\|\s*'(#[0-9a-fA-F]{3,6})'/g;
+  const FROZEN = [
+    { file: 'styles.html', selector: '.instance-banner', hex: '#8a4500',
+      reason: 'INV-166 / C17 batch-4: the DEV banner takes a FIXED amber that reads in both themes; it coincides with the light --warning-deep on purpose' },
+  ];
+  // RULE 2 — the ratchet. Counts are of chromatic literals that match NO
+  // token (hex, rgb(), hsl()), after the RULE 1 categories are removed.
+  const RATCHET = {
+    'styles.html': { count: 8, reason: '.viewas-banner fixed blue (INV-166) · one box-shadow tint · the six @media print neutral overrides (the print gotcha)' },
+    'tc/script_clock.html': { count: 23, reason: 'the fixed-palette clock card (INV-166): sky-gradient stops ×16, .clk-sky base, the state-line scrim, two state dots, and the ribbon/legend colour-mix FALLBACK pairs (rgba twins of --accent/--warn for pre-color-mix browsers — a token candidate, see follow-ons)' },
+    'metrics/script_metrics.html': { count: 4, reason: 'hsl() from mQueueHue_ — the deterministic per-queue hue hash (INV-181)' },
+  };
+
+  const report = [];
+  files.forEach((f) => {
+    const src = strip(read(f));
+    const canvas = {};
+    let km; CANVAS_FALLBACK.lastIndex = 0;
+    while ((km = CANVAS_FALLBACK.exec(src))) {
+      const tok = km[1], hex = norm(km[2]);
+      assert.strictEqual(hex, consoleLight[tok], f + ': canvas fallback for ' + tok + ' must equal that token\'s Console-light value (got ' + km[2] + ', token is ' + consoleLight[tok] + ')');
+      canvas[hex] = (canvas[hex] || 0) + 1;
+    }
+    let other = 0;
+    const re = /(^|[^&\w])(#[0-9a-fA-F]{3,8})\b|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+|hsla?\(/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const tok = m[2] ? m[2] : m[0];
+      if (m[2]) {
+        if (isNeutral(tok)) continue;
+        const h = norm(tok);
+        if (h && tokenValues[h]) {
+          if (canvas[h]) { canvas[h]--; continue; }
+          const frozen = FROZEN.find((x) => x.file === f && x.hex === h);
+          assert.ok(frozen, f + ': ' + tok + ' duplicates token ' + tokenValues[h].join('/') + ' — use var(' + tokenValues[h][0] + ') (F7), or name the freeze in FROZEN with its INV-166 reason');
+          // The freeze covers ONE copy, inside its selector — a second copy
+          // elsewhere in the file would otherwise ride the banner's reason.
+          const block = new RegExp(frozen.selector.replace(/\./g, '\\.') + '\\s*\\{[^}]*' + h).test(src);
+          const copies = (src.match(new RegExp(h, 'gi')) || []).length;
+          assert.ok(block && copies === 1, f + ': the frozen ' + h + ' must appear exactly once, inside ' + frozen.selector + ' (found ' + copies + ')');
+          continue;
+        }
+        other++;
+      } else {
+        if (/^rgba?\(\s*(0\s*,\s*0\s*,\s*0|255\s*,\s*255\s*,\s*255)/.test(tok)) continue;   // scrims / white tints (the token-partial rule)
+        other++;
+      }
+    }
+    const base = RATCHET[f] ? RATCHET[f].count : 0;
+    if (other !== base) report.push(f + ': ' + other + ' chromatic literal(s), ratchet says ' + base);
+  });
+  assert.strictEqual(report.join('\n'), '',
+    'RATCHET is two-sided: a new literal needs a token (or a recorded reason); a removed one lowers the baseline:\n' + report.join('\n'));
+  // The three canvas fallbacks the tripwire found stale are the category's whole membership today.
+  const canvasCount = files.reduce((n, f) => { const s = strip(read(f)); CANVAS_FALLBACK.lastIndex = 0; let c = 0; while (CANVAS_FALLBACK.exec(s)) c++; return n + c; }, 0);
+  assert.strictEqual(canvasCount, 4, 'four canvas fallbacks (qa ×2, empdocs ×2) — each pinned equal to its token above');
+});
+
+
+/* ── DR: the bounded getDeptRequestDetail read (cycle-19 follow-on) ──
+ * NOTE the placement: ABOVE the summary line (the documented harness hazard).
+ */
+console.log('\nDR — getDeptRequestDetail reads one column, then one row');
+
+test('DR-1: drFindRowByReqId_ scans the RequestId column and fetches ONE row at DR_HEADERS width; the detail routes through it', () => {
+  const ctx = vm.createContext({});
+  ['DR', 'DR_HEADERS'].forEach((k) => {
+    const m = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(new RegExp('^const ' + k + ' = (.*);$', 'm'));
+    vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx, { filename: 'Code.js#' + k });   // var — a lexical const is not a context property
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'drFindRowByReqId_'), ctx, { filename: 'Code.js#drFindRowByReqId_' });
+  // A stub sheet that RECORDS every range it is asked for. 3 data rows, a
+  // grid wider than the header (an operator note column) so a width taken
+  // from getLastColumn() is distinguishable from DR_HEADERS.length.
+  const grid = [
+    ['RequestId', 'CreatedById'],
+    ['r-aaa', 'E1', 'Ana', 'ana@x', 'Billing', 'x.com', '2026-09-01T09:00:00', 'open', '', '', 'Close order', 'n-1', '', 'Jane Doe · TRX 42', 'operator note'],
+    [' r-bbb ', 'E2', 'Bo', 'bo@x', 'Shipping', 'x.com', '2026-09-01T10:00:00', 'resolved', '', '', 'Ship', 'n-2', 'email', '', ''],
+    ['r-ccc', 'E3', 'Cy', 'cy@x', 'Power', 'x.com', '2026-09-02T09:00:00', 'open', '', '', 'Power', '', '', '', ''],
+  ];
+  const mk = () => {
+    const calls = [];
+    const sheet = {
+      getLastRow: () => grid.length,
+      getLastColumn: () => 20,
+      getRange: (r, c, nr, nc) => {
+        calls.push([r, c, nr, nc].join(','));
+        return { getValues: () => grid.slice(r - 1, r - 1 + nr).map((row) => { const out = []; for (let k = 0; k < nc; k++) out.push(row[c - 1 + k] === undefined ? '' : row[c - 1 + k]); return out; }) };
+      },
+    };
+    return { sheet: sheet, calls: calls };
+  };
+  let s = mk();
+  const hit = ctx.drFindRowByReqId_(s.sheet, 'r-ccc');
+  assert.ok(hit && hit.rowIndex === 4, 'the third data row (sheet row 4)');
+  assert.strictEqual(hit.row[ctx.DR.LABEL], 'Power', 'the full row comes back');
+  assert.strictEqual(hit.row.length, ctx.DR_HEADERS.length, 'exactly DR_HEADERS wide — never the operator note column beyond it');
+  assert.deepStrictEqual(s.calls.join(' | '), '2,1,3,1 | 4,1,1,' + ctx.DR_HEADERS.length,
+    'ONE column read (RequestId, all data rows) then ONE row read at header width — never getDataRange()');
+  s = mk();
+  const padded = ctx.drFindRowByReqId_(s.sheet, 'r-bbb');
+  assert.ok(padded && padded.rowIndex === 3, 'a whitespace-padded cell still matches (trimmed at the one read)');
+  s = mk();
+  assert.strictEqual(ctx.drFindRowByReqId_(s.sheet, 'r-zzz'), null, 'an unknown id is null');
+  assert.strictEqual(s.calls.length, 1, 'a miss costs exactly the column read');
+  s = mk();
+  assert.strictEqual(ctx.drFindRowByReqId_(s.sheet, '  '), null, 'a blank id is null');
+  assert.strictEqual(s.calls.length, 0, 'and costs NO read');
+  const empty = { getLastRow: () => 1, getLastColumn: () => 14, getRange: () => { throw new Error('must not read an empty tab'); } };
+  assert.strictEqual(ctx.drFindRowByReqId_(empty, 'r-aaa'), null, 'a header-only tab is null without a read');
+
+  // The detail routes through it; the C-N6 contract (bare read gate, the ONE
+  // not-found for unknown + out-of-scope, drCanAct_ on the row) is unchanged.
+  const detail = extractRawFunction('Code.js', 'getDeptRequestDetail').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/drFindRowByReqId_\(getOrCreateDeptRequestsSheet_\(\), reqId\)/.test(detail), 'the detail locates the row through the bounded reader');
+  assert.ok(!/getDataRange\(\)/.test(detail), 'no whole-tab read remains in the detail');
+  assert.ok(/!row \|\| !drCanAct_\(emp, row\)\) return \{ error: 'Request not found\.' \}/.test(detail), 'the scope refusal is still the not-found');
+  const helper = extractRawFunction('Code.js', 'drFindRowByReqId_');
+  assert.ok(/getRange\(2, DR\.REQ_ID \+ 1, lastRow - 1, 1\)/.test(helper) && /getRange\(rowIndex, 1, 1, DR_HEADERS\.length\)/.test(helper),
+    'column-then-row, header width (the findFormTokenRow_ shape) — not getLastColumn()');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

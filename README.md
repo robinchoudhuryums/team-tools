@@ -161,7 +161,7 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders a 99-scenario matrix in headless Chromium; it is
+(`test/visual/`) renders a 102-scenario matrix in headless Chromium; it is
 manual / on-demand, NOT in CI. (Read that count off the run —
 `shoot.mjs`'s own `SCENARIOS` list is the authority; a hand-carried number
 here has drifted before.) Four small companion harnesses live beside it and

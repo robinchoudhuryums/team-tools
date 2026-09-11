@@ -32,6 +32,18 @@ const CONFIG = {
   // step, not a code default, because the purge is irreversible. Enforced by the
   // daily purgeExpiredFormData trigger (must be installed).
   FORM_DATA_RETENTION_DAYS: 0,
+  // Cycle-18 F11 follow-on (2026-09-11): the two append-only DIAGNOSTICS tabs
+  // on the ADP spreadsheet — ViewUsage (feature-usage telemetry) and
+  // ClientErrors (the client error beacon) — were the only growing stores with
+  // no retention tier; "trim manually" was an operator obligation nobody was
+  // reminded of. Two INDEPENDENT windows in days; 0 = DISABLED (the safe
+  // committed default). Script Properties VIEW_USAGE_RETENTION_DAYS /
+  // CLIENT_ERR_RETENTION_DAYS override without a redeploy; the Admin → Config →
+  // Retention panel edits them. Both tabs are PHI-free by construction
+  // (INV-150 / the observability KDD), so the delete is irreversible but never
+  // a PHI question. Enforced by the daily purgeOldDiagnostics trigger.
+  VIEW_USAGE_RETENTION_DAYS: 0,
+  CLIENT_ERR_RETENTION_DAYS: 0,
 
   // #7 (INV-153) — Timesheet cold-archive window: rows whose DATE is older than
   // this many days MOVE to a TimesheetArchive tab in the same ADP spreadsheet
@@ -2773,7 +2785,16 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   if (type !== 'LunchOut' && type !== 'LunchIn') return false;
   const d = days[empId + '|' + date];
   if (!d) return false;
-  return d.lo.length > 1 && d.lo.length === d.li.length;
+  // Cycle-19 follow-on: ANY day carrying two-plus stamps of BOTH break types
+  // is off-limits to the collapse, whether or not the counts agree. The old
+  // equal-count test let a day like leaves [12:00, 17:00] / returns [11:00,
+  // 19:00] read as legal while the pairing silently produced ONE 7-hour
+  // "break" — and once the counts disagreed on such a day (a double-punched
+  // leave on a two-break day) the collapse would have kept the LAST leave and
+  // deleted a real one. Those days are REPORTED instead (getTimesheetDoctor's
+  // `unpaired` list — Day Edit is the fix); a day with at most one stamp of
+  // the other type keeps the classic double-punch semantics (last row wins).
+  return d.lo.length > 1 && d.li.length > 1;
 }
 
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
@@ -2813,13 +2834,13 @@ function getTimesheetDoctor() {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const scan = tsDoctorScan_();
-    const duplicates = [], inverted = [];
+    const duplicates = [], inverted = [], unpaired = [];
     // F2 (cycle 12): count EVERY finding, not just the ones that fit the
     // payload cap — the old silent truncation made a 512-group backlog read as
     // exactly 200, and the card ("Scan of the last 92 days" + a count) looked
     // complete. Every sibling bounded reader returns a truncation signal
     // (getCallNotesAuditLog, getAdminSheetView, getStorageHealth's kbEmbeds).
-    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0;
+    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0, totalUnpaired = 0;
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
       if (tsDoctorLegitBreaks_(scan.days, g.empId, g.date, g.type)) return;   // legal multi-break, not damage
@@ -2848,25 +2869,55 @@ function getTimesheetDoctor() {
       // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
       // before the lunch LEAVE — the same mis-keyed AM/PM class. Last-return
       // vs first-leave, so a legitimate multi-lunch day never false-flags.
+      let lunchInverted = false;
       if (d.lo.length && d.li.length) {
         const firstLo = d.lo.slice().sort()[0];
         const lastLi = d.li.slice().sort()[d.li.length - 1];
         if (lastLi <= firstLo) {
+          lunchInverted = true;
           totalInverted++;
           if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
             inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
           }
         }
       }
+      // Cycle-19 follow-on — UNPAIRABLE break stamps on a multi-break day. The
+      // greedy pairing (breakPairs_, INV-176) DROPS a leave with no later
+      // return or a return that precedes every open leave; on a day carrying
+      // two-plus stamps of BOTH types that drop is invisible everywhere else:
+      // the inverted test above passes it (leaves [12:00, 17:00] / returns
+      // [11:00, 19:00] reads as one 7-hour break), and the collapse never
+      // sees it because tsDoctorLegitBreaks_ protects such days. Report-only
+      // — the stamps it names are the ones Day Edit should fix; the doctor
+      // must never guess which half is real. Skipped when the day is already
+      // listed as inverted (one finding per day).
+      if (!lunchInverted && d.lo.length > 1 && d.li.length > 1) {
+        const anchor = d.in.length ? timeToMins_(d.in.slice().sort()[0]) : null;
+        const pairs = breakPairs_(d.lo, d.li, anchor);
+        const used = {};
+        pairs.forEach(function (b) { used['o' + b.out] = (used['o' + b.out] || 0) + 1; used['i' + b.in] = (used['i' + b.in] || 0) + 1; });
+        const dropped = [];
+        d.lo.forEach(function (t) { if (used['o' + t] > 0) used['o' + t]--; else dropped.push('leave ' + t); });
+        d.li.forEach(function (t) { if (used['i' + t] > 0) used['i' + t]--; else dropped.push('return ' + t); });
+        if (dropped.length) {
+          totalUnpaired++;
+          if (unpaired.length < TS_DOCTOR_MAX_GROUPS) {
+            unpaired.push({ kind: 'unpaired', empId: d.empId, name: d.name, date: d.date,
+              lunchOut: d.lo.slice().sort(), lunchIn: d.li.slice().sort(),
+              pairs: pairs.map(function (b) { return b.out + '\u2192' + b.in; }), dropped: dropped });
+          }
+        }
+      }
     });
     duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS,
+    unpaired.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    return { duplicates: duplicates, inverted: inverted, unpaired: unpaired, windowDays: TS_DOCTOR_WINDOW_DAYS,
       // F2: honest totals + the per-run collapse bound, so the client can say
       // "showing 200 of 512" and "collapses up to 200 rows per run".
-      totalDuplicates: totalDuplicates, totalInverted: totalInverted,
+      totalDuplicates: totalDuplicates, totalInverted: totalInverted, totalUnpaired: totalUnpaired,
       totalDuplicateRows: totalDuplicateRows,
-      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length),
+      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length) || (totalUnpaired > unpaired.length),
       fixMaxRows: TS_DOCTOR_FIX_MAX_ROWS };
   } catch (err) { return { error: err.message }; }
 }
@@ -2937,14 +2988,19 @@ function fixTimesheetDuplicates(empIdFilter) {
  *  report cannot drift from the behaviour it is describing.
  *
  *  Every listed day gets SHORTER: the earlier breaks were being paid. */
-function reportMultiBreakDays() {
-  assertManagerCaller_('reportMultiBreakDays');
+/** READ-ONLY shared reader for the two break-impact reports: every rep-day's
+ *  punches from the live Timesheet PLUS TimesheetArchive (INV-153/F1 — an
+ *  aged-out day still counts), accumulated through punchDayAdd_ so the
+ *  reports see exactly the shape the hours builders see. A row present in
+ *  BOTH tabs (a mid-run archive duplicate) is counted ONCE — the INV-132
+ *  duplicate-not-lose rule the accrual index already applies; without it a
+ *  duplicated LunchOut/LunchIn fabricates a phantom pair and puts a day on a
+ *  report that never changes. Writes nothing; never provisions a tab.
+ *  Returns { perDay: { 'empId|date': {empId, date, name, pm, source} },
+ *            liveRows, archRows }. */
+function tsPunchDaysWithArchive_() {
   const ss = getAdpSS_();
   const perDay = {};      // 'empId|date' -> { name, pm }
-  // A row present in BOTH tabs (a mid-run archive duplicate) must be counted
-  // ONCE — the INV-132 duplicate-not-lose rule the accrual index already
-  // applies. Without it a duplicated LunchOut/LunchIn would fabricate a phantom
-  // second pair and put a day on this report that never changes.
   const liveKeys = new Set();
   const readTab = (tabName, label) => {
     const sh = ss.getSheetByName(tabName);
@@ -2972,6 +3028,93 @@ function reportMultiBreakDays() {
   };
   const liveRows = readTab(CONFIG.ADP_TAB, 'live');
   const archRows = readTab(TIMESHEET_ARCHIVE_TAB, 'archive');
+  return { perDay: perDay, liveRows: liveRows, archRows: archRows };
+}
+
+/** The break pairing EXACTLY as it stood before cycle-19 F1 (commit 760c029
+ *  replaced it) — kept ONLY so reportBreakPairingChanges can reproduce the old
+ *  figure. Both lists walked on ONE index: outs[i] pairs with ins[i] when the
+ *  return follows the leave, else the slot is dropped. That is the shape a
+ *  single stray early LunchIn defeated — it shifted every later `in` one
+ *  slot and un-paired the whole day, PAYING every real break. Never call it
+ *  from anything but the report. */
+function breakPairsPositional_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const list = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null)
+    .sort((a, b) => a.mins - b.mins);
+  const outs = list(lunchOut), ins = list(lunchIn);
+  const pairs = [];
+  for (let i = 0; i < Math.min(outs.length, ins.length); i++) {
+    if (ins[i].mins <= outs[i].mins) continue;             // malformed: in at/before out
+    pairs.push({ out: outs[i].raw, in: ins[i].raw, minutes: ins[i].mins - outs[i].mins });
+  }
+  return pairs;
+}
+
+/** READ-ONLY operator report (cycle-19 F1 follow-on): which historical days
+ *  change when breakPairs_ moved from the POSITIONAL pairing to the GREEDY
+ *  one — each `out` takes the earliest `in` that can close it, and an `in`
+ *  that cannot close the current `out` is skipped ALONE.
+ *
+ *  The twin of reportMultiBreakDays: same shared reader (live + archive,
+ *  duplicates counted once), writes nothing, manager-gated because it walks
+ *  the whole Timesheet. The old figure comes from the SAME calcHours_ plus the
+ *  difference in deducted break minutes between the two pairings — the clock
+ *  arithmetic is never re-implemented, only the removed pairing is (verbatim,
+ *  in breakPairsPositional_). A day is listed only when the two pairings
+ *  deduct different minutes; on every such day the greedy figure is LOWER —
+ *  the old pairing had left a real break paid. */
+function reportBreakPairingChanges() {
+  assertManagerCaller_('reportBreakPairingChanges');
+  const read = tsPunchDaysWithArchive_();
+  const perDay = read.perDay;
+  const sumMin = (pairs) => pairs.reduce((acc, b) => acc + b.minutes, 0);
+  const affected = [];
+  let totalDelta = 0;
+  Object.keys(perDay).forEach((key) => {
+    const d = perDay[key], pm = d.pm;
+    if (!pm.ClockIn || !pm.ClockOut) return;              // incomplete days contribute no hours either way
+    const inMins = timeToMins_(pm.ClockIn);
+    const greedy = breakPairs_(pm.LunchOut, pm.LunchIn, inMins);
+    const positional = breakPairsPositional_(pm.LunchOut, pm.LunchIn, inMins);
+    const diffMin = sumMin(greedy) - sumMin(positional);
+    if (diffMin === 0) return;
+    const newH = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut, pm.LunchIn);
+    if (newH === null) return;
+    const oldH = newH + diffMin / 60;                      // the positional pairing deducted diffMin fewer minutes
+    const delta = +(newH - oldH).toFixed(2);
+    if (delta === 0) return;
+    totalDelta += delta;
+    affected.push({ empId: d.empId, name: d.name, date: d.date, source: d.source,
+      oldHours: +oldH.toFixed(2), newHours: +newH.toFixed(2), deltaHours: delta,
+      greedy: greedy.map((b) => b.out + '\u2192' + b.in).join(', ') || '(none)',
+      positional: positional.map((b) => b.out + '\u2192' + b.in).join(', ') || '(none)' });
+  });
+  affected.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name) : a.date.localeCompare(b.date)));
+
+  Logger.log('=== Break-pairing impact report (positional → greedy, cycle-19 F1) ===');
+  Logger.log('Scanned ' + read.liveRows + ' live + ' + read.archRows + ' archived punch rows across '
+    + Object.keys(perDay).length + ' rep-days.');
+  if (!affected.length) {
+    Logger.log('NO historical day changes — both pairings deduct the same minutes on every completed day.');
+  } else {
+    Logger.log(affected.length + ' day(s) change; total ' + totalDelta.toFixed(2) + ' hours (always a reduction —'
+      + ' the positional pairing had left a real break paid).');
+    affected.forEach((a) => Logger.log('  ' + a.date + '  ' + a.name + ' (' + a.empId + ')  ['
+      + a.source + ']  was: ' + a.positional + '  now: ' + a.greedy + '  ' + a.oldHours + 'h -> ' + a.newHours + 'h  ('
+      + a.deltaHours.toFixed(2) + ')'));
+  }
+  return { liveRows: read.liveRows, archiveRows: read.archRows, repDays: Object.keys(perDay).length,
+    affected: affected, totalDeltaHours: +totalDelta.toFixed(2) };
+}
+
+function reportMultiBreakDays() {
+  assertManagerCaller_('reportMultiBreakDays');
+  const read = tsPunchDaysWithArchive_();   // live + archive, duplicates counted once (INV-132/153)
+  const perDay = read.perDay;
+  const liveRows = read.liveRows, archRows = read.archRows;
 
   const lastOf = (v) => (Array.isArray(v) ? (v.length ? v.slice().sort()[v.length - 1] : null) : (v || null));
   const affected = [];
@@ -6254,10 +6397,15 @@ function getRetentionConfig() {
       return (cfgVal && cfgVal > 0) ? 'CONFIG' : 'default';
     };
     const a = getNoteArchiveDays_(), r = getNoteRetentionDays_(), ar = getArchiveRetentionDays_();
+    // Cycle-18 F11 follow-on: the two PHI-free diagnostics windows ride the
+    // same panel (additive fields — an older client ignores them).
+    const vu = viewUsageRetentionDays_(), ce = clientErrRetentionDays_();
     return {
       archiveDays:          { value: a,  source: srcOf('CN_NOTE_ARCHIVE_DAYS', CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS) },
       retentionDays:        { value: r,  source: srcOf('CN_NOTE_RETENTION_DAYS', CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS) },
       archiveRetentionDays: { value: ar, source: srcOf('CN_ARCHIVE_RETENTION_DAYS', CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS) },
+      viewUsageDays:        { value: vu, source: srcOf(VIEW_USAGE_RETENTION_PROP, CONFIG.VIEW_USAGE_RETENTION_DAYS) },
+      clientErrDays:        { value: ce, source: srcOf(CLIENT_ERR_RETENTION_PROP, CONFIG.CLIENT_ERR_RETENTION_DAYS) },
       warnings: retentionWarnings_(a, r, ar),
       archiveTab: CONFIG.CALL_NOTES.ARCHIVE_TAB,
     };
@@ -6286,12 +6434,25 @@ function saveRetentionConfig(settings) {
     if (a === null || r === null || ar === null) {
       return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
     }
+    // Cycle-18 F11 follow-on: the two diagnostics windows are OPTIONAL in the
+    // payload — written only when the client sent them, so a client that
+    // predates them (or omits them) can never silently reset a window to 0.
+    const hasVu = Object.prototype.hasOwnProperty.call(settings, 'viewUsageDays');
+    const hasCe = Object.prototype.hasOwnProperty.call(settings, 'clientErrDays');
+    const vu = hasVu ? parse(settings.viewUsageDays) : 0, ce = hasCe ? parse(settings.clientErrDays) : 0;
+    if (vu === null || ce === null) {
+      return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
+    }
     const props = PropertiesService.getScriptProperties();
     props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
     props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
     props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
+    if (hasVu) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(vu));
+    if (hasCe) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ce));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)', callerEmp.email);
+      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)' +
+      (hasVu || hasCe ? '; diagnostics (viewUsage=' + (hasVu ? vu + 'd' : 'unchanged') + ', clientErrors=' + (hasCe ? ce + 'd' : 'unchanged') + ')' : ''),
+      callerEmp.email);
     return { success: true, warnings: retentionWarnings_(a, r, ar) };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -7066,6 +7227,146 @@ function clientErrorsSummary_(mgrTz) {
   return out;
 }
 
+// ── Diagnostics retention (cycle-18 F11 follow-on, 2026-09-11) ─────────────
+// ViewUsage + ClientErrors were the ONLY two growing stores with no retention
+// tier — append-only diagnostics that nothing aged out, and neither surfaced
+// in Storage Health, so the "trim manually" obligation lived only in CLAUDE.md.
+// Two independent windows (Script Property first, then CONFIG — the
+// FORM_DATA_RETENTION_DAYS shape), both DISABLED by default, a single daily
+// trigger. The rows are PHI-free by construction (INV-150 / the observability
+// KDD): the delete is irreversible, never a PHI question — but it is still a
+// top-level trigger handler reachable via google.script.run, so it carries the
+// INV-44 gate, the INV-01 lock, and a counts-only audit row (the INV-161
+// liveness heartbeat). It reads with getSheetByName (never provisions — a
+// missing tab means nothing was ever recorded) and is bounded per run so a
+// large first enable drains over successive nights (the INV-153/F3 bound).
+const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS';
+const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';
+const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across BOTH tabs, oldest first
+
+/** Shared window resolver: Script Property first (non-empty wins), else the
+ *  CONFIG fallback. 0 / negative / unparseable → 0 (disabled — never NaN). */
+function retentionWindowDays_(propName, cfgVal) {
+  const prop = PropertiesService.getScriptProperties().getProperty(propName);
+  const raw = (prop != null && prop !== '') ? prop : (cfgVal || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+function viewUsageRetentionDays_() { return retentionWindowDays_(VIEW_USAGE_RETENTION_PROP, CONFIG.VIEW_USAGE_RETENTION_DAYS); }
+function clientErrRetentionDays_() { return retentionWindowDays_(CLIENT_ERR_RETENTION_PROP, CONFIG.CLIENT_ERR_RETENTION_DAYS); }
+
+/** The one-line summary Storage Health shows on the ADP store row, so the two
+ *  windows are visible where every other store's policy is (INV-186: unset is
+ *  a FACT — "kept" — never a warning). */
+function diagRetentionText_() {
+  const vu = viewUsageRetentionDays_(), ce = clientErrRetentionDays_();
+  return 'diagnostics tabs — ViewUsage ' + (vu > 0 ? vu + 'd purge' : 'kept') +
+    ' · ClientErrors ' + (ce > 0 ? ce + 'd purge' : 'kept');
+}
+
+/** Epoch ms of a diagnostics Timestamp cell. Both tabs are written
+ *  'yyyy-MM-dd HH:mm:ss' in CONFIG.TIMEZONE (recordClientError /
+ *  recordViewEnter); Sheets coerces the cell to a Date on read, which
+ *  normalizeAuditTs_ recovers in the sheet's own tz. NULL on a blank or
+ *  unparseable cell — such a row is never "old" and is NEVER deleted (the
+ *  parseRetentionDateMs_ fail-safe). */
+function diagTsMs_(cell) {
+  const s = normalizeAuditTs_(cell);
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return null;
+  try { return Utilities.parseDate(s, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); }
+  catch (e) { return null; }
+}
+
+/** PURE (Node-pinned): 1-based sheet row indices, any order, duplicates
+ *  tolerated → contiguous runs [{start, count}] sorted DESCENDING by start, so
+ *  deleting them in order never shifts a run still to be deleted. One
+ *  deleteRows per run instead of one deleteRow per row: the tabs are
+ *  append-only, so the purgeable rows are one long prefix and a 2000-row run
+ *  is ONE call (~0.5s per row otherwise — the INV-153 lock-starvation class). */
+function contiguousRowRunsDesc_(rowIdxs) {
+  const seen = {};
+  const sorted = (rowIdxs || []).map(Number).filter(function (n) {
+    if (!isFinite(n) || n < 1 || seen[n]) return false;
+    seen[n] = true; return true;
+  }).sort(function (a, b) { return a - b; });
+  const runs = [];
+  sorted.forEach(function (n) {
+    const last = runs[runs.length - 1];
+    if (last && n === last.start + last.count) last.count++;
+    else runs.push({ start: n, count: 1 });
+  });
+  return runs.reverse();
+}
+
+/** Delete rows of `sheet` whose column-A stamp is older than cutoffMs —
+ *  OLDEST first (append order), at most `budget` rows. Returns
+ *  {removed, hitCap}. Caller holds the lock. */
+function diagPurgeTab_(sheet, cutoffMs, budget) {
+  const out = { removed: 0, hitCap: false };
+  if (!sheet || !(budget > 0)) return out;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return out;
+  const col = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const idx = [];
+  for (let i = 0; i < col.length && idx.length < budget; i++) {
+    const ms = diagTsMs_(col[i][0]);
+    if (ms !== null && ms < cutoffMs) idx.push(i + 2);
+  }
+  if (!idx.length) return out;
+  // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
+  // delete all non-frozen rows" — the archive mover's spare-row guard and the
+  // _clearTestCallNotes lesson). A window that covers the whole tab would
+  // throw on the last run; keep one spare row so the final delete is never
+  // "all non-frozen rows".
+  if (idx.length >= sheet.getMaxRows() - 1) sheet.insertRowAfter(sheet.getMaxRows());
+  contiguousRowRunsDesc_(idx).forEach(function (r) { sheet.deleteRows(r.start, r.count); });
+  out.removed = idx.length;
+  out.hitCap = idx.length >= budget;
+  return out;
+}
+
+/** Daily diagnostics purge (trigger #20). No-ops while BOTH windows are 0
+ *  (the default) — the early return precedes the lock, so installing the
+ *  trigger is harmless. Counts-only audit on every enabled run; a thrown run
+ *  stamps AUTOMATION_LAST_ERRORS (a handler that only RETURNS reaches nobody —
+ *  the F4 rule) and a clean one clears it. */
+function purgeOldDiagnostics() {
+  assertManagerCaller_('purgeOldDiagnostics');
+  try {
+    const vuDays = viewUsageRetentionDays_(), ceDays = clientErrRetentionDays_();
+    if (!vuDays && !ceDays) {
+      Logger.log('purgeOldDiagnostics: both windows disabled (VIEW_USAGE_RETENTION_DAYS=0, CLIENT_ERR_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const ss = getAdpSS_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false };
+    try {
+      let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
+      if (vuDays) {
+        vu = diagPurgeTab_(ss.getSheetByName(VIEW_USAGE_TAB), Date.now() - vuDays * 86400000, budget);
+        budget -= vu.removed;
+      }
+      if (ceDays) {
+        ce = diagPurgeTab_(ss.getSheetByName(CLIENT_ERRORS_TAB), Date.now() - ceDays * 86400000, budget);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    const capped = vu.hitCap || ce.hitCap;
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
+      `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}` +
+      (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
+    clearAutomationError_('DiagnosticsPurge');
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors row(s)` +
+      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + '.');
+  } catch (err) {
+    stampAutomationError_('DiagnosticsPurge', err.message);
+    Logger.log('purgeOldDiagnostics failed: ' + err.message);
+  }
+}
+
 // ── Automation Health (Admin tab) ────────────────────────────────────────
 // Operationalizes the "monitor AuditLog for PersonalSheetSyncFail" gotcha and
 // the silent-degradation posture: one manager-gated, read-only aggregate that
@@ -7081,7 +7382,7 @@ function clientErrorsSummary_(mgrTz) {
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
   'CallNotesArchive', 'CallNotesArchivePurge', 'TimesheetArchive',
-  'PtoAccrualCredit', 'QaReviewPurge',
+  'PtoAccrualCredit', 'QaReviewPurge', 'DiagnosticsPurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -7126,6 +7427,9 @@ const AUTOMATION_JOB_CHECKS = [
   { action: 'QaReviewPurge', label: 'QA review-record retention purge',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return qaReviewRetentionDays_() > 0 && qaStoreConfigured_(); } },
+  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors)',
+    cadence: 'daily', staleHours: 30,
+    enabled: function () { return viewUsageRetentionDays_() > 0 || clientErrRetentionDays_() > 0; } },
 ];
 
 /** Is any roster row carrying a column-Q accrual rate? Decides whether the
@@ -7486,14 +7790,16 @@ function computeAutomationHealth_(opts) {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest', 'coachingRecap'].map(function (k) {
+    // The reported set is DERIVED from the staleness map (INV-179) — a
+    // heartbeat with a window but no row here would be stamped and never read.
+    const digestHealth = Object.keys(DIGEST_STALE_HOURS).map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -7867,7 +8173,7 @@ function getStorageHealth(opts) {
     const adpProp = props.getProperty('ADP_SS_ID');
     const adpId = adpProp || (isPlaceholder(CONFIG.ADP_SS_ID) ? '' : CONFIG.ADP_SS_ID);
     stores.push(probe({ label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust',
-      cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', id: adpId,
+      cls: 'Payroll', retention: 'Kept · ' + diagRetentionText_(), prop: 'ADP_SS_ID', id: adpId,
       source: adpProp ? 'Script Property' : (adpId ? 'CONFIG' : 'unset'),
       note: adpId ? '' : 'Set ADP_SS_ID — the app fails on first sheet open without it.' }));
 
@@ -12121,6 +12427,8 @@ function installAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'autoAssignSpanishThreadsScheduled',
+    'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -12155,6 +12463,12 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendCoachingRecapDigest')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Scheduled Spanish Inbox auto-assign (operator note 4 follow-on): hourly,
+  // acts only inside business hours and only while the `spanishAutoAssign`
+  // flag is on (default OFF) — installing it is harmless; it heartbeats
+  // regardless so the trigger's liveness shows on Automation Health.
+  ScriptApp.newTrigger('autoAssignSpanishThreadsScheduled')
+    .timeBased().everyHours(1).create();
   // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
   ScriptApp.newTrigger('sendCallNotesUrgentDigest')
     .timeBased().atHour(8).everyDays(1)
@@ -12176,6 +12490,13 @@ function installAutomationTriggers() {
   // QA_REVIEW_RETENTION_DAYS=0 (the default) or QA_SS_ID is unset, so
   // installing it is harmless.
   ScriptApp.newTrigger('purgeOldQaReviews')
+    .timeBased().atHour(2).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Diagnostics retention purge (cycle-18 F11 follow-on) — ViewUsage +
+  // ClientErrors rows past their windows. No-ops while BOTH
+  // VIEW_USAGE_RETENTION_DAYS and CLIENT_ERR_RETENTION_DAYS are 0 (the
+  // default), so installing it is harmless. Same 2am slot as the other purges.
+  ScriptApp.newTrigger('purgeOldDiagnostics')
     .timeBased().atHour(2).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
@@ -12310,6 +12631,8 @@ function removeAutomationTriggers() {
     'creditMonthlyPtoAccruals',
     'purgeOldQaReviews',
     'sendCoachingRecapDigest',
+    'autoAssignSpanishThreadsScheduled',
+    'purgeOldDiagnostics',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -14081,6 +14404,9 @@ const FEATURE_FLAGS = [
     default: false, scope: 'both' },
   { key: 'managerDailyBrief', label: 'Consolidated manager daily brief',
     description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
+    default: false, scope: 'server' },
+  { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
+    description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
@@ -15917,6 +16243,57 @@ function autoAssignSpanishThreads(days) {
   } catch (err) { return { success: false, error: 'Auto-assign failed: ' + err.message }; }
 }
 
+/** The SCHEDULED twin of the button (operator testing note 4's "might follow",
+ *  2026-09-11): an hourly trigger that runs the SAME spanishAutoAssignCore_
+ *  — one scope rule, one voicemail fold, one picker, one claim-row shape —
+ *  behind the `spanishAutoAssign` feature flag (server scope, default OFF,
+ *  the managerDailyBrief posture), so a fresh deploy is a behavioural no-op
+ *  and the operator turns it on from Manage → Admin → Feature Toggles.
+ *
+ *  Trigger handler: top-level, MANAGER_EMAILS-gated (INV-44), heartbeat
+ *  `spanishAutoAssign` stamped BEFORE the flag check so the trigger's
+ *  liveness stays observable while the feature is off (INV-151). It acts
+ *  ONLY inside business hours — the ONE definition the app has
+ *  (`businessMinutesBetween_`: the Coverage window, weekdays, US holidays),
+ *  never a second weekday/hour arithmetic — because a request auto-assigned
+ *  at 2am sits on somebody's plate all night reading as "claimed", which is
+ *  worse than unclaimed. The actor is the INSTALLER's roster row (the
+ *  claim's `assignedBy` and the audit actor), falling back to the SYSTEM
+ *  placeholder when the installer is not on the roster (the
+ *  reconcileCallNotes precedent). A failed run — no members configured, a
+ *  Gmail read that threw — is stamped into AUTOMATION_LAST_ERRORS (the F4
+ *  rule: a handler that merely RETURNS an error reaches nobody) and cleared
+ *  on the next clean run. The core's own audit row (`SpanishInboxAutoAssign`,
+ *  counts only) is written only when something was unclaimed, so an idle
+ *  hour adds nothing to the bounded AuditLog tail scans. */
+const SPANISH_AUTO_ASSIGN_DAYS = 7;   // the pending window the button uses by default
+function autoAssignSpanishThreadsScheduled() {
+  assertManagerCaller_('autoAssignSpanishThreadsScheduled');  // see sendDailyMissedPunchAlerts note
+  try {
+    stampDigestLastRun_('spanishAutoAssign');
+    if (!getFlag_('spanishAutoAssign')) { Logger.log('spanishAutoAssign flag is off — nothing assigned.'); return; }
+    const nowMs = Date.now();
+    // Inside the business window iff the next minute counts as a business
+    // minute — the same helper that times every request, so "working hour"
+    // has exactly one meaning. null (unusable input) reads as NOT inside.
+    const bizMin = businessMinutesBetween_(nowMs, nowMs + 60000);
+    if (!(bizMin > 0)) { Logger.log('spanishAutoAssign: outside business hours — nothing assigned.'); return; }
+    const emp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
+    const r = spanishAutoAssignCore_(emp, SPANISH_AUTO_ASSIGN_DAYS);
+    if (!r || !r.success) {
+      const why = (r && r.error) || 'auto-assign failed';
+      Logger.log('spanishAutoAssign: ' + why);
+      stampAutomationError_('SpanishAutoAssign', why);
+      return;
+    }
+    clearAutomationError_('SpanishAutoAssign');
+    Logger.log('spanishAutoAssign: ' + (r.assigned || []).length + ' assigned of ' + (r.unclaimed || 0) + ' unclaimed.');
+  } catch (err) {
+    Logger.log('autoAssignSpanishThreadsScheduled failed: ' + err.message);
+    stampAutomationError_('SpanishAutoAssign', err.message);
+  }
+}
+
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -16364,6 +16741,27 @@ function drCanAct_(emp, row) {
   });
 }
 
+/** Bounded single-request lookup (cycle-19 follow-on — the findFormTokenRow_ /
+ *  findCallNoteRow_ shape): scan ONLY the RequestId column to locate the row,
+ *  then fetch that ONE row at DR_HEADERS width (the header self-heals to it,
+ *  so a legacy narrow row reads its trailing cells as ''). RequestIds are
+ *  UUIDs, so the first match is the row. Returns { rowIndex, row } or null;
+ *  a blank id costs no read at all. */
+function drFindRowByReqId_(sheet, reqId) {
+  const id = String(reqId || '').trim();
+  if (!id) return null;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const ids = sheet.getRange(2, DR.REQ_ID + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === id) {
+      const rowIndex = i + 2;
+      return { rowIndex: rowIndex, row: sheet.getRange(rowIndex, 1, 1, DR_HEADERS.length).getValues()[0] };
+    }
+  }
+  return null;
+}
+
 /** The tracker card's EXPAND — the source note's fields for a request the
  *  caller may act on (drCanAct_: sender / manager / receiving-dept member —
  *  the SAME rule as resolveDeptRequest, so anyone who may close a request may
@@ -16383,11 +16781,11 @@ function getDeptRequestDetail(requestId) {
     if (!emp) return { error: 'Not authorized.' };
     const reqId = String(requestId || '').trim();
     if (!reqId) return { error: 'Request not found.' };
-    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let row = null;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === reqId) { row = rows[i]; break; }
-    }
+    // Bounded (cycle-19 follow-on): the RequestId column, then ONE row — this
+    // fires per Expand click on a rep-facing list and used to read the whole
+    // tab, every request's PatientTrx cell included, to find one row.
+    const hit = drFindRowByReqId_(getOrCreateDeptRequestsSheet_(), reqId);
+    const row = hit ? hit.row : null;
     if (!row || !drCanAct_(emp, row)) return { error: 'Request not found.' };
     const base = {
       requestId: reqId,
