@@ -20761,7 +20761,7 @@ test('F1b: the server source EVALUATES in load order with no ReferenceError', ()
   assert.strictEqual(typeof ctx.recordPunch, 'function', 'and so did a mid-file endpoint');
 });
 
-test('F1a: no pin reads the server by filename any more', () => {
+test('F1a: nothing reads the server by filename any more (run.js and counts.mjs)', () => {
   // The 73 direct `readFileSync(… 'web-app/Code.js')` reads in this file are
   // what made splitting the server a 73-edit change. They go through
   // serverSource() now; this keeps them there. The mock.js banner LITERAL is
@@ -20772,12 +20772,25 @@ test('F1a: no pin reads the server by filename any more', () => {
   const self = fs.readFileSync(__filename, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
-  const offenders = self.split('\n')
-    .map((l, i) => [i + 1, l])
-    .filter(([, l]) => /readFileSync\([^)]*Code\.js/.test(l))
-    .map(([n, l]) => n + ': ' + l.trim().slice(0, 90));
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
+  // INV-202's acceptance criterion is that `scripts/counts.mjs` resolves
+  // through the shim too — it read the server by path in two derivations, and a
+  // count that reads a file by name is coupled to that file's layout. It is
+  // scanned HERE rather than in its own pin so there is ONE place that says
+  // "the server has no filename".
+  const counts = strip(fs.readFileSync(path.join(__dirname, '../../scripts/counts.mjs'), 'utf8'));
+  const sources = [['run.js', self], ['scripts/counts.mjs', counts]];
+  const offenders = [];
+  sources.forEach(([label, text]) => {
+    text.split('\n').forEach((l, i) => {
+      if (/(?:readFileSync|read)\s*\([^)]*Code\.js/.test(l)) offenders.push(label + ':' + (i + 1) + ' — ' + l.trim().slice(0, 90));
+    });
+  });
   assert.deepStrictEqual(offenders, [],
     'read the server through serverSource(), not by filename: ' + offenders.join(' | '));
+  assert.ok(/serverSource\(\)/.test(counts),
+    'scripts/counts.mjs derives the server through serverSource() (INV-202)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
