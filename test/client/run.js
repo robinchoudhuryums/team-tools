@@ -20635,6 +20635,57 @@ test('D2: every Common Gotchas rule resolves to its narrative, and every narrati
     'a code comment names a gotcha the docs no longer carry: ' + dangling.join(', '));
 });
 
+test('D2: every Operator State inventory line resolves, and every entry is inventoried', () => {
+  // The third instance of the split's one real hazard: an index in CLAUDE.md
+  // and its entries in another file, with nothing noticing when they diverge.
+  // These entries are deploy PROCEDURE — the ALL-CST runbook, the tz-repair run
+  // order, the trigger list — so a link that lands nowhere costs an operator a
+  // deploy, not a doc read.
+  const root = path.join(__dirname, '../../');
+  const claude = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+  const st = fs.readFileSync(path.join(root, 'docs/operator-state.md'), 'utf8');
+  const i = claude.indexOf('### Inventory');
+  assert.ok(i >= 0, 'CLAUDE.md keeps the operator inventory');
+  const inv = claude.slice(i, claude.indexOf('## Cycle State & Memory'));
+
+  const linked = [...inv.matchAll(/docs\/operator-state\.md#(operator-[a-z0-9-]+)\)/g)].map((m) => m[1]);
+  const anchors = [...st.matchAll(/<a id="(operator-[a-z0-9-]+)"><\/a>/g)].map((m) => m[1]);
+  assert.ok(anchors.length >= 70, 'docs/operator-state.md carries the entries (got ' + anchors.length + ')');
+  assert.strictEqual(linked.length, anchors.length,
+    'one inventory line per entry (' + linked.length + ' links vs ' + anchors.length + ' entries)');
+  const missing = linked.filter((a) => anchors.indexOf(a) < 0);
+  assert.deepStrictEqual(missing, [], 'the inventory links entries that do not exist: ' + missing.join(', '));
+  const orphan = anchors.filter((a) => linked.indexOf(a) < 0);
+  assert.deepStrictEqual(orphan, [], 'docs/operator-state.md has entries the inventory never names: ' + orphan.join(', '));
+
+  // The storage map STAYS in CLAUDE.md — it is the one-screen answer to "which
+  // spreadsheet holds what", and sending a reader to a second file for it was
+  // the thing D1c was careful not to do.
+  assert.ok(/### Spreadsheet \/ storage map/.test(claude), 'CLAUDE.md keeps the storage map');
+  ['ADP_SS_ID', 'CDR_SS_ID', 'INTAKE_SS_ID', 'FORMS_SS_ID', 'KB_SS_ID', 'HR_DOCS_SS_ID', 'QA_SS_ID']
+    .forEach((k) => assert.ok(claude.indexOf(k) >= 0, 'the storage map still names ' + k));
+});
+
+test('D2d: CLAUDE.md stays a map — the size ceiling', () => {
+  // One-sided and deliberately ROUND. CLAUDE.md reached 12,661 lines one
+  // paragraph at a time, every one of them a reasonable addition; nothing in
+  // the tree ever said "this is now too long to read". D1+D2 took it to ~830.
+  //
+  // The plan said "10% above the post-split size", which would be ~915 — close
+  // enough that ordinary growth (a gotcha rule is 1 line, a decision index
+  // entry is 1) trips it within a couple of batches, and a ceiling that trips
+  // on legitimate growth just teaches people to raise it. 1,000 is a round
+  // number with real headroom, so raising it is a DECISION someone makes on
+  // purpose rather than a reflex while their own batch is red.
+  const CEILING = 1000;
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const n = claude.split('\n').length;
+  assert.ok(n <= CEILING,
+    'CLAUDE.md is ' + n + ' lines, over the ' + CEILING + '-line ceiling — the narrative belongs in ' +
+    'the file its index points at (docs/gotchas.md, docs/modules.md, docs/operator-state.md, ' +
+    'docs/design-decisions.md, .cycle/config.md), not here');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
