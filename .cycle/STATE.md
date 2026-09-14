@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -124,6 +124,9 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - F4 | web-app/Code.js, test/client/run.js | every completing flow drops the rep's cached Needs-you list (training read, quiz pass, coaching ack, doc sign, call-back closed, both dept-request resolve paths).
 - F3 | web-app/Code.js, web-app/cn/script_callnotes.html, test/client/run.js, test/visual/mock.js | MAIL_BCC_ALL — merged into EVERY email the app sends, including intake bodies and department emails — had NO surface anywhere. It now rides Storage Health via the read-only `mailBccStatus_` and surfaces as a System finding + an inventory line: unset is an ok fact, set-and-internal is a standing warn naming the address, off-domain is blocking. Reports, never enforces.
 - F5 | web-app/Code.js, test/client/run.js | qaOptionIsNumeric_ asks `Number()` like its consumers do, so `"4."` / `"1e0"` / `"0x5"` can no longer be a QA dropdown option and fold into the scale averages that drive coverage, calibration and exemption eligibility.
+- C1/C2 | scripts/counts.mjs (NEW), CLAUDE.md, README.md | every number the docs carry is DERIVED from the artefact that defines it, and stated ONCE in a generated block between COUNTS:BEGIN/END. Harness totals come from an actual run (a static count cannot equal either — loops), and a harness reporting failures refuses to yield a total.
+- C3 | CLAUDE.md | the prose sweep: "expect **N**", "797 → 798" and "the Nth admin endpoint" now cite the block or the command, across the invariant library, the config narrative and the 53 dated operator entries. It CAUGHT two live drifts on its first run — a KDD saying 43 admin endpoints where the code enforces 50, and 315 editor registrations where Batch Q had made it 316.
+- C4 | test/client/run.js, .github/workflows/client-tests.yml | four pins (block == derivation; a derived ban on a second copy in prose; --check exits on the drift AND missing branches; CI runs --check). F7's INV-136 assertion now consumes the same derivation. 13 mutations / 13 bites; three pins were corrected mid-batch after a first bite did not bite, and one was REPLACED for being structurally unable to fire.
 - F7 | web-app/styles_design_tokens.html, web-app/intake/script_intake.html, web-app/cn/script_callnotes.html, test/client/run.js | the PAP purple has ONE home: both consumers ride `--intake-pap` with a new `--intake-pap-soft` tint declared beside it, and the hand-written dark override is gone. Measured AA across all ten palette × mode combinations; the pill alpha moved .16 → .14 (measured 4.47, under AA for 11px).
 - F8 | web-app/Code.js, web-app/intake/script_intake.html, test/client/run.js | a failed intake-feedback read is NAMED (`feedbackUnavailable` → `errorStateHtml_`) instead of rendering as "nobody has said anything" — the reading the data cannot support.
 - D1 | CLAUDE.md | visual-matrix running total corrected 99→101 to 97→99 and annotated that `shoot.mjs`'s SCENARIOS list is the authority. The S103/S104 half was resolved by construction when STATE.md was reset for cycle 19.
@@ -282,12 +285,30 @@ README needed NO change — Batch S's own commit updated it and it reads counts 
 the run. Harnesses re-run AFTER the doc edits (F7 + VIS-COVER read CLAUDE.md):
 804 pure / 113 DOM, 0 failed. Every number measured: 804 / 113 / 102 scenarios /
 316 registrations. Checks 2 and 3 of /sync-docs came back clean.
+BATCH C DONE (2026-09-14) — `.cycle/blocks/19-batchC-broad-implement.md`, net
+0 - 0 = 0 (it ships no deployable code; its value is that the drift class can no
+longer be merged). 7 commits on `claude/adoring-einstein-b3vs6c`, NOT yet pushed
+and NO PR — Batch C's invocation carried no PR/merge authorization, unlike the
+sync-docs one. All green: 808 pure / 113 DOM / 0 failed, `counts.mjs --check`
+agrees with the tree, node --check OK on all three Apps Script files. No
+`web-app/` file changed, so nothing deploys and S1/S2 are NOT APPLICABLE by
+construction (Tests.js and Code.js are byte-identical to main).
+The one thing worth carrying forward: the recursion guard was FALSE COMFORT on
+its first write. counts.mjs spawns run.js and run.js calls counts.mjs back, so a
+dropped `--static` HANGS rather than fails; the obvious pin (assert run.js's own
+invocation carries the flag) can never fire, because countsJson_() is first
+called by the C1/C2 test that runs BEFORE it. The guard that works is a
+COUNTS_NO_SPAWN sentinel inside counts.mjs, bite-checked in three halves and
+proven end-to-end to turn the hang into an exit-1 naming the cycle.
 STILL OWED: `/reflect`'s estimates.csv rows for P (S 2 h / ~0.6 h), S (M 4 h /
-~1.3 h) and Q (M 5 h / ~2.5 h) — five consecutive reflections have skipped that
-row. NEXT: `/broad-implement C` (derived counts). OPERATOR: the Drive fix is one
-revoke-and-re-consent (see the dated entry in CLAUDE.md's Operator State
-Checklist); post-deploy `runAllTests()` expects 316, or whatever the run's own
-`Expected:` line says.
+~1.3 h), Q (M 5 h / ~2.5 h) and now C (S-M 3 h / ~1.5 h) — SIX consecutive
+reflections have skipped that row, with the hook reminding every session. The
+reminder is not working; consider making the row a derived obligation rather
+than a remembered one, which is the move this very batch made for counts.
+NEXT: the operator decides — push/PR Batch C, or run `/reflect`. OPERATOR: the
+Drive fix is one revoke-and-re-consent (see the dated entry in CLAUDE.md's
+Operator State Checklist); post-deploy `runAllTests()` expects 316, or whatever
+the run's own `Expected:` line says.
 
 DRIVE FOLLOW-ON: SETTLED, NOT A FALSE POSITIVE (operator ran the block's
 one-paste `driveDiag_` in the editor, 2026-09-14). In ONE execution:
