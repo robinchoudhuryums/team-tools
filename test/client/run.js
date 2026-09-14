@@ -20374,6 +20374,23 @@ test('C4: no count that the block carries is restated in the docs (every file th
     'a doc sentence carries a running total ("' + arrows.join('", "') +
     '") — state the DELTA the batch added; the block carries the total');
 
+  // (d) A PLAIN restated total — "all 44 scenarios" in test/visual/README, which
+  //     (a)/(b)/(c) all missed because it is neither an "expects N", nor an
+  //     arrow, nor the admin tier: just a number in front of the noun the block
+  //     already counts. The noun list is the tell, and it is deliberately NARROW:
+  //     only nouns whose ONLY meaning here is a block row. `triggers` is the
+  //     instructive exclusion — the docs legitimately state the Apps Script QUOTA
+  //     ("at most 20 installable triggers per user per script"), a platform
+  //     constant that is not a derived count and shares the noun with one. The
+  //     qualifier list is closed for the same reason a wider `(?:\w+ ){0,2}` was
+  //     rejected: it matched "646** and two DOM tests", a DELTA sentence, which
+  //     is exactly what this ban asks authors to write instead.
+  const totals = prose.match(
+    /\b(?:all|every|only|full)?\s*\*{0,2}\d{2,4}\*{0,2}\s+(?:visual |matrix |regression |pure |DOM |harness |editor |suite |library |invariant )*(?:scenarios|invariants|registrations|localStorage keys|harness tests|pure tests|DOM tests)\b/gi) || [];
+  assert.deepStrictEqual(totals, [],
+    'a doc sentence restates a derived total ("' + totals.join('", "') +
+    '") — cite the generated block, or state the DELTA this batch added');
+
   // (c) The admin-tier size drifted four times in INV-136's prose.
   const adminN = prose.match(/\d+ Admin-exclusive endpoints|INV-136's (?:count is now )?\d+(?:st|nd|rd|th)?\b/g) || [];
   assert.deepStrictEqual(adminN, [],

@@ -155,6 +155,11 @@ export function docLists() {
 // only authority, so we ask it.
 const NO_SPAWN = 'COUNTS_NO_SPAWN';
 
+// An expected, explainable failure: the CLI prints its message and exits 1
+// with no stack trace. An UNEXPECTED throw still gets the full trace, which
+// is the right split — a bug here should be loud, a red harness should not.
+export class CountsError extends Error {}
+
 function harnessTotal(rel) {
   // One of the harnesses we spawn (run.js) calls THIS script back, so the
   // spawn is a cycle waiting for a missing --static. Left unguarded it does
@@ -162,17 +167,37 @@ function harnessTotal(rel) {
   // nothing. The child carries a sentinel; seeing it means we are already
   // inside a harness, and the cycle becomes an immediate, legible error.
   if (process.env[NO_SPAWN]) {
-    throw new Error(
-      'counts: refusing to run ' + rel + ' from inside a harness run — this is the ' +
+    throw new CountsError(
+      'refusing to run ' + rel + ' from inside a harness run — this is the ' +
       'counts.mjs ⇄ harness cycle. The caller must pass --static (run.js does).');
   }
-  const out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
-    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-    env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
-  });
+  // A RED harness exits non-zero, so execFileSync THROWS before the summary
+  // check below can ever run — and the Error it throws carries the child's
+  // whole stdout in `.message`, which is a ~70k-character wall on top of a
+  // stack trace for what is really a one-line fact ("the harness is red").
+  // Catch it, read the summary out of the captured output, and say that.
+  let out;
+  try {
+    out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+      env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
+    });
+  } catch (e) {
+    const captured = String(e && e.stdout || '');
+    const sum = /(\d+) passed, (\d+) failed/.exec(captured);
+    if (sum && Number(sum[2]) > 0) {
+      throw new CountsError(
+        rel + ' is RED (' + sum[2] + ' failing of ' + (Number(sum[1]) + Number(sum[2])) + ') — the harness is ' +
+        'red, fix that first. The counts cannot be trusted while it is.\n' +
+        '  Run: node ' + rel);
+    }
+    throw new CountsError(
+      'could not run ' + rel + ' (' + (e && e.status != null ? 'exit ' + e.status : String(e && e.code || e)) + ').\n' +
+      '  Run: node ' + rel);
+  }
   const m = /(\d+) passed, (\d+) failed/.exec(out);
-  if (!m) throw new Error('counts: ' + rel + ' printed no summary line');
-  if (Number(m[2]) !== 0) throw new Error('counts: ' + rel + ' reported ' + m[2] + ' failing — fix the suite before trusting its total');
+  if (!m) throw new CountsError(rel + ' printed no summary line');
+  if (Number(m[2]) !== 0) throw new CountsError(rel + ' reported ' + m[2] + ' failing — fix the suite before trusting its total');
   return Number(m[1]);
 }
 
@@ -244,7 +269,14 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   const argv = process.argv.slice(2);
   const withHarness = !argv.includes('--static');
-  const c = derive({ withHarness });
+  let c;
+  try {
+    c = derive({ withHarness });
+  } catch (e) {
+    if (!(e instanceof CountsError)) throw e;
+    console.error('counts: ' + e.message);
+    process.exit(1);
+  }
 
   if (argv.includes('--json')) {
     console.log(JSON.stringify(c, null, 2));

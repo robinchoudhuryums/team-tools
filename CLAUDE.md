@@ -4848,7 +4848,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 8 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 201 | `.cycle/config.md` |
+| Invariant library entries | 203 | `.cycle/config.md` |
 | Regression scenarios (S*) | 101 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
