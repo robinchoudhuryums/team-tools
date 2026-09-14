@@ -56,6 +56,32 @@ entry says which it is.
   though it deploys to both. Pinned by the instance-guard Node tests (incl. the
   A5 "a LABEL alone is NOT dev" case) + the DEV-banner DOM test. Deploy: the
   same `clasp push -f` + New version; prod is unaffected until you set them.
+<a id="operator-the-server-is-fourteen-files-and-filepushorder-is-load-bearing"></a>
+- **The server is FOURTEEN files, and `filePushOrder` is load-bearing (Batch F2,
+  2026-09-14).** `web-app/Code.js` no longer exists: it was split, as a MOVE, into
+  `00_config.js` (CONFIG, the column enums, every top-level constant) plus one file
+  per module, and `web-app/.clasp.json`'s **`filePushOrder`** declares the load
+  order — the numeric prefixes advertise it. Apps Script gives every `.gs` file ONE
+  global scope, so nothing about the app's behaviour changed; what changed is that
+  the order is now something a person can get wrong. The constants file must stay
+  FIRST (a constant read at load time from a later file would be in its temporal
+  dead zone), and a run.js pin holds both the order and the fact that every
+  declaration is byte-identical to the pre-split file.
+  **ONE-TIME OPERATOR STEP, and it is easy to miss:** if you already have a
+  `web-app/.clasp.dev.json` (it is gitignored, so it survives a pull), it still
+  carries the OLD `"filePushOrder": []`. `npm run push:dev` swaps that file OVER
+  `.clasp.json` to push, so a stale dev config pushes the server in a different
+  order than prod. Copy the `filePushOrder` block from
+  `web-app/.clasp.dev.json.example` into it — a pin holds the committed EXAMPLE
+  equal to prod, but it cannot see your gitignored copy.
+  **AT DEPLOY:** after `clasp push -f`, confirm the editor's file list shows the
+  fourteen files and **no `Code.js`**. The tree cannot produce a stray one; a
+  project that was never fully re-pushed can, and a leftover `Code.js` would
+  SHADOW every declaration in it — the app would run the old server while the
+  files beside it look current. Push to the DEV instance and run `runAllTests`
+  there before prod (that is regression scenarios S1/S2, and the only check that
+  exercises the real Apps Script runtime).
+
 <a id="operator-the-timesheet-timezone-repair-operator-2026-09-02-the-ph-ros"></a>
 - **The Timesheet timezone REPAIR (operator 2026-09-02 — the PH roster flip
   done mid-shift).** Flipping a roster `Timezone` cell changes how EXISTING

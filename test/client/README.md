@@ -57,7 +57,8 @@ exposes the loaded functions so `run.js` can call them and assert.
   out of a large partial without loading the whole thing. Safe only for
   functions with no `{`/`}` inside string literals.
 - `extractRawFunction('Code.js', name)` — pull a server function source for a
-  pure unit test (e.g. `metricsTeamAvgSeries_`, `trainQuizAnalytics_`).
+  pure unit test (e.g. `metricsTeamAvgSeries_`, `trainQuizAnalytics_`). There is
+  no `Code.js` any more: the name is an ALIAS for the whole server (see below).
 
 Out of scope for the pure harness: functions that genuinely drive the DOM, fire
 `google.script.run` RPCs, or depend on cross-file `const`/`let` module state —
@@ -125,12 +126,13 @@ const fn = extractRawFunction('Code.js', 'foo_');  // resolves through serverSou
 - The file LIST comes from `web-app/.clasp.json`'s `filePushOrder` — the same
   declaration `clasp push` obeys — so the harness and the deployment cannot
   disagree about what the server is or in what order it loads. An empty list
-  THROWS rather than falling back to `Code.js`: a fallback would make the
+  THROWS rather than falling back to a hard-coded file: a fallback would make the
   derivation vacuous exactly when it stopped being true.
 - `extractRawFunction` and `extractConstObject` take a file name for
   readability, but any name in `filePushOrder` resolves through
-  `serverSource()`. `'Code.js'` has always been shorthand for "the server", so
-  those pins keep working after a function moves to another server file.
+  `serverSource()`. `'Code.js'` is an ALIAS: the file itself was split into fourteen in Batch F2 and
+  no longer exists, but the name always meant "the server", so the ~500 pins that
+  use it keep working — including after a function moves between server files.
 - **Do not read the server with `readFileSync`.** A pin does that once and the
   next split is a 73-edit change; the F1a pin fails CI on it, in this file and
   in `scripts/counts.mjs` (INV-202).

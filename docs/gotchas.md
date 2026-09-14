@@ -88,7 +88,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   returns the TRIMMED email or `''`, so it can only NARROW the nine raw call
   sites — the correct direction, matching INV-167's resolution. It is NOT an
   authorization check; `getEmployeeInfo_` still identifies the caller. Pinned by
-  the F3 tripwire, which bans the raw guard shape ANYWHERE in `Code.js` (derived,
+  the F3 tripwire, which bans the raw guard shape ANYWHERE in the server source (derived,
   not a hand list — INV-179) rather than enumerating today's fourteen walks.
 
 <a id="g04-a-declared-but-unread-config-key-enum"></a>
@@ -141,7 +141,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Set the real values once in Apps Script editor → Project Settings
   → Script Properties (or use the Admin tab for dept/rate config);
   clasp pull/push leaves Script Properties untouched, so the
-  committed `Code.js` never has to be scrubbed.
+  committed server source never has to be scrubbed.
   Projects that haven't migrated can still set CONFIG values directly,
   but then every clasp pull will pull real values and require a scrub
   before commit.
@@ -254,7 +254,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the row-match key for `updateTimeOffStatus` / `cancelTimeOffRequest` —
   BOTH the key-producing reads and the matchers normalize identically)
   and `PAR.SUBMITTED_AT` (sort/display). A Node tripwire fails CI on any
-  raw `String(rows[i][TO|PAR.SUBMITTED_AT])` read in `Code.js`/`Tests.js`.
+  raw `String(rows[i][TO|PAR.SUBMITTED_AT])` read in the server source / `Tests.js`.
 
 <a id="g12-cn-coercion-recovery-formats-in-the-host"></a>
 
@@ -818,7 +818,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   regardless of nowrap. The three OTHER sites that wrote the same replace
   inline (external customer/provider message body ×2, the form-submission
   table cell) were routed through `cnNlBr_` on 2026-09-04 as their own
-  follow-on (NLBR-2 pins ZERO inline `\n`→`<br>` replaces in Code.js; the
+  follow-on (NLBR-2 pins ZERO inline `\n`→`<br>` replaces in the server source; the
   helper also folds CRLF, a small widening for those three).
 
 <a id="g39-metrics-client-must-esc-every-server-string"></a>
@@ -1513,6 +1513,36 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   checked by reading it, since `print-color-adjust` and `:has()` only exist in a
   real engine.
 
+<a id="g113-read-the-server-through-serversource-never-by"></a>
+
+- **Read the server through `serverSource()` — never by FILENAME, and never by
+  POSITION (Batch F2, 2026-09-14).** The server is fourteen files now
+  (`web-app/.clasp.json`'s `filePushOrder` is the declaration; Apps Script loads
+  them into ONE global scope in that order). A pin that reaches for the server
+  has two ways to be coupled to a layout that will move again:
+  **(a) BY FILENAME.** `readFileSync(… 'web-app/Code.js')` was in 73 places and
+  would have been 73 edits; they go through `serverSource()`, and
+  `extractRawFunction('Code.js', name)` still works because `'Code.js'` is an
+  ALIAS for "the server" (`isServerFile` is the one place that decides). The F1a
+  pin fails CI on a filename read, in `run.js` AND in `scripts/counts.mjs` —
+  the latter because a derived COUNT that reads a path is coupled the same way
+  (INV-202).
+  **(b) BY POSITION.** TQ-3 grabbed three constants with
+  `slice(indexOf('const AUTOMATION_TRIGGER_QUOTA'), indexOf('function runTriggerGroup_'))`
+  — two landmarks that were neighbours in `Code.js` and are now in different
+  files, so the slice swallowed everything between them and evaluated it. Extract
+  BY NAME. A pin that depends on two declarations being adjacent is a pin the
+  next move breaks, and nothing warns you: it kept parsing, it just read the
+  wrong text.
+  **The trap inside the fix:** the by-name extractor first truncated a multi-line
+  `const X = Object.keys(Y)\n  .reduce(…)` at the first depth-0 newline, leaving
+  `Object.keys(Y)` — a VALID expression, so it failed with a WRONG VALUE (3
+  retired trigger handlers instead of 8) rather than a parse error. A declaration
+  continues while the next line is indented or starts a method chain.
+  Verify: the F1a filename ban, F2c (move-only + no duplicate top-level name
+  across files), F2d (Code.js is gone, constants load first, filePushOrder runs
+  in the numeric order the filenames advertise).
+
 <a id="g65-a-bite-check-ends-in-git-checkout"></a>
 
 - **A bite-check ends in `git checkout`, so never run one against a file with
@@ -1522,8 +1552,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   cycle-17 incident that cost an uncommitted `Code.js` block, and it fired THREE
   more times during the 5B sweep. The rule is: **commit before bite-checking**,
   which also makes an imprecise reverse-edit a safe `git checkout` recovery
-  instead of lost work. The A14 ratchet caught the last occurrence; nothing
-  catches it in general, so `bite.sh` should refuse to run against a dirty file.
+  instead of lost work. The A14 ratchet caught the last occurrence.
+  **It fired a FOURTH time in Batch F1** — the discarded edit was then committed
+  as a revert, and only the next full harness run caught it — so the helper is
+  committed as `scripts/bite.sh` now and REFUSES a file with uncommitted changes
+  before touching it. It also refuses a mutation that changed nothing (a no-op
+  mutation proves nothing while reading as a passing bite) and refuses to bite
+  ITSELF: bash reads a script incrementally, so mutating it mid-run makes the
+  shell resume mid-token and die with the restore never firing. The rule is
+  still commit-before-biting; the difference is that the tool now enforces it
+  instead of the rule living only in this paragraph. Verify: the F1-followon pin
+  (the guard precedes the mutation, the restore is still last).
 
 <a id="g66-an-outerhtml-patch-replaces-one-element-so"></a>
 
@@ -1694,7 +1733,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
 - **`CN_EMAIL_PALETTE` is hand-resolved from design tokens.** Email
   clients strip `<style>` blocks and don't honor CSS variables, so the
   call-note email bodies inline literal hex from a CN_EMAIL_PALETTE
-  constant in `Code.js`. If `styles_design_tokens.html` palette values
+  constant in the server source. If `styles_design_tokens.html` palette values
   change in a meaningful way (e.g., the Console → next palette swap),
   re-resolve the hex equivalents in CN_EMAIL_PALETTE or the email
   aesthetic drifts from the in-app aesthetic. Plus three UMS-brand
@@ -2262,7 +2301,7 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   engine scans the raw file for scriptlet delimiters regardless of JS
   comments, so a comment containing one opens a spurious scriptlet whose
   body begins with stray text → a server-side "Unexpected token" error
-  at `tpl.evaluate()` (Code.js `serveExternalForm_`). This regressed the
+  at `tpl.evaluate()` (`serveExternalForm_`). This regressed the
   fillable-form link until fixed — the page failed to load with
   `SyntaxError: Unexpected token ')'`. Now also pinned by
   `test_tpl_formPublic_evaluatesWithoutError`, which `.evaluate()`s the

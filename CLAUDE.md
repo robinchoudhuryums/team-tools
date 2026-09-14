@@ -336,7 +336,8 @@ Ways the suite can be green and wrong, and ways a tool can eat your work.
 - **A test function defined TWICE silently wins, and the registration count stays right (Batch S, 2026-09-11).** Fires when you add a test to `Tests.js`. [Detail](docs/gotchas.md#g08-a-test-function-defined-twice-silently-wins)
 - **A test fixture that writes DIRECTLY to a store behind a RESULT CACHE owes the production writer's invalidation (operator run, 2026-08-19).** Fires when you add a result cache, or a fixture writes straight to a cached store. Verify: an ordering assert. [Detail](docs/gotchas.md#g22-a-test-fixture-that-writes-directly-to)
 - **`TEST_` prefix is the cleanup key.** Fires when you name a production employee id, or hand-offboard a TEST row. Verify: the re-onboard/re-offboard Node pin. [Detail](docs/gotchas.md#g24-test-prefix-is-the-cleanup-key)
-- **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B).** Fires when you bite-check a pin. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
+- **Read the server through `serverSource()` — never by FILENAME, and never by POSITION (Batch F2, 2026-09-14).** Fires when a pin reaches for server source: `'Code.js'` is an ALIAS for the fourteen files, and two declarations that were adjacent in one file no longer are. Verify: the F1a filename ban + F2c/F2d. [Detail](docs/gotchas.md#g113-read-the-server-through-serversource-never-by)
+- **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B; `scripts/bite.sh` REFUSES a dirty file since Batch F2 — it fired a fourth time first).** Fires when you bite-check a pin. Verify: the F1-followon guard-ordering pin. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
 
 <!-- GOTCHA-INDEX:END -->
 
@@ -535,6 +536,7 @@ the dated round entries that used to sit here moved to
 [`docs/operator-log.md`](docs/operator-log.md) (Batch D1).
 
 - [Blue-green (a personal dev instance alongside the team's prod) — see `docs/deployment.md`](docs/operator-state.md#operator-blue-green-a-personal-dev-instance-alongside-the-team-s-prod)
+- [The server is FOURTEEN files, and `filePushOrder` is load-bearing (Batch F2) — incl. the one-time fix to an existing `.clasp.dev.json`](docs/operator-state.md#operator-the-server-is-fourteen-files-and-filepushorder-is-load-bearing)
 - [The Timesheet timezone REPAIR (operator 2026-09-02 — the PH roster flip done mid-shift)](docs/operator-state.md#operator-the-timesheet-timezone-repair-operator-2026-09-02-the-ph-ros)
 - [The QA module Phase 1 (operator 2026-08-27) needs THREE Script Properties and one Drive folder before it does anything](docs/operator-state.md#operator-the-qa-module-phase-1-operator-2026-08-27-needs-three-script)
 - [Set Script Property `ADP_SS_ID`](docs/operator-state.md#operator-set-script-property-adp-ss-id)
