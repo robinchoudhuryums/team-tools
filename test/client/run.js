@@ -20919,6 +20919,28 @@ test('F2d: Code.js is gone, and filePushOrder names the split in load order', ()
   assert.ok(fs.existsSync(path.join(__dirname, '../../web-app/DevTools.js')), 'DevTools.js is untouched by the split');
 });
 
+test('F1-followon: bite.sh refuses a file with uncommitted changes BEFORE it mutates', () => {
+  // The helper ends in `git checkout -- <file>`, which reverts to HEAD and
+  // takes uncommitted work with it. That has cost this project four times and
+  // the documented mitigation was "remember" — the only hazard here whose
+  // whole defence was memory. The guard must come FIRST: a refusal after the
+  // mutation is a restore, which is the thing being prevented.
+  const src = fs.readFileSync(path.join(__dirname, '../../scripts/bite.sh'), 'utf8');
+  const guardAt = src.indexOf('git status --porcelain');
+  const mutateAt = src.indexOf('python3 -c');
+  // lastIndexOf: the refusal MESSAGE quotes `git checkout -- <file>` to explain
+  // itself, so indexOf finds the comment rather than the restore — INV-188 in
+  // its smallest form, and the third time it fired in this batch.
+  const restoreAt = src.lastIndexOf('git checkout --');
+  assert.ok(guardAt > 0, 'bite.sh checks the file is clean');
+  assert.ok(mutateAt > guardAt, 'the clean check runs BEFORE the mutation');
+  assert.ok(restoreAt > mutateAt, 'and the restore is still last');
+  assert.ok(/REFUSING/.test(src.slice(guardAt, mutateAt)), 'the guard refuses rather than warning');
+  // A mutation that changes nothing reads as a passing bite while proving
+  // nothing — the vacuous-pin class, in the tool that checks for it.
+  assert.ok(/the mutation changed nothing/.test(src), 'a no-op mutation is refused');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
