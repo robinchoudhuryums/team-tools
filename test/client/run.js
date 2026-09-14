@@ -20925,12 +20925,15 @@ test('F1-followon: bite.sh refuses a file with uncommitted changes BEFORE it mut
   // the documented mitigation was "remember" — the only hazard here whose
   // whole defence was memory. The guard must come FIRST: a refusal after the
   // mutation is a restore, which is the thing being prevented.
-  const src = fs.readFileSync(path.join(__dirname, '../../scripts/bite.sh'), 'utf8');
+  // Comment-stripped (INV-188, the third time this batch): the script EXPLAINS
+  // its guard in a comment above it, and a probe that deleted the real guard
+  // line left this pin green because `indexOf` had found the explanation.
+  const src = fs.readFileSync(path.join(__dirname, '../../scripts/bite.sh'), 'utf8')
+    .split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
   const guardAt = src.indexOf('git status --porcelain');
   const mutateAt = src.indexOf('python3 -c');
-  // lastIndexOf: the refusal MESSAGE quotes `git checkout -- <file>` to explain
-  // itself, so indexOf finds the comment rather than the restore — INV-188 in
-  // its smallest form, and the third time it fired in this batch.
+  // Still lastIndexOf: the refusal MESSAGE (a runtime echo, not a comment, so
+  // the strip above leaves it) quotes `git checkout -- <file>` to explain itself.
   const restoreAt = src.lastIndexOf('git checkout --');
   assert.ok(guardAt > 0, 'bite.sh checks the file is clean');
   assert.ok(mutateAt > guardAt, 'the clean check runs BEFORE the mutation');
