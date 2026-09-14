@@ -33,12 +33,13 @@ if [ -n "$(git status --porcelain -- "$file")" ]; then
 fi
 
 python3 -c "
-import io
+import io, sys
 p = '$file'
 s = io.open(p, encoding='utf-8').read()
 before = s
 $mutation
-assert s != before, 'the mutation changed nothing — it cannot prove anything'
+if s == before:
+    sys.exit('the mutation changed nothing — it cannot prove anything (wrong target?)')
 io.open(p, 'w', encoding='utf-8').write(s)
 " || { echo "  MUTATION FAILED: $label" >&2; exit 1; }
 
