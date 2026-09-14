@@ -20571,6 +20571,70 @@ test('D2: the module map covers every TOOLS key, and every detail link resolves'
   });
 });
 
+test('D2: every Common Gotchas rule resolves to its narrative, and every narrative is indexed', () => {
+  // D2 split 2,124 lines of gotcha narrative out of CLAUDE.md, leaving the RULE
+  // + trigger + a link per entry. That creates the same coupling the decisions
+  // index has: two files that must agree, with nothing in the tree noticing if
+  // they stop. Checked in BOTH directions — an orphaned narrative is as bad as
+  // a dead link, because the index is what a reader actually scans.
+  const root = path.join(__dirname, '../../');
+  const claude = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+  const gi = claude.indexOf('<!-- GOTCHA-INDEX:BEGIN -->');
+  const gj = claude.indexOf('<!-- GOTCHA-INDEX:END -->');
+  assert.ok(gi >= 0 && gj > gi, 'CLAUDE.md carries the gotcha index block');
+  const index = claude.slice(gi, gj);
+  const gotchas = fs.readFileSync(path.join(root, 'docs/gotchas.md'), 'utf8');
+
+  const linked = [...index.matchAll(/docs\/gotchas\.md#([a-z0-9-]+)\)/g)].map((m) => m[1]);
+  const anchors = [...gotchas.matchAll(/<a id="(g\d+-[a-z0-9-]+)">/g)].map((m) => m[1]);
+  assert.ok(anchors.length >= 100, 'docs/gotchas.md carries the entries (got ' + anchors.length + ')');
+
+  const missing = linked.filter((a) => anchors.indexOf(a) < 0);
+  assert.deepStrictEqual(missing, [], 'the index links anchors docs/gotchas.md does not have: ' + missing.join(', '));
+  const orphan = anchors.filter((a) => linked.indexOf(a) < 0);
+  assert.deepStrictEqual(orphan, [], 'docs/gotchas.md has entries the index never names: ' + orphan.join(', '));
+
+  // Every indexed rule states WHEN it fires — the half that turns a wall of
+  // rules into something a reader can skip past. A bare rule line is a
+  // half-written entry, so the pin asks for the trigger rather than trusting it.
+  const rules = index.split('\n').filter((l) => /^- \*\*/.test(l));
+  assert.strictEqual(rules.length, anchors.length,
+    'one index line per narrative (' + rules.length + ' rules vs ' + anchors.length + ' entries)');
+  const noTrigger = rules.filter((l) => l.indexOf('Fires when ') < 0).map((l) => l.slice(0, 60));
+  assert.deepStrictEqual(noTrigger, [], 'an index entry states no trigger: ' + noTrigger.join(' | '));
+
+  // Code comments point at gotchas BY SUBJECT ("the [hidden] gotcha", "the
+  // CN.DATE_LOCAL gotcha"). The split preserved every rule's wording verbatim,
+  // so those references still resolve — this keeps them resolving by checking
+  // the subject still appears somewhere in the pair of documents.
+  const srcFiles = []
+    .concat(['web-app/Code.js', 'web-app/script_core.html', 'web-app/styles.html',
+             'test/visual/shoot.mjs'])
+    .concat(['cn/script_callnotes.html', 'metrics/script_metrics.html', 'kb/script_kb.html',
+             'qa/script_qa.html', 'train/script_empdocs.html'].map((f) => 'web-app/' + f));
+  const SKIP = new Set(['documented', 'the', 'a', 'this', 'that', 'same', 'class', 'following']);
+  const subjects = new Set();
+  srcFiles.forEach((f) => {
+    const t = fs.readFileSync(path.join(root, f), 'utf8');
+    for (const m of t.matchAll(/([A-Za-z0-9_.\[\]()/-]{2,44})[- ]gotcha/g)) {
+      if (!SKIP.has(m[1].toLowerCase())) subjects.add(m[1]);
+    }
+  });
+  assert.ok(subjects.size >= 8, 'code comments do reference gotchas by subject (got ' + subjects.size + ')');
+  const both = index + gotchas;
+  // Match on TOKENS, not the literal label: a comment writes shorthand
+  // ("spreadsheet-tz", "[hidden]-vs-display") that no doc sentence contains
+  // verbatim. One surviving token of four-plus characters is the signal that
+  // the entry is still there; zero means it was deleted out from under the
+  // comment, which is the only failure this can usefully catch.
+  const dangling = [...subjects].filter((sub) => {
+    const toks = (sub.match(/[A-Za-z_][A-Za-z0-9_]{3,}/g) || []);
+    return toks.length > 0 && !toks.some((t) => both.indexOf(t) >= 0);
+  });
+  assert.deepStrictEqual(dangling, [],
+    'a code comment names a gotcha the docs no longer carry: ' + dangling.join(', '));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
