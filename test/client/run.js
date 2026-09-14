@@ -6784,10 +6784,12 @@ test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-
   // same shape as A2/A12, and `cnNoteCoverage_` was added to this region in
   // the very next cycle. Every function declared between the banners must be
   // byte-identical to Code.js.
-  const region = mock.slice(
-    mock.indexOf('VERBATIM copies from web-app/Code.js'),
-    mock.indexOf('── end verbatim copies'));
-  assert.ok(region.length > 0, 'the verbatim region banners are still present');
+  // The opening banner no longer names a FILE — Batch F2 split the server, and
+  // the region mirrors the server, not one file of it.
+  const openAt = mock.indexOf('VERBATIM copies from the SERVER source');
+  const endAt = mock.indexOf('── end verbatim copies');
+  assert.ok(openAt >= 0 && endAt > openAt, 'the verbatim region banners are still present');
+  const region = mock.slice(openAt, endAt);
   const copied = [...region.matchAll(/^function ([A-Za-z0-9_]+)\(/gm)].map((m) => m[1]);
   assert.ok(copied.length >= 2,
     'the verbatim region should hold the copied fns (found: ' + copied.join(', ') + ')');

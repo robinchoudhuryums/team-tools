@@ -74,13 +74,16 @@ rows from the registry, so the two cannot drift again).
 
 `*` manager-only · `**` admin-only · `†` also gated on `canSeeSpanishInbox_`.
 Client partials per module: `.cycle/config.md`'s **Subsystems** section — the one
-place that mapping lives. Server endpoints are all in `web-app/Code.js` until
-Batch F2 splits it. The per-module narrative — what each tool actually does, the
+place that mapping lives. Server endpoints live in the FOURTEEN server files
+`web-app/.clasp.json`'s `filePushOrder` names — `00_config.js` first, then one
+per module in the numeric order the filenames advertise (Batch F2 split them out
+of `Code.js`; they are ONE Apps Script global scope). The per-module narrative — what each tool actually does, the
 redesigns, the operator rounds that shaped it — is [`docs/modules.md`](docs/modules.md).
 
 **Adding a new tool:** append an entry to `TOOLS`, drop a partial in
 `web-app/<tool>/script_*.html`, `include()` it from `index.html`, add server
-endpoints to `Code.js` alongside existing ones — and add a row to the map above,
+endpoints to the module's server file (or a new one, listed in `filePushOrder`) —
+and add a row to the map above,
 which the MODULE-MAP pin requires.
 The Workspace Add-on path (the old `call-notes/` scaffold — **deleted from the
 tree in cycle 13**, see Frozen Subsystems) is abandoned

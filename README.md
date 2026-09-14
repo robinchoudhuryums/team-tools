@@ -127,7 +127,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
   `web-app/<tool>/script_*.html`, `include()` them from
-  `index.html`, and add server endpoints to `Code.js` alongside the
+  `index.html`, and add server endpoints to the module's server file alongside the
   existing ones. The sidebar shows one button per tool; sub-navigation
   is a horizontal tab bar above the view area. Shared chrome
   vocabulary (`.hero`, `.actions`, `.ledger`, `.telemetry`,
@@ -190,7 +190,7 @@ read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
 had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
 answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
-(`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
+(`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
 `npm ci` + the DOM harness, on every push and PR — the project's only
 automated check. (The zero-install steps deliberately run before `npm ci`:

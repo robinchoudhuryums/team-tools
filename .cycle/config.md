@@ -74,7 +74,11 @@ Visual / Interaction Regression Posture | whether a change to the shared layer (
 
 ### Subsystems
 Server:
-  web-app/Code.js, web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json, scripts/push-env.sh
+  web-app/00_config.js, web-app/10_core.js, web-app/20_timeclock.js, web-app/30_callnotes.js, web-app/40_metrics.js, web-app/50_deptrequests.js, web-app/51_spanish.js, web-app/60_intake.js, web-app/61_forms.js, web-app/70_kb.js, web-app/80_training.js, web-app/81_empdocs.js, web-app/82_coaching.js, web-app/90_qa.js,
+  web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json, scripts/push-env.sh
+  (the fourteen server files are ONE Apps Script global scope, loaded in the
+   `filePushOrder` order their numeric prefixes advertise — Batch F2 split them
+   out of Code.js as a move; `serverSource()` is how a pin reads them)
 Client (shell):
   web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):

@@ -122,7 +122,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   editor; clasp pushes the subdirectory verbatim (works because
   `.clasp.json` has `skipSubdirectories: false`). New tools should
   follow the same pattern: `web-app/<tool-shortname>/script_*.html`.
-- <a id="one-config-object"></a>**One `CONFIG` object** in `web-app/Code.js` holds all
+- <a id="one-config-object"></a>**One `CONFIG` object** in `web-app/00_config.js` (it was `Code.js` until Batch F2 split the server) holds all
   tunable values (windows, thresholds, automation hours, feature
   flags). Adjust behavior by editing CONFIG rather than
   parameterizing functions. Exception: `DEPARTMENT_EMAILS`,

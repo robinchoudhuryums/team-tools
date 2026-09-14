@@ -8,8 +8,9 @@ behaviour is shaped as it is.
 
 The client partials for each module are listed in `.cycle/config.md`'s
 Subsystems section, which is the one place that mapping lives — this file does
-not restate it. Server endpoints are all in `web-app/Code.js` until Batch F2
-splits it.
+not restate it. Server endpoints live in the fourteen server files
+`web-app/.clasp.json`'s `filePushOrder` names (Batch F2 split them out of
+`Code.js`).
 
 ---
 
@@ -29,7 +30,7 @@ splits it.
      the punch buttons mounted directly beneath it, lunch color-coded), plus
      a one-row Punches · Team · Annual-PTO layout. **Sick leave was removed
      from the UI** (backend kept for legacy reverts — see Common Gotchas).
-     Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/Code.js`).
+     Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/00_config.js`).
 
 
 <a id="call-notes"></a>

@@ -1,7 +1,9 @@
-// ── VERBATIM copies from web-app/Code.js — DO NOT EDIT BY HAND ──────────────
+// ── VERBATIM copies from the SERVER source — DO NOT EDIT BY HAND ────────────
 // A fixture that reimplements server logic drifts silently and produces a
 // screenshot the server could not have produced (see README). These two are
-// pinned byte-identical to Code.js by the F4 mirror test in test/client/run.js.
+// pinned byte-identical to the server by the F4 mirror test in test/client/run.js,
+// which reads it through the harness's serverSource() — so Batch F2's split of
+// Code.js into fourteen files left this mirror working untouched.
 const CDR_QUEUE_UNGROUPED = 'Ungrouped';
 const MOCK_CDR_QUEUE_GROUPS = {
     'Sales':            ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
@@ -47,7 +49,7 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
 // seams-18 F3 (INV-185): the pay-statement fixture used to PARAPHRASE this
 // function's monthly branch (getUTCMonth() - off) — one drift away from
 // screenshots the server cannot produce. Verbatim copy; the derived F4 mirror
-// pin holds it byte-identical to Code.js automatically.
+// pin holds it byte-identical to the server automatically.
 function payPeriodRange_(cycle, currentBiweekly, todayStr, offset) {
   let off = parseInt(offset, 10);
   if (isNaN(off) || off < 0) off = 0;
