@@ -267,6 +267,27 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+DRIVE FOLLOW-ON: SETTLED, NOT A FALSE POSITIVE (operator ran the block's
+one-paste `driveDiag_` in the editor, 2026-09-14). In ONE execution:
+`DriveApp.getRootFolder()` FAILED with the runtime's missing-scope refusal
+(`Required permissions: (.../auth/drive.readonly || .../auth/drive)`) AND
+`driveAccessStatus_()` returned `granted:false` with an EMPTY `error` — i.e.
+tokeninfo answered 200 and simply did not list the scope, which is a positive
+signal rather than a probe failure. The two AGREE, so the narrow-execution-token
+hypothesis is FALSIFIED and the proposed probe rewrite (attempt a read-only
+DriveApp call, classify through `driveScopeError_`) is NOT needed — do not
+implement it. The Admin -> System BLOCKING Drive finding is CORRECT: this
+deployment genuinely lacks `/auth/drive`, `KB_IMAGES_FOLDER_ID` is unset, so
+article images stay placeholders and the `kbGetImageData` fallback is inert
+(no folder id to scope against). Running a function produced no prompt because
+the stored authorization record already reads as authorized while the granted
+set is short (granular consent with Drive unticked) — the remedy is to REVOKE
+and re-consent, not to run another function: myaccount.google.com -> Data &
+privacy -> Third-party apps & services -> the script -> Remove access, then run
+any function in the editor AS THE DEPLOYING ACCOUNT and accept the consent
+screen with every permission ticked. No code change is owed; INV-197 / DRV-1..4
+/ S104 all held, and the probe reported the truth.
+
 Batch Q is DONE (2026-09-11, 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`, pushed,
 not yet merged) and Batch S before it (84379ee). Q: `propSetBounded_` is the ONE writer for
 every JSON-blob Script Property — 14 operator blobs refuse by name with nothing written, 6

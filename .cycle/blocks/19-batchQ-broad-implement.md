@@ -158,6 +158,19 @@ store usage on this deployment, which is the number this batch was reasoning abo
 without being able to see.
 
 FOLLOW-ON ITEMS:
+- [RESOLVED 2026-09-14 — the decisive test below RAN; the hypothesis is FALSIFIED and
+  NO code change is owed. The operator pasted `driveDiag_` into the editor and one
+  execution produced both halves: `DriveApp.getRootFolder()` failed with the runtime's
+  missing-scope refusal AND `driveAccessStatus_()` returned `granted:false` with an
+  EMPTY `error` (tokeninfo answered 200 and did not list the scope — a positive signal,
+  not a probe failure). They AGREE, so the narrow-execution-token reading is wrong and
+  the proposed rewrite must NOT be implemented. The BLOCKING finding is correct: the
+  grant is genuinely short. No prompt appeared because the stored authorization record
+  already reads authorized while the granted set is short (granular consent with Drive
+  unticked), so the remedy is REVOKE-then-re-consent (myaccount.google.com -> Data &
+  privacy -> Third-party apps & services -> the script -> Remove access, then run any
+  function in the editor as the DEPLOYING account and tick every permission) — the
+  second reading this entry already named. Original text kept below for the trail.]
 - The DRIVE-ACCESS FINDING MAY BE A FALSE POSITIVE (operator report, mid-session).
   The operator redeployed, saw "Drive access not granted", ran a function in the editor
   as instructed, and got NO re-authorization prompt. No prompt is itself informative:
