@@ -7580,8 +7580,8 @@ manually for a fresh deploy or environment:
   (a follow-up date; a past one flags the item) on each card; (f) the Voided
   filter is the only place a voided item appears — reps never see them.
   **Post-deploy: run `runAllTests()`** — it adds the recap trigger
-  gate + the critical-only mail test ( which drives `createCoaching` through
-  the `_TEST_OVERRIDE_COACH_MAIL` seam so no real email leaves).
+  gate + the critical-only mail test, which drives `createCoaching` through
+  the `_TEST_OVERRIDE_COACH_MAIL` seam so no real email leaves.
 - **Design handoff PR 3 (2026-09-02, the Manage surface) adds ONE CONFIG
   constant and no other operator state** — `CONFIG.PUNCT_MAX_RANGE_DAYS` (92,
   code-only; no Script Property, triggers, migrations or new endpoints — every
@@ -7671,9 +7671,9 @@ manually for a fresh deploy or environment:
   a re-apply, and replacing them would contradict range mode's additive contract
   (a blank punch is left unchanged, INV-108).
   **Post-deploy: run `runAllTests()`** — it adds the new
-  `calcHours_multipleBreaks` smoke case ( the operator's split-shift day,
+  `calcHours_multipleBreaks` smoke case — the operator's split-shift day,
   two ordinary lunches, an unpaired leave, and overnight ordering; plus A4's
-  `managerSaveDay_multipleBreaks` integration case).
+  `managerSaveDay_multipleBreaks` integration case.
 - **The 2026-08-31 team-punches-calendar round adds NO operator state** — no
   properties, triggers, or migrations; one new MANAGER-gated read endpoint
   (`getTeamCalendar` — not admin-tier, so INV-136's count is unchanged).
