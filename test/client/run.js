@@ -20527,6 +20527,50 @@ test('D1: CLAUDE.md keeps a Cycle Workflow Config stub that redirects to .cycle/
   }
 });
 
+test('D2: the module map covers every TOOLS key, and every detail link resolves', () => {
+  // The Projects section used to open with "Hosts **eight** tools today" beside
+  // a hand-maintained bullet per module. It read "six" for a whole cycle after
+  // the Manage module shipped — the count and the list were two hand-carried
+  // copies of one fact. The table is DERIVED against the registry now: add a
+  // tool and this pin names the missing row (INV-179, applied to a doc).
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const ti = core.indexOf('const TOOLS = {');
+  assert.ok(ti >= 0, 'script_core.html declares the TOOLS registry');
+  // Brace-match so a nested `tabs: {` key can never be mistaken for a tool.
+  let depth = 0, end = -1;
+  for (let i = core.indexOf('{', ti); i < core.length; i++) {
+    if (core[i] === '{') depth++;
+    else if (core[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  assert.ok(end > ti, 'the TOOLS object closes');
+  const keys = [...core.slice(ti, end).matchAll(/^  ([A-Za-z][A-Za-z0-9]*): \{$/gm)].map((m) => m[1]);
+  assert.ok(keys.length >= 8, 'the registry parse found the tools (got ' + keys.length + ')');
+
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const mi = claude.indexOf('<!-- MODULE-MAP:BEGIN -->');
+  const mj = claude.indexOf('<!-- MODULE-MAP:END -->');
+  assert.ok(mi >= 0 && mj > mi, 'CLAUDE.md carries the module map block');
+  const map = claude.slice(mi, mj);
+  const rows = map.split('\n').filter((l) => /^\| \*\*/.test(l));
+  assert.strictEqual(rows.length, keys.length,
+    'the module map has one row per TOOLS key (' + rows.length + ' rows vs ' + keys.length + ' tools)');
+  keys.forEach((k) => {
+    assert.ok(map.indexOf('(`' + k + '`)') >= 0,
+      'the module map names the TOOLS key `' + k + '` — add its row');
+  });
+
+  // Every "Detail" link is an anchor INTO docs/modules.md, and the anchor must
+  // exist there. D1 shipped the same coupling for the decisions index; the
+  // failure it prevents is a link that looks right and lands nowhere.
+  const mods = fs.readFileSync(path.join(__dirname, '../../docs/modules.md'), 'utf8');
+  const links = [...map.matchAll(/docs\/modules\.md#([a-z0-9-]+)/g)].map((m) => m[1]);
+  assert.ok(links.length >= 7, 'the map links the module narratives (got ' + links.length + ')');
+  links.forEach((a) => {
+    assert.ok(mods.indexOf('<a id="' + a + '">') >= 0,
+      'docs/modules.md carries the anchor #' + a + ' the module map links to');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
