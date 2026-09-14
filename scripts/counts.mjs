@@ -131,12 +131,21 @@ export function localStorageKeys() {
   return [...keys].sort();
 }
 
-/** CLAUDE.md's own libraries — the two lists whose sizes the prose quotes. */
+/** The two libraries whose sizes the prose quotes. They live in
+ *  `.cycle/config.md` since Batch D1; CLAUDE.md is the fallback so this keeps
+ *  working in both directions while the move lands (the same prefer-then-fall-back
+ *  shape `scripts/cycle-context.mjs` already uses). INV-202: a derivation that
+ *  reads a file BY PATH is coupled to that file's layout — when the content
+ *  moves, the derivation moves with it IN THE SAME COMMIT. */
+export const LIBRARY_DOC = '.cycle/config.md';
+export function libraryFile() {
+  return fs.existsSync(path.join(ROOT, LIBRARY_DOC)) ? LIBRARY_DOC : 'CLAUDE.md';
+}
 export function docLists() {
-  const claude = read('CLAUDE.md');
+  const doc = read(libraryFile());
   return {
-    invariants: (claude.match(/^INV-\d+\s*\|/gm) || []).length,
-    regressionScenarios: (claude.match(/^S\d+\s*\|/gm) || []).length,
+    invariants: (doc.match(/^INV-\d+\s*\|/gm) || []).length,
+    regressionScenarios: (doc.match(/^S\d+\s*\|/gm) || []).length,
   };
 }
 
@@ -199,8 +208,8 @@ const ROWS = [
   ['installedTriggers', 'Installable triggers created', '`installAutomationTriggers`'],
   ['groupedTriggerJobs', 'Jobs riding a dispatcher', '`TRIGGER_GROUPS`'],
   ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/`"],
-  ['invariants', 'Invariant library entries', 'this file'],
-  ['regressionScenarios', 'Regression scenarios (S*)', 'this file'],
+  ['invariants', 'Invariant library entries', '`.cycle/config.md`'],
+  ['regressionScenarios', 'Regression scenarios (S*)', '`.cycle/config.md`'],
 ];
 
 export function renderBlock(c) {

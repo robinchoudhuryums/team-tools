@@ -1749,7 +1749,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   // the block that owns them (Coaching / Needs-you / Admin all-clear …); a
   // Node pin lists the blocks that owe one. The rule exists because the same
   // gap surfaced three times (getMyCoaching `{items:[]}`, the Admin all-clear
-  // path, the Needs-you empty state) — see CLAUDE.md's Visual Audit Stage.
+  // path, the Needs-you empty state) — see the Visual Audit Stage, which
+  // moved to `.cycle/config.md` in Batch D1 (CLAUDE.md's Doc map is the index).
   var FIXTURE_MODE = (function () {
     try {
       var m = /[?&]fixture=([^&]+)/.exec(window.location.search);

@@ -12,7 +12,7 @@ Phase: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/block
   `/reflect`.
 Scope: broad
 Test Command: manual
-Estimates: ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit
+Estimates: Batch D1 — M (~6 h), the plan's figure, recorded 2026-09-14 BEFORE the first edit. ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit
   (P1's own rule, applied to itself; the plan's figure). The remaining
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)

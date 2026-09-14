@@ -69,6 +69,19 @@ const REGISTRY_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.filter((f) =>
 // PARSE_GUARD_PARTIALS; a new module's partial can no longer ship outside
 // the net with CI green. (styles/modals have no <script>; form_public.html
 // is standalone — not include()'d — and is listed explicitly above.)
+
+// ── The cycle config doc (Batch D1) ──────────────────────────────────────────
+// The Invariant Library and the Visual Audit Stage moved from CLAUDE.md to
+// `.cycle/config.md`. INV-202: a pin that reads a doc BY PATH is coupled to
+// that doc's layout, so the resolution lives HERE, once, and every pin that
+// needs the library goes through it. Falls back to CLAUDE.md so the pin works
+// in both directions while a move lands.
+function configDoc_() {
+  const cfg = path.join(__dirname, '../../.cycle/config.md');
+  const p = fs.existsSync(cfg) ? cfg : path.join(__dirname, '../../CLAUDE.md');
+  return fs.readFileSync(p, 'utf8');
+}
+
 test('every JS-bearing include()d partial is in the parse-guard list', () => {
   const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
   const included = [...idx.matchAll(/include\('([^']+)'\)/g)].map((m) => m[1] + '.html');
@@ -5276,9 +5289,9 @@ test('F9: every gated endpoint is covered by a gate test (enumerated from source
 
 test('F7: INV-136 NAMES the admin-gated set, and the COUNT lives only in the generated block', () => {
   const admin = gatedEndpointsFromSource_().admin;
-  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const claude = configDoc_();
   const start = claude.indexOf('INV-136 |');
-  assert.ok(start > 0, 'INV-136 is present in the invariant library');
+  assert.ok(start > 0, 'INV-136 is present in the invariant library (.cycle/config.md since D1)');
   const para = claude.slice(start, claude.indexOf('| Subsystem:', start));
 
   // Batch C split this pin's two halves by where they belong. The COUNT drifted
@@ -15299,7 +15312,8 @@ test('BIZ-3: the clients lead with business time, keep wall clock, and say which
 
 
 test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained', () => {
-  // CLAUDE.md's Visual Audit Stage names the tabs the matrix does not shoot.
+  // The Visual Audit Stage names the tabs the matrix does not shoot. It moved
+  // to `.cycle/config.md` in Batch D1, which is why this pin reads configDoc_().
   // Measured 2026-08-31, that hand-kept sentence named 3 of 11 real gaps —
   // it had silently understated the list as tabs were added, and a /sync-docs
   // pass that verified file paths and Script Properties mechanically still
@@ -15311,7 +15325,7 @@ test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained'
   // the matrix, so growing the gap silently is impossible.
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
   const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
-  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const claude = configDoc_();
 
   const reg = /const TOOLS = \{([\s\S]*?)\n\};/.exec(core);
   assert.ok(reg, 'found the TOOLS registry');
@@ -15334,7 +15348,7 @@ test('VIS-COVER: the documented visual gap list is DERIVED, not hand-maintained'
   // to carry a machine-checkable marker list so this cannot drift into
   // "sort of mentions it somewhere".
   const m = /VISUAL-GAP-TABS:\s*([a-zA-Z0-9,\s]*)\n/.exec(claude);
-  assert.ok(m, 'CLAUDE.md carries a VISUAL-GAP-TABS marker line for this pin to check');
+  assert.ok(m, '.cycle/config.md carries a VISUAL-GAP-TABS marker line for this pin to check');
   const documented = m[1].split(',').map((x) => x.trim()).filter(Boolean).sort();
   assert.deepStrictEqual(documented, gaps,
     'the documented visual-coverage gaps disagree with the matrix.\n  matrix says: ' +
@@ -16622,7 +16636,13 @@ test('PR3-5: fixtures + scenarios — getCoveragePlan is a FUNCTION whose keys m
   ['punctuality-dark-wide', 'punctuality-light-mobile', 'punctuality-expanded-light-wide', 'coverage-light-wide', 'coverage-dark-wide', 'coverage-light-mobile']
     .forEach((n) => assert.ok(shoot.indexOf("'" + n + "'") >= 0, 'scenario ' + n));
   assert.ok(/punctuality-expanded-light-wide'[^\]]*\.pt-wrap \.m-qtoggle/.test(shoot), 'the expanded scenario opens the first detail row');
-  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  // D1: the marker moved to `.cycle/config.md`. Assert it EXISTS before asserting
+  // what it does NOT contain — a negative check against a file with no marker at
+  // all passes vacuously, which is exactly what this pin did for one commit while
+  // the Visual Audit Stage was being moved (the "structurally unable to fire"
+  // class the Batch C recursion guard also hit).
+  const claude = configDoc_();
+  assert.ok(/VISUAL-GAP-TABS:/.test(claude), 'the VISUAL-GAP-TABS marker is present for this pin to check');
   assert.ok(!/VISUAL-GAP-TABS:[^\n]*\bcoverage\b/.test(claude), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
 });
 
@@ -20285,11 +20305,40 @@ test('C1/C2: every STATIC figure in the generated block equals what counts.mjs d
   });
 });
 
-test('C4: no count that the block carries is restated in CLAUDE.md prose', () => {
-  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+test('C4: no count that the block carries is restated in the docs (every file the Doc map names)', () => {
+  // D1 split CLAUDE.md into four docs. A ban that still scanned only CLAUDE.md
+  // would have silently NARROWED the moment ~9,000 lines of the prose it guards
+  // moved out (INV-179: a derived scan is only as wide as what it derives from).
+  // The file set is DERIVED from the Doc map block, so adding a row there
+  // extends this ban automatically — no hand-copied list to fall behind.
+  const claudeRaw = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const mapI = claudeRaw.indexOf('<!-- DOCMAP:BEGIN -->');
+  const mapJ = claudeRaw.indexOf('<!-- DOCMAP:END -->');
+  assert.ok(mapI >= 0 && mapJ > mapI, 'CLAUDE.md carries the Doc map block');
+  const docFiles = ['CLAUDE.md'].concat(
+    [...claudeRaw.slice(mapI, mapJ).matchAll(/\]\(([^)]+\.md)\)/g)].map((m) => m[1]));
+  const named = [...new Set(docFiles)];
+  assert.ok(named.length >= 5, 'the Doc map names the split docs (got ' + named.length + ')');
+  for (const f of named) {
+    assert.ok(fs.existsSync(path.join(__dirname, '../../', f)), 'Doc map names a file that exists: ' + f);
+  }
+  // The append-only archives are DECLARED in the Doc map, not hand-listed here: a
+  // count in `.cycle/HISTORY.md` is a fact of its date ("the post-push run read
+  // 315/315"), not a live claim. An UNDECLARED file is scanned, so adding an
+  // archive is a deliberate edit to the doc rather than a quiet edit to this pin.
+  const decl = /\*\*Append-only archives\*\*([\s\S]*?)\n\n/.exec(claudeRaw);
+  assert.ok(decl, 'the Doc map declares which files are append-only archives');
+  const archives = new Set([...decl[1].matchAll(/`([^`]+\.md)`/g)].map((m) => m[1]));
+  assert.ok(archives.size >= 2, 'at least the two .cycle records are declared archives');
+  const unique = named.filter((f) => !archives.has(f));
+  assert.ok(unique.length >= 4, 'live-guidance docs remain after the archive exclusion');
+
   const block = countsBlockText_();
-  // Scan the doc OUTSIDE its own generated block.
-  const prose = claude.split(block).join('\n');
+  // Scan every doc OUTSIDE the generated block.
+  const prose = unique
+    .map((f) => fs.readFileSync(path.join(__dirname, '../../', f), 'utf8'))
+    .join('\n')
+    .split(block).join('\n');
 
   // (a) A post-deploy instruction must not name the editor-suite count. It was
   //     named in 13 dated entries, each correct on its day and wrong by the

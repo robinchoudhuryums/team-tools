@@ -26,6 +26,22 @@ The pure harness needs no `npm install`. The DOM harness needs the `jsdom`
 devDependency (`npm ci`). Neither ships — `clasp push` only touches `web-app/`.
 Both exit non-zero on failure (CI runs both — see `.github/workflows/client-tests.yml`).
 
+**Where the rest of this lives** (the Doc map in
+[`CLAUDE.md`](../../CLAUDE.md) is the index): the **Invariant Library** every
+pin cites (`INV-nnn`), the **Regression Scenarios** (`S-nnn`) a manual check
+walks, and the Subsystems list this harness is filed under are all in
+[`.cycle/config.md`](../../.cycle/config.md) — CLAUDE.md's Cycle Workflow
+Config is a stub pointing there since Batch D1. **Test counts are not written
+down**: `node ../../scripts/counts.mjs` derives them and CI fails on drift, so
+a batch note states the DELTA it added, never the new total.
+
+Two harness traps worth knowing before you add a test, both of which have cost
+a silently-dead pin: `run.js` prints its summary LAST, so a block appended
+after it still runs but a block appended after an early `process.exit` would
+not — append above the summary; and jsdom's `runScripts:'outside-only'` never
+compiles an inline `onclick`, so dispatching a click runs NOTHING — call the
+handler directly. Both are recorded in full in `.cycle/config.md`.
+
 ## How the pure harness works
 
 `harness.js` extracts the `<script>` bodies from a partial, evaluates them in a
