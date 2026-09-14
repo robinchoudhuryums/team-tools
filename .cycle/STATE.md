@@ -267,6 +267,28 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+SYNC-DOCS DONE + MERGED as PR #242 (2026-09-14, 1421c5b -> merge 1e7ea9e on main).
+Batches S and Q are now on main WITH their documentation. Applied: two Common
+Gotchas (Script Properties capped ~9KB/value + propSetBounded_'s refuse/degrade
+split; a test function defined twice hoists over the first while the count stays
+right), the Drive gotcha's FOURTH outcome (no prompt at all -> revoke-then-
+re-consent, and the probe is TESTED and trustworthy so the proposed rewrite must
+NOT be implemented), two KDDs (the sharded editor suite; the one-home budget
+badge), INV-201 (the size guard), Storage Health's THIRD capability line, a dated
+operator entry for S+Q plus one for the Drive remedy, and scenario extensions
+S1/S2 (Expected line, env block, Part A+B variant), S51/S56 (badge, tones, skew,
+the refusal leaving value+AuditLog untouched) and S97 (three capability lines).
+README needed NO change — Batch S's own commit updated it and it reads counts off
+the run. Harnesses re-run AFTER the doc edits (F7 + VIS-COVER read CLAUDE.md):
+804 pure / 113 DOM, 0 failed. Every number measured: 804 / 113 / 102 scenarios /
+316 registrations. Checks 2 and 3 of /sync-docs came back clean.
+STILL OWED: `/reflect`'s estimates.csv rows for P (S 2 h / ~0.6 h), S (M 4 h /
+~1.3 h) and Q (M 5 h / ~2.5 h) — five consecutive reflections have skipped that
+row. NEXT: `/broad-implement C` (derived counts). OPERATOR: the Drive fix is one
+revoke-and-re-consent (see the dated entry in CLAUDE.md's Operator State
+Checklist); post-deploy `runAllTests()` expects 316, or whatever the run's own
+`Expected:` line says.
+
 DRIVE FOLLOW-ON: SETTLED, NOT A FALSE POSITIVE (operator ran the block's
 one-paste `driveDiag_` in the editor, 2026-09-14). In ONE execution:
 `DriveApp.getRootFolder()` FAILED with the runtime's missing-scope refusal
