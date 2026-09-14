@@ -43,6 +43,20 @@ if [ -n "$(git status --porcelain -- "$file")" ]; then
   exit 2
 fi
 
+# The mutation is embedded in a double-quoted `python3 -c "..."` below, so a
+# double quote INSIDE it closes that string early and hands python a mangled
+# program. The dangerous part is that the wreckage often still edits the file,
+# so the no-op guard passes, the harness goes red for some unrelated reason and
+# the check reports BITES — a bite-check that proved nothing, which is worse
+# than none. Refuse instead; single quotes reach python untouched.
+case "$mutation" in
+  *'"'*)
+    echo "  REFUSING: the mutation contains a double quote, which closes the python -c" >&2
+    echo "            string early and silently mangles the program. Use single quotes" >&2
+    echo "            (or chr(34)) inside the mutation." >&2
+    exit 2 ;;
+esac
+
 python3 -c "
 import io, sys
 p = '$file'
