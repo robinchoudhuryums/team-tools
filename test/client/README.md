@@ -26,6 +26,22 @@ The pure harness needs no `npm install`. The DOM harness needs the `jsdom`
 devDependency (`npm ci`). Neither ships — `clasp push` only touches `web-app/`.
 Both exit non-zero on failure (CI runs both — see `.github/workflows/client-tests.yml`).
 
+**Where the rest of this lives** (the Doc map in
+[`CLAUDE.md`](../../CLAUDE.md) is the index): the **Invariant Library** every
+pin cites (`INV-nnn`), the **Regression Scenarios** (`S-nnn`) a manual check
+walks, and the Subsystems list this harness is filed under are all in
+[`.cycle/config.md`](../../.cycle/config.md) — CLAUDE.md's Cycle Workflow
+Config is a stub pointing there since Batch D1. **Test counts are not written
+down**: `node ../../scripts/counts.mjs` derives them and CI fails on drift, so
+a batch note states the DELTA it added, never the new total.
+
+Two harness traps worth knowing before you add a test, both of which have cost
+a silently-dead pin: `run.js` prints its summary LAST, so a block appended
+after it still runs but a block appended after an early `process.exit` would
+not — append above the summary; and jsdom's `runScripts:'outside-only'` never
+compiles an inline `onclick`, so dispatching a click runs NOTHING — call the
+handler directly. Both are recorded in full in `.cycle/config.md`.
+
 ## How the pure harness works
 
 `harness.js` extracts the `<script>` bodies from a partial, evaluates them in a
@@ -41,7 +57,8 @@ exposes the loaded functions so `run.js` can call them and assert.
   out of a large partial without loading the whole thing. Safe only for
   functions with no `{`/`}` inside string literals.
 - `extractRawFunction('Code.js', name)` — pull a server function source for a
-  pure unit test (e.g. `metricsTeamAvgSeries_`, `trainQuizAnalytics_`).
+  pure unit test (e.g. `metricsTeamAvgSeries_`, `trainQuizAnalytics_`). There is
+  no `Code.js` any more: the name is an ALIAS for the whole server (see below).
 
 Out of scope for the pure harness: functions that genuinely drive the DOM, fire
 `google.script.run` RPCs, or depend on cross-file `const`/`let` module state —
@@ -93,3 +110,46 @@ future client fix should land its regression test here instead of relying on a
 manual S-scenario.
 
 Both harnesses live outside `web-app/`, so `clasp push` never sees them.
+
+---
+
+## Reading the server: `serverSource()`, never a filename
+
+`harness.js` exports `serverFiles()` and `serverSource()` (Batch F1).
+
+```js
+const { serverSource, extractRawFunction } = require('./harness');
+const code = serverSource();                       // the whole server, one string
+const fn = extractRawFunction('Code.js', 'foo_');  // resolves through serverSource()
+```
+
+- The file LIST comes from `web-app/.clasp.json`'s `filePushOrder` — the same
+  declaration `clasp push` obeys — so the harness and the deployment cannot
+  disagree about what the server is or in what order it loads. An empty list
+  THROWS rather than falling back to a hard-coded file: a fallback would make the
+  derivation vacuous exactly when it stopped being true.
+- `extractRawFunction` and `extractConstObject` take a file name for
+  readability, but any name in `filePushOrder` resolves through
+  `serverSource()`. `'Code.js'` is an ALIAS: the file itself was split into fourteen in Batch F2 and
+  no longer exists, but the name always meant "the server", so the ~500 pins that
+  use it keep working — including after a function moves between server files.
+- **Do not read the server with `readFileSync`.** A pin does that once and the
+  next split is a 73-edit change; the F1a pin fails CI on it, in this file and
+  in `scripts/counts.mjs` (INV-202).
+- `Tests.js` and `DevTools.js` are NOT server source. They share the Apps Script
+  global scope but are not what the pins mean by "the server", and a pin asserts
+  they stay out of `filePushOrder`.
+
+---
+
+## Where the rest lives
+
+- **`docs/test-harness-log.md`** — the narrative this README does not carry:
+  what each batch added to each harness, the editor-test hazards (a
+  calendar-dependent fixture, a test function declared twice), and the incident
+  behind each rule. Moved out of `.cycle/config.md` by Batch D2; a count inside
+  it is a fact of its date.
+- **`.cycle/config.md`** — the Test Command itself plus a short summary of the
+  three harnesses, for the workflow commands that read it.
+- **`CLAUDE.md`** — the generated running-totals block is the ONLY live statement
+  of how many tests each harness carries. Do not restate one here.

@@ -127,7 +127,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
   `web-app/<tool>/script_*.html`, `include()` them from
-  `index.html`, and add server endpoints to `Code.js` alongside the
+  `index.html`, and add server endpoints to the module's server file alongside the
   existing ones. The sidebar shows one button per tool; sub-navigation
   is a horizontal tab bar above the view area. Shared chrome
   vocabulary (`.hero`, `.actions`, `.ledger`, `.telemetry`,
@@ -141,6 +141,25 @@ scaffold and the pre-port bound `form-generator` script were deleted in
 cycle 13 — the Add-on path was abandoned because admin policy on the org
 domain blocks Marketplace install without ticket-driven allowlisting, and
 the form-generator port shipped. Both live in git history.
+
+## Documentation
+
+| File | Holds |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | The maps and indexes: the module map, the Common Gotchas index (rule · when it fires · pointer), the Key Design Decisions index, the Operator State inventory + storage map, the generated running-totals block |
+| [`docs/gotchas.md`](docs/gotchas.md) | Every Common Gotcha in full — the incident, the reasoning, the pin |
+| [`docs/modules.md`](docs/modules.md) | The per-module narrative behind the module map |
+| [`docs/operator-state.md`](docs/operator-state.md) | Every operator item in full — setup, defaults, failure modes, run order |
+| [`docs/design-decisions.md`](docs/design-decisions.md) | Every Key Design Decision in full — why the code is shaped as it is |
+| [`docs/operator-log.md`](docs/operator-log.md) | The dated deploy-round entries — what each round changed for the operator |
+| [`docs/deployment.md`](docs/deployment.md) | Blue-green: running a personal dev instance alongside prod |
+| [`.cycle/config.md`](.cycle/config.md) | Cycle Workflow Config: Test Command, Subsystems, the Invariant Library, the Visual Audit Stage, the Regression Scenarios |
+| [`docs/test-harness-log.md`](docs/test-harness-log.md) | What each batch added to each harness; the editor-test hazards; the fixture rules |
+
+`CLAUDE.md` opens with a Doc map that says which of these a given update
+belongs in. Numbers live in exactly one place — the generated block — so no
+file above should restate one; `node scripts/counts.mjs --check` enforces that
+in CI.
 
 ## Development
 
@@ -167,11 +186,11 @@ first). `npm test` runs both. A third, **static-render visual** harness
 (`test/visual/`) renders the scenario matrix in headless Chromium; it is
 manual / on-demand, NOT in CI. (For how many scenarios — and for every other
 figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
-read the generated block in CLAUDE.md's Cycle Workflow Config. A hand-carried
-number here had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
+read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
+had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
 answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
-(`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
+(`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
 `npm ci` + the DOM harness, on every push and PR — the project's only
 automated check. (The zero-install steps deliberately run before `npm ci`:

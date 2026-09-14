@@ -63,11 +63,75 @@ function extractFunction(file, name) {
   return js.slice(start, i);
 }
 
+// ── The server source, as one string ────────────────────────────────────────
+// Every pin that reads server code goes through here rather than naming a file,
+// so splitting Code.js is a move of text between files that no pin can see.
+//
+// The file LIST is derived from `web-app/.clasp.json`'s `filePushOrder` — the
+// same declaration `clasp push` obeys — so the harness and the deployment can
+// never disagree about which files are the server, or in what order they load.
+// It is deliberately NOT a fallback-to-Code.js: an empty list means the
+// declaration was lost, and reading one file anyway would make the derivation
+// vacuous exactly when it stopped being true (INV-179, INV-202).
+// `'Code.js'` is an ALIAS for "the server". Batch F2 split that file into the
+// fourteen below, and ~500 pins name it; the name was always shorthand for the
+// whole server, so it keeps resolving rather than becoming 500 edits with no
+// behaviour change. `isServerFile()` is the one place that decides.
+const SERVER_ALIAS = 'Code.js';
+function isServerFile(file) {
+  return file === SERVER_ALIAS || serverFiles().indexOf(file) >= 0;
+}
+
+let _serverFiles = null;
+function serverFiles() {
+  if (_serverFiles) return _serverFiles;
+  const clasp = JSON.parse(fs.readFileSync(path.join(WEB_APP, '.clasp.json'), 'utf8'));
+  const order = (clasp.filePushOrder || []).filter((f) => /\.js$/i.test(f));
+  if (!order.length) {
+    throw new Error(
+      'harness: web-app/.clasp.json has no .js entries in filePushOrder — it is the ' +
+      'declaration of what the server source IS. List the server files there, in load order.');
+  }
+  // Name the missing file HERE. Without this, a filePushOrder entry for a file
+  // that does not exist surfaces as an ENOENT thrown out of whichever pin first
+  // asks for the server — a stack trace pointing at a test that has nothing to
+  // do with it. The pin below states the same contract; this makes the failure
+  // legible when the harness dies before reaching it.
+  const gone = order.filter((f) => !fs.existsSync(path.join(WEB_APP, f)));
+  if (gone.length) {
+    throw new Error(
+      'harness: web-app/.clasp.json filePushOrder names ' + gone.join(', ') +
+      ', which do(es) not exist. `clasp push` would fail the same way.');
+  }
+  _serverFiles = order;
+  return _serverFiles;
+}
+
+/** The whole server as one string, files concatenated in load order. With a
+ *  single-entry filePushOrder this is BYTE-EQUAL to that file (the join adds
+ *  nothing to a one-element array) — F1b pins exactly that. */
+let _serverSource = null;
+function serverSource() {
+  if (_serverSource !== null) return _serverSource;
+  _serverSource = serverFiles()
+    .map((f) => fs.readFileSync(path.join(WEB_APP, f), 'utf8'))
+    .join('\n');
+  return _serverSource;
+}
+
 /** Brace-match a single top-level `function NAME(...) { … }` out of a RAW
  *  file (no <script> extraction) — for pure helpers living in Code.js. Same
- *  caveat as extractFunction (no `{`/`}` inside string literals in the body). */
+ *  caveat as extractFunction (no `{`/`}` inside string literals in the body).
+ *
+ *  A SERVER file name (anything in filePushOrder) resolves through
+ *  `serverSource()`, not through that one file: the 500-odd pins that say
+ *  `extractRawFunction('Code.js', …)` keep working after the function moves to
+ *  another server file, because "Code.js" was always shorthand for "the server".
+ *  Any other file is read directly, as before. */
 function extractRawFunction(file, name) {
-  const js = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  const js = isServerFile(file)
+    ? serverSource()
+    : fs.readFileSync(path.join(WEB_APP, file), 'utf8');
   const start = js.indexOf('function ' + name + '(');   // F(cycle-8): paren-anchored — see extractFunction
   if (start < 0) throw new Error(`function ${name} not found in ${file}`);
   let i = js.indexOf('{', start);
@@ -159,4 +223,4 @@ function loadFunction(sandbox, file, name) {
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, buildSandbox, loadFunction, fakeEl };

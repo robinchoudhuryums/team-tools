@@ -11,6 +11,21 @@
   "jsonExtensions": [
     ".json"
   ],
-  "filePushOrder": [],
+  "filePushOrder": [
+    "00_config.js",
+    "10_core.js",
+    "20_timeclock.js",
+    "30_callnotes.js",
+    "40_metrics.js",
+    "50_deptrequests.js",
+    "51_spanish.js",
+    "60_intake.js",
+    "61_forms.js",
+    "70_kb.js",
+    "80_training.js",
+    "81_empdocs.js",
+    "82_coaching.js",
+    "90_qa.js"
+  ],
   "skipSubdirectories": false
 }

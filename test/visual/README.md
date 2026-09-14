@@ -11,6 +11,16 @@ it needs a Chromium install and its findings need human eyes. Run it before
 cutting a deploy that touched `styles*.html` or any view partial, and after
 any layout-affecting change.
 
+**Where the rest of this lives** (the Doc map in
+[`CLAUDE.md`](../../CLAUDE.md) is the index): the **Visual Audit Stage** —
+which every `/broad-scan` must run, what to compare, and the standing
+uncovered-surface list — is in
+[`.cycle/config.md`](../../.cycle/config.md); the fixture rules it enforces
+are INV-185 in the same file. **How many scenarios there are** is not written
+down anywhere on purpose: run `node ../../scripts/counts.mjs`, or read the
+generated running-totals block in `CLAUDE.md`. This README carried a
+hand-typed "44" long after the matrix passed 100.
+
 ## Run
 
 ```bash
@@ -19,7 +29,7 @@ npm ci                 # playwright package only (browser download is skipped
                        #   when PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 is set and a
                        #   system Chromium is provided — see below)
 node build.mjs         # composes web-app/ partials -> page.html (generated)
-node shoot.mjs         # all 44 scenarios -> shots/*.png + report.json
+node shoot.mjs         # every scenario -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 node map-check.mjs     # spot-measure: the ```map block + article-image fallback

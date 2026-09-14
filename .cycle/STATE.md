@@ -5,14 +5,14 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: implement — **Batch F2 + the four F1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-F2-followons-broad-implement.md`; net 0 − 0 = 0, a move). **`web-app/Code.js` IS GONE** — 30,789 lines split into fourteen files (`00_config.js` first, then one per module in the numeric order `filePushOrder` declares). Move-only is PROVEN, not claimed: 1,204 top-level units reassembled byte-identically, each checked standalone with `node --check`, and `test/client/server-split-manifest.json` (generated from Code.js at tag `pre-f2-split`) is re-derived by the F2c pin on every run — same names, same bodies, same files. Pure harness 818 → 822 (move-only, duplicate-name, split shape, the bite.sh guard); DOM 113 unchanged; every derived count identical; page.html byte-identical. `'Code.js'` is now an ALIAS for the server in the harness, so the ~500 pins naming it were untouched. **THE PLAN IS FINISHED: 0 → P → S → Q → C → D1 → D2 → F1 → F2 are all done**; only its Deferred set remains, which is operator/feature decisions. **NOT PUSHED/PR'd, and the DEPLOY IS BLOCKING: push to DEV and run `runAllTests` in that editor BEFORE prod** (F2d) — S1/S2 are the one check this container cannot run. Preceding: implement — **Batch F1 DONE 2026-09-14** (`.cycle/blocks/19-F1-broad-implement.md`; net 0 − 0 = 0, a deliberate no-op batch). The harness owns `serverSource()`, derived from `web-app/.clasp.json`'s `filePushOrder` (now `["Code.js"]`, was empty); the 73 direct server reads in run.js, `extractRawFunction`/`extractConstObject`, the two hand-listed server scans and `counts.mjs`'s two derivations all resolve through it, so F2 can move 40,000 lines between files without touching a pin. CI's `node --check` is a glob. Pure harness 814 → 818 (byte-equality, the filePushOrder declaration incl. the dev example, load-order evaluation, and a ban on reading the server by filename); DOM 113 unchanged; `build.mjs` reproduces page.html with no diff. INV-202's acceptance criterion is enforced by a pin rather than asserted. NOT PUSHED/PR'd yet. **REMAINING: F2 only** (the Code.js split — L, ~2 days). Preceding: implement — **Batch D2 + the four D1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-followons-D2-broad-implement.md`; net 1 − 0 = 1). CLAUDE.md 4,873 → 836 lines and is now MAPS AND INDEXES only: the gotcha narratives are `docs/gotchas.md` (113 entries, verbatim), the module narratives `docs/modules.md`, the operator entries `docs/operator-state.md` (74, verbatim — the D1c compression D1 deferred), the Test Command narrative `docs/test-harness-log.md`; a one-sided 1,000-line ceiling pin keeps it that way. Three NEW index↔entries pins (MODULE-MAP, GOTCHA-INDEX, OPERATOR-INDEX) plus the ceiling: pure harness 810 → 814, DOM 113 unchanged, `counts.mjs --check` green, 14 mutations / 14 bites + one inverse. Follow-ons: INV-202/203 written into the library; `counts.mjs` now reports a red harness in ONE line instead of a 70k-character stack trace; C4's ban gained pattern (d), a plain restated total. NOT PUSHED/PR'd yet. Preceding: implement — Batch D1 DONE 2026-09-14 (`.cycle/blocks/19-batchD1-broad-implement.md`; net 0 − 0 = 0, a structural batch shipping no deployable code). CLAUDE.md 12,662 → 4,873 lines; the Cycle Workflow Config is `.cycle/config.md`, the Key Design Decisions are `docs/design-decisions.md` (137-link index kept), the dated rounds are `docs/operator-log.md`. Pure harness 808 → 810 (two NEW pins on the index↔anchors coupling the split created). Preceding: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0, covering the four post-reflect next-steps batches P/S/Q/C; metrics + estimates rows appended; INV-202/203 proposed). Batch C MERGED as PR #244 (2026-09-14, f10c2ae) — every next-steps batch through C is now on main. Preceding: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
   `/reflect`.
 Scope: broad
 Test Command: manual
-Estimates: Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit
+Estimates: Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE the first edit and carried into the implement block as the template requires (the first batch to do BOTH halves; Batch C's block shipped without them). `/reflect` owes the estimates.csv row for D1, D2, F1 AND F2 (F2 — L/~6 h estimate vs **~2.5 h actual**) (F1 — S–M/~3 h estimate vs **~1.5 h actual**) (D2 + D1 follow-ons — L/~7 h estimate vs **~3 h actual**, both lines carried into `.cycle/blocks/19-followons-D2-broad-implement.md`). ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit · **Batch D2 + D1 follow-ons — L (~7 h), recorded 2026-09-14 17:05Z BEFORE the first edit** (D2 is M/~6 h in the plan; the four D1 follow-on items add ~1 h). · **Batch F1 — S–M (~3 h), recorded 2026-09-14 18:05Z BEFORE the first edit** (F1 is S/~2 h in the plan; INV-202 adds `counts. · **Batch F2 + the F1 follow-on items — L (~6 h), recorded 2026-09-14 18:40Z BEFORE the first edit** (the plan says L/~2 days incl. re-verification; the split is mechanical and script-driven here, and the four F1 follow-ons are small).mjs`'s two `Code.js` derivations to its scope).
   (P1's own rule, applied to itself; the plan's figure). The remaining
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
@@ -20,7 +20,10 @@ Estimates: Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edi
 Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
-  moved 1 → 2 at that reflection)
+  moved 1 → 2 at that reflection; the 2026-09-14 SECOND reflection (19-b) did NOT
+  increment it — it closes a batch set INSIDE cycle 19, not a new subsystem
+  cycle, and counting one cycle twice would pull the every-4 seams cadence
+  forward by a cycle it did not earn. Do not "correct" this to 3.)
 Updated: 2026-09-11 (Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
@@ -117,6 +120,9 @@ D (note 10 — a new presence signal on the Team-right-now card).
   next concrete step after that is `/reflect`.
 
 ## Completed this cycle
+- F2 + F1 follow-ons | web-app/*.js (Code.js split into 14), .clasp.json(+dev example), test/client/{harness.js,run.js,server-split-manifest.json}, test/visual/mock.js, scripts/bite.sh, CLAUDE.md, README.md, docs/{modules,design-decisions}.md, .cycle/config.md | the server split, proven move-only; 4 pins; the bite helper committed with its guard
+- F1 | test/client/{harness.js,run.js,README.md}, scripts/counts.mjs, web-app/.clasp.json + .clasp.dev.json.example, .github/workflows/client-tests.yml | the server-source shim, derived from filePushOrder; 4 pins; INV-202 enforced
+- D2 + D1 follow-ons | CLAUDE.md, README.md, .cycle/config.md, scripts/counts.mjs, test/client/run.js, test/client/README.md, docs/{gotchas,modules,operator-state,test-harness-log}.md | the doc split finished; three index pins + a size ceiling; INV-202/203 written; counts.mjs red-harness ergonomics; C4 pattern (d)
 - (template sync) | .claude/commands/{broad-scan,cycle-init,reflect,setup-cycle}.md, CLAUDE.md | synced to claude-workflow-tools v1.33.0; `Client (QA views)` added to the Deploy Command map. Commit 53b1f44.
 - F1 | web-app/Code.js, test/client/run.js | breakPairs_ pairs with independent cursors — a stray early LunchIn no longer un-pairs the whole day (the rep was being PAID for every real break). A1 pin gained its IN-direction cases.
 - F6 | web-app/Code.js, test/client/run.js | punchAdjustDecideAll_ discards the cached punch index after a `resume` writes outside it; buildAdjustPunchIndex_ states the precondition a caller owes instead of a universal that is not true.
@@ -142,11 +148,19 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- (DONE 2026-09-14) BATCH D1 of the next-steps plan — `.cycle/blocks/19-batchD1-broad-implement.md`;
+  net 0 − 0 = 0 (structural; ships no deployable code). Estimate M (6 h) vs Actual ~3.5 h.
+  On branch `claude/adoring-einstein-b3vs6c` (0e5b688, 9edcdef, 5236f5f, eca9455 + the inventory
+  line), NOT yet merged. D1c's entry compression is DEFERRED TO D2 on purpose — see
+  "Where I left off". NEXT in the plan: D2, then F1 (whose scope must grow `counts.mjs`
+  per INV-202), then F2.
 - (DONE 2026-09-11) BATCH Q of the next-steps plan — `.cycle/blocks/19-batchQ-broad-implement.md`;
   net 0 − 0 = 0, PREVENTIVE by construction (the plan classified it as the one latent DEFECT, and a
   latent defect has by definition not fired). Estimate M (5 h) vs Actual ~2.5 h. On branch
   `claude/adoring-einstein-b3vs6c` (3ab7018 + 3afeea6), NOT yet merged.
-  NEXT in the plan: Batch C (derived counts).
+  Batches P, S, Q and C are ALL MERGED to main as of 2026-09-14 (#240, #242/#243, #244).
+  NEXT in the plan: D1 (CLAUDE.md structural moves) — but read INV-202 in
+  `19-b-reflect.md` first: F1's scope must grow `scripts/counts.mjs` before F2 runs.
 - (DONE 2026-09-11) BATCH S of the next-steps plan — `.cycle/blocks/19-batchS-broad-implement.md`;
   net 1 − 0 = 1 (the shadowed gate test); Estimate M (4 h) vs Actual ~1.3 h. On branch
   `claude/adoring-einstein-b3vs6c` (84379ee), NOT yet merged. The "full on dev nightly" half of
@@ -270,6 +284,119 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+
+**Batch F2 + the F1 follow-ons are DONE, committed on `claude/adoring-einstein-b3vs6c`,
+NOT pushed and with no PR.** The server is fourteen files; the split is proven
+move-only by a manifest the CI pin re-derives; `scripts/bite.sh` is committed
+with the dirty-file guard (and refuses to bite itself — bash reads a script as
+it runs). **The next step is a DEPLOY, and it is the blocking one: `npm run
+push:dev`, then `runAllTests` in the dev project's editor.** That is regression
+scenarios S1/S2, the only check this container cannot perform, and F2d requires
+it before prod. After a green dev run: `clasp push -f` to prod, confirm the
+editor's file list shows fourteen files and NO `Code.js` (a leftover project
+file would shadow every declaration in it), then cut a New version. The
+next-steps plan is otherwise complete — cycle 19 is ready to close with a
+`/reflect` covering D1, D2, F1 and F2.
+
+**Batch F1 is DONE, committed on `claude/adoring-einstein-b3vs6c`, NOT pushed and
+with no PR.** The shim is proven inert: `serverSource()` is byte-identical to
+Code.js while `filePushOrder` has one entry, every pin and both `counts.mjs`
+derivations read through it, and all three harnesses plus `counts --check` are
+green. Push, then **F2 is the last batch in the plan** — the move-only split of
+Code.js into `00_config.js` + thirteen prefixed files, with `filePushOrder`
+listing them in load order. Two things F1 learned that F2 needs: (a) F2c should
+pin that no top-level function NAME is declared twice across server files —
+`serverSource()` resolves a collision to the FIRST declaration while Apps Script
+resolves it to the LAST, which is the one way the shim could hide a real defect;
+(b) `test/visual/mock.js`'s banner and `.cycle/config.md`'s Subsystems list both
+name Code.js and are F2e's to update.
+
+**Batch D2 + the four D1 follow-ons are DONE, committed on `claude/adoring-einstein-b3vs6c`
+(head after `362403a`), NOT pushed and with no PR.** The doc split is finished:
+CLAUDE.md is 836 lines of maps and indexes, every narrative moved VERBATIM
+(each move diff-verified byte-identical) into `docs/gotchas.md`,
+`docs/modules.md`, `docs/operator-state.md`, `docs/test-harness-log.md`, and
+each index↔entries coupling is held by a pin that checks BOTH directions.
+Push, then the plan's sequence has **F1 then F2 remaining** — and INV-202 (now
+written) binds F1: `scripts/counts.mjs` reads `web-app/Code.js` by hardcoded
+path in `gatedEndpoints()` and `triggers()`, so F1's scope must grow those
+derivations through `serverSource()` BEFORE F2 splits that file, or the split
+lands with CI red on a false drift. The block's FOLLOW-ON ITEMS list four
+smaller things, of which INV-203's estimate scan is the one with a real design
+question (the grandfather boundary).
+BATCH D1 DONE (2026-09-14, NOT yet merged — 5 commits on
+`claude/adoring-einstein-b3vs6c`, block in
+`.cycle/blocks/19-batchD1-broad-implement.md`). CLAUDE.md is 4,873 lines, down
+from 12,662. The Cycle Workflow Config is `.cycle/config.md` (CLAUDE.md keeps a
+redirecting stub under the same heading, because the eleven workflow commands
+that name it are synced byte-identical and cannot be edited here); the 137 Key
+Design Decisions are `docs/design-decisions.md` (CLAUDE.md keeps a 137-link
+index); the 67 dated rounds are `docs/operator-log.md`. Everything moved
+VERBATIM — fidelity verified by diff, not by reading: 137 links resolve to 137
+anchors, and 74 property entries + 67 round entries = the 141 HEAD carried.
+
+TWO THINGS TO KNOW BEFORE THE NEXT BATCH. (1) **D1c's compression of the 74
+operator property entries was deliberately NOT done and is deferred to D2.**
+Compression is a lossy rewrite inside a batch whose method is "move verbatim",
+and those entries carry deploy-critical procedure (the ALL-CST roster runbook,
+the tz-repair run ORDER, the 24-handler trigger list) that a one-line summary
+cannot express. The line reduction D1 wanted came from moving the 67 ROUND
+entries instead. D2's own method — "rule + trigger + verify pointer" — is the
+right shape for it. (2) **Batch C's running-totals ban would have silently
+narrowed** to the 3,800 lines left in CLAUDE.md the moment the prose it guards
+moved out — INV-179's exact failure mode, one week after INV-179 was written.
+It now derives its file set from the Doc map and its archive exclusion from a
+declaration in that map, and an UNDECLARED file is scanned. Any future doc
+split must check the same thing.
+
+Pure harness 808 → 810: the split CREATED a parallel source (the index vs the
+anchors) and D1 pinned it in the same batch, in both directions, rather than
+leaving it to the hand-run script that verified it. 14 mutations, 14 bites —
+one of which found a pin that had been passing VACUOUSLY since PR 3 (PR3-5's
+coverage assert is negative-only, so a moved marker never made it red; its
+first replacement was vacuous too, matching the prose that DESCRIBES the
+marker). Also caught: `test/visual/README`'s hand-typed "all 44 scenarios",
+stale by 58, which the C4 ban's three patterns do not reach — a follow-on.
+
+REMAINING: D2, F1, F2. INV-202 still applies — F1's scope must grow
+`scripts/counts.mjs`'s `Code.js` derivations BEFORE F2 splits that file.
+
+PRECEDING — REFLECTED + MERGED (2026-09-14). Batch C is MERGED as PR #244 (f10c2ae, both
+CI checks green) and the branch `claude/adoring-einstein-b3vs6c` now equals
+origin/main. `/reflect` ran as the SECOND reflection of cycle 19:
+`.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0 over the four post-reflect
+next-steps batches P/S/Q/C. One production fix (Batch S's shadowed gate test,
+which reported a clean 315 on every run since #239 while one gate went
+unverified); two new capabilities (Q's budget badge, Q's Storage Health line);
+thirteen defensive/structural; and ONE new failure mode CORRECTED INTO the
+tally against Batch C's own 0-0 self-report — see the next paragraph, it is a
+pre-requisite for F1. estimates.csv finally has rows again (P/S/Q/C, the first
+since cycle 17, all 2–3.3x under estimate). The seam counter was deliberately
+NOT incremented (second reflection of ONE subsystem cycle).
+
+CARRY INTO F1 — THE ONE THING THIS REFLECTION FOUND: `scripts/counts.mjs`
+reads `web-app/Code.js` by HARDCODED PATH in `gatedEndpoints()` (L91) and
+`triggers()` (L107). Batch F2 splits Code.js into ~13 files, after which the
+admin count collapses from 50, `counts.mjs --check` goes red on a FALSE drift,
+and F7's INV-136 pin (which Batch C rewired to CONSUME that derivation) goes
+red with it. F1's scope list as written in the plan names "the 69 direct reads
++ mock's F4 mirror + CI node --check" but NOT counts.mjs — it did not exist
+when the plan was drafted. Add it to F1's scope: `serverSource()` must be what
+counts.mjs resolves through too, and `--check` green on the post-F2 tree is the
+acceptance test. Proposed as INV-202; INV-203 proposes deriving the estimate
+obligation rather than reminding about it (P1's reminder did not work — Batch
+C's own block shipped without the Estimate:/Actual: lines it requires).
+
+NEXT: `/broad-implement D1` (CLAUDE.md structural moves, M ~6 h) per the plan's
+sequence — or F1 first if the operator would rather close INV-202 before the
+doc moves. OPERATOR, unchanged and still owed: the Drive revoke-and-re-consent
+(0b), the one `installAutomationTriggers()` re-run (0c), `reportBreakPairingChanges()`
+once (0d), the Admin → System mail-routing look (0e), the DEV instance (0f — the
+precondition that makes Batch S's "full on dev nightly" runbook line true), and
+a New version deploy carrying #236/#237/#239/#240 plus #242/#243/#244's docs.
+Post-deploy `runAllTests()` expects whatever the run's own `Expected:` line says
+(316 today).
+
 SYNC-DOCS DONE + MERGED as PR #242 (2026-09-14, 1421c5b -> merge 1e7ea9e on main).
 Batches S and Q are now on main WITH their documentation. Applied: two Common
 Gotchas (Script Properties capped ~9KB/value + propSetBounded_'s refuse/degrade

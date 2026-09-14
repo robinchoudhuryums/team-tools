@@ -10,8 +10,8 @@ name: Client tests
 #
 # This is the only automated check for the project (the Apps Script suite in
 # web-app/Tests.js runs only inside the editor). It guards the client helpers,
-# the render/escape + lifecycle layer, and catches gross syntax errors in
-# Code.js / Tests.js.
+# the render/escape + lifecycle layer, and catches gross syntax errors in every
+# server .js file.
 
 on:
   push:
@@ -33,11 +33,17 @@ jobs:
       # — a registry hiccup or a jsdom resolution failure failed the job without
       # ever running the only dependency-free checks, in a repo where this
       # workflow is the sole automated gate.
-      - name: Syntax-check server JS (Code.js / Tests.js / DevTools.js)
+      # F1: a LOOP, not a list. The server is about to become many files
+      # (Batch F2), and a hand-listed check would silently stop covering the
+      # ones it does not name — on the very commit that creates them.
+      - name: Syntax-check every server JS file
         run: |
-          node --check web-app/Code.js
-          node --check web-app/Tests.js
-          node --check web-app/DevTools.js
+          set -e
+          shopt -s nullglob
+          files=(web-app/*.js)
+          if [ ${#files[@]} -eq 0 ]; then echo "no web-app/*.js found"; exit 1; fi
+          for f in "${files[@]}"; do echo "node --check $f"; node --check "$f"; done
+        shell: bash
 
       # The always-on floor: no dependencies, so it is green even if the jsdom
       # install below ever fails.

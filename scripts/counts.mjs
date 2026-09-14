@@ -27,9 +27,17 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+// The server source comes from the ONE shim the harness owns, which derives its
+// file list from `web-app/.clasp.json`'s filePushOrder (Batch F1). These counts
+// read the server BY PATH, which is precisely the coupling INV-202 names: split
+// Code.js without moving the derivation and `--check` goes red on a drift that
+// is not real. Going through serverSource() means the split is invisible here.
+const { serverSource } = createRequire(import.meta.url)('../test/client/harness.js');
 
 export const BEGIN = '<!-- COUNTS:BEGIN -->';
 export const END = '<!-- COUNTS:END -->';
@@ -88,7 +96,7 @@ export function editorRegistrations() {
  *  run.js's F7/F9 pins already use, so INV-136's stated count cannot drift from
  *  what the code enforces (it drifted four times while hand-maintained). */
 export function gatedEndpoints() {
-  const src = read('web-app/Code.js');
+  const src = serverSource();
   const out = { admin: [], manager: [] };
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
   let m;
@@ -104,7 +112,7 @@ export function gatedEndpoints() {
  *  dispatcher instead of owning one. Apps Script caps the first at
  *  AUTOMATION_TRIGGER_QUOTA (20) — the cap that threw on the operator. */
 export function triggers() {
-  const src = read('web-app/Code.js');
+  const src = serverSource();
   const install = fnBody(src, 'installAutomationTriggers');
   const created = [...new Set([...install.matchAll(/newTrigger\('([^']+)'\)/g)].map((m) => m[1]))];
   const groups = /const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/.exec(src);
@@ -131,12 +139,21 @@ export function localStorageKeys() {
   return [...keys].sort();
 }
 
-/** CLAUDE.md's own libraries — the two lists whose sizes the prose quotes. */
+/** The two libraries whose sizes the prose quotes. They live in
+ *  `.cycle/config.md` since Batch D1; CLAUDE.md is the fallback so this keeps
+ *  working in both directions while the move lands (the same prefer-then-fall-back
+ *  shape `scripts/cycle-context.mjs` already uses). INV-202: a derivation that
+ *  reads a file BY PATH is coupled to that file's layout — when the content
+ *  moves, the derivation moves with it IN THE SAME COMMIT. */
+export const LIBRARY_DOC = '.cycle/config.md';
+export function libraryFile() {
+  return fs.existsSync(path.join(ROOT, LIBRARY_DOC)) ? LIBRARY_DOC : 'CLAUDE.md';
+}
 export function docLists() {
-  const claude = read('CLAUDE.md');
+  const doc = read(libraryFile());
   return {
-    invariants: (claude.match(/^INV-\d+\s*\|/gm) || []).length,
-    regressionScenarios: (claude.match(/^S\d+\s*\|/gm) || []).length,
+    invariants: (doc.match(/^INV-\d+\s*\|/gm) || []).length,
+    regressionScenarios: (doc.match(/^S\d+\s*\|/gm) || []).length,
   };
 }
 
@@ -146,6 +163,11 @@ export function docLists() {
 // only authority, so we ask it.
 const NO_SPAWN = 'COUNTS_NO_SPAWN';
 
+// An expected, explainable failure: the CLI prints its message and exits 1
+// with no stack trace. An UNEXPECTED throw still gets the full trace, which
+// is the right split — a bug here should be loud, a red harness should not.
+export class CountsError extends Error {}
+
 function harnessTotal(rel) {
   // One of the harnesses we spawn (run.js) calls THIS script back, so the
   // spawn is a cycle waiting for a missing --static. Left unguarded it does
@@ -153,17 +175,37 @@ function harnessTotal(rel) {
   // nothing. The child carries a sentinel; seeing it means we are already
   // inside a harness, and the cycle becomes an immediate, legible error.
   if (process.env[NO_SPAWN]) {
-    throw new Error(
-      'counts: refusing to run ' + rel + ' from inside a harness run — this is the ' +
+    throw new CountsError(
+      'refusing to run ' + rel + ' from inside a harness run — this is the ' +
       'counts.mjs ⇄ harness cycle. The caller must pass --static (run.js does).');
   }
-  const out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
-    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-    env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
-  });
+  // A RED harness exits non-zero, so execFileSync THROWS before the summary
+  // check below can ever run — and the Error it throws carries the child's
+  // whole stdout in `.message`, which is a ~70k-character wall on top of a
+  // stack trace for what is really a one-line fact ("the harness is red").
+  // Catch it, read the summary out of the captured output, and say that.
+  let out;
+  try {
+    out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+      env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
+    });
+  } catch (e) {
+    const captured = String(e && e.stdout || '');
+    const sum = /(\d+) passed, (\d+) failed/.exec(captured);
+    if (sum && Number(sum[2]) > 0) {
+      throw new CountsError(
+        rel + ' is RED (' + sum[2] + ' failing of ' + (Number(sum[1]) + Number(sum[2])) + ') — the harness is ' +
+        'red, fix that first. The counts cannot be trusted while it is.\n' +
+        '  Run: node ' + rel);
+    }
+    throw new CountsError(
+      'could not run ' + rel + ' (' + (e && e.status != null ? 'exit ' + e.status : String(e && e.code || e)) + ').\n' +
+      '  Run: node ' + rel);
+  }
   const m = /(\d+) passed, (\d+) failed/.exec(out);
-  if (!m) throw new Error('counts: ' + rel + ' printed no summary line');
-  if (Number(m[2]) !== 0) throw new Error('counts: ' + rel + ' reported ' + m[2] + ' failing — fix the suite before trusting its total');
+  if (!m) throw new CountsError(rel + ' printed no summary line');
+  if (Number(m[2]) !== 0) throw new CountsError(rel + ' reported ' + m[2] + ' failing — fix the suite before trusting its total');
   return Number(m[1]);
 }
 
@@ -194,13 +236,13 @@ const ROWS = [
   ['domTests', 'DOM harness tests', '`node test/client/dom/runDom.js`'],
   ['visualScenarios', 'Visual matrix scenarios', "`shoot.mjs`'s `SCENARIOS`"],
   ['editorRegistrations', 'Editor suite registrations', "`Tests.js`; a run prints its own `Expected:` line"],
-  ['adminEndpoints', 'Admin-tier endpoints (INV-136)', "`'Admin access required.'` in `Code.js`"],
-  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` in `Code.js`"],
+  ['adminEndpoints', 'Admin-tier endpoints (INV-136)', "`'Admin access required.'` in the server source"],
+  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` in the server source"],
   ['installedTriggers', 'Installable triggers created', '`installAutomationTriggers`'],
   ['groupedTriggerJobs', 'Jobs riding a dispatcher', '`TRIGGER_GROUPS`'],
   ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/`"],
-  ['invariants', 'Invariant library entries', 'this file'],
-  ['regressionScenarios', 'Regression scenarios (S*)', 'this file'],
+  ['invariants', 'Invariant library entries', '`.cycle/config.md`'],
+  ['regressionScenarios', 'Regression scenarios (S*)', '`.cycle/config.md`'],
 ];
 
 export function renderBlock(c) {
@@ -235,7 +277,14 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   const argv = process.argv.slice(2);
   const withHarness = !argv.includes('--static');
-  const c = derive({ withHarness });
+  let c;
+  try {
+    c = derive({ withHarness });
+  } catch (e) {
+    if (!(e instanceof CountsError)) throw e;
+    console.error('counts: ' + e.message);
+    process.exit(1);
+  }
 
   if (argv.includes('--json')) {
     console.log(JSON.stringify(c, null, 2));

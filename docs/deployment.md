@@ -129,6 +129,14 @@ re-copy the creds; nothing is lost, it's all in git or Google).
    ```
    `.clasp.dev.json` is gitignored; `push:dev` swaps it in, pushes, and restores
    the committed prod `.clasp.json` so a bare `clasp push` still targets prod.
+
+   **If your `.clasp.dev.json` predates Batch F2 (2026-09-14), fix it now:** the
+   server is fourteen files loaded in the order `filePushOrder` declares, and an
+   old dev config still has `"filePushOrder": []`. Since `push:dev` swaps that
+   file OVER `.clasp.json` to push, a stale copy pushes the server in a different
+   order than prod. Copy the `filePushOrder` block out of
+   `.clasp.dev.json.example`. A pin holds the committed example equal to prod —
+   it cannot see your gitignored copy.
 3. **Copy the operational (non-PHI) sheets in Google Drive** (File → Make a copy):
    - **ADP spreadsheet** → this is your dev roster/timesheet store. (KB is PHI-free
      too — copy it if you want populated Reference content.)
