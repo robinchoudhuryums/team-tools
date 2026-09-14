@@ -23,6 +23,17 @@ cd "$(git rev-parse --show-toplevel)" || exit 2
 
 [ -f "$file" ] || { echo "  NO SUCH FILE: $file" >&2; exit 2; }
 
+# bash reads a script INCREMENTALLY, so mutating this file while it runs makes
+# the shell resume mid-token and die — the restore never happens and the tree is
+# left dirty. Found the only way it could be: by trying it.
+case "$file" in
+  */bite.sh|bite.sh)
+    echo "  REFUSING: bite.sh cannot bite itself — bash reads it as it runs, so the" >&2
+    echo "            mutation corrupts the running shell and the restore never fires." >&2
+    echo "            Drive its assertions from a probe instead." >&2
+    exit 2 ;;
+esac
+
 # The guard. `git status --porcelain <file>` prints nothing for a clean,
 # tracked file — anything at all (modified, staged, untracked) means the
 # restore below would destroy work, so refuse before touching it.
