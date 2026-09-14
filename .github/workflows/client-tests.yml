@@ -49,3 +49,11 @@ jobs:
 
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js
+
+      # Batch C: the generated counts block in CLAUDE.md must equal what the
+      # tree derives. This runs LAST because it re-runs both harnesses to read
+      # their own summary lines — a static count cannot equal either total
+      # (tests registered in loops), and run.js's own pins cannot ask for them
+      # without spawning the harness that is asking.
+      - name: Check the generated counts block
+        run: node scripts/counts.mjs --check

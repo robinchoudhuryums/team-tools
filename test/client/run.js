@@ -5274,18 +5274,30 @@ test('F9: every gated endpoint is covered by a gate test (enumerated from source
     '(or a dedicated *_nonManagerRejected test): ' + uncovered.join(', '));
 });
 
-test('F7: INV-136 documents exactly the admin-gated set that Code.js enforces', () => {
+test('F7: INV-136 NAMES the admin-gated set, and the COUNT lives only in the generated block', () => {
   const admin = gatedEndpointsFromSource_().admin;
   const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
   const start = claude.indexOf('INV-136 |');
   assert.ok(start > 0, 'INV-136 is present in the invariant library');
   const para = claude.slice(start, claude.indexOf('| Subsystem:', start));
-  // The prose count drifted for two cycles (said 30 while the code enforced
-  // 35) — the operator reads it to decide whether to narrow ADMIN_EMAILS.
-  const stated = /\*\*(\d+) Admin-exclusive endpoints\*\*/.exec(para);
-  assert.ok(stated, 'INV-136 states an "N Admin-exclusive endpoints" count');
-  assert.strictEqual(Number(stated[1]), admin.length,
-    'INV-136 says ' + stated[1] + ' admin-exclusive endpoints; Code.js enforces ' + admin.length);
+
+  // Batch C split this pin's two halves by where they belong. The COUNT drifted
+  // four times while INV-136 carried it in prose (24 -> 28 -> 30 -> 35, each
+  // "authoritative"), so the number now has ONE home — the generated counts
+  // block — and this asserts the block agrees with what Code.js enforces.
+  const stated = countsBlockRow_('Admin-tier endpoints (INV-136)');
+  assert.strictEqual(stated, admin.length,
+    'the counts block says ' + stated + ' admin-tier endpoints; Code.js enforces ' +
+    admin.length + ' — regenerate with `node scripts/counts.mjs --block`');
+
+  // INV-136 must NOT restate it: a second copy is a second source of truth,
+  // which is exactly how it drifted (and an operator reads it to decide
+  // whether to narrow ADMIN_EMAILS).
+  assert.ok(!/\d+ Admin-exclusive endpoints/.test(para),
+    'INV-136 states an endpoint COUNT again — cite the generated counts block instead');
+
+  // The NAMING half stays here, where it is useful: the list is how a reader
+  // learns WHICH endpoints are admin-tier, and it cannot be derived elsewhere.
   const unnamed = admin.filter((n) => para.indexOf('`' + n + '`') < 0);
   assert.deepStrictEqual(unnamed, [],
     'admin-gated endpoint(s) missing from INV-136\'s list: ' + unnamed.join(', '));
@@ -20207,6 +20219,137 @@ test('Q-5: both DeptRequests resolve paths use the bounded RequestId lookup — 
   assert.ok(/drBumpCacheGen_\(\)/.test(mark) && /pendingTasksBust_\(row\[DR\.BY_ID\]\)/.test(mark), 'both cache busts survive');
   assert.ok(/if \(!hit\) return \{ found: false \}/.test(mark), 'an unknown token is still not-found');
   assert.ok(/drCanAct_\(emp, row\)/.test(inApp), 'the in-app path still scope-checks the located row');
+});
+
+// ---------------------------------------------------------------------------
+// Batch C — derived counts. A number worth writing down is derived from the
+// thing that defines it (INV-179 applied to documentation). These guard the
+// generated block and ban a second copy in prose; `scripts/counts.mjs --check`
+// (CI) additionally verifies the two harness totals, which cannot be checked
+// from inside a harness without spawning the harness that is asking.
+console.log('\nbatch C — derived counts (C1/C2/C4)');
+
+function countsJson_() {
+  if (countsJson_._c) return countsJson_._c;
+  const out = require('child_process').execFileSync(
+    process.execPath,
+    [path.join(__dirname, '../../scripts/counts.mjs'), '--json', '--static'],
+    { encoding: 'utf8' });
+  countsJson_._c = JSON.parse(out);
+  return countsJson_._c;
+}
+
+function countsBlockText_() {
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const i = claude.indexOf('<!-- COUNTS:BEGIN -->');
+  const j = claude.indexOf('<!-- COUNTS:END -->');
+  assert.ok(i >= 0 && j > i, 'CLAUDE.md carries the generated counts block');
+  return claude.slice(i, j + '<!-- COUNTS:END -->'.length);
+}
+
+// Used by F7 (and anything else that needs a documented figure): read it from
+// the ONE place the docs state it, never from a sentence.
+function countsBlockRow_(label) {
+  const line = countsBlockText_().split('\n').find((l) => l.indexOf('| ' + label + ' |') === 0);
+  assert.ok(line, 'the counts block has a "' + label + '" row');
+  const v = line.split('|')[2].trim();
+  return v === '\u2014' ? null : Number(v);
+}
+
+test('C1/C2: every STATIC figure in the generated block equals what counts.mjs derives', () => {
+  // The harness totals are deliberately excluded here — see the note above.
+  const c = countsJson_();
+  const rows = {
+    'Visual matrix scenarios': 'visualScenarios',
+    'Editor suite registrations': 'editorRegistrations',
+    'Admin-tier endpoints (INV-136)': 'adminEndpoints',
+    'Manager-gated endpoints': 'managerEndpoints',
+    'Installable triggers created': 'installedTriggers',
+    'Jobs riding a dispatcher': 'groupedTriggerJobs',
+    'localStorage keys': 'localStorageKeys',
+    'Invariant library entries': 'invariants',
+    'Regression scenarios (S*)': 'regressionScenarios',
+  };
+  Object.keys(rows).forEach((label) => {
+    assert.strictEqual(countsBlockRow_(label), c[rows[label]],
+      'the block\'s "' + label + '" row is stale — regenerate with `node scripts/counts.mjs --block`');
+  });
+
+  // The two harness rows must still be PRESENT and numeric: `--check` fills
+  // them from real runs, so an em dash here means someone pasted `--static`
+  // output into the doc and quietly dropped two of the figures.
+  ['Pure harness tests', 'DOM harness tests'].forEach((label) => {
+    const v = countsBlockRow_(label);
+    assert.ok(typeof v === 'number' && v > 0,
+      'the block\'s "' + label + '" row must carry a real total (run `node scripts/counts.mjs --block`)');
+  });
+});
+
+test('C4: no count that the block carries is restated in CLAUDE.md prose', () => {
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const block = countsBlockText_();
+  // Scan the doc OUTSIDE its own generated block.
+  const prose = claude.split(block).join('\n');
+
+  // (a) A post-deploy instruction must not name the editor-suite count. It was
+  //     named in 13 dated entries, each correct on its day and wrong by the
+  //     next round, which is why three of them carried a "THIS IS THE FIGURE
+  //     FOR THE WHOLE BACKLOG" warning about the other ten.
+  const expectN = prose.match(/expects? \*{0,2}\d{2,4}\*{0,2}(?!\s*(?:h|hours|%|px|ms|,\d))/g) || [];
+  assert.deepStrictEqual(expectN, [],
+    'a doc sentence states a test count ("' + expectN.join('", "') +
+    '") — point at the run\'s own `Expected:` line or the generated block instead');
+
+  // (b) A harness/matrix/suite running total must not appear as "A -> B".
+  const arrows = prose.match(/(?:harness|matrix|DOM|editor suite|pure) \*{0,2}\d{2,4}\*{0,2} → \*{0,2}\d{2,4}/g) || [];
+  assert.deepStrictEqual(arrows, [],
+    'a doc sentence carries a running total ("' + arrows.join('", "') +
+    '") — state the DELTA the batch added; the block carries the total');
+
+  // (c) The admin-tier size drifted four times in INV-136's prose.
+  const adminN = prose.match(/\d+ Admin-exclusive endpoints|INV-136's (?:count is now )?\d+(?:st|nd|rd|th)?\b/g) || [];
+  assert.deepStrictEqual(adminN, [],
+    'a doc sentence states the admin-tier size ("' + adminN.join('", "') +
+    '") — cite the generated block');
+});
+
+test('C4: counts.mjs derives from the defining artefact, and --check compares the block', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../scripts/counts.mjs'), 'utf8');
+  // Comment-stripped: the file DOCUMENTS the drift it exists to stop, so a ban
+  // scanned over the raw text would trip on its own rationale (INV-188).
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const has = (needle, why) => assert.ok(code.indexOf(needle) >= 0, why);
+
+  // Each figure comes from the artefact that DEFINES it, not from a doc.
+  has('const SCENARIOS = ', 'scenarios come from shoot.mjs\'s own list');
+  has('smokeTest', 'editor registrations come from the _smokeTest registration calls');
+  has('integrationTest', 'and the _integrationTest ones');
+  has("'Admin access required.'", 'admin endpoints come from the message they return');
+  has("'Manager access required.'", 'manager endpoints come from the message they return');
+  has('newTrigger', 'installable triggers come from the installer');
+  has('TRIGGER_GROUPS', 'grouped jobs come from TRIGGER_GROUPS');
+  has('INV-', 'the invariant library is counted from CLAUDE.md itself');
+
+  // A static count CANNOT equal a harness total (tests registered in loops),
+  // so the totals are taken from the RUN. Guard the recursion that invites.
+  has('execFileSync', 'harness totals are read by running the harness');
+  has('passed, ', 'and parsed from its own summary line');
+  has('withHarness = true', 'the harness runs are opt-OUT (--static), so --check is truthful by default');
+
+  // --check must compare and FAIL, not merely print.
+  has('process.exit(1)', '--check exits non-zero on drift');
+  has('renderBlock(c)', '--check renders the expected block');
+  has('blockIn(claude)', '--check reads the block the doc carries');
+
+  // A failing harness must never be laundered into a count.
+  has('failing — fix the suite before trusting its total',
+    'a harness that reports failures refuses to yield a total');
+});
+
+test('C4: CI runs `counts.mjs --check`', () => {
+  const wf = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
+  assert.ok(/counts\.mjs --check/.test(wf),
+    'the workflow must run `node scripts/counts.mjs --check` — the pins above cannot verify the harness totals from inside a harness');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

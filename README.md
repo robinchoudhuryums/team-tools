@@ -164,10 +164,11 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders a 102-scenario matrix in headless Chromium; it is
-manual / on-demand, NOT in CI. (Read that count off the run —
-`shoot.mjs`'s own `SCENARIOS` list is the authority; a hand-carried number
-here has drifted before.) Four small companion harnesses live beside it and
+(`test/visual/`) renders the scenario matrix in headless Chromium; it is
+manual / on-demand, NOT in CI. (For how many scenarios — and for every other
+figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
+read the generated block in CLAUDE.md's Cycle Workflow Config. A hand-carried
+number here had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
 answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
