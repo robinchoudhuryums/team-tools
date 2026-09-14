@@ -144,9 +144,22 @@ export function docLists() {
 // A static count CANNOT equal either harness's total: some tests are registered
 // inside loops, so 762 call sites in run.js produce 804 runs. The run is the
 // only authority, so we ask it.
+const NO_SPAWN = 'COUNTS_NO_SPAWN';
+
 function harnessTotal(rel) {
+  // One of the harnesses we spawn (run.js) calls THIS script back, so the
+  // spawn is a cycle waiting for a missing --static. Left unguarded it does
+  // not fail, it HANGS — in CI that burns the job's whole timeout and reports
+  // nothing. The child carries a sentinel; seeing it means we are already
+  // inside a harness, and the cycle becomes an immediate, legible error.
+  if (process.env[NO_SPAWN]) {
+    throw new Error(
+      'counts: refusing to run ' + rel + ' from inside a harness run — this is the ' +
+      'counts.mjs ⇄ harness cycle. The caller must pass --static (run.js does).');
+  }
   const out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
   });
   const m = /(\d+) passed, (\d+) failed/.exec(out);
   if (!m) throw new Error('counts: ' + rel + ' printed no summary line');

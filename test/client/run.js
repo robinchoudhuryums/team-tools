@@ -20364,6 +20364,23 @@ test('C4: counts.mjs derives from the defining artefact, and --check compares th
   // A failing harness must never be laundered into a count.
   has('failing — fix the suite before trusting its total',
     'a harness that reports failures refuses to yield a total');
+
+  // THE CYCLE THIS SCRIPT INVITES: counts.mjs spawns BOTH harnesses, and one
+  // of them (run.js) calls counts.mjs back. Unguarded, a dropped --static does
+  // not fail — it HANGS, and in CI that burns the whole job timeout reporting
+  // nothing. A source check on run.js's own '--static' would be false comfort:
+  // countsJson_() is first called by the C1/C2 test ABOVE this one, so the
+  // cycle would start before this assertion could ever run. The guard that
+  // works is in counts.mjs — a sentinel on the child env turns the cycle into
+  // an immediate, legible throw — so that is what is pinned.
+  has("const NO_SPAWN = 'COUNTS_NO_SPAWN'", 'counts.mjs names the spawn sentinel');
+  has('if (process.env[NO_SPAWN])',
+    'counts.mjs must REFUSE to spawn a harness from inside one — without this the counts.mjs ⇄ run.js cycle hangs instead of failing');
+  has('[NO_SPAWN]:', 'and must set the sentinel on the child it spawns, or the refusal never triggers');
+  const selfInvoke = fs.readFileSync(__filename, 'utf8');
+  assert.ok(selfInvoke.slice(selfInvoke.indexOf('function countsJson_'),
+    selfInvoke.indexOf('function countsBlockText_')).indexOf("'--static'") >= 0,
+    'run.js calls counts.mjs with --static (the sentinel above is what makes its removal legible rather than a hang)');
 });
 
 test('C4: CI runs `counts.mjs --check`', () => {
