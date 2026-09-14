@@ -69,7 +69,14 @@ io.open(p, 'w', encoding='utf-8').write(s)
 " || { echo "  MUTATION FAILED: $label" >&2; exit 1; }
 
 out="$(node test/client/run.js 2>&1)"
-if echo "$out" | grep -q "✗.*$needle"; then
+# HERESTRING, not `echo "$out" | grep -q`. Under `set -o pipefail`, `grep -q`
+# exits the moment it matches; if the harness output is larger than the pipe
+# buffer (~64KB — it is ~83KB) the writer then dies of SIGPIPE and the PIPELINE
+# reports 141, so a pin that DID bite was reported as NO BITE. Worse, it was
+# size- and position-dependent: an early match flaked, a late one passed, and
+# the same bite-check gave different answers on different days. Cost an hour
+# while bitting the previewPtoAccruals pin. The herestring has no writer to kill.
+if grep -q "✗.*$needle" <<<"$out"; then
   echo "  BITES: $label"
   rc=0
 else
