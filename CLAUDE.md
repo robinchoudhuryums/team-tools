@@ -4685,6 +4685,16 @@ Every phase within a cycle (audit → plan → implement → regression → refl
 carries the same number. `/cycle-status` surfaces it.
 
 ### `.cycle/` state directory (committed — survives the ephemeral container)
+- `.cycle/config.md` — **the Cycle Workflow Config** (Batch D1, 2026-09-14):
+  Test Command, Health Dimensions, Axis B, Subsystems, the Invariant Library,
+  the Visual Audit Stage, Policy, the Seams cadence, the Regression Scenarios,
+  Frozen Subsystems, Deploy Command. It is the one file here that is NOT a
+  rolling record — it is stable configuration, and it lives in `.cycle/` because
+  that is what every workflow command already reads for cycle machinery.
+  CLAUDE.md keeps a stub under the same heading so the commands (which are
+  synced byte-identical and cannot be edited locally) still land somewhere that
+  redirects. `scripts/counts.mjs` and `scripts/cycle-context.mjs` both PREFER
+  this file and fall back to CLAUDE.md, so the move is safe in both directions.
 - `.cycle/STATE.md` — the CURRENT cycle ONLY (template below); written by the
   implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`
   and the SessionStart hook. **Split (2026-07-24):** STATE.md no longer rolls —
