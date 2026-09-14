@@ -112,6 +112,34 @@ Both harnesses live outside `web-app/`, so `clasp push` never sees them.
 
 ---
 
+## Reading the server: `serverSource()`, never a filename
+
+`harness.js` exports `serverFiles()` and `serverSource()` (Batch F1).
+
+```js
+const { serverSource, extractRawFunction } = require('./harness');
+const code = serverSource();                       // the whole server, one string
+const fn = extractRawFunction('Code.js', 'foo_');  // resolves through serverSource()
+```
+
+- The file LIST comes from `web-app/.clasp.json`'s `filePushOrder` — the same
+  declaration `clasp push` obeys — so the harness and the deployment cannot
+  disagree about what the server is or in what order it loads. An empty list
+  THROWS rather than falling back to `Code.js`: a fallback would make the
+  derivation vacuous exactly when it stopped being true.
+- `extractRawFunction` and `extractConstObject` take a file name for
+  readability, but any name in `filePushOrder` resolves through
+  `serverSource()`. `'Code.js'` has always been shorthand for "the server", so
+  those pins keep working after a function moves to another server file.
+- **Do not read the server with `readFileSync`.** A pin does that once and the
+  next split is a 73-edit change; the F1a pin fails CI on it, in this file and
+  in `scripts/counts.mjs` (INV-202).
+- `Tests.js` and `DevTools.js` are NOT server source. They share the Apps Script
+  global scope but are not what the pins mean by "the server", and a pin asserts
+  they stay out of `filePushOrder`.
+
+---
+
 ## Where the rest lives
 
 - **`docs/test-harness-log.md`** — the narrative this README does not carry:
