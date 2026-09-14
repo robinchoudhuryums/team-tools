@@ -819,7 +819,7 @@ this block, or the command that prints the number.
 | Jobs riding a dispatcher | 8 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
 | Invariant library entries | 204 | `.cycle/config.md` |
-| Regression scenarios (S*) | 101 | `.cycle/config.md` |
+| Regression scenarios (S*) | 102 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
