@@ -20301,7 +20301,14 @@ test('C4: no count that the block carries is restated in CLAUDE.md prose', () =>
     '") — point at the run\'s own `Expected:` line or the generated block instead');
 
   // (b) A harness/matrix/suite running total must not appear as "A -> B".
-  const arrows = prose.match(/(?:harness|matrix|DOM|editor suite|pure) \*{0,2}\d{2,4}\*{0,2} → \*{0,2}\d{2,4}/g) || [];
+  //     \s+ spans NEWLINES deliberately: the narrative wraps at ~76 columns, so
+  //     the label and its number land on different lines about as often as not —
+  //     a same-line rule read as passing against exactly that shape when it was
+  //     bite-checked. The second alternative catches the bolded total on its
+  //     own, which is the idiom's tell: a date range (2026-08-21 → 2026-08-24)
+  //     and a measurement (704 → 367) are never bolded.
+  const arrows = prose.match(
+    /(?:harness|matrix|DOM|editor|suite|pure)\s+\*{0,2}\d{2,4}\*{0,2}\s*→\s*\*{0,2}\d{2,4}\*{0,2}|\b\d{2,4}\s*→\s*\*\*\d{2,4}\*\*/g) || [];
   assert.deepStrictEqual(arrows, [],
     'a doc sentence carries a running total ("' + arrows.join('", "') +
     '") — state the DELTA the batch added; the block carries the total');
