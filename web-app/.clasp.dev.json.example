@@ -1,5 +1,5 @@
 {
-  "//": "Copy this file to web-app/.clasp.dev.json (gitignored) and paste your SEPARATE dev Apps Script project's scriptId below. `npm run push:dev` swaps this over .clasp.json, pushes, then restores prod. See docs/deployment.md.",
+  "//": "Copy this file to web-app/.clasp.dev.json (gitignored) and paste your SEPARATE dev Apps Script project's scriptId below. `npm run push:dev` swaps this over .clasp.json, pushes, then restores prod. See docs/deployment.md. Keep filePushOrder EQUAL to the prod .clasp.json: it declares which files are the server source and in what load order, and Batch F1 made the test harness derive that from it.",
   "scriptId": "PASTE_YOUR_DEV_SCRIPT_ID_HERE",
   "rootDir": ".",
   "scriptExtensions": [
@@ -12,6 +12,8 @@
   "jsonExtensions": [
     ".json"
   ],
-  "filePushOrder": [],
+  "filePushOrder": [
+    "Code.js"
+  ],
   "skipSubdirectories": false
 }
