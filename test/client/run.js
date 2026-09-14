@@ -20447,6 +20447,69 @@ test('C4: CI runs `counts.mjs --check`', () => {
     'the workflow must run `node scripts/counts.mjs --check` — the pins above cannot verify the harness totals from inside a harness');
 });
 
+
+// --- Batch D1 (2026-09-14): the CLAUDE.md split -------------------------------
+// D1 moved the 137 Key Design Decisions out of CLAUDE.md and left a 137-link
+// INDEX behind. That index is a new parallel source (INV-72's family): a
+// decision added to docs/design-decisions.md without an index line, or a
+// renamed anchor, rots it silently — and the only thing that caught the split's
+// own fidelity problems was a script run by hand, which is not a pin (INV-179).
+// Both directions, because each fails differently: a dead LINK sends the reader
+// to nothing, and a MISSING link hides a decision from the only place anyone
+// looks for one.
+test('D1: the Key Design Decisions index and docs/design-decisions.md agree in BOTH directions', () => {
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const dd = fs.readFileSync(path.join(__dirname, '../../docs/design-decisions.md'), 'utf8');
+
+  const links = [...claude.matchAll(/\]\(docs\/design-decisions\.md#([^)]+)\)/g)].map((m) => m[1]);
+  const anchors = [...dd.matchAll(/<a id="([^"]+)"><\/a>/g)].map((m) => m[1]);
+  assert.ok(links.length >= 100, 'CLAUDE.md keeps the decision index (got ' + links.length + ' links)');
+
+  const anchorSet = new Set(anchors);
+  const dead = links.filter((l) => !anchorSet.has(l));
+  assert.deepStrictEqual(dead, [],
+    'a Key Design Decisions index link points at no anchor ("' + dead.join('", "') +
+    '") — add the anchor in docs/design-decisions.md or fix the link');
+
+  // An anchor is emitted per decision entry, so a decision with no anchor is a
+  // decision the index CANNOT reach. Count entries the same way the move did.
+  // The anchor is emitted INSIDE the entry line ("- <a id=…></a>**Title.**"),
+  // so an entry is a top-level bullet whose bold run opens it — with or without
+  // the anchor, which is the whole point: an UNANCHORED entry must still count.
+  const entries = (dd.match(/^- (?:<a id="[^"]+"><\/a>)?\*\*/gm) || []).length;
+  assert.strictEqual(anchors.length, entries,
+    'every decision entry carries an anchor (' + anchors.length + ' anchors for ' + entries + ' entries)');
+
+  const linkSet = new Set(links);
+  const unlisted = anchors.filter((a) => !linkSet.has(a));
+  assert.deepStrictEqual(unlisted, [],
+    'a decision exists with no index line in CLAUDE.md ("' + unlisted.join('", "') +
+    '") — nobody looking at CLAUDE.md would ever find it');
+
+  assert.strictEqual(new Set(anchors).size, anchors.length, 'anchors are unique (a duplicate makes one unreachable)');
+});
+
+// The split only holds while CLAUDE.md redirects the commands that still say
+// "read CLAUDE.md's Cycle Workflow Config". Those commands are synced
+// byte-identical from the template (see /sync-commands), so they cannot be
+// edited locally — the stub IS the mechanism, and silently losing it would
+// leave every workflow command reading an empty section.
+test('D1: CLAUDE.md keeps a Cycle Workflow Config stub that redirects to .cycle/config.md', () => {
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const i = claude.indexOf('## Cycle Workflow Config');
+  assert.ok(i >= 0, 'CLAUDE.md still has a Cycle Workflow Config section for the commands to land on');
+  const stub = claude.slice(i);
+  assert.ok(/\.cycle\/config\.md/.test(stub), 'the stub names .cycle/config.md');
+  // Every implement command reads the Test Command FIRST, so the stub restates
+  // it rather than costing that read a second file open.
+  assert.ok(/Test Command:\s*`manual`/.test(stub), 'the stub restates the Test Command');
+  assert.ok(fs.existsSync(path.join(__dirname, '../../.cycle/config.md')), '.cycle/config.md exists');
+  const cfg = fs.readFileSync(path.join(__dirname, '../../.cycle/config.md'), 'utf8');
+  for (const h of ['### Test Command', '### Subsystems', '### Invariant Library', '### Regression Scenarios', '### Deploy Command']) {
+    assert.ok(cfg.indexOf(h) >= 0, '.cycle/config.md carries ' + h);
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
