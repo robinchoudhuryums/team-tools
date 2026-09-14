@@ -17,7 +17,7 @@ Estimates: Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE 
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
   · F1 — S (~2 h) · F2 — L (~2 days).
-Subsystem cycles since last Seams audit: 2 (cycle 18's F1–F5 round WAS the
+Subsystem cycles since last Seams audit: 3 (cycle 18's F1–F5 round WAS the
   seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
   2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
   moved 1 → 2 at that reflection; the 2026-09-14 SECOND reflection (19-b) did NOT
