@@ -20346,10 +20346,20 @@ test('C4: counts.mjs derives from the defining artefact, and --check compares th
   has('passed, ', 'and parsed from its own summary line');
   has('withHarness = true', 'the harness runs are opt-OUT (--static), so --check is truthful by default');
 
-  // --check must compare and FAIL, not merely print.
-  has('process.exit(1)', '--check exits non-zero on drift');
+  // --check must compare and FAIL, not merely print. Asserted on the DRIFT
+  // BRANCH, not on the file: there are two exits (missing block / stale block),
+  // so a bare presence check passes with the one that matters disabled — which
+  // is how this read as covered when it was first bite-checked.
   has('renderBlock(c)', '--check renders the expected block');
   has('blockIn(claude)', '--check reads the block the doc carries');
+  const driftAt = code.indexOf('have !== want');
+  assert.ok(driftAt > 0, '--check has a drift branch');
+  const driftBranch = code.slice(driftAt, driftAt + 900);
+  assert.ok(driftBranch.indexOf('process.exit(1)') >= 0,
+    '--check must EXIT non-zero when the block is stale — printing a diff and returning 0 makes CI green on drift');
+  const missingAt = code.indexOf('have === null');
+  assert.ok(missingAt > 0 && code.slice(missingAt, missingAt + 400).indexOf('process.exit(1)') >= 0,
+    '--check must also exit non-zero when the block is missing entirely');
 
   // A failing harness must never be laundered into a count.
   has('failing — fix the suite before trusting its total',
