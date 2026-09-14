@@ -1,0 +1,6036 @@
+{
+ "generatedFrom": "web-app/Code.js @ tag pre-f2-split",
+ "order": [
+  "00_config.js",
+  "10_core.js",
+  "20_timeclock.js",
+  "30_callnotes.js",
+  "40_metrics.js",
+  "50_deptrequests.js",
+  "51_spanish.js",
+  "60_intake.js",
+  "61_forms.js",
+  "70_kb.js",
+  "80_training.js",
+  "81_empdocs.js",
+  "82_coaching.js",
+  "90_qa.js"
+ ],
+ "units": {
+  "ADMIN_PROP_KEYS_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "086e9a08ffe3f17e"
+  },
+  "ADMIN_VIEW_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "865def4acb414d6f"
+  },
+  "ADP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "481c8853995f98b9"
+  },
+  "AUDIT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8c8153addefa6f36"
+  },
+  "AUTOMATION_AUDIT_ACTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c46abfb663380734"
+  },
+  "AUTOMATION_ERROR_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7455ef0ef23a97d5"
+  },
+  "AUTOMATION_JOB_CHECKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "80e1aaed6249b137"
+  },
+  "AUTOMATION_SYNCFAIL_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "22b4293f1160bb18"
+  },
+  "AUTOMATION_TRIGGER_QUOTA": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ca569dffce0f62ab"
+  },
+  "BIZ_MAX_SPAN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f3c62008514b124e"
+  },
+  "BREAK_EMP_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "441372d0d0633333"
+  },
+  "BREAK_EMP_MAX_KEYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f02bc00c5785274b"
+  },
+  "BUILD_HASH_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4787349895dd3ddc"
+  },
+  "BUILD_HASH_CACHE_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "14498b47c67aa0a5"
+  },
+  "CDR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "daf5c72300d71dbe"
+  },
+  "CDR_EXPECTED_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5c33ae490e886aa7"
+  },
+  "CDR_QUEUE_LIST_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "82bf97ed2d5e063c"
+  },
+  "CDR_QUEUE_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7bd2b7f1656088d4"
+  },
+  "CDR_QUEUE_UNGROUPED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c0fb04450cddb2d8"
+  },
+  "CLIENT_ERRORS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5977c485ef8353ce"
+  },
+  "CLIENT_ERR_ALERT_COOLDOWN_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6a850b14fd5f401c"
+  },
+  "CLIENT_ERR_ALERT_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ea953740908521a6"
+  },
+  "CLIENT_ERR_ALERT_WINDOW_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb67eff5041b3b2c"
+  },
+  "CLIENT_ERR_MSG_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2b39298a70a9fa2b"
+  },
+  "CLIENT_ERR_PROBLEM_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3fbaafdea654aa70"
+  },
+  "CLIENT_ERR_RATE_MAX_PER_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0d842bbae8e986d5"
+  },
+  "CLIENT_ERR_RETENTION_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "88966b03bfc7767b"
+  },
+  "CLIENT_ERR_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "05af347afbe34145"
+  },
+  "CLIENT_ERR_STACK_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c39ade3fa408ed04"
+  },
+  "CLIENT_ERR_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "885725c06817589f"
+  },
+  "CN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8864a067f489d1b6"
+  },
+  "CN_AMBIENT_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2369686a03abad1d"
+  },
+  "CN_AMBIENT_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0c0f5d0dada629ac"
+  },
+  "CN_ARCHIVED_TAGS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8614d8001aadf729"
+  },
+  "CN_AUDIT_ACTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "81840f2b45f75077"
+  },
+  "CN_AUDIT_DEFAULT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cd579f14289d89d6"
+  },
+  "CN_AUDIT_MAX_RESULTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5ec21dc8b1b62b70"
+  },
+  "CN_AUDIT_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fa3910791e4bb381"
+  },
+  "CN_AUTO_TAG_RULE_LIMIT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "94cee43df522a0c2"
+  },
+  "CN_EMAIL_DETAILS_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6274b4580ef0ba4f"
+  },
+  "CN_EMAIL_PALETTE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6b9450eaae2eb67c"
+  },
+  "CN_EMAIL_TEMPLATE_BODY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4200a48b5ab82a63"
+  },
+  "CN_EMAIL_TEMPLATE_LIMIT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7862480cd2f0b9e9"
+  },
+  "CN_EXTERNAL_EMAILS_MAX_ENTRIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7c1b0b0d96a8e342"
+  },
+  "CN_EXTERNAL_LINK_CATEGORIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bbc6eaa72fc9b57a"
+  },
+  "CN_EXTERNAL_LINK_LIMIT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "229ec1c5c42f18ed"
+  },
+  "CN_FEEDBACK_MAX_ENTRIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dcd2de90cf521ca2"
+  },
+  "CN_FLAG_PRIORITY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "879fe649066de7d7"
+  },
+  "CN_FLAG_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cf4836b5c9310201"
+  },
+  "CN_FLAG_TYPES_EXTENDED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "461f1e1513692145"
+  },
+  "CN_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1137c693d12dca52"
+  },
+  "CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6f5832c23a64603b"
+  },
+  "CN_PIN_LIMIT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bc625fbaf36ca33f"
+  },
+  "CN_SUBFORM_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "297ec7b0b911d649"
+  },
+  "CN_TAG_TRENDS_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f218ef0815df69c2"
+  },
+  "CN_TAG_TRENDS_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0964ef6d669ac00b"
+  },
+  "CN_TAG_TRENDS_TOPK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3b033ef3a7ee7c7d"
+  },
+  "CN_TAG_TRENDS_WEEKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "60f8dd910625f4cb"
+  },
+  "CN_TAXONOMY_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d861066f2bccf3e7"
+  },
+  "CN_TAXONOMY_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "32bef85adcd8d32d"
+  },
+  "CN_TEMPLATE_RECIPIENT_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2295b6851fc8cdaa"
+  },
+  "CN_UNRESOLVED_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e95cfa096275e3d2"
+  },
+  "CN_UNRESOLVED_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9bb6b67fba03804a"
+  },
+  "CO": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6edbca5ea3fd7d19"
+  },
+  "COACH_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09b584b1614a6549"
+  },
+  "COACH_RESPONSE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "64efc128883d3fbc"
+  },
+  "COACH_SEVERITIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "029020cb7fa9cb65"
+  },
+  "COACH_SEV_LABELS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f65960db9bd6f71b"
+  },
+  "COACH_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09de3c067a092f90"
+  },
+  "COACH_TEXT_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b109b53a1b08eeaf"
+  },
+  "COACH_TRX_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee3675da1ca37e25"
+  },
+  "COACH_VOIDED_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "da9a3d07feed6617"
+  },
+  "CONFIG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ad0d28959103e0d"
+  },
+  "CSRT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09aa9a844ca0edd3"
+  },
+  "CSRT_QUEUE_COL_FIRST": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4fda6a843dfb00f8"
+  },
+  "CSRT_QUEUE_COL_LAST": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ddef7b89c5a5531f"
+  },
+  "CSR_TRANSFER_EXPECTED_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "df172413390f5513"
+  },
+  "CSR_TRANSFER_NUM_COLS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "618c8754809587c9"
+  },
+  "CSR_TRANSFER_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3769ba1b4d159f7e"
+  },
+  "DASHBOARD_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "8ad0903b1c50cb6d"
+  },
+  "DASHBOARD_PERIOD_KEYS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "4febbaaedcb34ab7"
+  },
+  "DASH_MONTH_ABBR": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "931a37513e31d1a7"
+  },
+  "DAY_ABBR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d00fd66fa5fdf535"
+  },
+  "DIAG_PURGE_MAX_ROWS_PER_RUN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b5f4d676334826c5"
+  },
+  "DIGEST_LAST_RUN_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0d38e2d7532af187"
+  },
+  "DR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c558b3fa7aeda4b7"
+  },
+  "DRIVE_ACCESS_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1d21760fa8b2c762"
+  },
+  "DRIVE_ACCESS_CACHE_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bfbf47927e477911"
+  },
+  "DRIVE_REAUTH_HINT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1bbc0b3260c0d3d3"
+  },
+  "DRIVE_WRITE_SCOPE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "72e0ebdcd5e1fb58"
+  },
+  "DR_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eaa5480127a0a5c5"
+  },
+  "DR_LIST_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "baea742682793ec7"
+  },
+  "DR_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4165e710c4b0aa13"
+  },
+  "DR_PATIENT_TRX_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a2f66a149b546c21"
+  },
+  "DR_RESOLVED_VIA_VALUES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3f01b313fd184107"
+  },
+  "DR_RESULT_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ac5bb06d6b9fe632"
+  },
+  "ED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c0063f8f2a2c7f4c"
+  },
+  "EDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f378680227e3a122"
+  },
+  "EDT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef3d15109ac1ad01"
+  },
+  "EMP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "587e2a15873b7a26"
+  },
+  "EMPDOC_ACK_TEXT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3fcf8e4488e10ee0"
+  },
+  "EMPDOC_ACK_VERSION": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "56cf9f5b85f84bf3"
+  },
+  "EMPDOC_BODY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0e9567ddd1ce886b"
+  },
+  "EMPDOC_FIELD_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dba5987da9117794"
+  },
+  "EMPDOC_FIELD_LABEL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58cf901618c7c752"
+  },
+  "EMPDOC_FIELD_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e0f01189d8b6b629"
+  },
+  "EMPDOC_HASH_DELIM_LEGACY": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "a4897da88e913f66"
+  },
+  "EMPDOC_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bead7a97eb1f3d0c"
+  },
+  "EMPDOC_RESPONSE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9ab5765a17a19207"
+  },
+  "EMPDOC_SIG_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "24f1ba1ff32bb27f"
+  },
+  "EMPDOC_SIG_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a425602a3dbd94a9"
+  },
+  "EMPDOC_SIG_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "60fdacba4770841a"
+  },
+  "EMPDOC_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aa79cfc5191f455"
+  },
+  "EMPDOC_TITLE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bed56816dfb3882d"
+  },
+  "EMPDOC_TPL_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "247813ef8bec9e22"
+  },
+  "EMPDOC_TPL_NAME_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "15d76b1fa8fd3acc"
+  },
+  "EMPDOC_TPL_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fc28ec6126026103"
+  },
+  "EMPDOC_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "41ad9d2f188e970d"
+  },
+  "FEATURE_FLAGS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ef3d2a18a1ad98b"
+  },
+  "FS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "90df66ecb50d9131"
+  },
+  "FS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a5cdde2678e31ebd"
+  },
+  "FT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b13998c26db09489"
+  },
+  "FT_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "873d7db6b6f268c2"
+  },
+  "INS_PAYOR_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cf86da545f2aca2d"
+  },
+  "INS_PAYOR_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "857f860699fee7c2"
+  },
+  "INS_PAYOR_TOP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "69c0e1fc8704c449"
+  },
+  "INTAKE_ACCT_SUB_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "70fba4cbd9d2a0c4"
+  },
+  "INTAKE_FEEDBACK_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "83375ea1c717d4c7"
+  },
+  "INTAKE_FEEDBACK_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6d1f8cbdf44febdf"
+  },
+  "INTAKE_FEEDBACK_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1e6c09d36898120d"
+  },
+  "INTAKE_FORM_TYPES_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cf28acd175e41fee"
+  },
+  "INTAKE_LIST_CAP_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ebfeefaefc3e40fc"
+  },
+  "INTAKE_OFFERINGS_LIST_CAP_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ad1051e4cc758ca"
+  },
+  "INTAKE_PAP_LAYOUT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cc00d98f6bf7719d"
+  },
+  "INTAKE_PMD_LAYOUT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e575416c0b74b196"
+  },
+  "INTAKE_PPD_SUB_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7e2d2ddfcfdea037"
+  },
+  "INTAKE_PPD_YESNO_QS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ec555a688c927994"
+  },
+  "INTAKE_STORE_CELL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "771f0722e8770bac"
+  },
+  "INTAKE_VOLUME_MONTHS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8918601f642c9814"
+  },
+  "INTAKE_VOLUME_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "45f65f6b185a31b3"
+  },
+  "INTERACTIVE_FORM_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a9d986c94c371fb6"
+  },
+  "KB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "924171e6a12805a0"
+  },
+  "KBC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d16f3622d0023e05"
+  },
+  "KBF": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a522c639706a62db"
+  },
+  "KBR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9db218445b99c217"
+  },
+  "KBREV": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c8f905ad23ac67e8"
+  },
+  "KB_AI_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "378fb3a36197249b"
+  },
+  "KB_AI_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ce780c7e71d0151"
+  },
+  "KB_AI_CALL_RESERVE_USD": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e17ce8805dbc8e37"
+  },
+  "KB_AI_DEFAULT_DAILY_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "da7a1f1791b5e37e"
+  },
+  "KB_AI_DEFAULT_MODEL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "476d180d447984ea"
+  },
+  "KB_AI_GEN_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "07ffc1d1b69a9784"
+  },
+  "KB_AI_MAX_CHUNKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "aae7881d803dd41a"
+  },
+  "KB_AI_MODEL_PRICES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9331ded9d4fc0855"
+  },
+  "KB_AI_SCORE_FLOOR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fe1f2bd053d851c8"
+  },
+  "KB_AI_SPEND_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "308a25ad2f0d79b3"
+  },
+  "KB_BODY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "838f24607ada9c23"
+  },
+  "KB_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "608bf2b6a83c7807"
+  },
+  "KB_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1ecb4977fb87c85b"
+  },
+  "KB_CHUNK_FENCE_OVERAGE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "05df8cb23f564bd8"
+  },
+  "KB_CHUNK_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e01bfe4daf3abe94"
+  },
+  "KB_COMMENTS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "994ca9563144b33d"
+  },
+  "KB_COMMENTS_LIST_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "758f035d763be27c"
+  },
+  "KB_COMMENTS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "de65cd80423d2ce0"
+  },
+  "KB_COMMENTS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0f24a86b3369dcd2"
+  },
+  "KB_COMMENT_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3eec0a4026ae41cd"
+  },
+  "KB_DATA_TABLES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b180d3d2fba911f6"
+  },
+  "KB_DATA_TABLE_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9786dc7ecf809596"
+  },
+  "KB_DATA_TABLE_MAX_COLS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ba3f0ae1c40dd6a7"
+  },
+  "KB_DATA_TABLE_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b223e78aefa4c6fb"
+  },
+  "KB_DOC_HEADING_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1735a89d0884c08a"
+  },
+  "KB_DOC_IMAGE_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3fd1f0bfc1e2f21d"
+  },
+  "KB_EMBED_SCAN_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "305383bcac165701"
+  },
+  "KB_FEEDBACK_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f7dea92b2a0e6ef0"
+  },
+  "KB_FEEDBACK_KINDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cdf0b9a21efede5a"
+  },
+  "KB_FEEDBACK_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "55741f4261892628"
+  },
+  "KB_FEEDBACK_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "79aef82f6d4171be"
+  },
+  "KB_FEEDBACK_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3dc0af3719c0ae6a"
+  },
+  "KB_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b94405f7f4dccb8"
+  },
+  "KB_IMAGES_FOLDER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "819c80f4c9b0941e"
+  },
+  "KB_IMG_FETCH_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dabe7bb3baedb96d"
+  },
+  "KB_IMG_UPLOAD_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fc1587ace327f6f7"
+  },
+  "KB_IMG_UPLOAD_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "69338a530f1701f7"
+  },
+  "KB_INGEST_CONVERT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7a26b99ec5d0674a"
+  },
+  "KB_INGEST_CSV_EXT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "085a2c00fe296c11"
+  },
+  "KB_INGEST_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3063576f7220b0e8"
+  },
+  "KB_INGEST_TEXT_EXT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7bb1ad63a645d08b"
+  },
+  "KB_MAP_GEOCODE_CACHE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dce9ecbd2d5d9054"
+  },
+  "KB_MAP_GEOCODE_CACHE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5d3c1b136de88316"
+  },
+  "KB_MAP_MAX_WH": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8899ec8607dcbe48"
+  },
+  "KB_MAP_QUERY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fe299ac35a89da87"
+  },
+  "KB_RELATED_MIN_COVIEWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6ce36b46e63e4c53"
+  },
+  "KB_RELATED_TOP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef8c26242a1b8352"
+  },
+  "KB_REQUESTS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e6758ebb71bf61fd"
+  },
+  "KB_REQUESTS_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ea6cd5b0bd151e4c"
+  },
+  "KB_REQUESTS_RESOLVED_TAIL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5baf93a528453546"
+  },
+  "KB_REQUESTS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "917194383505ac41"
+  },
+  "KB_REQUEST_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "922cde7ad0e11b79"
+  },
+  "KB_REQUEST_TOPIC_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cb04d14dc7b6ecec"
+  },
+  "KB_REVIEW_DUE_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2d18c2398218b328"
+  },
+  "KB_REVISIONS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a0a7aa0f635d152a"
+  },
+  "KB_REVISIONS_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "05bcf01f666ddb5e"
+  },
+  "KB_REVISIONS_PER_ITEM": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e1cbbb281f9b5bc5"
+  },
+  "KB_REVISIONS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d2a7ee3133c2d409"
+  },
+  "KB_SEARCH_MAX_PER_ITEM": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee15577702d84097"
+  },
+  "KB_SEARCH_MAX_RESULTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "86a944328cc3143e"
+  },
+  "KB_SEARCH_TOKENS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "862ef1ac07f02f8d"
+  },
+  "KB_SHEET_MAX_COLS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1ffa50d5524c282b"
+  },
+  "KB_SHEET_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c4c39217551c36ef"
+  },
+  "KB_STATUS_DRAFT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "405dd2370184adca"
+  },
+  "KB_STATUS_PUBLISHED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0a159da8fc6c48ce"
+  },
+  "KB_SYNONYMS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7b81088ce3aaa8b2"
+  },
+  "KB_SYNONYM_GROUPS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0edda2016b4758c5"
+  },
+  "KB_SYNONYM_TERMS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8f1f9df66bbde153"
+  },
+  "KB_SYNONYM_TERM_MAXLEN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c955a33d58ce863"
+  },
+  "KB_USAGE_TOP_N": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3db06f6a14a1c758"
+  },
+  "KB_USAGE_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "149681d32cfca640"
+  },
+  "KB_VIEWS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "836decdd70178528"
+  },
+  "KB_VIEWS_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "53a5741cd5570f78"
+  },
+  "KB_VIEWS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f8cbf630ec1709fd"
+  },
+  "MANAGER_DAY_MAX_BREAKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "af54be9a7d09c7f0"
+  },
+  "MONTH_NAMES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7a0dc3c58da6b826"
+  },
+  "PAR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6208e63d6c8209f2"
+  },
+  "PAR_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a8a333248b6f187d"
+  },
+  "PENDING_TASKS_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "e188dd72a021ccaf"
+  },
+  "PENDING_TASKS_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "318a7ac1231a496b"
+  },
+  "PENDING_TASKS_CAP": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "c597604f75222003"
+  },
+  "PENDING_TASKS_KINDS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "c4ce3786a6bf8e81"
+  },
+  "PRESENCE_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5fe3759db6b8dfbe"
+  },
+  "PRESENCE_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8326c600d7fdec03"
+  },
+  "PROP_STORE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6771a28a8f752e04"
+  },
+  "PROP_VALUE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5220fd2f0cd39455"
+  },
+  "PROP_WARN_PCT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0d6e8503bbe4b9e6"
+  },
+  "PTO_ACCRUAL_CATCHUP_MAX_MONTHS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7df6b02ee6be477f"
+  },
+  "PUNCH_ADJUST_BULK_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ec5bc3164b067abc"
+  },
+  "PUNCH_LABELS_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2ba2c9f61576e505"
+  },
+  "QAC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c9a8ba47e1707bb8"
+  },
+  "QAE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f2ae7817486b6c88"
+  },
+  "QAR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a2f35c1d7129033c"
+  },
+  "QA_AUDIO_CHUNK_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "099b7d5a81f9b57f"
+  },
+  "QA_AUDIO_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6f083620476dd3d6"
+  },
+  "QA_CHECK_NO": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ba92373cb70498de"
+  },
+  "QA_CHECK_YES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0778506e0b8f1f05"
+  },
+  "QA_CHOICE_OPTIONS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a2f307f4564a9eb0"
+  },
+  "QA_CHOICE_OPTIONS_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f936aa2b79acb0b6"
+  },
+  "QA_CHOICE_OPTION_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9f92e8fce136b581"
+  },
+  "QA_COMMENTS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "13e7f249038c6f2e"
+  },
+  "QA_COMMENTS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "24b465c0f0d162d3"
+  },
+  "QA_COMMENTS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cc0a57149853cf0e"
+  },
+  "QA_COMMENT_MAX_AT_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "825cdebe0b90a6c7"
+  },
+  "QA_COMMENT_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cebd351d95b7d2b3"
+  },
+  "QA_CRITERION_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9bbfa4f475673625"
+  },
+  "QA_DURATION_MAX_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "59bdde404cc6a1dc"
+  },
+  "QA_EXEMPTIONS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8c3aa9b3ad0f3fb9"
+  },
+  "QA_EXEMPTIONS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "12332f9fed78ac06"
+  },
+  "QA_EXEMPTIONS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "50c6604db305edba"
+  },
+  "QA_EXEMPT_AVG_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "61645c1537fb240d"
+  },
+  "QA_EXEMPT_CRIT_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "775d3231170cb7c3"
+  },
+  "QA_LIST_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "30f70fa3b3574c22"
+  },
+  "QA_LIST_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fb7dbf8bc4f7cb39"
+  },
+  "QA_LOG_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3bc3b2456175c874"
+  },
+  "QA_LOG_DEFAULT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "59f15804c7ad3b4a"
+  },
+  "QA_LOG_MAX_SPAN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2dbc1935dcdc9a31"
+  },
+  "QA_LOG_PENDING_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "45ddd3d356b0d7b9"
+  },
+  "QA_MANUAL_ID_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "596891be7f4cd81e"
+  },
+  "QA_MANUAL_LABEL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2722496150aef445"
+  },
+  "QA_MY_REVIEWS_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d25995e09fd4b1e4"
+  },
+  "QA_RECORDINGS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "37fd58d10db7ae76"
+  },
+  "QA_RECORDINGS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "48260ddf860031b0"
+  },
+  "QA_SCORECARDS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e8405a6ec2bfece8"
+  },
+  "QA_SCORECARDS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7e844419688000c7"
+  },
+  "QA_SCORECARDS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "05c6ef5ce195a932"
+  },
+  "QA_SCORECARD_CRITERIA": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cf37e699663b593c"
+  },
+  "QA_SCORECARD_NOTES_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ca8bfbffee18f46b"
+  },
+  "QA_SKIP_REASON_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "61228ad9b64b5de7"
+  },
+  "QA_STATUSES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ec89148ebabde7ab"
+  },
+  "QA_SYNC_MAX_FILES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "aeef593799128025"
+  },
+  "QSC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eebe6ba6e656e9f8"
+  },
+  "RETIRED_TRIGGER_HANDLERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7ef8ae86c5a851f2"
+  },
+  "ROSTER_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "143b765761ddc7b8"
+  },
+  "ROSTER_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b54a1f6176ae6cc8"
+  },
+  "SC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "913626b81ec42918"
+  },
+  "SCHED_ACTIVE_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "55271d59ca764fd9"
+  },
+  "SCHED_CALLS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8d66bba0f37f2eef"
+  },
+  "SCHED_CALLS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f46067fe8d67c157"
+  },
+  "SCHED_LABEL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5f6d697918d2203e"
+  },
+  "SCHED_MAX_DAYS_AHEAD": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5b674f37f5d3bea4"
+  },
+  "SCRATCHPAD_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2d6e2d4d9361b94f"
+  },
+  "SCRATCHPAD_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eace9878ff3dfda3"
+  },
+  "SELF_TEST_RESULT_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a166da752bfa1630"
+  },
+  "SELF_TEST_STUCK_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1a64e9138d22e365"
+  },
+  "SPANISH_AUTO_ASSIGN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "83d510c1f52d8857"
+  },
+  "SPANISH_CLAIMS_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "49f97adcdbe613c6"
+  },
+  "SPANISH_CLAIMS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "af4ddd03640b9439"
+  },
+  "SPANISH_RESOLVED_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "18d4cdaca3f70ce1"
+  },
+  "SPANISH_RESOLVED_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "aeb6a044c3d3910e"
+  },
+  "SPANISH_THREAD_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "25c3558c2ce08119"
+  },
+  "SPLIT_REPAIR_MAX_SPAN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "836b046a3cbdd83f"
+  },
+  "TA": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "11040ef7f2cc2263"
+  },
+  "TCMP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "12c1a2380a3aa274"
+  },
+  "TIMEOFF_MAX_DAYS_AHEAD": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "63268d0cd8963052"
+  },
+  "TIMEOFF_MAX_DAYS_BACK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b54314aa96f984a0"
+  },
+  "TIMEOFF_RANGE_MAX_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "623b8a2402113efb"
+  },
+  "TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f51768fee1e36a86"
+  },
+  "TIMESHEET_ARCHIVE_MIN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9575f2d799e50dcf"
+  },
+  "TIMESHEET_ARCHIVE_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b202984b3dec2a5"
+  },
+  "TIME_OFF_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ba69117c30e46ade"
+  },
+  "TO": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7e0c3448e1ecc93f"
+  },
+  "TQ": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "14c8dbc0711ec4f7"
+  },
+  "TQA": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "32e410bc579ed65b"
+  },
+  "TRAIN_ASSIGN_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc09ec98031a3640"
+  },
+  "TRAIN_ASSIGN_MAX_EMPS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58ab12d4bab913dc"
+  },
+  "TRAIN_ASSIGN_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b21908ea6ea8da43"
+  },
+  "TRAIN_ATTEMPT_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "29ca185db95c7076"
+  },
+  "TRAIN_ATTEMPT_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "05608d983e8ec45f"
+  },
+  "TRAIN_ATTEMPT_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "793c14c002ba2739"
+  },
+  "TRAIN_COMPLETE_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "82e9b3c42659246f"
+  },
+  "TRAIN_COMPLETE_MAX_SCAN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "80b5022f75e1b120"
+  },
+  "TRAIN_COMPLETE_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ca2d30fda7fc9813"
+  },
+  "TRAIN_QUIZ_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d759efd35e940130"
+  },
+  "TRAIN_QUIZ_JSON_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ba4f592154721258"
+  },
+  "TRAIN_QUIZ_MAX_OPTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b7f48bcac5842bff"
+  },
+  "TRAIN_QUIZ_MAX_QUESTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7fdb4609ed8b1692"
+  },
+  "TRAIN_QUIZ_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0fd35ecf494a563f"
+  },
+  "TRIGGER_GROUPS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ad12ae49b770296"
+  },
+  "TS_DOCTOR_FIX_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "e23e4f8f0af8ef8a"
+  },
+  "TS_DOCTOR_MAX_GROUPS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "1c128c5880a971d8"
+  },
+  "TS_DOCTOR_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "e4d42a6ff2d96b97"
+  },
+  "TZ_ABBR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a579c3d9ae290729"
+  },
+  "TZ_CANONICAL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "945a8608fab33e58"
+  },
+  "TZ_REPAIR_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ea6b00e0573e20b"
+  },
+  "VIEW_USAGE_RATE_MAX_PER_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6ee18b7099f03d3a"
+  },
+  "VIEW_USAGE_RETENTION_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d758a6fe62c86ef6"
+  },
+  "VIEW_USAGE_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8d2dce11e4bc880e"
+  },
+  "VIEW_USAGE_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bee4aa6636b5be4c"
+  },
+  "VIEW_USAGE_TIMING_KEYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f09691d04f7fb7e3"
+  },
+  "VIEW_USAGE_TIMING_MAX_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3a34e1e1ae91076e"
+  },
+  "VIEW_USAGE_WIDTH": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bfde661cda064d7a"
+  },
+  "_SYSTEM_AUDIT_EMP_": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "db7c30ff17fc0b37"
+  },
+  "_TEST_OVERRIDE_COACH_MAIL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "72a16e4b22d982f9"
+  },
+  "_adpSsMemo": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "7b729c3ec9e8fa4f"
+  },
+  "_adpTzMemo": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "9d0e07e5990339e4"
+  },
+  "_breakSchedulesCache": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "9bf7e58b2278b1c2"
+  },
+  "_cdrColumnWarning": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "f3a98673da6c8fa2"
+  },
+  "_cdrColumnsValidated": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "6b236581a4684097"
+  },
+  "_cdrNameMapCache": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "f47a15de813f956d"
+  },
+  "_cdrNameMapExpiry": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "e620165957ee73fc"
+  },
+  "_clientBuildHashMemo": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "2bbadd203555c548"
+  },
+  "_cnHostTz": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "2e4c6bfcc61ea31a"
+  },
+  "_cnHostTzById": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "80f62a1ae6de2e20"
+  },
+  "_csrTransferValidated": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "6125a62420e5cfaf"
+  },
+  "_csrTransferWarning": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "9dc231789999c914"
+  },
+  "_intakeOfferingsCache": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "3722653d207640d8"
+  },
+  "_intakeSsMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "744fbcd437cfa7e0"
+  },
+  "_mailBccAllCache": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "9d98dde947eb1635"
+  },
+  "_personalSsCache": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "17fe0445c4bcce97"
+  },
+  "_repSenderFromResolved": {
+   "file": "00_config.js",
+   "kind": "let",
+   "sha": "4909866ff927fd5a"
+  },
+  "accrualDaysForHours_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3203cf146874d025"
+  },
+  "accrualMonthList_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3563e879b902281c"
+  },
+  "accrualMonthsToCredit_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f7a5061cd9eb56b4"
+  },
+  "accrualStampYm_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8f669a657b3d5283"
+  },
+  "acknowledgeCoaching": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "956d543de62ffe37"
+  },
+  "acknowledgeDoc": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6e0fe6b30ff4101f"
+  },
+  "addDaysIso_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "4432ca133932c149"
+  },
+  "addEmployee": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4e1250482aed491f"
+  },
+  "adjustLeaveBalance_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b34fea58706733b1"
+  },
+  "adminAuditRowTone_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5e5283ef996d7872"
+  },
+  "adminKbReviewTone_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "394f966c61de3ee4"
+  },
+  "adminSheetViewBuild_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ed35b532ade481e3"
+  },
+  "adminSheetViewKeys_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "af9b5b3867c5d910"
+  },
+  "adminSheetView_auditLog_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "626a8e865d467e4e"
+  },
+  "adminSheetView_kb_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c8afcd0a79eca7e1"
+  },
+  "adminSheetView_trainingAssign_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c32a0496a36c08f7"
+  },
+  "adminSheetView_trainingComplete_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "118f9fb9ee8cb5c7"
+  },
+  "adpSheetTz_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "028010dccb532cae"
+  },
+  "appSendMail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "e61be0e4d34c350c"
+  },
+  "appendCallNoteFeedback": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "faf7cf9cee3ba8a8"
+  },
+  "appendToAdpSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "20fcb4f68ec73e2d"
+  },
+  "applyTagTransformAcrossReps_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "9d5898e1a0b154e7"
+  },
+  "archiveCallNoteTag": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "28c4e8a553f96adf"
+  },
+  "archiveOldCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "dbd15547ae3f5c9f"
+  },
+  "archiveOldTimesheetRows": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4ad847cbe85e940f"
+  },
+  "archiveSheetRowsOlderThan_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "012ac66cc3f5b001"
+  },
+  "arraysEqual_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fa3139dd984a9af6"
+  },
+  "assertDevInstance_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5028199054a60916"
+  },
+  "assertManagerCaller_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "27f290a49b014e21"
+  },
+  "assertNotProdInstance_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a26898e1e4503d83"
+  },
+  "auditRowObj_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6d5ec89cc32717f4"
+  },
+  "authorizeGmailScope": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "55d98f9bd672d5ec"
+  },
+  "autoAssignSpanishThreads": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5c46669e09f34623"
+  },
+  "autoAssignSpanishThreadsScheduled": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "498fc23d90a5f700"
+  },
+  "automationDetectorChecks_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9e3ce057e4050391"
+  },
+  "automationJobProblems_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c4b47a7535c3d4c9"
+  },
+  "automationProblems_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "878d066493d02ec2"
+  },
+  "bizMinutesLocal_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "4dab72ee9623d065"
+  },
+  "bizPointInTz_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ac7b2de51529e499"
+  },
+  "brandedKvRows_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "db7342c6b16af6ac"
+  },
+  "breakCoverageAgents_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "aa72af41a605d94f"
+  },
+  "breakCoverageSlots_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "94df589cc8c0f5c2"
+  },
+  "breakListResolve_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "abca1d288e07023a"
+  },
+  "breakListSanitize_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c82f31aa1e8d8f93"
+  },
+  "breakListValidate_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "369d59ccf5f1f2d9"
+  },
+  "breakPairsPositional_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "86931585f259d1e9"
+  },
+  "breakPairs_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "17c9b41cbab00510"
+  },
+  "breakSchedSanitize_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d54105d1a10dcaf4"
+  },
+  "breakSchedulesAdminView_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4ad68f508d468a9f"
+  },
+  "breakSortKey_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8dccbd814efcb683"
+  },
+  "buildAdjustPunchIndex_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "34f47083c8d984ae"
+  },
+  "buildBrandedEmailHtml_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b7de94c461c46cd2"
+  },
+  "buildCalendarForEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "daa4b76cc08a92b5"
+  },
+  "buildCallNoteEmailHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4181536616c287ee"
+  },
+  "buildCallNoteEmailText_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "81266997945c6914"
+  },
+  "buildCustomerEmailHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "285ed475c430be66"
+  },
+  "buildCustomerEmailText_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "81d3ea9e45131c4b"
+  },
+  "buildEmailSubject_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "387af2e72d90b489"
+  },
+  "buildFormCertHtml_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "2109e6db57154987"
+  },
+  "buildFormLinksBlock_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "5a83cc4c680ad679"
+  },
+  "buildFormSubmissionCardHtml_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "5c67329c8e94cee1"
+  },
+  "buildFormSubmissionHtml_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "6f3bdce82ada28cc"
+  },
+  "buildFormSubmissionResult_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "b021ea19a9db8613"
+  },
+  "buildFormSubmissionSigHtml_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "97f1a7835e4c5a9f"
+  },
+  "buildFormSubmissionTableHtml_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "3ddaa3bd0fd7632e"
+  },
+  "buildFormUrl_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "fbd8ba72c3f3113e"
+  },
+  "buildPatientTimeline_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "c1345d9098bbdb65"
+  },
+  "buildProviderEmailHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "76f9062f06deaefb"
+  },
+  "buildProviderEmailText_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e68d6899cd9c152a"
+  },
+  "buildTimesheetForEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e5c316c2ddcd6b34"
+  },
+  "businessHours_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a1732bb23f1c2e7c"
+  },
+  "businessMinutesBetween_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9af25cb9d32392e1"
+  },
+  "calcHours_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f81a6a71446f3f25"
+  },
+  "callDataFromNote_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "7639cc04895a0bdc"
+  },
+  "callNoteMatchesFilter_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e39816a8ab82c36e"
+  },
+  "callNoteRowToObject_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e9b140c18786fae7"
+  },
+  "canSeeQa_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "d814d2fed5a336f3"
+  },
+  "canSeeSpanishInbox_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4daa51565807bd11"
+  },
+  "cancelTimeOffRequest": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9135338f9b9ce41a"
+  },
+  "cdrFmtHms_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "3018cc0cb4adcfca"
+  },
+  "cdrLikelyNameMismatches_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "068daa5d0bbc20e1"
+  },
+  "cdrNameTokens_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "600d2574fda9dafa"
+  },
+  "cdrParseHms_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "283080131ced9fc2"
+  },
+  "cdrQueueInventory_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "720919dd9d43225f"
+  },
+  "cdrRosterHash_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "70fd9daa234da2f3"
+  },
+  "cdrRowDateIso_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "8c24fe4fdd46335a"
+  },
+  "claimSpanishThread": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5417872b20b43a89"
+  },
+  "clearAutomationError_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c6ecadb2f803c15a"
+  },
+  "clearCaches_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "dca6b7c6fecaddf3"
+  },
+  "clearFromEmployeeSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9d0ded847ee95ac9"
+  },
+  "clientBuildHash_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "11f5e7420e3f140c"
+  },
+  "clientErrRetentionDays_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f4b44211f1f2b614"
+  },
+  "clientErrSpikeAlert_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8e8c8e28e9e04949"
+  },
+  "clientErrorsSummary_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "94487ec6f246da5f"
+  },
+  "cnAppendBounded_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "de9b488c66ab22cf"
+  },
+  "cnCountIntakeNotesResult_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "820cde9db9ae7cf9"
+  },
+  "cnCountNotesResult_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "36df0e2efff08b57"
+  },
+  "cnDateLocalString_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "f9c6b2624ad9f147"
+  },
+  "cnDayNumToIso_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "064292e8b82e3bed"
+  },
+  "cnEnrolledSheetId_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4ce89e60d5719254"
+  },
+  "cnExtractAuditNoteId_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "97ece20bc9823a23"
+  },
+  "cnFlagsVersion_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "df187967d44de1ca"
+  },
+  "cnFmtEmailHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ed5ba5cb447fa94d"
+  },
+  "cnHostTz_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2249e402ca22868f"
+  },
+  "cnIsoToDayNum_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1d96885605ea6f09"
+  },
+  "cnNlBr_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "48bfd6d4ef46170c"
+  },
+  "cnNoteCoverage_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "becfe9e373c1d5d4"
+  },
+  "cnPing": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "74609ee0a5020783"
+  },
+  "cnReadCallNoteAuditRows_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e3ef8698c81ca85a"
+  },
+  "cnTagTrendsFromEvents_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "541b0c684a0e4aa6"
+  },
+  "cnTimestampString_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "5f50322727797cfa"
+  },
+  "cnTrendWeekStarts_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "7c6e7933a5a52011"
+  },
+  "coachActorName_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "f6c583777bdc401b"
+  },
+  "coachAgeDays_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "f8fe0f78be4eb7fb"
+  },
+  "coachAnalytics_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "5ae0405ffc8890a6"
+  },
+  "coachBizOpts_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "20a682c5036f423a"
+  },
+  "coachCanManagerSee_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "e6d46e49f0a72ccd"
+  },
+  "coachCriticalMailHtml_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "f89c579b0a9e2df8"
+  },
+  "coachIsoDateOrBlank_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "aa8537fa6c64abd9"
+  },
+  "coachMedian_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0e08d8644b81fabe"
+  },
+  "coachNudgeMailHtml_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "616d9c9897175bd6"
+  },
+  "coachParseTs_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "2db4345dddcb6348"
+  },
+  "coachRecapBuckets_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "849e16068940cd7f"
+  },
+  "coachRetractionMailHtml_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "7966ff7d32938aea"
+  },
+  "coachRowToObj_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "b03551031d26d71d"
+  },
+  "coachSendMail_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a3b69ce96f21ffba"
+  },
+  "coachStampDayMgr_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "e6766865b7ec722b"
+  },
+  "coachUnackedAll_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "3a25cfea0074acb9"
+  },
+  "coachUnackedOverdue_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a0ae95fbb2ca63da"
+  },
+  "coachValidate_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d2e691b711bbc2f1"
+  },
+  "computeAutomationHealth_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9533535496dc05f3"
+  },
+  "computeCnEmailHash_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "6eb5acbbe4a5b2ab"
+  },
+  "computeFormSubmissionHash_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "9addbd2f5f80e74f"
+  },
+  "computeMissedClockOuts_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0a2e078659b7d2e1"
+  },
+  "contiguousRowRunsDesc_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f2cf8d85df294dfe"
+  },
+  "convertAuditTs_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b9a2ec0129f45f58"
+  },
+  "convertDateTime_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d2cd901d70799194"
+  },
+  "coverageBucketHours_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a3e940fbccbb8b7f"
+  },
+  "coverageSplitAtBreaks_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "630eee620f933c22"
+  },
+  "createCoaching": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "66adf8378aa602bd"
+  },
+  "createFormToken": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "351ecf142e7e25d7"
+  },
+  "createPinnedSpreadsheet_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b70928bc8bb2be1d"
+  },
+  "createScheduledCall": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "eabe46bd2941947e"
+  },
+  "creditMonthlyPtoAccruals": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "60858a47aa4f18ba"
+  },
+  "csrTransferHeaderMismatches_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "d475ed8c5386a15a"
+  },
+  "csrTransferQueueColumns_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "1d8028a86d2b519b"
+  },
+  "dashboardPeriodRange_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "94404db08ef842c0"
+  },
+  "dashboardPrevRange_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "0d72a49078984976"
+  },
+  "dashboardTeamAggregate_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "d9e9b23281ab3870"
+  },
+  "dashboardTeamTransfer_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "d91bdf27f128ab8f"
+  },
+  "daysBetween_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ff9245611b84b342"
+  },
+  "deleteCallNote": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "0a7dd01ceea235f3"
+  },
+  "deleteEmpDocTemplate": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "73a56f02e645d305"
+  },
+  "deletePunch": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "67130065d772681c"
+  },
+  "deleteQuiz": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "ddf58bbb12be51c1"
+  },
+  "deployReadinessItems_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "820c1dc763c26abb"
+  },
+  "deptRequestsOverdueOpen_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "d97642463d68763c"
+  },
+  "deriveFlagType_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e220b8d1a1a4a385"
+  },
+  "diagPurgeTab_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "49803f39cfcd44de"
+  },
+  "diagRetentionText_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3187c49a15fdf948"
+  },
+  "diagTsMs_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6cf8fed74316377e"
+  },
+  "doGet": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "419d2376ed9e3820"
+  },
+  "drBumpCacheGen_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "78fd9ff26cbf641c"
+  },
+  "drCacheGen_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "507f1f9f36d1c529"
+  },
+  "drCanAct_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "589e7815f209dd04"
+  },
+  "drDeptStats_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "49a1b038a609e719"
+  },
+  "drFindOpenRequest_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "858056e89bc1f77d"
+  },
+  "drFindRowByReqId_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "d9b2cee2490b00a0"
+  },
+  "drNowTs_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "39bd717321f01502"
+  },
+  "drParseDepartments_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "1fafb42ce6c05e15"
+  },
+  "drRecipientDomains_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9a689f496667a440"
+  },
+  "drResolveCtaHtml_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ae76c94ddde876a3"
+  },
+  "drResolvedVia_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "eb9c7ae4eb1943d5"
+  },
+  "drSlaForToDept_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "92d00b7b09c6bb70"
+  },
+  "drSlaStatus_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "a7f5362a5253b8e4"
+  },
+  "drSplitDepts_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "37995421f93953b2"
+  },
+  "drStatus_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "28e21b3ea81dd078"
+  },
+  "driveAccessStatus_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5278ee2834f6965f"
+  },
+  "driveScopeError_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ad11f4e82b9ddff9"
+  },
+  "emailAddrOnly_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fac7039c5ea3dec6"
+  },
+  "emailFromCallNote": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b3a140760eab908a"
+  },
+  "empDepartments_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ad43e50edb1883c6"
+  },
+  "empDocCanManagerSee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "216fccb42590745d"
+  },
+  "empDocContentHashMatches_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d9205deed76001d1"
+  },
+  "empDocContentHash_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "38b8379999a27a42"
+  },
+  "empDocNeedsAction_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "cbcc2abac833a636"
+  },
+  "empDocParseJson_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a5b30e8e33172812"
+  },
+  "empDocRowToObj_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0305d4f31f2119a9"
+  },
+  "empDocSha256Hex_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "5392983bb4d350ab"
+  },
+  "empDocSignatureHash_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d1a76f04e5a9277d"
+  },
+  "empDocTemplateRowToObj_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2ddf9b45f8f3f007"
+  },
+  "empDocTemplateValidate_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d7a8bb61ef758338"
+  },
+  "empDocValidateFields_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0f3485fc013cc8ea"
+  },
+  "empDocValidateIssue_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "add22bafc7ec31cd"
+  },
+  "empDocValidateResponses_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "93365bb830d6aa3f"
+  },
+  "empDocsOverdueAll_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7e94b82658c4ea69"
+  },
+  "empIsAdmin_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "5b397d49bc497141"
+  },
+  "empIsOffToday_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "702594402ed851a8"
+  },
+  "empPayRateById_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ae0f4c207e8b2152"
+  },
+  "empPayRate_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e9b4b7b7e1752f98"
+  },
+  "empPendingAdjustments_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "473ffd802e704b74"
+  },
+  "empPtoAccrual_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "eeedad1d4e9ffa7f"
+  },
+  "empRosterEmail_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3c1e4e3ff234d3ef"
+  },
+  "empShiftSchedule_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "50fa665047a2ab0f"
+  },
+  "empTz_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "15b1b7aec2d8bd5c"
+  },
+  "empValidateNewEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "456e695eb2f80b91"
+  },
+  "esc_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d5b76168f33d83bf"
+  },
+  "exportAdpRange": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "02eaa7a2128131db"
+  },
+  "exportCallNotesRange": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e3809a9db422c63f"
+  },
+  "featureFlagDef_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "153e55031f2f19e4"
+  },
+  "findCallNoteRow_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "f57d9bc2cd9b858a"
+  },
+  "findCoachingRow_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "74e8e54acc4ccfb3"
+  },
+  "findEmpDocRow_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "1c81e5b93309996f"
+  },
+  "findEmpDocTemplateRow_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "08a830ad0b0de9ec"
+  },
+  "findExistingPunch_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f94b14d4f11c5304"
+  },
+  "findFormSubmissionRow_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "8155f27a549f0447"
+  },
+  "findFormTokenRow_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "d05d950e969a1570"
+  },
+  "fixPtoReconciliation": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e51c39f2f9f25ab9"
+  },
+  "fixTimesheetDuplicates": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "134394568e609981"
+  },
+  "fixedHoliday_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "58859fc4f23a5ae6"
+  },
+  "fmtDateTz_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "dacf6c89354e9c1b"
+  },
+  "fmtDate_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5af196aa1f615e28"
+  },
+  "fmtTimeTz_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f81f727c1365d59a"
+  },
+  "fmtTime_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2dc8cc4784db820e"
+  },
+  "formTokenCellMs_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "a584ce101dc05071"
+  },
+  "formTokenIsoString_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "80fca7460a29daec"
+  },
+  "formatFormFieldValue_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "86db9fa30d42164e"
+  },
+  "formatPhoneNumber_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "9cd3b9b0bf876a48"
+  },
+  "formatProviderPhone_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "73f449409b481484"
+  },
+  "generateExportSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3927f66b66086f57"
+  },
+  "generateFormToken_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "387187fc0310b375"
+  },
+  "generateOOPResolutionText_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "5ea35de0bbb615bf"
+  },
+  "getActiveUserEmail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c56e57f693656793"
+  },
+  "getAdminConfig": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5766ec0f100c6c7e"
+  },
+  "getAdminSheetView": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "45024f69a1997eb4"
+  },
+  "getAdpSS_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d276c055c89f97e4"
+  },
+  "getArchiveRetentionDays_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "14dfbbb56ff94846"
+  },
+  "getArchivedTagsSet_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "d80a8e7e20f42e2c"
+  },
+  "getAutoTagRules_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d742430f5932525d"
+  },
+  "getAutomationHealth": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9f97025facaba800"
+  },
+  "getAutomationHealthBadge": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f84c865a84844912"
+  },
+  "getBreakCoverage": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4a4fc42d61e30669"
+  },
+  "getBreakSchedules_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "604a49c815456a06"
+  },
+  "getCalendarData": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "628b949b0e7822a3"
+  },
+  "getCallNoteAuditHistory": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b421d72629874690"
+  },
+  "getCallNoteTagSuggestions": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "16769c971f12af4a"
+  },
+  "getCallNotesAmbient": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "e18e29d2d6a26eae"
+  },
+  "getCallNotesAuditLog": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2c45fad2f47e0783"
+  },
+  "getCallNotesDepartments": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "9d91d632f0d5041c"
+  },
+  "getCallNotesEnrollment": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "59fd7b1fd27b2354"
+  },
+  "getCallNotesSheet_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "af48b3f0f15f899d"
+  },
+  "getCallNotesTagTaxonomy": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "f6a5abdaef6ebdef"
+  },
+  "getCallNotesTagTrends": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "bddb4036bb26cdc1"
+  },
+  "getCdrAgentMetrics_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "08f88ddd5823428d"
+  },
+  "getCdrDailyBreakdown_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "71a7e9395c8c9cdb"
+  },
+  "getCdrInboundVolume_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "024a99ca5f2666a6"
+  },
+  "getCdrNameMap_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "25d6291df1ed22fc"
+  },
+  "getCdrQueueGroups_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "550d8446ffc2b5d9"
+  },
+  "getCdrSS_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "fbe41e7280767e99"
+  },
+  "getClientFeatureFlags_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7d4e171a847a1c61"
+  },
+  "getCoachingDashboard": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "1d35be7f4c1edb29"
+  },
+  "getCoveragePlan": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e056e38545900ef2"
+  },
+  "getCsrTransferPerRepDaily_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "80af50d651b3cd37"
+  },
+  "getCurrentBiweeklyRange_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ec7ea85e73efbef0"
+  },
+  "getDashboardMetrics": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "ccaf87f1d0074808"
+  },
+  "getDepartmentEmails_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d0107c73e5c3cc1d"
+  },
+  "getDeployReadiness": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "e033723cdb50fc4d"
+  },
+  "getDeployStamp": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b70aa64e80c1db91"
+  },
+  "getDeptRequestDetail": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "5c4cea70934f3691"
+  },
+  "getDeptRequestSla": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "45efb783caeeba9b"
+  },
+  "getDeptRequestSlaConfig_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "0f79c1225961e43a"
+  },
+  "getDeptRequestSla_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "2f6936a3e6030910"
+  },
+  "getDeptRequests": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "814e199159d8e39e"
+  },
+  "getDeptRequestsSS_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "5eca3dff78646127"
+  },
+  "getDocsDashboard": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "44424ea0e4c716c4"
+  },
+  "getEmailTemplates_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6b95fa08f7a27f6a"
+  },
+  "getEmpDocTemplates": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "123d3cc6a77b1de5"
+  },
+  "getEmployeeInfo_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c4c691fef3738776"
+  },
+  "getEmployeeRosterRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "84d7703e220def24"
+  },
+  "getEmployeeState": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "cb12e25aba87621d"
+  },
+  "getEmployeeTimesheetForManager": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4fb322727efab5a3"
+  },
+  "getEmployeesList": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ed3700a7173adf67"
+  },
+  "getEnrolledCallNotesReps": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b141ba395fdbece1"
+  },
+  "getExternalLinks_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ccdc7f112c1f52d6"
+  },
+  "getFeatureFlags": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5e7aca6189a04386"
+  },
+  "getFeatureFlagsResolved_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "480167e5fcea2417"
+  },
+  "getFlagOverrides_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2d6a8f47237addc1"
+  },
+  "getFlag_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8c729ab9d79eb23f"
+  },
+  "getFormByToken": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "15c05eb53921fa73"
+  },
+  "getFormCatalog": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "bcdecb7f3d45b9b4"
+  },
+  "getFormRetentionDays_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "54292c17cf3c12a7"
+  },
+  "getFormSubmission": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "58de0127f2d5fa88"
+  },
+  "getFormsSS_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "23dc04fdf572c39b"
+  },
+  "getHrDocsSS_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "2c81991b17025075"
+  },
+  "getIntakeAgents": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9abb3affe054fbf1"
+  },
+  "getIntakeAllAgentsEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "1f5b14f376600bb3"
+  },
+  "getIntakeBccEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "6734fbceb34dc96b"
+  },
+  "getIntakeCatalogHealth_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "3953656ddc85bc3b"
+  },
+  "getIntakeFeedbackSheet_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "d75005f396be82c4"
+  },
+  "getIntakeOfferings_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "33df648259dc22e1"
+  },
+  "getIntakeSS_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "6b565080177b95f4"
+  },
+  "getIntakeSalesEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "7344ab80f32f8ffd"
+  },
+  "getIntakeSleepEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "349f065d451cc3e5"
+  },
+  "getIntakeSubmissionSheet_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "4d36e05e12f7ac1a"
+  },
+  "getIntakeVolumeStats": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "b0c15d8072c5f5ab"
+  },
+  "getKbAiConfig_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3df2853d9133df34"
+  },
+  "getKbDataTables": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6b3c262dbf877637"
+  },
+  "getKbSS_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f8ada3dc56f87a39"
+  },
+  "getKbSearchSynonyms_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d91492820358145c"
+  },
+  "getLeaveDeduction_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d2f943ea4b867ad3"
+  },
+  "getManagerDashboard": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ba737ab3314445d3"
+  },
+  "getManagerEmails_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "73ad029c0233380a"
+  },
+  "getMetricsAmbient": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "21bc0526c14fc52e"
+  },
+  "getMonthRange_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "36a5967db76d55e0"
+  },
+  "getMyCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "27e0862c9ef14d07"
+  },
+  "getMyCallNotesRange": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4e2125f94635f60c"
+  },
+  "getMyCoaching": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a127f8355bcede91"
+  },
+  "getMyDoc": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "0b71301350b75d91"
+  },
+  "getMyDocs": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "e81c4917fda1b904"
+  },
+  "getMyMetrics": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "343e93bb28a86ea7"
+  },
+  "getMyMetricsRange": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "1b9a5e677baee5e5"
+  },
+  "getMyNoteHourBuckets": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "95a71aaa874b53dc"
+  },
+  "getMyPayStatement": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "76df8e61413d5897"
+  },
+  "getMyPendingTasks": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "31ef2a2d0629784a"
+  },
+  "getMyPinnedCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ed506328a8e73d12"
+  },
+  "getMyPunchAdjustRequests": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "395ecf2288798d6d"
+  },
+  "getMyQaReviewAudioChunk": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "9d327e44f28f84ef"
+  },
+  "getMyQaReviews": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "632d7d537b641cff"
+  },
+  "getMyScheduledCalls": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b3b57a64584862a1"
+  },
+  "getMyScratchpad": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "8213605b3f446654"
+  },
+  "getMySentForms": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "8883e950fbb8349f"
+  },
+  "getMyTraining": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b74d8469f6d8234a"
+  },
+  "getMyTrainingQA": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "1788c9dfaeb79d5f"
+  },
+  "getNextActions_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a2fd603a879bbbcb"
+  },
+  "getNoteArchiveDays_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ec51a3779022f663"
+  },
+  "getNoteRetentionDays_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1e933449ed4bcbb0"
+  },
+  "getOnboardingCdrReadiness": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "edbc2fc187b7b420"
+  },
+  "getOnboardingPanel": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fe8fe93eefdbfb59"
+  },
+  "getOrCreateAuditSheet_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fd3c072f29680501"
+  },
+  "getOrCreateClientErrorsSheet_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b9d5d746c39fcd54"
+  },
+  "getOrCreateDeptRequestsSheet_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "7772d4faf71c4d6e"
+  },
+  "getOrCreateEmpDocSheet_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "a4fdd17fcdc17e8a"
+  },
+  "getOrCreateFormSubmissionsSheet_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "d0974edfd7ef298c"
+  },
+  "getOrCreateFormTokensSheet_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "2ddda5e82bff656b"
+  },
+  "getOrCreateKbCommentsSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c0459a358e5a2228"
+  },
+  "getOrCreateKbFeedbackSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "40b79c71104bf56e"
+  },
+  "getOrCreateKbImagesFolder_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "029ca38e4b1a420d"
+  },
+  "getOrCreateKbRequestsSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "58d863e2a452ef37"
+  },
+  "getOrCreateKbRevisionsSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a5006e5f78390e54"
+  },
+  "getOrCreateKbSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fdbf253dcdebf0f0"
+  },
+  "getOrCreateKbViewsSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bf99d17e2713a6cb"
+  },
+  "getOrCreateNotesArchiveTab_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "42d5612895a8efe2"
+  },
+  "getOrCreatePunchAdjustSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0adc07df8405ecea"
+  },
+  "getOrCreateQaCommentsSheet_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "bcb11513e496f117"
+  },
+  "getOrCreateQaExemptionsSheet_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "43d00f47419f1ee8"
+  },
+  "getOrCreateQaRecordingsSheet_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "94bd3fa8199a8491"
+  },
+  "getOrCreateQaScorecardsSheet_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "d25f0f2929593e42"
+  },
+  "getOrCreateQaSheet_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "9e38ae56c5a5388c"
+  },
+  "getOrCreateScheduledCallsSheet_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1ac3458e0dc443cc"
+  },
+  "getOrCreateSpanishClaimsSheet_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5e5a5414aff77a5f"
+  },
+  "getOrCreateSpanishResolvedSheet_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "1bb563c8bbdb05a2"
+  },
+  "getOrCreateTimeOffSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "5faf40e4f0e48b90"
+  },
+  "getOrCreateTimesheetArchiveTab_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "33808b6ff44722c7"
+  },
+  "getOrCreateTrainSheet_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "18f125eae05a2078"
+  },
+  "getOrCreateViewUsageSheet_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "be2b62f37bf86584"
+  },
+  "getPatientTimeline": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "442c397ad0715c2e"
+  },
+  "getPtoReconciliation": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4b4500f62ca45d99"
+  },
+  "getPunctualityReport": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "85f85ee1a672a236"
+  },
+  "getQaLog": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "dfc5c68750b8bb77"
+  },
+  "getQaMembers_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "5423c92d61f2c587"
+  },
+  "getQaQueue": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "b4096aa20123cec2"
+  },
+  "getQaSS_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "e5b4bfdbc5fb8d35"
+  },
+  "getQaScorecardCriteria_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "ee1cdeac80727bfe"
+  },
+  "getQaStats": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "f96f2080ed71c209"
+  },
+  "getQuiz": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "7e8c59d82975e708"
+  },
+  "getQuizAnalytics": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "f3cda55be3f3f756"
+  },
+  "getQuizzes": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "6ca89391252d03ab"
+  },
+  "getReferenceItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6d419c5a4ed39e68"
+  },
+  "getReferenceTree": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "61350a471153cd48"
+  },
+  "getRetentionConfig": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "761774b03fc7ac08"
+  },
+  "getShiftSchedule_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "83042ca77302baa7"
+  },
+  "getSpanishInboxAddress_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "ee1a6cf2835c8294"
+  },
+  "getSpanishInboxMembers_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "ec303bad324823be"
+  },
+  "getSpanishInboxPending": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "abce310393910b28"
+  },
+  "getSpanishInboxResolved": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "23d19c48f61c98e7"
+  },
+  "getSpanishInboxStats": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "52bf2787ba710e6d"
+  },
+  "getSpanishInboxThreadBody": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "0350d21954b6138b"
+  },
+  "getSpanishVmFilter_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "fbed8f014c3d49d1"
+  },
+  "getSpanishVmSender_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "a3b81d6550da0642"
+  },
+  "getStateTaxRates_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "45640108d00e182e"
+  },
+  "getStorageHealth": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8997f443bea8220b"
+  },
+  "getTeamCalendar": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3a349d6a2816cc52"
+  },
+  "getTeamMetrics": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "be832a51f9f26b6f"
+  },
+  "getTeammateStatus": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d93fc8b63c340b3f"
+  },
+  "getTimesheetArchiveDays_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e0aafb4da7a07810"
+  },
+  "getTimesheetData": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bd3de3c8ba1d6ac0"
+  },
+  "getTimesheetDoctor": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bc76ccf0b9d6aadc"
+  },
+  "getTodayPunches_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6f4d7e53f573e390"
+  },
+  "getTrainingDashboard": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "ab78dbb4c28bceec"
+  },
+  "getUpdateSuggestions_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3d064fb7c5d47228"
+  },
+  "getUsHolidays_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d42f215b9200d021"
+  },
+  "getViewUsageStats": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c631beed34c0e905"
+  },
+  "getWebAppExecUrl_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "4d073a2149c57b10"
+  },
+  "getWhatsNew": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a0b6880361a943af"
+  },
+  "groupQueueRows_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "d2a9ae8859eb6c78"
+  },
+  "hasActiveTimeOffOnDate_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a7df5c74fff20e6b"
+  },
+  "humanizeFormFieldKey_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "d2f98149c421be89"
+  },
+  "importQuizFromForm": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "860bbfa6839d41d2"
+  },
+  "inboundVolumeBuckets_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b2e27c70beb5133b"
+  },
+  "include": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5823beeb234155f1"
+  },
+  "insPayorRowObj_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4f06af0bedc89ad6"
+  },
+  "insPayorScore_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "290eae6fc7f1aa39"
+  },
+  "installAutomationTriggers": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "291a235563c6b1b5"
+  },
+  "instanceLabel_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f12204590c1398a5"
+  },
+  "intakeAmendBannerHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "326c532956c1cd91"
+  },
+  "intakeAmendDiff_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "e38bcce2be48e99c"
+  },
+  "intakeAmendSource_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "326e27216b243617"
+  },
+  "intakeBodyHash_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "7b48bddb799cba72"
+  },
+  "intakeBuildAcctBodyHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "5c4dc28829246513"
+  },
+  "intakeBuildPpdBodyHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "5a5151a0ce0dec39"
+  },
+  "intakeCatalogIssues_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "a13c299690f56168"
+  },
+  "intakeDecodeImages_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "20241aae6a5f0e9f"
+  },
+  "intakeDeriveClinicalFactors_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "8e32917d17d05fa0"
+  },
+  "intakeEmailDomain_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "cfa4e9727fa57cd7"
+  },
+  "intakeEmailShell_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "2ef74a4ac164f770"
+  },
+  "intakeExplainFactors_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "89bda29295fd6315"
+  },
+  "intakeFeedbackCtaHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "83862fde50bff685"
+  },
+  "intakeFeedbackCta_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9e7dca085f60db14"
+  },
+  "intakeFeedbackFor_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "0a1b35a74363c78b"
+  },
+  "intakeFeedbackResult_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "5e7fe5f2d3dbe97e"
+  },
+  "intakeFilterRecommendations_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "d25640bc35055f68"
+  },
+  "intakeGetSubmission": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "547a6d4c3020cd17"
+  },
+  "intakeHttpOnly_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "605984d43b79ce61"
+  },
+  "intakeListMySubmissions": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "6d5af121c1dba995"
+  },
+  "intakeListOfferings": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "5e430c7bb6c98d4b"
+  },
+  "intakePpdAnswerStyles_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "2cdadb352a48b845"
+  },
+  "intakePreviewAcct_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "89e08e87e18f985c"
+  },
+  "intakePreviewPAP": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "53a558a0373a3dd3"
+  },
+  "intakePreviewPMD": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "0b93107e9d0827a2"
+  },
+  "intakePreviewPPD": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "00610c2f2e2d695f"
+  },
+  "intakeRecListHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9918ad803ebb6818"
+  },
+  "intakeResolveRecipient_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "525049c88d6602b8"
+  },
+  "intakeSectionRowHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "eed5f891b88e016f"
+  },
+  "intakeSendAcct_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "3bece8c9474ea35a"
+  },
+  "intakeSendPAP": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "be5bb4b56af399c8"
+  },
+  "intakeSendPMD": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "8dfe22a25676e9b8"
+  },
+  "intakeSendPPD": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "20b1eb58bd437f84"
+  },
+  "intakeStoreFailWarn_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "ca97adcf1ca5619c"
+  },
+  "intakeStoreOversizeError_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "60ae387b05fb68f2"
+  },
+  "intakeTsString_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "0d636a8e6dc51179"
+  },
+  "intakeValidateEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "1238cbb1fb5a587c"
+  },
+  "intakeVolumeBuckets_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "c1cc44e8adc293e6"
+  },
+  "invalidateCnAmbientCache_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "10e862fe725eec01"
+  },
+  "invalidateCnTaxonomyCache_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "d29e513dc9f2466b"
+  },
+  "invalidateKbCache_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "77165ee43551ab3b"
+  },
+  "invalidateRosterCache_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "218e133332716b1c"
+  },
+  "isCdrQueueSentinel_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "867f9c629bd5029e"
+  },
+  "isDevInstance_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "25ac5f394712a866"
+  },
+  "isProdInstance_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "4a89e34e47ddf1e4"
+  },
+  "isValidTimeOffType_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "49c3b836fb2d6c91"
+  },
+  "isoFromUtc_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2e23e13c0059f86d"
+  },
+  "isoLocalDate_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c3a57b09019d4161"
+  },
+  "issueDoc": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "65909bdd49815ccc"
+  },
+  "kbAddComment": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8f6e70c2e071203d"
+  },
+  "kbAiApplySpend_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b7f2020ab58e0cfe"
+  },
+  "kbAiBuildPrompt_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5ab0c31f2c764bbd"
+  },
+  "kbAiCallVendor_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4b7b4e2ef204395d"
+  },
+  "kbAiCanonicalFacets_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f0aa7838c54c9f8c"
+  },
+  "kbAiEstimateCostUsd_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b1a8477b2dfbc8b6"
+  },
+  "kbAiGeneration_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "612abb62a955459a"
+  },
+  "kbAiQueryTerms_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "168baf67493bbb0f"
+  },
+  "kbAiReadSpend_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ca6853a4d8bc7afb"
+  },
+  "kbAiSanitizeFacets_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ca76d26df02ea89c"
+  },
+  "kbAiTryReserveSpend_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5a848e5a0d03ea63"
+  },
+  "kbAppendRevision_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bb5e1ce0eca21dbf"
+  },
+  "kbCellDateIso_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "213fcae40ca977e9"
+  },
+  "kbCellTs_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c5c30655d6ba450f"
+  },
+  "kbChunkTruncate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3e127356a90818e3"
+  },
+  "kbCoViewRelated_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7cc422437e3c5319"
+  },
+  "kbCollectDocInlineImages_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "77f27b506e435901"
+  },
+  "kbCommentCounts_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "80aafb312e3973e0"
+  },
+  "kbCommentTargetOk_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "32229c8dbe199b62"
+  },
+  "kbConvertDriveDoc": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "87260171e585f906"
+  },
+  "kbConvertDriveSheet": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9ff0d8c9e3943136"
+  },
+  "kbDataTableSummary_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "aef3e84efd4d5a0d"
+  },
+  "kbDeleteComment": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7d40b38aad4846f5"
+  },
+  "kbDeleteItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "739bf2fe768deba1"
+  },
+  "kbDocBodyToMarkdown_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a3e4079e74b04c66"
+  },
+  "kbDriveUpload_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "362ec61b8a0b6249"
+  },
+  "kbEditComment": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9549ef2cb4ef95e3"
+  },
+  "kbEmbedUrl_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7f799dae8bd11769"
+  },
+  "kbExpandSynonymTokens_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9e9e6773a4a8f7b2"
+  },
+  "kbExtractDocImageRefs_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "cfe3b26768f70fd2"
+  },
+  "kbFeedbackCounts_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4e12d900d37c7847"
+  },
+  "kbFlagItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "758482cf0537a0c1"
+  },
+  "kbGeocodeOne_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5192857fd4994eae"
+  },
+  "kbGetComments": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2e47703a547f7268"
+  },
+  "kbGetContentRequests": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "46e077cc8be0bc21"
+  },
+  "kbGetFacetGuidance": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "526a2abfd36912d2"
+  },
+  "kbGetImageData": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fe9ee4ef1ecc861a"
+  },
+  "kbGetRelated": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a10f0f46249fca78"
+  },
+  "kbGetReviewDue": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "790ff1a9121d92b5"
+  },
+  "kbGetRevisions": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5b87541d98c3c899"
+  },
+  "kbGetSearchConfig": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b869f20067f8a7ae"
+  },
+  "kbGetUsageStats": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1f9c3de3e3d19e40"
+  },
+  "kbHaversineMiles_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "80bc103110b98773"
+  },
+  "kbImportDataTable": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "92945c41055ee55b"
+  },
+  "kbIngestFile": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5a476fc98ce0f50f"
+  },
+  "kbIngestPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "78177d85b224a962"
+  },
+  "kbMapCacheKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "826bb1e9670b3836"
+  },
+  "kbMapDistances": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "161ca02a4ddff030"
+  },
+  "kbMarkReviewed": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5830a51fccbc1d51"
+  },
+  "kbOpenUrl_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e6897dcf3e5e8869"
+  },
+  "kbParseCsv_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "57b74b7340857a65"
+  },
+  "kbParseDriveUrl_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4cec09b834788e18"
+  },
+  "kbParseImageDataUrl_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "eb0631fd4899dc8a"
+  },
+  "kbPublishItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5149bd21de1a805b"
+  },
+  "kbRecordView": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "52ccc15920736658"
+  },
+  "kbReplaceDocImageTokens_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c60c6ba2f27955ac"
+  },
+  "kbRequestArticle": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "81d578f7b5c8928b"
+  },
+  "kbResolveContentRequest": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e1396d43974f7bdb"
+  },
+  "kbResolveDocImages_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5f0968f6e2b732be"
+  },
+  "kbRevertItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ac0bfa638aceda10"
+  },
+  "kbRosterFromBanded_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "34d239c82292c840"
+  },
+  "kbRowStatus_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "25544911a427024d"
+  },
+  "kbRunsToMarkdown_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "05602ad0ab831d74"
+  },
+  "kbSaveItem": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5fe9c38ae47c532e"
+  },
+  "kbSaveSearchConfig": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "694117bf7e832cd6"
+  },
+  "kbScanBrokenEmbeds_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c16d7c2610255755"
+  },
+  "kbSearchScore_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6ef45df821e362c6"
+  },
+  "kbSheetGridToMarkdown_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "56c963a2f3e1e044"
+  },
+  "kbSlug_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1afd4f6641545de5"
+  },
+  "kbSplitSections_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3bf094b3063bd2bd"
+  },
+  "kbStaleFlags_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "092e567a1f84f72a"
+  },
+  "kbTextToRuns_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "36795c548ac5f6f6"
+  },
+  "kbUploadImage": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "24d8b43a1cea4b27"
+  },
+  "kbUsageCounts_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "476f61b78e47de8d"
+  },
+  "lastWeekday_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c1119478e3152f94"
+  },
+  "lookupEmployeeById_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "400ec8230ce92c91"
+  },
+  "mailBccAll_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b455b69222df1a7a"
+  },
+  "mailBccStatus_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c762960f9f9d2217"
+  },
+  "mailMergeBcc_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a530dcb65e387dac"
+  },
+  "managerAggregateFlagged_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1f24f377c67eaaa9"
+  },
+  "managerAggregateUrgent_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "9ebfbf412d1c0e2d"
+  },
+  "managerBriefSections_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "596f55a3a7a2ae60"
+  },
+  "managerBriefSuppressionActive_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "01c3bb0a1b4e667b"
+  },
+  "managerDeleteCallNote": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "90c0384fb8e4a52f"
+  },
+  "managerGetCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "891bbed80f3ae419"
+  },
+  "managerGetFormSubmission": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "d20021cce3997764"
+  },
+  "managerGetPendingAdjustments": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d230c2298ac0f0c7"
+  },
+  "managerGetReviewCandidates": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "46814a2aa47087a2"
+  },
+  "managerGetShiftStats": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a684900aba9fe8cd"
+  },
+  "managerGetTrainingQueue": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "c59bb574cf3168b6"
+  },
+  "managerGetUnresolvedActionCount": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ba45117f7e3357c8"
+  },
+  "managerParseBreakSlots_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4be5f056c13763a2"
+  },
+  "managerPlanDay_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2ebd6fd3a0de1881"
+  },
+  "managerSaveDay": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d9b581170ce076a6"
+  },
+  "managerSaveDayRange": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9d096ea392226bf0"
+  },
+  "managerSearchCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "706822a45d0af0ff"
+  },
+  "managerSourceDrift_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c3ef16b811cfb3a5"
+  },
+  "managerSubmitTimeOff": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1a66121703bf23d0"
+  },
+  "markDeptRequestResolved_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "22d4caa945dd4cff"
+  },
+  "markTrainingComplete": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "e78b1fbf759b7845"
+  },
+  "mergeCallNoteTags": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "71b41ece5a34c160"
+  },
+  "metricsBuildKpiSeries_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "c5d5ed7618c38cbd"
+  },
+  "metricsParsePercent_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "754fbb0d42ee5134"
+  },
+  "metricsTeamAvgSeries_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "64c9cb5e59c9e46f"
+  },
+  "metricsWorkdayIsos_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "1df55595dc58ed73"
+  },
+  "mgrWorkdaysEnding_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "61b6a7c0bfa653a2"
+  },
+  "normalizeAuditTs_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f15ae33f9797b8cf"
+  },
+  "normalizeDate_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a605cf41c988c4f9"
+  },
+  "normalizeTagForAdmin_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "710be7fa2579968e"
+  },
+  "normalizeTime_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "efa705f0bb924283"
+  },
+  "normalizeType_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f279b744ad338c4d"
+  },
+  "normalizeWebAppExecUrl_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "3654ab2ba4f67118"
+  },
+  "notifyEmpDocIssued_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d892ca085ba26bea"
+  },
+  "notifyEmpDocSigned_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "e8c24278518fc4fb"
+  },
+  "notifyEmployeeOfAdjustDecision_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "364fa3654b1f5721"
+  },
+  "notifyEmployeeOfDecision_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9cb9f5f08ddadca1"
+  },
+  "notifyManagerOfCoachingAck_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "327b49e905452781"
+  },
+  "notifyManagerOldAdjustment_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "38cc5cf787d27c03"
+  },
+  "notifyManagerTrainingQuestion_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b94e52155b96c4d9"
+  },
+  "notifyManagersOfAdjustRequests_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4ecc534fcff1aa66"
+  },
+  "notifyRepOfCoachingNudge_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "86c97b6a012dcb5a"
+  },
+  "notifyRepOfCoachingRetraction_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "b037433f04e6c330"
+  },
+  "notifyRepOfCoaching_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "7afd61c037dbb3b0"
+  },
+  "notifyRepOfFailedSubmission_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "5146fb47893492e9"
+  },
+  "notifyRepOfFormSubmission_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "788c6bf3bd66fcdf"
+  },
+  "notifyTrainingAssigned_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "a29a0c956912e935"
+  },
+  "nthWeekday_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3f484565e578b720"
+  },
+  "nudgeCoaching": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "ba25c62f635f6be9"
+  },
+  "offboardEmployee": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b3357dc2e76ac45d"
+  },
+  "openPersonalSs_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d55b74af94f02808"
+  },
+  "parseRetentionDateMs_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "886c7b0cbec5b62c"
+  },
+  "parseShiftOverride_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a6d1eb0f4595daa4"
+  },
+  "parseTimestampMs_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "30e926f10feaa052"
+  },
+  "payPeriodRange_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "00e75f71a7c3946c"
+  },
+  "pendingTasksBust_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7647393af4ed445b"
+  },
+  "pendingTasksSort_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b2b3f0091963eefe"
+  },
+  "presenceMap_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "45019ef4f8c6ba9f"
+  },
+  "prevWorkdayIso_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "4b6189a852a82b08"
+  },
+  "previewCallNoteEmail": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "8f0e383a47e5a9bb"
+  },
+  "propBudgetsFor_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "cdbce753ff704ae2"
+  },
+  "propSetBounded_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "bdce0d93be6995f4"
+  },
+  "propShrinkDropOldest_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5226a7cd26a34600"
+  },
+  "propShrinkStripFields_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "719cef093a445dfb"
+  },
+  "propValueBudget_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c2a5d55acb36c06d"
+  },
+  "provisionCallNotesSheet": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "aad48aebe37a8208"
+  },
+  "ptoLegitHalfDayPair_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f54af7218152d716"
+  },
+  "punchAdjustDecideAll_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2b8ce298119c5fbd"
+  },
+  "punchDayAdd_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "39f7a473bfcc9b17"
+  },
+  "punchFirst_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "767e78c9c1cd9d37"
+  },
+  "punctDayState_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "697306332bd17fad"
+  },
+  "punctWeeklyBuckets_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b0f23081a3ddbcbb"
+  },
+  "purgeArchivedCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "9bdee88f77731c53"
+  },
+  "purgeExpiredFormData": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "a7cfdafb5158dc81"
+  },
+  "purgeOldCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "7f539660f1dbc553"
+  },
+  "purgeOldDiagnostics": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a08199a6b30311fe"
+  },
+  "purgeOldQaReviews": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "9e775f0d3c48c82a"
+  },
+  "purgeSheetRowsOlderThan_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3aaa40de83df7b4b"
+  },
+  "qaAddComment": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "b992d1df594c81b6"
+  },
+  "qaAssignRecording": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "d4dfd0f73feb2dd2"
+  },
+  "qaAudioChunkFor_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "b0fdbe157f3de3d1"
+  },
+  "qaAuditTarget_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "564da498815c75aa"
+  },
+  "qaCalibration_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "cdf8ec936460bf3c"
+  },
+  "qaCanReviewEmail_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "fb31015d1232db2a"
+  },
+  "qaCardStats_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "aa6a4dc7e787f17e"
+  },
+  "qaChoiceOptionsSanitize_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "3b64e8dcc68edf47"
+  },
+  "qaChunkRange_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "394b7b63c0f37327"
+  },
+  "qaCoverageRows_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "ebc6e795a6380242"
+  },
+  "qaCreateManualRecording": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "95d0f0e9e85b5625"
+  },
+  "qaCritType_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "bcf08cd85a74eb66"
+  },
+  "qaCriteriaSanitize_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "8909923c8c9570aa"
+  },
+  "qaDeleteComment": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "ecf6502f713654e1"
+  },
+  "qaExemptEligible_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c3a509aed66ef21e"
+  },
+  "qaFindRecordingRow_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1bc855c656226304"
+  },
+  "qaFolderId_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "96a2b80b794e1077"
+  },
+  "qaGetAudioChunk": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "0b85fdaf1bc0c452"
+  },
+  "qaIsManualId_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "7ee099321f1d6eec"
+  },
+  "qaLatestScorecards_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "88b785a176d00d83"
+  },
+  "qaListComments": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "fef6e03b5c63daef"
+  },
+  "qaListScorecards": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "e6a3851243811bb5"
+  },
+  "qaLogEntries_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "3bf343f727ff9ab0"
+  },
+  "qaMsToYmd_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "20a8fec5e9d1f1da"
+  },
+  "qaOptionIsNumeric_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c31da548b4d9889a"
+  },
+  "qaPeriodBounds_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "71b7b2769e6097ff"
+  },
+  "qaPeriodKeysForYmd_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1abf14ea6ead38d4"
+  },
+  "qaPeriodLabel_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "27b0625df5464827"
+  },
+  "qaPeriodMatches_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "5d5646c59d5aa68d"
+  },
+  "qaPeriodOptions_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "0d4ce2fb63f4bb22"
+  },
+  "qaPeriodValid_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "848027a379afafb0"
+  },
+  "qaPrevPeriod_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "28d62b80697cd097"
+  },
+  "qaRatingNormalize_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "42b7fb1189aa6964"
+  },
+  "qaReadExemptions_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "0edfd6b9c7983956"
+  },
+  "qaReadScorecards_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "32ce675a838f5f74"
+  },
+  "qaReviewRetentionDays_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "8e65c327742009df"
+  },
+  "qaRosterIdByName_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "7cc88ade5c535fc1"
+  },
+  "qaSamplePick_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "b1ddd179fa397739"
+  },
+  "qaSampleRecordings": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c8f9aa37229e93f2"
+  },
+  "qaSaveScorecard": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "57b01a649a3e0cba"
+  },
+  "qaSetExemption": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "bf79288be0d727b2"
+  },
+  "qaSetRecordingAgent": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "86801cfe020a17b6"
+  },
+  "qaSetRecordingDuration": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "532bd4911a468c48"
+  },
+  "qaSetRecordingShared": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "3eb9a5421fd9d133"
+  },
+  "qaSetRecordingStatus": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "3d77db7a3ea5e486"
+  },
+  "qaStatsAggregate_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "23c066fbf757337a"
+  },
+  "qaStatus_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "420bd974afbd92fe"
+  },
+  "qaStoreConfigured_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "0574551843c49416"
+  },
+  "qaSyncRecordings": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "7fe5465bf9b87c09"
+  },
+  "qaYmdMs_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "e630a3e9b237e555"
+  },
+  "readAutomationErrors_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "856e5e11ddbd0a16"
+  },
+  "readCallNoteRowsInRange_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2e4229518eb270ba"
+  },
+  "reconcileCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "801777cd2aa5cabc"
+  },
+  "recordClientError": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8cd1bca700f399fc"
+  },
+  "recordPresence": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "69d2bc86d3bfa727"
+  },
+  "recordPunch": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0be6ba2c3dc639d2"
+  },
+  "recordPunchCore_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "dead62bd34e23228"
+  },
+  "recordViewEnter": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "bb16a9c3fae98a60"
+  },
+  "releaseDoc": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "c1c257de0d95b2e9"
+  },
+  "releaseSpanishThread": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4190449096af4f1d"
+  },
+  "removeAutomationTriggers": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a6e8e7b713517633"
+  },
+  "renameCallNoteTag": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b1c9f9b3076d1388"
+  },
+  "renderOopDetailsHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "a4169076d8da0f2f"
+  },
+  "renderResupplyDetailsHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "f7566604566141e1"
+  },
+  "renderShippingDetailsHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "435862b8c61f4be8"
+  },
+  "repSenderFrom_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5e07f3004a80b095"
+  },
+  "repSenderOpts_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a67c848c3cfaf634"
+  },
+  "repairSplitDayPunches": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2d691a0ef3fe64c0"
+  },
+  "repairTimesheetTimezone": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "65ba240bba535b72"
+  },
+  "reportBreakPairingChanges": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "40d6ea17ef90098c"
+  },
+  "reportMultiBreakDays": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1d363a0a92539eeb"
+  },
+  "resolveDeptRequest": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "8b23c87c7dd69527"
+  },
+  "resolveEmailRecipients_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "657c89d126e80976"
+  },
+  "resolveSpanishThread": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "e5dc4a4a5919031d"
+  },
+  "resumeShiftForEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c0f29823681b4fb5"
+  },
+  "retentionWarnings_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a9add205ddd2fb02"
+  },
+  "retentionWindowDays_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b7e66edd8d5a89f1"
+  },
+  "revokeTrainingAssignment": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "84ecd4e7e2704a54"
+  },
+  "rosterHasAccruingRep_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1a37be5691c30e7c"
+  },
+  "runDailyExportCheck": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "581e29d9b2488b34"
+  },
+  "runHourlyJobs": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "0c74540c3160cfa1"
+  },
+  "runNightlyPurges": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "98f78cb13a5405b8"
+  },
+  "runNightlySelfTest": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2bb3b7280ec12e37"
+  },
+  "runTriggerGroup_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "4d14b09cfe487358"
+  },
+  "runWeeklyDigests": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ae5bcd52bf45fed4"
+  },
+  "safeTimezone_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9f3e152ae6b264eb"
+  },
+  "safeWebAppUrl_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "536d9ef0641827cc"
+  },
+  "sanitizeCallNotePayload_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "42c4160dc54aedf8"
+  },
+  "sanitizeEmailSelections_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4d7c945076b5a95a"
+  },
+  "sanitizeFlagType_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "db22b24d13deeb0e"
+  },
+  "sanitizeFlagsArray_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "0c4965f8619f0035"
+  },
+  "sanitizeTagsArray_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4e7eed2e466a936d"
+  },
+  "saveAutoTagRules": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b94b3f5517b4f6d6"
+  },
+  "saveBreakSchedules": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "137e1ad3501f629a"
+  },
+  "saveDepartmentEmails": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fe74e6ad0c8b8f3b"
+  },
+  "saveDeptRequestSla": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "41e5f80f97af7054"
+  },
+  "saveEmailTemplates": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d67e37af1a0fa42b"
+  },
+  "saveEmpDocTemplate": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "49efd7fbc0d0b8c1"
+  },
+  "saveExternalLinks": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6e7048893bdaac90"
+  },
+  "saveFeatureFlags": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6f8be9a2da7cd967"
+  },
+  "saveKbAiSettings": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b582e199c7a008f9"
+  },
+  "saveMyScratchpad": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2690ee739189fdef"
+  },
+  "saveQaMembers": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "2d659e5cfdce5383"
+  },
+  "saveQaScorecardCriteria": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "802cb400a868c8e3"
+  },
+  "saveQuiz": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "6e76805971bec136"
+  },
+  "saveRetentionConfig": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6e6a925514a2e29f"
+  },
+  "saveSpanishInboxMembers": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f3a9da860be7ae70"
+  },
+  "saveStateTaxRates": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3daceb0ac861ed5b"
+  },
+  "saveTrainingAssignment": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "e6f2a17bbab7f24a"
+  },
+  "saveUpdateSuggestions": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a4e68a1bbaf9a166"
+  },
+  "schedReadMine_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "7f7859bf29c46ad5"
+  },
+  "schedValidateShape_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "81f48d8e0cac462f"
+  },
+  "scratchpadSheet_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "463678f9e1460ff4"
+  },
+  "scriptPropertiesStatus_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "aeaadf9fb83b1e82"
+  },
+  "searchInsurancePayors": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "51610bb3a1f1794e"
+  },
+  "searchMyCallNotes": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "be911415bb994066"
+  },
+  "searchReference": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6814815a3349fdfa"
+  },
+  "selfDeletePunch": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6f7520447488050c"
+  },
+  "selfTestFailureEmail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c2bad1096f53a814"
+  },
+  "sendAutomatedExport_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d553965779e62f90"
+  },
+  "sendAutomationHealthDigest": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8ba7d9ba12036553"
+  },
+  "sendCallNotesEodDigest": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "d34177267bca4054"
+  },
+  "sendCallNotesUrgentDigest": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "982af328548794cc"
+  },
+  "sendCallNotesWeeklyDigests": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "3e3a95de54fd53ee"
+  },
+  "sendCoachingRecapDigest": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "3b510bffe66e59a8"
+  },
+  "sendDailyMissedPunchAlerts": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bb83db0b33c14b9e"
+  },
+  "sendDeptRequestReminderDigest": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "0ff947e6edec66c7"
+  },
+  "sendEmployeeOverdueDocsEmail_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c0b366b3e244cd29"
+  },
+  "sendExternalEmail": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "6a907d66cecbcbf5"
+  },
+  "sendManagerBriefEmail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7c17429f29d3250d"
+  },
+  "sendManagerDailyBrief": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a98e591a34516a93"
+  },
+  "sendManagerFlagDigest_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "d9f7e84de0de7ebe"
+  },
+  "sendOneRepEodDigest_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4357d276cbf865ee"
+  },
+  "sendRepEmail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fdf741f572ada34d"
+  },
+  "sendTrainingOverdueDigest": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "9dc160b72d8b30e1"
+  },
+  "sendTrainingOverdueEmail_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "564abfd58101fab8"
+  },
+  "serveExternalForm_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "204ae43b25dcc8ec"
+  },
+  "serveIntakeFeedbackPage_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9f150a986884c9e8"
+  },
+  "serveResolvePage_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "ada76d1c4a12d56e"
+  },
+  "setArchivedTagsSet_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "a07a38eec68a13a7"
+  },
+  "setCallNoteFlag": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "7d040467f26e7707"
+  },
+  "setCallNoteManagerComment": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4f7f5904a86326c3"
+  },
+  "setCallNotePinned": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "d638a81213e5392f"
+  },
+  "setCallNoteResolved": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "5e6ffc51b21449c6"
+  },
+  "setCallNoteTrainingReply": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "4a82e45557d2d782"
+  },
+  "setCoachingFollowUp": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "b54185abe34cb5df"
+  },
+  "setScheduledCallStatus": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "098baa9e4b050671"
+  },
+  "signatureDataUrlToBlob_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "0b17d6903d564ac9"
+  },
+  "spanishAddrListIncludes_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "894c9ad3979e3cc2"
+  },
+  "spanishAutoAssignCore_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2b56bd725726218f"
+  },
+  "spanishAutoAssignPick_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4b8e1d00a5a74e5b"
+  },
+  "spanishCacheHash_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "6f6ff9469b02b288"
+  },
+  "spanishClaimsFold_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f73c96180db96a40"
+  },
+  "spanishClaimsMap_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f3de5ef1b401de6a"
+  },
+  "spanishManualResolvedMap_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "21e02b7b0560f0f7"
+  },
+  "spanishSearchQuery_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "7f80063af231a396"
+  },
+  "spanishThreadInScope_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "86903343ba36728f"
+  },
+  "spanishVmCaller_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "d37a00676d33a869"
+  },
+  "spanishVmMatch_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "fd25a96fa6a5a67d"
+  },
+  "spanishVmQuery_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "6ab826efc77ef200"
+  },
+  "splitDayRepairPlan_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2d960f1b3a70bbc8"
+  },
+  "stampAutomationError_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6296753cac3f335e"
+  },
+  "stampDigestLastRun_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "62f9d2066e856065"
+  },
+  "storeConfigured_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d54cba9e48d38116"
+  },
+  "storePlaceholder_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ea812c853953326a"
+  },
+  "submitCallNote": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4c104c06959b3064"
+  },
+  "submitFormByToken": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "df79cc88a0589dec"
+  },
+  "submitIntakeFeedback": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "3fbeb8b5e7ab8783"
+  },
+  "submitPunchAdjustRequests": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "331ddb5ec367a769"
+  },
+  "submitQuizAttempt": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "c54883e44b8665cf"
+  },
+  "submitTimeOffRange": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bc441c65383dcb39"
+  },
+  "submitTimeOffRequest": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0d7494baab765e12"
+  },
+  "teamMetricsRepView_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "70b622ecfef22790"
+  },
+  "teammateActiveNotIn_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "52db95eb7e8fa104"
+  },
+  "timeDiffSeconds_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "3425cc78d8750744"
+  },
+  "timeToMins_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "cc0a0c6d0641fa02"
+  },
+  "toDisplayTime_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2aaaa6c4988aa9ec"
+  },
+  "trainAttemptStats_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "f7941acf9b5fa96b"
+  },
+  "trainCellDate_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "302a14cac4310017"
+  },
+  "trainCellTs_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "9bf56c5e186a9fb5"
+  },
+  "trainDeriveStatus_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "8217d900e8aabc1c"
+  },
+  "trainEffectiveForEmp_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "e0d644ea8dfc8b66"
+  },
+  "trainGradeQuiz_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "8318bcdf8554e44b"
+  },
+  "trainKbTitles_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fc340196c79810a4"
+  },
+  "trainOverdueForRoster_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "030a42f99e7dc6fa"
+  },
+  "trainParseFormId_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "5bc3cd85f2b3bb1a"
+  },
+  "trainQuizAnalytics_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b406f86749e3add5"
+  },
+  "trainReadAssignments_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "c2586347b80389f0"
+  },
+  "trainReadAttempts_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "76059ec92efc28e9"
+  },
+  "trainReadCompletions_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "e441e6d1133a40ee"
+  },
+  "trainReadQuizzes_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "32895f775a3c8640"
+  },
+  "trainStripQuizForRep_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "6abf5564f6bca552"
+  },
+  "trainValidateQuizDef_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "345d9423410c3cb3"
+  },
+  "tsDoctorLegitBreaks_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "00b836bdf80d4f07"
+  },
+  "tsDoctorScan_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "265c3267a790d71c"
+  },
+  "tsPunchDaysWithArchive_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0630bdeb937160a0"
+  },
+  "tzAbbr_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8d03533a0a1e8cf6"
+  },
+  "tzCanonical_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f89361496557b2b1"
+  },
+  "tzEquivalent_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7115b7c27adfa164"
+  },
+  "tzRepairPlanRow_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f7842368caaa1d67"
+  },
+  "tzRepairResolveTargets_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ab64e3829fcdfd4b"
+  },
+  "updateCallNote": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "83bb78aa1ec389f7"
+  },
+  "updateInfoToSubformKey_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "6a14939693773f9f"
+  },
+  "updatePunchAdjustStatus": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "abb8a06367c48956"
+  },
+  "updatePunchAdjustStatusBulk": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "60040f6944661baa"
+  },
+  "updateTimeOffStatus": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "af7fe4dd50d2061a"
+  },
+  "utf8Len_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "18eb5994f793a5fe"
+  },
+  "validateCallNotePayload_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "0976e54c05148d78"
+  },
+  "validateCdrColumns_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "0733ace2620bba03"
+  },
+  "validateCsrTransferColumns_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "46f31ca4a8c1c37d"
+  },
+  "validateEmailSelections_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "fe918e8b88857256"
+  },
+  "verifyDocSignature": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "b8150bc14cc63c95"
+  },
+  "verifyFormSubmissionIntegrity_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "2e57ae03689d8541"
+  },
+  "viewUsageAggregate_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7b82b04bb04025a5"
+  },
+  "viewUsageRetentionDays_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "fcb87544b2f847e0"
+  },
+  "viewUsageTimingCell_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d2d13694a540104c"
+  },
+  "viewUsageTimingParse_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7079019ce0db1d7d"
+  },
+  "voidCoaching": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "cdcc0859d2edaa62"
+  },
+  "voidDoc": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d0805c0eeebc7098"
+  },
+  "withBreakSchedulesProp_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e44f75a7660d21e6"
+  },
+  "workedHoursByEmpForRange_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4c8c0bdfb4ee182c"
+  },
+  "workedHoursForEmpMonth_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "44477c159778c182"
+  },
+  "writeAdjustPunchForEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "704ef6c59d329322"
+  },
+  "writeAuditLog_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "e75cb1d620366d7f"
+  },
+  "writeToEmployeeSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "250afd54452841e0"
+  },
+  "writeWitnessAuditLog_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "36be7f3b2d660b87"
+  }
+ }
+}

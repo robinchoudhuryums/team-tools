@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -2113,10 +2113,36 @@ test('registry reorg: Manage hosts the moved tabs; Admin is adminOnly; old tools
 // ─────────────────────────────────────────────────────────────────────────────
 
 // extract a top-level `const NAME = {...};` object literal from a source file
+// Extract a whole top-level `const NAME = …;` declaration BY NAME from the
+// server source, brace/bracket-matched. Batch F2 made position meaningless —
+// two declarations that were adjacent in Code.js can now be in different files.
+function extractConstDecl_(name) {
+  const src = serverSource();
+  const start = src.indexOf('\nconst ' + name) + 1;
+  assert.ok(start > 0, 'const ' + name + ' found in the server source');
+  let i = start, depth = 0;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{' || c === '[' || c === '(') depth++;
+    else if (c === '}' || c === ']' || c === ')') depth--;
+    else if (c === ';' && depth === 0) { i++; break; }
+    else if (c === '\n' && depth === 0) {
+      // A multi-line declaration continues while the next line is INDENTED or
+      // starts a method chain — `const X = Object.keys(Y)\n  .reduce(…);` is the
+      // live shape, and breaking at the first depth-0 newline truncated it to
+      // `Object.keys(Y)`, which is a valid expression and so failed silently
+      // with a wrong VALUE rather than a parse error.
+      const next = src.slice(i + 1, src.indexOf('\n', i + 1));
+      if (!/^\s/.test(next) && !/^\s*\./.test(next)) break;
+    }
+  }
+  return src.slice(start, i);
+}
+
 function extractConstObject(file, name) {
   // Server files resolve through serverSource() for the same reason
   // extractRawFunction does: "Code.js" is shorthand for "the server" (F1).
-  const src = serverFiles().indexOf(file) >= 0
+  const src = isServerFile(file)
     ? serverSource()
     : fs.readFileSync(path.join(__dirname, '..', '..', 'web-app', file), 'utf8');
   const start = src.indexOf('const ' + name);
@@ -19763,7 +19789,13 @@ test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the 
 });
 
 test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quota would be exceeded, repairs the 2026-09-11 half-installed state, and names what a mid-creation throw left out', () => {
-  const consts = codeSrc.slice(codeSrc.indexOf('const AUTOMATION_TRIGGER_QUOTA'), codeSrc.indexOf('function runTriggerGroup_'));
+  // BY NAME, not by a positional slice between two landmarks: Batch F2 moved
+  // the constants and `runTriggerGroup_` into different server files, so the
+  // old `slice(indexOf(A), indexOf(B))` swallowed everything between them in
+  // the concatenation and evaluated it. A pin that depends on two declarations
+  // being NEIGHBOURS is a pin the next move breaks.
+  const consts = ['AUTOMATION_TRIGGER_QUOTA', 'TRIGGER_GROUPS', 'RETIRED_TRIGGER_HANDLERS']
+    .map((n) => extractConstDecl_(n)).join('\n');
   const drive = (existing, failAt) => {
     const state = { existing: existing.slice(), deleted: [], created: [], mail: null };
     const trig = (h) => ({ getHandlerFunction: () => h });
@@ -20798,6 +20830,91 @@ test('F1a: nothing reads the server by filename any more (run.js and counts.mjs)
     'read the server through serverSource(), not by filename: ' + offenders.join(' | '));
   assert.ok(/serverSource\(\)/.test(counts),
     'scripts/counts.mjs derives the server through serverSource() (INV-202)');
+});
+
+console.log('\nbatch F2 — the server split');
+
+// Parse the server files into top-level declarations the way the split did:
+// a declaration starts at COLUMN 0, and runs to just before the next one with
+// trailing blank / pure-comment lines dropped (so a file banner or a moved
+// comment is not a changed declaration). Every unit produced this way parsed
+// standalone under `node --check` when the split was generated.
+function serverDecls_() {
+  const DECL = /^(function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
+  const CMT = /^\s*(\/\/|\/\*|\*|\*\/)/;
+  const out = new Map();
+  const dupes = [];
+  serverFiles().forEach((f) => {
+    const lines = fs.readFileSync(path.join(__dirname, '../../web-app/', f), 'utf8').split('\n');
+    const starts = [];
+    lines.forEach((t, i) => { if (DECL.test(t)) starts.push(i); });
+    starts.forEach((i, k) => {
+      let e = k + 1 < starts.length ? starts[k + 1] : lines.length;
+      while (e - 1 > i && CMT.test(lines[e - 1]) && lines[e - 1].trim()) e--;
+      const body = lines.slice(i, e);
+      while (body.length && (!body[body.length - 1].trim() || CMT.test(body[body.length - 1]))) body.pop();
+      const m = DECL.exec(lines[i]);
+      const rec = {
+        kind: m[1], file: f,
+        sha: require('crypto').createHash('sha256').update(body.join('\n')).digest('hex').slice(0, 16),
+      };
+      if (out.has(m[2])) dupes.push(m[2] + ' (' + out.get(m[2]).file + ' and ' + f + ')');
+      out.set(m[2], rec);
+    });
+  });
+  return { decls: out, dupes };
+}
+
+test('F2c: the split is MOVE-ONLY — every declaration is byte-identical to pre-split Code.js', () => {
+  // Batch F2 moved ~30,000 lines out of Code.js into fourteen files. The claim
+  // that nothing CHANGED is the whole basis for deploying it without re-testing
+  // the server, so it is checked rather than asserted: the manifest was
+  // generated from Code.js at tag `pre-f2-split`, and this recomputes the same
+  // canonical hash from the tree. It also holds the split's SHAPE — each
+  // declaration in the file the manifest says — so a later "tidy-up" that moves
+  // a function between files has to say so here.
+  const man = JSON.parse(fs.readFileSync(path.join(__dirname, 'server-split-manifest.json'), 'utf8'));
+  const { decls, dupes } = serverDecls_();
+  assert.ok(Object.keys(man.units).length > 1000, 'the manifest covers the whole server');
+
+  const missing = Object.keys(man.units).filter((n) => !decls.has(n));
+  assert.deepStrictEqual(missing, [], 'declaration(s) lost in the split: ' + missing.slice(0, 8).join(', '));
+  const added = [...decls.keys()].filter((n) => !man.units[n]);
+  assert.deepStrictEqual(added, [],
+    'top-level declaration(s) the manifest does not know: ' + added.slice(0, 8).join(', ') +
+    ' — a NEW server function is fine, but regenerate the manifest in the same commit so "move-only" keeps meaning something');
+  const changed = Object.keys(man.units).filter((n) => decls.get(n).sha !== man.units[n].sha);
+  assert.deepStrictEqual(changed, [], 'declaration body changed since the split: ' + changed.slice(0, 8).join(', '));
+  const moved = Object.keys(man.units).filter((n) => decls.get(n).file !== man.units[n].file);
+  assert.deepStrictEqual(moved, [], 'declaration(s) in a different file than the manifest records: ' + moved.slice(0, 8).join(', '));
+});
+
+test('F2c: no top-level name is declared in two server files', () => {
+  // The one way the F1 shim could HIDE a real defect. Apps Script gives every
+  // file one global scope, so a duplicate name resolves to the LAST declaration
+  // evaluated; `serverSource()` brace-matches from the FIRST. A pin reading the
+  // first while production runs the second is worse than no pin, and the split
+  // made it reachable for the first time.
+  const { dupes } = serverDecls_();
+  assert.deepStrictEqual(dupes, [], 'duplicate top-level name(s) across server files: ' + dupes.join(', '));
+});
+
+test('F2d: Code.js is gone, and filePushOrder names the split in load order', () => {
+  assert.ok(!fs.existsSync(path.join(__dirname, '../../web-app/Code.js')),
+    'web-app/Code.js was split; a stray copy would be pushed AND shadow every declaration in it');
+  const files = serverFiles();
+  assert.ok(files.length >= 14, 'the server is the split set (got ' + files.length + ')');
+  assert.strictEqual(files[0], '00_config.js',
+    'the constants load FIRST — a const read at load time from a later file would be in its temporal dead zone');
+  // The numeric prefixes ARE the load order; a file out of numeric order means
+  // the name says one thing and the deployment does another.
+  const nums = files.map((f) => parseInt(f, 10));
+  assert.deepStrictEqual(nums, nums.slice().sort((a, b) => a - b),
+    'filePushOrder runs in the numeric order the filenames advertise: ' + files.join(', '));
+  // Tests.js and DevTools.js stay OUT (they share the global scope but are not
+  // the server) — F1b asserts that too; this keeps the pair together after F2.
+  assert.ok(fs.existsSync(path.join(__dirname, '../../web-app/Tests.js')), 'Tests.js is untouched by the split');
+  assert.ok(fs.existsSync(path.join(__dirname, '../../web-app/DevTools.js')), 'DevTools.js is untouched by the split');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

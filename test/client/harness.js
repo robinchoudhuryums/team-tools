@@ -73,6 +73,15 @@ function extractFunction(file, name) {
 // It is deliberately NOT a fallback-to-Code.js: an empty list means the
 // declaration was lost, and reading one file anyway would make the derivation
 // vacuous exactly when it stopped being true (INV-179, INV-202).
+// `'Code.js'` is an ALIAS for "the server". Batch F2 split that file into the
+// fourteen below, and ~500 pins name it; the name was always shorthand for the
+// whole server, so it keeps resolving rather than becoming 500 edits with no
+// behaviour change. `isServerFile()` is the one place that decides.
+const SERVER_ALIAS = 'Code.js';
+function isServerFile(file) {
+  return file === SERVER_ALIAS || serverFiles().indexOf(file) >= 0;
+}
+
 let _serverFiles = null;
 function serverFiles() {
   if (_serverFiles) return _serverFiles;
@@ -120,7 +129,7 @@ function serverSource() {
  *  another server file, because "Code.js" was always shorthand for "the server".
  *  Any other file is read directly, as before. */
 function extractRawFunction(file, name) {
-  const js = serverFiles().indexOf(file) >= 0
+  const js = isServerFile(file)
     ? serverSource()
     : fs.readFileSync(path.join(WEB_APP, file), 'utf8');
   const start = js.indexOf('function ' + name + '(');   // F(cycle-8): paren-anchored — see extractFunction
@@ -214,4 +223,4 @@ function loadFunction(sandbox, file, name) {
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, buildSandbox, loadFunction, fakeEl };
