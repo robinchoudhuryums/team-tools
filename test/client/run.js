@@ -20729,6 +20729,13 @@ test('F1b: filePushOrder is the declaration, and every file it names exists', ()
   ['Tests.js', 'DevTools.js'].forEach((f) => {
     assert.ok(serverFiles().indexOf(f) < 0, f + ' is not server source — keep it out of filePushOrder');
   });
+  // `npm run push:dev` swaps .clasp.dev.json OVER .clasp.json to push the dev
+  // instance, so a dev config with a different list would push the server in a
+  // different order than prod — inert with one file, not inert after F2. The
+  // committed EXAMPLE is what a dev config gets copied from, so it must agree.
+  const ex = JSON.parse(fs.readFileSync(path.join(__dirname, '../../web-app/.clasp.dev.json.example'), 'utf8'));
+  assert.deepStrictEqual(ex.filePushOrder, clasp.filePushOrder,
+    'the dev clasp example declares the SAME filePushOrder as prod — push:dev swaps it in');
 });
 
 test('F1b: the server source EVALUATES in load order with no ReferenceError', () => {
