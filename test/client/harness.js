@@ -83,6 +83,17 @@ function serverFiles() {
       'harness: web-app/.clasp.json has no .js entries in filePushOrder — it is the ' +
       'declaration of what the server source IS. List the server files there, in load order.');
   }
+  // Name the missing file HERE. Without this, a filePushOrder entry for a file
+  // that does not exist surfaces as an ENOENT thrown out of whichever pin first
+  // asks for the server — a stack trace pointing at a test that has nothing to
+  // do with it. The pin below states the same contract; this makes the failure
+  // legible when the harness dies before reaching it.
+  const gone = order.filter((f) => !fs.existsSync(path.join(WEB_APP, f)));
+  if (gone.length) {
+    throw new Error(
+      'harness: web-app/.clasp.json filePushOrder names ' + gone.join(', ') +
+      ', which do(es) not exist. `clasp push` would fail the same way.');
+  }
   _serverFiles = order;
   return _serverFiles;
 }
