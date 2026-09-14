@@ -217,10 +217,49 @@ function buildSandbox(files, extraGlobals) {
   return sandbox;
 }
 
+/** Parse the server files into TOP-LEVEL declarations the way the F2 split
+ *  did: a declaration starts at COLUMN 0 and runs to just before the next one,
+ *  with trailing blank / pure-comment lines dropped (so a file banner or a
+ *  moved comment is not a changed declaration).
+ *
+ *  ONE definition on purpose. The split manifest is a hash comparison, and a
+ *  SECOND implementation of the same canonicalization is exactly what produced
+ *  43 spurious mismatches while F2 was being built — the generator and the
+ *  verifier disagreed about whether a trailing comment belonged to the unit
+ *  above it. The pin and the regenerator now read the same function.
+ *
+ *  → { decls: Map<name, {kind, file, sha}>, dupes: string[] } */
+function serverDecls() {
+  const crypto = require('crypto');
+  const DECL = /^(function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
+  const CMT = /^\s*(\/\/|\/\*|\*|\*\/)/;
+  const out = new Map();
+  const dupes = [];
+  serverFiles().forEach((f) => {
+    const lines = fs.readFileSync(path.join(WEB_APP, f), 'utf8').split('\n');
+    const starts = [];
+    lines.forEach((t, i) => { if (DECL.test(t)) starts.push(i); });
+    starts.forEach((i, k) => {
+      let e = k + 1 < starts.length ? starts[k + 1] : lines.length;
+      while (e - 1 > i && CMT.test(lines[e - 1]) && lines[e - 1].trim()) e--;
+      const body = lines.slice(i, e);
+      while (body.length && (!body[body.length - 1].trim() || CMT.test(body[body.length - 1]))) body.pop();
+      const m = DECL.exec(lines[i]);
+      const rec = {
+        kind: m[1], file: f,
+        sha: crypto.createHash('sha256').update(body.join('\n')).digest('hex').slice(0, 16),
+      };
+      if (out.has(m[2])) dupes.push(m[2] + ' (' + out.get(m[2]).file + ' and ' + f + ')');
+      out.set(m[2], rec);
+    });
+  });
+  return { decls: out, dupes };
+}
+
 /** Eval an extracted function body into an already-built sandbox. */
 function loadFunction(sandbox, file, name) {
   vm.runInContext(extractFunction(file, name), sandbox, { filename: `${file}#${name}` });
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, serverDecls, buildSandbox, loadFunction, fakeEl };

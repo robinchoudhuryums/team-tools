@@ -2507,3 +2507,37 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
   already covers compact.)
+
+<a id="g114-a-zero-that-could-mean-three-different"></a>
+- **A computed ZERO that could mean three different things must say WHICH —
+  the accrual audit row (operator 2026-09-14).** `creditMonthlyPtoAccruals`
+  writes an audit row for a rep who earned nothing, which is the right instinct:
+  a month of unexpected silence should be visible. But the row said only
+  `hoursWorked=0; … no worked hours in the period`, and that single sentence
+  covered three unrelated situations with three unrelated remedies:
+
+  1. the rep genuinely did not work that month — nothing to do;
+  2. the rep HAS punches, but not under the employee id the roster carries for
+     them, so `hoursIdx.byEmp[p.emp.id]` missed entirely (`if (!rec) return;`) —
+     fix the id, then re-credit;
+  3. the rep has punches that never formed a complete clock-in/clock-out pair —
+     an open day (counted as INCOMPLETE) or, worse, a clock-OUT with no
+     clock-in, which `workedHoursByEmpForRange_` used to skip counted as
+     *nothing at all*, leaving no trace anywhere.
+
+  Case 3's second half is the sharp edge: a rep with real punches produced a
+  row byte-identical to a rep who never clocked in. The operator hit this on a
+  live `2026-09-01` run and could only tell cases apart by reading the
+  Timesheet by hand — and by then the stamp in column R had already advanced,
+  so the month was closed and the daily job would never retry it.
+
+  The rule: when a number can be zero for several reasons, the record carries
+  the REASON, not just the zero. Here that is `accrualZeroReason_` (three
+  distinct sentences, and the "no rows at all" one NAMES the employee id it
+  looked for) plus `accrualUncountedNote_` (the "… NOT counted" tail, one
+  builder so the credited row and the zero row cannot disagree), and the index
+  now counts clock-out-only days instead of dropping them. Prospectively, the
+  same question is answered before the fact by `previewPtoAccruals` — see
+  [the dry-run decision](design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin).
+  The family this belongs to is the one above it: a degraded or ambiguous read
+  must never render as data.

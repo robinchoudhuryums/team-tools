@@ -1526,6 +1526,7 @@ function _registerIntegrationB_() {
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
   _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
+  _integrationTest('triggerGate_previewPtoAccruals_nonManagerThrows', test_triggerGate_previewPtoAccruals_nonManagerThrows);
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
@@ -1534,6 +1535,7 @@ function _registerIntegrationB_() {
   _integrationTest('triggerGate_runWeeklyDigests_nonManagerThrows', test_triggerGate_runWeeklyDigests_nonManagerThrows);
   _integrationTest('triggerGate_nightlyPurges_nonManagerThrows', test_triggerGate_nightlyPurges_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
+  _integrationTest('previewPtoAccrual_predictsTheCredit',           test_previewPtoAccrual_predictsTheCredit);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
@@ -4641,6 +4643,15 @@ function test_triggerGate_ptoAccrual_nonManagerThrows() {
   }, 'manager access required');
 }
 
+// The READ-ONLY accrual preview is top-level too, so it is reachable via
+// google.script.run — read-only does not mean ungated: the report names every
+// accruing rep, their rate and their worked hours.
+function test_triggerGate_previewPtoAccruals_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccruals(); });
+  }, 'manager access required');
+}
+
 // The QA review-record retention purge (Phase-3 follow-on, 2026-08-28) is a
 // trigger handler → INV-44 gate. Destructive when enabled, so the gate is
 // load-bearing; with the default window 0 a gated caller still can't reach it.
@@ -4797,6 +4808,119 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
       'disabled rep not credited');
     _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'disabled rep stamp frozen');
+  } finally {
+    _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
+    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
+    rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
+    ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
+    balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
+    invalidateRosterCache_();
+  }
+}
+
+// The PREVIEW must predict the CREDIT exactly — that is the entire claim behind
+// showing it to an operator before the 6pm job runs, and a preview that merely
+// re-implements the resolver would satisfy itself while telling them nothing.
+// Same fixture discipline as the credit test above (the credited month cleared
+// first, so other fixtures' punches for this employee cannot join in), with one
+// deliberate difference: the second day is left OPEN. A run that counts one
+// complete day and declines to count one incomplete one is the case the audit
+// row used to leave silent, so the preview is asserted on BOTH halves.
+function test_previewPtoAccrual_predictsTheCredit() {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = sheet.getDataRange().getValues();
+  let rowIdx = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === _TEST_INDIA_ID) { rowIdx = i + 1; break; }
+  }
+  if (rowIdx < 0) { _skipTest('India test employee not on roster'); }
+  const qCell = sheet.getRange(rowIdx, EMP.PTO_ACCRUAL + 1);
+  const rCell = sheet.getRange(rowIdx, EMP.ACCRUED_THROUGH + 1);
+  const ptoCell = sheet.getRange(rowIdx, EMP.PTO_ENABLED + 1);
+  const balCell = sheet.getRange(rowIdx, EMP.ANNUAL_LEAVE + 1);
+  const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
+  const balBefore = parseFloat(balCell.getValue()) || 0;
+  const props = PropertiesService.getScriptProperties();
+  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
+  try {
+    const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
+    const lastYm = accrualMonthsToCredit_('', nowYm).newStamp;
+    const lp = lastYm.split('-');
+    const backYm = lp[1] === '01' ? (parseInt(lp[0], 10) - 1) + '-12'
+      : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
+    const ts = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    if (ts) {
+      const all = ts.getDataRange().getValues();
+      for (let i = all.length - 1; i >= 2; i--) {
+        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
+        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) ts.deleteRow(i + 1);
+      }
+    }
+    const d1 = lastYm + '-05', d2 = lastYm + '-06';
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN',  'ClockIn');
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '17:00:00', 'OUT', 'ClockOut');
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d2, '09:00:00', 'IN',  'ClockIn');   // never closed
+    const RATE = 3.08;
+    const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
+    const expectDays = Math.round(((8 * RATE / basis) / perDay) * 100) / 100;
+    _assertTrue(expectDays > 0, 'the fixture earns a non-zero credit');
+    qCell.setValue(RATE); rCell.setValue(backYm); invalidateRosterCache_();
+
+    let prev;
+    _asUser(_TEST_MGR_EMAIL, function () { prev = previewPtoAccruals(); });
+    _assertSuccess(prev);
+    let me = null;
+    prev.reps.forEach(function (r) { if (r.id === _TEST_INDIA_ID) me = r; });
+    _assertTrue(!!me, 'the accruing test rep appears in the preview');
+    _assertEq(me.months.join(','), lastYm, 'exactly the one in-arrears month is owed');
+    _assertTrue(me.onTimesheet, 'the rep is found on the Timesheet under their own employee id');
+    _assertEqClose(me.hours, 8, 0.001, 'the preview counted the one COMPLETE day');
+    _assertEq(me.incompleteDays, 1, 'and reported the open day rather than swallowing it');
+    _assertEqClose(me.wouldCreditDays, expectDays, 0.001, 'the preview predicts the hours-driven credit');
+    _assertEq(me.zeroReason, '', 'a rep with worked hours carries no zero reason');
+    // READ-ONLY. If either of these moved, every other assertion here is moot.
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore, 0.001, 'the preview credited nothing');
+    _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'the preview advanced no stamp');
+
+    // …and the real job lands EXACTLY what was previewed.
+    let res;
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + me.wouldCreditDays, 0.001,
+      'the credit landed exactly the previewed amount');
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'stamp advanced with the credit');
+    const note = _findLatestAuditNote(_TEST_INDIA_ID, 'PtoAccrualCredit');
+    _assertTrue(note.indexOf('1 incomplete day(s) NOT counted') >= 0,
+      'the credited audit row NAMES the day it did not count, got: ' + note);
+
+    // ── The NO-ROWS case, which is the one the operator actually hit: an
+    // accruing rep with a rate, an owed month, and no Timesheet rows under
+    // their employee id at all. It must NOT pass through silently — it earns a
+    // legitimate zero, and the zero has to be recorded WITH its reason (a null
+    // `earned` here would skip the audit row entirely and record the rep
+    // nowhere, which is the regression this half exists to catch).
+    const balAfterCredit = parseFloat(balCell.getValue()) || 0;
+    _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
+    rCell.setValue(backYm); invalidateRosterCache_();
+    let bare;
+    _asUser(_TEST_MGR_EMAIL, function () { bare = previewPtoAccruals(); });
+    _assertSuccess(bare);
+    let none = null;
+    bare.reps.forEach(function (r) { if (r.id === _TEST_INDIA_ID) none = r; });
+    _assertTrue(!!none, 'a rep with no punches still appears in the preview');
+    _assertTrue(!none.onTimesheet, 'and is reported as absent from the Timesheet');
+    _assertEqClose(none.wouldCreditDays, 0, 0.001, 'no hours, no credit');
+    _assertTrue(none.zeroReason.indexOf('no Timesheet rows at all under employee id ' + _TEST_INDIA_ID) >= 0,
+      'the zero NAMES the employee id it found nothing under, got: ' + none.zeroReason);
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balAfterCredit, 0.001, 'a zero month credits nothing');
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'and the stamp still advances past it');
+    const zeroNote = _findLatestAuditNote(_TEST_INDIA_ID, 'PtoAccrualCredit');
+    _assertTrue(zeroNote.indexOf('no Timesheet rows at all under employee id ' + _TEST_INDIA_ID) >= 0,
+      'the ZERO audit row is written and carries the reason, got: ' + zeroNote);
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
     if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
