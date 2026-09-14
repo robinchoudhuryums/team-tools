@@ -27,9 +27,17 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+// The server source comes from the ONE shim the harness owns, which derives its
+// file list from `web-app/.clasp.json`'s filePushOrder (Batch F1). These counts
+// read the server BY PATH, which is precisely the coupling INV-202 names: split
+// Code.js without moving the derivation and `--check` goes red on a drift that
+// is not real. Going through serverSource() means the split is invisible here.
+const { serverSource } = createRequire(import.meta.url)('../test/client/harness.js');
 
 export const BEGIN = '<!-- COUNTS:BEGIN -->';
 export const END = '<!-- COUNTS:END -->';
@@ -88,7 +96,7 @@ export function editorRegistrations() {
  *  run.js's F7/F9 pins already use, so INV-136's stated count cannot drift from
  *  what the code enforces (it drifted four times while hand-maintained). */
 export function gatedEndpoints() {
-  const src = read('web-app/Code.js');
+  const src = serverSource();
   const out = { admin: [], manager: [] };
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
   let m;
@@ -104,7 +112,7 @@ export function gatedEndpoints() {
  *  dispatcher instead of owning one. Apps Script caps the first at
  *  AUTOMATION_TRIGGER_QUOTA (20) — the cap that threw on the operator. */
 export function triggers() {
-  const src = read('web-app/Code.js');
+  const src = serverSource();
   const install = fnBody(src, 'installAutomationTriggers');
   const created = [...new Set([...install.matchAll(/newTrigger\('([^']+)'\)/g)].map((m) => m[1]))];
   const groups = /const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/.exec(src);
@@ -228,8 +236,8 @@ const ROWS = [
   ['domTests', 'DOM harness tests', '`node test/client/dom/runDom.js`'],
   ['visualScenarios', 'Visual matrix scenarios', "`shoot.mjs`'s `SCENARIOS`"],
   ['editorRegistrations', 'Editor suite registrations', "`Tests.js`; a run prints its own `Expected:` line"],
-  ['adminEndpoints', 'Admin-tier endpoints (INV-136)', "`'Admin access required.'` in `Code.js`"],
-  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` in `Code.js`"],
+  ['adminEndpoints', 'Admin-tier endpoints (INV-136)', "`'Admin access required.'` in the server source"],
+  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` in the server source"],
   ['installedTriggers', 'Installable triggers created', '`installAutomationTriggers`'],
   ['groupedTriggerJobs', 'Jobs riding a dispatcher', '`TRIGGER_GROUPS`'],
   ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/`"],

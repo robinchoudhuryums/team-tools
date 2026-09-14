@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -671,7 +671,7 @@ console.log('\nCode.js — isValidTimeOffType_() (M1 leave-type whitelist)');
 // Source BOTH the validator and its canonical TIME_OFF_TYPES set from Code.js
 // (no local re-declaration → no Category-B drift). Strip the `const` so the
 // array lands as a sandbox global the extracted function reads as a free var.
-const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+const codeSrc = serverSource();
 const totMatch = codeSrc.match(/const (TIME_OFF_TYPES\s*=\s*\[[\s\S]*?\]);/);
 assert.ok(totMatch, 'TIME_OFF_TYPES declaration found in Code.js');
 vm.runInContext(totMatch[1] + ';', sb, { filename: 'Code.js#TIME_OFF_TYPES' });
@@ -1074,7 +1074,7 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // `[CN.TIMESTAMP]` occurrence must sit inside a known-safe expression —
   // a cnTimestampString_(…) argument, a bare cell WRITE (setValue/appendRow
   // builders don't read), or the whitelisted inline-guard functions.
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const lines = src.split('\n');
   const offenders = [];
   // Cycle 10: the write-exemption is `=` NOT followed by `=` — a raw
@@ -1321,7 +1321,7 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   // column (PUNCH_DATE / PUNCH_TIME / IS_ADJUSTMENT) must sit inside the typed
   // reader. A write (`= …` / `+ 1`) or a comment line is exempt. A new function
   // reading `row[AUDIT.PUNCH_DATE]` raw now fails CI (F1 would have).
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const reader = extractRawFunction('Code.js', 'auditRowObj_');
   const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
   // Cycle 10: `=(?!=)` — a raw comparison read must NOT pass as a write
@@ -1411,7 +1411,7 @@ flagCtx.PropertiesService = {
   },
 };
 vm.createContext(flagCtx);
-const ffSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+const ffSrc = serverSource();
 const ffConst = ffSrc.match(/const (FEATURE_FLAGS\s*=\s*\[[\s\S]*?\];)/);
 assert.ok(ffConst, 'FEATURE_FLAGS declaration found in Code.js');
 vm.runInContext(ffConst[1] + ';', flagCtx, { filename: 'Code.js#FEATURE_FLAGS' });
@@ -1516,7 +1516,7 @@ test('branded email CTA deep-links point at REGISTERED tab keys', () => {
   // A CTA is the one part of these emails that can be silently wrong: a stale
   // tab key still renders a button, it just lands on the default view.
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   const used = [...code.matchAll(/safeWebAppUrl_\('([^']+)'\)/g)].map((m) => m[1]);
   assert.ok(used.length >= 4, `CTAs are wired (found ${used.length})`);
   const core = extractScript('script_core.html');
@@ -1952,7 +1952,7 @@ console.log('\nCode.js — Sheets-coerced timestamp columns are read via normali
 // "Thu Jun 11 2026 ...", which silently fails every parse / date filter /
 // chronological sort downstream.
 test('no raw String() reads of TO/PAR.SUBMITTED_AT remain in Code.js', () => {
-  const tsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const tsSrc = serverSource();
   // F(cycle-8 M-15): ANY-index scan — the old regex required the loop index to
   // literally be `i`, so `String(rows[j][TO.SUBMITTED_AT])` or a destructured
   // `String(row[TO.SUBMITTED_AT])` sailed past, re-opening the exact class the
@@ -1979,7 +1979,9 @@ test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
 // still escapes — accepted; the one-variable alias no longer does.
 test('every SUBMITTED_AT index touch is normalizeAuditTs_-wrapped or a write (alias-proof)', () => {
   const offenders = [];
-  ['Code.js', 'Tests.js'].forEach((f) => {
+  // Derived from filePushOrder + Tests.js (F1): after the server splits, this
+  // net must cover every server file, not the one that used to hold them all.
+  serverFiles().concat(['Tests.js']).forEach((f) => {
     const lines = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8').split('\n');
     lines.forEach((line, idx) => {
       if (!/\[(TO|PAR)\.SUBMITTED_AT\]/.test(line)) return;
@@ -2112,7 +2114,11 @@ test('registry reorg: Manage hosts the moved tabs; Admin is adminOnly; old tools
 
 // extract a top-level `const NAME = {...};` object literal from a source file
 function extractConstObject(file, name) {
-  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'web-app', file), 'utf8');
+  // Server files resolve through serverSource() for the same reason
+  // extractRawFunction does: "Code.js" is shorthand for "the server" (F1).
+  const src = serverFiles().indexOf(file) >= 0
+    ? serverSource()
+    : fs.readFileSync(path.join(__dirname, '..', '..', 'web-app', file), 'utf8');
   const start = src.indexOf('const ' + name);
   if (start < 0) throw new Error('const ' + name + ' not found in ' + file);
   const open = src.indexOf('{', start);
@@ -2800,7 +2806,7 @@ const _kbSearchCtx = vm.createContext({});
 // the pin tracks the real values instead of a hand-copied guess.
 ['KB_CHUNK_MAX_CHARS', 'KB_CHUNK_FENCE_OVERAGE'].forEach((k) => {
   const m = new RegExp('const ' + k + '\\s*=\\s*(\\d+)').exec(
-    fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+    serverSource());
   assert.ok(m, k + ' is declared in Code.js');
   vm.runInContext('const ' + k + ' = ' + m[1] + ';', _kbSearchCtx);
 });
@@ -3989,7 +3995,7 @@ console.log('\ncoupling — LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ behavi
   // tripwire, and the PTO modal silently previewed the annual/1.0 fallback.
   // Reverse subset: every creatable type must have a client preview entry.
   test('TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys (reverse direction of the mirror)', () => {
-    const codeSrcLd = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    const codeSrcLd = serverSource();
     const m = codeSrcLd.match(/const TIME_OFF_TYPES\s*=\s*(\[[^\]]*\])/);
     assert.ok(m, 'TIME_OFF_TYPES literal found');
     const types = JSON.parse(m[1].replace(/'/g, '"').replace(/,\s*\]/, ']'));
@@ -4515,7 +4521,7 @@ console.log('\ncycle-10 — top-5 broad-scan fix pins');
 // M-5 behavioral: the intake PHI-store cell cap helper (pure). The cap must
 // reject a cell over the Sheets-safe limit and pass ordinary payloads.
 test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   const capM = codeSrc.match(/const INTAKE_STORE_CELL_MAX = (\d+)/);
   assert.ok(capM, 'INTAKE_STORE_CELL_MAX declared');
   const cap = parseInt(capM[1], 10);
@@ -4576,7 +4582,7 @@ test('openDayEditModal uses the target rep timezone; liveStatus ships it (M-2)',
   const body = modal.slice(0, modal.indexOf('\nfunction ', 10));
   assert.ok(/targetTz/.test(body) && /\.timezone/.test(body),
     'openDayEditModal resolves the target’s tz from liveStatus');
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   const lsBlock = codeSrc.slice(codeSrc.indexOf('const liveStatus = employees.map'));
   assert.ok(/timezone: e\.timezone/.test(lsBlock.slice(0, 2000)),
     'liveStatus entries carry the IANA timezone');
@@ -4598,7 +4604,7 @@ test('cnReRenderActiveView_ re-renders the pinned tray; tray render is edit-safe
 // Batch C server pins (cycle 10): witness-audit wiring, validation, and the
 // small silent-degradation guards.
 test('cycle-10 batch C: witness wiring + server guards hold', () => {
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   // C4 — the three witness rows route through writeWitnessAuditLog_, the
   // health report carries witnessFails, and the failure digest pushes recent.
   ['FormSubmissionReceived', 'EmpDocSigned', 'EmpDocCompleted'].forEach((a) => {
@@ -4921,7 +4927,7 @@ test('F3: archiveSheetRowsOlderThan_ honors a per-run bound; the Timesheet calle
 // F4: the INV-124 cohort guard + team average were computed over a roster that
 // still included offboarded/placeholder rows every sibling walk excludes.
 test('F3: roster inclusion goes through ONE predicate (INV-124 cohort + F3)', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   // (a) The predicate TRIMS — the whole point. A whitespace-only email cell
   // must read as "not a current employee" everywhere, or the walks disagree
   // exactly as column L's did before cnEnrolledSheetId_ (INV-167).
@@ -5192,7 +5198,7 @@ test('R1 follow-on: a non-http pdfLink/imageUrl is a NAMED warning, not a silent
 });
 
 test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from clean', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const compute = extractRawFunction('Code.js', 'computeAutomationHealth_');
   assert.ok(/const scanCatalog = !!\(opts && opts\.scanCatalog\)/.test(compute),
     'defaults OFF — the 10-min-per-manager badge and the daily digest must not open the Intake store');
@@ -5672,7 +5678,7 @@ test('A3: timeToMins_ returns null (never NaN) for an unparseable time', () => {
 });
 
 test('A3: the calcHours_ callers route null to their incomplete-day branch', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   assert.ok(/if \(hoursWorked === null\) \{ isIncomplete = true; incompleteCount\+\+; \}\s*\n\s*else \{ totalHours \+= hoursWorked; daysWorked\+\+; \}/.test(src),
     'buildTimesheetForEmployee_ must not add a null/NaN into totalHours');
   assert.ok(/const h = calcHours_[\s\S]{0,120}?if \(h !== null\) sparkHoursMap\[key\] = h;/.test(src),
@@ -5807,7 +5813,7 @@ test('F7: the client Ungrouped sentinel is named and mirrors the server', () => 
   const client = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
   const m = /var M_QUEUE_UNGROUPED = '([^']+)'/.exec(client);
   assert.ok(m, 'the client declares a named sentinel');
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const server = /(?:var|const) CDR_QUEUE_UNGROUPED = '([^']+)'/.exec(code);
   assert.ok(server, 'the server declares CDR_QUEUE_UNGROUPED');
   assert.strictEqual(m[1], server[1],
@@ -6003,7 +6009,7 @@ test('Phase 0: queue identifiers from the sheet are escaped', () => {
 // computeAutomationHealth_ directly, so the default must be OFF. This pin is
 // the thing standing between a diagnostic and a recurring cost regression.
 test('Phase 0: the queue scan is opt-in — badge, digest and deploy-readiness skip it', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   assert.ok(/function computeAutomationHealth_\(opts\)[\s\S]{0,400}?const scanQueues = !!\(opts && opts\.scanQueues\);/.test(src),
     'computeAutomationHealth_ defaults scanQueues OFF');
   assert.ok(/if \(scanQueues\) \{[\s\S]{0,200}?cdrQueueInventory_\(/.test(src),
@@ -6023,7 +6029,7 @@ test('Phase 0: the queue scan is opt-in — badge, digest and deploy-readiness s
 // The reader must stay READ-ONLY and bounded — it is a discovery tool wired
 // into a manager panel, not a data path.
 test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const m = src.match(/function cdrQueueInventory_\(from, to\) \{[\s\S]*?\n\}/);
   assert.ok(m, 'cdrQueueInventory_ is present');
   const body = m[0];
@@ -6042,7 +6048,7 @@ test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
     'the DQE read is bounded by enum-derived offsets');
   assert.ok(/qWidth = \(CDR\.QUEUE_EXT - CDR\.DATE\) \+ 1/.test(body),
     'the width comes from the enum, not a literal');
-  const enumSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+  const enumSrc = serverSource()
     .match(/const CDR = \{[\s\S]*?\}/)[0];
   const gi = (k) => Number(enumSrc.match(new RegExp(k + ':\\s*(\\d+)'))[1]);
   assert.strictEqual((gi('QUEUE_EXT') - gi('DATE')) + 1, 3,
@@ -6062,7 +6068,7 @@ test('Phase 1: queue columns are discovered from the header row, blanks skipped'
   // Read the REAL bounds out of Code.js rather than injecting literals — an
   // injected 7/17 cannot notice the constants moving, which is exactly the
   // drift this test is for (bite-checked: widening LAST to 18 now fails here).
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const first = Number((src.match(/const CSRT_QUEUE_COL_FIRST = (\d+);/) || [])[1]);
   const last = Number((src.match(/const CSRT_QUEUE_COL_LAST = (\d+);/) || [])[1]);
   assert.strictEqual(first, 7, 'the queue block starts at column H (0-indexed 7)');
@@ -6088,7 +6094,7 @@ test('Phase 1: queue columns are discovered from the header row, blanks skipped'
 // pass 3 args, and their assembled results are CACHED. If the default flipped
 // on, those payloads would change shape without an INV-85 cache bump.
 test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 args', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   assert.ok(/function getCsrTransferPerRepDaily_\(from, to, rosterNames, opts\) \{\s*\n\s*const withQueues = !!\(opts && opts\.withQueues\);/.test(src),
     'withQueues defaults OFF');
   // Every call site, excluding the definition itself.
@@ -6199,7 +6205,7 @@ test('Phase 2: mtRenderTable_ detail rows are additive and the disclosure is rea
 // The whole team table must not vanish because one auxiliary tab is
 // unreachable — and a failure must not read as "no transfers" (INV-175).
 test('Phase 2: a failed transfer read degrades to an error strip, not an empty table', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const fn = extractRawFunction('Code.js', 'getTeamMetrics');
   // Anchor on the INNER try — the function body opens with an outer one.
   const guarded = fn.slice(fn.indexOf('var trAgents'));
@@ -6255,7 +6261,7 @@ test('Phase 4: an unmapped queue stays VISIBLE as Ungrouped, sorted last', () =>
 
 // A queue listed under two groups would be counted twice — the INV-180 class.
 test('Phase 4: a queue claimed by two groups is counted ONCE', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const src = serverSource();
   const fn = extractRawFunction('Code.js', 'getCdrQueueGroups_');
   assert.ok(/if \(!qn \|\| claimed\[qn\]\) return;/.test(fn),
     'the resolver drops a duplicate queue so the first group wins');
@@ -6454,7 +6460,7 @@ console.log('\ncycle 13 — A4 / A6 / A8 / A9 fix pins');
 // which ASSERTED it returns 0 on an unreadable Sheet, i.e. pinned the exact
 // behaviour F5 removed and kept the unsafe variant alive under the obvious name.
 test('A4: the 0-on-error count wrapper is gone; only the outcome-carrying helper remains', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   assert.ok(code.indexOf('function countCallNotesInRange_(') < 0,
     'countCallNotesInRange_ must not be re-introduced — use cnCountNotesResult_(…).count ' +
     'and decide what to do with .unavailable');
@@ -6495,7 +6501,7 @@ test('A6: kbReloadTree_ surfaces a failed refresh instead of returning silently'
 // gone, which is a stronger guarantee than a hardened catch. This pin now keeps
 // it from being reintroduced.
 test('A8/follow-on: the dead annualPlannedUpcoming path stays removed', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const stripped = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   assert.ok(stripped.indexOf('function getUpcomingAnnualPlanned_') < 0,
     'the helper stays removed — a whole TimeOffRequests read per getEmployeeState call, for no reader');
@@ -6507,7 +6513,7 @@ test('A8/follow-on: the dead annualPlannedUpcoming path stays removed', () => {
 // rows and nothing was left — so a clean final run stamped hitPerRunCap and an
 // operator watching a backlog drain could not tell it had finished.
 test('A9: the CN archive stamps hitPerRunCap only when work actually remained', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const fn = code.slice(code.indexOf('function archiveOldCallNotes('));
   const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
   assert.ok(!/const capped = budget <= 0 \?/.test(body),
@@ -6528,7 +6534,7 @@ console.log('\ncycle 13 — A5 / A7 / A10 fix pins');
 // suite against live payroll — and assertNotProdInstance_ does not catch it,
 // because that only fires on INSTANCE_IS_PROD === 'true'.
 test('A5: dev-detection is single-sourced and requires an explicit non-prod marker', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const pred = extractRawFunction('Code.js', 'isDevInstance_');
   assert.ok(/INSTANCE_IS_PROD/.test(pred) && /raw === null \|\| String\(raw\)\.trim\(\) === ''/.test(pred),
     'an UNSET INSTANCE_IS_PROD is ambiguous and must resolve to NOT-dev');
@@ -6743,7 +6749,7 @@ test('CDR: both name-list renders cap and SAY what was cut', () => {
 // the server cannot produce. The fixture now carries VERBATIM copies; these
 // pins are what make "verbatim" true rather than aspirational.
 test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
 
   // Cycle-16 F10 batch: DERIVE the copied set from the fixture's own
@@ -6806,7 +6812,7 @@ test('F1: every CONFIG key has a reader (dead declarations are defects)', () => 
   });
   walk(root);
 
-  const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
+  const code = serverSource();
   const st = code.indexOf('const CONFIG = {') + 'const CONFIG = {'.length;
   let d = 1, i = st;
   while (d) { if (code[i] === '{') d++; else if (code[i] === '}') d--; i++; }
@@ -6846,7 +6852,7 @@ test('F1: every CONFIG key has a reader (dead declarations are defects)', () => 
 test('F1-inverse: every CONFIG.<KEY> read names a declared key (a typo reads as undefined, not an error)', () => {
   const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/<!--[\s\S]*?-->/g, '');
   const root = path.join(__dirname, '../../web-app');
-  const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
+  const code = serverSource();
   const st = code.indexOf('const CONFIG = {') + 'const CONFIG = {'.length;
   let d = 1, i = st;
   while (d) { if (code[i] === '{') d++; else if (code[i] === '}') d--; i++; }
@@ -7205,7 +7211,7 @@ test('batch-5: capped/annotated list contracts (INV-169) + search hit status + c
     'all three hit pushes carry the item status (draft legibility for admins)');
   const kb = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'));
   assert.ok(/g\.status === 'draft'/.test(kb), 'the chunk-group header renders the Draft pill');
-  const code = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = c17strip(serverSource());
   assert.ok(/indexOf\('\?'\) >= 0 \? '&v=' : '\?v='/.test(code),
     'the intake image cache-buster respects an existing query string');
 });
@@ -7464,7 +7470,7 @@ console.log('\nmetrics — operator improvements #1–#10');
 // that quote the shapes they replaced).
 const mopStrip = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const mopPartial = mopStrip(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
-const mopCode = mopStrip(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+const mopCode = mopStrip(serverSource());
 const mopFn = (src, name, nextName) => {
   const a = src.indexOf('function ' + name + '(');
   assert.ok(a >= 0, name + ' exists');
@@ -8028,7 +8034,7 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
   // Every CALL SITE names its form via the subLabel (the body arg may be an
   // expression — the 2026-08-13 feedback CTA rides it — so scan a window
   // after each call rather than one rigid arg shape).
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   // REWRITTEN in place (operator 2026-08-25, the accrual precedent): the two
   // SEND sites now pass `sendSubject` (the amend flow's post-hash "AMENDED: "
   // prefix rides the variable); the two PREVIEW sites keep the base subject.
@@ -9296,14 +9302,14 @@ test('auto-tag rules: sanitize-on-read mirrors the save validation (server)', ()
   assert.ok(/appears twice/.test(save), 'duplicate tags are refused, not silently merged');
   assert.ok(/CN_AUTO_TAG_RULE_LIMIT/.test(save), 'rule count is bounded');
   // Shipped to reps beside the other composer config; admins get it in the editor.
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   assert.strictEqual((code.match(/autoTagRules: getAutoTagRules_\(\),/g) || []).length, 2,
     'getCallNotesDepartments AND getAdminConfig both carry the rules');
 });
 
 test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA outside the hash', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const w = nc(extractRawFunction('Code.js', 'submitIntakeFeedback'));
   assert.ok(/getEmployeeInfo_\(\)/.test(w) && /Not authorized/.test(w),
     'the writer requires a registered employee — the page only collects text');
@@ -9656,7 +9662,7 @@ test('tzOffsetMinAt_ behavioral + the mismatch check compares OFFSETS once a day
   const nc2 = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const st = nc2(extractRawFunction('Code.js', 'getEmployeeState'));
   assert.ok(/workAnchorTz: CONFIG\.MANAGER_TIMEZONE/.test(st), 'getEmployeeState ships workAnchorTz');
-  const codeSrc = nc2(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const codeSrc = nc2(serverSource());
   assert.ok(/BY_TIMEZONE: \{\}/.test(codeSrc) && !/'Asia\/Manila': \{ start/.test(codeSrc),
     'the Manila-LOCAL shift entry is gone (it was wrong twice over under the policy)');
 });
@@ -10118,7 +10124,7 @@ test('pay statement: pure period math + rate boundary (operator 2026-08-17)', ()
 
 test('pay statement: the rate never leaves its one reader; other-rep view is manager-gated', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = nc(fs.readFileSync(path.resolve(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   // The INV-167/F14 boundary shape: column P is read in exactly ONE place
   // (empPayRate_), so no endpoint can spread a rate onto emp objects and leak
   // it to a teammate surface (the INV-24 discipline).
@@ -10434,7 +10440,7 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
   assert.ok(/dept_req_v1:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt');
   assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
   assert.ok(bumps >= 2, 'gen bumped at the resolve write AND the auto-track append (found ' + bumps + ')');
   assert.ok(/drBumpCacheGen_\(\);[\s\S]{0,400}DeptRequestResolved/.test(code),
@@ -10669,7 +10675,7 @@ test('Time/PTO consolidation: one page, quick-actions card, pay-statement edit c
 
 test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   const to = nc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
   const modals = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
   // ── Server: submitTimeOffRange is ATOMIC (INV-106 posture) and carries the
@@ -10757,7 +10763,7 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
 
 test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed read, archive-aware, credit-before-stamp (operator 2026-08-19)', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   // ── The entitlement arithmetic, BEHAVIOURAL. The rule is "N PTO hours per
   // BASIS hours worked", converted to the DAYS the balance column stores.
   // Constants come from CONFIG so a policy change re-parameterizes rather
@@ -10922,7 +10928,7 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
 
   test('the real table covers every audit-row job, or says why not', () => {
     const src = extractRawFunction('Code.js', 'automationProblems_');
-    const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    const codeSrc = serverSource();
     // Slice from the RATIONALE comment, not the const — the reasoned omission
     // below is stated there, and a slice that starts at the const cannot see it.
     const table = codeSrc.slice(codeSrc.indexOf('// ── Per-JOB liveness'), codeSrc.indexOf('function rosterHasAccruingRep_'));
@@ -11145,7 +11151,7 @@ test('F8: every rep-facing tool has a mobile visual scenario', () => {
 // and reports nothing — that hazard cost three silently-dead pins last session.
 
 test('F5: the DeptRequests Status cell has ONE reader (INV-183, fifth column)', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+  const code = serverSource()
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
   // The predicate exists and normalizes BOTH ways, with the 'open' default the
   // one already-correct reader applied.
@@ -12036,7 +12042,7 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
 console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comments');
 {
   const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
@@ -12520,7 +12526,7 @@ test('spanishThreadInScope_ — inbox-addressed OR configured VM shape, nothing 
 
 test('wiring: the fold rides both lists, first-message re-check, one predicate at all three by-id sites', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const grab = (name) => {
     const i = code.indexOf('function ' + name + '(');
     assert.ok(i >= 0, name + ' found');
@@ -12693,7 +12699,7 @@ test('intakeAmendBannerHtml_ — names the original send, lists changes, says re
 
 test('wiring: validate-before-send, post-hash marking, owner-only source, append-only chain', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const grab = (name) => {
     const i = code.indexOf('function ' + name + '(');
     assert.ok(i >= 0, name + ' found');
@@ -12814,7 +12820,7 @@ test('NLBR: the email keeps the rep\'s line breaks, and converts them AFTER the 
   // Both email callers share the ONE rule rather than repeating the replace:
   // the free-text branch through cnFmtEmailHtml_, the server-generated OOP
   // resolution directly (it is deliberately never marker-processed).
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+  const code = serverSource()
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');          // INV-188
   assert.ok(/resolutionText = cnNlBr_\(esc_\(generateOOPResolutionText_/.test(code),
     'the OOP branch routes through the shared helper');
@@ -12841,7 +12847,7 @@ test('B5 wiring: cards render formatted, copy strips, email applies post-esc_, k
   // bold wrote <b> tags that did not survive the plain-text save).
   assert.ok(/fmtMk\) \{\s*e\.preventDefault\(\);/.test(cn) && /cnWrapSelection_\(el, fmtMk\)/.test(cn), 'B/U/Shift+H wrap markers instead of native formatting');
   assert.ok(/execCommand\('insertText'/.test(nc(extractFunction('cn/script_callnotes.html', 'cnWrapSelection_'))), 'wrap inserts TEXT (undo stack intact, no HTML)');
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   assert.ok(/cnFmtEmailHtml_\(esc_\(callData\.issue\)\)/.test(code), 'email Issue row formatted post-esc_');
   assert.ok(/resolutionText = cnFmtEmailHtml_\(esc_\(resolutionText\)\)/.test(code), 'email Resolution formatted on the FREE-TEXT branch only');
   assert.ok(!/cnFmtEmailHtml_\(esc_\(generateOOPResolutionText_/.test(code), 'the server-generated OOP resolution is NOT marker-processed');
@@ -12897,7 +12903,7 @@ test('B6: cnCountIntakeNotesResult_ — bounded 2-col read, pre-filter before pa
 
 test('B6 server wiring: three endpoints attach intakeNotes null-on-unavailable; the volume endpoint is gated + bounded + honest', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   assert.strictEqual((code.match(/intakeNotes: intakeRes\.unavailable \? null : intakeRes\.count/g) || []).length, 3,
     'getMyMetrics + getMyMetricsRange + getTeamMetrics per-rep all attach null on an unavailable read (never 0)');
   assert.ok(/if \(rep\.intakeNotes != null\) teamTotals\.intakeNotes = \(teamTotals\.intakeNotes \|\| 0\) \+ rep\.intakeNotes;/.test(code) &&
@@ -13108,7 +13114,7 @@ test('DT-3: the import is allowlisted, dry by default, admin-gated, plain-text-f
 
 test('KBI-1: kbIngestPlan_ routes by extension — text/csv locally, office via Drive, the rest as an embed', () => {
   const ctx = vm.createContext({});
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+  vm.runInContext(serverSource()
     .match(/const KB_INGEST_TEXT_EXT[\s\S]*?\n\};/)[0], ctx);
   vm.runInContext(extractRawFunction('Code.js', 'kbIngestPlan_'), ctx);
   const plan = (n) => vm.runInContext('kbIngestPlan_(' + JSON.stringify(n) + ')', ctx);
@@ -13172,7 +13178,7 @@ test('GATE-SHAPE: an auth-gate test asserts the shape its endpoint actually retu
   // contract. Derived, so it covers every future gate test rather than the
   // four that exist today.
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   // Split Tests.js into function bodies, keep the ones that auth-gate-assert.
   const bodies = [];
   const re = /\nfunction (test_[A-Za-z0-9_]+)\s*\(\)\s*\{/g;
@@ -13516,7 +13522,7 @@ test('PTA-3: wiring — the memo is set in the single opener, recovery never rea
   // Derived ban: NO CN.DATE_LOCAL cell read reaches normalizeDate_ anywhere —
   // a NEW site reaching for the ADP-sheet twin fails CI (the F14/INV-142
   // boundary pattern).
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   const banned = code.match(/normalizeDate_\(\s*[^()]*\[CN\.DATE_LOCAL\]/g) || [];
   assert.strictEqual(banned.length, 0,
     'raw normalizeDate_([…CN.DATE_LOCAL]) read(s) — CN-region dates go through cnDateLocalString_: ' + banned.join(' | '));
@@ -13613,7 +13619,7 @@ test('QA-4: QA comments — QA-gated, target-must-exist, bounded anchor, refuse-
 
 test('QA-5: wiring — every endpoint gates before its store, the tab rides also:canSeeQa, the client seq-guards + escapes', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-  const code = nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = nc(serverSource());
   ['getQaQueue', 'qaSyncRecordings', 'qaSetRecordingStatus', 'qaAssignRecording',
    'qaGetAudioChunk', 'qaListComments', 'qaAddComment', 'qaDeleteComment'].forEach((fn) => {
     const body = nc(extractRawFunction('Code.js', fn));
@@ -14692,7 +14698,7 @@ test('QA-18: QA review-record retention — index untouched, ms fail-safe, botto
   // (e) The liveness row is INV-186 in code: enabled() consults BOTH the
   // window and the store, so a deployment with retention off (the default)
   // or no QA store is never checked — rather than checked and forever amber.
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   const jobRow = codeSrc.slice(codeSrc.indexOf("{ action: 'QaReviewPurge'"), codeSrc.indexOf("{ action: 'QaReviewPurge'") + 400);
   assert.ok(/enabled: function \(\) \{ return qaReviewRetentionDays_\(\) > 0 && qaStoreConfigured_\(\); \}/.test(jobRow),
     'AUTOMATION_JOB_CHECKS row gated on window>0 AND store configured (INV-186)');
@@ -15483,7 +15489,7 @@ test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairin
 });
 
 test('A2: all five hours builders accumulate breaks through ONE helper', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const stripped = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
 
   // The accumulator: breaks pile up, clock punches stay LAST-WINS (multi-shift
@@ -15910,7 +15916,7 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
   // The client cap MIRRORS the server constant (a drift degrades to a server
   // rejection, but the two should not disagree).
   const cap = (extractRawFunction('Code.js', 'managerParseBreakSlots_'), 
-    fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    serverSource()
       .match(/const MANAGER_DAY_MAX_BREAKS = (\d+);/));
   assert.ok(cap, 'the server declares the cap');
   assert.ok(new RegExp('var DE_MAX_BREAKS = ' + cap[1] + ';').test(mgr),
@@ -16010,7 +16016,7 @@ function extractFnFrom(src, name) {
 
 test('B1/B2: the done-state Adjust is prefilled, and a submitted request reaches a manager', () => {
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
 
   // B1 — the button carries the type, the dispatcher passes it, and the modal
   // RESETS before applying it (a <select> keeps its last value, so a prefill
@@ -16048,7 +16054,7 @@ test('B1/B2: the done-state Adjust is prefilled, and a submitted request reaches
 });
 
 test('B3: a resume CONVERTS the clock-out into a break — it never just deletes it', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const resume = extractRawFunction('Code.js', 'resumeShiftForEmployee_');
   const stripped = resume.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
 
@@ -16505,7 +16511,7 @@ test('PR3-1: getPunctualityReport — dayDetail is ADDITIVE beside `days`, cappe
   assert.ok(/getUsHolidays_\(/.test(src), 'holidays from the Coverage source');
   assert.ok(/if \(!empRosterEmail_\(roster\[i\]\)\) continue;/.test(src), 'F3 roster predicate kept');
   assert.ok(/if \(mins === null\) continue;/.test(src), 'A3 unparseable-time skip kept');
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   assert.ok(/PUNCT_MAX_RANGE_DAYS: 92,/.test(code), 'the cap is a CONFIG key (92 — the QTR preset fits)');
   // INV-185: the fixture's dayDetail keys EQUAL the server's push literal.
   const push = /dayDetail\.push\(\{([\s\S]*?)\}\);/.exec(src)[1];
@@ -17237,7 +17243,7 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   // Every source is its own try/catch and NAMES itself on failure (INV-187):
   // a source that could not be read must render "couldn\'t check", never 0.
   const pushes = [...fn.matchAll(/(?:unavailable|notConfigured)\)?\.push\('(\w+)'\)/g)].map((m) => m[1]);
-  const kindsLine = /PENDING_TASKS_KINDS = \[([^\]]+)\]/.exec(pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')));
+  const kindsLine = /PENDING_TASKS_KINDS = \[([^\]]+)\]/.exec(pr6nc(serverSource()));
   const kinds = kindsLine[1].match(/'(\w+)'/g).map((k) => k.replace(/'/g, ''));
   assert.strictEqual(pushes.slice().sort().join('|'), kinds.slice().sort().join('|'), 'one classification per declared kind: ' + pushes.join(','));
   assert.ok((fn.match(/\} catch \(e\) \{ \(?\w+ \? unavailable : notConfigured\)?\.?push|\} catch \(e\) \{ unavailable\.push/g) || []).length === kinds.length,
@@ -17439,7 +17445,7 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
   assert.ok(/1 overdue/.test(out) && /is-overdue is-past/.test(out) && (out.match(/Overdue<\/span>/g) || []).length === 1, 'overdue in words + past-due tone');
   assert.ok(out.indexOf('&lt;b&gt;x&lt;/b&gt;') >= 0 && out.indexOf('<b>x</b>') < 0, 'a hostile title is inert');
   // Fixtures + scenarios (INV-185: keys derived from the server push literals).
-  const code = pr6nc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = pr6nc(serverSource());
   const fnSrc = pr6nc(extractRawFunction('Code.js', 'getMyPendingTasks'));
   const itemKeys = [];
   [...fnSrc.matchAll(/items\.push\(\{([\s\S]*?)\}\);/g)].forEach((m) => {
@@ -17906,9 +17912,9 @@ test('QA-26: getQaLog + qaCreateManualRecording contracts — gate shape, self-s
     'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed, unshared, no duration/skip');
   assert.ok(/writeAuditLog_\(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' \+ fid, emp\.email\);/.test(man), 'audit row is id-only — the label may name a caller (INV-32/196)');
   assert.ok(!/name/.test(man.slice(man.indexOf("writeAuditLog_"), man.indexOf("writeAuditLog_") + 120)), 'the label never reaches the audit note');
-  const pfx = /const QA_MANUAL_ID_PREFIX = 'manual-';/.test(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const pfx = /const QA_MANUAL_ID_PREFIX = 'manual-';/.test(serverSource());
   assert.ok(pfx, 'the prefix is the named constant');
-  assert.ok(/^function qaIsManualId_\(fid\) \{ return String\(fid \|\| ''\)\.indexOf\(QA_MANUAL_ID_PREFIX\) === 0; \}/m.test(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')), 'ONE predicate for manual ids');
+  assert.ok(/^function qaIsManualId_\(fid\) \{ return String\(fid \|\| ''\)\.indexOf\(QA_MANUAL_ID_PREFIX\) === 0; \}/m.test(serverSource()), 'ONE predicate for manual ids');
   // The `manual` flag rides every surface that lists a recording, so no
   // client reaches for the player on a recording-less audit.
   const queue = qaLogNc(extractRawFunction('Code.js', 'getQaQueue'));
@@ -18103,7 +18109,7 @@ test('ARCH-GUARD: archiveSheetRowsOlderThan_ keeps a spare row so the final dele
 });
 
 test('NLBR-2: every line-break conversion in Code.js routes through cnNlBr_ — the three inline sites joined the note-email path', () => {
-  const code = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const code = foNc(serverSource());
   assert.strictEqual((code.match(/\.replace\(\/\\n\/g, '<br>'\)/g) || []).length, 0, 'no inline \\n→<br> replace survives anywhere in Code.js');
   assert.strictEqual((code.match(/cnNlBr_\(esc_\(message\)\)/g) || []).length, 2, 'both external customer/provider message bodies route through the helper');
   assert.strictEqual((code.match(/cnNlBr_\(esc_\(formatFormFieldValue_\(sanitizedData\[k\]\)\)\)/g) || []).length, 1, 'the form-submission table cell routes through the helper');
@@ -18146,7 +18152,7 @@ test('VIS-TZ: shoot.mjs carries a browser-timezone tuple entry, the mock honours
   assert.ok(/\/\[\?&\]tz=\(\[\^&\]\+\)\/\.exec\(window\.location\.search\)/.test(mock), 'the mock parses ?tz=');
   assert.ok(/FIXTURES\.getEmployeeState\.timezone = tzId;/.test(mock) && /FIXTURES\.getEmployeeState\.timezoneAbbr = TZ_ABBR_FIX\[tzId\] \|\| tzId;/.test(mock), 'the hook overrides the ROSTER timezone + its abbreviation');
   // The abbreviations the hook can emit are the server's own (INV-185).
-  const tzAbbr = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(/const TZ_ABBR = \{([^}]*)\}/);
+  const tzAbbr = serverSource().match(/const TZ_ABBR = \{([^}]*)\}/);
   assert.ok(tzAbbr, 'TZ_ABBR found');
   [['America/Chicago', 'CST'], ['Asia/Kolkata', 'IST'], ['Asia/Manila', 'PHT']].forEach(([z, a]) => {
     assert.ok(new RegExp("'" + z.replace('/', '\\/') + "':\\s*'" + a + "'").test(tzAbbr[1]), z + ' → ' + a + ' matches the server map');
@@ -18166,7 +18172,7 @@ test('VIS-TZ: shoot.mjs carries a browser-timezone tuple entry, the mock honours
 const DRV_SCOPE_MSG = 'You do not have permission to call DriveApp.createFolder. Required permissions: https://www.googleapis.com/auth/drive';
 
 function drvCtx(extra) {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const ctx = vm.createContext(Object.assign({ console: { warn() {}, log() {} }, JSON, String, Number, Object }, extra || {}));
   // Pull the real constants, so a rename or a reworded hint fails here.
   ['KB_IMAGES_FOLDER_PROP', 'DRIVE_WRITE_SCOPE', 'DRIVE_REAUTH_HINT', 'DRIVE_ACCESS_CACHE_KEY', 'DRIVE_ACCESS_CACHE_SEC']
@@ -19039,7 +19045,7 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
 console.log('\nCode.js — RT-1: diagnostics retention tier (ViewUsage / ClientErrors)');
 test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // INV-188
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   // (a) Getter behavioural — property wins, CONFIG 0 = disabled, garbage → 0,
   // and the two windows are INDEPENDENT (one set does not enable the other).
   const mk = (props, cfg) => {
@@ -19175,7 +19181,7 @@ test('BP-1: breakPairsPositional_ is the OLD shape — a stray early return un-p
   assert.strictEqual(show(pos(['12:00:00', '17:00:00'], ['12:30:00'], anchor)), '12:00:00>12:30:00=30',
     'an unmatched trailing leave contributes nothing in either shape');
   // It exists ONLY for the report: defined once, called once, from the twin.
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+  const code = serverSource()
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.strictEqual((code.match(/breakPairsPositional_\(/g) || []).length, 2,
     'breakPairsPositional_ is defined once and called exactly once (the report) — nothing else may reach for the old pairing');
@@ -19351,7 +19357,7 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
   const strip = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
   const raw = extractRawFunction('Code.js', 'autoAssignSpanishThreadsScheduled');
   const body = strip(raw);
-  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const codeSrc = serverSource();
   const codeStripped = strip(codeSrc);
 
   // Behavioural: the real handler over stubs. Every decision it makes is a
@@ -19455,7 +19461,7 @@ test('TW-A: every "is this numeric?" guard accepts exactly what Number() parses 
   // dropdown OPTIONS and folded into the scale averages. The rule is about the
   // SHAPE of a guard, so the set is DERIVED by name (INV-179): any function
   // whose name says it decides numeric-ness must use the consumers' own test.
-  const sources = [['Code.js', fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')]]
+  const sources = [['Code.js', serverSource()]]
     .concat(A11Y_SCAN_PARTIALS.map((f) => [f, fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8')]));
   const found = [];
   sources.forEach(([file, src]) => {
@@ -19605,7 +19611,7 @@ console.log('\nDR — getDeptRequestDetail reads one column, then one row');
 test('DR-1: drFindRowByReqId_ scans the RequestId column and fetches ONE row at DR_HEADERS width; the detail routes through it', () => {
   const ctx = vm.createContext({});
   ['DR', 'DR_HEADERS'].forEach((k) => {
-    const m = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8').match(new RegExp('^const ' + k + ' = (.*);$', 'm'));
+    const m = serverSource().match(new RegExp('^const ' + k + ' = (.*);$', 'm'));
     vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx, { filename: 'Code.js#' + k });   // var — a lexical const is not a context property
   });
   vm.runInContext(extractRawFunction('Code.js', 'drFindRowByReqId_'), ctx, { filename: 'Code.js#drFindRowByReqId_' });
@@ -19966,7 +19972,7 @@ console.log('\nBatch Q — Script Property size guard');
  *  binding, not a context property, so the sandbox's functions cannot see it. */
 function loadPropGuard_(ctx) {
   if (!ctx.Logger) ctx.Logger = { log: () => {} };
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   ['PROP_VALUE_MAX', 'PROP_STORE_MAX', 'PROP_WARN_PCT'].forEach((c) => {
     const m = code.match(new RegExp('^const ' + c + ' = ([^;]+);', 'm'));
     assert.ok(m, c + ' declared in Code.js');
@@ -19992,7 +19998,7 @@ const Q_SCALAR_WRITERS = {
 };
 
 test('Q-1: every JSON-blob property is written through propSetBounded_ — the scalar writers are allowlisted BY NAME, and no blob key is', () => {
-  const src = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8'));
+  const src = stripJsComments_(serverSource());
   const helper = extractRawFunction('Code.js', 'propSetBounded_');
   // Every setProperty OUTSIDE the helper writes an allowlisted scalar.
   const outside = src.replace(helper, '');
@@ -20107,7 +20113,7 @@ test('Q-1b: propSetBounded_ + its shrinkers, driven — refuse writes NOTHING an
 });
 
 test('Q-2: every Admin save endpoint routes its write through the guard and its editor shows the budget; the worst-case advertised caps are stated', () => {
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   const src = stripJsComments_(code);
   // Each save endpoint's write is the bounded one, INSIDE the try whose catch
   // turns the thrown refusal into {success:false, error} for the client.
@@ -20197,7 +20203,7 @@ test('Q-3: Storage Health reports the Script Property store — read-only, unkno
   // Driven: a comfortable store, a full one, an unreadable one.
   const ctx = { String, JSON, Number, Math, Object, Array, RegExp, Error };
   vm.createContext(ctx);
-  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const code = serverSource();
   loadPropGuard_(ctx);
   vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
   ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x'.repeat(100), BB: 'y'.repeat(4000) }) }) };
@@ -20608,8 +20614,8 @@ test('D2: every Common Gotchas rule resolves to its narrative, and every narrati
   // so those references still resolve — this keeps them resolving by checking
   // the subject still appears somewhere in the pair of documents.
   const srcFiles = []
-    .concat(['web-app/Code.js', 'web-app/script_core.html', 'web-app/styles.html',
-             'test/visual/shoot.mjs'])
+    .concat(serverFiles().map((f) => 'web-app/' + f))
+    .concat(['web-app/script_core.html', 'web-app/styles.html', 'test/visual/shoot.mjs'])
     .concat(['cn/script_callnotes.html', 'metrics/script_metrics.html', 'kb/script_kb.html',
              'qa/script_qa.html', 'train/script_empdocs.html'].map((f) => 'web-app/' + f));
   const SKIP = new Set(['documented', 'the', 'a', 'this', 'that', 'same', 'class', 'following']);
@@ -20684,6 +20690,94 @@ test('D2d: CLAUDE.md stays a map — the size ceiling', () => {
     'CLAUDE.md is ' + n + ' lines, over the ' + CEILING + '-line ceiling — the narrative belongs in ' +
     'the file its index points at (docs/gotchas.md, docs/modules.md, docs/operator-state.md, ' +
     'docs/design-decisions.md, .cycle/config.md), not here');
+});
+
+console.log('\nbatch F1 — the server-source shim');
+
+test('F1b: serverSource() is BYTE-EQUAL to the single file filePushOrder names', () => {
+  // The whole point of landing the shim alone: prove it changes NOTHING while
+  // the server is one file. If this ever fails with a one-entry list, the shim
+  // is transforming the source and every pin reading through it is reading
+  // something the deployment does not have.
+  const files = serverFiles();
+  assert.ok(files.length >= 1, 'filePushOrder names at least one server file');
+  const cat = files
+    .map((f) => fs.readFileSync(path.join(__dirname, '../../web-app/', f), 'utf8'))
+    .join('\n');
+  assert.strictEqual(serverSource(), cat, 'serverSource() is exactly the files, joined in order');
+  if (files.length === 1) {
+    const only = fs.readFileSync(path.join(__dirname, '../../web-app/', files[0]), 'utf8');
+    assert.strictEqual(serverSource(), only,
+      'with one server file the shim must be byte-identical to it — it is a no-op by construction');
+  }
+});
+
+test('F1b: filePushOrder is the declaration, and every file it names exists', () => {
+  // The list is not decoration: `clasp push` obeys it, and the harness derives
+  // the server from it. An entry naming a file that is gone would push a
+  // partial project and make every pin read a truncated server.
+  const clasp = JSON.parse(fs.readFileSync(path.join(__dirname, '../../web-app/.clasp.json'), 'utf8'));
+  assert.ok(Array.isArray(clasp.filePushOrder) && clasp.filePushOrder.length >= 1,
+    'web-app/.clasp.json declares filePushOrder (F1: it is what serverSource() derives from)');
+  clasp.filePushOrder.forEach((f) => {
+    assert.ok(fs.existsSync(path.join(__dirname, '../../web-app/', f)),
+      'filePushOrder names a file that exists: ' + f);
+  });
+  // Tests.js and DevTools.js are deliberately NOT server source: they share the
+  // Apps Script global scope but are not part of what the pins call "the server",
+  // and F2 leaves them alone.
+  ['Tests.js', 'DevTools.js'].forEach((f) => {
+    assert.ok(serverFiles().indexOf(f) < 0, f + ' is not server source — keep it out of filePushOrder');
+  });
+});
+
+test('F1b: the server source EVALUATES in load order with no ReferenceError', () => {
+  // Apps Script gives every .gs file ONE shared global scope, so a `const`
+  // declared in one file is visible in another and load order decides whether a
+  // top-level read hits the temporal dead zone. Concatenating in filePushOrder
+  // order and evaluating once is the faithful model of that — evaluating the
+  // files as SEPARATE vm scripts would not be, because a script's top-level
+  // `const`/`let` never reach the shared context.
+  //
+  // Today this passes with no stubs at all (nothing touches a GAS service at
+  // load). The stubs are here so that a future file that DOES cannot turn this
+  // pin red for a reason that has nothing to do with load order.
+  const anyService = new Proxy(function () {}, {
+    get() { return anyService; },
+    apply() { return anyService; },
+    construct() { return anyService; },
+  });
+  const sandbox = {};
+  ['SpreadsheetApp', 'PropertiesService', 'CacheService', 'LockService', 'Session',
+   'Utilities', 'MailApp', 'GmailApp', 'DriveApp', 'DocumentApp', 'FormApp',
+   'ScriptApp', 'UrlFetchApp', 'HtmlService', 'Logger', 'console']
+    .forEach((k) => { sandbox[k] = anyService; });
+  const ctx = vm.createContext(sandbox);
+  assert.doesNotThrow(
+    () => vm.runInContext(serverSource(), ctx, { filename: 'server(filePushOrder).js' }),
+    'the server source must evaluate top-to-bottom in filePushOrder order');
+  // Not vacuous: an empty or truncated source would "evaluate" happily.
+  assert.strictEqual(typeof ctx.doGet, 'function', 'doGet reached the global scope — the source really ran');
+  assert.strictEqual(typeof ctx.recordPunch, 'function', 'and so did a mid-file endpoint');
+});
+
+test('F1a: no pin reads the server by filename any more', () => {
+  // The 73 direct `readFileSync(… 'web-app/Code.js')` reads in this file are
+  // what made splitting the server a 73-edit change. They go through
+  // serverSource() now; this keeps them there. The mock.js banner LITERAL is
+  // the one allowed mention — it is a marker string, not a read.
+  // Comment-stripped: the comment above quotes the very shape it bans, which is
+  // INV-188 exactly — a scan run over its own rationale fails on the commit that
+  // fixes the thing. (It fired here on the first run, as it has twice before.)
+  const self = fs.readFileSync(__filename, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');
+  const offenders = self.split('\n')
+    .map((l, i) => [i + 1, l])
+    .filter(([, l]) => /readFileSync\([^)]*Code\.js/.test(l))
+    .map(([n, l]) => n + ': ' + l.trim().slice(0, 90));
+  assert.deepStrictEqual(offenders, [],
+    'read the server through serverSource(), not by filename: ' + offenders.join(' | '));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
