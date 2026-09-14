@@ -304,7 +304,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 - **Modals close on Escape THROUGH their close hook — dynamic overlays must be created via `ensureOverlay`.** Fires when you create an overlay dynamically. [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
 - **Apps Script's HtmlService iframe sandboxes `window.location.search`.** Fires when client code reads the URL or the app’s own address. Verify: a Node tripwire. [Detail](docs/gotchas.md#g107-apps-script-s-htmlservice-iframe-sandboxes-window)
 - **`form_public.html`'s signature canvas must be resized when its section becomes visible.** Fires when a hidden section containing a canvas becomes visible. [Detail](docs/gotchas.md#g109-form-public-html-s-signature-canvas-must)
-- **Eighteen client-side localStorage keys total.** Fires when you add a client-side persisted key. [Detail](docs/gotchas.md#g112-eighteen-client-side-localstorage-keys-total)
+- **Client-side persistence is localStorage only, every key `ums…`-prefixed and every read/write in a try/catch** (a privacy-mode browser must not break the app; the KEY COUNT is in the running-totals block, not here). Fires when you add a client-side persisted key. [Detail](docs/gotchas.md#g112-eighteen-client-side-localstorage-keys-total)
 
 ### CSS & layout
 

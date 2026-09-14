@@ -146,11 +146,15 @@ the form-generator port shipped. Both live in git history.
 
 | File | Holds |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Common Gotchas (what has bitten before), the Key Design Decisions index, the Operator State Checklist, the generated running-totals block |
+| [`CLAUDE.md`](CLAUDE.md) | The maps and indexes: the module map, the Common Gotchas index (rule · when it fires · pointer), the Key Design Decisions index, the Operator State inventory + storage map, the generated running-totals block |
+| [`docs/gotchas.md`](docs/gotchas.md) | Every Common Gotcha in full — the incident, the reasoning, the pin |
+| [`docs/modules.md`](docs/modules.md) | The per-module narrative behind the module map |
+| [`docs/operator-state.md`](docs/operator-state.md) | Every operator item in full — setup, defaults, failure modes, run order |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | Every Key Design Decision in full — why the code is shaped as it is |
 | [`docs/operator-log.md`](docs/operator-log.md) | The dated deploy-round entries — what each round changed for the operator |
 | [`docs/deployment.md`](docs/deployment.md) | Blue-green: running a personal dev instance alongside prod |
 | [`.cycle/config.md`](.cycle/config.md) | Cycle Workflow Config: Test Command, Subsystems, the Invariant Library, the Visual Audit Stage, the Regression Scenarios |
+| [`docs/test-harness-log.md`](docs/test-harness-log.md) | What each batch added to each harness; the editor-test hazards; the fixture rules |
 
 `CLAUDE.md` opens with a Doc map that says which of these a given update
 belongs in. Numbers live in exactly one place — the generated block — so no
