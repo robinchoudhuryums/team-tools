@@ -22,6 +22,7 @@ this file keeps an index into each.
 | [`PROJECT_HEALTH.md`](PROJECT_HEALTH.md) | Current Standing + Score History | `/health-pulse`, portfolio reporting |
 | [`test/client/README.md`](test/client/README.md) | How the Node + DOM harnesses work | Writing or debugging a pin |
 | [`test/visual/README.md`](test/visual/README.md) | How the visual matrix works | Before a `/broad-scan`'s Visual Audit Stage |
+| [`docs/test-harness-log.md`](docs/test-harness-log.md) | What each batch added to each harness; the editor-test hazards; the fixture rules | A pin's history, or why a harness rule exists |
 | [`docs/deployment.md`](docs/deployment.md) | Blue-green: the dev instance alongside prod | Standing up or using the DEV project |
 <!-- DOCMAP:END -->
 

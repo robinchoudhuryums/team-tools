@@ -109,3 +109,17 @@ future client fix should land its regression test here instead of relying on a
 manual S-scenario.
 
 Both harnesses live outside `web-app/`, so `clasp push` never sees them.
+
+---
+
+## Where the rest lives
+
+- **`docs/test-harness-log.md`** — the narrative this README does not carry:
+  what each batch added to each harness, the editor-test hazards (a
+  calendar-dependent fixture, a test function declared twice), and the incident
+  behind each rule. Moved out of `.cycle/config.md` by Batch D2; a count inside
+  it is a fact of its date.
+- **`.cycle/config.md`** — the Test Command itself plus a short summary of the
+  three harnesses, for the workflow commands that read it.
+- **`CLAUDE.md`** — the generated running-totals block is the ONLY live statement
+  of how many tests each harness carries. Do not restate one here.
