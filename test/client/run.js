@@ -16641,9 +16641,18 @@ test('PR3-5: fixtures + scenarios — getCoveragePlan is a FUNCTION whose keys m
   // all passes vacuously, which is exactly what this pin did for one commit while
   // the Visual Audit Stage was being moved (the "structurally unable to fire"
   // class the Batch C recursion guard also hit).
-  const claude = configDoc_();
-  assert.ok(/VISUAL-GAP-TABS:/.test(claude), 'the VISUAL-GAP-TABS marker is present for this pin to check');
-  assert.ok(!/VISUAL-GAP-TABS:[^\n]*\bcoverage\b/.test(claude), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
+  // Parse the marker LINE the way VIS-COVER does, not by name-presence: the
+  // Visual Audit Stage also MENTIONS `VISUAL-GAP-TABS:` in prose, so a bare
+  // /VISUAL-GAP-TABS:/ existence test is satisfied by the sentence describing
+  // the marker even when the marker itself is gone — which is exactly how this
+  // assert read as covered while being vacuous (it is a NEGATIVE check, so a
+  // missing marker passed it). The char class excludes the backtick the prose
+  // mention carries, so only the real line matches.
+  const gapLine = /VISUAL-GAP-TABS:\s*([a-zA-Z0-9,\s]*)\n/.exec(configDoc_());
+  assert.ok(gapLine, '.cycle/config.md carries a VISUAL-GAP-TABS marker line for this pin to check');
+  const gapTabs = gapLine[1].split(',').map((t) => t.trim()).filter(Boolean);
+  assert.ok(gapTabs.length >= 3, 'the marker lists the uncovered tabs (got ' + gapTabs.length + ')');
+  assert.ok(!gapTabs.includes('coverage'), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
 });
 
 
