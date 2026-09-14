@@ -20306,9 +20306,12 @@ test('C4: no count that the block carries is restated in CLAUDE.md prose', () =>
   //     a same-line rule read as passing against exactly that shape when it was
   //     bite-checked. The second alternative catches the bolded total on its
   //     own, which is the idiom's tell: a date range (2026-08-21 → 2026-08-24)
-  //     and a measurement (704 → 367) are never bolded.
+  //     and a measurement (704 → 367) are never bolded. The third alternative
+  //     catches the UNLABELLED, UNBOLDED form the narrative also used — a total
+  //     right after a parenthetical list, "…mode-only-with-data) → 391" — which
+  //     the first two miss and which zero legitimate sentences match today.
   const arrows = prose.match(
-    /(?:harness|matrix|DOM|editor|suite|pure)\s+\*{0,2}\d{2,4}\*{0,2}\s*→\s*\*{0,2}\d{2,4}\*{0,2}|\b\d{2,4}\s*→\s*\*\*\d{2,4}\*\*/g) || [];
+    /(?:harness|matrix|DOM|editor|suite|pure)\s+\*{0,2}\d{2,4}\*{0,2}\s*→\s*\*{0,2}\d{2,4}\*{0,2}|\b\d{2,4}\s*→\s*\*\*\d{2,4}\*\*|\)\s*→\s*\*{0,2}\d{2,4}/g) || [];
   assert.deepStrictEqual(arrows, [],
     'a doc sentence carries a running total ("' + arrows.join('", "') +
     '") — state the DELTA the batch added; the block carries the total');
