@@ -564,6 +564,17 @@ Script Properties and the `DevTools.js` roster scrubber) is in
 
 For Apps Script tests (`Tests.js` in each project), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
+**The runbook is smoke on prod, full on dev nightly (Batch S, 2026-09-11):**
+`runNightlySelfTest` runs the full suite on the DEV instance every night, and
+`runAllTests` on prod is the exception, not the routine (with
+`INSTANCE_IS_PROD=true` it refuses outright). When a full run must be split —
+a mid-shift manual run contends for the one project ScriptLock — run
+`runAllTestsPartA` and `runAllTestsPartB` as two executions; together they are
+exactly `runAllTests`. The summary's `Expected: N registrations` line is
+DERIVED from the registration list — read the expected count off the run,
+never off a doc — and the `── Suite environment ──` block at the top of the
+log names every deployment setting the outcome depends on (instance markers,
+`ADMIN_EMAILS`, `MANAGER_EMAILS`, the fixture properties, the TEST rows).
 
 **Only `web-app/` is clasp-synced / deployed.** Everything else in the repo is
 local-only and never reaches the live Apps Script project: `test/` (the Node
@@ -694,6 +705,44 @@ this section before touching the relevant area.
   Projects that haven't migrated can still set CONFIG values directly,
   but then every clasp pull will pull real values and require a scrub
   before commit.
+- **Script Properties are CAPPED — ~9KB per value, 500KB per store — and the
+  advertised entry caps were never the binding constraint (Batch Q, 2026-09-11).**
+  `saveEmailTemplates` admits 50 templates × 4000 chars, i.e. ~200KB into a slot
+  that holds ~9KB; `saveQaScorecardCriteria`, `saveBreakSchedules`,
+  `saveUpdateSuggestions` and ten more are the same shape. A `setProperty` past the
+  cap throws, and every one of those endpoints writes its `AdminConfigChange` audit
+  row BEFORE the save returns — so the operator saw an opaque platform error with an
+  audit row claiming the change landed. **`propSetBounded_(key, value, opts)` is the
+  ONE writer for every JSON-blob property**, and the split is deliberate: the 14
+  OPERATOR-edited blobs **REFUSE by name with nothing written** (the error names the
+  key, the byte size, the cap and what to shorten — there is a person to tell, so
+  telling them beats guessing what to drop), while the 6 AUTO-MANAGED blobs
+  **DEGRADE** through a caller-supplied shrinker (`propShrinkDropOldest_` for the
+  stamp maps, `propShrinkStripFields_` for the self-test result, two custom ones) —
+  nobody is watching a heartbeat write, so refusing would just lose it. **Size is
+  measured in BYTES via `utf8Len_`, never `.length`:** a JS string length counts
+  UTF-16 units, so it under-counts every non-ASCII character (an emoji in a template
+  is 4 bytes, not 2). Three rules for anything new: (a) a blob write goes through the
+  helper — the Q-1 pin is DERIVED, so a bare `setProperty` of a known blob key fails
+  CI; (b) a SCALAR write (a day count, a dollar cap, a model key, a folder id, a
+  generation counter) may stay on `setProperty` but must be allowlisted BY NAME with
+  a reason; (c) a degrade that cannot shrink **deletes the property and logs why**
+  rather than leaving a stale value — every degrade target is a cache or heartbeat
+  that regenerates, and "no heartbeat recorded yet" is honest where a frozen old
+  stamp is not. `propShrinkDropOldest_` drops oldest-first UNTIL IT FITS rather than
+  one entry per call, because a caller's retry loop is a safety net and a large map
+  would exhaust it and clear the property. See INV-201.
+- **A test function defined TWICE silently wins, and the registration count stays
+  right (Batch S, 2026-09-11).** `Tests.js` is one file of top-level `function
+  test_X()` declarations; a second declaration of the same name HOISTS OVER the
+  first, so both registrations run the later body, the earlier test's assertions
+  never execute, and the summary still reports the full count — the failure is
+  invisible in every direction a reader looks. It fired: #239 added
+  `test_triggerGate_weeklyDigests_nonManagerThrows` for the `runWeeklyDigests`
+  DISPATCHER beside the existing one for `sendCallNotesWeeklyDigests`, so that
+  digest's own gate went unverified while the suite read a clean 315. The dispatcher
+  test is `test_triggerGate_runWeeklyDigests_nonManagerThrows` now, and the S1/S4
+  pin fails CI on ANY test function defined twice — the net, not the rename.
 - **Sheets coerces `'TRUE'`/`'FALSE'` strings to native booleans.** On
   write, `setValue('FALSE')` stores boolean `false`; on read,
   `getValues()` returns the boolean. Naive `String(value || '').trim()`
@@ -2791,6 +2840,33 @@ this section before touching the relevant area.
 - **Best-effort email notifications.** Email failures never block
   or fail the API call that triggered them — the spreadsheet write
   is the source of truth; the email is a convenience.
+- **The editor suite is SHARDED into three registrars, and its expected count is
+  DERIVED (Batch S, 2026-09-11).** `_runAllTests` is `_registerSmokeTests_` (118)
+  + `_registerIntegrationA_` (91 — Time Clock punches / adjustments / PTO / the
+  adjust queue / managerSaveDay) + `_registerIntegrationB_` (107 — Call Notes,
+  forms, metrics/CDR, KB, training + docs + coaching, intake, trigger gates,
+  audit rows). `runAllTests` runs all three in ONE execution as before;
+  `runAllTestsPartA` (smoke + A) and `runAllTestsPartB` (B) go through
+  `_runSuitePart_` (prod guard, own setup + cleanup in `finally`) so a mid-shift
+  run can be split across two executions rather than contending for the one
+  project ScriptLock — **together they are exactly `runAllTests`**, which holds
+  only because every test at a shard boundary clears its own state
+  (`_clearTestState` / `_clearTestCallNotes`), verified per boundary and pinned as
+  a disjoint-union. **No entry point carries a typed-in count:** a
+  `_TEST_COUNTING` mode makes `_smokeTest`/`_integrationTest` record the name and
+  return before `_test`, `_expectedTestCount_(parts)` walks the requested shards,
+  and `_printSummary` prints `Expected: N registrations (S smoke · A · B)` plus a
+  `⚠ Recorded X of N` line on a short run and `⚠ Duplicate registration name(s)`
+  by name — so the count is read off the run, never off a doc (the figure in this
+  file has drifted before). `_suiteEnvCheck_` runs as the FIRST statement of
+  `setupTestEnvironment` — before the prod guard, so the log explains a refusal —
+  and prints the `── Suite environment ──` block naming every deployment setting
+  the outcome depends on: the instance markers and the app's own
+  `isDevInstance_`/`isProdInstance_` verdict, `ADMIN_EMAILS` classified through
+  `_testAdminEmailsSplit_`, `MANAGER_EMAILS` and whether the test manager is
+  listed, the four fixture properties, the three save/restore properties, the
+  store ids, and the three TEST roster rows. It reads only and never throws. The
+  runbook that goes with it is smoke on prod, full on dev nightly.
 - **Smoke vs. integration tests.** `runSmokeTests()` is safe to run
   on the production spreadsheet (pure logic only — no writes).
   `runAllTests()` writes `TEST_` rows to the live spreadsheet and
@@ -5592,6 +5668,34 @@ this section before touching the relevant area.
   nothing about Drive and the gap could sit unnoticed for weeks. Admin →
   System now reports it (see INV-197); the general rule is that **a green
   suite vouches only for what it calls.**
+  **A FOURTH outcome exists and it is the one this deployment hit (operator
+  2026-09-14): running a function produces NO PROMPT AT ALL and the scope is
+  still missing.** Apps Script prompts by comparing the project's required set
+  against a STORED authorization record, and Google's granular consent can
+  leave that record reading "authorized" while the granted set is short (Drive
+  unticked on an earlier accept) — so re-running a function is a no-op and
+  re-running it again will stay a no-op. **The remedy is to REVOKE and
+  re-consent**, not to run another function: myaccount.google.com → Data &
+  privacy → Third-party apps & services → the script → Remove access, then run
+  any function in the editor AS THE DEPLOYING ACCOUNT and accept with every
+  permission ticked. **The probe is trustworthy here, and this was TESTED
+  rather than assumed:** a mid-Batch-Q follow-on hypothesised that
+  `driveAccessStatus_` might be lying — `ScriptApp.getOAuthToken()` returns the
+  RUNNING EXECUTION's token, so a Storage Health run that never touches DriveApp
+  could in principle yield a token without the scope while Drive works — and
+  proposed rewriting the probe to attempt a read-only DriveApp call instead. The
+  operator ran the decisive one-paste diagnostic and the hypothesis is
+  FALSIFIED: in ONE execution `DriveApp.getRootFolder()` failed with the
+  missing-scope refusal AND the probe returned `granted:false` with an EMPTY
+  `error` (tokeninfo answered 200 and simply did not list the scope — a positive
+  signal, not a probe failure). They agree, so **do not rewrite the probe**; it
+  reported the truth. Keep the diagnostic for the next time the question comes
+  up — it costs one paste and settles it:
+      function driveDiag_() {
+        try { Logger.log('DriveApp OK — root: ' + DriveApp.getRootFolder().getName()); }
+        catch (e) { Logger.log('DriveApp FAILED: ' + e.message); }
+        Logger.log('probe: ' + JSON.stringify(driveAccessStatus_()));
+      }
 - **Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -5918,6 +6022,19 @@ this section before touching the relevant area.
   function is a sibling between them. Blocking an off-domain BCC rather than
   flagging it is a deliberate policy change to `mailMergeBcc_` and an operator
   decision, not a defect.
+  **A THIRD capability line joined them in Batch Q (2026-09-11): Script
+  Properties.** Same reason as the other two — the store is app-wide, has no
+  timezone, retention or link column, and no row in a table of SPREADSHEETS can
+  carry it. `scriptPropertiesStatus_` reports bytes used against the 500KB store
+  cap and the LARGEST single value against the ~9KB per-value cap (the one that
+  actually bites — see the Script-Properties gotcha). It is strictly read-only
+  and values are **COUNTED, never returned**: several of those properties hold
+  operator config an audit would rather not see echoed into a health panel, and
+  a byte count answers the question without quoting anything. A failed read is
+  `bytes: null` — unknown, never OK (INV-187) — and it rides `cnHealthFindings_`
+  as an **ok FACT** while the store is comfortable, warning only past
+  `PROP_WARN_PCT` (80%) of either cap or on an unreadable read, so the System tab
+  still reaches "Nothing needs attention" on a healthy deployment (INV-186).
 - **Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
   rendered by `cnLoadStoragePanel_`). Since design handoff PR 2 (2026-09-02) it
@@ -6275,6 +6392,23 @@ this section before touching the relevant area.
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
+- **The Script-Property budget badge has ONE home (`propBudgetHtml_` +
+  `.prop-budget`, Batch Q).** Eleven Admin editors and the Reference synonyms
+  modal each save into a capped Script Property, and a size the operator cannot
+  see is a cap they can only discover by hitting it — so every one of them shows
+  the SERIALIZED size against the ~9KB per-value cap, built by one shell helper
+  over one shared stylesheet rule (the `mtRenderTable_` / `mtDateRange_`
+  precedent: a twelfth editor is a call, not a copy). The server ships the
+  budget rather than the client computing it — `getAdminConfig.propBudget` for
+  the 13 operator keys plus `propValueMax`, `kbGetSearchConfig` its own — because
+  the size that matters is the STORED value's, which only the server can measure,
+  and a client-side estimate of a JSON blob would drift from it. Two properties
+  make it safe: it renders **NOTHING** without a server budget (an older
+  client/server pair degrades to no badge rather than a fabricated "0%"), and the
+  tone thresholds live in exactly one place, so no editor can disagree with
+  another about what "nearly full" means. The synonyms modal reads the SOLE
+  budget value rather than naming the server's property constant — no second name
+  to keep in step.
 - **Shared `mtRenderTable_` table component (`script_core.html`).** One
   config-driven `.m-table` renderer (columns + rows + sort + sticky header +
   per-cell tone) backs BOTH the Metrics Team table AND the Call Notes manager
@@ -7121,7 +7255,49 @@ manually for a fresh deploy or environment:
   to remove; (d) if a dispatcher's job ever throws, Admin → System shows it
   under the JOB's name. **Post-deploy: `clasp push -f`, re-run
   `installAutomationTriggers()` once (expect the "16 of the 20" log line),
-  then `runAllTests()` — expect **315** (three dispatcher gate tests).**
+  then `runAllTests()` — expect **315** (three dispatcher gate tests; Batches S
+  and Q have since taken it to **316** — read the count off the run's own
+  `Expected:` line rather than from any figure written down here).**
+- **Batches S and Q of the post-cycle-19 next-steps plan (2026-09-11) add NO
+  operator state — no Script Property, trigger, migration, OAuth scope or CONFIG
+  value to choose — but three things change on the deployment.** (a) **The suite
+  runbook is now smoke on prod, full on dev nightly**, and `runAllTests` on prod
+  is the exception rather than the routine (with `INSTANCE_IS_PROD=true` it
+  refuses outright). When a full run must happen mid-shift, `runAllTestsPartA`
+  and `runAllTestsPartB` split it across two executions and together are exactly
+  `runAllTests` — the point is the ONE project ScriptLock, which a long run makes
+  live punches queue behind. Every run now prints `Expected: N registrations`
+  DERIVED from the registration list (so no count needs carrying in a doc) and a
+  `── Suite environment ──` block naming every deployment setting the outcome
+  depends on — read that block FIRST when a run surprises you, because the last
+  three surprising runs were all deployment state rather than code. (b) **Every
+  Admin config editor now shows the size of what it is about to save** against the
+  ~9KB-per-value Script Property cap, and a save past the cap is **REFUSED BY NAME
+  with nothing written** instead of throwing an opaque platform error beside an
+  audit row claiming it landed. Nothing on this deployment is near the cap today;
+  the largest value is `CN_EMAIL_TEMPLATES`. (c) **Admin → System gains a Script
+  Properties line** beside Drive and mail routing, stating the store's real usage —
+  which is the number this work was reasoning about without being able to see.
+  **Post-deploy: `runAllTests()` — expect 316, or whatever the run's own
+  `Expected:` line says.**
+- **The Drive finding is CORRECT and the remedy is REVOKE-then-re-consent
+  (operator diagnostic, 2026-09-14).** A mid-Batch-Q follow-on suspected the
+  Admin → System Drive finding of being a false positive, because the operator
+  redeployed, ran a function in the editor as instructed, and got NO
+  re-authorization prompt. The one-paste `driveDiag_` settled it: in a single
+  execution `DriveApp.getRootFolder()` failed with the runtime's missing-scope
+  refusal AND `driveAccessStatus_()` returned `granted:false` with an empty
+  `error` — they agree, so the probe is telling the truth and the scope is
+  genuinely absent. **No prompt appears because Apps Script compares the required
+  set against a STORED authorization record that can read "authorized" while the
+  granted set is short** (granular consent with Drive unticked), so running
+  another function will keep doing nothing. Fix it once, as the DEPLOYING account:
+  myaccount.google.com → Data & privacy → Third-party apps & services → the script
+  → **Remove access**, then run any function in the Apps Script editor and accept
+  the consent screen with **every permission ticked**. Until then article images
+  stay placeholders, `KB_IMAGES_FOLDER_ID` stays unset (so the `kbGetImageData`
+  fallback is inert — it has no folder to scope against), the KB embed-reachability
+  check cannot run, and QA recording playback is unavailable.
 - **The 2026-09-11 post-push `runAllTests()` read 302/312 — ten `Admin access
   required.` failures — and the cause was OPERATOR STATE, not the round.**
   `ADMIN_EMAILS` is SET on this deployment (the Admin tier narrowed to the
@@ -10489,6 +10665,36 @@ failed and `git checkout` of the whole file was the recovery, which is exactly
 the hazard the commit-first rule exists for), and a `const` inside
 `vm.runInContext` is a lexical binding, not a context property — declare
 sandbox globals with `var`.
+**Batch Q (2026-09-11, the Script-Property size guard) added five pins → 804**
+(Q-1 the DERIVED writer scan — every `setProperty` outside `propSetBounded_`
+writes an allowlisted scalar, every blob key IS bounded, and the refuse-vs-degrade
+mode is asserted per key, so a new blob property fails CI until it picks one;
+Q-1b the helper and both shrinkers driven in a vm — refuse writes NOTHING and
+names key/size/cap, degrade keeps the NEWEST entry, an unshrinkable value deletes
+rather than leaving a stale one, `utf8Len_` counts BYTES; Q-2 every save endpoint,
+the one-home badge rule, the derived no-second-tone-rule scan, and the WORST-CASE
+arithmetic so a raised entry cap reads as the over-budget it is; Q-3 the Storage
+Health line; Q-5 the bounded DeptRequests resolve lookup). Editor suite 315 → 316
+(a `saveEmailTemplates` over-size case). **9 mutations, 8 bites — and the 9th is
+worth keeping: widening the scalar allowlist ALONE is an EQUIVALENT MUTANT**,
+because the entry is inert unless something also bypasses the guard; re-run as
+bypass + allowlist together it bit on both halves of Q-1 and on Q-2. The lesson is
+the one this project keeps re-learning from the other direction: a mutation that
+does not bite is sometimes a property of the mutation, not a weak pin — establish
+which before tightening anything.
+**Batch S (2026-09-11, suite operability) added three pins → 799** — all DERIVED
+from `Tests.js` itself: the three shards kind-pure, disjoint, and unioning to every
+registration in the file, with every registered function defined EXACTLY ONCE; the
+counter driven behaviourally in a vm with every `test_*` stubbed to THROW (so
+counting is proven to touch none of them), asserting per-shard sums, a duplicate
+name reported, and no `Expected:` line printed without an expectation; and
+`_suiteEnvCheck_` naming every `getProperty('…')` literal the rest of the file
+reads, using the app's own predicates, never writing and never throwing, and
+running FIRST in setup. 8/8 bites. **Its FIX is the reason the once-only clause
+exists:** `test_triggerGate_weeklyDigests_nonManagerThrows` had been defined twice
+since #239, the later declaration hoisted over the earlier, both registrations ran
+the dispatcher body, and `sendCallNotesWeeklyDigests`'s own gate went unverified
+while the count read a clean 315 — invisible in every direction a reader looks.
 **Batch P (2026-09-11, the first batch of the post-cycle-19 next-steps plan)
 REWROTE TW-B in place** — the per-file ratchet half is gone, the token-equality
 ban / FROZEN list / canvas-fallback rule stay (a re-added token-equal literal
@@ -10889,7 +11095,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send. **AMENDMENT (operator 2026-08-25): the composer's Note Reference is EDITABLE, and Preview COMMITS those edits BEFORE rendering** — so the previewed body, and therefore the hash the send is checked against, is always built from the note as it will be sent (a failed save aborts the chain rather than previewing unsaved text; previewing first would have hashed the STALE stored note and silently emailed the un-corrected text). The editable fields exist on the FORM step ONLY, so editing between Preview and Send remains impossible — that is this guard working, not a gap. See the two-stage-email Key Design Decision; pinned by CMP-1..4 + the two composer DOM tests | Subsystem: Server
 INV-42 | `emailFromCallNote` sends first (via `sendRepEmail_` — the rep-identity wrapper over MailApp/GmailApp since pilot round 1; wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The twenty-four trigger-handler endpoints — the three same-slot DISPATCHERS `runHourlyJobs` / `runWeeklyDigests` / `runNightlyPurges` (operator 2026-09-11: Apps Script caps installable triggers at `AUTOMATION_TRIGGER_QUOTA` = 20 per user per script, so a trigger belongs to a SLOT; `TRIGGER_GROUPS` is the one source for which handler runs inside which dispatcher, `RETIRED_TRIGGER_HANDLERS` is DERIVED from it and consulted by both delete loops, the installer COUNTS before it deletes and refuses with nothing touched when the quota would be exceeded, a throw mid-creation rethrows naming what was NOT installed, and the TQ-1 pin holds the created count at ≤ 19) and the twenty-one job handlers (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`, `purgeOldDiagnostics`, `autoAssignSpanishThreadsScheduled` — eight of which own no trigger of their own any more and run inside a dispatcher, each STILL carrying its own gate) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code, and TQ-1 asserts the same of every grouped handler — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` / `purgeOldDiagnostics` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, QA review records, and ViewUsage/ClientErrors diagnostics rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge; `test_triggerGate_diagnosticsPurge_nonManagerThrows` + `test_triggerGate_spanishAutoAssign_nonManagerThrows` cover the two 2026-09-11 handlers, `test_triggerGate_hourlyJobs_` / `_weeklyDigests_` / `_nightlyPurges_nonManagerThrows` cover the three dispatchers, and the derived TARGETS/gate-type nets generated a Node test each the moment they entered the arrays; TQ-2 drives `runTriggerGroup_` behaviourally and TQ-3 drives the installer's refusal, the repair of the half-installed state and the mid-creation rethrow against a stubbed ScriptApp) | Subsystem: Server
+INV-44 | The twenty-four trigger-handler endpoints — the three same-slot DISPATCHERS `runHourlyJobs` / `runWeeklyDigests` / `runNightlyPurges` (operator 2026-09-11: Apps Script caps installable triggers at `AUTOMATION_TRIGGER_QUOTA` = 20 per user per script, so a trigger belongs to a SLOT; `TRIGGER_GROUPS` is the one source for which handler runs inside which dispatcher, `RETIRED_TRIGGER_HANDLERS` is DERIVED from it and consulted by both delete loops, the installer COUNTS before it deletes and refuses with nothing touched when the quota would be exceeded, a throw mid-creation rethrows naming what was NOT installed, and the TQ-1 pin holds the created count at ≤ 19) and the twenty-one job handlers (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`, `archiveOldTimesheetRows`, `runNightlySelfTest`, `creditMonthlyPtoAccruals`, `purgeOldQaReviews`, `sendCoachingRecapDigest`, `purgeOldDiagnostics`, `autoAssignSpanishThreadsScheduled` — eight of which own no trigger of their own any more and run inside a dispatcher, each STILL carrying its own gate) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code, and TQ-1 asserts the same of every grouped handler — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` / `purgeOldQaReviews` / `purgeOldDiagnostics` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, per-rep NotesArchive rows, QA review records, and ViewUsage/ClientErrors diagnostics rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate; `test_triggerGate_qaReviewPurge_nonManagerThrows` covers the QA purge; `test_triggerGate_diagnosticsPurge_nonManagerThrows` + `test_triggerGate_spanishAutoAssign_nonManagerThrows` cover the two 2026-09-11 handlers, `test_triggerGate_hourlyJobs_` / `_runWeeklyDigests_` / `_nightlyPurges_nonManagerThrows` cover the three dispatchers (the middle one was renamed in Batch S — as `_weeklyDigests_` it SHADOWED the `sendCallNotesWeeklyDigests` gate test of the same name, so that gate went unverified while the count still read 315; the S1/S4 pin now fails CI on any test function defined twice), and the derived TARGETS/gate-type nets generated a Node test each the moment they entered the arrays; TQ-2 drives `runTriggerGroup_` behaviourally and TQ-3 drives the installer's refusal, the repair of the half-installed state and the mid-creation rethrow against a stubbed ScriptApp) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — **but since cycle-17 C17-6 it no longer "skips that rep" silently either (that clause described the defect, the same INV-52 correction cycle-16 F1 made): the skipped set rides the response (`skippedReps`, additive), the audit row (`skippedReps=N (ids) — INCOMPLETE`), and a client warn toast, and an all-skipped run returns a read-failure error instead of "No notes found" — a PHI export can never read as complete when it isn't (INV-187).** Pinned by the C17-6 pin | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -11068,6 +11274,7 @@ INV-197 | **Drive is ONE grant, and the app REPORTS whether it has it (operator 
 INV-198 | **Reopening a closed day CONVERTS its ClockOut into a break — it never deletes it, so the away gap is unpaid (Workstream B3, operator 2026-09-01; proposed by the 19pre reflection, written 2026-09-11).** Validated at SUBMIT and RE-VALIDATED at approval (the day can be edited while the request waits, and converting a punch that is gone leaves an unpaired half the arithmetic silently drops); a refused resume never marks the request Approved. Every surface — the rep's confirm, the pending chip, the manager queue row, the decision email — states the EFFECT rather than naming the punch it consumes. A genuine second SHIFT on one date is still not modelled. Verify: the three B3 pins (convert-not-delete with a `deleteRow` ban, dual-side validation, back-compat on the trailing `Action` column across all four readers; every surface's wording), the three DOM tests, `test_punchAdjust_resumeConvertsClockOut` | Subsystem: Server + Client (Time Clock views)
 INV-199 | **A coverage marker is only as fine-grained as the unit it enumerates (proposed by the 19pre reflection, written 2026-09-11).** VIS-COVER works at TAB granularity, so five Admin panes hid behind one covered tab for three weeks — long enough for a table header to ship stacked in a meaningless column above its own rows. A tab that hosts sub-panes owes a scan that DERIVES the pane set from the client's own render site (INV-179 applied one level down) and requires a scenario per pane. Ask the same of any surface whose unit of coverage is coarser than its unit of failure (a modal state, a fixture-driven empty state, a browser timezone — each of which now has its own scenario dimension). Verify: VIS-ADMIN (pane set derived from the `tab('key','Label')` call sites, one mobile scenario per pane, bite-checked with a sixth pane landing uncovered) alongside VIS-COVER | Subsystem: Test Suite
 INV-200 | **A colour a `<canvas>` reads through `getPropertyValue('--t') || '#hex'` is a second source of truth, and the fallback must EQUAL the token's Console-light value; a hex literal equal to a declared token value is banned everywhere else outside a named INV-166 freeze (proposed by the cycle-19 reflection, written in Batch P 2026-09-11).** A canvas cannot read `var(--x)` at paint time, so the QA waveform and the EmpDocs signature pad read the token first and fall back to a literal on a page with no stylesheet — and writing the scan found all THREE stale (`--accent` falling back to `--accent-2`'s value; two values no token declares). The reflection's proposal also carried a two-sided per-file RATCHET over every other chromatic literal; Batch P RETIRED that half before recording the invariant — it was a hand-reasoned baseline to maintain on every colour edit, guarding literals that fire on no real page, and its one recorded token candidate (the clock ribbon's Console-only rgba fallback twins) rides `--accent-glow` / `--warn-glow` now, the color-mix line still setting the strength so the render is byte-identical. The rule that survives is the F7 shape: ONE home per colour. Verify: TW-B (derived token set, the canvas regex incl. the `(… || '').trim()` shape, the FROZEN exactly-once-inside-its-selector — a re-added token-equal literal and a moved canvas fallback both bite) + P2 (the three ribbon fallbacks on the glow tokens; `--warn-glow` in exactly the two base blocks and in no palette block; no rgba twin left in the partial; pixel-compared) | Subsystem: Client (shell) + Client (Time Clock views) + Test Suite
+INV-201 | **Every JSON-blob Script Property is written through `propSetBounded_` — operator blobs REFUSE by name with nothing written, auto-managed blobs DEGRADE through a named shrinker, and a scalar writer is allowlisted BY NAME (Batch Q, 2026-09-11).** Script Properties cap at ~9KB per value and 500KB per store, while the endpoints' own entry caps admit far more (50 email templates × 4000 chars is ~200KB into a ~9KB slot) — and because every save endpoint writes its `AdminConfigChange` audit row before returning, a `setProperty` throw produced an opaque platform error beside an audit row claiming the change landed. Size is measured in BYTES by `utf8Len_`, never `.length` (UTF-16 units under-count anything non-ASCII; a surrogate pair is 4 bytes). The MODE is the decision: a blob an operator edits REFUSES with an error naming the key, the size, the cap and what to shorten — nothing is written, and each of the 14 call sites sits inside the endpoint try whose catch already returns `{success:false, error}` to its editor, so the refusal reaches the person who can act on it. A blob nobody is watching (the 6 heartbeat/cache/stamp maps) DEGRADES instead, because refusing would simply lose the write: `propShrinkDropOldest_` drops oldest-first UNTIL IT FITS (not one per call — a caller's retry loop is a safety net, and a large map would exhaust it and clear the property), `propShrinkStripFields_` costs the self-test result its free text before its figures, and two custom shrinkers reset a cache on BYTES. An UNSHRINKABLE degrade DELETES the property and LOGS why rather than leaving a stale value — every degrade target regenerates, and "no heartbeat recorded yet" is honest where a frozen stamp is not. The 9 scalar writers (a day count, a dollar cap, a model key, a folder id, a generation counter) stay on `setProperty` and are allowlisted by name with a reason each. Companion rule: the SERIALIZED size is shown to the operator by one shared badge (`propBudgetHtml_`, the KDD above), and `scriptPropertiesStatus_` reports the store's usage on Admin → System — read-only, values COUNTED never returned, `bytes: null` on a failed read (INV-187), an ok FACT while comfortable (INV-186). Verify: Q-1 (DERIVED — every `setProperty` outside the helper writes an allowlisted scalar, every blob key IS bounded, and the refuse/degrade mode is asserted per key, so a new blob property fails CI until it picks one), Q-1b (the helper and both shrinkers driven in a vm: refuse writes NOTHING and names key/size/cap, degrade keeps the NEWEST entry, an unshrinkable value deletes rather than leaving a stale one, `utf8Len_` counts bytes), Q-2 (every save endpoint, the one-home badge rule, and the WORST-CASE arithmetic so a raised entry cap reads as the over-budget it is), Q-3, plus a `saveEmailTemplates` over-size case in the editor suite | Subsystem: Server + Client (shell) + Client (Call Notes views) + Client (Reference views)
 
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
@@ -11247,14 +11454,17 @@ S1 | Smoke test suite | Subsystem: Test Suite
     - Open the Apps Script editor for the web-app project
     - In Tests.js, select `runSmokeTests` and click ▶
     - Wait for Logger output
-  Expected: `Failed: 0`. Pure-logic tests run with no spreadsheet writes; integration tests show as `SKIP`.
+  Expected: `Failed: 0`. Pure-logic tests run with no spreadsheet writes; integration tests show as `SKIP`. **The run opens with the `── Suite environment ──` block** (instance markers + the app's own dev/prod verdict, `ADMIN_EMAILS` classified, `MANAGER_EMAILS` + whether the test manager is listed, the fixture and save/restore properties, the store ids, the three TEST roster rows) and closes with `Expected: N registrations (S smoke · A · B)` DERIVED from the registration list — read the count there, never from a doc. A run that records fewer than expected prints `⚠ Recorded X of N`, and a name registered twice prints `⚠ Duplicate registration name(s)` by name.
 
 S2 | Full integration test suite | Subsystem: Test Suite
   Steps:
     - Confirm the editor is pointing at a TEST copy of `CONFIG.ADP_SS_ID` (or accept that production gets `TEST_*` rows that auto-clean)
     - Select `runAllTests` and click ▶
     - Wait for Logger output
-  Expected: `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end, resets test-employee balances to 15 annual / 10 sick, and RE-OFFBOARDS the test accounts (emails cleared) so they stay invisible to real agents between runs; the next run's setup restores the emails itself.
+    - **(Batch S variant)** Instead run `runAllTestsPartA`, wait for it to finish, then run `runAllTestsPartB` — the split that exists for a mid-shift run, since one long execution makes every live punch queue behind the project ScriptLock
+    - **(Batch S)** Read the `Expected:` line and the `── Suite environment ──` block at the top before reading any failure
+    - **(Batch Q)** Confirm the `saveEmailTemplates` over-size case passes: it drives the refusal against the live store and restores what was there
+  Expected: `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end, resets test-employee balances to 15 annual / 10 sick, and RE-OFFBOARDS the test accounts (emails cleared) so they stay invisible to real agents between runs; the next run's setup restores the emails itself. **Part A + Part B together are exactly `runAllTests`** — each Part runs its own setup and cleanup in `finally`, and every test at a shard boundary clears its own state, so a Part stands alone; their two `Expected:` lines sum to the whole run's. The expected count is whatever the run prints (316 today). On a prod instance (`INSTANCE_IS_PROD=true`) `runAllTests` REFUSES outright and the environment block above the refusal says why — that is the runbook working, not a fault.
 
 S3 | Employee golden path: clock in → lunch → clock out | Subsystem: Server, Client
   Steps:
@@ -11682,7 +11892,9 @@ S51 | Call Notes Admin tab augment (Round 2 · 8h) | Subsystem: Server + Client 
     - Confirm the tag taxonomy table below shows unique tags + usage bars + counts + last-seen dates + per-row action buttons
     - Confirm the existing department-email mapping + state-tax-rate + update-suggestions controls render BELOW the new sections (preserved unchanged)
     - As a rep (non-manager), open the Admin tab — confirm tab is hidden entirely
-  Expected: KPI strip + tag table render correctly; existing admin controls work unchanged. `getCallNotesTagTaxonomy` is manager-gated. Rename / Merge / Archive action buttons are present per row (Restore button for archived tags); see S53 for the full action flow.
+    - **(Batch Q)** On each Config editor — email templates, quick links, auto-tag rules, dept emails, state-tax rates, update suggestions, break schedules, QA criteria, QA reviewers, Spanish members, SLA targets — read the small mono budget line beside its Save button; then open Reference → the admin Synonyms modal and read the same line there
+    - Add entries until one editor's badge passes 80% of the cap and confirm it tones; open the page against an older server (or with the field absent) and confirm NO badge renders at all
+  Expected: KPI strip + tag table render correctly; existing admin controls work unchanged. `getCallNotesTagTaxonomy` is manager-gated. Rename / Merge / Archive action buttons are present per row (Restore button for archived tags); see S53 for the full action flow. **Every editor shows "N of 9,000 bytes" for the value it would SAVE** (the server measures the stored value and ships it — the client never estimates), built by the one shared `propBudgetHtml_` over the one `.prop-budget` rule, so no two editors can disagree about what "nearly full" looks like. Past 80% it tones warn and past 90% danger. With no server budget it renders NOTHING rather than a fabricated "0%", so a client/server version skew degrades to the pre-Batch-Q appearance.
 
 S52 | Email composer Internal/External tab transition (modal-tab merge) | Subsystem: Client (Call Notes views)
   Steps:
@@ -11738,7 +11950,9 @@ S56 | Card-level urgent toggle + external-email template library | Subsystem: Cl
     - Confirm the message textarea fills with the body and `{name}` is replaced by the recipient name
     - Toggle recipient type to Provider → confirm the picker re-filters (the customer-only template drops; `any` templates stay) without re-rendering the whole modal
     - As a non-manager, call `google.script.run...saveEmailTemplates([])` from the console
-  Expected: Urgent toggles `subformData.flags[]` only (never the FlagType column, INV-77); `_flagInFlight` drops a double-click; failure reverts the array. Templates persist to Script Property `CN_EMAIL_TEMPLATES`; `saveEmailTemplates` writes an `AdminConfigChange` audit row and rejects the non-manager call with "Manager access required." (INV-93). The composer picker renders only when ≥1 template is configured, filters to `{any + current recipient type}`, and inserts the `{name}`-substituted body. A corrupt `CN_EMAIL_TEMPLATES` blob degrades to the CONFIG fallback (composer still works). Pinned by `cnIsUrgent_`/`cnUrgentPillHtml_` + `cnExtTemplatesFor_`/`cnExtTemplateOptionsHtml_` client tests.
+    - **(Batch Q)** Paste a very long body (or add templates) until the badge reads past 9,000 bytes, then press Save Templates
+    - Re-open the Admin tab and confirm the previously-saved templates are intact, and that the AuditLog has NO `AdminConfigChange` row for the refused attempt
+  Expected: Urgent toggles `subformData.flags[]` only (never the FlagType column, INV-77); `_flagInFlight` drops a double-click; failure reverts the array. Templates persist to Script Property `CN_EMAIL_TEMPLATES`; `saveEmailTemplates` writes an `AdminConfigChange` audit row and rejects the non-manager call with "Manager access required." (INV-93). The composer picker renders only when ≥1 template is configured, filters to `{any + current recipient type}`, and inserts the `{name}`-substituted body. A corrupt `CN_EMAIL_TEMPLATES` blob degrades to the CONFIG fallback (composer still works). **An over-cap save is REFUSED BY NAME with nothing written** (INV-201) — the error states the key, the byte size, the cap and what to shorten; the stored templates are untouched and no audit row is written, because the refusal happens before the write. That is the whole point of the guard: the entry caps (50 × 4000 chars ≈ 200KB) admit far more than the ~9KB slot holds, and before Batch Q this failed as an opaque platform error AFTER the audit row had already claimed success. Pinned by `cnIsUrgent_`/`cnUrgentPillHtml_` + `cnExtTemplatesFor_`/`cnExtTemplateOptionsHtml_` client tests + the editor-suite over-size case.
 
 S57 | Compliance audit panel (Admin tab) | Subsystem: Server, Client (Call Notes views)
   Steps:
@@ -12266,9 +12480,9 @@ S97 | Admin → System is findings-first and reaches all-clear | Subsystem: Clie
     - In the Storage inventory table, press a row's chevron
     - Break `CDR_SS_ID` (or use `?failrpc=getAutomationHealth` on the visual harness) and reload the Admin tab
     - On a healthy deployment with dozens of off-roster CDR agents and HR/QA stores left unset, read the System tab
-    - Read the two capability lines ABOVE the inventory table, in order; then set `MAIL_BCC_ALL` to an internal address and reload, and again to an address on another domain
+    - Read the THREE capability lines ABOVE the inventory table, in order (Drive, mail routing, Script Properties); then set `MAIL_BCC_ALL` to an internal address and reload, and again to an address on another domain
     - Narrow to a phone width and open the System tab
-  Expected: each Overview card is a BUTTON that lands on the System tab scrolled to its own section (Automation / CDR / Storage), and its aria-label names the destination. The System tab's badge equals the number of items in "Needs attention"; every item carries a Blocking/Warning pill, a title, the detail, a fix line, and — where the server supplied one — an open link. Blocking items sort first. The chevron expands the store's detail row (note / per-rep problems / the exact tz fix naming the CONFIG zone) with `aria-expanded` following. With the health read broken, the Automation and CDR cards read **Unavailable**, the findings list carries a Blocking "Automation health could not be read" item, and the Automation detail slot renders the warn card — never "All OK". On the healthy deployment the list reads **Nothing needs attention** and the off-roster agents, the no-CDR roster names, and the unset no-fallback stores appear ONLY inside "checks passing" with their counts (INV-186 — a tab that can never go green trains the reader to ignore it). **Two capability lines sit above the table, Drive first then mail routing** — neither is a spreadsheet, so no store row can carry them (F3, cycle 19). With `MAIL_BCC_ALL` unset the mail line is an `ok` FACT inside "checks passing", so the tab still reaches Nothing-needs-attention; with an internal address it is a standing WARNING naming the address and stating that those copies carry intake bodies (full patient answers) and department emails (patient name + TRX); with an off-domain address it is BLOCKING and sorts to the top. Reporting never changes what is sent — an address the operator typed is always honoured. At 390px nothing scrolls sideways; the finding cards stack their pill above the title.
+  Expected: each Overview card is a BUTTON that lands on the System tab scrolled to its own section (Automation / CDR / Storage), and its aria-label names the destination. The System tab's badge equals the number of items in "Needs attention"; every item carries a Blocking/Warning pill, a title, the detail, a fix line, and — where the server supplied one — an open link. Blocking items sort first. The chevron expands the store's detail row (note / per-rep problems / the exact tz fix naming the CONFIG zone) with `aria-expanded` following. With the health read broken, the Automation and CDR cards read **Unavailable**, the findings list carries a Blocking "Automation health could not be read" item, and the Automation detail slot renders the warn card — never "All OK". On the healthy deployment the list reads **Nothing needs attention** and the off-roster agents, the no-CDR roster names, and the unset no-fallback stores appear ONLY inside "checks passing" with their counts (INV-186 — a tab that can never go green trains the reader to ignore it). **THREE capability lines sit above the table — Drive, then mail routing, then Script Properties** — none is a spreadsheet, so no store row can carry them (F3, cycle 19; Script Properties added in Batch Q). The Script Properties line states bytes used of the 500KB store and the largest single value against the ~9KB per-value cap; on a comfortable store it is an `ok` FACT inside "checks passing" and the badge count does NOT rise, it warns only past 80% of either cap, and an unreadable read renders as unknown rather than OK. Values are COUNTED, never echoed into the panel. With `MAIL_BCC_ALL` unset the mail line is an `ok` FACT inside "checks passing", so the tab still reaches Nothing-needs-attention; with an internal address it is a standing WARNING naming the address and stating that those copies carry intake bodies (full patient answers) and department emails (patient name + TRX); with an off-domain address it is BLOCKING and sorts to the top. Reporting never changes what is sent — an address the operator typed is always honoured. At 390px nothing scrolls sideways; the finding cards stack their pill above the title.
 
 S99 | Coaching surface — signal board, drawer, business-day overdue, reply, critical-only mail, weekly recap | Subsystem: Server, Client (Training views)
   Steps:
@@ -12421,4 +12635,4 @@ S106 | Diagnostics retention tier — the ViewUsage / ClientErrors purge | Subsy
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load — and since 2026-08-27 open windows notice on their own: the deploy-version beacon shows each open tab a sticky "reload to get the latest version" prompt within ~20 minutes of the New version (see the beacon Key Design Decision).
 Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (QA views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
-Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).
+Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end). Smoke on prod, full on dev nightly; `runAllTests` on prod is the exception, not the routine. `runAllTestsPartA` / `runAllTestsPartB` split a full run across two executions when one would run too long; the summary prints the DERIVED expected count.

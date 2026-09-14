@@ -1335,6 +1335,14 @@
   /* Operator 2026-08-17 — full-width: the grid flows to the view's width (the
      auto-fill minmax reflows 1..4-up on its own; the old 920px cap left the
      right half of a wide monitor empty on both request-tracking pages). */
+  /* Batch Q — the serialized-size badge a Script-Property editor renders
+     (propBudgetHtml_, script_core). Shared: the Admin config editors and the
+     Reference synonyms modal both use it, so the tone rule has ONE home. */
+  .prop-budget { font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+    text-transform: uppercase; margin-bottom: 10px; }
+  .prop-budget-ok { color: var(--muted-2); }
+  .prop-budget-warn { color: var(--warning-deep); }
+  .prop-budget-danger { color: var(--danger-deep); }
   .sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
   /* The wide top row (Spanish): summary strip + note on the left, the
      resolution-share chart on the right. Stacks below 1024px — the same

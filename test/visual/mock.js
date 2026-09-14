@@ -1314,6 +1314,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
       externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
       deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      // Batch Q — propBudgetsFor_(ADMIN_PROP_KEYS_)'s shape (INV-185): every
+      // editor shows the STORED value's size. One key deliberately past 80%
+      // so the warn tone is on camera, the rest comfortable.
+      propValueMax: 9000,
+      propBudget: (function () {
+        var b = {}, sizes = { CN_DEPARTMENT_EMAILS: 180, CN_STATE_TAX_RATES: 64, CN_UPDATE_SUGGESTIONS: 120,
+          CN_EMAIL_TEMPLATES: 7620, CN_EXTERNAL_LINKS: 96, CN_AUTO_TAG_RULES: 310, DR_SLA_TARGETS: 28,
+          SPANISH_INBOX_MEMBERS: 44, SHIFT_BREAK_SCHEDULES: 640, QA_SCORECARD_CRITERIA: 410,
+          QA_MEMBERS: 22, CN_FEATURE_FLAGS: 58, CN_ARCHIVED_TAGS: 0 };
+        Object.keys(sizes).forEach(function (k) {
+          b[k] = { key: k, bytes: sizes[k], max: 9000, pct: Math.round(sizes[k] * 100 / 9000), set: sizes[k] > 0 };
+        });
+        return b;
+      })(),
       // QA reviewers editor (operator testing note 8, 2026-09-10) — the sorted
       // QA_MEMBERS list getAdminConfig ships; one non-manager reviewer on camera.
       qaMembers: ['ines@umsupply.com'],
@@ -1652,6 +1666,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         },
         // F3 — mailBccStatus_'s shape (INV-185). Set-and-internal is the warn
         // state, which is what the Admin System scenarios put on camera.
+        // Batch Q — scriptPropertiesStatus_'s shape. A comfortable store is the
+        // ok FACT the System tab needs to still reach "Nothing needs attention".
+        propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 14, bytes: 21480,
+                     largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 4120, error: '' },
         mailBcc: { prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['robin@umsupply.com'],
                    external: [], ownDomain: 'umsupply.com' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
@@ -1805,6 +1823,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz', folderOk: true, folderError: '',
       },
       mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
+      propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
+                   largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 2100, error: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };
