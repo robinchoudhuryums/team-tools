@@ -93,6 +93,28 @@
     "EMP"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "Batch T (prevention): checkOpenPunches + planOpenPunchCheck_ + the OPEN_PUNCH_CHECK stamp; the runDailyChecks dispatcher; AUTOMATION_TRIGGER_QUOTA moved back beside its own comment",
+   "added": [
+    "OPEN_PUNCH_EXPIRING_DAYS",
+    "OPEN_PUNCH_GRACE_DAYS",
+    "checkOpenPunches",
+    "planOpenPunchCheck_",
+    "readOpenPunchCheck_",
+    "runDailyChecks",
+    "stampOpenPunchCheck_"
+   ],
+   "removed": [],
+   "changed": [
+    "TRIGGER_GROUPS",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "installAutomationTriggers",
+    "removeAutomationTriggers"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1227,6 +1249,16 @@
    "kind": "const",
    "sha": "7a0dc3c58da6b826"
   },
+  "OPEN_PUNCH_EXPIRING_DAYS": {
+   "file": "20_timeclock.js",
+   "kind": "const",
+   "sha": "62c1af6abf871a41"
+  },
+  "OPEN_PUNCH_GRACE_DAYS": {
+   "file": "20_timeclock.js",
+   "kind": "const",
+   "sha": "cc9e16bd0fd465c9"
+  },
   "PAR": {
    "file": "00_config.js",
    "kind": "const",
@@ -1755,7 +1787,7 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8ad12ae49b770296"
+   "sha": "7ae79bc578ad83d0"
   },
   "TS_DOCTOR_FIX_MAX_ROWS": {
    "file": "00_config.js",
@@ -2135,7 +2167,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b60f43a0ea7f66fe"
+   "sha": "b27acafba604f9ff"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -2382,6 +2414,11 @@
    "kind": "function",
    "sha": "8c24fe4fdd46335a"
   },
+  "checkOpenPunches": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "59ebd6ed8df42579"
+  },
   "claimSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -2605,7 +2642,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "97b7877be8753cc5"
+   "sha": "4992e7fc70dad470"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -4020,7 +4057,7 @@
   "installAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "291a235563c6b1b5"
+   "sha": "a19c093beb0bc8f6"
   },
   "instanceLabel_": {
    "file": "10_core.js",
@@ -4967,6 +5004,11 @@
    "kind": "function",
    "sha": "aa98ba272c5c2c46"
   },
+  "planOpenPunchCheck_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c76fff4fbbe6d6d9"
+  },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5357,6 +5399,11 @@
    "kind": "function",
    "sha": "2e4229518eb270ba"
   },
+  "readOpenPunchCheck_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "710ea67df7d3e6a9"
+  },
   "reconcileCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -5400,7 +5447,7 @@
   "removeAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a6e8e7b713517633"
+   "sha": "216c252213ffca5c"
   },
   "renameCallNoteTag": {
    "file": "30_callnotes.js",
@@ -5491,6 +5538,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "1a37be5691c30e7c"
+  },
+  "runDailyChecks": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "82734d913e0a4c13"
   },
   "runDailyExportCheck": {
    "file": "20_timeclock.js",
@@ -5916,6 +5968,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "62f9d2066e856065"
+  },
+  "stampOpenPunchCheck_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "440b8d4b94b4511a"
   },
   "storeConfigured_": {
    "file": "10_core.js",

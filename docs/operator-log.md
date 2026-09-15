@@ -14,6 +14,36 @@ Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.
 
+- **The daily open-punch check (2026-09-15) — ONE new auto-managed Script
+  Property, and the trigger count does NOT change.** `checkOpenPunches` runs at
+  8am manager-tz and reports every rep with a day the Timesheet cannot turn into
+  hours. It is the PREVENTION half of the accrual work: the reconcile pass
+  recovers the PTO after a day is fixed, this tells you the day is broken while
+  it still can be.
+
+  **Where you will see it.** Manage → Admin → System, and the 9am automation-health
+  email — the scan sends no mail itself, it stamps at 8am and the existing digest
+  reads the stamp an hour later. A finding names the rep, the day count and the
+  window it checked.
+
+  **What it will NOT tell you, on purpose.** A day from today or yesterday (a rep
+  mid-shift is not a defect, and the PH team is twelve hours ahead of the manager
+  anchor). And a day older than `CONFIG.ADJUST_WINDOW_DAYS` (30) — past that both
+  the Day Edit range apply and the adjustment queue refuse the date, so the fix
+  the finding implies no longer exists. Days within a week of crossing that line
+  get their own sharper line, which is your cue to act.
+
+  **The trigger count is unchanged (still what `installAutomationTriggers`
+  reports).** `sendCallNotesUrgentDigest` moved out of its own standalone trigger
+  into a new `runDailyChecks` group beside the scan. **Re-run
+  `installAutomationTriggers` after the push** — it removes the old standalone
+  trigger by itself (the retired list is derived), but until you do, the scan has
+  nothing to run it.
+
+  **`OPEN_PUNCH_CHECK`** — auto-managed, written by the scan, read by the health
+  panel. Delete it to clear a stale flag; never set it by hand. A scan that
+  FAILS stamps the failure, so an empty finding list is never a clean board.
+
 - **The accrual reconciles late data (2026-09-15) — ONE new auto-managed Script
   Property, nothing to set.** `creditMonthlyPtoAccruals` now re-values the last
   three completed months on every run and credits the difference, so a

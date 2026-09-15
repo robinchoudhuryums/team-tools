@@ -1124,6 +1124,8 @@ const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // install email and the Node pins); (b) the installer COUNTS before it
 // deletes and refuses when the total would exceed the quota, so a future
 // overflow fails with nothing removed.
+const AUTOMATION_TRIGGER_QUOTA = 20;
+
 // How many COMPLETED months the accrual credit re-examines on every run
 // (operator 2026-09-15). The column-R stamp closes a month permanently, but the
 // Timesheet is not final on the 1st — an adjustment approved days later used to
@@ -1134,7 +1136,6 @@ const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // costs nothing at read time (the range index reads the whole tab regardless)
 // and lengthens only the in-memory per-month slicing.
 const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
-const AUTOMATION_TRIGGER_QUOTA = 20;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
 // defined top-level function that carries its own assertManagerCaller_ gate
 // (INV-44) — each stays reachable via google.script.run and keeps its own
@@ -1145,6 +1146,14 @@ const TRIGGER_GROUPS = {
   runHourlyJobs:    ['sendCallNotesEodDigest', 'autoAssignSpanishThreadsScheduled'],
   runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
   runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
+  // 8am manager-tz. checkOpenPunches STAMPS and sendAutomationHealthDigest
+  // (9am) reads that stamp, so an open punch reaches a manager by email the
+  // same morning without this group sending mail of its own — the hour gap is
+  // the wiring, not a coincidence. sendCallNotesUrgentDigest moved in here from
+  // a standalone trigger of its own, so the group is COUNT-NEUTRAL against the
+  // quota that already bit this deployment once (RETIRED_TRIGGER_HANDLERS is
+  // derived from these lists, so a re-install removes its old trigger).
+  runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install

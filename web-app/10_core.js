@@ -1483,6 +1483,7 @@ function computeAutomationHealth_(opts) {
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
       accrualReconcile: readAccrualReconcile_(),   // the last PTO accrual reconcile pass (operator 2026-09-15)
+      openPunches: readOpenPunchCheck_(),          // the last open-punch scan (operator 2026-09-15)
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
       // F9 (cycle 16) — Offerings catalog shape. null when not scanned (the
       // badge/digest path), so the client can tell "not checked" from "clean".
@@ -1535,6 +1536,30 @@ function automationProblems_(report) {
   // What reaches a manager is what the pass deliberately would NOT fix: hours
   // that went DOWN (never clawed back, by design), a month-set it could not
   // value, and a ledger read that could not see the whole window.
+  // Open punches (operator 2026-09-15) — PREVENTION, and the only finding here
+  // that is about the rep's data rather than the automation. It leads with the
+  // count because "three reps, nine days" is the actionable shape, and names
+  // the adjust-window boundary because a day past it cannot be fixed in-app.
+  const op = report.openPunches;
+  if (op) {
+    if (op.error) {
+      problems.push('Open-punch check: the scan could not run (' + op.error +
+        ') — an empty open-punch list below is NOT a clean board.');
+    } else if (op.days > 0) {
+      const who = (op.detail || []).map(function (d) {
+        return d.name + ' (' + d.count + ')';
+      }).join(', ');
+      problems.push('Open punches: ' + op.days + ' day(s) across ' + op.reps +
+        ' rep(s) have no usable clock-in/clock-out pair — ' + who +
+        '. Those days earn no hours and no PTO until they are fixed' +
+        (op.window ? ' (checked ' + op.window.start + '…' + op.window.end + ')' : '') + '.');
+      if (op.expiring > 0) {
+        problems.push('Open punches: ' + op.expiring + ' of them fall out of the ' +
+          ((op.window && op.window.adjustWindowDays) || CONFIG.ADJUST_WINDOW_DAYS) +
+          '-day adjust window within a week — after that the in-app fix is gone and only a hand-edit will do.');
+      }
+    }
+  }
   const ar = report.accrualReconcile;
   if (ar) {
     (ar.shortfalls || []).forEach(function (sf) {
@@ -2703,6 +2728,10 @@ function runNightlyPurges() {
   assertManagerCaller_('runNightlyPurges');
   return runTriggerGroup_('runNightlyPurges');
 }
+function runDailyChecks() {
+  assertManagerCaller_('runDailyChecks');
+  return runTriggerGroup_('runDailyChecks');
+}
 function installAutomationTriggers() {
   // Use getActiveUserEmail_() so test impersonation via _TEST_OVERRIDE_EMAIL
   // is respected, and getManagerEmails_() so the Script-Properties override
@@ -2723,7 +2752,7 @@ function installAutomationTriggers() {
     'runDailyExportCheck',
     'runHourlyJobs',
     'runWeeklyDigests',
-    'sendCallNotesUrgentDigest',
+    'runDailyChecks',
     'runNightlyPurges',
     'archiveOldCallNotes',
     'purgeOldCallNotes',
@@ -2788,7 +2817,11 @@ function installAutomationTriggers() {
       .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
       .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
     // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
-    ScriptApp.newTrigger('sendCallNotesUrgentDigest')
+    // DAILY-CHECKS dispatcher, manager-tz 8am — checkOpenPunches (the
+    // open-punch scan, which only stamps) then sendCallNotesUrgentDigest.
+    // sendCallNotesUrgentDigest used to own this trigger; folding it into a
+    // group keeps the installed count unchanged while giving the scan a home.
+    ScriptApp.newTrigger('runDailyChecks')
       .timeBased().atHour(8).everyDays(1)
       .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
     // NIGHTLY PURGES dispatcher, manager-tz 2am — the four DELETE-ONLY
@@ -2948,7 +2981,7 @@ function removeAutomationTriggers() {
     'runDailyExportCheck',
     'runHourlyJobs',
     'runWeeklyDigests',
-    'sendCallNotesUrgentDigest',
+    'runDailyChecks',
     'runNightlyPurges',
     'archiveOldCallNotes',
     'purgeOldCallNotes',

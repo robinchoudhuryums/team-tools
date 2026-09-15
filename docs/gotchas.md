@@ -2618,3 +2618,39 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   bite-check claim more or less than it proved. Both halves matter, because a
   bite-check is the ONLY evidence that a pin can fail — and a project that
   writes pins as its main defence has no second line when the checker is wrong.
+
+<a id="g117-a-recovery-is-not-a-prevention"></a>
+- **A recovery is not a prevention, and shipping one can make the other feel
+  done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
+  heal itself, which is the right fix for *"the month closed before the data
+  arrived"*. It does nothing about the thing that put the data late: Anne's
+  2026-08-27 sat clock-in-only for five days, and no surface said so. The
+  in-progress month had no open-punch visibility at ALL — the accrual only ever
+  looked at months it owed, so a day broken today was invisible until the month
+  it was in had already closed and been recovered.
+
+  Both halves are needed and they are different jobs. The recovery keeps the
+  balance correct; the prevention keeps the rep's timesheet correct, which
+  matters to the ADP export, the pay statement and the punctuality report long
+  before it matters to PTO. **When you fix a "the data arrived too late" bug,
+  ask separately what made it late — the answer is usually a missing signal,
+  not a missing retry.**
+
+  Two design rules the check had to choose rather than inherit, both about
+  keeping a report worth reading:
+  - **Leave the tail alone.** The window ends `OPEN_PUNCH_GRACE_DAYS` before
+    today. A rep clocked in right now has an open day BY DEFINITION, and a rep
+    twelve hours ahead of the manager anchor looks open for most of a manager's
+    day. A report that cries wolf on both is a report nobody opens.
+  - **Only report what can still be fixed.** The lookback IS
+    `CONFIG.ADJUST_WINDOW_DAYS`, because past it both `managerSaveDayRange` and
+    the adjustment queue refuse the date — the remedy the finding implies does
+    not exist. So the report states its own boundary and flags the days about
+    to cross it, rather than listing days whose only fix is a hand-edit.
+
+  And it reaches a person without inventing a channel: it STAMPS at 8am inside
+  `runDailyChecks`, and the 9am `sendAutomationHealthDigest` already emails
+  whatever `automationProblems_` returns. A failed scan stamps the FAILURE, so
+  an empty list is never mistaken for a clean board (the honest-failure family,
+  pointed at a diagnostic rather than at data). Verify: the T pin's two bounds
+  driven, plus the read-only / no-mail / no-PTO-flag assertions.

@@ -1633,6 +1633,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // or the Admin scenario renders a shape the server does not ship.
       accrualReconcile: { at: Date.now(), window: [], toppedUp: 0, days: 0,
         shortfalls: [], skipped: [], incomplete: [], truncated: false },
+      // The last open-punch scan (operator 2026-09-15). A CLEAN board: zero
+      // days, so automationProblems_ emits nothing — but every shape it reads
+      // is present, which is what INV-185 is checking.
+      openPunches: { at: Date.now(), reps: 0, days: 0, expiring: 0, detail: [],
+        window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true,
@@ -1819,6 +1824,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // or the Admin scenario renders a shape the server does not ship.
       accrualReconcile: { at: Date.now(), window: [], toppedUp: 0, days: 0,
         shortfalls: [], skipped: [], incomplete: [], truncated: false },
+      // The last open-punch scan (operator 2026-09-15). A CLEAN board: zero
+      // days, so automationProblems_ emits nothing — but every shape it reads
+      // is present, which is what INV-185 is checking.
+      openPunches: { at: Date.now(), reps: 0, days: 0, expiring: 0, detail: [],
+        window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',

@@ -405,6 +405,7 @@ function _suiteEnvCheck_() {
   lines.push(setOrNot('TIMESHEET_ARCHIVE_DAYS', 'the archive test sets + restores it'));
   lines.push(setOrNot('WHATSNEW_KB_ID', 'the What\'s-new test sets + restores it'));
   lines.push(setOrNot('PTO_ACCRUAL_RECONCILE', 'auto-managed reconcile stamp; the accrual test saves + restores it'));
+  lines.push(setOrNot('OPEN_PUNCH_CHECK', 'auto-managed open-punch scan stamp'));
   // Store resolution the fixtures ride on.
   lines.push(setOrNot('FORMS_SS_ID', 'unset = the ADP sheet (back-compat)'));
   lines.push(setOrNot('KB_SS_ID', 'KB tests run against the TEST_KB fixture'));
@@ -1529,6 +1530,8 @@ function _registerIntegrationB_() {
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
   _integrationTest('triggerGate_previewPtoAccruals_nonManagerThrows', test_triggerGate_previewPtoAccruals_nonManagerThrows);
   _integrationTest('triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows', test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows);
+  _integrationTest('triggerGate_checkOpenPunches_nonManagerThrows', test_triggerGate_checkOpenPunches_nonManagerThrows);
+  _integrationTest('triggerGate_runDailyChecks_nonManagerThrows', test_triggerGate_runDailyChecks_nonManagerThrows);
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
@@ -4661,6 +4664,20 @@ function test_triggerGate_previewPtoAccruals_nonManagerThrows() {
 function test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccrualsLastMonth(); });
+  }, 'manager access required');
+}
+
+// The open-punch scan (operator 2026-09-15) rides the runDailyChecks
+// dispatcher, so BOTH are top-level and reachable via google.script.run and
+// both carry their own gate — the dispatcher's does not stand in for the job's.
+function test_triggerGate_checkOpenPunches_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { checkOpenPunches(); });
+  }, 'manager access required');
+}
+function test_triggerGate_runDailyChecks_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runDailyChecks(); });
   }, 'manager access required');
 }
 
