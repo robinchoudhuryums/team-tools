@@ -1124,6 +1124,16 @@ const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // install email and the Node pins); (b) the installer COUNTS before it
 // deletes and refuses when the total would exceed the quota, so a future
 // overflow fails with nothing removed.
+// How many COMPLETED months the accrual credit re-examines on every run
+// (operator 2026-09-15). The column-R stamp closes a month permanently, but the
+// Timesheet is not final on the 1st — an adjustment approved days later used to
+// be lost behind the stamp, and was, for all three PH reps in 2026-08. Three
+// months is the window in which late payroll corrections actually arrive; the
+// reconcile pass re-values those months on every run and credits the
+// difference, so nothing is lost and nothing is credited twice. Widening this
+// costs nothing at read time (the range index reads the whole tab regardless)
+// and lengthens only the in-memory per-month slicing.
+const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
 const AUTOMATION_TRIGGER_QUOTA = 20;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
 // defined top-level function that carries its own assertManagerCaller_ gate

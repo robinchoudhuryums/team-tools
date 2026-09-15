@@ -195,7 +195,7 @@ function workedHoursByEmpForRange_(startIso, endIso) {
  *  Each returned entry carries the plan AND the evidence behind it:
  *    {rowIndex, rate, stamp, plan, months, emp,
  *     totalHours, incompleteDays, orphanDays, onTimesheet, earned} */
-function planPtoAccrualRun_(rows, nowYm, inspectYm) {
+function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
   const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
 
   // Pass 1 — who owes what, and the widest month range any of them needs.
@@ -233,15 +233,26 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm) {
     return { entries: [], basis: basis, perDay: perDay, range: null, archivedRows: 0 };
   }
 
-  // Pass 2 — ONE Timesheet read covering every owed month (see the index's
-  // own comment for why this is not a per-rep call). Only built when some
-  // rep actually owes months; a pure seeding round reads nothing.
+  // Pass 2 — ONE Timesheet read covering every owed month AND the reconcile
+  // window (see the index's own comment for why this is not a per-rep call).
+  // The window is folded into the SAME range on purpose: the reader already
+  // pulls the whole tab and filters by date, so widening it costs nothing,
+  // while a second `workedHoursByEmpForRange_` call would be a second full
+  // read inside the credit's ScriptLock — the C17-9 / INV-153 amplification
+  // rule this function exists to obey.
   let hoursIdx = null, range = null;
-  if (earliestYm) {
-    const lastYm = plans.reduce((acc, p) => (p.months.length && p.months[p.months.length - 1] > acc) ? p.months[p.months.length - 1] : acc, earliestYm);
-    const startIso = earliestYm + '-01';
-    const lastParts = lastYm.split('-');
-    const endIso = lastYm + '-' + String(new Date(+lastParts[0], +lastParts[1], 0).getDate()).padStart(2, '0');
+  const recMonths = reconcileMonths || [];
+  let startYm = earliestYm;
+  let endYm = earliestYm
+    ? plans.reduce((acc, p) => (p.months.length && p.months[p.months.length - 1] > acc) ? p.months[p.months.length - 1] : acc, earliestYm)
+    : null;
+  recMonths.forEach((ym) => {
+    if (startYm === null || ym < startYm) startYm = ym;
+    if (endYm === null || ym > endYm) endYm = ym;
+  });
+  if (startYm && endYm) {
+    const startIso = startYm + '-01';
+    const endIso = monthEndIso_(endYm);
     range = { start: startIso, end: endIso };
     hoursIdx = workedHoursByEmpForRange_(startIso, endIso);   // throws — the caller decides what that means
   }
@@ -262,22 +273,20 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm) {
     // exists to remove.
     p.months.forEach((ym) => {
       if (!rec) return;
-      const parts = ym.split('-');
-      const mStart = ym + '-01';
-      const mEnd = ym + '-' + String(new Date(+parts[0], +parts[1], 0).getDate()).padStart(2, '0');
-      // The index is range-wide; re-derive this month's slice by asking it
-      // for the month only when the plan spans more than one month.
-      if (p.months.length === 1) {
-        p.totalHours += rec.hours; p.incompleteDays += rec.incompleteDays; p.orphanDays += rec.orphanDays;
-      } else {
-        const m = workedHoursForEmpMonth_(hoursIdx, p.emp.id, mStart, mEnd);
-        p.totalHours += m.hours; p.incompleteDays += m.incompleteDays; p.orphanDays += m.orphanDays;
-      }
+      // ALWAYS slice the month out of the index, never read the range-wide
+      // total. That shortcut was correct only while the range WAS the single
+      // owed month; the reconcile window widened it, and a fast path that is
+      // right until an unrelated parameter changes is a defect waiting on a
+      // schedule. Slicing is an in-memory walk of that rep's days.
+      const m = workedHoursForEmpMonth_(hoursIdx, p.emp.id, ym + '-01', monthEndIso_(ym));
+      p.totalHours += m.hours; p.incompleteDays += m.incompleteDays; p.orphanDays += m.orphanDays;
     });
+    p.totalHours = +p.totalHours.toFixed(2);
     p.earned = accrualDaysForHours_(p.totalHours, p.rate, basis, perDay);
   });
   return { entries: plans, basis: basis, perDay: perDay, range: range,
-           inspectYm: inspectYm || '',
+           inspectYm: inspectYm || '', hoursIdx: hoursIdx,
+           reconcileMonths: recMonths.slice(),
            archivedRows: hoursIdx ? hoursIdx.archivedRows : 0 };
 }
 
@@ -326,6 +335,223 @@ function accrualUncountedNote_(entry) {
          (entry.orphanDays ? '; ' + entry.orphanDays + ' day(s) with a clock-out and no clock-in NOT counted' : '');
 }
 
+/** PURE (Node-pinned): the last day of a 'yyyy-MM' month, as 'yyyy-MM-dd'.
+ *  ONE definition — the accrual code computed this inline in three places, and
+ *  three copies of a month-end calculation is three chances to disagree about
+ *  February. */
+function monthEndIso_(ym) {
+  const p = String(ym).split('-');
+  return ym + '-' + String(new Date(+p[0], +p[1], 0).getDate()).padStart(2, '0');
+}
+
+/** PURE (Node-pinned): the K COMPLETED months before nowYm, newest first.
+ *  The reconcile window. Never includes nowYm — a month still in progress has
+ *  nothing to reconcile against, because its hours are not final. */
+function accrualReconcileMonths_(nowYm, k) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(nowYm == null ? '' : nowYm));
+  if (!m) return [];
+  let y = +m[1], mo = +m[2];
+  if (mo < 1 || mo > 12) return [];
+  const out = [];
+  for (let i = 0; i < k; i++) {
+    mo -= 1; if (mo === 0) { mo = 12; y -= 1; }
+    out.push(y + '-' + String(mo).padStart(2, '0'));
+  }
+  return out;
+}
+
+/** PURE (Node-pinned) — the LEDGER FIELDS, written by every accrual audit row
+ *  and read back by `parseAccrualLedger_`. These two are a MIRROR PAIR and the
+ *  pin round-trips them: the note format stopped being cosmetic the moment the
+ *  audit row became the record of WHAT HAS BEEN PAID FOR. `hoursWorked` is the
+ *  hours the credit was computed from; `months` is the month-set it covered. */
+function accrualCreditNote_(p, basis, earned, newBal) {
+  return 'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; ptoHours=' + earned.ptoHours +
+    '; days=' + earned.days + '; months=' + p.months.join(',') + '; through=' + p.plan.newStamp +
+    '; balance=' + newBal +
+    accrualUncountedNote_(p) +
+    (p.plan.capped ? '; CAPPED — ' + p.plan.capped + ' older month(s) NOT credited (stamp advanced past them; hand-adjust if owed)' : '');
+}
+function accrualZeroNote_(p, basis) {
+  return 'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; days=0; months=' + p.months.join(',') +
+    '; through=' + p.plan.newStamp + '; ' + accrualZeroReason_(p) +
+    accrualUncountedNote_(p);
+}
+/** The TOP-UP row. Same action and the same ledger fields as a first credit —
+ *  deliberately, so the ledger read needs no special case and a later
+ *  reconcile sees the new total rather than the original one. */
+function accrualTopUpNote_(r, basis, earnedNow, deltaDays, newBal) {
+  return 'hoursWorked=' + r.hoursNow + '; rate=' + r.rate + '/' + basis + 'h; ptoHours=' + earnedNow.ptoHours +
+    '; days=' + earnedNow.days + '; months=' + r.monthsKey +
+    '; TOP-UP +' + deltaDays + ' day(s) — the Timesheet now reads ' + r.hoursNow + ' h where ' +
+    r.ledgerHours + ' h had been credited (late punches, or an adjustment approved after the month closed)' +
+    '; balance=' + newBal +
+    accrualUncountedNote_(r);
+}
+/** PURE (Node-pinned): the ledger fields back out of a note, or null when the
+ *  row is not a readable ledger entry. Null is the FAIL-CLOSED answer — an
+ *  unreadable row means "we do not know what was credited", which must never
+ *  become "nothing was credited" (that would top up the whole month again). */
+function parseAccrualLedger_(note) {
+  const t = String(note == null ? '' : note);
+  const h = /(?:^|;\s*)hoursWorked=(\d+(?:\.\d+)?)/.exec(t);
+  const m = /(?:^|;\s*)months=(\d{4}-\d{2}(?:,\d{4}-\d{2})*)/.exec(t);
+  if (!h || !m) return null;
+  const hours = parseFloat(h[1]);
+  if (!isFinite(hours) || hours < 0) return null;
+  return { hours: hours, months: m[1].split(',') };
+}
+
+/** How many AuditLog rows the ledger read will look at, newest first. The
+ *  AuditLog is kept forever, so an unbounded `getDataRange()` here would grow
+ *  without limit inside the credit's ScriptLock. Reading the tail is bounded;
+ *  the cost of the bound is that a very busy log could push a window row out of
+ *  reach, which the read REPORTS (`truncated`) rather than silently treating as
+ *  "never credited". */
+const ACCRUAL_LEDGER_MAX_ROWS = 5000;
+
+/** THE LEDGER — what each rep has already been credited FOR, per month-set,
+ *  read back from the `PtoAccrualCredit` audit rows themselves.
+ *
+ *  WHY THE AUDIT LOG rather than a new tab: the row already records the hours
+ *  and the months, the log is append-only and never purged, and a second store
+ *  would be a second thing that can disagree with it. The cost is that the note
+ *  format is now a CONTRACT — hence the mirror pair above and its round-trip
+ *  pin — and that the accrual row is load-bearing, so it is written through
+ *  `writeWitnessAuditLog_` (retry, then the WITNESS_AUDIT_FAILS stamp).
+ *
+ *  Rows are append-ordered by time, so this walks from the bottom and stops
+ *  once it is past `sinceIso`. Within a (rep, month-set) it keeps the MAXIMUM
+ *  hours seen, not the last: a re-run that somehow credited less must not lower
+ *  the ledger and re-open a top-up that has already been paid. */
+function readAccrualLedger_(sinceIso) {
+  const sheet = getOrCreateAuditSheet_();
+  const lastRow = sheet.getLastRow();
+  const out = { byEmp: {}, rowsRead: 0, truncated: false };
+  if (lastRow < 2) return out;
+  const width = AUDIT.NOTES + 1;
+  const take = Math.min(lastRow - 1, ACCRUAL_LEDGER_MAX_ROWS);
+  const startRow = lastRow - take + 1;
+  const rows = sheet.getRange(startRow, 1, take, width).getValues();
+  out.rowsRead = take;
+  let reachedBack = false;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const ts = normalizeAuditTs_(rows[i][AUDIT.TS]);
+    if (ts && ts.length >= 10 && ts.slice(0, 10) < sinceIso) { reachedBack = true; break; }
+    if (String(rows[i][AUDIT.ACTION]).trim() !== 'PtoAccrualCredit') continue;
+    const led = parseAccrualLedger_(rows[i][AUDIT.NOTES]);
+    if (!led) continue;
+    const id = String(rows[i][AUDIT.EMP_ID]).trim();
+    if (!id) continue;
+    const key = led.months.join(',');
+    if (!out.byEmp[id]) out.byEmp[id] = {};
+    if (!out.byEmp[id][key] || led.hours > out.byEmp[id][key].hours) {
+      out.byEmp[id][key] = { hours: led.hours, months: led.months };
+    }
+  }
+  // Only a scan that actually reached PAST the window proves it saw all of it.
+  out.truncated = !reachedBack && startRow > 2;
+  return out;
+}
+
+/** PURE (Node-pinned): what the RECONCILE pass WOULD do. Reads nothing — the
+ *  caller supplies the ledger and the hours index — so a pin can drive every
+ *  branch without a spreadsheet.
+ *
+ *  THE RULE: the credit is idempotent on the HOURS ALREADY PAID FOR, not on
+ *  "this month was processed". Late data (an adjustment approved after the
+ *  month closed, a manager day edit, a direct Sheet edit) therefore heals
+ *  itself on the next run instead of being lost behind the column-R stamp.
+ *
+ *  Three outcomes, and the two that are not a top-up matter more:
+ *   • `topup`     — the Timesheet now reads MORE than was credited. Credit the
+ *                   difference in DAYS (not hours), so the running total always
+ *                   equals days(total hours) and re-running credits nothing.
+ *   • `shortfall` — it now reads LESS. REPORTED, never clawed back: a script
+ *                   must not quietly take PTO off someone's balance, and the
+ *                   cause (a deleted punch) needs a human either way.
+ *   • `skipped`   — a month-set reaching outside the window, or hours that will
+ *                   not compute. FAIL CLOSED: no top-up, and it is reported. */
+function planAccrualReconcile_(entries, ledger, hoursIdx, windowMonths, basis, perDay) {
+  const out = [];
+  (entries || []).forEach((p) => {
+    const byKey = (ledger && ledger.byEmp && ledger.byEmp[p.emp.id]) || null;
+    if (!byKey) return;
+    Object.keys(byKey).forEach((key) => {
+      const months = byKey[key].months;
+      const base = { emp: p.emp, rate: p.rate, monthsKey: key, months: months,
+                     ledgerHours: byKey[key].hours, hoursNow: null,
+                     incompleteDays: 0, orphanDays: 0, deltaDays: 0 };
+      const outside = months.filter((ym) => windowMonths.indexOf(ym) < 0);
+      if (outside.length) {
+        out.push(Object.assign(base, { action: 'skipped',
+          why: 'covers ' + outside.join(',') + ', outside the ' + windowMonths.length + '-month reconcile window' }));
+        return;
+      }
+      let hoursNow = 0, incompleteDays = 0, orphanDays = 0;
+      months.forEach((ym) => {
+        const sl = workedHoursForEmpMonth_(hoursIdx, p.emp.id, ym + '-01', monthEndIso_(ym));
+        hoursNow += sl.hours; incompleteDays += sl.incompleteDays; orphanDays += sl.orphanDays;
+      });
+      hoursNow = +hoursNow.toFixed(2);
+      base.hoursNow = hoursNow; base.incompleteDays = incompleteDays; base.orphanDays = orphanDays;
+      const earnedNow = accrualDaysForHours_(hoursNow, p.rate, basis, perDay);
+      const earnedLedger = accrualDaysForHours_(base.ledgerHours, p.rate, basis, perDay);
+      if (!earnedNow || !earnedLedger) {
+        out.push(Object.assign(base, { action: 'skipped', why: 'hours did not compute (rate or basis unusable)' }));
+        return;
+      }
+      base.earnedNow = earnedNow;
+      const deltaDays = +(earnedNow.days - earnedLedger.days).toFixed(2);
+      base.deltaDays = deltaDays;
+      if (deltaDays > 0) { out.push(Object.assign(base, { action: 'topup' })); return; }
+      // A hair under is float noise on two rounded figures, not a real drop.
+      if (hoursNow + 0.005 < base.ledgerHours) {
+        out.push(Object.assign(base, { action: 'shortfall',
+          why: 'the Timesheet now reads ' + hoursNow + ' h where ' + base.ledgerHours + ' h was credited' }));
+        return;
+      }
+      out.push(Object.assign(base, { action: 'ok' }));
+    });
+  });
+  return out;
+}
+
+/** Auto-managed diagnostic (the AUTOMATION_LAST_ERRORS pattern): the last
+ *  reconcile pass's outcome, so Admin → Automation Health and the failure
+ *  digest can surface a shortfall, a skipped month or a truncated ledger read
+ *  WITHOUT re-running the reconciliation — which costs two full sheet reads and
+ *  has no business running from a dashboard. Delete the property to clear a
+ *  stale flag. Bounded per INV-201: the per-rep detail degrades one entry at a
+ *  time, because a trimmed list is still a usable signal and an absent property
+ *  is not. */
+function stampAccrualReconcile_(rec) {
+  try {
+    propSetBounded_('PTO_ACCRUAL_RECONCILE', JSON.stringify(rec), {
+      mode: 'degrade',
+      shrink: function (str) {
+        let o = {};
+        try { o = JSON.parse(str) || {}; } catch (_) { return null; }
+        const lists = ['skipped', 'incomplete', 'shortfalls'];
+        for (let i = 0; i < lists.length; i++) {
+          const k = lists[i];
+          if (Array.isArray(o[k]) && o[k].length) {
+            o[k] = o[k].slice(0, o[k].length - 1);
+            o[k + 'Trimmed'] = true;
+            return JSON.stringify(o);
+          }
+        }
+        return null;
+      },
+    });
+  } catch (e) { Logger.log('stampAccrualReconcile_ failed: ' + e.message); }
+}
+function readAccrualReconcile_() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('PTO_ACCRUAL_RECONCILE') || 'null');
+  } catch (_) { return null; }
+}
+
 /** TRIGGER HANDLER (daily, manager-tz — the automation anchor): credits each
  *  accruing rep's earned PTO into the col-I balance, IN ARREARS and driven by
  *  HOURS ACTUALLY WORKED (operator 2026-08-19: 3.08 PTO hours per 80 worked).
@@ -358,7 +584,8 @@ function creditMonthlyPtoAccruals() {
     const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
     const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
     const rows = sheet.getDataRange().getValues();
-    const run = planPtoAccrualRun_(rows, nowYm);   // throws → caught below, nothing written
+    const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
+    const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
     const basis = run.basis;
     if (run.entries.length === 0) return { success: true, credited: 0, seeded: 0 };
 
@@ -369,22 +596,19 @@ function creditMonthlyPtoAccruals() {
         if (earned.days > 0) {
           const newBal = adjustLeaveBalance_(p.emp.id, 'annual', earned.days);
           if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
-          writeAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; ptoHours=' + earned.ptoHours +
-            '; days=' + earned.days + '; months=' + p.months.join(',') + '; through=' + p.plan.newStamp +
-            '; balance=' + newBal +
-            accrualUncountedNote_(p) +
-            (p.plan.capped ? '; CAPPED — ' + p.plan.capped + ' older month(s) NOT credited (stamp advanced past them; hand-adjust if owed)' : ''));
+          // WITNESS-class since the reconcile ledger reads these rows back: a
+          // dropped row would read as "never credited" and the next run would
+          // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
+          writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+            accrualCreditNote_(p, basis, earned, newBal));
           credited++;
         } else {
           // Zero hours worked = zero accrual. Correct under an hours-driven
           // rule, but recorded — WITH the reason — so a month of unexpected
           // silence is something the operator can act on rather than re-derive.
           zeroHourReps++;
-          writeAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; days=0; months=' + p.months.join(',') +
-            '; through=' + p.plan.newStamp + '; ' + accrualZeroReason_(p) +
-            accrualUncountedNote_(p));
+          writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+            accrualZeroNote_(p, basis));
         }
       }
       if (p.stamp !== p.plan.newStamp) {
@@ -393,8 +617,47 @@ function creditMonthlyPtoAccruals() {
       }
     });
     if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
+
+    // ── RECONCILE (operator 2026-09-15). The month-stamp made the credit
+    // idempotent on "this month was processed", but the Timesheet is NOT final
+    // on the 1st: a missing-punch adjustment approved on the 3rd, a manager day
+    // edit, a direct Sheet edit all land later, and every one of them was lost
+    // behind the stamp. It fired live — all three PH reps were credited ZERO
+    // for 2026-08 on open days that were closed by approvals days afterwards.
+    // The fix is to make the credit idempotent on the HOURS ALREADY PAID FOR,
+    // which is what the ledger records, so late data heals itself here instead.
+    const rec = { at: Date.now(), window: recMonths.slice(), toppedUp: 0, days: 0,
+                  shortfalls: [], skipped: [], incomplete: [], truncated: false };
+    if (recMonths.length && run.hoursIdx) {
+      // Widen the ledger read a little past the window: the audit stamp is
+      // written in CONFIG.TIMEZONE while the months are manager-tz, and a row
+      // on a boundary day must not fall outside the scan (INV-51's class).
+      const ledger = readAccrualLedger_(addDaysIso_(recMonths[recMonths.length - 1] + '-01', -10));
+      rec.truncated = !!ledger.truncated;
+      planAccrualReconcile_(run.entries, ledger, run.hoursIdx, recMonths, basis, perDay).forEach((r) => {
+        if (r.incompleteDays || r.orphanDays) {
+          rec.incomplete.push({ id: r.emp.id, months: r.monthsKey, days: (r.incompleteDays || 0) + (r.orphanDays || 0) });
+        }
+        if (r.action === 'topup') {
+          const newBal = adjustLeaveBalance_(r.emp.id, 'annual', r.deltaDays);
+          if (newBal === null) return;   // gated away mid-run — next run retries
+          writeWitnessAuditLog_(r.emp, 'PtoAccrualCredit', '', '', false, 0,
+            accrualTopUpNote_(r, basis, r.earnedNow, r.deltaDays, newBal));
+          rec.toppedUp++; rec.days = +(rec.days + r.deltaDays).toFixed(2);
+        } else if (r.action === 'shortfall') {
+          // NEVER clawed back. A script does not quietly take PTO off a
+          // balance, and the cause needs a person either way.
+          rec.shortfalls.push({ id: r.emp.id, months: r.monthsKey, was: r.ledgerHours, now: r.hoursNow });
+        } else if (r.action === 'skipped') {
+          rec.skipped.push({ id: r.emp.id, months: r.monthsKey, why: r.why });
+        }
+      });
+    }
+    stampAccrualReconcile_(rec);
+
     clearAutomationError_('PtoAccrualCredit');
-    return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps };
+    return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps,
+             toppedUp: rec.toppedUp, topUpDays: rec.days, shortfalls: rec.shortfalls.length };
   } catch (err) {
     // F4: this job writes LEAVE BALANCES, and a caught error reports failure to
     // nobody — Apps Script's trigger-failure email fires on a THROW, not on a
@@ -450,7 +713,12 @@ function previewPtoAccruals(monthYm) {
   try {
     const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
     const rows = sheet.getDataRange().getValues();
-    const run = planPtoAccrualRun_(rows, nowYm, inspectYm);
+    // Reconciliation is reported only in the ORDINARY preview. In inspect mode
+    // the per-rep SETTLED marker already answers the same question for the one
+    // month being looked at, and two overlapping verdicts on one report is how
+    // an operator ends up believing the wrong one.
+    const recMonths = inspectYm ? [] : accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
+    const run = planPtoAccrualRun_(rows, nowYm, inspectYm, recMonths);
     const out = {
       success: true,
       enabled: !!getFlag_('enablePtoTracking'),
@@ -460,6 +728,7 @@ function previewPtoAccruals(monthYm) {
       basis: run.basis,
       hoursPerDay: run.perDay,
       range: run.range,
+      reconcileWindow: run.reconcileMonths,
       archivedRows: run.archivedRows,
       reps: run.entries.map((p) => ({
         id: p.emp.id,
@@ -486,6 +755,19 @@ function previewPtoAccruals(monthYm) {
         settled: !!(inspectYm && p.stamp && p.stamp >= inspectYm),
       })),
     };
+    // What the next credit run WOULD reconcile — read-only, through the same
+    // planner the job uses, so the preview cannot promise a top-up the job
+    // would not make.
+    out.reconcile = [];
+    out.ledgerTruncated = false;
+    if (recMonths.length && run.hoursIdx) {
+      const ledger = readAccrualLedger_(addDaysIso_(recMonths[recMonths.length - 1] + '-01', -10));
+      out.ledgerTruncated = !!ledger.truncated;
+      out.reconcile = planAccrualReconcile_(run.entries, ledger, run.hoursIdx, recMonths, run.basis, run.perDay)
+        .map((r) => ({ id: r.emp.id, name: r.emp.name, months: r.monthsKey, action: r.action,
+                       ledgerHours: r.ledgerHours, hoursNow: r.hoursNow, deltaDays: r.deltaDays,
+                       incompleteDays: r.incompleteDays, orphanDays: r.orphanDays, why: r.why || '' }));
+    }
     out.text = formatPtoAccrualPreview_(out);
     Logger.log(out.text);
     return out;
@@ -571,6 +853,32 @@ function formatPtoAccrualPreview_(o) {
         (r.wouldCreditDays > 0 ? ' — set column R to the month BEFORE ' + o.inspectYm + ' to re-credit it.' : '.'));
     }
   });
+  const rec = o.reconcile || [];
+  if (rec.length) {
+    const open = rec.filter((r) => r.action !== 'ok');
+    L.push('── Reconcile: ' + ((o.reconcileWindow || []).join(', ') || 'recent months') +
+      ' vs what was already credited ──');
+    if (!open.length) {
+      L.push('  Nothing outstanding — every credited month still reads the hours it was paid for.');
+    }
+    open.forEach((r) => {
+      const who = r.name + ' [' + r.id + ']';
+      if (r.action === 'topup') {
+        L.push('  · ' + who + ' — ' + r.months + ': credited for ' + r.ledgerHours + ' h, now reads ' +
+          r.hoursNow + ' h → the next credit run TOPS UP ' + r.deltaDays + ' day(s)' +
+          (r.incompleteDays || r.orphanDays ? ' (' + ((r.incompleteDays || 0) + (r.orphanDays || 0)) +
+            ' day(s) still without a usable pair)' : ''));
+      } else if (r.action === 'shortfall') {
+        L.push('  · ' + who + ' — ' + r.months + ': ' + r.why +
+          '. NOT clawed back — a deleted punch needs a person.');
+      } else {
+        L.push('  · ' + who + ' — ' + r.months + ': NOT reconciled (' + r.why + ').');
+      }
+    });
+    if (o.ledgerTruncated) {
+      L.push('  !! the ledger read hit its row cap — an older month may not have been checked.');
+    }
+  }
   L.push(o.inspectYm
     ? ('Total ' + o.inspectYm + ' is WORTH: ' + (Math.round(totalDays * 100) / 100) + ' day(s) across ' +
        o.reps.filter((r) => r.wouldCreditDays > 0).length + ' rep(s). Nothing was credited by this run.')

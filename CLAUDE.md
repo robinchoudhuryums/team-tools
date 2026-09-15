@@ -809,10 +809,10 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 823 | `node test/client/run.js` |
+| Pure harness tests | 824 | `node test/client/run.js` |
 | DOM harness tests | 113 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 319 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 320 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 50 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |

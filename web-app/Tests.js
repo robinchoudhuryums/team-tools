@@ -404,6 +404,7 @@ function _suiteEnvCheck_() {
   lines.push(setOrNot('CN_EMAIL_TEMPLATES', 'the Q size-guard test saves + restores it'));
   lines.push(setOrNot('TIMESHEET_ARCHIVE_DAYS', 'the archive test sets + restores it'));
   lines.push(setOrNot('WHATSNEW_KB_ID', 'the What\'s-new test sets + restores it'));
+  lines.push(setOrNot('PTO_ACCRUAL_RECONCILE', 'auto-managed reconcile stamp; the accrual test saves + restores it'));
   // Store resolution the fixtures ride on.
   lines.push(setOrNot('FORMS_SS_ID', 'unset = the ADP sheet (back-compat)'));
   lines.push(setOrNot('KB_SS_ID', 'KB tests run against the TEST_KB fixture'));
@@ -1537,6 +1538,7 @@ function _registerIntegrationB_() {
   _integrationTest('triggerGate_nightlyPurges_nonManagerThrows', test_triggerGate_nightlyPurges_nonManagerThrows);
   _integrationTest('creditPtoAccrual_seedCreditIdempotent',         test_creditPtoAccrual_seedCreditIdempotent);
   _integrationTest('previewPtoAccrual_predictsTheCredit',           test_previewPtoAccrual_predictsTheCredit);
+  _integrationTest('accrualReconcile_topsUpLateData',               test_accrualReconcile_topsUpLateData);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
@@ -4961,6 +4963,111 @@ function test_previewPtoAccrual_predictsTheCredit() {
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
+    balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
+    invalidateRosterCache_();
+  }
+}
+
+// THE 2026-08 SEQUENCE, replayed (operator 2026-09-15). This is the failure
+// that actually happened, in order: a rep with an OPEN day at credit time is
+// credited zero and the stamp closes the month; the missing punch is approved
+// days later; the next credit run must TOP UP the difference on its own. If
+// this test ever goes red, late payroll data is being lost behind the stamp
+// again — which is silent in production, by construction.
+function test_accrualReconcile_topsUpLateData() {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = sheet.getDataRange().getValues();
+  let rowIdx = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === _TEST_INDIA_ID) { rowIdx = i + 1; break; }
+  }
+  if (rowIdx < 0) { _skipTest('India test employee not on roster'); }
+  const qCell = sheet.getRange(rowIdx, EMP.PTO_ACCRUAL + 1);
+  const rCell = sheet.getRange(rowIdx, EMP.ACCRUED_THROUGH + 1);
+  const balCell = sheet.getRange(rowIdx, EMP.ANNUAL_LEAVE + 1);
+  const prevQ = qCell.getValue(), prevR = rCell.getValue();
+  const balBefore = parseFloat(balCell.getValue()) || 0;
+  const props = PropertiesService.getScriptProperties();
+  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevRec = props.getProperty('PTO_ACCRUAL_RECONCILE');
+  props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
+  try {
+    const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
+    const lastYm = accrualMonthsToCredit_('', nowYm).newStamp;
+    const lp = lastYm.split('-');
+    const backYm = lp[1] === '01' ? (parseInt(lp[0], 10) - 1) + '-12'
+      : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
+    const ts = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    if (ts) {
+      const all = ts.getDataRange().getValues();
+      for (let i = all.length - 1; i >= 2; i--) {
+        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
+        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) ts.deleteRow(i + 1);
+      }
+    }
+    const RATE = 3.08;
+    const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
+    const d1 = lastYm + '-09';
+    // ── 1. The day is OPEN at credit time: clocked in, never out.
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN', 'ClockIn');
+    qCell.setValue(RATE); rCell.setValue(backYm); invalidateRosterCache_();
+    let res;
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore, 0.001,
+      'an open day earns NOTHING — the credit does not invent a clock-out');
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'and the stamp closes the month anyway');
+    const zeroNote = _findLatestAuditNote(_TEST_INDIA_ID, 'PtoAccrualCredit');
+    _assertTrue(zeroNote.indexOf('1 incomplete day(s) NOT counted') >= 0,
+      'the zero row names the open day, got: ' + zeroNote);
+
+    // ── 2. The missing punch is approved AFTERWARDS (the ADJ- row the
+    //      approval flow writes). The month is already settled.
+    _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '17:00:00', 'OUT', 'ADJ-ClockOut');
+    invalidateRosterCache_();
+
+    // ── 3. The NEXT run must top up on its own. Before this existed the run
+    //      returned "nothing owed" and those 8 hours were lost for good.
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    const expectDays = Math.round(((8 * RATE / basis) / perDay) * 100) / 100;
+    _assertEq(res.toppedUp, 1, 'exactly one rep was topped up');
+    _assertEqClose(res.topUpDays, expectDays, 0.001, 'by the hours the late punch revealed');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'and the BALANCE moved by that amount');
+    const topNote = _findLatestAuditNote(_TEST_INDIA_ID, 'PtoAccrualCredit');
+    _assertTrue(topNote.indexOf('TOP-UP') >= 0, 'the top-up row names itself, got: ' + topNote);
+    _assertTrue(topNote.indexOf('hoursWorked=8') >= 0,
+      'and records the NEW total, so the next run reconciles against it: ' + topNote);
+
+    // ── 4. IDEMPOTENT. The pass runs every day; it must credit once.
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEq(res.toppedUp, 0, 'a settled top-up does not repeat');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'and the balance is unchanged by the re-run');
+
+    // ── 5. A SHORTFALL is reported, never clawed back. Delete the clock-out
+    //      and the month now reads fewer hours than were credited.
+    const ts2 = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    const all2 = ts2.getDataRange().getValues();
+    for (let i = all2.length - 1; i >= 2; i--) {
+      if (String(all2[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
+      if (String(normalizeDate_(all2[i][ADP.DATE]) || '') === d1 &&
+          normalizeType_(String(all2[i][ADP.COMMENTS])) === 'ClockOut') { ts2.deleteRow(i + 1); break; }
+    }
+    invalidateRosterCache_();
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'a SHORTFALL never reduces a balance');
+    _assertTrue(res.shortfalls >= 1, 'it is reported instead, got ' + res.shortfalls);
+  } finally {
+    _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
+    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    if (prevRec === null) props.deleteProperty('PTO_ACCRUAL_RECONCILE'); else props.setProperty('PTO_ACCRUAL_RECONCILE', prevRec);
+    qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
+    rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
     invalidateRosterCache_();
   }
