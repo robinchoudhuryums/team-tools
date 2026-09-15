@@ -195,7 +195,7 @@ function workedHoursByEmpForRange_(startIso, endIso) {
  *  Each returned entry carries the plan AND the evidence behind it:
  *    {rowIndex, rate, stamp, plan, months, emp,
  *     totalHours, incompleteDays, orphanDays, onTimesheet, earned} */
-function planPtoAccrualRun_(rows, nowYm) {
+function planPtoAccrualRun_(rows, nowYm, inspectYm) {
   const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
 
   // Pass 1 — who owes what, and the widest month range any of them needs.
@@ -215,7 +215,15 @@ function planPtoAccrualRun_(rows, nowYm) {
     const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
     const plan = accrualMonthsToCredit_(stamp, nowYm);
     if (!plan) continue;
-    const months = accrualMonthList_(stamp, plan);
+    // INSPECT mode (operator 2026-09-15): report what ONE named month yields,
+    // ignoring the column-R stamp. The stamp closes a month permanently, so
+    // once a month is settled the ordinary plan reports "nothing owed" — true,
+    // and useless to an operator asking why that month came out at zero. The
+    // rest of the walk (inclusion, rate, the per-row PTO gate) is UNCHANGED, so
+    // an inspection sees exactly the population a credit would. `plan` is still
+    // computed above and carried, so the report can say whether the real job
+    // would act on this month or considers it settled.
+    const months = inspectYm ? [inspectYm] : accrualMonthList_(stamp, plan);
     if (months.length > 0 && (earliestYm === null || months[0] < earliestYm)) earliestYm = months[0];
     plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: months,
       emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
@@ -269,6 +277,7 @@ function planPtoAccrualRun_(rows, nowYm) {
     p.earned = accrualDaysForHours_(p.totalHours, p.rate, basis, perDay);
   });
   return { entries: plans, basis: basis, perDay: perDay, range: range,
+           inspectYm: inspectYm || '',
            archivedRows: hoursIdx ? hoursIdx.archivedRows : 0 };
 }
 
@@ -393,21 +402,44 @@ function creditMonthlyPtoAccruals() {
  *  the credit does: "nothing will happen, and here is the switch that is off"
  *  is the more useful answer than an empty report. The flag is reported.
  *
+ *  INSPECT MODE — `previewPtoAccruals('2026-08')`: report what ONE completed
+ *  month is worth on the Timesheet AS IT READS NOW, ignoring the column-R
+ *  stamp. The ordinary preview only reports OWED months, so once the stamp has
+ *  closed a month it answers "nothing owed" — true, and useless to an operator
+ *  asking why that month came out at zero (the 2026-09-15 round: all three PH
+ *  reps were stamped through 2026-08, so the month in question was invisible).
+ *  Ignoring the stamp is the whole point, so the report SAYS it is ignoring it
+ *  and marks every rep whose stamp already settles that month — the numbers
+ *  must not imply a credit that will never come. A month that is not yet
+ *  complete is REFUSED rather than reported short.
+ *
  *  Run it from the Apps Script editor (the summary lands in the execution log
  *  via `text`) or call it from a manager surface for the structured form. */
-function previewPtoAccruals() {
+function previewPtoAccruals(monthYm) {
   assertManagerCaller_('previewPtoAccruals');
   const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
   const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  // INSPECT mode: a named COMPLETED month, stamp ignored. Both guards refuse
+  // rather than degrade — a preview that silently inspected the wrong month, or
+  // a partial one, is worse than no preview, because the operator acts on it.
+  const inspectYm = (monthYm === null || monthYm === undefined) ? '' : String(monthYm).trim();
+  if (inspectYm && !/^\d{4}-(0[1-9]|1[0-2])$/.test(inspectYm)) {
+    return { success: false, error: 'previewPtoAccruals: month must be "yyyy-MM" (got "' + inspectYm + '")' };
+  }
+  if (inspectYm && inspectYm >= nowYm) {
+    return { success: false, error: 'previewPtoAccruals: ' + inspectYm + ' is not a COMPLETED month (it is ' +
+      nowYm + ' in ' + tz + ') — a partial month understates the hours, and the accrual rule is in arrears.' };
+  }
   try {
     const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
     const rows = sheet.getDataRange().getValues();
-    const run = planPtoAccrualRun_(rows, nowYm);
+    const run = planPtoAccrualRun_(rows, nowYm, inspectYm);
     const out = {
       success: true,
       enabled: !!getFlag_('enablePtoTracking'),
       nowYm: nowYm,
       tz: tz,
+      inspectYm: run.inspectYm,
       basis: run.basis,
       hoursPerDay: run.perDay,
       range: run.range,
@@ -430,6 +462,11 @@ function previewPtoAccruals() {
         wouldCreditDays: (p.months.length && p.earned) ? p.earned.days : 0,
         wouldCreditPtoHours: (p.months.length && p.earned) ? p.earned.ptoHours : 0,
         zeroReason: (p.months.length && p.earned && p.earned.days <= 0) ? accrualZeroReason_(p) : '',
+        // INSPECT only: does column R already consider this month settled? If
+        // it does, the real job will NEVER credit what this report shows
+        // without a deliberate stamp rewind — the report must say so rather
+        // than let the numbers imply a credit is coming.
+        settled: !!(inspectYm && p.stamp && p.stamp >= inspectYm),
       })),
     };
     out.text = formatPtoAccrualPreview_(out);
@@ -448,9 +485,15 @@ function previewPtoAccruals() {
  *  as a bare 0 (the whole reason this function exists). */
 function formatPtoAccrualPreview_(o) {
   const L = [];
-  L.push('── PTO accrual preview — NOTHING WAS WRITTEN ──');
+  L.push(o.inspectYm
+    ? ('── PTO accrual INSPECTION of ' + o.inspectYm + ' — NOTHING WAS WRITTEN ──')
+    : '── PTO accrual preview — NOTHING WAS WRITTEN ──');
   L.push('Now ' + o.nowYm + ' (' + o.tz + ') · rule: ' + o.basis + ' worked hours earns the rep\'s column-Q rate' +
     ' in PTO hours · ' + o.hoursPerDay + ' PTO hours = 1 day');
+  if (o.inspectYm) {
+    L.push('Column R is IGNORED below — this is what ' + o.inspectYm + ' is worth on the Timesheet as it reads NOW,' +
+      ' which is not necessarily what was credited at the time.');
+  }
   if (!o.enabled) L.push('!! enablePtoTracking is OFF — the real job will credit NOTHING until it is on.');
   L.push(o.range ? ('Timesheet read: ' + o.range.start + ' … ' + o.range.end +
     (o.archivedRows ? ' (incl. ' + o.archivedRows + ' archived row(s))' : ''))
@@ -463,7 +506,7 @@ function formatPtoAccrualPreview_(o) {
   o.reps.forEach((r) => {
     totalDays += r.wouldCreditDays;
     const who = r.name + ' [' + r.id + ']';
-    if (r.seeds) {
+    if (!o.inspectYm && r.seeds) {
       L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R): credits nothing, by design.');
       return;
     }
@@ -473,13 +516,20 @@ function formatPtoAccrualPreview_(o) {
     }
     const tail = (r.incompleteDays ? ' · ' + r.incompleteDays + ' incomplete day(s) NOT counted' : '') +
                  (r.orphanDays ? ' · ' + r.orphanDays + ' clock-out-only day(s) NOT counted' : '') +
-                 (r.capped ? ' · CAPPED: ' + r.capped + ' older month(s) will be SKIPPED' : '');
+                 (!o.inspectYm && r.capped ? ' · CAPPED: ' + r.capped + ' older month(s) will be SKIPPED' : '');
     L.push('  · ' + who + ' — ' + r.months.join(',') + ': ' + r.hours + ' h at ' + r.rate + '/' + o.basis +
       'h → ' + r.wouldCreditPtoHours + ' PTO hours = ' + r.wouldCreditDays + ' day(s)' + tail);
     if (r.zeroReason) L.push('      WHY ZERO: ' + r.zeroReason);
+    if (r.settled) {
+      L.push('      SETTLED: column R already reads ' + r.stamp + ', so the job will NOT credit this' +
+        (r.wouldCreditDays > 0 ? ' — set column R to the month BEFORE ' + o.inspectYm + ' to re-credit it.' : '.'));
+    }
   });
-  L.push('Total that WOULD be credited: ' + (Math.round(totalDays * 100) / 100) + ' day(s) across ' +
-    o.reps.filter((r) => r.wouldCreditDays > 0).length + ' rep(s). Re-run creditMonthlyPtoAccruals to apply.');
+  L.push(o.inspectYm
+    ? ('Total ' + o.inspectYm + ' is WORTH: ' + (Math.round(totalDays * 100) / 100) + ' day(s) across ' +
+       o.reps.filter((r) => r.wouldCreditDays > 0).length + ' rep(s). Nothing was credited by this run.')
+    : ('Total that WOULD be credited: ' + (Math.round(totalDays * 100) / 100) + ' day(s) across ' +
+       o.reps.filter((r) => r.wouldCreditDays > 0).length + ' rep(s). Re-run creditMonthlyPtoAccruals to apply.'));
   return L.join('\n');
 }
 /** The month list a plan owes: stamp+1 .. newStamp, capped to plan.months

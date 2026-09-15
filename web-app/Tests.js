@@ -4895,6 +4895,30 @@ function test_previewPtoAccrual_predictsTheCredit() {
     _assertTrue(note.indexOf('1 incomplete day(s) NOT counted') >= 0,
       'the credited audit row NAMES the day it did not count, got: ' + note);
 
+    // ── INSPECT mode. The stamp now reads lastYm, so the ORDINARY preview says
+    // "nothing owed" for this rep — which is exactly the blind spot inspect
+    // exists to remove. Same month, stamp ignored, hours still readable.
+    let insp;
+    _asUser(_TEST_MGR_EMAIL, function () { insp = previewPtoAccruals(lastYm); });
+    _assertSuccess(insp);
+    _assertEq(insp.inspectYm, lastYm, 'the report knows which month it inspected');
+    let mi = null;
+    insp.reps.forEach(function (r) { if (r.id === _TEST_INDIA_ID) mi = r; });
+    _assertTrue(!!mi, 'a rep whose stamp has CLOSED the month still appears under inspect');
+    _assertEqClose(mi.hours, 8, 0.001, 'and the month\'s hours are still readable');
+    _assertTrue(mi.settled, 'marked SETTLED — column R already covers this month');
+    _assertTrue(insp.text.indexOf('Column R is IGNORED') >= 0, 'the report states it ignored the stamp');
+    // Still read-only, on the path that ignores the stamp.
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + me.wouldCreditDays, 0.001,
+      'the inspection credited nothing');
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'the inspection advanced no stamp');
+    // Both guards refuse rather than report something the operator would act on.
+    let bad;
+    _asUser(_TEST_MGR_EMAIL, function () { bad = previewPtoAccruals('2026-13'); });
+    _assertTrue(bad && bad.success === false, 'a malformed month is refused');
+    _asUser(_TEST_MGR_EMAIL, function () { bad = previewPtoAccruals(nowYm); });
+    _assertTrue(bad && bad.success === false, 'the CURRENT (incomplete) month is refused');
+
     // ── The NO-ROWS case, which is the one the operator actually hit: an
     // accruing rep with a rate, an owed month, and no Timesheet rows under
     // their employee id at all. It must NOT pass through silently — it earns a

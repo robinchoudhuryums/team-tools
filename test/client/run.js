@@ -10858,7 +10858,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // The DECISIONS moved into planPtoAccrualRun_ (shared with the read-only
   // preview); the credit is now the writes and their order. Both halves are
   // pinned, so the extraction cannot quietly become two implementations.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm\) \{[\s\S]*?\n\}/);
   assert.ok(plan, 'planPtoAccrualRun_ exists');
   assert.ok(!/buildTimesheetForEmployee_/.test(h[0] + plan[0]),
     'no per-rep timesheet build inside the locked credit run');
@@ -10866,6 +10866,12 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'exactly ONE range index build per run');
   assert.strictEqual((h[0].match(/planPtoAccrualRun_\(/g) || []).length, 1,
     'the credit resolves the run exactly once');
+  // The resolver's THIRD parameter forces a month, ignoring the column-R stamp
+  // — the diagnostic's whole purpose and the last thing a WRITING caller may
+  // do with it. A third argument here would credit an arbitrary month and
+  // advance the stamp past it.
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm\);/.test(h[0]),
+    'the CREDIT calls the resolver with two arguments — never an inspect month');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
   assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2,
@@ -10919,8 +10925,8 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   // as hard as the arithmetic.
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(serverSource());
-  const prev = code.match(/function previewPtoAccruals\(\) \{[\s\S]*?\n\}/);
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm\) \{[\s\S]*?\n\}/);
+  const prev = code.match(/function previewPtoAccruals\(monthYm\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm\) \{[\s\S]*?\n\}/);
   assert.ok(prev && plan, 'previewPtoAccruals and planPtoAccrualRun_ exist');
 
   // ── ONE resolver, shared. Both callers, and nobody re-deriving the plan.
@@ -11025,6 +11031,46 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   assert.ok(!/WHY ZERO/.test(good), 'a credited rep carries no zero reason');
   assert.ok(/enablePtoTracking is OFF/.test(fmt({ ...base, enabled: false, reps: [] })),
     'a disabled feature is stated, not implied by an empty report');
+
+  // ── INSPECT mode (operator 2026-09-15). The ordinary preview reports only
+  // OWED months, so a month the column-R stamp has closed reads "nothing owed"
+  // — true, and useless to the operator asking why that month came out zero.
+  // Inspect ignores the stamp ON PURPOSE, which is exactly why the report has
+  // to say so: numbers that imply a credit nobody will make are worse than no
+  // numbers (the honest-failure family, pointed the other way).
+  assert.ok(/const months = inspectYm \? \[inspectYm\] : accrualMonthList_\(stamp, plan\);/.test(plan[0]),
+    'inspect replaces the OWED month list, and changes nothing else about who is walked');
+  assert.ok(!/inspectYm/.test(credit),
+    'the CREDIT never mentions an inspect month — it may only ever act on the stamp');
+  // Both guards REFUSE rather than degrade: a preview of the wrong month, or of
+  // a month still in progress, is acted on by an operator either way.
+  assert.ok(/month must be "yyyy-MM"/.test(prev[0]), 'a malformed month is refused by name');
+  assert.ok(/inspectYm >= nowYm/.test(prev[0]) && /is not a COMPLETED month/.test(prev[0]),
+    'the CURRENT month is refused — a partial month understates the hours under an in-arrears rule');
+  const insBase = { ...base, inspectYm: '2026-08' };
+  const ins = fmt({ ...insBase, reps: [{ id: 'E1', name: 'Rep One', rate: 3.08, stamp: '2026-08',
+    months: ['2026-08'], seeds: false, capped: 0, newStamp: '2026-08', hours: 160, incompleteDays: 0,
+    orphanDays: 0, onTimesheet: true, wouldCreditDays: 0.77, wouldCreditPtoHours: 6.16, zeroReason: '',
+    settled: true }] });
+  assert.ok(/PTO accrual INSPECTION of 2026-08 — NOTHING WAS WRITTEN/.test(ins),
+    'the inspection names the month it inspected, and still leads with writing nothing');
+  assert.ok(/Column R is IGNORED below/.test(ins),
+    'and states that it ignored the stamp — the reader must not infer the stamp agreed');
+  assert.ok(/SETTLED: column R already reads 2026-08, so the job will NOT credit this/.test(ins),
+    'a settled rep is marked: these hours are worth something, and nothing will pay them');
+  assert.ok(/set column R to the month BEFORE 2026-08 to re-credit it/.test(ins),
+    'and the remedy rides with the finding, not in a doc the operator has to go find');
+  assert.ok(/Total 2026-08 is WORTH: 0\.77 day\(s\)/.test(ins) && /Nothing was credited by this run/.test(ins),
+    'the inspection total is a VALUATION, never phrased as a pending credit');
+  assert.ok(!/Re-run creditMonthlyPtoAccruals to apply/.test(ins),
+    'and it does not tell the operator to run the credit — the stamp would ignore it');
+  // A rep the stamp does NOT settle carries no SETTLED line (the flag is real,
+  // not decoration on every inspected row).
+  const insOpen = fmt({ ...insBase, reps: [{ id: 'E2', name: 'Rep Two', rate: 3.08, stamp: '2026-07',
+    months: ['2026-08'], seeds: false, capped: 0, newStamp: '2026-08', hours: 80, incompleteDays: 0,
+    orphanDays: 0, onTimesheet: true, wouldCreditDays: 0.39, wouldCreditPtoHours: 3.08, zeroReason: '',
+    settled: false }] });
+  assert.ok(!/SETTLED/.test(insOpen), 'a month the stamp has not closed is not marked settled');
 });
 
 
