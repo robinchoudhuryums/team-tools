@@ -496,6 +496,35 @@ function previewPtoAccruals(monthYm) {
   }
 }
 
+/** EDITOR ENTRY POINT — inspect the PREVIOUS completed month, one click.
+ *
+ *  The Apps Script editor's ▶ Run calls the selected function with NO
+ *  arguments: there is no field for one in the picker. So `previewPtoAccruals`
+ *  is runnable from the editor only in its no-argument form, and the INSPECT
+ *  form — the half that can see a month the column-R stamp has closed — was
+ *  unreachable from the one place an operator actually runs it. Shipping a
+ *  function whose useful form cannot be invoked is not shipping it.
+ *
+ *  The previous completed month is the question that RECURS ("last month came
+ *  out wrong — why?"), so it gets the entry point. An older or arbitrary month
+ *  still needs an argument: call `previewPtoAccruals('2026-05')` from a scratch
+ *  function, or from a manager surface.
+ *
+ *  The month is DERIVED, never composed here: `accrualMonthsToCredit_('', ym)`
+ *  is the seed path, whose whole job is "the last month that is complete",
+ *  including the year boundary. A second piece of month arithmetic would be a
+ *  second definition of the accrual period (INV-179).
+ *
+ *  Top-level → reachable via google.script.run, so it carries the INV-44 gate
+ *  in its own body rather than inheriting one: a reader must see the gate here,
+ *  and the refusal should name the function the caller actually invoked. */
+function previewPtoAccrualsLastMonth() {
+  assertManagerCaller_('previewPtoAccrualsLastMonth');
+  const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  return previewPtoAccruals(accrualMonthsToCredit_('', nowYm).newStamp);
+}
+
 /** PURE (Node-pinned): the preview as a text block for the execution log.
  *  Pure so a pin can assert the wording — and the honesty of it — without a
  *  spreadsheet: a rep who will be credited nothing must SAY why, never render

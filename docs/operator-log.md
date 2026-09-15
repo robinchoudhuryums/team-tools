@@ -14,6 +14,17 @@ Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.
 
+- **`previewPtoAccrualsLastMonth` — the one-click form of the inspection
+  (2026-09-15, same day).** The Apps Script editor's ▶ Run button calls the
+  selected function with NO arguments, so `previewPtoAccruals('2026-08')` could
+  not be run from the picker at all: the inspect form shipped unreachable from
+  the only place it is used. Pick `previewPtoAccrualsLastMonth` instead — it
+  inspects the previous completed month, which is the recurring question. For
+  an older month, paste a scratch function into the editor
+  (`function q(){ previewPtoAccruals('2026-05'); }`), run it, and delete it —
+  it is not in the repo, so the next `clasp push -f` removes it anyway. Adds NO
+  operator state.
+
 - **The accrual dry run gains an INSPECT month (2026-09-15) — still NO new
   operator state.** `previewPtoAccruals('2026-08')` reports what one COMPLETED
   month is worth on the Timesheet as it reads now, ignoring the column-R stamp.

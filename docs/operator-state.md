@@ -1405,6 +1405,12 @@ entry says which it is.
   That reports what the month is worth on the Timesheet as it reads NOW,
   ignoring column R, and marks each rep the stamp has already settled. It is the
   check to run BEFORE rewinding a stamp and again after fixing punches.
+  **From the Apps Script editor pick `previewPtoAccrualsLastMonth`** — the
+  ▶ Run button passes no arguments, so the month form is not selectable
+  there; that wrapper inspects the previous completed month, which is the case
+  this usually is. For an OLDER month, paste a scratch function into the editor
+  (`function q(){ previewPtoAccruals('2026-05'); }`) and run that — and delete
+  it, or the next `clasp push -f` will, since the editor copy is not in the repo.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);

@@ -399,6 +399,20 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   credit — the honest-failure family pointed the other way: not a degraded read
   rendering as data, but a hypothetical rendering as a commitment.
 
+  **The editor cannot pass an argument, so the inspect form needs an entry
+  point** (`previewPtoAccrualsLastMonth`, 2026-09-15). The Apps Script ▶ Run
+  button invokes the selected function with none, so `previewPtoAccruals('…')`
+  is unreachable from the one place an operator runs it — the feature shipped
+  in a form nobody could invoke, which is the same defect class as an unusable
+  preview, one layer out. The wrapper takes the PREVIOUS completed month
+  because that is the question that recurs; an older month still needs a
+  scratch function, which is fine for a rare case. Its month is DERIVED from
+  `accrualMonthsToCredit_('', nowYm).newStamp` — the seed path already means
+  "the last complete month", year boundary included — rather than composed,
+  because a second piece of month arithmetic is a second definition of the
+  accrual period. It carries its own INV-44 gate rather than inheriting one:
+  the refusal should name what the caller actually invoked.
+
   Both guards REFUSE rather than degrade, and the guard is a PURE helper
   (`accrualInspectMonthError_`) for a reason worth recording: written inline
   first, its pin asserted only that the error message appeared in the source,

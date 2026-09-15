@@ -45,6 +45,16 @@
     "previewPtoAccruals"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "previewPtoAccrualsLastMonth: a no-argument editor entry point for the inspect form, since the Apps Script Run button passes no arguments",
+   "added": [
+    "previewPtoAccrualsLastMonth"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
   }
  ],
  "order": [
@@ -4898,6 +4908,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "b672967b234ba6b2"
+  },
+  "previewPtoAccrualsLastMonth": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f1709491c5f0181e"
   },
   "propBudgetsFor_": {
    "file": "10_core.js",

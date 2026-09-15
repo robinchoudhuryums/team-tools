@@ -11084,6 +11084,32 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
     orphanDays: 0, onTimesheet: true, wouldCreditDays: 0.39, wouldCreditPtoHours: 3.08, zeroReason: '',
     settled: false }] });
   assert.ok(!/SETTLED/.test(insOpen), 'a month the stamp has not closed is not marked settled');
+
+  // ── The editor entry point. The Apps Script Run button passes NO arguments,
+  // so without this the INSPECT half is unreachable from the one place it is
+  // actually run — a function shipped in a form nobody can invoke.
+  const last = code.match(/function previewPtoAccrualsLastMonth\(\) \{[\s\S]*?\n\}/);
+  assert.ok(last, 'previewPtoAccrualsLastMonth exists');
+  assert.strictEqual((last[0].match(/previewPtoAccruals\(/g) || []).length, 1,
+    'it DELEGATES — one call, no second copy of the report');
+  assert.ok(/assertManagerCaller_\('previewPtoAccrualsLastMonth'\)/.test(last[0]),
+    'INV-44 — top-level, so gated in its own body, naming the function the caller invoked');
+  assert.ok(!/\.setValue\(|adjustLeaveBalance_\(|writeAuditLog_\(/.test(last[0]),
+    'the one-click form writes nothing either');
+  // The month is DERIVED from the seed path, never composed here: a second
+  // piece of month arithmetic is a second definition of the accrual period,
+  // and the year boundary is exactly where a hand-rolled one goes wrong.
+  assert.ok(/accrualMonthsToCredit_\('', nowYm\)\.newStamp/.test(last[0]),
+    'the previous completed month comes from the ONE resolver that already defines it');
+  assert.ok(!/getMonth\(\)|- 1\b|padStart/.test(last[0]),
+    'no hand-rolled month arithmetic in the wrapper');
+  // And that derivation really is "last completed month", across a year edge.
+  const capM2 = /const PTO_ACCRUAL_CATCHUP_MAX_MONTHS\s*=\s*(\d+)/.exec(code);
+  vm.runInContext('var PTO_ACCRUAL_CATCHUP_MAX_MONTHS = ' + capM2[1] + ';', sb);
+  vm.runInContext(extractRawFunction('Code.js', 'accrualMonthsToCredit_'), sb, { filename: 'Code.js#accrualMonthsToCredit_' });
+  const lastYmOf = (ym) => sb.accrualMonthsToCredit_('', ym).newStamp;
+  assert.strictEqual(lastYmOf('2026-09'), '2026-08', 'seed path yields last month');
+  assert.strictEqual(lastYmOf('2026-01'), '2025-12', 'and crosses the year boundary');
 });
 
 
