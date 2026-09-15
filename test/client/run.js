@@ -11001,7 +11001,10 @@ test('T: the open-punch check is PREVENTION — read-only, bounded to what can s
 
   // ── The window is DERIVED from the adjust window, not a second constant: a
   // finding past it names a fix that no longer exists.
-  assert.ok(/CONFIG\.ADJUST_WINDOW_DAYS/.test(fn[0]),
+  // The DERIVATION, not just a mention of the constant: it also appears in the
+  // stamp's window block, so a looser assertion passed a mutation that replaced
+  // the lookback with a hard-coded 90 days.
+  assert.ok(/const startIso = addDaysIso_\(todayIso, -CONFIG\.ADJUST_WINDOW_DAYS\);/.test(fn[0]),
     'the lookback IS the adjust window — report what can still be fixed');
   assert.ok(/OPEN_PUNCH_GRACE_DAYS/.test(fn[0]), 'and the tail grace is named, not a magic number');
 
