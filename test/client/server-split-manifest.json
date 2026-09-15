@@ -83,6 +83,16 @@
     "previewPtoAccruals"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "sync-docs: the EMP.PTO_ACCRUAL comment now states the post-INV-205 idempotency rule (hours paid, not months processed)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "EMP"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -605,7 +615,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "587e2a15873b7a26"
+   "sha": "6d7f29a50d56da88"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",

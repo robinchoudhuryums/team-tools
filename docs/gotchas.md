@@ -2576,3 +2576,45 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   again); and **a ledger that is the record itself** rather than a second
   store that can disagree with it. Verify: the R pin's four verdicts, the
   round-trip mirror, and the editor suite's replay of the 2026-08 sequence.
+
+<a id="g116-your-test-tooling-lies-in-both"></a>
+- **Your test TOOLING lies in both directions, and a green pin is not the same
+  as a checked one (operator 2026-09-15).** Four separate times in one session
+  the harness or the bite-checker gave an answer that was not about the code.
+  They are listed together because the lesson is one thing: the tool is not the
+  evidence — what it DOES with a deliberate defect is.
+
+  1. **A pin that asserts a guard's error MESSAGE stays green when the `if`
+     around it is deleted.** `previewPtoAccruals`' month guard was written
+     inline and pinned with `assert.ok(/month must be yyyy-MM/.test(body))`. The
+     bite-check that replaced its condition with `if (false && …)` left the
+     harness green — the message string was still sitting in the source. Every
+     *structural* assertion has this shape to some degree; the cure is to make
+     the guard a PURE function and RUN it (`accrualInspectMonthError_`), so the
+     pin exercises behaviour rather than the presence of a string.
+  2. **`deepStrictEqual` against a value returned from the vm sandbox compares
+     REALMS, not values.** A sandbox array's prototype is the vm context's
+     `Array.prototype`, so `deepStrictEqual(sandboxArr, ['2026-08'])` fails on
+     an array that is element-for-element identical, with a diff that shows two
+     apparently equal arrays. `run.js` already worked around this in older pins
+     without naming it — compare `.join('|')`, or lengths and members.
+  3. **`scripts/bite.sh` silently mangled any mutation containing a double
+     quote.** The mutation is embedded in a double-quoted `python3 -c "…"`
+     string, so an inner `"` closed it early and handed python a wrecked
+     program. The wreckage usually still EDITED the file, so the no-op guard
+     passed, the harness went red for an unrelated reason, and the run printed
+     `BITES` having proved nothing. It refuses such a mutation now.
+  4. **`bite.sh`'s `grep -q` over a pipe reported a REAL bite as NO BITE.**
+     Under `set -o pipefail`, `grep -q` exits the moment it matches; when the
+     harness output exceeds the pipe buffer (~64KB — it is ~83KB) the writing
+     `echo` then dies of SIGPIPE and the pipeline returns 141. It was
+     size- AND position-dependent, so the same bite-check answered differently
+     on different runs. A herestring has no writer to kill. The direction is the
+     merciful one (a real bite under-reported, never a false `BITES`), but it is
+     still corrosive: the answer you get is "this pin does not work", and acting
+     on that means weakening a pin that was fine.
+
+  The first two make a pin claim more than it checks; the second two make the
+  bite-check claim more or less than it proved. Both halves matter, because a
+  bite-check is the ONLY evidence that a pin can fail — and a project that
+  writes pins as its main defence has no second line when the checker is wrong.

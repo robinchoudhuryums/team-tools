@@ -340,6 +340,7 @@ Ways the suite can be green and wrong, and ways a tool can eat your work.
 - **`TEST_` prefix is the cleanup key.** Fires when you name a production employee id, or hand-offboard a TEST row. Verify: the re-onboard/re-offboard Node pin. [Detail](docs/gotchas.md#g24-test-prefix-is-the-cleanup-key)
 - **Read the server through `serverSource()` — never by FILENAME, and never by POSITION (Batch F2, 2026-09-14).** Fires when a pin reaches for server source: `'Code.js'` is an ALIAS for the fourteen files, and two declarations that were adjacent in one file no longer are. Verify: the F1a filename ban + F2c/F2d. [Detail](docs/gotchas.md#g113-read-the-server-through-serversource-never-by)
 - **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B; `scripts/bite.sh` REFUSES a dirty file since Batch F2 — it fired a fourth time first).** Fires when you bite-check a pin. Verify: the F1-followon guard-ordering pin. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
+- **Your test TOOLING lies in both directions — a green pin is not a checked one (operator 2026-09-15).** Fires when you write a structural assertion, compare a value returned from the vm sandbox, or read a bite-check's verdict. [Detail](docs/gotchas.md#g116-your-test-tooling-lies-in-both)
 
 <!-- GOTCHA-INDEX:END -->
 

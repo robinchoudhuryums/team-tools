@@ -1324,10 +1324,19 @@ entry says which it is.
   rep's ACTUAL worked hours for each owed month (one range-wide Timesheet
   index, archive-aware) and credits `hours × rate / basis ÷
   CONFIG.PTO_HOURS_PER_DAY` days, IN ARREARS (month M's accrual lands
-  on/after the 1st of M+1), idempotent via the auto-managed column-R stamp
-  (see below and INV-194). **A month with no worked hours credits nothing**
+  on/after the 1st of M+1). **A month with no worked hours credits nothing**
   — correct under an hours rule, and it still writes an audit row so the
   silence is visible.
+  **Idempotence is on the HOURS ALREADY PAID FOR, not on "this month was
+  processed" (2026-09-15, INV-205).** The auto-managed column-R stamp still
+  decides which months are OWED (see below and INV-194), but it no longer
+  closes a month against correction: every run re-values the last
+  `PTO_ACCRUAL_RECONCILE_MONTHS` (3) completed months against what the
+  `PtoAccrualCredit` audit rows say was credited, and tops up the difference.
+  So a missing punch approved days after the month closed is picked up on the
+  next nightly run rather than lost. The pass only ever credits UPWARD — a
+  month that now reads FEWER hours than were credited is reported on
+  Admin → Automation Health and the balance is left alone.
   Shipped display-only for ~an hour, then operator-upgraded to
   system-computed the same day. Column I REMAINS the balance of record:
   the credit is a DELTA through `adjustLeaveBalance_`, so manual
