@@ -1627,6 +1627,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
+      // pass: nothing topped up, and nothing the pass deliberately declined to
+      // fix — but the shapes automationProblems_ reads must still be present,
+      // or the Admin scenario renders a shape the server does not ship.
+      accrualReconcile: { at: Date.now(), window: [], toppedUp: 0, days: 0,
+        shortfalls: [], skipped: [], incomplete: [], truncated: false },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true,
@@ -1807,6 +1813,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       detectors: [{ key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
+      // pass: nothing topped up, and nothing the pass deliberately declined to
+      // fix — but the shapes automationProblems_ reads must still be present,
+      // or the Admin scenario renders a shape the server does not ship.
+      accrualReconcile: { at: Date.now(), window: [], toppedUp: 0, days: 0,
+        shortfalls: [], skipped: [], incomplete: [], truncated: false },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',

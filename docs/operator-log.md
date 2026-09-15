@@ -14,6 +14,35 @@ Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.
 
+- **The accrual reconciles late data (2026-09-15) — ONE new auto-managed Script
+  Property, nothing to set.** `creditMonthlyPtoAccruals` now re-values the last
+  three completed months on every run and credits the difference, so a
+  missing-punch adjustment approved after the month closed is no longer lost
+  behind the column-R stamp.
+
+  **What you will see change.** A month that gains hours after it was credited
+  produces a SECOND `PtoAccrualCredit` audit row naming itself `TOP-UP +N
+  day(s)` and saying what changed — that is the system working, not a fault.
+  `previewPtoAccruals` gained a Reconcile section listing what the next run
+  would top up. Admin → Automation Health gained findings for the things the
+  pass deliberately will NOT fix: a month that now reads FEWER hours than were
+  credited (reported, never clawed back — look for a deleted punch), a month it
+  could not value, a ledger read that hit its row cap, and days still lacking a
+  usable clock-in/clock-out pair.
+
+  **`PTO_ACCRUAL_RECONCILE`** — auto-managed, written by the credit, read by the
+  health panel. Delete it to clear a stale flag; never set it by hand.
+  **`PTO_ACCRUAL_RECONCILE_MONTHS`** (3) is a CODE constant, not a property:
+  widening it costs nothing at read time (the range index reads the whole tab
+  regardless) and only lengthens the in-memory per-month slicing.
+
+  **One thing to know about the ledger.** "What has already been credited" is
+  read back from the `PtoAccrualCredit` audit rows themselves — there is no
+  separate ledger tab. So those rows are now load-bearing: do not hand-edit or
+  delete a `PtoAccrualCredit` row's Notes cell. Deleting one does not
+  over-credit silently — the pass fails closed and reports — but editing the
+  `hoursWorked=` figure in one would change what the next run believes was paid.
+
 - **`previewPtoAccrualsLastMonth` — the one-click form of the inspection
   (2026-09-15, same day).** The Apps Script editor's ▶ Run button calls the
   selected function with NO arguments, so `previewPtoAccruals('2026-08')` could

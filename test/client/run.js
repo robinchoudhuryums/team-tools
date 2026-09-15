@@ -10858,7 +10858,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // The DECISIONS moved into planPtoAccrualRun_ (shared with the read-only
   // preview); the credit is now the writes and their order. Both halves are
   // pinned, so the extraction cannot quietly become two implementations.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
   assert.ok(plan, 'planPtoAccrualRun_ exists');
   assert.ok(!/buildTimesheetForEmployee_/.test(h[0] + plan[0]),
     'no per-rep timesheet build inside the locked credit run');
@@ -10870,8 +10870,8 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // — the diagnostic's whole purpose and the last thing a WRITING caller may
   // do with it. A third argument here would credit an arbitrary month and
   // advance the stamp past it.
-  assert.ok(/planPtoAccrualRun_\(rows, nowYm\);/.test(h[0]),
-    'the CREDIT calls the resolver with two arguments — never an inspect month');
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths\);/.test(h[0]),
+    'the CREDIT passes an EMPTY inspect month — a diagnostic month here would credit an arbitrary one and advance the stamp past it');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
   assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2,
@@ -10898,10 +10898,18 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'the stamp cell is written ONLY when the plan changes it (so a forward stamp is left alone)');
   assert.ok(h[0].indexOf('adjustLeaveBalance_') < h[0].indexOf('EMP.ACCRUED_THROUGH + 1'),
     'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
-  assert.ok(/hoursWorked=/.test(h[0]) && /ptoHours=/.test(h[0]) && /rate=/.test(h[0]),
+  const creditNote = extractRawFunction('Code.js', 'accrualCreditNote_');
+  assert.ok(/hoursWorked=/.test(creditNote) && /ptoHours=/.test(creditNote) && /rate=/.test(creditNote),
     'the audit row records the hours, the rate and the days — the operator can verify a credit');
-  assert.ok(/accrualZeroReason_\(p\)/.test(h[0]),
+  assert.ok(/accrualZeroReason_\(p\)/.test(extractRawFunction('Code.js', 'accrualZeroNote_')),
     'a zero-hours month writes an audit row too, so unexpected silence is visible');
+  // The row is the LEDGER now, so it may not be fire-and-forget: a dropped row
+  // reads as "never credited" and the next reconcile tops up the whole month
+  // again. Witness-class — retry, then the WITNESS_AUDIT_FAILS stamp.
+  assert.ok(!/[^s]writeAuditLog_\(p\.emp, 'PtoAccrualCredit'/.test(h[0]),
+    'no fire-and-forget accrual audit write survives');
+  assert.strictEqual((h[0].match(/writeWitnessAuditLog_\([^,]+, 'PtoAccrualCredit'/g) || []).length, 3,
+    'all THREE accrual rows (credit, zero, top-up) are witness-class');
   assert.ok(/getFlag_\('enablePtoTracking'\)/.test(h[0]), 'the global PTO switch short-circuits the run');
   const asy = code.match(/function accrualStampYm_\(cell\) \{[\s\S]*?\n\}/);
   assert.ok(asy && /instanceof Date/.test(asy[0]) && /normalizeDate_/.test(asy[0]),
@@ -10909,6 +10917,139 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // Membership the coupling registry cannot enforce in this direction.
   assert.ok(/'TimesheetArchive',\s*'PtoAccrualCredit',/.test(code),
     'PtoAccrualCredit is a registered automation audit action');
+});
+
+test('R: the accrual RECONCILES late data — top-up, never claw back, fail closed (operator 2026-09-15)', () => {
+  // WHY: the column-R stamp made the credit idempotent on "this month was
+  // processed", but the Timesheet is not final on the 1st. It fired live — all
+  // three PH reps were credited ZERO for 2026-08 on days that were still open
+  // at 18:00 on the 1st and were closed by approved adjustments days later, by
+  // which time the stamp had shut the month for good. The credit is now
+  // idempotent on the HOURS ALREADY PAID FOR instead, so late data heals.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(serverSource());
+
+  // ── The note is a CONTRACT now, so writer and parser are a mirror pair and
+  // this round-trips them. A drifted format would not throw — it would read as
+  // "never credited" and re-credit a month that was already paid.
+  ['monthEndIso_', 'accrualZeroReason_', 'accrualUncountedNote_', 'accrualDaysForHours_',
+   'accrualCreditNote_', 'accrualZeroNote_', 'accrualTopUpNote_', 'parseAccrualLedger_',
+   'accrualReconcileMonths_', 'workedHoursForEmpMonth_', 'planAccrualReconcile_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+  });
+  const dayConsts = /const TIMESHEET_DAY_INCOMPLETE = '([a-z]+)';\s*const TIMESHEET_DAY_ORPHAN = '([a-z]+)';/.exec(code);
+  assert.ok(dayConsts, 'the per-day outcome sentinels are declared');
+  vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = '" + dayConsts[1] + "'; var TIMESHEET_DAY_ORPHAN = '" + dayConsts[2] + "';", sb);
+
+  const p = { totalHours: 160, rate: 3.08, months: ['2026-08'], incompleteDays: 1, orphanDays: 0,
+              onTimesheet: true, emp: { id: 'E1' }, plan: { newStamp: '2026-08', capped: 0 } };
+  const earned = sb.accrualDaysForHours_(160, 3.08, 80, 8);
+  const roundTrips = [
+    ['credit', sb.accrualCreditNote_(p, 80, earned, 5.2), 160, ['2026-08']],
+    ['zero', sb.accrualZeroNote_({ ...p, totalHours: 0, incompleteDays: 2 }, 80), 0, ['2026-08']],
+    ['top-up', sb.accrualTopUpNote_({ rate: 3.08, monthsKey: '2026-06,2026-07', hoursNow: 88.5,
+        ledgerHours: 40, incompleteDays: 0, orphanDays: 0 }, 80, earned, 0.23, 6.1), 88.5, ['2026-06', '2026-07']],
+  ];
+  roundTrips.forEach(([label, note, hours, months]) => {
+    const back = sb.parseAccrualLedger_(note);
+    assert.ok(back, label + ' note parses back');
+    assert.strictEqual(back.hours, hours, label + ' round-trips its hours');
+    // join(): the sandbox's Array has the vm realm's prototype, so a
+    // deepStrictEqual against a host array fails on the prototype alone.
+    assert.strictEqual(back.months.join(','), months.join(','), label + ' round-trips its month set');
+  });
+  // FAIL CLOSED. "Cannot read what was credited" must never become "nothing
+  // was credited" — that re-credits the whole month.
+  assert.strictEqual(sb.parseAccrualLedger_(''), null, 'an empty note is not a ledger entry');
+  assert.strictEqual(sb.parseAccrualLedger_('hoursWorked=12'), null, 'hours without months is unusable');
+  assert.strictEqual(sb.parseAccrualLedger_('months=2026-08'), null, 'months without hours is unusable');
+  assert.strictEqual(sb.parseAccrualLedger_('hoursWorked=x; months=2026-08'), null, 'unparseable hours are unusable');
+
+  // ── The window: COMPLETED months only, newest first, year boundary included.
+  assert.strictEqual(sb.accrualReconcileMonths_('2026-09', 3).join('|'), '2026-08|2026-07|2026-06');
+  assert.strictEqual(sb.accrualReconcileMonths_('2026-02', 3).join('|'), '2026-01|2025-12|2025-11');
+  assert.strictEqual(sb.accrualReconcileMonths_('2026-09', 0).length, 0, 'k=0 disables reconciliation entirely');
+  assert.strictEqual(sb.accrualReconcileMonths_('nonsense', 3).length, 0, 'a bad now-month yields no window');
+  assert.ok(sb.accrualReconcileMonths_('2026-09', 3).indexOf('2026-09') < 0,
+    'the CURRENT month is never in the window — its hours are not final');
+  assert.strictEqual(sb.monthEndIso_('2024-02'), '2024-02-29', 'month end handles a leap February');
+  assert.strictEqual(sb.monthEndIso_('2026-02'), '2026-02-28');
+
+  // ── The four outcomes, driven. `idx` is the shape workedHoursForEmpMonth_
+  // reads: a number is hours, a sentinel says why a day contributed none.
+  const idx = { perDayByEmp: { E1: { '2026-08-03': 8, '2026-08-04': 7.82,
+                                     '2026-08-05': dayConsts[1] } } };
+  const entry = { emp: { id: 'E1' }, rate: 3.08 };
+  const WINDOW = ['2026-08', '2026-07', '2026-06'];
+  const run1 = sb.planAccrualReconcile_([entry],
+    { byEmp: { E1: { '2026-08': { hours: 0, months: ['2026-08'] } } } }, idx, WINDOW, 80, 8);
+  assert.strictEqual(run1.length, 1);
+  assert.strictEqual(run1[0].action, 'topup', 'credited 0 h, Timesheet now reads 15.82 — that is a top-up');
+  assert.strictEqual(run1[0].hoursNow, 15.82, 'and it values the month from the index, not the ledger');
+  assert.strictEqual(run1[0].incompleteDays, 1, 'the day that still has no pair is reported, not counted');
+  assert.strictEqual(run1[0].deltaDays, sb.accrualDaysForHours_(15.82, 3.08, 80, 8).days,
+    'the delta is the FULL amount when nothing had been credited');
+
+  // Paid in full already → nothing. This is the idempotence that lets the pass
+  // run every single day without crediting twice.
+  const run2 = sb.planAccrualReconcile_([entry],
+    { byEmp: { E1: { '2026-08': { hours: 15.82, months: ['2026-08'] } } } }, idx, WINDOW, 80, 8);
+  assert.strictEqual(run2[0].action, 'ok');
+  assert.strictEqual(run2[0].deltaDays, 0, 'a settled month credits nothing on re-run');
+
+  // Hours went DOWN → reported, NEVER clawed back.
+  const run3 = sb.planAccrualReconcile_([entry],
+    { byEmp: { E1: { '2026-08': { hours: 200, months: ['2026-08'] } } } }, idx, WINDOW, 80, 8);
+  assert.strictEqual(run3[0].action, 'shortfall', 'fewer readable hours than were credited is a shortfall');
+  assert.ok(run3[0].deltaDays < 0, 'the arithmetic knows it is negative…');
+  assert.ok(/now reads 15\.82 h where 200 h was credited/.test(run3[0].why), '…and says so');
+
+  // Outside the window → FAIL CLOSED. We have no hours for those months, so a
+  // "delta" would be measured against zero and would credit the lot again.
+  const run4 = sb.planAccrualReconcile_([entry],
+    { byEmp: { E1: { '2026-01': { hours: 99, months: ['2026-01'] } } } }, idx, WINDOW, 80, 8);
+  assert.strictEqual(run4[0].action, 'skipped', 'a month-set outside the window is skipped, not valued');
+  assert.ok(/outside the 3-month reconcile window/.test(run4[0].why), 'and says why');
+  // A multi-month key is reconciled as a SET, against the same set's hours —
+  // the shape a catch-up run writes.
+  const run5 = sb.planAccrualReconcile_([entry],
+    { byEmp: { E1: { '2026-07,2026-08': { hours: 0, months: ['2026-07', '2026-08'] } } } }, idx, WINDOW, 80, 8);
+  assert.strictEqual(run5[0].action, 'topup', 'a multi-month key is valued across its whole set');
+  assert.strictEqual(run5[0].hoursNow, 15.82, 'July contributes nothing, August its 15.82');
+  // A rep with no ledger entry at all is not reconciled — there is nothing to
+  // compare against, and the ordinary credit path owns their first credit.
+  assert.strictEqual(sb.planAccrualReconcile_([entry], { byEmp: {} }, idx, WINDOW, 80, 8).length, 0,
+    'a rep with no ledger entry is not reconciled');
+
+  // ── The WRITES, structurally. Only a top-up moves a balance.
+  const h = code.match(/function creditMonthlyPtoAccruals\(\) \{[\s\S]*?\n\}/)[0];
+  const recBlock = h.slice(h.indexOf('planAccrualReconcile_('));
+  assert.ok(/if \(r\.action === 'topup'\)/.test(recBlock),
+    'the balance moves only on an explicit topup verdict');
+  assert.ok(/adjustLeaveBalance_\(r\.emp\.id, 'annual', r\.deltaDays\)/.test(recBlock),
+    'and through THE balance mutator, so the INV-27 gate and cache invalidation ride along');
+  assert.ok(!/adjustLeaveBalance_[\s\S]{0,80}shortfall/.test(recBlock) && /shortfalls\.push/.test(recBlock),
+    'a shortfall is PUSHED to a report, never written to a balance');
+  assert.strictEqual((h.match(/planAccrualReconcile_\(/g) || []).length, 1, 'one reconcile pass per run');
+  // ONE Timesheet read for the whole run — the reconcile window rides the
+  // resolver's range rather than opening a second full read inside the lock.
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/)[0];
+  assert.strictEqual((plan.match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
+    'still exactly ONE range index build, window included');
+  assert.ok(!/workedHoursByEmpForRange_\(/.test(recBlock),
+    'the reconcile pass opens no read of its own');
+  // The range-wide fast path is GONE: it was correct only while the range was
+  // the single owed month, and the window widened it.
+  assert.ok(!/p\.months\.length === 1/.test(plan),
+    'no range-wide shortcut survives — every month is sliced out of the index');
+  // The ledger read is BOUNDED and says when it could not see the whole window.
+  const led = code.match(/function readAccrualLedger_\(sinceIso\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(/ACCRUAL_LEDGER_MAX_ROWS/.test(led) && !/getDataRange\(\)/.test(led),
+    'the ledger reads a bounded tail of the AuditLog, never the whole sheet');
+  assert.ok(/truncated = !reachedBack/.test(led),
+    'and REPORTS a scan that never reached past the window rather than implying it saw it all');
+  assert.ok(/led\.hours > out\.byEmp\[id\]\[key\]\.hours/.test(led),
+    'within a key the MAXIMUM hours wins — a lower later row must not re-open a paid top-up');
 });
 
 test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual resolver (operator 2026-09-14)', () => {
@@ -10926,7 +11067,7 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(serverSource());
   const prev = code.match(/function previewPtoAccruals\(monthYm\) \{[\s\S]*?\n\}/);
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
   assert.ok(prev && plan, 'previewPtoAccruals and planPtoAccrualRun_ exist');
 
   // ── ONE resolver, shared. Both callers, and nobody re-deriving the plan.
@@ -10993,8 +11134,13 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   assert.ok(/2 incomplete day\(s\) NOT counted/.test(tail({ incompleteDays: 2, orphanDays: 0 })));
   assert.ok(/1 day\(s\) with a clock-out and no clock-in NOT counted/.test(tail({ incompleteDays: 0, orphanDays: 1 })));
   const credit = code.match(/function creditMonthlyPtoAccruals\(\) \{[\s\S]*?\n\}/)[0];
-  assert.strictEqual((credit.match(/accrualUncountedNote_\(p\)/g) || []).length, 2,
-    'BOTH accrual audit rows carry the same uncounted tail');
+  // The notes moved into pure builders when the audit row became the ledger.
+  // EVERY one of the three carries the tail — the credited row, the zero row
+  // and the top-up row cannot disagree about what was left out.
+  ['accrualCreditNote_', 'accrualZeroNote_', 'accrualTopUpNote_'].forEach((fn) => {
+    const body = extractRawFunction('Code.js', fn);
+    assert.ok(/accrualUncountedNote_\(/.test(body), fn + ' carries the uncounted tail');
+  });
 
   // ── The range index now SEES a clock-out with no clock-in. It used to
   // `return` past that day counted as nothing at all, so a rep with real

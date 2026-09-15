@@ -342,6 +342,53 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `creditMonthlyPtoAccruals` skips a `FALSE` rep, so if the example had been
   true the accrual feature would have credited nobody. Check column K before
   concluding a population does not accrue.
+- <a id="the-accrual-credit-is-idempotent-on-hours-paid-not-on-months"></a>**The accrual credit is idempotent on HOURS PAID, not on months processed — and the ledger is the audit row (operator 2026-09-15).**
+  The column-R stamp is what makes a DAILY credit of a MONTHLY entitlement safe:
+  a re-run owes nothing, and a missed run catches up. But it also froze each
+  month's valuation at the instant of the first run after the 1st — and the
+  Timesheet is not final then. A missing-punch adjustment approved on the 3rd, a
+  manager day edit, a direct Sheet edit (which this project supports by design)
+  all landed afterwards and were lost with no error and no retry. It fired: all
+  three PH reps credited ZERO for 2026-08 on days closed by approvals days
+  later. See the gotcha for the general rule about idempotency keys.
+
+  **The reconciliation.** Every run re-values a trailing window of completed
+  months (`PTO_ACCRUAL_RECONCILE_MONTHS`, 3) and credits the DIFFERENCE in days,
+  so the running total always equals `days(total hours)` and a re-run credits
+  nothing. Late data heals itself on the next nightly pass, with an audit row
+  that names itself a top-up and says what changed.
+
+  **The ledger is the `PtoAccrualCredit` audit rows themselves**, not a new tab.
+  They already record the hours and the month-set; the log is append-only and
+  never purged; a second store is a second thing that can disagree with the
+  first. Two costs, both paid explicitly: the note format became a CONTRACT, so
+  the builders and `parseAccrualLedger_` are a mirror pair with a round-trip pin
+  (the pin caught a real defect on its first run — the parser read capture group
+  2 of a one-group regex); and the row became load-bearing, so all three accrual
+  writes moved from `writeAuditLog_` to `writeWitnessAuditLog_`, because a
+  dropped row reads as "never credited" and would re-credit the whole month.
+
+  **Three properties that generalise to any reconciliation.** UPWARD ONLY — a
+  month that now reads FEWER hours than were credited is a reported shortfall,
+  never a claw-back; a script does not quietly take PTO off a balance, and a
+  deleted punch needs a person. FAIL CLOSED — a month-set outside the window,
+  hours that will not compute, or a ledger read that never reached past the
+  window are reported and skipped, because "cannot read what was credited" must
+  not collapse into "nothing was credited". And ONE READ — the window rides the
+  resolver's existing range rather than opening a second full-sheet read inside
+  the ScriptLock (the C17-9 rule), while the ledger reads a bounded tail of the
+  AuditLog and says so when the tail was not long enough.
+
+  A casualty worth recording: pass 3's range-wide fast path (`if
+  (p.months.length === 1) use rec.hours`) is gone. It was correct only while the
+  range WAS the single owed month, and the window widened it — a shortcut that
+  is right until an unrelated parameter changes is a defect on a schedule.
+
+  **Not chosen: a grace period.** Delaying the credit to the 5th moves the cliff
+  rather than removing it — an approval on the 6th is still lost, data corrected
+  months later is still lost, and every legitimate credit is delayed for a rare
+  case. The top-up subsumes it.
+
 - <a id="the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin"></a>**The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14).**
   `creditMonthlyPtoAccruals` runs unattended at 18:00 manager-tz, credits real
   leave balances, and advances a stamp that closes the month against retry. Its

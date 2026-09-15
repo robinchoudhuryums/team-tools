@@ -1482,6 +1482,7 @@ function computeAutomationHealth_(opts) {
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
+      accrualReconcile: readAccrualReconcile_(),   // the last PTO accrual reconcile pass (operator 2026-09-15)
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
       // F9 (cycle 16) — Offerings catalog shape. null when not scanned (the
       // badge/digest path), so the client can tell "not checked" from "clean".
@@ -1529,6 +1530,29 @@ function automationProblems_(report) {
     parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
     Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
   ).forEach(function (m) { problems.push(m); });
+  // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
+  // data on its own, so a top-up is NOT a problem — it is the system working.
+  // What reaches a manager is what the pass deliberately would NOT fix: hours
+  // that went DOWN (never clawed back, by design), a month-set it could not
+  // value, and a ledger read that could not see the whole window.
+  const ar = report.accrualReconcile;
+  if (ar) {
+    (ar.shortfalls || []).forEach(function (sf) {
+      problems.push('PTO accrual: ' + sf.id + ' was credited for ' + sf.was + ' h in ' + sf.months +
+        ' but the Timesheet now reads ' + sf.now + ' h — the balance was NOT reduced; check for a deleted punch.');
+    });
+    (ar.skipped || []).forEach(function (sk) {
+      problems.push('PTO accrual: ' + sk.id + '\'s ' + sk.months + ' could not be reconciled (' + sk.why + ').');
+    });
+    if (ar.truncated) {
+      problems.push('PTO accrual: the reconcile ledger read hit its row cap, so an older month may not have been ' +
+        'checked. Nothing was credited from a partial read.');
+    }
+    (ar.incomplete || []).forEach(function (ic) {
+      problems.push('PTO accrual: ' + ic.id + ' has ' + ic.days + ' day(s) in ' + ic.months +
+        ' with no usable clock-in/clock-out pair — those hours are earning no PTO until the punches are fixed.');
+    });
+  }
   if (report.syncFails && report.syncFails.count > 0) {
     problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
   }

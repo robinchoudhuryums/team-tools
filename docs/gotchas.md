@@ -2541,3 +2541,80 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   [the dry-run decision](design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin).
   The family this belongs to is the one above it: a degraded or ambiguous read
   must never render as data.
+
+<a id="g115-a-job-that-closes-a-period-must"></a>
+- **A job that CLOSES a period must RECONCILE it afterwards — the data it read
+  was not final (operator 2026-09-15).** `creditMonthlyPtoAccruals` ran on the
+  1st, valued the month from the Timesheet, credited it, and advanced the
+  column-R stamp. The stamp is what makes the daily cadence safe — it is why a
+  re-run owes nothing — but it also made the month's valuation PERMANENT at the
+  instant of the first run. The Timesheet is not final on the 1st. Three things
+  routinely land later: a missing-punch adjustment approved by a manager, a
+  manager day edit, and a direct Sheet edit (which this project supports by
+  design, via the reconcile pass). Every one of them was silently lost.
+
+  It fired: on 2026-09-01 all three PH reps were credited ZERO for 2026-08 on
+  days that were still clock-in-with-no-clock-out at 18:00. The credit was
+  RIGHT to refuse them — inventing a clock-out is worse. The approvals landed
+  days afterwards, the days became complete, and nothing ever looked again.
+  There was no error, no red dot, and no retry; the operator found it by
+  reading an audit row and asking why it said zero.
+
+  **The rule: pick the idempotency key that matches what can still change.**
+  "This period was processed" is only safe when the period's inputs are frozen.
+  When they are not, the key must be the VALUE already committed — here, the
+  hours already paid for — so a later change is a difference to settle rather
+  than a fact that arrives too late to matter. The accrual now re-values a
+  trailing window on every run and credits the difference.
+
+  Three properties the reconciliation needs, and they generalise:
+  **upward only** (fewer readable hours is reported, never clawed back — a
+  script does not quietly take back something a person has been told they
+  have); **fail closed** (a period it cannot value, or a ledger it cannot
+  fully read, is reported and skipped — "cannot read what was committed" must
+  never collapse into "nothing was committed", which would commit it all
+  again); and **a ledger that is the record itself** rather than a second
+  store that can disagree with it. Verify: the R pin's four verdicts, the
+  round-trip mirror, and the editor suite's replay of the 2026-08 sequence.
+
+<a id="g116-your-test-tooling-lies-in-both"></a>
+- **Your test TOOLING lies in both directions, and a green pin is not the same
+  as a checked one (operator 2026-09-15).** Four separate times in one session
+  the harness or the bite-checker gave an answer that was not about the code.
+  They are listed together because the lesson is one thing: the tool is not the
+  evidence — what it DOES with a deliberate defect is.
+
+  1. **A pin that asserts a guard's error MESSAGE stays green when the `if`
+     around it is deleted.** `previewPtoAccruals`' month guard was written
+     inline and pinned with `assert.ok(/month must be yyyy-MM/.test(body))`. The
+     bite-check that replaced its condition with `if (false && …)` left the
+     harness green — the message string was still sitting in the source. Every
+     *structural* assertion has this shape to some degree; the cure is to make
+     the guard a PURE function and RUN it (`accrualInspectMonthError_`), so the
+     pin exercises behaviour rather than the presence of a string.
+  2. **`deepStrictEqual` against a value returned from the vm sandbox compares
+     REALMS, not values.** A sandbox array's prototype is the vm context's
+     `Array.prototype`, so `deepStrictEqual(sandboxArr, ['2026-08'])` fails on
+     an array that is element-for-element identical, with a diff that shows two
+     apparently equal arrays. `run.js` already worked around this in older pins
+     without naming it — compare `.join('|')`, or lengths and members.
+  3. **`scripts/bite.sh` silently mangled any mutation containing a double
+     quote.** The mutation is embedded in a double-quoted `python3 -c "…"`
+     string, so an inner `"` closed it early and handed python a wrecked
+     program. The wreckage usually still EDITED the file, so the no-op guard
+     passed, the harness went red for an unrelated reason, and the run printed
+     `BITES` having proved nothing. It refuses such a mutation now.
+  4. **`bite.sh`'s `grep -q` over a pipe reported a REAL bite as NO BITE.**
+     Under `set -o pipefail`, `grep -q` exits the moment it matches; when the
+     harness output exceeds the pipe buffer (~64KB — it is ~83KB) the writing
+     `echo` then dies of SIGPIPE and the pipeline returns 141. It was
+     size- AND position-dependent, so the same bite-check answered differently
+     on different runs. A herestring has no writer to kill. The direction is the
+     merciful one (a real bite under-reported, never a false `BITES`), but it is
+     still corrosive: the answer you get is "this pin does not work", and acting
+     on that means weakening a pin that was fine.
+
+  The first two make a pin claim more than it checks; the second two make the
+  bite-check claim more or less than it proved. Both halves matter, because a
+  bite-check is the ONLY evidence that a pin can fail — and a project that
+  writes pins as its main defence has no second line when the checker is wrong.

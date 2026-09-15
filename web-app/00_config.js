@@ -411,7 +411,7 @@ const EMP = {
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
-  PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate: PTO HOURS EARNED PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS` HOURS WORKED (operator 2026-08-19; PH team = 3.08 per 80). HOURS-DRIVEN, not calendar-driven: creditMonthlyPtoAccruals (daily trigger) credits `hoursWorked(month) × rate / basis / PTO_HOURS_PER_DAY` days into the col-I balance, in arrears, idempotent via col R. A month with no worked hours accrues NOTHING — that is the rule, not a failure. Blank/garbage = no accrual at all (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
+  PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate: PTO HOURS EARNED PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS` HOURS WORKED (operator 2026-08-19; PH team = 3.08 per 80). HOURS-DRIVEN, not calendar-driven: creditMonthlyPtoAccruals (daily trigger) credits `hoursWorked(month) × rate / basis / PTO_HOURS_PER_DAY` days into the col-I balance, in arrears. IDEMPOTENT ON HOURS PAID FOR, not on "this month was processed" (INV-205, 2026-09-15): col R still decides which months are OWED, but it no longer closes a month against correction — every run re-values the last PTO_ACCRUAL_RECONCILE_MONTHS completed months against the PtoAccrualCredit audit rows and credits the difference, so a punch approved after the month closed is picked up instead of lost. A month with no worked hours accrues NOTHING *at the time* — that is the rule, not a failure — and it accrues later if hours appear. Blank/garbage = no accrual at all (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
   ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank = SEEDS on the next run (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
 };
 /** Pure month arithmetic for the accrual credit (Node-pinned). IN ARREARS:
@@ -1124,6 +1124,16 @@ const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // install email and the Node pins); (b) the installer COUNTS before it
 // deletes and refuses when the total would exceed the quota, so a future
 // overflow fails with nothing removed.
+// How many COMPLETED months the accrual credit re-examines on every run
+// (operator 2026-09-15). The column-R stamp closes a month permanently, but the
+// Timesheet is not final on the 1st — an adjustment approved days later used to
+// be lost behind the stamp, and was, for all three PH reps in 2026-08. Three
+// months is the window in which late payroll corrections actually arrive; the
+// reconcile pass re-values those months on every run and credits the
+// difference, so nothing is lost and nothing is credited twice. Widening this
+// costs nothing at read time (the range index reads the whole tab regardless)
+// and lengthens only the in-memory per-month slicing.
+const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
 const AUTOMATION_TRIGGER_QUOTA = 20;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
 // defined top-level function that carries its own assertManagerCaller_ gate

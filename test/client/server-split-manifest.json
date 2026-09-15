@@ -55,6 +55,44 @@
    "removed": [],
    "changed": [],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "accrual resilience: the AuditLog ledger + the top-up reconcile pass, the note mirror pair, the bounded ledger read, and the reconcile stamp",
+   "added": [
+    "ACCRUAL_LEDGER_MAX_ROWS",
+    "PTO_ACCRUAL_RECONCILE_MONTHS",
+    "accrualCreditNote_",
+    "accrualReconcileMonths_",
+    "accrualTopUpNote_",
+    "accrualZeroNote_",
+    "monthEndIso_",
+    "parseAccrualLedger_",
+    "planAccrualReconcile_",
+    "readAccrualLedger_",
+    "readAccrualReconcile_",
+    "stampAccrualReconcile_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "creditMonthlyPtoAccruals",
+    "formatPtoAccrualPreview_",
+    "planPtoAccrualRun_",
+    "previewPtoAccruals"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "sync-docs: the EMP.PTO_ACCRUAL comment now states the post-INV-205 idempotency rule (hours paid, not months processed)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "EMP"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -74,6 +112,11 @@
   "90_qa.js"
  ],
  "units": {
+  "ACCRUAL_LEDGER_MAX_ROWS": {
+   "file": "20_timeclock.js",
+   "kind": "const",
+   "sha": "68179aeacaee5fa7"
+  },
   "ADMIN_PROP_KEYS_": {
    "file": "00_config.js",
    "kind": "const",
@@ -572,7 +615,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "587e2a15873b7a26"
+   "sha": "6d7f29a50d56da88"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",
@@ -1244,6 +1287,11 @@
    "kind": "const",
    "sha": "7df6b02ee6be477f"
   },
+  "PTO_ACCRUAL_RECONCILE_MONTHS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "03f1734e30cbe2f5"
+  },
   "PUNCH_ADJUST_BULK_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -1869,6 +1917,11 @@
    "kind": "let",
    "sha": "4909866ff927fd5a"
   },
+  "accrualCreditNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8766174f50aec4d7"
+  },
   "accrualDaysForHours_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -1889,15 +1942,30 @@
    "kind": "function",
    "sha": "f7a5061cd9eb56b4"
   },
+  "accrualReconcileMonths_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8fd0c569c66285bf"
+  },
   "accrualStampYm_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8f669a657b3d5283"
   },
+  "accrualTopUpNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e140cc3324dc3831"
+  },
   "accrualUncountedNote_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "2eadf4a3ed42f57b"
+  },
+  "accrualZeroNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "072a4abee082967e"
   },
   "accrualZeroReason_": {
    "file": "20_timeclock.js",
@@ -2067,7 +2135,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "878d066493d02ec2"
+   "sha": "b60f43a0ea7f66fe"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -2537,7 +2605,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9533535496dc05f3"
+   "sha": "97b7877be8753cc5"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -2602,7 +2670,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "08c41ab4fc75a4f3"
+   "sha": "c3298258959f72ad"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -3032,7 +3100,7 @@
   "formatPtoAccrualPreview_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "13ff9a44405ff1f3"
+   "sha": "ea01b5766f99bdff"
   },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
@@ -4734,6 +4802,11 @@
    "kind": "function",
    "sha": "61b6a7c0bfa653a2"
   },
+  "monthEndIso_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "febfb48554030de4"
+  },
   "normalizeAuditTs_": {
    "file": "10_core.js",
    "kind": "function",
@@ -4854,6 +4927,11 @@
    "kind": "function",
    "sha": "d55b74af94f02808"
   },
+  "parseAccrualLedger_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "beda14cf6b147968"
+  },
   "parseRetentionDateMs_": {
    "file": "61_forms.js",
    "kind": "function",
@@ -4884,10 +4962,15 @@
    "kind": "function",
    "sha": "b2b3f0091963eefe"
   },
+  "planAccrualReconcile_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "aa98ba272c5c2c46"
+  },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4741048c01cc40b2"
+   "sha": "cbced56bbf27e68e"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -4907,7 +4990,7 @@
   "previewPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b672967b234ba6b2"
+   "sha": "72cc3da87f039930"
   },
   "previewPtoAccrualsLastMonth": {
    "file": "20_timeclock.js",
@@ -5253,6 +5336,16 @@
    "file": "90_qa.js",
    "kind": "function",
    "sha": "e630a3e9b237e555"
+  },
+  "readAccrualLedger_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "65ae9808270b14fa"
+  },
+  "readAccrualReconcile_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "77bfbdfb94d3374e"
   },
   "readAutomationErrors_": {
    "file": "10_core.js",
@@ -5808,6 +5901,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "2d960f1b3a70bbc8"
+  },
+  "stampAccrualReconcile_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b018c4656be3d973"
   },
   "stampAutomationError_": {
    "file": "10_core.js",

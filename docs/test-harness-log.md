@@ -1076,3 +1076,43 @@ VERBATIM copies of `groupQueueRows_`, `CDR_QUEUE_UNGROUPED` and the
 `CDR_QUEUE_GROUPS` seed under a DO-NOT-EDIT banner, pinned byte-identical by the
 F4 mirror test. Copy server logic in and pin it; never paraphrase it.
 See `test/visual/README.md`.
+
+**The PTO accrual batches (2026-09-14 → 15) added two pure-harness pins and
+two editor registrations, and the harness log has a GAP before them.** Batches C, D1, D2, F1 and F2 are not
+written up here; their harness work is recorded in `.cycle/blocks/` instead
+(`19-batchD1-…`, `19-followons-D2-…`, `19-F1-…`, `19-F2-followons-…`). This
+entry is not backfilling those — it records the accrual work and names the gap
+so a reader does not take this file's last dated entry as the harness's last
+change. Read the blocks for anything between 2026-09-11 and 2026-09-14.
+
+What the accrual round added:
+
+- **`previewPtoAccruals` is a READ-ONLY dry run that shares the ONE accrual
+  resolver** — the shared-resolver claim (one `planPtoAccrualRun_` call, no
+  re-derivation of the plan) and the writes-nothing claim (no `setValue` /
+  `appendRow` / `deleteRow`, no `adjustLeaveBalance_`, no `writeAuditLog_`, in
+  the preview OR the resolver) asserted on both bodies, plus the zero-reason
+  split and the report's wording driven behaviourally.
+- **`R: the accrual RECONCILES late data`** — the note round-trip mirror
+  (builders ↔ `parseAccrualLedger_`, including the fail-closed nulls), the
+  window incl. the year boundary and the current-month exclusion, all four
+  verdicts of `planAccrualReconcile_` driven in a vm (topup / ok / shortfall /
+  skipped), and the structural rules: only a topup reaches the balance mutator,
+  one range index build per run, the ledger read bounded and reporting
+  `truncated`, the max-hours-wins rule.
+- **The editor suite gained `accrualReconcile_topsUpLateData`** (+1
+  registration; the run prints its own `Expected:` line), which replays the live 2026-08 sequence end to end rather
+  than asserting the parts: open day credits zero → the approval lands late →
+  the next run tops up → a re-run does not → a deleted punch reports instead of
+  clawing back. It is the acceptance test for the whole change.
+- **`serverDecls()` moved into `harness.js`** so the F2c pin and
+  `scripts/split-manifest.mjs` share ONE declaration canonicalization. Two
+  implementations of the same hash is what produced 43 spurious mismatches
+  while F2 was being built.
+
+**Three hazards this round put in the gotcha index rather than here**, because
+they are rules for writing pins and not facts about a batch: a pin that asserts
+a guard's MESSAGE instead of RUNNING it, `deepStrictEqual` against a
+vm-sandbox value comparing realms, and the two ways `bite.sh` misreported a
+verdict. See g116 — all four were found by bite-checking, which is the only
+reason they are known at all.
