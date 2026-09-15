@@ -2541,3 +2541,38 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   [the dry-run decision](design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin).
   The family this belongs to is the one above it: a degraded or ambiguous read
   must never render as data.
+
+<a id="g115-a-job-that-closes-a-period-must"></a>
+- **A job that CLOSES a period must RECONCILE it afterwards — the data it read
+  was not final (operator 2026-09-15).** `creditMonthlyPtoAccruals` ran on the
+  1st, valued the month from the Timesheet, credited it, and advanced the
+  column-R stamp. The stamp is what makes the daily cadence safe — it is why a
+  re-run owes nothing — but it also made the month's valuation PERMANENT at the
+  instant of the first run. The Timesheet is not final on the 1st. Three things
+  routinely land later: a missing-punch adjustment approved by a manager, a
+  manager day edit, and a direct Sheet edit (which this project supports by
+  design, via the reconcile pass). Every one of them was silently lost.
+
+  It fired: on 2026-09-01 all three PH reps were credited ZERO for 2026-08 on
+  days that were still clock-in-with-no-clock-out at 18:00. The credit was
+  RIGHT to refuse them — inventing a clock-out is worse. The approvals landed
+  days afterwards, the days became complete, and nothing ever looked again.
+  There was no error, no red dot, and no retry; the operator found it by
+  reading an audit row and asking why it said zero.
+
+  **The rule: pick the idempotency key that matches what can still change.**
+  "This period was processed" is only safe when the period's inputs are frozen.
+  When they are not, the key must be the VALUE already committed — here, the
+  hours already paid for — so a later change is a difference to settle rather
+  than a fact that arrives too late to matter. The accrual now re-values a
+  trailing window on every run and credits the difference.
+
+  Three properties the reconciliation needs, and they generalise:
+  **upward only** (fewer readable hours is reported, never clawed back — a
+  script does not quietly take back something a person has been told they
+  have); **fail closed** (a period it cannot value, or a ledger it cannot
+  fully read, is reported and skipped — "cannot read what was committed" must
+  never collapse into "nothing was committed", which would commit it all
+  again); and **a ledger that is the record itself** rather than a second
+  store that can disagree with it. Verify: the R pin's four verdicts, the
+  round-trip mirror, and the editor suite's replay of the 2026-08 sequence.

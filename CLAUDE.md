@@ -226,6 +226,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself (F4, cycle-16 — FIXED).** Fires when you wrap an overlay read in a bare `catch`. [Detail](docs/gotchas.md#g53-a-best-effort-overlay-whose-absence-is)
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
 - **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
+- **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
 
 ### Punch, PTO & roster semantics
 
@@ -358,6 +359,7 @@ for the reasoning, which is usually the part that matters.
 - [Smoke vs. integration tests](docs/design-decisions.md#smoke-vs-integration-tests)
 - [PTO bucket state lives in the Employees sheet](docs/design-decisions.md#pto-bucket-state-lives-in-the-employees-sheet)
 - [Per-employee PTO opt-out via `EMP.PTO_ENABLED` column](docs/design-decisions.md#per-employee-pto-opt-out-via-emp-pto-enabled-column)
+- [The accrual credit is idempotent on HOURS PAID, not on months processed — and the ledger is the audit row (operator 2026-09-15)](docs/design-decisions.md#the-accrual-credit-is-idempotent-on-hours-paid-not-on-months)
 - [The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14)](docs/design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin)
 - [Self-undo vs. Adjust split](docs/design-decisions.md#self-undo-vs-adjust-split)
 - [Resuming a closed day CONVERTS the clock-out into a break — it never deletes it (B3, operator 2026-09-01)](docs/design-decisions.md#resuming-a-closed-day-converts-the-clock-out-into-a-break-it)
@@ -523,7 +525,12 @@ Auto-managed diagnostics: `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
 `{count, lastAt, lastAction}` lost-tamper-witness counter stamped by
 `writeWitnessAuditLog_` after a failed retry; surfaced in Automation Health +
 the failure digest's 48h window; delete the property to reset the counter)
-`AUTOMATION_LAST_ERRORS` (cycle-18 F4 — `{job: {at, error}}` stamped by a trigger handler's own catch and cleared on its next clean run, because a handler that RETURNS an error object reaches nobody; read by `automationProblems_` onto the health dot + failure digest. Auto-managed — delete the property to clear a stale failure flag) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
+`AUTOMATION_LAST_ERRORS` (cycle-18 F4 — `{job: {at, error}}` stamped by a trigger handler's own catch and cleared on its next clean run, because a handler that RETURNS an error object reaches nobody; read by `automationProblems_` onto the health dot + failure digest. Auto-managed — delete the property to clear a stale failure flag) `PTO_ACCRUAL_RECONCILE` (operator 2026-09-15 — `{at, window, toppedUp, days,
+shortfalls[], skipped[], incomplete[], truncated}`, the last accrual reconcile
+pass's outcome, stamped by `creditMonthlyPtoAccruals` and read by
+`automationProblems_` onto the health dot + failure digest so a shortfall or an
+unreconcilable month is visible without re-running two full sheet reads.
+Auto-managed — delete the property to clear a stale flag) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
 `{date, mode, pass, fail, skip[, error]}`; delete to clear a stale failure
 flag after fixing).
 
@@ -818,8 +825,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 8 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 204 | `.cycle/config.md` |
-| Regression scenarios (S*) | 102 | `.cycle/config.md` |
+| Invariant library entries | 205 | `.cycle/config.md` |
+| Regression scenarios (S*) | 103 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

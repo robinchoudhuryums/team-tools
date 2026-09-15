@@ -1411,6 +1411,14 @@ entry says which it is.
   this usually is. For an OLDER month, paste a scratch function into the editor
   (`function q(){ previewPtoAccruals('2026-05'); }`) and run that — and delete
   it, or the next `clasp push -f` will, since the editor copy is not in the repo.
+  **Since 2026-09-15 a closed month is no longer beyond reach automatically.**
+  Every credit run re-values the last `PTO_ACCRUAL_RECONCILE_MONTHS` (3)
+  completed months against what was already credited and TOPS UP the
+  difference, so a missing punch approved after the month closed is picked up on
+  the next nightly run without touching column R at all. You only need the
+  hand-rewind for a month OLDER than that window. What the pass will not do is
+  reduce a balance: a month that now reads fewer hours than were credited is
+  reported on Admin → Automation Health as a shortfall and left alone.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);
