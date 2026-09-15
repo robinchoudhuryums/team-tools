@@ -20992,6 +20992,54 @@ test('C4: CI runs `counts.mjs --check`', () => {
 });
 
 
+// --- g118 (2026-09-15): the undeclared-identifier net --------------------------
+// `creditMonthlyPtoAccruals` shipped reading a `perDay` that no scope declared,
+// and FOUR pins over that exact function stayed green — every pin here reads the
+// server as TEXT, and the text looked right. scripts/lint-server.mjs closes the
+// gap between "parses" (node --check, per file) and "runs" (name resolution,
+// across the ONE global scope Apps Script loads them into).
+//
+// READ THE IRONY: this pin is itself structural, so it cannot tell you the net
+// WORKS. Two other things do, and neither is here — the bite-check recorded in
+// g118 (revert the fix, the net names 20_timeclock.js:780), and CI actually
+// running it. What this pin protects is the WIRING: a net nobody runs is worth
+// nothing, and the three ways it silently stops running are all checkable.
+test('g118: the undeclared-identifier net is wired, and can resolve its dependency when it runs', () => {
+  const wf = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
+  const net = fs.readFileSync(path.join(__dirname, '../../scripts/lint-server.mjs'), 'utf8');
+
+  assert.ok(/scripts\/lint-server\.mjs/.test(wf),
+    'CI must run the undeclared-identifier net — without this step nothing between a ReferenceError and prod');
+  assert.ok(pkg.devDependencies && pkg.devDependencies.eslint,
+    'eslint must be a declared devDependency: it resolves from a global install on a dev box and from NOTHING on a CI runner');
+  assert.ok(pkg.scripts && /lint-server\.mjs/.test(pkg.scripts['lint:server'] || ''),
+    'package.json must expose the net as `npm run lint:server` — g118 and the CI step both name it');
+
+  // ORDER: the net imports eslint, so it cannot run in the dependency-free
+  // floor that precedes `npm ci` (F10's rule). A step that moved above it would
+  // fail the job on a resolution error rather than on a real finding.
+  const ci = wf.indexOf('npm ci');
+  const lint = wf.indexOf('scripts/lint-server.mjs');
+  assert.ok(ci >= 0 && lint > ci,
+    'the net step must come AFTER `npm ci` — it needs eslint, unlike the zero-dependency floor above it');
+
+  // MEMBERSHIP is the directory, not filePushOrder. clasp pushes Tests.js and
+  // DevTools.js too, and they declare globals the fourteen files READ
+  // (_TEST_OVERRIDE_*). Linting only filePushOrder would report every one of
+  // them as undeclared, and the honest fix for that noise is a hand-written
+  // allow-list that then hides the next real one.
+  assert.ok(/readdirSync/.test(net),
+    'the net must enumerate web-app/*.js from the DIRECTORY, so a new server file is covered the day it lands');
+  assert.ok(/'no-undef'/.test(net), 'the net must enable no-undef');
+
+  // ONE combined lint. Per-file, every cross-file helper is "undeclared" — the
+  // concatenation IS the model of Apps Script's single global scope.
+  assert.strictEqual((net.match(/\.verify\(/g) || []).length, 1,
+    'the net must lint the CONCATENATION once, not each file separately — separate lints model a runtime this is not');
+});
+
+
 // --- Batch D1 (2026-09-14): the CLAUDE.md split -------------------------------
 // D1 moved the 137 Key Design Decisions out of CLAUDE.md and left a 137-link
 // INDEX behind. That index is a new parallel source (INV-72's family): a

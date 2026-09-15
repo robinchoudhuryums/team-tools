@@ -2654,3 +2654,54 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   an empty list is never mistaken for a clean board (the honest-failure family,
   pointed at a diagnostic rather than at data). Verify: the T pin's two bounds
   driven, plus the read-only / no-mail / no-PTO-flag assertions.
+
+<a id="g118-a-structural-pin-cannot-see-a"></a>
+- **A structural pin cannot see a ReferenceError — every Node pin reads the
+  server as TEXT, and text that LOOKS right resolves to nothing (operator
+  2026-09-15).** `creditMonthlyPtoAccruals` shipped passing a `perDay` that no
+  scope declared. When `planPtoAccrualRun_` was extracted as the ONE resolver,
+  the credit's own `const basis = …, perDay = …;` moved into it and only
+  `basis` was re-declared at the call site. The accrual credit threw
+  `perDay is not defined` on **every** run — including the 18:00 run that was
+  supposed to top August up — and it surfaced only when the editor suite ran on
+  the real runtime, a day later, as three failures reading
+  `{"success":false,"error":"perDay is not defined"}`.
+
+  Four Node pins stand over that exact function (hours-driven, the dry run, the
+  reconcile, the ledger round-trip) and all four stayed green, because **that is
+  what they are for**. A pin built on `serverSource()` asserts that the source
+  contains a shape: the shape was perfect. Nothing in `test/client/` executes
+  server code, and `node --check` parses each file in isolation, where an
+  undeclared identifier is legal. The defect lived in the one gap between
+  "parses" and "runs" — name resolution — and this repo had no check there at
+  all.
+
+  The net is [`scripts/lint-server.mjs`](../scripts/lint-server.mjs)
+  (`npm run lint:server`, wired into CI after `npm ci`): eslint with `no-undef`
+  and nothing else, over the CONCATENATION of every `web-app/*.js` file. The
+  concatenation is the point — Apps Script loads them into ONE global scope, so
+  a name declared in `00_config.js` is in scope in `90_qa.js`, and linting them
+  separately would report every cross-file helper as undeclared. Membership is
+  the DIRECTORY, not `filePushOrder`: clasp pushes `Tests.js` and `DevTools.js`
+  too, which is why their globals need no hand-list, and why a new server file
+  is covered the day it lands. The ONE hand-maintained list is the Apps Script
+  platform's own services, which live in no file we can read — **an entry added
+  there silences a real bug, so add one only against the Apps Script reference.**
+
+  Its first run found three more, all pre-existing: `_TEST_OVERRIDE_KB_SS_ID`,
+  `_TEST_OVERRIDE_FORMS_SS_ID` and `_TEST_OVERRIDE_QA_SS_ID` were read by their
+  resolvers and declared nowhere. The reads never threw (they sit behind
+  `typeof … !== 'undefined'`), but `_withTestKb_` **assigns** the KB one, and
+  that only worked because Apps Script runs sloppy mode and an assignment to an
+  undeclared name creates an implicit global. All eight overrides are now
+  declared together in `Tests.js`. Note what the other two mean: nothing assigns
+  FORMS or QA, so those two resolver branches cannot fire — a read-but-never-
+  written override is the g04 defect with the arrow reversed.
+
+  **The rule: a check that reads source can only ever find what source LOOKS
+  like.** Before trusting a wall of structural pins over a function, ask what
+  class of defect leaves the source looking correct — and whether anything in
+  the repo would notice. Verify: revert `const basis = run.basis, perDay =
+  run.perDay;` to `const basis = run.basis;` and `npm run lint:server` names
+  `20_timeclock.js:780 'perDay' is not defined` (bite-checked at the time of
+  writing, against the real defect).

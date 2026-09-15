@@ -115,6 +115,16 @@
     "removeAutomationTriggers"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "g118: creditMonthlyPtoAccruals declares perDay from the resolver — the reconcile call read an identifier no scope declared and threw ReferenceError on every run",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "creditMonthlyPtoAccruals"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2707,7 +2717,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c3298258959f72ad"
+   "sha": "56af11cc8d5489f0"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
