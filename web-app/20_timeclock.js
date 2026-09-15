@@ -296,6 +296,28 @@ function accrualZeroReason_(entry) {
   return 'no worked hours in the period';
 }
 
+/** PURE (Node-pinned): why an INSPECT month cannot be used, or '' when it can.
+ *  Pure because the alternative is a pin that asserts the error MESSAGE exists
+ *  in the source — which stays green when the `if` around it is deleted. That
+ *  is not hypothetical: the first version of this guard was written inline, and
+ *  the bite-check that removed its condition did not turn the harness red.
+ *
+ *  Both cases REFUSE rather than report something smaller than the truth. A
+ *  malformed month would silently inspect nothing; a month still in progress
+ *  would report real hours that are simply incomplete, under a rule that is
+ *  explicitly in arrears — and an operator acts on either. */
+function accrualInspectMonthError_(inspectYm, nowYm) {
+  if (!inspectYm) return '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(inspectYm)) {
+    return 'month must be yyyy-MM (got "' + inspectYm + '")';
+  }
+  if (inspectYm >= nowYm) {
+    return inspectYm + ' is not a COMPLETED month (it is ' + nowYm + ') — a partial month ' +
+      'understates the hours, and the accrual rule is in arrears.';
+  }
+  return '';
+}
+
 /** PURE (Node-pinned): the "… NOT counted" tail BOTH accrual audit rows carry.
  *  One builder so the credited row and the zero row can never disagree about
  *  what was left out. */
@@ -423,13 +445,8 @@ function previewPtoAccruals(monthYm) {
   // rather than degrade — a preview that silently inspected the wrong month, or
   // a partial one, is worse than no preview, because the operator acts on it.
   const inspectYm = (monthYm === null || monthYm === undefined) ? '' : String(monthYm).trim();
-  if (inspectYm && !/^\d{4}-(0[1-9]|1[0-2])$/.test(inspectYm)) {
-    return { success: false, error: 'previewPtoAccruals: month must be "yyyy-MM" (got "' + inspectYm + '")' };
-  }
-  if (inspectYm && inspectYm >= nowYm) {
-    return { success: false, error: 'previewPtoAccruals: ' + inspectYm + ' is not a COMPLETED month (it is ' +
-      nowYm + ' in ' + tz + ') — a partial month understates the hours, and the accrual rule is in arrears.' };
-  }
+  const monthErr = accrualInspectMonthError_(inspectYm, nowYm);
+  if (monthErr) return { success: false, error: 'previewPtoAccruals: ' + monthErr + ' [' + tz + ']' };
   try {
     const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
     const rows = sheet.getDataRange().getValues();

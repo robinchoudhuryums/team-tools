@@ -33,6 +33,18 @@
     "previewPtoAccruals"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "previewPtoAccruals inspect mode: the resolver takes an optional completed month that ignores the column-R stamp; the month guard is a pure helper so a pin can drive it",
+   "added": [
+    "accrualInspectMonthError_"
+   ],
+   "removed": [],
+   "changed": [
+    "previewPtoAccruals"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1851,6 +1863,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "3203cf146874d025"
+  },
+  "accrualInspectMonthError_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3e4f6d85e71d9b24"
   },
   "accrualMonthList_": {
    "file": "20_timeclock.js",
@@ -4880,7 +4897,7 @@
   "previewPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "369cbf1bd0719f4d"
+   "sha": "b672967b234ba6b2"
   },
   "propBudgetsFor_": {
    "file": "10_core.js",

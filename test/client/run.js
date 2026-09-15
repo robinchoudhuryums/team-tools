@@ -11043,10 +11043,23 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   assert.ok(!/inspectYm/.test(credit),
     'the CREDIT never mentions an inspect month — it may only ever act on the stamp');
   // Both guards REFUSE rather than degrade: a preview of the wrong month, or of
-  // a month still in progress, is acted on by an operator either way.
-  assert.ok(/month must be "yyyy-MM"/.test(prev[0]), 'a malformed month is refused by name');
-  assert.ok(/inspectYm >= nowYm/.test(prev[0]) && /is not a COMPLETED month/.test(prev[0]),
+  // a month still in progress, is acted on by an operator either way. Driven
+  // BEHAVIOURALLY — the first version of this pin asserted only that the error
+  // message existed in the source, and a bite-check that deleted the `if`
+  // around it left the harness green. The guard is pure now so it can be run.
+  vm.runInContext(extractRawFunction('Code.js', 'accrualInspectMonthError_'), sb, { filename: 'Code.js#accrualInspectMonthError_' });
+  const monthErr = sb.accrualInspectMonthError_;
+  assert.strictEqual(monthErr('', '2026-09'), '', 'no month at all is the ordinary preview, not an error');
+  assert.strictEqual(monthErr('2026-08', '2026-09'), '', 'a completed month is accepted');
+  assert.ok(/month must be yyyy-MM/.test(monthErr('2026-13', '2026-09')), 'month 13 is refused');
+  assert.ok(/month must be yyyy-MM/.test(monthErr('2026-8', '2026-09')), 'an unpadded month is refused');
+  assert.ok(/month must be yyyy-MM/.test(monthErr('August', '2026-09')), 'a month NAME is refused');
+  assert.ok(/month must be yyyy-MM/.test(monthErr('2026-00', '2026-09')), 'month 00 is refused');
+  assert.ok(/is not a COMPLETED month/.test(monthErr('2026-09', '2026-09')),
     'the CURRENT month is refused — a partial month understates the hours under an in-arrears rule');
+  assert.ok(/is not a COMPLETED month/.test(monthErr('2026-10', '2026-09')), 'a FUTURE month likewise');
+  assert.ok(/planPtoAccrualRun_/.test(prev[0].slice(prev[0].indexOf('accrualInspectMonthError_'))),
+    'the refusal happens BEFORE the resolver runs — a bad month never reaches a Timesheet read');
   const insBase = { ...base, inspectYm: '2026-08' };
   const ins = fmt({ ...insBase, reps: [{ id: 'E1', name: 'Rep One', rate: 3.08, stamp: '2026-08',
     months: ['2026-08'], seeds: false, capped: 0, newStamp: '2026-08', hours: 160, incompleteDays: 0,
