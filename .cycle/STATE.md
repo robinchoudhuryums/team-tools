@@ -149,6 +149,7 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- **OPERATOR (2026-09-15): run `previewPtoAccruals('2026-08')` after the push.** The 2026-09-01 run credited ZERO to all three PH reps (PH0001/2/3) — two with incomplete days (2 and 4), one with none — while the Timesheet now shows complete days assembled from `ADJ-` rows. Working hypothesis: the missing-punch adjustments were approved AFTER the 6pm Sep 1 credit, so the days were genuinely open at the time and the stamp then closed the month. The inspection confirms or refutes it; the AuditLog rows for those approvals (action = the punch type, column H `TRUE`, notes `approved adjustment request…`) carry the timestamps that settle it.
 - **OPERATOR (new, 2026-09-14): deploy the `previewPtoAccruals` batch.** `clasp push -f` + a New version. Two things move with it: the editor suite is now **318** registrations (Part A 209 + Part B **109**), and the PTO accrual audit rows gain a reason clause. Then run `previewPtoAccruals` from the editor (regression scenario S107) against the real roster — that is the first real answer to "does the accrual tally correctly", and the rep whose 2026-08 row read `hoursWorked=0` is the one to look at.
 - **OPERATOR (new): the 2026-08 zero row is still un-recovered.** The preview will now say WHICH of the three causes it was. If the rep did work that month, fix the cause, then set their column R back to `2026-07` and let the daily job re-credit; column I is the balance of record and the credit is a delta, so it composes.
 - OPERATOR: set `INSTANCE_IS_PROD=true` on prod (the 2026-09-14 run proved it unset — the full suite ran against live payroll with the guard inert). Setting it makes every full-suite entry point refuse on prod, so stand up the dev instance in the same pass.
@@ -290,8 +291,13 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 
 ## Where I left off
 
-**`previewPtoAccruals` shipped on this branch (2026-09-14), NOT yet pushed to
-Apps Script.** A live `PtoAccrualCredit` row reading `hoursWorked=0 … no worked
+**Inspect mode shipped 2026-09-15** — `previewPtoAccruals('2026-08')` reports a
+completed month ignoring the column-R stamp, because the first live run showed
+all three accruing reps stamped through 2026-08 and therefore invisible to an
+owed-months report. The month guard is a pure helper after a bite-check proved
+the inline version's pin could not fail. Next: push, then inspect 2026-08.
+
+**`previewPtoAccruals` shipped 2026-09-14 and MERGED as PR #246 (1a7d35f).** A live `PtoAccrualCredit` row reading `hoursWorked=0 … no worked
 hours in the period` turned out to cover three unrelated causes with one
 sentence, and the month was already closed by the column-R stamp. The batch adds
 a read-only dry run that shares the credit's own resolver (`planPtoAccrualRun_`,

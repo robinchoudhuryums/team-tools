@@ -375,6 +375,35 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   execution log via `text`); the structured `reps` array is there for a future
   manager surface, which is deliberately NOT built yet — the editor is where
   this question gets asked today.
+
+  **INSPECT MODE — `previewPtoAccruals('2026-08')` (2026-09-15).** The first
+  live run found the gap in the paragraph above: all three accruing reps were
+  stamped through 2026-08, so the preview reported "nothing owed" for every one
+  of them. That is TRUE and useless — the column-R stamp closes a month
+  permanently, so the month an operator most wants to look at is precisely the
+  one an owed-months report cannot see. A forward-looking tool answering a
+  backward-looking question.
+
+  Inspect mode reports what ONE completed month is worth on the Timesheet as it
+  reads NOW, ignoring the stamp. It rides the same resolver (a third parameter
+  replaces the owed-month list and changes nothing else — same inclusion
+  predicate, same rate parse, same per-row PTO gate), so an inspection sees
+  exactly the population a credit would.
+
+  **Ignoring the stamp is the point, so the report says it is doing that.** The
+  header names the month and states column R was ignored; every rep whose stamp
+  already settles that month is marked SETTLED with the remedy on the same line;
+  the total is phrased as a valuation ("Total 2026-08 is WORTH"), and the
+  "re-run creditMonthlyPtoAccruals to apply" line is deliberately absent. Hours
+  that are worth something and will never be paid must not read as a pending
+  credit — the honest-failure family pointed the other way: not a degraded read
+  rendering as data, but a hypothetical rendering as a commitment.
+
+  Both guards REFUSE rather than degrade, and the guard is a PURE helper
+  (`accrualInspectMonthError_`) for a reason worth recording: written inline
+  first, its pin asserted only that the error message appeared in the source,
+  and a bite-check that deleted the `if` around it left the harness green. A
+  guard a pin cannot RUN is a guard nobody has checked.
 - <a id="self-undo-vs-adjust-split"></a>**Self-undo vs. Adjust split.** Live mistakes within 5 minutes
   go through `selfDeletePunch` (audit row, no Manager
   involvement). Anything older now goes through the **adjustment-request

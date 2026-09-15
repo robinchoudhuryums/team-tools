@@ -21,6 +21,30 @@
     "workedHoursForEmpMonth_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "previewPtoAccruals inspect mode: the resolver takes an optional completed month that ignores the column-R stamp, for diagnosing a month the stamp has already closed",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "formatPtoAccrualPreview_",
+    "planPtoAccrualRun_",
+    "previewPtoAccruals"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-15",
+   "why": "previewPtoAccruals inspect mode: the resolver takes an optional completed month that ignores the column-R stamp; the month guard is a pure helper so a pin can drive it",
+   "added": [
+    "accrualInspectMonthError_"
+   ],
+   "removed": [],
+   "changed": [
+    "previewPtoAccruals"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1840,6 +1864,11 @@
    "kind": "function",
    "sha": "3203cf146874d025"
   },
+  "accrualInspectMonthError_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3e4f6d85e71d9b24"
+  },
   "accrualMonthList_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -2993,7 +3022,7 @@
   "formatPtoAccrualPreview_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "29f7c233cbfb0e47"
+   "sha": "13ff9a44405ff1f3"
   },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
@@ -4848,7 +4877,7 @@
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3abb59bba80799e8"
+   "sha": "4741048c01cc40b2"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -4868,7 +4897,7 @@
   "previewPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "656d55ec49027ba9"
+   "sha": "b672967b234ba6b2"
   },
   "propBudgetsFor_": {
    "file": "10_core.js",

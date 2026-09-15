@@ -14,6 +14,47 @@ Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.
 
+- **The accrual dry run gains an INSPECT month (2026-09-15) — still NO new
+  operator state.** `previewPtoAccruals('2026-08')` reports what one COMPLETED
+  month is worth on the Timesheet as it reads now, ignoring the column-R stamp.
+
+  **Why, one day after the preview shipped.** The first live run read:
+
+  ```
+  Timesheet read: none needed — no rep owes a completed month.
+    · Anne Garcia [PH0001] — nothing owed (column R already 2026-08).
+    · Margie Ingay [PH0002] — nothing owed (column R already 2026-08).
+    · Julienne Inaanuran [PH0003] — nothing owed (column R already 2026-08).
+  ```
+
+  Correct, and useless. The stamp closes a month permanently, so the month you
+  want to look at is always one the owed-months report cannot see — a
+  forward-looking tool answering a backward-looking question. Inspect mode is
+  the missing half.
+
+  **Reading an inspection.** It ignores the stamp, so it says so: the header
+  names the month, a line states column R was IGNORED, each rep the stamp has
+  already settled is marked SETTLED with the rewind remedy beside it, and the
+  total is phrased as a valuation ("Total 2026-08 is WORTH") with no
+  "re-run creditMonthlyPtoAccruals" suggestion — because for a settled month
+  running the credit would do nothing at all.
+
+  **Two refusals.** A malformed month (`2026-13`, `2026-8`, `August`) and the
+  CURRENT month are both refused outright with nothing read. The current-month
+  refusal matters: the accrual rule is in arrears, so a partial month reports
+  real hours that are simply not all of them, and an operator would act on the
+  smaller number.
+
+  **The August 2026 finding this came from.** All three PH reps were credited
+  ZERO for August on the 2026-09-01 run — two with incomplete days (2 and 4),
+  one with none at all — while the Timesheet now shows complete days for them,
+  assembled from `ADJ-` rows that the missing-punch approval flow writes. The
+  working hypothesis is a TIMING one rather than a defect: at 6pm on Sep 1 those
+  days were still open (clock-in, no clock-out), the credit correctly declined
+  to count them, the stamp advanced, and the adjustments were approved
+  afterwards. Inspect mode is how that gets confirmed or refuted — and if
+  confirmed, the remedy is the documented rewind of column R.
+
 - **The PTO accrual dry run (`previewPtoAccruals`, 2026-09-14) adds NO new
   operator state** — no Script Property, no trigger, no roster column, no
   migration. It is a manager-gated, read-only function you run from the Apps
