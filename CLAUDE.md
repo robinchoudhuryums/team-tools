@@ -227,6 +227,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
 - **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
+- **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
 ### Punch, PTO & roster semantics
 
@@ -531,7 +532,12 @@ shortfalls[], skipped[], incomplete[], truncated}`, the last accrual reconcile
 pass's outcome, stamped by `creditMonthlyPtoAccruals` and read by
 `automationProblems_` onto the health dot + failure digest so a shortfall or an
 unreconcilable month is visible without re-running two full sheet reads.
-Auto-managed — delete the property to clear a stale flag) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
+Auto-managed — delete the property to clear a stale flag) `OPEN_PUNCH_CHECK`
+(operator 2026-09-15 — `{at, window, reps, days, expiring, detail[]}` or
+`{at, error}`, the last daily open-punch scan, stamped by `checkOpenPunches`
+at 8am and read by `automationProblems_` an hour later so the 9am health digest
+emails it. A FAILED scan stamps the error, so an empty finding list is never a
+clean board. Auto-managed — delete to clear) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
 `{date, mode, pass, fail, skip[, error]}`; delete to clear a stale failure
 flag after fixing).
 
@@ -826,8 +832,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 205 | `.cycle/config.md` |
-| Regression scenarios (S*) | 103 | `.cycle/config.md` |
+| Invariant library entries | 206 | `.cycle/config.md` |
+| Regression scenarios (S*) | 104 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
