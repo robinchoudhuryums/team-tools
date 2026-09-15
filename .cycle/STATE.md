@@ -149,6 +149,8 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- **OPERATOR (new, 2026-09-14): deploy the `previewPtoAccruals` batch.** `clasp push -f` + a New version. Two things move with it: the editor suite is now **318** registrations (Part A 209 + Part B **109**), and the PTO accrual audit rows gain a reason clause. Then run `previewPtoAccruals` from the editor (regression scenario S107) against the real roster — that is the first real answer to "does the accrual tally correctly", and the rep whose 2026-08 row read `hoursWorked=0` is the one to look at.
+- **OPERATOR (new): the 2026-08 zero row is still un-recovered.** The preview will now say WHICH of the three causes it was. If the rep did work that month, fix the cause, then set their column R back to `2026-07` and let the daily job re-credit; column I is the balance of record and the credit is a delta, so it composes.
 - OPERATOR: set `INSTANCE_IS_PROD=true` on prod (the 2026-09-14 run proved it unset — the full suite ran against live payroll with the guard inert). Setting it makes every full-suite entry point refuse on prod, so stand up the dev instance in the same pass.
 - OPERATOR: confirm the New version was cut, and that the editor lists fourteen server files with no `Code.js`.
 - (DONE 2026-09-14) BATCH D1 of the next-steps plan — `.cycle/blocks/19-batchD1-broad-implement.md`;
@@ -287,6 +289,20 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+
+**`previewPtoAccruals` shipped on this branch (2026-09-14), NOT yet pushed to
+Apps Script.** A live `PtoAccrualCredit` row reading `hoursWorked=0 … no worked
+hours in the period` turned out to cover three unrelated causes with one
+sentence, and the month was already closed by the column-R stamp. The batch adds
+a read-only dry run that shares the credit's own resolver (`planPtoAccrualRun_`,
+extracted, not copied), makes the zero audit row name which cause it saw, and
+stops the range index from dropping a clock-out-with-no-clock-in without trace.
+823 pure + 113 DOM green; seven bite-checks; INV-204, gotcha g114, scenario S107.
+Two side-findings fixed in their own commits: `bite.sh` silently mangled any
+mutation containing a double quote, and its `grep -q` over a pipe reported a
+real bite as NO BITE whenever the match landed early in an 83KB output
+(SIGPIPE under `pipefail`). **Next: push, New version, then walk S107 against
+the real roster.**
 
 **The cycle-19 deploy gate is CLOSED (2026-09-14).** Everything through PR #245
 is merged, pushed and validated on the real Apps Script runtime — 316/316 across

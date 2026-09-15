@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile, serverDecls } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -10855,10 +10855,17 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // buildTimesheetForEmployee_ call would be N full-sheet reads.
   const h = code.match(/function creditMonthlyPtoAccruals\(\) \{[\s\S]*?\n\}/);
   assert.ok(h, 'creditMonthlyPtoAccruals exists');
-  assert.ok(!/buildTimesheetForEmployee_/.test(h[0]),
+  // The DECISIONS moved into planPtoAccrualRun_ (shared with the read-only
+  // preview); the credit is now the writes and their order. Both halves are
+  // pinned, so the extraction cannot quietly become two implementations.
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm\) \{[\s\S]*?\n\}/);
+  assert.ok(plan, 'planPtoAccrualRun_ exists');
+  assert.ok(!/buildTimesheetForEmployee_/.test(h[0] + plan[0]),
     'no per-rep timesheet build inside the locked credit run');
-  assert.strictEqual((h[0].match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
+  assert.strictEqual((plan[0].match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
     'exactly ONE range index build per run');
+  assert.strictEqual((h[0].match(/planPtoAccrualRun_\(/g) || []).length, 1,
+    'the credit resolves the run exactly once');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
   assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2,
@@ -10876,7 +10883,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   assert.ok(!/catch/.test(idx[0]),
     'a failed read THROWS — the run aborts with no credits rather than crediting from partial hours');
   // ── Unchanged guarantees, re-pinned against the rewrite.
-  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(h[0]), 'INV-183 — the roster-inclusion predicate guards the walk');
+  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(plan[0]), 'INV-183 — the roster-inclusion predicate guards the walk');
   assert.ok(/adjustLeaveBalance_\(p\.emp\.id, 'annual', earned\.days\)/.test(h[0]),
     'credits go through THE balance mutator (per-row gate + cache invalidation ride along)');
   // The forward-stamp NO-OP above is only a no-op because the caller's write is
@@ -10887,7 +10894,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
   assert.ok(/hoursWorked=/.test(h[0]) && /ptoHours=/.test(h[0]) && /rate=/.test(h[0]),
     'the audit row records the hours, the rate and the days — the operator can verify a credit');
-  assert.ok(/no worked hours in the period/.test(h[0]),
+  assert.ok(/accrualZeroReason_\(p\)/.test(h[0]),
     'a zero-hours month writes an audit row too, so unexpected silence is visible');
   assert.ok(/getFlag_\('enablePtoTracking'\)/.test(h[0]), 'the global PTO switch short-circuits the run');
   const asy = code.match(/function accrualStampYm_\(cell\) \{[\s\S]*?\n\}/);
@@ -10896,6 +10903,128 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // Membership the coupling registry cannot enforce in this direction.
   assert.ok(/'TimesheetArchive',\s*'PtoAccrualCredit',/.test(code),
     'PtoAccrualCredit is a registered automation audit action');
+});
+
+test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual resolver (operator 2026-09-14)', () => {
+  // WHY this exists: a `PtoAccrualCredit` row reading `hoursWorked=0 … no
+  // worked hours in the period` could mean a genuine month off, a rep whose
+  // punches are filed under a different employee id, or punches that never
+  // formed a complete day — three causes, one string, and the operator had to
+  // reconstruct which by hand from the Timesheet. The preview answers it
+  // BEFORE the 6pm job runs.
+  //
+  // The only reason a preview is worth trusting is that it is not a second
+  // implementation (g59: a DRAFT preview goes through the ONE resolver). So
+  // the two structural claims — shared resolver, writes nothing — are pinned
+  // as hard as the arithmetic.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(serverSource());
+  const prev = code.match(/function previewPtoAccruals\(\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm\) \{[\s\S]*?\n\}/);
+  assert.ok(prev && plan, 'previewPtoAccruals and planPtoAccrualRun_ exist');
+
+  // ── ONE resolver, shared. Both callers, and nobody re-deriving the plan.
+  assert.strictEqual((prev[0].match(/planPtoAccrualRun_\(/g) || []).length, 1,
+    'the preview resolves the run through the shared resolver, exactly once');
+  assert.ok(!/accrualMonthsToCredit_\(|empPtoAccrual_\(|accrualDaysForHours_\(/.test(prev[0]),
+    'the preview re-derives NO part of the plan itself — that is what makes it a preview and not a guess');
+  assert.strictEqual((code.match(/^function planPtoAccrualRun_/gm) || []).length, 1,
+    'the resolver is declared once');
+
+  // ── READ-ONLY, and provably so. Any of these three in the preview or the
+  // resolver would make "nothing was written" a lie the operator acts on.
+  [['previewPtoAccruals', prev[0]], ['planPtoAccrualRun_', plan[0]]].forEach(([name, body]) => {
+    assert.ok(!/\.setValue\(|\.appendRow\(|\.deleteRow\(/.test(body), name + ' writes no cell');
+    assert.ok(!/adjustLeaveBalance_\(/.test(body), name + ' credits no balance');
+    assert.ok(!/writeAuditLog_\(/.test(body), name + ' writes no audit row');
+  });
+  assert.ok(!/LockService/.test(prev[0]),
+    'a read-only diagnostic does NOT take the 15s ScriptLock live punches queue behind');
+  assert.ok(!/stampAutomationError_/.test(prev[0]),
+    'a failed PREVIEW must not light the health dot for a job that has not itself failed');
+  assert.ok(/assertManagerCaller_\('previewPtoAccruals'\)/.test(prev[0]),
+    'INV-44 — top-level, so reachable via google.script.run, so gated');
+  // The credit short-circuits on the flag; the preview deliberately reports it
+  // instead, because "nothing will happen, and here is the switch" beats an
+  // empty report when the operator is asking why nothing happened.
+  assert.ok(/enabled: !!getFlag_\('enablePtoTracking'\)/.test(prev[0]),
+    'the preview REPORTS the PTO flag rather than short-circuiting on it');
+
+  // ── A rep with NO Timesheet rows must still reach `earned`. This one was a
+  // live regression in the extraction itself: hoisting the `if (!rec) return;`
+  // out of the months walk left `earned === null`, and the credit writes its
+  // audit row on `earned` being non-null — so the rep the whole batch is about
+  // would have passed through recorded NOWHERE. The guard belongs inside the
+  // walk (there is no month to add hours for); the zero is still earned.
+  const between = plan[0].slice(plan[0].indexOf('p.onTimesheet = !!rec;'),
+                                plan[0].indexOf('p.months.forEach('));
+  assert.ok(between.length > 0, 'the resolver records whether the rep was found on the Timesheet');
+  assert.ok(!/\breturn\b/.test(between),
+    'no early return between the Timesheet lookup and the months walk — a rep with no rows earns a legitimate ZERO and must reach the audit row');
+  assert.ok(plan[0].indexOf('p.earned = accrualDaysForHours_') > plan[0].indexOf('p.months.forEach('),
+    'what the plan earns is computed AFTER the walk, for every planned rep');
+
+  // ── The zero-reason split, behaviourally. This is the finding itself.
+  vm.runInContext(extractRawFunction('Code.js', 'accrualZeroReason_'), sb, { filename: 'Code.js#accrualZeroReason_' });
+  const why = sb.accrualZeroReason_;
+  assert.ok(/no Timesheet rows at all under employee id E9/.test(
+    why({ onTimesheet: false, incompleteDays: 0, orphanDays: 0, emp: { id: 'E9' } })),
+    'no rows at all NAMES the employee id that had none — the id mismatch case');
+  assert.ok(/no day formed a complete clock-in\/clock-out pair/.test(
+    why({ onTimesheet: true, incompleteDays: 3, orphanDays: 0, emp: { id: 'E9' } })),
+    'rows that never closed are not the same claim as no rows');
+  assert.ok(/no day formed a complete clock-in\/clock-out pair/.test(
+    why({ onTimesheet: true, incompleteDays: 0, orphanDays: 2, emp: { id: 'E9' } })),
+    'clock-out-only days count as punches that exist, not as an empty month');
+  assert.strictEqual(why({ onTimesheet: true, incompleteDays: 0, orphanDays: 0, emp: { id: 'E9' } }),
+    'no worked hours in the period', 'a genuine month off keeps the original wording');
+
+  // ── The "NOT counted" tail is ONE builder, so the credited row and the zero
+  // row cannot disagree about what was left out.
+  vm.runInContext(extractRawFunction('Code.js', 'accrualUncountedNote_'), sb, { filename: 'Code.js#accrualUncountedNote_' });
+  const tail = sb.accrualUncountedNote_;
+  assert.strictEqual(tail({ incompleteDays: 0, orphanDays: 0 }), '', 'a clean month adds nothing');
+  assert.ok(/2 incomplete day\(s\) NOT counted/.test(tail({ incompleteDays: 2, orphanDays: 0 })));
+  assert.ok(/1 day\(s\) with a clock-out and no clock-in NOT counted/.test(tail({ incompleteDays: 0, orphanDays: 1 })));
+  const credit = code.match(/function creditMonthlyPtoAccruals\(\) \{[\s\S]*?\n\}/)[0];
+  assert.strictEqual((credit.match(/accrualUncountedNote_\(p\)/g) || []).length, 2,
+    'BOTH accrual audit rows carry the same uncounted tail');
+
+  // ── The range index now SEES a clock-out with no clock-in. It used to
+  // `return` past that day counted as nothing at all, so a rep with real
+  // punches was indistinguishable from a rep who never clocked in.
+  const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
+  assert.ok(/else \{ orphan\+\+; perDayByEmp\[id\]\[date\] = TIMESHEET_DAY_ORPHAN; \}/.test(idx[0]),
+    'a clock-out with no clock-in is COUNTED, not dropped');
+  assert.ok(/orphanDays: orphan/.test(idx[0]), 'and reported per rep');
+  const slice = code.match(/function workedHoursForEmpMonth_\(idx, empId, startIso, endIso\) \{[\s\S]*?\n\}/);
+  assert.ok(/TIMESHEET_DAY_INCOMPLETE/.test(slice[0]) && /TIMESHEET_DAY_ORPHAN/.test(slice[0]),
+    'the month slicer separates the two outcomes the same way the index does');
+
+  // ── The report itself: a rep credited nothing must SAY why, never render as
+  // a bare 0 (the honest-failure family — a degraded read must not read as data).
+  vm.runInContext(extractRawFunction('Code.js', 'formatPtoAccrualPreview_'), sb, { filename: 'Code.js#formatPtoAccrualPreview_' });
+  const fmt = sb.formatPtoAccrualPreview_;
+  const base = { enabled: true, nowYm: '2026-09', tz: 'America/Chicago', basis: 80, hoursPerDay: 8,
+                 range: { start: '2026-08-01', end: '2026-08-31' }, archivedRows: 0 };
+  const zero = fmt({ ...base, reps: [{ id: 'E9', name: 'Rep Nine', rate: 3.08, stamp: '2026-07',
+    months: ['2026-08'], seeds: false, capped: 0, newStamp: '2026-08', hours: 0, incompleteDays: 0,
+    orphanDays: 0, onTimesheet: false, wouldCreditDays: 0, wouldCreditPtoHours: 0,
+    zeroReason: 'no Timesheet rows at all under employee id E9 in the period' }] });
+  assert.ok(/NOTHING WAS WRITTEN/.test(zero), 'the report says up front that it changed nothing');
+  assert.ok(/WHY ZERO: no Timesheet rows at all under employee id E9/.test(zero),
+    'a zero rep carries the reason INLINE — the whole point of the preview');
+  const good = fmt({ ...base, reps: [{ id: 'E1', name: 'Rep One', rate: 3.08, stamp: '2026-07',
+    months: ['2026-08'], seeds: false, capped: 0, newStamp: '2026-08', hours: 160, incompleteDays: 1,
+    orphanDays: 0, onTimesheet: true, wouldCreditDays: 0.77, wouldCreditPtoHours: 6.16, zeroReason: '' }] });
+  assert.ok(/160 h at 3\.08\/80h → 6\.16 PTO hours = 0\.77 day\(s\)/.test(good),
+    'a credited rep shows the whole arithmetic, not just the answer');
+  assert.ok(/1 incomplete day\(s\) NOT counted/.test(good),
+    'and what was excluded from it');
+  assert.ok(/Total that WOULD be credited: 0\.77 day\(s\) across 1 rep\(s\)/.test(good));
+  assert.ok(!/WHY ZERO/.test(good), 'a credited rep carries no zero reason');
+  assert.ok(/enablePtoTracking is OFF/.test(fmt({ ...base, enabled: false, reps: [] })),
+    'a disabled feature is stated, not implied by an empty report');
 });
 
 
@@ -20836,38 +20965,13 @@ test('F1a: nothing reads the server by filename any more (run.js and counts.mjs)
 
 console.log('\nbatch F2 — the server split');
 
-// Parse the server files into top-level declarations the way the split did:
-// a declaration starts at COLUMN 0, and runs to just before the next one with
-// trailing blank / pure-comment lines dropped (so a file banner or a moved
-// comment is not a changed declaration). Every unit produced this way parsed
-// standalone under `node --check` when the split was generated.
-function serverDecls_() {
-  const DECL = /^(function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
-  const CMT = /^\s*(\/\/|\/\*|\*|\*\/)/;
-  const out = new Map();
-  const dupes = [];
-  serverFiles().forEach((f) => {
-    const lines = fs.readFileSync(path.join(__dirname, '../../web-app/', f), 'utf8').split('\n');
-    const starts = [];
-    lines.forEach((t, i) => { if (DECL.test(t)) starts.push(i); });
-    starts.forEach((i, k) => {
-      let e = k + 1 < starts.length ? starts[k + 1] : lines.length;
-      while (e - 1 > i && CMT.test(lines[e - 1]) && lines[e - 1].trim()) e--;
-      const body = lines.slice(i, e);
-      while (body.length && (!body[body.length - 1].trim() || CMT.test(body[body.length - 1]))) body.pop();
-      const m = DECL.exec(lines[i]);
-      const rec = {
-        kind: m[1], file: f,
-        sha: require('crypto').createHash('sha256').update(body.join('\n')).digest('hex').slice(0, 16),
-      };
-      if (out.has(m[2])) dupes.push(m[2] + ' (' + out.get(m[2]).file + ' and ' + f + ')');
-      out.set(m[2], rec);
-    });
-  });
-  return { decls: out, dupes };
-}
+// The declaration split is ONE function, in the harness, shared with
+// `scripts/split-manifest.mjs` which regenerates the manifest. Two copies of a
+// hash canonicalization is what produced 43 spurious mismatches while F2 was
+// being built, so the pin and the regenerator read the same code.
+const serverDecls_ = serverDecls;
 
-test('F2c: the split is MOVE-ONLY — every declaration is byte-identical to pre-split Code.js', () => {
+test('F2c: every server declaration matches the manifest, revision by revision', () => {
   // Batch F2 moved ~30,000 lines out of Code.js into fourteen files. The claim
   // that nothing CHANGED is the whole basis for deploying it without re-testing
   // the server, so it is checked rather than asserted: the manifest was
@@ -20875,18 +20979,25 @@ test('F2c: the split is MOVE-ONLY — every declaration is byte-identical to pre
   // canonical hash from the tree. It also holds the split's SHAPE — each
   // declaration in the file the manifest says — so a later "tidy-up" that moves
   // a function between files has to say so here.
+  //
+  // AFTER the split the manifest is a LEDGER, not a frozen snapshot: a real
+  // server edit regenerates it via `node scripts/split-manifest.mjs --why "…"`,
+  // which appends a revision naming every declaration added/changed/moved. The
+  // proof survives because each revision's diff is reviewable — what it can no
+  // longer do is silently absorb an edit, since regenerating without --why is
+  // refused.
   const man = JSON.parse(fs.readFileSync(path.join(__dirname, 'server-split-manifest.json'), 'utf8'));
   const { decls, dupes } = serverDecls_();
   assert.ok(Object.keys(man.units).length > 1000, 'the manifest covers the whole server');
 
   const missing = Object.keys(man.units).filter((n) => !decls.has(n));
-  assert.deepStrictEqual(missing, [], 'declaration(s) lost in the split: ' + missing.slice(0, 8).join(', '));
+  assert.deepStrictEqual(missing, [], 'declaration(s) gone from the tree: ' + missing.slice(0, 8).join(', '));
   const added = [...decls.keys()].filter((n) => !man.units[n]);
   assert.deepStrictEqual(added, [],
     'top-level declaration(s) the manifest does not know: ' + added.slice(0, 8).join(', ') +
-    ' — a NEW server function is fine, but regenerate the manifest in the same commit so "move-only" keeps meaning something');
+    ' — a NEW server function is fine: regenerate with `node scripts/split-manifest.mjs --why "…"` in the same commit');
   const changed = Object.keys(man.units).filter((n) => decls.get(n).sha !== man.units[n].sha);
-  assert.deepStrictEqual(changed, [], 'declaration body changed since the split: ' + changed.slice(0, 8).join(', '));
+  assert.deepStrictEqual(changed, [], 'declaration body changed without a manifest revision (run scripts/split-manifest.mjs --why "…"): ' + changed.slice(0, 8).join(', '));
   const moved = Object.keys(man.units).filter((n) => decls.get(n).file !== man.units[n].file);
   assert.deepStrictEqual(moved, [], 'declaration(s) in a different file than the manifest records: ' + moved.slice(0, 8).join(', '));
 });

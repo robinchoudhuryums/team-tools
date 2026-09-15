@@ -225,6 +225,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A failed note-count read must be SURFACED, never rendered as 0 (cycle-12 F5).** Fires when a note-count read fails and a coverage surface still renders. [Detail](docs/gotchas.md#g48-a-failed-note-count-read-must-be)
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself (F4, cycle-16 — FIXED).** Fires when you wrap an overlay read in a bare `catch`. [Detail](docs/gotchas.md#g53-a-best-effort-overlay-whose-absence-is)
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
+- **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
 
 ### Punch, PTO & roster semantics
 
@@ -357,6 +358,7 @@ for the reasoning, which is usually the part that matters.
 - [Smoke vs. integration tests](docs/design-decisions.md#smoke-vs-integration-tests)
 - [PTO bucket state lives in the Employees sheet](docs/design-decisions.md#pto-bucket-state-lives-in-the-employees-sheet)
 - [Per-employee PTO opt-out via `EMP.PTO_ENABLED` column](docs/design-decisions.md#per-employee-pto-opt-out-via-emp-pto-enabled-column)
+- [The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14)](docs/design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin)
 - [Self-undo vs. Adjust split](docs/design-decisions.md#self-undo-vs-adjust-split)
 - [Resuming a closed day CONVERTS the clock-out into a break — it never deletes it (B3, operator 2026-09-01)](docs/design-decisions.md#resuming-a-closed-day-converts-the-clock-out-into-a-break-it)
 - [Punch-adjustment requests are a TimeOffRequests-style queue (#4a)](docs/design-decisions.md#punch-adjustment-requests-are-a-timeoffrequests-style-queue)
@@ -807,17 +809,17 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 822 | `node test/client/run.js` |
+| Pure harness tests | 823 | `node test/client/run.js` |
 | DOM harness tests | 113 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 316 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 318 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 50 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 8 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 203 | `.cycle/config.md` |
-| Regression scenarios (S*) | 101 | `.cycle/config.md` |
+| Invariant library entries | 204 | `.cycle/config.md` |
+| Regression scenarios (S*) | 102 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

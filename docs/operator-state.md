@@ -1386,6 +1386,20 @@ entry says which it is.
   the audit row rather than silently absorbed). Sheets may coerce the cell
   to a Date — every read routes through `accrualStampYm_` (the
   `normalizeDate_` class). `ROSTER_CACHE_KEY` bumped to v11.
+  **Before you backdate it, run the dry run** (2026-09-14): `previewPtoAccruals`
+  from the Apps Script editor prints, per accruing rep, the months owed, the
+  hours the Timesheet actually yields for them, the days that are NOT counted
+  and why, and the credit that would land — and writes nothing at all. It goes
+  through the same `planPtoAccrualRun_` the real job does, so what it prints is
+  what tonight's 6pm run will do. Use it to answer the question the audit row
+  alone cannot: a rep credited nothing may have taken the month off, may have no
+  Timesheet rows under that employee id at all, or may have punches that never
+  formed a complete clock-in/clock-out pair. **Recovering a month that was
+  wrongly credited zero:** fix the cause first (the punches, or the employee-id
+  mismatch), re-run the preview to confirm the hours now read, then set column R
+  back to the month BEFORE the one you want re-credited and let the daily job
+  pick it up — the credit is a delta onto column I, so it composes with whatever
+  the balance already holds.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);

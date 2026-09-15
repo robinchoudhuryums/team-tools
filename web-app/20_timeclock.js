@@ -79,6 +79,17 @@ function accrualMonthsToCredit_(stampYm, nowYm) {
            capped: Math.max(0, owed - PTO_ACCRUAL_CATCHUP_MAX_MONTHS),
            seeded: false };
 }
+/** The NON-NUMERIC per-day outcomes the range index stores in perDayByEmp. A
+ *  number is hours worked; these two say WHY a day contributed none, and they
+ *  are distinct because they have different operator remedies: an INCOMPLETE
+ *  day needs the missing clock-out (or an unparseable time fixed), an ORPHAN
+ *  day is a clock-out with no clock-in at all. Both used to be indistinguishable
+ *  — the orphan case left no trace whatsoever — which is how a rep with real
+ *  punches produced an accrual row reading "no worked hours in the period"
+ *  (operator 2026-09-14). */
+const TIMESHEET_DAY_INCOMPLETE = 'incomplete';
+const TIMESHEET_DAY_ORPHAN = 'orphan';
+
 /** ONE Timesheet read for a whole date range → {empId: {hours, incompleteDays}}.
  *  Built for the accrual credit, which runs inside the global ScriptLock and
  *  needs every accruing rep's worked hours: calling buildTimesheetForEmployee_
@@ -137,27 +148,153 @@ function workedHoursByEmpForRange_(startIso, endIso) {
   }
   const byEmp = {}, perDayByEmp = {};
   Object.keys(perDay).forEach((id) => {
-    let hours = 0, incomplete = 0, daysWorked = 0;
+    let hours = 0, incomplete = 0, orphan = 0, daysWorked = 0;
     perDayByEmp[id] = {};
     Object.keys(perDay[id]).forEach((date) => {
       const pm = perDay[id][date];
       if (!pm.ClockIn || !pm.ClockOut) {
         // An open day (clocked in, never out) is INCOMPLETE, not zero hours.
-        if (pm.ClockIn) { incomplete++; perDayByEmp[id][date] = null; }
+        // A clock-OUT with no clock-in is neither: it is an ORPHAN punch, and
+        // it used to `return` here counted as nothing at all, so the rep's
+        // month looked identical to a month they never worked.
+        if (pm.ClockIn) { incomplete++; perDayByEmp[id][date] = TIMESHEET_DAY_INCOMPLETE; }
+        else { orphan++; perDayByEmp[id][date] = TIMESHEET_DAY_ORPHAN; }
         return;
       }
       const h = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
-      if (h === null) { incomplete++; perDayByEmp[id][date] = null; return; }   // INV-176 — never a silent 0
+      if (h === null) { incomplete++; perDayByEmp[id][date] = TIMESHEET_DAY_INCOMPLETE; return; }   // INV-176 — never a silent 0
       hours += h; daysWorked++;
       perDayByEmp[id][date] = h;
     });
-    byEmp[id] = { hours: +hours.toFixed(2), daysWorked: daysWorked, incompleteDays: incomplete };
+    byEmp[id] = { hours: +hours.toFixed(2), daysWorked: daysWorked,
+                  incompleteDays: incomplete, orphanDays: orphan };
   });
   // perDayByEmp carries the same per-day outcome the totals were built from
-  // (a null = incomplete), so a multi-month catch-up can slice one month out
-  // WITHOUT a second Timesheet read — see workedHoursForEmpMonth_.
+  // (a sentinel = a day that contributed no hours, and which of the two it is),
+  // so a multi-month catch-up can slice one month out WITHOUT a second
+  // Timesheet read — see workedHoursForEmpMonth_.
   return { byEmp: byEmp, perDayByEmp: perDayByEmp, archivedRows: archivedRows };
 }
+/** THE accrual resolver: what a run WOULD do, with NOTHING written.
+ *
+ *  Both `creditMonthlyPtoAccruals` (which applies it) and `previewPtoAccruals`
+ *  (which only reports it) go through this ONE function. That is the g59 rule
+ *  applied to payroll: a DRAFT preview that re-implements the real resolver
+ *  reassures the operator about arithmetic nobody runs, and the two drift on
+ *  the first policy change. The split is deliberate and total — every DECISION
+ *  (who accrues, which months are owed, how many hours were readable, what
+ *  those hours earn) lives here; every WRITE lives in the credit.
+ *
+ *  `rows` is the Employees sheet as the caller already read it — the credit
+ *  holds them under the lock, and re-reading here would be a second full read.
+ *
+ *  THROWS if the Timesheet (or the archive behind it) cannot be read: neither
+ *  crediting nor previewing may report from a partial read, because a short
+ *  read UNDER-states real earned PTO in the direction nobody checks.
+ *
+ *  Each returned entry carries the plan AND the evidence behind it:
+ *    {rowIndex, rate, stamp, plan, months, emp,
+ *     totalHours, incompleteDays, orphanDays, onTimesheet, earned} */
+function planPtoAccrualRun_(rows, nowYm) {
+  const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
+
+  // Pass 1 — who owes what, and the widest month range any of them needs.
+  const plans = [];
+  let earliestYm = null;
+  for (let i = 1; i < rows.length; i++) {
+    if (!empRosterEmail_(rows[i])) continue;                 // INV-183 — the ONE inclusion predicate
+    const rate = empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]);
+    if (rate === null) continue;
+    // Per-row PTO gate (INV-27). A FALSE rep is skipped WITHOUT advancing
+    // the stamp, so re-enabling credits the (capped) missed months rather
+    // than silently swallowing them.
+    const ptoVal = rows[i][EMP.PTO_ENABLED];
+    const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+      ? '' : String(ptoVal).trim().toLowerCase();
+    if (ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0') continue;
+    const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
+    const plan = accrualMonthsToCredit_(stamp, nowYm);
+    if (!plan) continue;
+    const months = accrualMonthList_(stamp, plan);
+    if (months.length > 0 && (earliestYm === null || months[0] < earliestYm)) earliestYm = months[0];
+    plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: months,
+      emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
+      totalHours: 0, incompleteDays: 0, orphanDays: 0, onTimesheet: false, earned: null });
+  }
+  if (plans.length === 0) {
+    return { entries: [], basis: basis, perDay: perDay, range: null, archivedRows: 0 };
+  }
+
+  // Pass 2 — ONE Timesheet read covering every owed month (see the index's
+  // own comment for why this is not a per-rep call). Only built when some
+  // rep actually owes months; a pure seeding round reads nothing.
+  let hoursIdx = null, range = null;
+  if (earliestYm) {
+    const lastYm = plans.reduce((acc, p) => (p.months.length && p.months[p.months.length - 1] > acc) ? p.months[p.months.length - 1] : acc, earliestYm);
+    const startIso = earliestYm + '-01';
+    const lastParts = lastYm.split('-');
+    const endIso = lastYm + '-' + String(new Date(+lastParts[0], +lastParts[1], 0).getDate()).padStart(2, '0');
+    range = { start: startIso, end: endIso };
+    hoursIdx = workedHoursByEmpForRange_(startIso, endIso);   // throws — the caller decides what that means
+  }
+
+  // Pass 3 — the readable hours behind each plan, and what they earn. The
+  // per-rep `onTimesheet` flag is the one the audit row could never tell you:
+  // a rep with NO rows at all under their employee id is not the same thing as
+  // a rep who took the month off, and both used to render as a bare zero.
+  plans.forEach((p) => {
+    if (p.months.length === 0 || !hoursIdx) return;
+    const rec = hoursIdx.byEmp[p.emp.id];
+    p.onTimesheet = !!rec;
+    // `earned` is assigned BELOW the months walk, OUTSIDE this guard, on
+    // purpose: a rep with no Timesheet rows at all still earned a legitimate
+    // ZERO, and the credit writes its audit row on `earned` being non-null. An
+    // early return here would leave earned === null and that rep would pass
+    // through the whole run recorded NOWHERE — the exact silence this batch
+    // exists to remove.
+    p.months.forEach((ym) => {
+      if (!rec) return;
+      const parts = ym.split('-');
+      const mStart = ym + '-01';
+      const mEnd = ym + '-' + String(new Date(+parts[0], +parts[1], 0).getDate()).padStart(2, '0');
+      // The index is range-wide; re-derive this month's slice by asking it
+      // for the month only when the plan spans more than one month.
+      if (p.months.length === 1) {
+        p.totalHours += rec.hours; p.incompleteDays += rec.incompleteDays; p.orphanDays += rec.orphanDays;
+      } else {
+        const m = workedHoursForEmpMonth_(hoursIdx, p.emp.id, mStart, mEnd);
+        p.totalHours += m.hours; p.incompleteDays += m.incompleteDays; p.orphanDays += m.orphanDays;
+      }
+    });
+    p.earned = accrualDaysForHours_(p.totalHours, p.rate, basis, perDay);
+  });
+  return { entries: plans, basis: basis, perDay: perDay, range: range,
+           archivedRows: hoursIdx ? hoursIdx.archivedRows : 0 };
+}
+
+/** PURE (Node-pinned): WHY an owed month earned nothing. The audit row used to
+ *  say only "no worked hours in the period", which cannot tell a genuine month
+ *  off from a rep whose punches are filed under a different employee id — the
+ *  operator hit exactly that on the 2026-09-01 run and had to reconstruct the
+ *  answer from the Timesheet by hand. Three distinct answers, three remedies. */
+function accrualZeroReason_(entry) {
+  if (!entry.onTimesheet) {
+    return 'no Timesheet rows at all under employee id ' + entry.emp.id + ' in the period';
+  }
+  if (entry.incompleteDays || entry.orphanDays) {
+    return 'punches exist but no day formed a complete clock-in/clock-out pair';
+  }
+  return 'no worked hours in the period';
+}
+
+/** PURE (Node-pinned): the "… NOT counted" tail BOTH accrual audit rows carry.
+ *  One builder so the credited row and the zero row can never disagree about
+ *  what was left out. */
+function accrualUncountedNote_(entry) {
+  return (entry.incompleteDays ? '; ' + entry.incompleteDays + ' incomplete day(s) NOT counted' : '') +
+         (entry.orphanDays ? '; ' + entry.orphanDays + ' day(s) with a clock-out and no clock-in NOT counted' : '');
+}
+
 /** TRIGGER HANDLER (daily, manager-tz — the automation anchor): credits each
  *  accruing rep's earned PTO into the col-I balance, IN ARREARS and driven by
  *  HOURS ACTUALLY WORKED (operator 2026-08-19: 3.08 PTO hours per 80 worked).
@@ -165,6 +302,9 @@ function workedHoursByEmpForRange_(startIso, endIso) {
  *  MANAGER_EMAILS gate; locked (INV-01 — it mutates the payroll-adjacent
  *  Employees sheet). IDEMPOTENT via the col-R stamp: a re-run (or the daily
  *  cadence between month boundaries) owes nothing.
+ *
+ *  WHAT to credit is `planPtoAccrualRun_`'s decision, shared verbatim with the
+ *  read-only `previewPtoAccruals`; this function is the WRITES and their order.
  *
  *  ORDER IS DELIBERATE — the credit (via adjustLeaveBalance_, THE balance
  *  mutator, so the INV-27 per-row gate and cache invalidation ride along) and
@@ -187,81 +327,33 @@ function creditMonthlyPtoAccruals() {
     const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
     const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
     const rows = sheet.getDataRange().getValues();
-    const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
-
-    // Pass 1 — who owes what, and the widest month range any of them needs.
-    const plans = [];
-    let earliestYm = null;
-    for (let i = 1; i < rows.length; i++) {
-      if (!empRosterEmail_(rows[i])) continue;                 // INV-183 — the ONE inclusion predicate
-      const rate = empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]);
-      if (rate === null) continue;
-      // Per-row PTO gate (INV-27). A FALSE rep is skipped WITHOUT advancing
-      // the stamp, so re-enabling credits the (capped) missed months rather
-      // than silently swallowing them.
-      const ptoVal = rows[i][EMP.PTO_ENABLED];
-      const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
-        ? '' : String(ptoVal).trim().toLowerCase();
-      if (ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0') continue;
-      const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
-      const plan = accrualMonthsToCredit_(stamp, nowYm);
-      if (!plan) continue;
-      const months = accrualMonthList_(stamp, plan);
-      if (months.length > 0 && (earliestYm === null || months[0] < earliestYm)) earliestYm = months[0];
-      plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: months,
-        emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) } });
-    }
-    if (plans.length === 0) return { success: true, credited: 0, seeded: 0 };
-
-    // Pass 2 — ONE Timesheet read covering every owed month (see the index's
-    // own comment for why this is not a per-rep call). Only built when some
-    // rep actually owes months; a pure seeding round reads nothing.
-    let hoursIdx = null;
-    if (earliestYm) {
-      const lastYm = plans.reduce((acc, p) => (p.months.length && p.months[p.months.length - 1] > acc) ? p.months[p.months.length - 1] : acc, earliestYm);
-      const startIso = earliestYm + '-01';
-      const lastParts = lastYm.split('-');
-      const endIso = lastYm + '-' + String(new Date(+lastParts[0], +lastParts[1], 0).getDate()).padStart(2, '0');
-      hoursIdx = workedHoursByEmpForRange_(startIso, endIso);   // throws → caught below, nothing written
-    }
+    const run = planPtoAccrualRun_(rows, nowYm);   // throws → caught below, nothing written
+    const basis = run.basis;
+    if (run.entries.length === 0) return { success: true, credited: 0, seeded: 0 };
 
     let credited = 0, seeded = 0, zeroHourReps = 0;
-    plans.forEach((p) => {
-      if (p.months.length > 0 && hoursIdx) {
-        let totalHours = 0, incompleteDays = 0;
-        p.months.forEach((ym) => {
-          const parts = ym.split('-');
-          const mStart = ym + '-01';
-          const mEnd = ym + '-' + String(new Date(+parts[0], +parts[1], 0).getDate()).padStart(2, '0');
-          const rec = hoursIdx.byEmp[p.emp.id];
-          if (!rec) return;
-          // The index is range-wide; re-derive this month's slice by asking it
-          // for the month only when the plan spans more than one month.
-          if (p.months.length === 1) { totalHours += rec.hours; incompleteDays += rec.incompleteDays; }
-          else {
-            const m = workedHoursForEmpMonth_(hoursIdx, p.emp.id, mStart, mEnd);
-            totalHours += m.hours; incompleteDays += m.incompleteDays;
-          }
-        });
-        const earned = accrualDaysForHours_(totalHours, p.rate, basis, perDay);
-        if (earned && earned.days > 0) {
+    run.entries.forEach((p) => {
+      const earned = p.earned;
+      if (p.months.length > 0 && earned) {
+        if (earned.days > 0) {
           const newBal = adjustLeaveBalance_(p.emp.id, 'annual', earned.days);
           if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
           writeAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            'hoursWorked=' + totalHours + '; rate=' + p.rate + '/' + basis + 'h; ptoHours=' + earned.ptoHours +
+            'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; ptoHours=' + earned.ptoHours +
             '; days=' + earned.days + '; months=' + p.months.join(',') + '; through=' + p.plan.newStamp +
             '; balance=' + newBal +
-            (incompleteDays ? '; ' + incompleteDays + ' incomplete day(s) NOT counted' : '') +
+            accrualUncountedNote_(p) +
             (p.plan.capped ? '; CAPPED — ' + p.plan.capped + ' older month(s) NOT credited (stamp advanced past them; hand-adjust if owed)' : ''));
           credited++;
-        } else if (earned) {
+        } else {
           // Zero hours worked = zero accrual. Correct under an hours-driven
-          // rule, but recorded so a month of unexpected silence is visible.
+          // rule, but recorded — WITH the reason — so a month of unexpected
+          // silence is something the operator can act on rather than re-derive.
           zeroHourReps++;
           writeAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            'hoursWorked=0; rate=' + p.rate + '/' + basis + 'h; days=0; months=' + p.months.join(',') +
-            '; through=' + p.plan.newStamp + '; no worked hours in the period' +
-            (incompleteDays ? '; ' + incompleteDays + ' incomplete day(s) NOT counted' : ''));
+            'hoursWorked=' + p.totalHours + '; rate=' + p.rate + '/' + basis + 'h; days=0; months=' + p.months.join(',') +
+            '; through=' + p.plan.newStamp + '; ' + accrualZeroReason_(p) +
+            accrualUncountedNote_(p));
         }
       }
       if (p.stamp !== p.plan.newStamp) {
@@ -282,6 +374,114 @@ function creditMonthlyPtoAccruals() {
   }
   finally { lock.releaseLock(); }
 }
+
+/** READ-ONLY dry run of the monthly accrual (operator 2026-09-14). Answers the
+ *  two questions the audit row cannot: what will tonight's 6pm job credit, and
+ *  why does THIS rep read zero? Nothing is written — no balance, no audit row,
+ *  no stamp — and the single reason to trust the answer is that it shares
+ *  `planPtoAccrualRun_` with the real job (g59: a DRAFT preview goes through
+ *  the ONE resolver, or it is a second implementation wearing the first one's
+ *  name).
+ *
+ *  Top-level → reachable via google.script.run, so it carries the INV-44
+ *  MANAGER_EMAILS gate. Deliberately NOT locked: it only reads, and a 15s
+ *  ScriptLock on a diagnostic would contend with live punches for no benefit.
+ *  The trade is that a preview taken WHILE the credit runs can read half-
+ *  applied state — so the preview is advisory and the job stays the record.
+ *
+ *  Deliberately does NOT short-circuit on the `enablePtoTracking` flag the way
+ *  the credit does: "nothing will happen, and here is the switch that is off"
+ *  is the more useful answer than an empty report. The flag is reported.
+ *
+ *  Run it from the Apps Script editor (the summary lands in the execution log
+ *  via `text`) or call it from a manager surface for the structured form. */
+function previewPtoAccruals() {
+  assertManagerCaller_('previewPtoAccruals');
+  const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  try {
+    const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+    const rows = sheet.getDataRange().getValues();
+    const run = planPtoAccrualRun_(rows, nowYm);
+    const out = {
+      success: true,
+      enabled: !!getFlag_('enablePtoTracking'),
+      nowYm: nowYm,
+      tz: tz,
+      basis: run.basis,
+      hoursPerDay: run.perDay,
+      range: run.range,
+      archivedRows: run.archivedRows,
+      reps: run.entries.map((p) => ({
+        id: p.emp.id,
+        name: p.emp.name,
+        rate: p.rate,
+        stamp: p.stamp,
+        months: p.months.slice(),
+        seeds: !!p.plan.seeded,
+        capped: p.plan.capped || 0,
+        newStamp: p.plan.newStamp,
+        // null (not 0) when no month is owed: there is nothing to read hours
+        // for, which is not the same claim as "read them and they were zero".
+        hours: p.months.length ? p.totalHours : null,
+        incompleteDays: p.incompleteDays,
+        orphanDays: p.orphanDays,
+        onTimesheet: p.onTimesheet,
+        wouldCreditDays: (p.months.length && p.earned) ? p.earned.days : 0,
+        wouldCreditPtoHours: (p.months.length && p.earned) ? p.earned.ptoHours : 0,
+        zeroReason: (p.months.length && p.earned && p.earned.days <= 0) ? accrualZeroReason_(p) : '',
+      })),
+    };
+    out.text = formatPtoAccrualPreview_(out);
+    Logger.log(out.text);
+    return out;
+  } catch (err) {
+    // No stampAutomationError_ here: this is a DIAGNOSTIC, and a failed preview
+    // must not light up the health dot for a job that has not itself failed.
+    return { success: false, error: err.message };
+  }
+}
+
+/** PURE (Node-pinned): the preview as a text block for the execution log.
+ *  Pure so a pin can assert the wording — and the honesty of it — without a
+ *  spreadsheet: a rep who will be credited nothing must SAY why, never render
+ *  as a bare 0 (the whole reason this function exists). */
+function formatPtoAccrualPreview_(o) {
+  const L = [];
+  L.push('── PTO accrual preview — NOTHING WAS WRITTEN ──');
+  L.push('Now ' + o.nowYm + ' (' + o.tz + ') · rule: ' + o.basis + ' worked hours earns the rep\'s column-Q rate' +
+    ' in PTO hours · ' + o.hoursPerDay + ' PTO hours = 1 day');
+  if (!o.enabled) L.push('!! enablePtoTracking is OFF — the real job will credit NOTHING until it is on.');
+  L.push(o.range ? ('Timesheet read: ' + o.range.start + ' … ' + o.range.end +
+    (o.archivedRows ? ' (incl. ' + o.archivedRows + ' archived row(s))' : ''))
+    : 'Timesheet read: none needed — no rep owes a completed month.');
+  if (!o.reps.length) {
+    L.push('No accruing reps: no roster row carries a usable column-Q rate (or every one is PTO-disabled).');
+    return L.join('\n');
+  }
+  let totalDays = 0;
+  o.reps.forEach((r) => {
+    totalDays += r.wouldCreditDays;
+    const who = r.name + ' [' + r.id + ']';
+    if (r.seeds) {
+      L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R): credits nothing, by design.');
+      return;
+    }
+    if (!r.months.length) {
+      L.push('  · ' + who + ' — nothing owed (column R already ' + (r.stamp || '(blank)') + ').');
+      return;
+    }
+    const tail = (r.incompleteDays ? ' · ' + r.incompleteDays + ' incomplete day(s) NOT counted' : '') +
+                 (r.orphanDays ? ' · ' + r.orphanDays + ' clock-out-only day(s) NOT counted' : '') +
+                 (r.capped ? ' · CAPPED: ' + r.capped + ' older month(s) will be SKIPPED' : '');
+    L.push('  · ' + who + ' — ' + r.months.join(',') + ': ' + r.hours + ' h at ' + r.rate + '/' + o.basis +
+      'h → ' + r.wouldCreditPtoHours + ' PTO hours = ' + r.wouldCreditDays + ' day(s)' + tail);
+    if (r.zeroReason) L.push('      WHY ZERO: ' + r.zeroReason);
+  });
+  L.push('Total that WOULD be credited: ' + (Math.round(totalDays * 100) / 100) + ' day(s) across ' +
+    o.reps.filter((r) => r.wouldCreditDays > 0).length + ' rep(s). Re-run creditMonthlyPtoAccruals to apply.');
+  return L.join('\n');
+}
 /** The month list a plan owes: stamp+1 .. newStamp, capped to plan.months
  *  (the newest ones — the cap drops the OLDEST, which the audit row names). */
 function accrualMonthList_(stampYm, plan) {
@@ -300,14 +500,16 @@ function accrualMonthList_(stampYm, plan) {
  *  days; single-month runs (the daily norm) never call this. */
 function workedHoursForEmpMonth_(idx, empId, startIso, endIso) {
   const days = (idx && idx.perDayByEmp && idx.perDayByEmp[empId]) || null;
-  if (!days) return { hours: 0, incompleteDays: 0 };
-  let hours = 0, incomplete = 0;
+  if (!days) return { hours: 0, incompleteDays: 0, orphanDays: 0 };
+  let hours = 0, incomplete = 0, orphan = 0;
   Object.keys(days).forEach((date) => {
     if (date < startIso || date > endIso) return;
     const v = days[date];
-    if (v === null) incomplete++; else hours += v;
+    if (v === TIMESHEET_DAY_INCOMPLETE) incomplete++;
+    else if (v === TIMESHEET_DAY_ORPHAN) orphan++;
+    else hours += v;
   });
-  return { hours: +hours.toFixed(2), incompleteDays: incomplete };
+  return { hours: +hours.toFixed(2), incompleteDays: incomplete, orphanDays: orphan };
 }
 /**
  * The ONE roster-INCLUSION predicate: a row counts as a CURRENT employee iff

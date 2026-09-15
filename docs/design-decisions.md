@@ -342,6 +342,39 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `creditMonthlyPtoAccruals` skips a `FALSE` rep, so if the example had been
   true the accrual feature would have credited nobody. Check column K before
   concluding a population does not accrue.
+- <a id="the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin"></a>**The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14).**
+  `creditMonthlyPtoAccruals` runs unattended at 18:00 manager-tz, credits real
+  leave balances, and advances a stamp that closes the month against retry. Its
+  audit row is the only window into it, and that window is *after the fact* —
+  when a live `2026-09-01` run recorded a rep at zero hours, the operator could
+  neither tell WHY nor get the month back without hand-editing column R.
+  `previewPtoAccruals` is the before-the-fact answer: manager-gated, read-only,
+  and reporting per rep the months owed, the hours the Timesheet actually
+  yields, the days NOT counted and why, and the credit that would land.
+
+  **Two properties make it worth trusting, and both are pinned rather than
+  intended.** First, it is not a second implementation: the decision half of
+  the credit was extracted into `planPtoAccrualRun_`, which both functions call
+  and neither duplicates — the g59 rule (a DRAFT preview goes through the ONE
+  resolver) applied to payroll, because a preview that re-derives the plan
+  reassures the operator about arithmetic nobody runs and drifts from the real
+  job on the first policy change. Second, it writes nothing: no `setValue`, no
+  `adjustLeaveBalance_`, no `writeAuditLog_`, in the preview OR the resolver,
+  asserted directly on both bodies. "Nothing was written" is a claim an operator
+  acts on, so it is checked, not asserted in a comment.
+
+  Two deliberate differences from the credit. It takes NO ScriptLock — a
+  diagnostic that queues behind (and ahead of) live punches costs more than it
+  is worth, and the trade is that a preview taken mid-run can read half-applied
+  state, which is why the job remains the record. And it does not short-circuit
+  on the `enablePtoTracking` flag the way the credit does: "nothing will happen,
+  and here is the switch that is off" is the more useful answer to an operator
+  asking why nothing happened, so the flag is reported instead.
+
+  Run it from the Apps Script editor (the formatted summary lands in the
+  execution log via `text`); the structured `reps` array is there for a future
+  manager surface, which is deliberately NOT built yet — the editor is where
+  this question gets asked today.
 - <a id="self-undo-vs-adjust-split"></a>**Self-undo vs. Adjust split.** Live mistakes within 5 minutes
   go through `selfDeletePunch` (audit row, no Manager
   involvement). Anything older now goes through the **adjustment-request

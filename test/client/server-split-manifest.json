@@ -1,5 +1,28 @@
 {
  "generatedFrom": "web-app/Code.js @ tag pre-f2-split",
+ "regeneratedBy": "scripts/split-manifest.mjs",
+ "revisions": [
+  {
+   "date": "2026-09-14",
+   "why": "previewPtoAccruals: the accrual resolver extracted into planPtoAccrualRun_ and shared with a read-only preview; the range index now counts clock-out-only days; both accrual audit rows now carry the reason a month read zero",
+   "added": [
+    "TIMESHEET_DAY_INCOMPLETE",
+    "TIMESHEET_DAY_ORPHAN",
+    "accrualUncountedNote_",
+    "accrualZeroReason_",
+    "formatPtoAccrualPreview_",
+    "planPtoAccrualRun_",
+    "previewPtoAccruals"
+   ],
+   "removed": [],
+   "changed": [
+    "creditMonthlyPtoAccruals",
+    "workedHoursByEmpForRange_",
+    "workedHoursForEmpMonth_"
+   ],
+   "moved": []
+  }
+ ],
  "order": [
   "00_config.js",
   "10_core.js",
@@ -1547,6 +1570,16 @@
    "kind": "const",
    "sha": "8b202984b3dec2a5"
   },
+  "TIMESHEET_DAY_INCOMPLETE": {
+   "file": "20_timeclock.js",
+   "kind": "const",
+   "sha": "b2eba56400cc61d6"
+  },
+  "TIMESHEET_DAY_ORPHAN": {
+   "file": "20_timeclock.js",
+   "kind": "const",
+   "sha": "eba1e4f1882b97c3"
+  },
   "TIME_OFF_TYPES": {
    "file": "00_config.js",
    "kind": "const",
@@ -1821,6 +1854,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8f669a657b3d5283"
+  },
+  "accrualUncountedNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2eadf4a3ed42f57b"
+  },
+  "accrualZeroReason_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9ed57b5afcb398ee"
   },
   "acknowledgeCoaching": {
    "file": "82_coaching.js",
@@ -2520,7 +2563,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "60858a47aa4f18ba"
+   "sha": "08c41ab4fc75a4f3"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -2946,6 +2989,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "73f449409b481484"
+  },
+  "formatPtoAccrualPreview_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "29f7c233cbfb0e47"
   },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
@@ -4797,6 +4845,11 @@
    "kind": "function",
    "sha": "b2b3f0091963eefe"
   },
+  "planPtoAccrualRun_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3abb59bba80799e8"
+  },
   "presenceMap_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4811,6 +4864,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "8f0e383a47e5a9bb"
+  },
+  "previewPtoAccruals": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "656d55ec49027ba9"
   },
   "propBudgetsFor_": {
    "file": "10_core.js",
@@ -6005,12 +6063,12 @@
   "workedHoursByEmpForRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4c8c0bdfb4ee182c"
+   "sha": "d302c628b063f1ad"
   },
   "workedHoursForEmpMonth_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "44477c159778c182"
+   "sha": "6bfc59b214f1d3c2"
   },
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",

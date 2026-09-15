@@ -14,6 +14,34 @@ Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.
 
+- **The PTO accrual dry run (`previewPtoAccruals`, 2026-09-14) adds NO new
+  operator state** — no Script Property, no trigger, no roster column, no
+  migration. It is a manager-gated, read-only function you run from the Apps
+  Script editor; the summary lands in the execution log. What it changes is the
+  question you can answer: for every accruing rep it prints the months owed,
+  the hours the Timesheet actually yields for them, the days NOT counted and
+  why, and the credit that would land tonight — sharing `planPtoAccrualRun_`
+  with the real job, so it is a prediction rather than a second opinion.
+
+  **The round it came from.** Admin → Automation Health showed a live
+  `PtoAccrualCredit` row reading `hoursWorked=0; rate=3.08/80h; days=0;
+  months=2026-08; through=2026-08; no worked hours in the period`. That sentence
+  covered three unrelated situations — a genuine month off, no Timesheet rows at
+  all under that employee id, or punches that never formed a complete
+  clock-in/clock-out pair — and column R had already advanced past the month, so
+  the daily job would never retry it. Three changes came out of it, all
+  additive: the zero audit row now NAMES which of the three it saw (and, in the
+  "no rows" case, the employee id it looked for); a clock-OUT with no clock-in
+  is now COUNTED and reported instead of being skipped without trace; and the
+  preview answers the same question before the job runs rather than after.
+
+  **Running it:** Apps Script editor → pick `previewPtoAccruals` → ▶, and read
+  the execution log. It is safe on prod — it takes no ScriptLock and writes
+  nothing — but note the flip side: a preview taken WHILE the 18:00 credit is
+  running can read half-applied state, so treat the job's audit rows as the
+  record. See the column-R entry in the Operator State Checklist for how to
+  re-credit a month that was wrongly zero.
+
 - **The 2026-06 redesign + deferred follow-ons #1–#4 + niceties #8–#10
   add NO new operator state** — no new Script Properties, no new triggers,
   no migrations. The new endpoints (`getMyMetricsRange`,
