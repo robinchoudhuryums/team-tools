@@ -517,6 +517,146 @@ function planAccrualReconcile_(entries, ledger, hoursIdx, windowMonths, basis, p
   return out;
 }
 
+/** PURE (Node-pinned): which days in the window have no usable clock-in /
+ *  clock-out pair, per rep, from the SAME range index the accrual reads.
+ *
+ *  WHY THIS EXISTS (operator 2026-09-15). The reconcile pass recovers PTO when
+ *  a day is fixed after its month closed; it does nothing about the day sitting
+ *  open for a week in the first place, which is what actually went wrong on
+ *  2026-09-01. An open day is a payroll problem before it is a PTO problem —
+ *  the ADP export, the pay statement and the punctuality report all read the
+ *  same rows — so this walks the WHOLE roster, not just reps who accrue, and
+ *  does not consult the PTO feature flag.
+ *
+ *  Two bounds, both chosen rather than inherited:
+ *   • The window ENDS `graceDays` before today. A rep clocked in right now has
+ *     an open day BY DEFINITION, and a rep twelve hours ahead of the manager
+ *     anchor can look open for most of a manager's day. Reporting either would
+ *     train the reader to ignore the report.
+ *   • The window STARTS at the adjust window, because past it the remedy does
+ *     not exist: `managerSaveDayRange` and the adjustment queue both refuse a
+ *     date older than `CONFIG.ADJUST_WINDOW_DAYS`. A finding nobody can act on
+ *     is noise — so the report states its own boundary instead of pretending
+ *     the older days are fine, and flags the ones about to cross it.
+ *
+ *  `idx.perDayByEmp[id][date]` is a number for a counted day and one of the two
+ *  TIMESHEET_DAY_* sentinels otherwise; the sentinel says WHICH remedy applies,
+ *  so it is carried through rather than flattened to "broken". */
+function planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso) {
+  const out = [];
+  (roster || []).forEach((emp) => {
+    const days = (idx && idx.perDayByEmp && idx.perDayByEmp[emp.id]) || null;
+    if (!days) return;
+    const open = [];
+    Object.keys(days).forEach((date) => {
+      if (date < startIso || date > endIso) return;
+      const v = days[date];
+      if (v === TIMESHEET_DAY_INCOMPLETE) open.push({ date: date, kind: 'no clock-out' });
+      else if (v === TIMESHEET_DAY_ORPHAN) open.push({ date: date, kind: 'clock-out with no clock-in' });
+    });
+    if (!open.length) return;
+    open.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const expiring = open.filter((d) => d.date < expiringBeforeIso).map((d) => d.date);
+    out.push({ id: emp.id, name: emp.name, days: open, count: open.length, expiring: expiring });
+  });
+  out.sort((a, b) => b.count - a.count);
+  return out;
+}
+
+/** How many days at the END of the window are left alone — the in-flight
+ *  buffer. One covers a rep mid-shift and the manager-anchor timezone skew; the
+ *  second covers the rep who forgets at 6pm and fixes it next morning, which is
+ *  self-healing and must not page anyone. */
+const OPEN_PUNCH_GRACE_DAYS = 2;
+/** A day this close to falling out of the adjust window is called out
+ *  separately: after that the in-app remedy is gone and the only fix is a
+ *  hand-edit of the Timesheet. */
+const OPEN_PUNCH_EXPIRING_DAYS = 7;
+
+/** DAILY CHECK (8am manager-tz, inside the runDailyChecks dispatcher) — reports
+ *  every rep with a day the Timesheet cannot turn into hours, while the remedy
+ *  still exists. Read-only: it takes NO ScriptLock (nothing is written but a
+ *  diagnostic stamp) and writes no audit row, so it cannot queue behind or
+ *  ahead of a live punch.
+ *
+ *  It runs at 8am and `sendAutomationHealthDigest` runs at 9am, deliberately:
+ *  the stamp is an hour old when the digest reads it, so a finding reaches a
+ *  manager by email the same morning WITHOUT this job sending mail of its own.
+ *
+ *  Top-level → reachable via google.script.run, so it carries the INV-44 gate. */
+function checkOpenPunches() {
+  assertManagerCaller_('checkOpenPunches');
+  try {
+    const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const todayIso = fmtDateTz_(new Date(), tz);
+    const startIso = addDaysIso_(todayIso, -CONFIG.ADJUST_WINDOW_DAYS);
+    const endIso = addDaysIso_(todayIso, -OPEN_PUNCH_GRACE_DAYS);
+    if (endIso < startIso) return { success: true, reps: 0, days: 0, window: null };
+    const expiringBeforeIso = addDaysIso_(startIso, OPEN_PUNCH_EXPIRING_DAYS);
+
+    const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
+    const roster = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;              // INV-183 — the ONE inclusion predicate
+      roster.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+    }
+    const idx = workedHoursByEmpForRange_(startIso, endIso);   // throws → caught below, nothing stamped
+    const found = planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso);
+    const rec = {
+      at: Date.now(),
+      window: { start: startIso, end: endIso, adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS },
+      reps: found.length,
+      days: found.reduce((n, r) => n + r.count, 0),
+      expiring: found.reduce((n, r) => n + r.expiring.length, 0),
+      detail: found.map((r) => ({ id: r.id, name: r.name, count: r.count,
+        first: r.days[0].date, last: r.days[r.days.length - 1].date,
+        kinds: r.days.map((d) => d.kind).filter((k, i, a) => a.indexOf(k) === i),
+        expiring: r.expiring.length })),
+    };
+    stampOpenPunchCheck_(rec);
+    Logger.log('checkOpenPunches: ' + rec.days + ' open day(s) across ' + rec.reps +
+      ' rep(s) in ' + startIso + '…' + endIso + (rec.expiring ? ' — ' + rec.expiring + ' about to leave the adjust window' : ''));
+    return { success: true, reps: rec.reps, days: rec.days, expiring: rec.expiring, window: rec.window };
+  } catch (err) {
+    // A FAILED check must not read as "no open punches" — that is the reassuring
+    // absence this whole batch exists to remove. Stamp the failure so the health
+    // panel says the check could not run, rather than showing a clean board.
+    // The failure rides THIS stamp rather than AUTOMATION_LAST_ERRORS: that map
+    // is cleared by a job's own next clean run, and a job outside
+    // AUTOMATION_JOB_CHECKS (this one writes no audit row, so it is correctly
+    // not in that table) would leave an entry nothing ever clears. This stamp
+    // is rewritten in full on every run, so it self-clears.
+    stampOpenPunchCheck_({ at: Date.now(), error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+/** Auto-managed diagnostic — the last open-punch scan. Bounded per INV-201:
+ *  the per-rep detail degrades one entry at a time, newest-largest first, so a
+ *  trimmed list still carries the counts that make the finding actionable. */
+function stampOpenPunchCheck_(rec) {
+  try {
+    propSetBounded_('OPEN_PUNCH_CHECK', JSON.stringify(rec), {
+      mode: 'degrade',
+      shrink: function (str) {
+        let o = {};
+        try { o = JSON.parse(str) || {}; } catch (_) { return null; }
+        if (Array.isArray(o.detail) && o.detail.length) {
+          o.detail = o.detail.slice(0, o.detail.length - 1);
+          o.detailTrimmed = true;
+          return JSON.stringify(o);
+        }
+        return null;
+      },
+    });
+  } catch (e) { Logger.log('stampOpenPunchCheck_ failed: ' + e.message); }
+}
+function readOpenPunchCheck_() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('OPEN_PUNCH_CHECK') || 'null');
+  } catch (_) { return null; }
+}
+
 /** Auto-managed diagnostic (the AUTOMATION_LAST_ERRORS pattern): the last
  *  reconcile pass's outcome, so Admin → Automation Health and the failure
  *  digest can surface a shortfall, a skipped month or a truncated ledger read

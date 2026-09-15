@@ -1648,6 +1648,22 @@ function targetsSet_(fnSrc) {
 const newTriggerHandlers = [...installSrc.matchAll(/newTrigger\('([^']+)'\)/g)].map((x) => x[1]).sort();
 const installTargets = targetsSet_(installSrc);
 const removeTargets  = targetsSet_(removeSrc);
+// TRIGGER_GROUPS, parsed ONCE. TQ-1 and TQ-3 both need the grouped-job list;
+// deriving it twice would be two answers to one question, which is the defect
+// this project keeps writing pins about.
+const triggerGroups_ = (() => {
+  const stripped = serverSource()
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => (/^\s*\/\//.test(l) ? '' : l)).join('\n');   // INV-188
+  const gm = stripped.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/);
+  if (!gm) return {};
+  const out = {};
+  [...gm[1].matchAll(/(\w+):\s*\[([^\]]*)\]/g)]
+    .forEach((x) => { out[x[1]] = [...x[2].matchAll(/'([^']+)'/g)].map((y) => y[1]); });
+  return out;
+})();
+const groupedJobs_ = Object.keys(triggerGroups_)
+  .sort().reduce((a, k) => a.concat(triggerGroups_[k]), []);
 
 test('every installed trigger handler is in the install TARGETS dedupe list', () => {
   assert.ok(newTriggerHandlers.length >= 8, 'parsed the newTrigger handlers (got ' + newTriggerHandlers.length + ')');
@@ -10919,6 +10935,89 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'PtoAccrualCredit is a registered automation audit action');
 });
 
+test('T: the open-punch check is PREVENTION — read-only, bounded to what can still be fixed, and a failed scan is not a clean board (operator 2026-09-15)', () => {
+  // WHY: the reconcile pass RECOVERS the PTO when a day is fixed after its
+  // month closed. Nothing stopped the day sitting open for a week, which is
+  // what actually happened — Anne's 2026-08-27 was clock-in-only at 18:00 on
+  // Sep 1 and was closed by an approval days later. This is the warning that
+  // was missing, and the current (in-progress) month had no visibility at all.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const code = nc(serverSource());
+  const fn = code.match(/function checkOpenPunches\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'checkOpenPunches exists');
+
+  // ── READ-ONLY, and no lock. A diagnostic that queues behind a punch costs
+  // more than it is worth, and there is nothing to serialize: the only write
+  // is its own stamp.
+  assert.ok(!/LockService/.test(fn[0]), 'takes no ScriptLock');
+  assert.ok(!/\.setValue\(|\.appendRow\(|\.deleteRow\(/.test(fn[0]), 'writes no cell');
+  assert.ok(!/adjustLeaveBalance_\(|writeAuditLog_\(|writeWitnessAuditLog_\(/.test(fn[0]),
+    'writes no balance and no audit row');
+  assert.ok(/assertManagerCaller_\('checkOpenPunches'\)/.test(fn[0]), 'INV-44 — top-level, so gated');
+  // It is a TIMESHEET check, not a PTO feature: a rep with no accrual rate
+  // still has a broken timesheet, and the ADP export reads the same rows.
+  assert.ok(!/getFlag_\('enablePtoTracking'\)/.test(fn[0]),
+    'does NOT consult the PTO flag — an open punch is a payroll problem for every rep');
+  assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(fn[0]), 'INV-183 — the ONE inclusion predicate walks the roster');
+  assert.strictEqual((fn[0].match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
+    'ONE range index build — the same reader the accrual uses, so "broken day" means one thing');
+
+  // ── A FAILED scan must not read as a clean board. This is the honest-failure
+  // family aimed at the exact shape this batch exists to remove: a reassuring
+  // absence. The catch stamps the error, and the health text says so.
+  const cat = fn[0].slice(fn[0].indexOf('catch'));
+  assert.ok(/stampOpenPunchCheck_\(\{ at: Date\.now\(\), error: err\.message \}\)/.test(cat),
+    'a failed scan stamps the FAILURE, it does not leave the last clean result standing');
+  assert.ok(!/stampAutomationError_/.test(fn[0]),
+    'and not into AUTOMATION_LAST_ERRORS, which only a registered job\'s clean run clears — this one writes no audit row, so nothing would ever clear it');
+
+  // ── The two bounds, driven.
+  vm.runInContext(extractRawFunction('Code.js', 'planOpenPunchCheck_'), sb, { filename: 'Code.js#planOpenPunchCheck_' });
+  const dayConsts = /const TIMESHEET_DAY_INCOMPLETE = '([a-z]+)';\s*const TIMESHEET_DAY_ORPHAN = '([a-z]+)';/.exec(code);
+  vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = '" + dayConsts[1] + "'; var TIMESHEET_DAY_ORPHAN = '" + dayConsts[2] + "';", sb);
+  const plan = sb.planOpenPunchCheck_;
+  const roster = [{ id: 'E1', name: 'Rep One' }, { id: 'E2', name: 'Rep Two' }];
+  const idx = { perDayByEmp: {
+    E1: { '2026-08-20': dayConsts[1], '2026-09-02': dayConsts[1], '2026-09-12': 7.5, '2026-09-14': dayConsts[1] },
+    E2: { '2026-09-05': dayConsts[2], '2026-09-10': 8 },
+  } };
+  // window 2026-08-16 … 2026-09-13 (today 2026-09-15 less the grace), expiring before 2026-08-23
+  const out = plan(roster, idx, '2026-08-16', '2026-09-13', '2026-08-23');
+  assert.strictEqual(out.length, 2, 'both reps have something');
+  const e1 = out.filter((r) => r.id === 'E1')[0];
+  assert.strictEqual(e1.count, 2, 'the day AFTER the window end (2026-09-14) is not reported — a rep mid-shift is not a defect');
+  assert.strictEqual(e1.days.map((d) => d.date).join(','), '2026-08-20,2026-09-02', 'and the reported days are sorted oldest first');
+  assert.strictEqual(e1.days[0].kind, 'no clock-out', 'the sentinel is carried through — it names which remedy applies');
+  assert.strictEqual(e1.expiring.join(','), '2026-08-20',
+    'a day about to leave the adjust window is flagged separately, because after that only a hand-edit will do');
+  const e2 = out.filter((r) => r.id === 'E2')[0];
+  assert.strictEqual(e2.days[0].kind, 'clock-out with no clock-in', 'the orphan kind is distinguished, not flattened to "broken"');
+  assert.strictEqual(out[0].count >= out[1].count, true, 'worst first');
+  // A counted day is never reported, and a rep with a clean window drops out.
+  assert.strictEqual(plan([{ id: 'E2', name: 'Rep Two' }], { perDayByEmp: { E2: { '2026-09-10': 8 } } },
+    '2026-08-16', '2026-09-13', '2026-08-23').length, 0, 'a clean rep is absent, not present with zero');
+  assert.strictEqual(plan(roster, { perDayByEmp: {} }, '2026-08-16', '2026-09-13', '2026-08-23').length, 0,
+    'a rep with no rows at all in the window is not an open-punch finding');
+
+  // ── The window is DERIVED from the adjust window, not a second constant: a
+  // finding past it names a fix that no longer exists.
+  assert.ok(/CONFIG\.ADJUST_WINDOW_DAYS/.test(fn[0]),
+    'the lookback IS the adjust window — report what can still be fixed');
+  assert.ok(/OPEN_PUNCH_GRACE_DAYS/.test(fn[0]), 'and the tail grace is named, not a magic number');
+
+  // ── It reaches a manager WITHOUT sending mail of its own: it stamps at 8am
+  // inside runDailyChecks, and sendAutomationHealthDigest reads that at 9am.
+  assert.ok(!/appSendMail_|MailApp|GmailApp/.test(fn[0]), 'sends no mail — the health digest already does');
+  const groups = code.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/)[1];
+  assert.ok(/runDailyChecks:\s*\[[^\]]*'checkOpenPunches'/.test(groups),
+    'it rides the daily-checks dispatcher rather than owning a trigger (the quota bit this deployment once)');
+  const probs = code.match(/function automationProblems_\(report\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(/report\.openPunches/.test(probs), 'and automationProblems_ surfaces it');
+  assert.ok(/op\.error[\s\S]{0,220}NOT a clean board/.test(probs),
+    'a failed scan says so in the panel, instead of showing an empty list that reads as all-clear');
+  assert.ok(/op\.expiring > 0/.test(probs), 'the expiring days get their own, sharper line');
+});
+
 test('R: the accrual RECONCILES late data — top-up, never claw back, fail closed (operator 2026-09-15)', () => {
   // WHY: the column-R stamp made the credit idempotent on "this month was
   // processed", but the Timesheet is not final on the 1st. It fired live — all
@@ -20073,14 +20172,22 @@ test('TQ-1: the installer stays under the quota WITH headroom, refuses BEFORE de
     'the installer creates ' + installTargets.length + ' triggers — it must stay at or under ' + (QUOTA - 1) +
     ' (the quota minus one of headroom). Adding a trigger? Fold the job into a same-slot dispatcher (TRIGGER_GROUPS) ' +
     'instead — the 2026-09-11 install hit the cap on the LAST create, after deleting every existing trigger');
-  const gm = codeSrc.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/);
-  assert.ok(gm, 'TRIGGER_GROUPS found');
-  const groups = {};
-  [...gm[1].matchAll(/(\w+):\s*\[([^\]]*)\]/g)].forEach((x) => { groups[x[1]] = [...x[2].matchAll(/'([^']+)'/g)].map((y) => y[1]); });
+  const groups = triggerGroups_;
+  assert.ok(Object.keys(groups).length, 'TRIGGER_GROUPS found');
   const dispatchers = Object.keys(groups).sort();
-  assert.deepStrictEqual(dispatchers, ['runHourlyJobs', 'runNightlyPurges', 'runWeeklyDigests'], 'the three same-slot dispatchers');
-  const grouped = dispatchers.reduce((a, k) => a.concat(groups[k]), []);
-  assert.strictEqual(grouped.length, 8, 'eight jobs run inside dispatchers');
+  // DERIVED, not restated (INV-179): a batch that folds a job into a slot
+  // changes both of these legitimately, and a hard-coded three/eight turns that
+  // into a red pin with nothing wrong. What must hold is the SHAPE — every
+  // dispatcher is installed, every dispatcher carries jobs, and no job rides
+  // two slots.
+  assert.ok(dispatchers.length >= 3, 'the same-slot dispatchers exist (got ' + dispatchers.length + ')');
+  dispatchers.forEach((d) => {
+    assert.ok(installTargets.indexOf(d) >= 0, d + ' is a dispatcher with no trigger installed for it');
+    assert.ok(groups[d].length >= 1, d + ' is an EMPTY dispatcher — a trigger that runs nothing');
+  });
+  const grouped = groupedJobs_;
+  assert.strictEqual(new Set(grouped).size, grouped.length,
+    'no job rides two dispatchers (it would run twice a day and nothing would say so)');
   assert.strictEqual(new Set(grouped).size, grouped.length, 'no job is in two groups');
   assert.ok(/const RETIRED_TRIGGER_HANDLERS = Object\.keys\(TRIGGER_GROUPS\)/.test(strip(codeSrc)),
     'RETIRED_TRIGGER_HANDLERS is DERIVED from TRIGGER_GROUPS — never a second literal list');
@@ -20186,7 +20293,14 @@ test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quot
   const ours = installTargets.slice();
   const probe = drive([]);
   const retired = probe.retired;
-  assert.strictEqual(retired.length, 8, 'eight retired standalone handlers');
+  // DERIVED from TRIGGER_GROUPS, which is what RETIRED_TRIGGER_HANDLERS is
+  // built from — restating the total here just makes a legitimate fold go red.
+  assert.strictEqual(retired.length, groupedJobs_.length,
+    'every grouped job is a retired standalone handler, and nothing else is');
+  // join(), not deepStrictEqual: `retired` came out of the vm, so its Array has
+  // the context's prototype and a deep compare fails on that alone (g116).
+  assert.strictEqual(retired.slice().sort().join(','), groupedJobs_.slice().sort().join(','),
+    'the retired list IS the grouped list — a second list would drift');
   const foreign = (n) => Array.from({ length: n }, (_, i) => 'someoneElsesJob' + i);
   // (a) would not fit → refuse, touch nothing.
   let r = drive(ours.concat(retired, foreign(5)));
@@ -20201,8 +20315,18 @@ test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quot
   assert.deepStrictEqual(r.state.created.slice().sort(), ours.slice().sort(), 'exactly the TARGETS set is created');
   assert.ok(r.state.mail && /runNightlyPurges → runs purgeOldDiagnostics/.test(r.state.mail.body), 'the confirmation email lists each dispatcher\'s jobs');
   // (c) the 2026-09-11 live shape: the OLD 21-set minus the accrual (20 standalone triggers) → repaired to 16 incl. the accrual.
-  const oldSet = ours.filter((h) => !/^run(HourlyJobs|WeeklyDigests|NightlyPurges)$/.test(h)).concat(retired);
-  assert.strictEqual(oldSet.length, 21, 'the pre-fix installer created 21');
+  // Expand every dispatcher back into the standalone triggers it replaced: the
+  // set EXCEEDS the quota, which is the whole reason the dispatchers exist
+  // rather than being tidiness. The live number on 2026-09-11 was 21; it is
+  // deliberately NOT re-derived, because a job added later (checkOpenPunches)
+  // was never in that set and a frozen historical count cannot be computed
+  // from today's tree — asserting it would make every future fold go red.
+  const QUOTA3 = Number((serverSource().match(/^const AUTOMATION_TRIGGER_QUOTA = (\d+);/m) || [])[1]);
+  assert.ok(QUOTA3 > 0, 'the quota constant is readable');
+  const dispatcherNames = Object.keys(triggerGroups_);
+  const oldSet = ours.filter((h) => dispatcherNames.indexOf(h) < 0).concat(retired);
+  assert.ok(oldSet.length > QUOTA3,
+    'expanding the dispatchers exceeds the quota (' + oldSet.length + ' > ' + QUOTA3 + ')');
   r = drive(oldSet.filter((h) => h !== 'creditMonthlyPtoAccruals'));
   assert.strictEqual(r.err, null, 'the repair install fits');
   assert.strictEqual(r.state.existing.length, ours.length, 'afterwards exactly the 16 exist');
