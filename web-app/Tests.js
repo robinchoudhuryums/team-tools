@@ -1527,6 +1527,7 @@ function _registerIntegrationB_() {
   _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('triggerGate_ptoAccrual_nonManagerThrows',       test_triggerGate_ptoAccrual_nonManagerThrows);
   _integrationTest('triggerGate_previewPtoAccruals_nonManagerThrows', test_triggerGate_previewPtoAccruals_nonManagerThrows);
+  _integrationTest('triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows', test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows);
   _integrationTest('triggerGate_qaReviewPurge_nonManagerThrows',    test_triggerGate_qaReviewPurge_nonManagerThrows);
   _integrationTest('triggerGate_coachingRecap_nonManagerThrows',    test_triggerGate_coachingRecap_nonManagerThrows);
   _integrationTest('triggerGate_diagnosticsPurge_nonManagerThrows', test_triggerGate_diagnosticsPurge_nonManagerThrows);
@@ -4649,6 +4650,15 @@ function test_triggerGate_ptoAccrual_nonManagerThrows() {
 function test_triggerGate_previewPtoAccruals_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccruals(); });
+  }, 'manager access required');
+}
+
+// The one-click editor entry point for the inspect form is top-level too, so
+// it is reachable via google.script.run and carries its own gate rather than
+// inheriting previewPtoAccruals' — the refusal must name what was invoked.
+function test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccrualsLastMonth(); });
   }, 'manager access required');
 }
 
