@@ -2705,3 +2705,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   run.perDay;` to `const basis = run.basis;` and `npm run lint:server` names
   `20_timeclock.js:780 'perDay' is not defined` (bite-checked at the time of
   writing, against the real defect).
+
+  One postscript, because it is the same lesson twice. The wiring pin's own
+  "the net step comes after `npm ci`" assertion anchored on `indexOf('npm ci')`
+  — and `npm ci` appears in three PROSE comments in that workflow, two of them
+  above the step. The compare was vacuously true wherever the step sat. It was
+  caught by ONE thing: bite-checking it, which reported NO BITE when the step
+  was moved above the install. Six assertions, six bite-checks, one of them
+  wrong — and the wrong one was in the pin written to guard against pins that
+  cannot see what they claim to (g116). **Anchor an ordering compare on the
+  executable line, never on a mention of it.**
