@@ -1399,7 +1399,12 @@ entry says which it is.
   mismatch), re-run the preview to confirm the hours now read, then set column R
   back to the month BEFORE the one you want re-credited and let the daily job
   pick it up — the credit is a delta onto column I, so it composes with whatever
-  the balance already holds.
+  the balance already holds. **To look at a month the stamp has already
+  closed** — which is every past month, so this is the usual case when something
+  looks wrong — run `previewPtoAccruals('2026-08')` with the month you want.
+  That reports what the month is worth on the Timesheet as it reads NOW,
+  ignoring column R, and marks each rep the stamp has already settled. It is the
+  check to run BEFORE rewinding a stamp and again after fixing punches.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);
