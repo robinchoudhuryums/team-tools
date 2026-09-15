@@ -21019,10 +21019,15 @@ test('g118: the undeclared-identifier net is wired, and can resolve its dependen
   // ORDER: the net imports eslint, so it cannot run in the dependency-free
   // floor that precedes `npm ci` (F10's rule). A step that moved above it would
   // fail the job on a resolution error rather than on a real finding.
-  const ci = wf.indexOf('npm ci');
-  const lint = wf.indexOf('scripts/lint-server.mjs');
+  // Anchor on the RUN LINES, not on any mention. `npm ci` appears in three
+  // prose comments here, two of them near the top — indexOf('npm ci') found
+  // the header comment, so the compare was vacuously true wherever the step
+  // sat, and a bite-check moving the step above the install did NOT bite. The
+  // g116 class, fired on the pin written to guard a pin-blindness class.
+  const ci = wf.indexOf('run: npm ci');
+  const lint = wf.indexOf('run: node scripts/lint-server.mjs');
   assert.ok(ci >= 0 && lint > ci,
-    'the net step must come AFTER `npm ci` — it needs eslint, unlike the zero-dependency floor above it');
+    'the net step must come AFTER the `npm ci` STEP — it needs eslint, unlike the zero-dependency floor above it');
 
   // MEMBERSHIP is the directory, not filePushOrder. clasp pushes Tests.js and
   // DevTools.js too, and they declare globals the fourteen files READ
