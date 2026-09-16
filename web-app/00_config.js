@@ -1632,6 +1632,30 @@ const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
 // grid, the Hawaii marker, whatever a future import adds) passed through
 // VERBATIM — the operator rule: unknown tokens render as-is in neutral tone,
 // never guessed at.
+// ── OOP pricing lookup (operator 2026-09-16) ────────────────────────────────
+// Out-of-pocket prices for items a patient is most likely to order OOP. The
+// operator maintains them in their OWN spreadsheet, read LIVE through
+// `OOP_SS_ID` — NOT imported the way the payor table is.
+//
+// WHY LIVE, and it is the whole design: the payor table is ADVISORY (an
+// unlisted plan falls through to the TRY rules, and a stale copy costs a
+// re-check), but a rep QUOTES an OOP price and TAKES PAYMENT on that call.
+// Under an import model the app's copy lags the operator's sheet by however
+// long since the last upload, and the failure is a rep collecting a superseded
+// price — discovered from the customer, never from the app.
+//
+// Columns are discovered BY HEADER NAME, not by position (the
+// searchInsurancePayors discipline): the operator owns the file and may
+// reorder it. The FIRST column is the item name the search scans. Anything
+// the role matcher does not recognise rides along as a verbatim attribute —
+// unknown tokens render as-is, never guessed at.
+const OOP_MAX_ROWS = 5000;      // bounded tail — the INV-46 family
+const OOP_TOP = 8;              // top-N fetched full-width; ties ride along so the REP judges
+// NO result cache, deliberately — searchInsurancePayors has none either, and
+// here a cache is the staleness this whole design exists to remove. The plan
+// said "cache SHORT"; the honest answer on a price someone collects on is
+// "do not cache at all". One openById per lookup is what every other resolver
+// already costs.
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
 const INS_PAYOR_MAX_ROWS = 5000;

@@ -13018,6 +13018,64 @@ const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your exten
   + 'Transcript Hi, we have this patient calling, asking for a Spanish representative. '
   + "I only have their number or his number. It's 956-935-0289. Please call the patient back. Thank you.";
 
+// OOP-A (operator 2026-09-16) — the pricing reader resolves its columns BY
+// HEADER NAME, because the operator owns the spreadsheet and may reorder it.
+// That flexibility is the whole risk: a header the role matcher misses shows a
+// BLANK price rather than an error, and a rep quoting a blank is a rep quoting
+// nothing. These drive the matcher directly so a stem change is caught here
+// rather than mid-call.
+vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), _vmCtx, { filename: 'oopHeaderRole_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), _vmCtx, { filename: 'oopRowObj_' });
+
+test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `price` so a date column can never be read as money', () => {
+  const r = (h) => vm.runInContext('oopHeaderRole_(' + JSON.stringify(h) + ')', _vmCtx);
+
+  // The operator's own column names, and the obvious variants of each.
+  assert.strictEqual(r('Price'), 'price');
+  assert.strictEqual(r('Patient Cost'), 'price');
+  assert.strictEqual(r('OOP Amount'), 'price');
+  assert.strictEqual(r('Area Eligibility'), 'eligibility');
+  assert.strictEqual(r('Eligible Regions'), 'eligibility');
+  assert.strictEqual(r('EffectiveDate'), 'effective');
+  assert.strictEqual(r('As of'), 'effective');
+
+  // THE ORDERING ASSERTION. "Effective Price Date" contains BOTH stems. Read as
+  // `price` it would put a DATE in front of a customer as a dollar figure, so
+  // the date reading has to win. Inverting the two tests in oopHeaderRole_ must
+  // turn this red.
+  assert.strictEqual(r('Effective Price Date'), 'effective',
+    'a header carrying both stems reads as the DATE — never as the money');
+
+  // Unrecognised is '' (the row object then carries it verbatim), not a guess.
+  assert.strictEqual(r('Manufacturer'), '');
+  assert.strictEqual(r(''), '');
+  assert.strictEqual(r(null), '');
+});
+
+test('OOP-A: oopRowObj_ takes the FIRST column as the item name, fills each role ONCE, and passes unknown columns through verbatim', () => {
+  const obj = (h, row) => vm.runInContext('oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + ')', _vmCtx);
+
+  const o = obj(['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Manufacturer'],
+    ['Widget', '$129.00', 'AZ NV', '2026-09-01', 'Acme']);
+  assert.strictEqual(o.name, 'Widget', 'the first column is the item name whatever it is headed');
+  assert.strictEqual(o.price, '$129.00', 'the price is carried as the sheet DISPLAYS it, not reformatted');
+  assert.strictEqual(o.eligibility, 'AZ NV');
+  assert.strictEqual(o.effective, '2026-09-01');
+  assert.deepStrictEqual(o.details.map((d) => d.label + '=' + d.value).join('|'), 'Manufacturer=Acme',
+    'an unrecognised column rides along VERBATIM — shown, never dropped, never guessed at');
+
+  // FIRST match per role wins, so a second price-ish column cannot overwrite
+  // the real one further down the row.
+  const two = obj(['Item', 'Price', 'List Cost'], ['W', '$10', '$99']);
+  assert.strictEqual(two.price, '$10', 'the first price-role column wins');
+  assert.strictEqual(two.details.map((d) => d.value).join(), '$99', 'and the second rides along as an attribute');
+
+  // A blank header is skipped entirely rather than producing a blank-labelled row.
+  const blank = obj(['Item', '', 'Price'], ['W', 'junk', '$5']);
+  assert.strictEqual(blank.price, '$5');
+  assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing, not an unlabelled attribute');
+});
+
 test('SP4: spanishVmDurationSec_ parses RIGHT-TO-LEFT, so MM:SS and HH:MM:SS both read correctly — and anything else is null, never 0', () => {
   const d = (body) => vm.runInContext('spanishVmDurationSec_(' + JSON.stringify(body) + ')', _vmCtx);
 

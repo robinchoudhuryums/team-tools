@@ -58,6 +58,7 @@ var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T
 var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_
 var _TEST_OVERRIDE_FORMS_SS_ID = null;   // assigned by _withTestForms_
 var _TEST_OVERRIDE_QA_SS_ID = null;      // assigned by _withTestQa_
+var _TEST_OVERRIDE_OOP_SS_ID = null;     // assigned by _withTestOop_
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -409,7 +410,7 @@ function _suiteEnvCheck_() {
   lines.push('MANAGER_EMAILS: ' + (mgrRaw === undefined ? 'UNREADABLE' : mgrList.length ? mgrList.length + ' address(es)' + (mgrList.indexOf(_TEST_MGR_EMAIL.toLowerCase()) >= 0 ? ' (test manager listed)' : ' (test manager NOT listed — the trigger-gate tests append it per test)') : 'unset — NO manager passes assertManagerCaller_'));
   // Fixture stores (created on first use; a stale id re-provisions).
   ['TEST_CDR_SS_ID', 'TEST_INTAKE_SS_ID', 'TEST_KB_SS_ID', 'TEST_HRDOCS_SS_ID',
-   'TEST_FORMS_SS_ID', 'TEST_QA_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
+   'TEST_FORMS_SS_ID', 'TEST_QA_SS_ID', 'TEST_OOP_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
   // Properties individual tests save/override/restore — a value left behind by
   // a killed run is visible here rather than as a surprise mid-suite.
   lines.push(setOrNot('CN_FEATURE_FLAGS', 'tests override + restore it'));
@@ -6006,6 +6007,7 @@ function test_managerGates_rejectNonManager() {
     ['kbIngestFile',                   function () { return kbIngestFile({ name: 'x.txt', base64: '' }); }],
     // dryRun defaults TRUE, so even a gate-test call can never write.
     ['kbImportDataTable',              function () { return kbImportDataTable('InsurancePayors', '', {}); }],
+    ['getOopPricingDiagnostics',       function () { return getOopPricingDiagnostics(); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
@@ -6070,6 +6072,7 @@ function test_managerGates_rejectNonManager() {
     saveQaScorecardCriteria: 1, saveQaMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
+    getOopPricingDiagnostics: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
@@ -7231,6 +7234,41 @@ function _withTestForms_(fn) {
  *  `qa_reviewFlowOnFixture` drives this, so the fixture is exercised rather
  *  than merely declared. QA holds no CacheService state (unlike the KB tree
  *  cache), so there is nothing to invalidate on entry or exit. */
+/** The OOP pricing fixture — the `_withTestQa_` shape, for the ninth store.
+ *
+ *  It ASSIGNS the override rather than only declaring it, which is not
+ *  boilerplate: g119 was written this week about exactly the branch that gets
+ *  read by a resolver and set by nothing, and the `fixtures:` pin now fails the
+ *  build for a read-only one. Adding `getOopSS_` without this would have
+ *  reproduced the bug the pin exists to catch, one week later.
+ *
+ *  Unlike the other fixtures this one SEEDS the sheet: the OOP reader
+ *  discovers its columns BY HEADER, so an empty spreadsheet would exercise the
+ *  not-configured path rather than the reader. The header row here is the
+ *  SHAPE the reader claims to handle — if the operator's real sheet ever stops
+ *  matching it, that is a finding for getOopPricingDiagnostics, not a reason to
+ *  loosen this. */
+function _withTestOop_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_OOP_SS_ID');
+  let ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = createPinnedSpreadsheet_('TEST_OOP_Fixture');
+    props.setProperty('TEST_OOP_SS_ID', ss.getId());
+  }
+  const sh = ss.getSheets()[0];
+  sh.clear();
+  sh.getRange(1, 1, 3, 5).setValues([
+    ['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Notes'],
+    ['TEST_OOP Widget', '$129.00', 'AZ NV', '2026-09-01', 'sample row'],
+    ['TEST_OOP Gadget', '$45.50', 'US', '2026-09-01', ''],
+  ]);
+  _TEST_OVERRIDE_OOP_SS_ID = ss.getId();
+  try { return fn(); }
+  finally { _TEST_OVERRIDE_OOP_SS_ID = null; }
+}
+
 function _withTestQa_(fn) {
   const props = PropertiesService.getScriptProperties();
   let id = props.getProperty('TEST_QA_SS_ID');

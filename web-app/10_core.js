@@ -1880,6 +1880,17 @@ function getStorageHealth(opts) {
     // enabled purge is visible where every other store's policy already is.
     // Review RECORDS only — the QaRecordings index + Drive audio files are
     // never purged (INV-196).
+    // OOP pricing (operator 2026-09-16) — the ninth store, and the only one
+    // the app never writes to. Read LIVE on every lookup precisely so a quoted
+    // price cannot lag the operator's sheet; the tz row matters as much here as
+    // anywhere, because an EffectiveDate column is a coerced date read.
+    const oopProp = props.getProperty('OOP_SS_ID');
+    stores.push(probe({ label: 'OOP pricing', role: 'Out-of-pocket item prices + area eligibility (read-only)',
+      cls: 'PHI-free by policy', prop: 'OOP_SS_ID', id: oopProp || '',
+      retention: 'kept — the app never writes to this store',
+      source: oopProp ? 'Script Property' : 'unset',
+      note: oopProp ? '' : 'Unset → the OOP price lookup says it is not configured (no fallback store, by design — a price lookup that silently resolves elsewhere is worse than one that does not work).' }));
+
     const qaProp = props.getProperty('QA_SS_ID');
     const qaDays = qaReviewRetentionDays_();
     stores.push(probe({ label: 'QA (recordings)', role: 'QaRecordings index + QaComments + QaScorecards',

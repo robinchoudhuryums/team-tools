@@ -152,6 +152,33 @@
     "getTeamCalendar"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-A (OOP1/OOP2): the ninth store read live - getOopSS_/oopSheet_ plus the pure oopHeaderRole_/oopRowObj_ mappers, searchOopPricing and getOopPricingDiagnostics",
+   "added": [
+    "OOP_MAX_ROWS",
+    "OOP_TOP",
+    "getOopPricingDiagnostics",
+    "getOopSS_",
+    "oopHeaderRole_",
+    "oopRowObj_",
+    "oopSheet_",
+    "searchOopPricing"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-A: getStorageHealth carries the ninth store (OOP_SS_ID)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getStorageHealth"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1285,6 +1312,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7a0dc3c58da6b826"
+  },
+  "OOP_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4cf733af4afd3548"
+  },
+  "OOP_TOP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3829a39b37d5150e"
   },
   "OPEN_PUNCH_EXPIRING_DAYS": {
    "file": "20_timeclock.js",
@@ -3721,6 +3758,16 @@
    "kind": "function",
    "sha": "fe8fe93eefdbfb59"
   },
+  "getOopPricingDiagnostics": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f1d7ed9b859294c2"
+  },
+  "getOopSS_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4c8f3c867800fefe"
+  },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
    "kind": "function",
@@ -3989,7 +4036,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8997f443bea8220b"
+   "sha": "6591f67d509b24be"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -5001,6 +5048,21 @@
    "kind": "function",
    "sha": "b3357dc2e76ac45d"
   },
+  "oopHeaderRole_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d64410e4fd5d8520"
+  },
+  "oopRowObj_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fc5954dd2cdb9e6c"
+  },
+  "oopSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "058b050020dbedad"
+  },
   "openPersonalSs_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5770,6 +5832,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "be911415bb994066"
+  },
+  "searchOopPricing": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d3d02b11a9ab3e2e"
   },
   "searchReference": {
    "file": "70_kb.js",

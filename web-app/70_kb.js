@@ -650,6 +650,145 @@ function insPayorRowObj_(headers, row) {
   }
   return out;
 }
+// ════════════════════════════════════════════════════════════════════════════
+//  OOP PRICING LOOKUP (operator 2026-09-16) — the NINTH store, read LIVE
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The OOP pricing store — NO fallback, the `getQaSS_` / `getHrDocsSS_`
+ *  posture. An unset property is a friendly not-configured error, never a
+ *  silent read of some other spreadsheet: a price lookup that quietly resolves
+ *  somewhere else is the one outcome worse than not working. */
+function getOopSS_() {
+  if (typeof _TEST_OVERRIDE_OOP_SS_ID !== 'undefined' && _TEST_OVERRIDE_OOP_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_OOP_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('OOP_SS_ID');
+  if (!id) throw new Error('OOP pricing is not configured — set Script Property OOP_SS_ID to the pricing spreadsheet.');
+  return SpreadsheetApp.openById(id);
+}
+
+/** The pricing sheet: the spreadsheet's FIRST tab.
+ *
+ *  Deliberately not a configured tab name. This spreadsheet exists for one
+ *  purpose, so "the first sheet" needs no operator decision and cannot drift
+ *  out of step with a constant in here. The diagnostics endpoint REPORTS which
+ *  tab it read, so the assumption is visible rather than silent. */
+function oopSheet_() {
+  const sheets = getOopSS_().getSheets();
+  if (!sheets || !sheets.length) throw new Error('The OOP pricing spreadsheet has no sheets.');
+  return sheets[0];
+}
+
+/** PURE (Node-pinned): what ROLE a header column plays, or '' for none.
+ *
+ *  Header-name discovery rather than fixed positions, because the operator owns
+ *  the file and may reorder it — the same reason searchInsurancePayors matches
+ *  `waystar|network|qualif|reimbur` on the stem rather than the exact string.
+ *
+ *  ORDER MATTERS in one place and it is not obvious: `effective` is tested
+ *  BEFORE `price`, because a header like "Effective Price Date" contains both
+ *  stems and the date reading is the safe one — mistaking a date column for the
+ *  price would put a date in front of a customer as a dollar figure. */
+function oopHeaderRole_(header) {
+  const h = String(header == null ? '' : header).trim();
+  if (!h) return '';
+  if (/effective|as[\s_-]*of/i.test(h)) return 'effective';
+  if (/area|eligib|region|territor/i.test(h)) return 'eligibility';
+  if (/price|cost|oop|amount|charge|\$/i.test(h)) return 'price';
+  return '';
+}
+
+/** PURE (Node-pinned): one pricing row → the result object. The FIRST column is
+ *  always the item name (the column the search scans). Every other column
+ *  resolves through oopHeaderRole_; anything unrecognised rides along in
+ *  `details` VERBATIM — an unknown column is shown, never dropped and never
+ *  guessed at (the payor-row discipline, INV-169's spirit). */
+function oopRowObj_(headers, row) {
+  const out = { name: String(row[0] == null ? '' : row[0]).trim(),
+    price: '', eligibility: '', effective: '', details: [] };
+  for (let c = 1; c < headers.length; c++) {
+    const h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (!h) continue;
+    const v = String(row[c] == null ? '' : row[c]).trim();
+    const role = oopHeaderRole_(h);
+    if (role === 'price' && !out.price) out.price = v;
+    else if (role === 'eligibility' && !out.eligibility) out.eligibility = v;
+    else if (role === 'effective' && !out.effective) out.effective = v;
+    else if (v) out.details.push({ label: h, value: v });
+  }
+  return out;
+}
+
+/** Rep-callable, read-only, no lock. Top-N item matches for a query.
+ *
+ *  Scores through `insPayorScore_` — the SAME scorer the payor lookup uses,
+ *  reused rather than copied: two scorers for two lookups is two things to keep
+ *  in step, and nobody would notice them diverging.
+ *
+ *  FAILURE POSTURE, inherited deliberately: a wrong price is a billing error, so
+ *  the failure mode is "no match" (visible) and never a confident wrong number.
+ *  Ties and near-misses ride along so the REP judges ambiguity. */
+function searchOopPricing(query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const q = String(query || '').trim();
+    if (q.length < 2) return { matches: [], total: 0 };
+    const sh = oopSheet_();
+    const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+    if (last < 2) return { matches: [], total: 0, notFound: true };
+    const width = sh.getLastColumn();
+    // getDisplayValues throughout — the operator's sheet formats a price the way
+    // they mean it to read, and reinterpreting a foreign-authored cell is the
+    // INV-64 mistake. A currency cell handed back as a raw float would show a
+    // customer a different number than the sheet does.
+    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    const scored = [];
+    for (let i = 0; i < names.length; i++) {
+      const sc = insPayorScore_(names[i][0], q);
+      if (sc > 0) scored.push({ i: i, score: sc });
+    }
+    scored.sort(function (a, b) { return b.score - a.score; });
+    const matches = scored.slice(0, OOP_TOP).map(function (t) {
+      return oopRowObj_(headers, sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0]);
+    });
+    return { matches: matches, total: scored.length, notFound: scored.length === 0,
+      cap: OOP_TOP, truncated: sh.getLastRow() > OOP_MAX_ROWS + 1 };
+  } catch (err) { return { error: 'OOP pricing lookup failed: ' + err.message }; }
+}
+
+/** Admin-gated: what the reader actually MATCHED in the operator's sheet.
+ *
+ *  This exists because header discovery is invisible until it goes wrong. The
+ *  operator edits the spreadsheet directly — rename "Price" to "Patient Cost"
+ *  and the lookup keeps working; rename it to something the stem list misses
+ *  and every result silently shows a blank price. Without this they would find
+ *  out from a rep mid-call. It reports the tab it read, every header and the
+ *  role assigned to it, and NAMES the roles it could not find — an absent price
+ *  column is the finding, not an empty column.
+ *
+ *  Read-only, no lock, no row content beyond a couple of sample values. */
+function getOopPricingDiagnostics() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const sh = oopSheet_();
+    const width = sh.getLastColumn();
+    const rows = Math.max(0, sh.getLastRow() - 1);
+    const headers = width ? sh.getRange(1, 1, 1, width).getDisplayValues()[0] : [];
+    const cols = headers.map(function (h, i) {
+      return { header: String(h || ''), role: i === 0 ? 'name (the searched column)' : (oopHeaderRole_(h) || '—') };
+    });
+    const found = {};
+    headers.forEach(function (h, i) { if (i > 0) { const r = oopHeaderRole_(h); if (r) found[r] = true; } });
+    const missing = ['price', 'eligibility', 'effective'].filter(function (r) { return !found[r]; });
+    return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
+      truncated: rows > OOP_MAX_ROWS,
+      sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
+  } catch (err) { return { error: String(err.message || err) }; }
+}
+
 /** Rep-callable, read-only, no lock. Returns the top-N payor matches for a
  *  query — never a single confident guess: ties and near-misses ride along so
  *  the REP judges ambiguity. A no-match result carries notFound:true (the
