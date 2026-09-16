@@ -248,6 +248,61 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
   question, not a batch.
 
 ## Open follow-on items
+
+### Operator testing round 2026-09-16 — five items, planned but NOT implemented
+A `/broad-implement`-shaped plan for all five is in
+`.cycle/blocks/20pre-operator-2026-09-16-plan.md`. Findings are SP1–SP3, PTO1–PTO2,
+OOP1–OOP3, EL1–EL2 in five batches (SP · PTO · OOP-A · OOP-B · ELIG). Facts
+established by reading the code this session, so the next session need not re-derive:
+
+- **SP1 — the Spanish unclaimed count stalls after "Mark resolved". A REAL BUG, root-caused.**
+  `spanishResolve_` (`web-app/metrics/script_metrics.html:2593`) ends in `card.remove()`,
+  a raw DOM removal. The count comes from `spanishUnclaimedCount_()` (`:2040`), which
+  reads `SPANISH_STATE.pendingRes.pending` — resolve never touches it, and never calls
+  `spanishRefreshAutoAssign_()` (which only runs at the tail of `spanishRenderList_()`,
+  `:2342`). The sibling `spanishClaimRpc_` (`:2520`) does it correctly via
+  `spanishSetClaimLocal_`. SECOND symptom: `cacheHalf` stores the SAME object reference,
+  so the SWR cache still holds the resolved item — leave the tab and the card returns.
+  This is g67. Fix shape: `spanishRemovePendingLocal_(tid)` mirroring
+  `spanishSetClaimLocal_`, then re-render; the count follows for free.
+- **SP2 — card fade on resolve.** Falls out of SP1 (animate the outgoing node, re-render
+  on `animationend`). Must honour `prefers-reduced-motion`, and must not become the only
+  signal — the toast already carries the outcome.
+- **SP3 — Expand/Collapse → chevron.** `chevronDown`/`chevronUp` already exist in
+  `script_icons.html`. TRAP: the words are currently the button's ACCESSIBLE NAME, so an
+  icon-only button needs an `aria-label`; `aria-expanded`/`aria-controls` (INV-174) stay in
+  step. The button was made a real toggle on 2026-09-10 after a version that removed
+  itself. `.sp-more` is shared with the Mark-resolved button — g70, so scope any styling.
+- **PTO1/PTO2 — a manager CAN'T see a rep's PTO balance except on a pending request.**
+  Confirmed, not a UI oversight: `getManagerDashboard` builds `annualLeave`/`sickLeave`
+  per rep (`web-app/20_timeclock.js:1580`), but the ONLY manager render is the
+  `12 → 11 d` projection chip on a pending time-off card
+  (`web-app/tc/script_manager.html:791`) plus the negative-balance approve warning
+  (`:1022`). The `liveStatus` projection (`20_timeclock.js:1620`) deliberately does NOT
+  carry the balance, so PTO1 adds `annualLeave`/`sickLeave`/`ptoEnabled` to it.
+  TWO CONSTRAINTS: gate the display on `EMP.PTO_ENABLED` (the cycle-8 bug showed a
+  contractor a projection), and never add it to `getTeammateStatus` (g33 — low-privilege).
+- **OOP1–OOP3 — the OOP pricing sheet has a ready-made home.** `KB_DATA_TABLES`
+  (`web-app/00_config.js:1648`) is the allowlist-gated CSV → named KB tab pattern built
+  for the insurance lookup; its own comment says adding an entry is "a deliberate code
+  change beside the reader that consumes it". `kbImportDataTable` (`70_kb.js:765`) is
+  admin-gated, DRY-RUN BY DEFAULT and sets plain-text format before the write;
+  `kbDataTableSummary_` (`:726`) is the per-spec validation hook. Mirror
+  `searchInsurancePayors` (`:658`) for the reader and the DUAL surface — the insurance
+  lookup renders in both the Reference tab and the Ctrl/⌘+K drawer (the `-d` id suffix,
+  `web-app/kb/script_kb.html:2430`). The email half is the open design question:
+  `CN_EMAIL_TEMPLATES` bodies carry only a `{name}` token (`00_config.js:266`).
+- **EL1/EL2 — the Reference MAP ALREADY EXISTS.** The ` ```map ` block shipped
+  2026-08-13 (Tier A, no billing): `wh| Name: Address` lines, a "Find nearest" ZIP box,
+  straight-line distances via `kbMapDistances` (`70_kb.js:1947` — geocode + haversine +
+  a hash-keyed coordinate cache), a per-row Google Maps link and a lazy KEYLESS
+  `?output=embed` iframe (`kb/script_kb.html:1204`). If it looks missing, no article
+  uses the block. The NEW work is item eligibility, and the operator has agreed to add
+  an **"Area Eligibility" column to the OOP sheet**, which supplies the dataset that was
+  the blocker. g41 governs it: an operator-maintained column a DECISION ENGINE reads
+  needs a shape check and a CHOSEN fail direction — unparseable/blank must read UNKNOWN,
+  never "eligible".
+
 - Drive access finding may be a FALSE POSITIVE (operator report 2026-09-11, mid Batch Q) —
   `driveAccessStatus_` introspects the RUNNING EXECUTION's OAuth token. If the runtime mints
   it with only the scopes that execution exercises, a Storage Health run that never touches
