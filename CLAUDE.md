@@ -607,6 +607,7 @@ the dated round entries that used to sit here moved to
 - [`Employees` sheet column M = `ManagerEmail`](docs/operator-state.md#operator-employees-sheet-column-m-manageremail)
 - [`Employees` sheet column N = `Departments`](docs/operator-state.md#operator-employees-sheet-column-n-departments)
 - [`Employees` sheet column O = `Schedule`](docs/operator-state.md#operator-employees-sheet-column-o-schedule)
+- [Script Property `SPANISH_VM_MIN_SECONDS`](docs/operator-state.md#operator-script-property-spanish-vm-min-seconds)
 - [Script Property `CDR_QUEUE_GROUPS`](docs/operator-state.md#operator-script-property-cdr-queue-groups)
 - [Script Property `DR_SLA_TARGETS`](docs/operator-state.md#operator-script-property-dr-sla-targets)
 - [Set Script Property `HR_DOCS_SS_ID`](docs/operator-state.md#operator-set-script-property-hr-docs-ss-id)
@@ -830,8 +831,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 827 | `node test/client/run.js` |
-| DOM harness tests | 113 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 830 | `node test/client/run.js` |
+| DOM harness tests | 116 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 323 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 50 | `'Admin access required.'` in the server source |

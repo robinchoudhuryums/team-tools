@@ -137,6 +137,12 @@
   .tcal-off-chip { font-size: 12px; padding: 2px 9px; border-radius: var(--radius-pill); border: 1px solid var(--line); }
   .tcal-off-chip.approved { background: var(--accent-soft); }
   .tcal-off-chip.pending { background: var(--warn-soft); }
+  /* PTO2 — the remaining balance ON the off chip, where the approve decision
+     is made. Mono + muted so it reads as a figure the manager is being handed,
+     not as part of the rep's name. Absent entirely when the balance does not
+     apply (see mgrLeaveBalanceText_), so there is nothing to tone. */
+  .tcal-off-bal { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .tcal-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
   /* Follow-on (2026-09-01): the manager analytics pair carried an INLINE
      `grid-template-columns:1fr 1fr`, which beats every stylesheet rule
@@ -655,6 +661,25 @@ function adjBulkConfirmed_(status, ids) {
     .updatePunchAdjustStatusBulk(ids, status);
 }
 
+// PTO1/PTO2 (operator 2026-09-16) — the ONE predicate for "may this surface
+// show a leave balance, and what does it say".
+//
+// Returns '' rather than a number for a rep the balance does not apply to.
+// That absence is the point: `adjustLeaveBalance_` no-ops for a pto-disabled
+// rep, so rendering their 0 would read as "used it all" when the truth is
+// "this does not apply" (INV-187 / g114). The cycle-8 bug was exactly this —
+// a contractor's pending card showed a `12 → 11 d` projection for a deduction
+// that never happened — and the gate that fixed it is the CONJUNCTION the
+// server folds into `e.ptoEnabled`: the feature flag AND the per-row column.
+//
+// One helper because two surfaces render this. Two copies of a gate is how
+// one of them quietly stops applying it.
+function mgrLeaveBalanceText_(e) {
+  if (!e || !e.ptoEnabled) return '';
+  if (e.annualLeave === null || e.annualLeave === undefined) return '';
+  return formatLeaveDays(e.annualLeave) + ' d';
+}
+
 function renderManagerView(area, data) {
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
   // D3 (cycle 10): tolerate an unknown status value — `counts[e.status]++` on
@@ -738,6 +763,13 @@ function renderManagerView(area, data) {
         }
         // V4·E3 — 7-WORKDAY daily-hours sparkline under the status line.
         const sparkSection = renderEmpSparkline_(e.recentHours);
+        // PTO1 — the leave balance, absent entirely for a rep it does not
+        // apply to (see mgrLeaveBalanceText_). Muted: it is context for the
+        // manager, not a status the card is reporting.
+        const bal = mgrLeaveBalanceText_(e);
+        const ptoLine = bal
+          ? `<div class="emp-pto" title="Annual leave remaining for ${esc(e.name)}">${icon('timeoff', 11)} PTO ${esc(bal)}</div>`
+          : '';
         // Batch 8: the actions moved OFF the name row. MEASURED at 1440 —
         // the card is 181px, and two 26px buttons plus their gaps left the
         // name 33px for a 75px name ("Av…"). One button had already cost it
@@ -749,6 +781,7 @@ function renderManagerView(area, data) {
             <div class="emp-name" title="${esc(e.name)}">${esc(e.name)}</div>
           </div>
           <div class="emp-status-line">${line}</div>
+          ${ptoLine}
           ${sparkSection}
           <div class="emp-card-actions">
             <button class="de-open-btn" title="Edit day" aria-label="Edit day for ${esc(e.name)}" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
@@ -1548,8 +1581,19 @@ function tcalDayTableHtml_(data) {
 
   var offHtml = day.off.length
     ? '<div class="tcal-off" role="list" aria-label="Reps off this day">' + day.off.map(function (o) {
+        // PTO2 — the balance ON the chip, which is where the approve decision
+        // actually gets made. Joined BY ID (the server ships `empId` for this);
+        // a rep missing from liveStatus, or one the balance does not apply to,
+        // renders the chip exactly as before rather than a zero.
+        var ls = null;
+        if (o.empId && mgrData && mgrData.liveStatus) {
+          ls = mgrData.liveStatus.filter(function (x) { return x.id === o.empId; })[0] || null;
+        }
+        var oBal = mgrLeaveBalanceText_(ls);
         return '<span class="tcal-off-chip ' + (o.status === 'approved' ? 'approved' : 'pending') + '" role="listitem">' +
-          esc(o.name) + ' · ' + esc(o.type) + (o.status === 'pending' ? ' (pending)' : '') + '</span>';
+          esc(o.name) + ' · ' + esc(o.type) + (o.status === 'pending' ? ' (pending)' : '') +
+          (oBal ? '<span class="tcal-off-bal" title="Annual leave remaining">' + esc(oBal) + '</span>' : '') +
+          '</span>';
       }).join('') + '</div>'
     : '';
   var editNote = !editable && dateIso <= todayIso

@@ -1172,3 +1172,56 @@ neither by reading:
 Both are the g116 shape, in the pin written to prevent a g116-shaped bug. The
 three bite-checks that pass now: the QA override unassigned, the FORMS override
 unassigned, and the KB override reduced to its declaration plus its reset.
+
+## 2026-09-16 — the operator round (SP · SP2 · PTO)
+
+Three batches, 16 mutations / 16 bites; three new pure pins and three new DOM
+pins (the live totals are CLAUDE.md's running-totals block, not this sentence).
+What the harness added is below; what it CAUGHT is the more useful record.
+
+**Three defects the pins caught before they shipped**, none of which reading
+found:
+
+1. **A regex whose trailing lookahead rejected only the delimiter.**
+   `spanishVmDurationSec_` matched `Duration:\s*((?:\d{1,3}:){1,2}\d{1,2})(?!\s*:)`.
+   Against `Duration: 00:00:00:01` that returned **0 seconds**: the seconds
+   group backtracks to ONE digit, and the next character then being a *digit*
+   satisfies a colon-only lookahead, so `00:00:0` matched. A malformed duration
+   reading as zero would have SUPPRESSED the card — the one direction that
+   feature must never fail in. The lookahead now rejects a following digit too.
+   **The rule worth carrying: a fixed-width group plus a delimiter-only
+   lookahead can always backtrack into a shorter, wronger match. Anchor on
+   "not a digit AND not a delimiter", and drive the malformed case.**
+   *(Considered for a gotcha entry and deliberately NOT given one: the Common
+   Gotchas bar is "has bitten this project in production", and this never
+   shipped. The lesson lives here instead.)*
+2. **A shared helper declared in the wrong scope.** `mgrLeaveBalanceText_` was
+   first nested inside `renderManagerView`, where `tcalDayTableHtml_` — a
+   sibling, not a child — could not see it. PTO2 would have thrown on every
+   calendar render.
+3. **A DOM pin asserting against SKELETON cards.** The PTO pin's first version
+   used `enterTool('timeClock','manager')`, which leaves `currentView='clock'`;
+   `loadManagerDashboard` then skips the render behind its own guard, and
+   `.emp-card` matches the loading skeleton, so `cards.length === 3` passed
+   against placeholders. **The manager landing is the MANAGE tool's `manage`
+   tab.** The selector now requires a real `.emp-name` child. It passed the
+   count assert and failed the first real one — which is the only reason it
+   was caught rather than shipping as a green pin over nothing.
+
+**Harness additions.** `SP1/SP2 DOM` (resolve mutates STATE: the count and
+header follow, a failed resolve keeps the row and clears the in-flight class,
+and a re-render from the same state does not resurrect the card); `SP4 DOM`
+(two suppression counts, separately toned, on the full list AND the empty one);
+`SP4`/`SP5` pure pins (the duration parser right-to-left with every branch
+driven, the fail-open verdict, the transcript extraction); `PTO1/PTO2 DOM`
+(the balance on both surfaces, with the ABSENT cases as the load-bearing
+assertions). The A5 toggle pin was updated in place for the chevron — it
+asserts the ACCESSIBLE NAME now, because a `textContent` assertion would have
+passed against an unnamed icon button.
+
+**Two harness facts this round established.** `scripts/bite.sh` drives the
+PURE harness only, so a DOM pin must be bite-checked by hand (mutate, run
+`runDom.js`, grep for the ✗, restore). And jsdom does not run CSS animations,
+so an `animationend` listener is never exercised there — the SP2 pin verifies
+the TIMEOUT fallback, and says so rather than implying coverage it does not
+have.

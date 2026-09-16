@@ -1261,6 +1261,43 @@ entry says which it is.
   ribbon). Breaks + the break reminder still come from the per-tz schedule
   (the override changes start/length only). Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
+<a id="operator-script-property-spanish-vm-min-seconds"></a>
+- **Script Property `SPANISH_VM_MIN_SECONDS`** (optional — operator 2026-09-16).
+  An 8x8 A_Q_Spanish voicemail SHORTER than this many seconds is treated as a
+  hang-up and never becomes a task card on Metrics → Spanish Inbox. **Unset is
+  fine:** `CONFIG.SPANISH_VM_MIN_SECONDS` seeds **5**, so the gate is on from
+  the first deploy with no action. Set the property to change the threshold, or
+  to **`0` to disable the gate entirely** — that is the escape hatch if 8x8
+  restyles its notification body and you want the noise back while the parser
+  is fixed.
+
+  The duration is read from the body's `Duration: MM:SS` line (`00:01` is one
+  second, not one minute — the samples that set this rule were a 1-second
+  hang-up and an 18-second request). Parsed RIGHT-TO-LEFT, so `01:30` and
+  `00:01:30` both resolve correctly without the app having to know which form
+  8x8 used.
+
+  **It FAILS OPEN, and that is deliberate.** A voicemail whose duration cannot
+  be read is SHOWN, never hidden: the body belongs to a vendor who can change
+  it in a release note nobody here reads, and the failure that costs a
+  Spanish-speaking patient a callback is the silent one (the g41 rule, pointed
+  at a source the operator does not even own).
+
+  **What it hides is REPORTED.** The Pending header carries two counts, kept
+  separate on purpose: *"N short voicemails hidden (under 5s)"* — neutral, the
+  feature working — and *"N voicemails with no readable duration — shown"*,
+  warning-toned. **If that second number starts climbing, 8x8 has changed the
+  email format and the filter has stopped measuring anything.** One combined
+  count could not tell those apart, and a suppressed card is invisible by
+  definition. Both render on an EMPTY pending list too, which is the state they
+  exist for: "all caught up" with three suppressed voicemails would otherwise
+  be indistinguishable from a quiet day.
+
+  **Auto-assign inherits the gate.** `autoAssignSpanishThreads` and its
+  scheduled twin distribute whatever `getSpanishInboxPending` returns, so a
+  suppressed hang-up is no longer handed to a rep — intended, but it means the
+  hourly job's assigned count drops by however many hang-ups the window holds.
+
 <a id="operator-script-property-cdr-queue-groups"></a>
 - **Script Property `CDR_QUEUE_GROUPS`** (optional — cycle-14 Phase 4). JSON
   `{"Department": ["A_Q_Queue", ...]}` mapping transfer queues to departments

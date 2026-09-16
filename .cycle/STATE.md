@@ -12,7 +12,7 @@ Phase: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushe
   `/reflect`.
 Scope: broad
 Test Command: manual
-Estimates: **Batch T (prevention — the open-punch check) — M (~4 h) estimate vs ~2.5 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (a read-only daily scan for days with no usable clock-in/clock-out pair, riding a NEW count-neutral `runDailyChecks` dispatcher at 8am so the 9am health digest pushes it the same morning; window bounded by CONFIG.ADJUST_WINDOW_DAYS because a day older than that cannot be fixed in-app). · **Batch R (accrual resilience — the AuditLog ledger + top-up reconciliation) — M (~4–5 h) estimate vs ~3 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (proposed and approved in chat: top-up over a trailing window, ledger derived from the PtoAccrualCredit audit rows, never claws back, fails closed). · Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE the first edit and carried into the implement block as the template requires (the first batch to do BOTH halves; Batch C's block shipped without them). `/reflect` owes the estimates.csv row for D1, D2, F1 AND F2 (F2 — L/~6 h estimate vs **~2.5 h actual**) (F1 — S–M/~3 h estimate vs **~1.5 h actual**) (D2 + D1 follow-ons — L/~7 h estimate vs **~3 h actual**, both lines carried into `.cycle/blocks/19-followons-D2-broad-implement.md`). ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit · **Batch D2 + D1 follow-ons — L (~7 h), recorded 2026-09-14 17:05Z BEFORE the first edit** (D2 is M/~6 h in the plan; the four D1 follow-on items add ~1 h). · **Batch F1 — S–M (~3 h), recorded 2026-09-14 18:05Z BEFORE the first edit** (F1 is S/~2 h in the plan; INV-202 adds `counts. · **Batch F2 + the F1 follow-on items — L (~6 h), recorded 2026-09-14 18:40Z BEFORE the first edit** (the plan says L/~2 days incl. re-verification; the split is mechanical and script-driven here, and the four F1 follow-ons are small).mjs`'s two `Code.js` derivations to its scope).
+Estimates: **Batch PTO (PTO1 manager-visible leave balance on the live-status card · PTO2 the same on the team calendar) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The balance is ALREADY built per rep in getManagerDashboard; liveStatus just does not carry it, so this is a projection + render, not new data). · **Batch SP2 (SP4 voicemail duration gate + SP5 transcript snippet) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The body is ALREADY fetched at list time, so both ride one parse of a string already in hand; the cost is the two pure parsers, the fail-open counts and their pins, not a new Gmail read). · **Batch SP (operator round 2026-09-16 — the Spanish resolve-count bug, the card fade, the chevron toggle) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** (SP1 is the only defect: spanishResolve_ removes the DOM node without mutating the state the unclaimed count folds; SP2 and SP3 are polish riding the same partial) — **~1.5 h ACTUAL**. · **Batch T (prevention — the open-punch check) — M (~4 h) estimate vs ~2.5 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (a read-only daily scan for days with no usable clock-in/clock-out pair, riding a NEW count-neutral `runDailyChecks` dispatcher at 8am so the 9am health digest pushes it the same morning; window bounded by CONFIG.ADJUST_WINDOW_DAYS because a day older than that cannot be fixed in-app). · **Batch R (accrual resilience — the AuditLog ledger + top-up reconciliation) — M (~4–5 h) estimate vs ~3 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (proposed and approved in chat: top-up over a trailing window, ledger derived from the PtoAccrualCredit audit rows, never claws back, fails closed). · Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE the first edit and carried into the implement block as the template requires (the first batch to do BOTH halves; Batch C's block shipped without them). `/reflect` owes the estimates.csv row for D1, D2, F1 AND F2 (F2 — L/~6 h estimate vs **~2.5 h actual**) (F1 — S–M/~3 h estimate vs **~1.5 h actual**) (D2 + D1 follow-ons — L/~7 h estimate vs **~3 h actual**, both lines carried into `.cycle/blocks/19-followons-D2-broad-implement.md`). ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit · **Batch D2 + D1 follow-ons — L (~7 h), recorded 2026-09-14 17:05Z BEFORE the first edit** (D2 is M/~6 h in the plan; the four D1 follow-on items add ~1 h). · **Batch F1 — S–M (~3 h), recorded 2026-09-14 18:05Z BEFORE the first edit** (F1 is S/~2 h in the plan; INV-202 adds `counts. · **Batch F2 + the F1 follow-on items — L (~6 h), recorded 2026-09-14 18:40Z BEFORE the first edit** (the plan says L/~2 days incl. re-verification; the split is mechanical and script-driven here, and the four F1 follow-ons are small).mjs`'s two `Code.js` derivations to its scope).
   (P1's own rule, applied to itself; the plan's figure). The remaining
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
@@ -248,6 +248,111 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
   question, not a batch.
 
 ## Open follow-on items
+
+### Operator testing round 2026-09-16 — SP + SP2 + PTO DONE, THREE remain
+**Batch PTO (PTO1 live-status card · PTO2 calendar off-chip) is IMPLEMENTED** —
+`.cycle/blocks/20pre-PTO-broad-implement.md`, net 2 − 0 = 2, 4 mutations / 4 bites,
+pure 830 unchanged · DOM 115 → 116. NOT PUSHED TO APPS SCRIPT.
+Carry forward: (a) **g33 is already held tighter than planned** — `getTeammateStatus`
+has a strict four-key allow-list pin (`activeNotIn|isSelf|name|status`), so a balance
+leaked there turns the harness red with no new pin. (b) Three defects the pins caught
+and reading did not: a banned `var(--muted-2, …)` fallback on a DEFINED token (g57);
+the shared helper first declared INSIDE `renderManagerView` where the calendar renderer
+could not see it; and the DOM pin asserting against three SKELETON `.emp-card`s because
+`enterTool('timeClock','manager')` never reaches the manager landing — it is the MANAGE
+tool's `manage` tab. (c) `sickLeave` now rides the projection UNUSED (g04 shape) —
+deliberate while sick leave is dormant, but it is a declared-and-unread field.
+**OOP-A, OOP-B and ELIG remain.**
+
+**Batch SP2 (SP4 voicemail duration gate · SP5 transcript snippet) is IMPLEMENTED** —
+`.cycle/blocks/20pre-SP2-broad-implement.md`, net 2 − 0 = 2, 7 mutations / 7 bites,
+pure 827 → 830 · DOM 114 → 115. NOT PUSHED TO APPS SCRIPT.
+Three things to carry forward: (a) **auto-assign inherits the gate** — INV-31 and S105
+both say voicemails are deliberately included, and auto-assign distributes whatever
+`getSpanishInboxPending` returns, so a suppressed hang-up is no longer assignable
+(right, but a behaviour change, and S105's setup now needs a voicemail at or above the
+threshold). (b) The pin caught a REAL regex defect before it shipped: a colon-only
+trailing lookahead let `00:00:00:01` match `00:00:0` → 0 seconds → SUPPRESSED, the one
+direction the feature must never fail in. (c) **`SPANISH_VM_MIN_SECONDS` is a new
+operator Script Property documented NOWHERE** — `/sync-docs` owes the operator-state
+entry plus its CLAUDE.md inventory line (the OPERATOR-INDEX pin needs both halves),
+an INV-31 amendment, and the S105 setup fix.
+
+**Batch SP (SP1 · SP2 · SP3) is IMPLEMENTED** — `.cycle/blocks/20pre-SP-broad-implement.md`,
+net 2 − 0 = 2, 5 mutations / 5 bites, pure 827 · DOM 113 → 114. NOT PUSHED TO APPS SCRIPT:
+it is client-only and inert until `clasp push -f` + a New version deployment.
+Two things worth carrying forward from it: `.sp-task.is-busy` had been DEAD CSS since
+2026-08-24 (written for this action, applied only to the auto-assign BUTTON), and
+`scripts/bite.sh` drives the PURE harness only — DOM pins must be bitten by hand.
+**PTO, OOP-A, OOP-B and ELIG remain.** The two operator decisions of 2026-09-16 are
+answered and folded into the plan: a quoted OOP price is a COMMITMENT, and the sheet is
+its own spreadsheet — which together moved OOP1 from a CSV upload to a NINTH STORE read
+LIVE (`OOP_SS_ID`, no fallback), because a price collected on cannot be served from a
+copy that lags its source.
+
+A `/broad-implement`-shaped plan for all five is in
+`.cycle/blocks/20pre-operator-2026-09-16-plan.md`. Findings are SP1–SP3, PTO1–PTO2,
+OOP1–OOP3, EL1–EL2 in five batches (SP · PTO · OOP-A · OOP-B · ELIG). Facts
+established by reading the code this session, so the next session need not re-derive:
+
+- **SP1 — the Spanish unclaimed count stalls after "Mark resolved". A REAL BUG, root-caused.**
+  `spanishResolve_` (`web-app/metrics/script_metrics.html:2593`) ends in `card.remove()`,
+  a raw DOM removal. The count comes from `spanishUnclaimedCount_()` (`:2040`), which
+  reads `SPANISH_STATE.pendingRes.pending` — resolve never touches it, and never calls
+  `spanishRefreshAutoAssign_()` (which only runs at the tail of `spanishRenderList_()`,
+  `:2342`). The sibling `spanishClaimRpc_` (`:2520`) does it correctly via
+  `spanishSetClaimLocal_`. SECOND symptom: `cacheHalf` stores the SAME object reference,
+  so the SWR cache still holds the resolved item — leave the tab and the card returns.
+  This is g67. Fix shape: `spanishRemovePendingLocal_(tid)` mirroring
+  `spanishSetClaimLocal_`, then re-render; the count follows for free.
+- **SP2 — card fade on resolve.** Falls out of SP1 (animate the outgoing node, re-render
+  on `animationend`). Must honour `prefers-reduced-motion`, and must not become the only
+  signal — the toast already carries the outcome.
+- **SP3 — Expand/Collapse → chevron.** `chevronDown`/`chevronUp` already exist in
+  `script_icons.html`. TRAP: the words are currently the button's ACCESSIBLE NAME, so an
+  icon-only button needs an `aria-label`; `aria-expanded`/`aria-controls` (INV-174) stay in
+  step. The button was made a real toggle on 2026-09-10 after a version that removed
+  itself. `.sp-more` is shared with the Mark-resolved button — g70, so scope any styling.
+- **PTO1/PTO2 — a manager CAN'T see a rep's PTO balance except on a pending request.**
+  Confirmed, not a UI oversight: `getManagerDashboard` builds `annualLeave`/`sickLeave`
+  per rep (`web-app/20_timeclock.js:1580`), but the ONLY manager render is the
+  `12 → 11 d` projection chip on a pending time-off card
+  (`web-app/tc/script_manager.html:791`) plus the negative-balance approve warning
+  (`:1022`). The `liveStatus` projection (`20_timeclock.js:1620`) deliberately does NOT
+  carry the balance, so PTO1 adds `annualLeave`/`sickLeave`/`ptoEnabled` to it.
+  TWO CONSTRAINTS: gate the display on `EMP.PTO_ENABLED` (the cycle-8 bug showed a
+  contractor a projection), and never add it to `getTeammateStatus` (g33 — low-privilege).
+- **OOP1–OOP3 — REVISED 2026-09-16: a NINTH store, read LIVE.** The operator
+  confirmed a quoted price is a COMMITMENT (payment is processed on the call) and
+  that the sheet is its own spreadsheet in the same Workspace. Those two answers
+  rule out the CSV-upload pattern below: a price that is collected on cannot be
+  served from a copy that lags its source. So OOP1 is `OOP_SS_ID` + `getOopSS_`
+  with NO fallback (the `getQaSS_` posture), a `_withTestOop_` fixture that
+  actually assigns its override (g119 — the new `fixtures:` pin will catch a
+  read-only branch), a storage-map row, and a SHORT cache. The send writes an
+  audit row naming the item and exact price quoted, recipient DOMAIN only (g36).
+  Kept for reference, because the reader and its failure posture still apply:
+  `KB_DATA_TABLES`
+  (`web-app/00_config.js:1648`) is the allowlist-gated CSV → named KB tab pattern built
+  for the insurance lookup; its own comment says adding an entry is "a deliberate code
+  change beside the reader that consumes it". `kbImportDataTable` (`70_kb.js:765`) is
+  admin-gated, DRY-RUN BY DEFAULT and sets plain-text format before the write;
+  `kbDataTableSummary_` (`:726`) is the per-spec validation hook. Mirror
+  `searchInsurancePayors` (`:658`) for the reader and the DUAL surface — the insurance
+  lookup renders in both the Reference tab and the Ctrl/⌘+K drawer (the `-d` id suffix,
+  `web-app/kb/script_kb.html:2430`). The email half is the open design question:
+  `CN_EMAIL_TEMPLATES` bodies carry only a `{name}` token (`00_config.js:266`).
+- **EL1/EL2 — the Reference MAP ALREADY EXISTS.** The ` ```map ` block shipped
+  2026-08-13 (Tier A, no billing): `wh| Name: Address` lines, a "Find nearest" ZIP box,
+  straight-line distances via `kbMapDistances` (`70_kb.js:1947` — geocode + haversine +
+  a hash-keyed coordinate cache), a per-row Google Maps link and a lazy KEYLESS
+  `?output=embed` iframe (`kb/script_kb.html:1204`). If it looks missing, no article
+  uses the block. The NEW work is item eligibility, and the operator has agreed to add
+  an **"Area Eligibility" column to the OOP sheet**, which supplies the dataset that was
+  the blocker. g41 governs it: an operator-maintained column a DECISION ENGINE reads
+  needs a shape check and a CHOSEN fail direction — unparseable/blank must read UNKNOWN,
+  never "eligible".
+
 - Drive access finding may be a FALSE POSITIVE (operator report 2026-09-11, mid Batch Q) —
   `driveAccessStatus_` introspects the RUNNING EXECUTION's OAuth token. If the runtime mints
   it with only the scopes that execution exercises, a Storage Health run that never touches

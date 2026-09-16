@@ -1966,6 +1966,34 @@ function spanishTruncNote_(d) {
   return ' · <span style="color:var(--warning-deep)">scan capped at 200 threads — figures may be incomplete; narrow the window</span>';
 }
 
+/** SP4 (operator 2026-09-16) — what the voicemail duration gate HID, on the
+ *  Pending header beside the truncation note.
+ *
+ *  THIS IS THE WHOLE POINT OF THE FEATURE BEING SAFE. A suppressed card is
+ *  invisible by definition: without a count, the gate silently eating every
+ *  voicemail (8x8 restyles the body, the parser stops matching, everything
+ *  reads as 0 seconds) looks exactly like a quiet day. The two numbers are
+ *  reported SEPARATELY for the same reason — "3 hang-ups hidden" and "3 could
+ *  not be measured" are different facts, and only the second one means
+ *  something is broken. The unparsed note is WARNING-toned; the hidden count
+ *  is neutral, because hiding hang-ups is the feature working. */
+function spanishVmNote_(d) {
+  if (!d) return '';
+  var out = '';
+  var n = Number(d.vmSuppressed) || 0;
+  var u = Number(d.vmUnparsed) || 0;
+  if (n) {
+    out += ' · <span title="8x8 voicemails shorter than the threshold are treated as hang-ups and never become tasks. Set Script Property SPANISH_VM_MIN_SECONDS to 0 to show them all.">' +
+      esc(String(n)) + ' short voicemail' + (n === 1 ? '' : 's') + ' hidden (under ' +
+      esc(String(Number(d.vmMinSeconds) || 0)) + 's)</span>';
+  }
+  if (u) {
+    out += ' · <span style="color:var(--warning-deep)" title="The notification body carried no readable Duration, so these were SHOWN rather than hidden. If this number keeps climbing, 8x8 has changed the email format and the duration filter has stopped working.">' +
+      esc(String(u)) + ' voicemail' + (u === 1 ? '' : 's') + ' with no readable duration — shown</span>';
+  }
+  return out;
+}
+
 /** The stats note + telemetry strip + filter tabs — extracted so a background
  *  SWR stats refresh can swap the head alone (#spanish-head) without touching
  *  the list below it. */
@@ -2312,10 +2340,13 @@ function spanishRenderList_() {
       if (!pending.length) {
         html += '<div class="day-section-label" style="margin:6px 0 8px">Pending</div>' +
           '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">' + icon('checkCircle', 14) +
-          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + '</div>';
+          // "All caught up" with three voicemails suppressed is EXACTLY the
+          // state the count exists for — an empty list is the most misleading
+          // place to omit it.
+          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>';
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
-          spanishTruncNote_(pd) + '</div>' +
+          spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>' +
           spCappedTasksHtml_(pending.map(spanishTaskCard_), (SPANISH_STATE.shown || {}).pending,
             "spanishShowMore_('pending')", 'margin-bottom:16px');
       }
@@ -2563,10 +2594,14 @@ function spanishTaskCard_(t) {
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
   var bodyId = spanishBodyId_(t.threadId);
   var isOpen = spanishIsExpanded_(t.threadId);
-  // Operator 2026-09-10: a real toggle — Expand ⇄ Collapse, aria-expanded kept
-  // in step (INV-174), aria-controls naming the body it opens.
-  var more = t.hasMore ? '<button type="button" class="sp-more" data-thread="' + esc(t.threadId) + '" aria-expanded="' + (isOpen ? 'true' : 'false') +
-    '" aria-controls="' + bodyId + '" onclick="spanishExpand_(this)">' + (isOpen ? 'Collapse' : 'Expand') + '</button>' : '';
+  // Operator 2026-09-10: a real toggle — aria-expanded kept in step (INV-174),
+  // aria-controls naming the body it opens. SP3 (2026-09-16) swapped the words
+  // for a chevron; the LABEL moved to aria-label rather than disappearing —
+  // until then the visible text WAS this button's accessible name.
+  var moreState = isOpen ? 'open' : 'closed';
+  var more = t.hasMore ? '<button type="button" class="sp-more sp-toggle" data-thread="' + esc(t.threadId) + '" aria-expanded="' + (isOpen ? 'true' : 'false') +
+    '" aria-controls="' + bodyId + '" aria-label="' + esc(spanishToggleLabel_(moreState)) + '" title="' + esc(spanishToggleLabel_(moreState)) +
+    '" onclick="spanishExpand_(this)">' + icon(isOpen ? 'chevronUp' : 'chevronDown', 14) + '</button>' : '';
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   // Operator feedback 2026-07-09 — manual mark-resolved for requests handled
   // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
@@ -2590,6 +2625,58 @@ function spanishTaskCard_(t) {
 /** Manual mark-resolved (member/manager). Confirm first — a mis-click would
  *  permanently hide a pending request (there is no un-resolve; the thread
  *  itself stays in Gmail). Success removes the card in place. */
+/** SP1 (operator 2026-09-16) — drop a resolved request from the list STATE.
+ *  The mirror of spanishSetClaimLocal_, and it exists because this action used
+ *  to call `card.remove()` instead: the DOM node went, but
+ *  SPANISH_STATE.pendingRes.pending did not. That array is what
+ *  spanishUnclaimedCount_ folds for the Auto-assign button, what the
+ *  "Pending · N" header counts, and — because cacheHalf stores the SAME
+ *  object reference — what the SWR cache serves on re-entry. So the button
+ *  kept advertising requests that were gone, and leaving the tab and coming
+ *  back re-rendered the card that had just been resolved.
+ *
+ *  g67: a cached list of TASKS owes an invalidation from every flow that
+ *  COMPLETES one. Claim and Release already routed through
+ *  spanishSetClaimLocal_; resolve was the one action that skipped the pattern.
+ *
+ *  It does NOT re-render — deliberately, unlike its sibling. The caller owns
+ *  that, because the card has to finish leaving first (SP2). The count IS
+ *  refreshed here, synchronously, so it can never be waiting on an animation. */
+function spanishRemovePendingLocal_(tid) {
+  var pd = SPANISH_STATE.pendingRes;
+  if (pd && Array.isArray(pd.pending)) {
+    for (var i = pd.pending.length - 1; i >= 0; i--) {
+      if (pd.pending[i].threadId === tid) pd.pending.splice(i, 1);
+    }
+  }
+  // The body/expanded caches are keyed by thread id. Drop this thread's
+  // entries with the row: a resolved thread can never be expanded again, and
+  // a body left behind is memory held for a card that no longer exists.
+  if (SPANISH_STATE.bodies) delete SPANISH_STATE.bodies[tid];
+  if (SPANISH_STATE.expanded) delete SPANISH_STATE.expanded[tid];
+  spanishRefreshAutoAssign_();
+}
+
+/** SP2 — the card leaves, THEN the list re-renders from state.
+ *
+ *  Order is the honest-failure half. The state mutation and the count refresh
+ *  happen first and synchronously; only the re-render waits on the animation.
+ *  So if `animationend` never arrives — a detached node, a dropped event, a
+ *  browser that disables animations outright — the count is already correct
+ *  and the timeout still re-renders. Nothing a reader relies on hangs off an
+ *  animation event. */
+var SP_LEAVE_FALLBACK_MS = 400;   // comfortably past the .22s exit
+function spanishResolveDone_(tid, card) {
+  spanishRemovePendingLocal_(tid);
+  if (!card || !card.parentNode) { spanishRenderList_(); return; }
+  var done = false;
+  var finish = function () { if (done) return; done = true; spanishRenderList_(); };
+  card.classList.remove('is-busy');
+  card.classList.add('is-leaving');
+  try { card.addEventListener('animationend', finish, { once: true }); } catch (e) { /* fallback covers it */ }
+  setTimeout(finish, SP_LEAVE_FALLBACK_MS);
+}
+
 function spanishResolve_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
@@ -2601,15 +2688,28 @@ function spanishResolve_(btn) {
   }).then(function (ok) {
     if (!ok) return;
     btn.disabled = true;
+    // SP2 — the in-flight signal. `.sp-task.is-busy` and its keyframe were
+    // written for THIS action in 2026-08-24 ("the card now carries its own
+    // busy treatment") and never applied to a card; only the auto-assign
+    // BUTTON used the class. Wiring it is the operator's "visual loading
+    // indication", not new decoration.
+    card.classList.add('is-busy');
     google.script.run
       .withSuccessHandler(function (r) {
         btn.disabled = false;
-        if (!r || r.error) { showToast((r && r.error) || 'Could not mark resolved', 'error'); return; }
-        card.remove();
+        if (!r || r.error) {
+          card.classList.remove('is-busy');
+          showToast((r && r.error) || 'Could not mark resolved', 'error');
+          return;
+        }
+        // The toast fires BEFORE the animation: it is the outcome, and a
+        // reduced-motion user must not depend on a fade to learn anything.
         showToast(r.already ? 'Already marked resolved' : 'Marked resolved', 'success');
+        spanishResolveDone_(tid, card);
       })
       .withFailureHandler(function (e) {
         btn.disabled = false;
+        card.classList.remove('is-busy');
         showToast((e && e.message) || 'Could not mark resolved', 'error');
       })
       .resolveSpanishThread(tid);
@@ -2638,6 +2738,34 @@ function spanishPendingItem_(tid) {
  *  cache. State, not the DOM, is the source of truth, so a list re-render
  *  (claim, filter) keeps an open card open. (Before 2026-09-10 the button
  *  replaced the snippet and REMOVED ITSELF — there was no way back.) */
+/** SP3 — the ONE source for the expand toggle's label. Used by the card
+ *  markup and by spanishToggleBtnState_, so the rendered button and the
+ *  toggled button can never describe themselves differently. */
+function spanishToggleLabel_(state) {
+  return state === 'loading' ? 'Loading the full request…'
+    : state === 'open' ? 'Collapse the request' : 'Show the full request';
+}
+
+/** SP3 — set the toggle's appearance, its aria state and its ACCESSIBLE NAME
+ *  together. All three used to be set inline at five separate call sites in
+ *  spanishExpand_ (four `btn.textContent =` plus a 'Loading…'), which was
+ *  survivable while the visible text carried the name. It stops being
+ *  survivable the moment the button is an icon: a missed call site leaves a
+ *  chevron pointing the wrong way AND an aria-label describing the opposite
+ *  state. One helper is why they cannot disagree.
+ *  `state`: 'open' | 'closed' | 'loading'. Loading is not expanded, so
+ *  aria-expanded stays false until the body actually arrives. */
+function spanishToggleBtnState_(btn, state) {
+  if (!btn) return;
+  var open = state === 'open';
+  var label = spanishToggleLabel_(state);
+  btn.classList.toggle('is-loading', state === 'loading');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+  btn.innerHTML = icon(open ? 'chevronUp' : 'chevronDown', 14);
+}
+
 function spanishExpand_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
@@ -2650,20 +2778,20 @@ function spanishExpand_(btn) {
     st.expanded[tid] = false;
     var item = spanishPendingItem_(tid);
     if (bodyEl) bodyEl.textContent = (item ? String(item.snippet || '') : '') + (item && item.hasMore ? '…' : '');
-    btn.textContent = 'Expand'; btn.setAttribute('aria-expanded', 'false');
+    spanishToggleBtnState_(btn, 'closed');
     return;
   }
   var open = function (body) {
     st.expanded[tid] = true;
     if (bodyEl) bodyEl.textContent = body || '(empty)';
-    btn.textContent = 'Collapse'; btn.setAttribute('aria-expanded', 'true');
+    spanishToggleBtnState_(btn, 'open');
   };
   if (st.bodies[tid] != null) { open(st.bodies[tid]); return; }   // cached — a second Expand costs no RPC
-  btn.disabled = true; btn.textContent = 'Loading…';
+  btn.disabled = true; spanishToggleBtnState_(btn, 'loading');
   google.script.run
     .withSuccessHandler(function (r) {
       btn.disabled = false;
-      if (!r || r.error) { btn.textContent = 'Expand'; showToast((r && r.error) || 'Could not load', 'error'); return; }
+      if (!r || r.error) { spanishToggleBtnState_(btn, 'closed'); showToast((r && r.error) || 'Could not load', 'error'); return; }
       st.bodies[tid] = String(r.body || '');
       open(st.bodies[tid]);
       // Re-run tool suggestions now that the fuller body text is available.
@@ -2671,7 +2799,7 @@ function spanishExpand_(btn) {
       var wrap = card.querySelector('.sp-suggest-wrap');
       if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + st.bodies[tid]);
     })
-    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Expand'; showToast((e && e.message) || 'Error', 'error'); })
+    .withFailureHandler(function (e) { btn.disabled = false; spanishToggleBtnState_(btn, 'closed'); showToast((e && e.message) || 'Error', 'error'); })
     .getSpanishInboxThreadBody(tid);
 }
 </script>

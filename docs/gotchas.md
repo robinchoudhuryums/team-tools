@@ -1610,6 +1610,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   from `getMyMetrics`'s own 5-minute cache, so busting this key alone could not
   change the answer, which would be a claimed fix that does not fix.
 
+
+  **Second instance (operator 2026-09-16, Spanish Inbox).** `spanishResolve_`
+  ended in `card.remove()` — the DOM node went, `SPANISH_STATE.pendingRes.pending`
+  did not. That array is what the Auto-assign button's count folds, what the
+  "Pending · N" header counts, and — because `cacheHalf` stores the SAME object
+  reference — what the SWR cache serves on re-entry. So the button advertised
+  requests that were gone, the header disagreed with the list, and leaving the
+  tab re-rendered the card that had just been resolved. Its siblings Claim and
+  Release already routed through `spanishSetClaimLocal_`; resolve was the ONE
+  action that skipped the pattern.
+
+  **What generalises is the shape, not the module.** Both instances are an
+  action that COMPLETES a task, on a surface whose list is cached, taking a
+  shortcut that updates only what the user can see. The fix both times was to
+  mutate the STATE the list is derived from and re-render. **When you add an
+  action to a task list, find the actions that already exist and route through
+  whatever they route through** — a new one that touches the DOM directly is
+  not a simpler version of them, it is a missing invalidation.
 <a id="g68-an-async-prefill-must-fill-only-the"></a>
 
 - **An ASYNC prefill must fill only the fields the user has not typed into,

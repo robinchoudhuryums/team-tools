@@ -115,6 +115,14 @@ const CONFIG = {
   // property disables the voicemail fold entirely (fail-quiet, not fail-wide).
   SPANISH_VM_SENDER:            'no-reply@8x8.com',
   SPANISH_VM_SUBJECT_FILTER:    'via A_Q_Spanish',
+  // SP4 (operator 2026-09-16) — a voicemail shorter than this many SECONDS is a
+  // hang-up, not a request, and never becomes a task card. Read from the 8x8
+  // body's `Duration: MM:SS`. Script Property SPANISH_VM_MIN_SECONDS overrides;
+  // 0 disables the gate — the escape hatch if 8x8 restyles the body and the
+  // operator wants the noise back while the parser is fixed. An UNPARSEABLE
+  // duration always SHOWS (fail open): the body belongs to the vendor, and the
+  // failure that costs a patient a callback is the silent one.
+  SPANISH_VM_MIN_SECONDS:       5,
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 

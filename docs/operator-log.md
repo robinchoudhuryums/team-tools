@@ -10,6 +10,41 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-16 — operator testing round (Spanish Inbox · manager PTO visibility)
+
+Five items from a testing pass, planned as nine findings in five batches
+(`.cycle/blocks/20pre-operator-2026-09-16-plan.md`). Three shipped this round;
+OOP-A, OOP-B and ELIG remain.
+
+**Adds ONE piece of operator state:** Script Property `SPANISH_VM_MIN_SECONDS`
+(optional — CONFIG seeds 5, so the gate is on at deploy with no action; set `0`
+to disable). Its entry is in the checklist. Everything else here is behaviour.
+
+**What changed for you:**
+
+- **Spanish Inbox — "Mark resolved" now updates the list.** The Auto-assign
+  button's unclaimed count, the "Pending · N" header and the cached list were
+  all stale after a manual resolve; the card also came back on re-entry. The
+  card now dims while the request is in flight and fades out, and Expand /
+  Collapse is a chevron rather than the words.
+- **Spanish Inbox — 8x8 hang-ups no longer become tasks.** A voicemail under
+  the threshold is suppressed, and **what was suppressed is stated on the
+  Pending header**, with a separate warning-toned count for voicemails whose
+  duration could not be read (those are SHOWN, never hidden). If that second
+  number starts climbing, 8x8 has changed its email format. **Auto-assign
+  inherits the gate**, so the hourly job will assign fewer requests than before
+  by however many hang-ups the window holds — expected, not a fault.
+- **Spanish Inbox — a voicemail card now shows the TRANSCRIPT.** It used to
+  show the first 240 characters of the 8x8 body, roughly 220 of which were
+  boilerplate, so the message itself was cut off just as it began.
+- **Manage → a rep's PTO balance is visible without a pending request.** It
+  shows on the live-status card and on the team-calendar off chip, where the
+  approve decision is made. A rep with PTO tracking off shows NO balance rather
+  than a zero — a zero would read as "used it all".
+
+**Deploy:** `clasp push -f` + a New version deployment. Nothing here is
+retroactive and nothing writes to a store, so there is no migration.
+
 Some CONFIG constants and caps are documented ONLY here, in the round that
 introduced them. The checklist's inventory names every operator-SETTABLE one;
 the rest are code-only tuning values that live with their round.

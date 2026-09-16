@@ -30,6 +30,13 @@ not restate it. Server endpoints live in the fourteen server files
      the punch buttons mounted directly beneath it, lunch color-coded), plus
      a one-row Punches · Team · Annual-PTO layout. **Sick leave was removed
      from the UI** (backend kept for legacy reverts — see Common Gotchas).
+     **Manager-visible leave balances (operator 2026-09-16):** a rep's remaining
+     annual PTO shows on the manager's live-status card and on the team-calendar
+     off-chip, where the approve decision is made. Until then a manager could see
+     a balance ONLY on a rep who happened to have a pending request. Both surfaces
+     go through one predicate and render NOTHING — not a zero — for a rep the
+     balance does not apply to, because `adjustLeaveBalance_` no-ops for a
+     pto-disabled rep (INV-27).
      Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/00_config.js`).
 
 
@@ -113,6 +120,15 @@ not restate it. Server endpoints live in the fourteen server files
      (manager-gated; real monthly counts from the submission tabs'
      Timestamp column, bounded tail; an unreadable tab is NAMED in
      `failedTypes`, never a silent 0 column).
+     **Spanish Inbox voicemail gate + transcript snippet (operator 2026-09-16):**
+     8x8 A_Q_Spanish voicemail notifications fold into the pending list, and one
+     shorter than `SPANISH_VM_MIN_SECONDS` (CONFIG seed 5) is treated as a
+     hang-up and never becomes a task. The gate FAILS OPEN — an unreadable
+     `Duration:` shows the card — and reports what it hid in two separate counts,
+     because a suppressed card is invisible and one number could not tell
+     hang-ups from a dead parser. Auto-assign inherits the gate. The card's
+     snippet is now the voicemail TRANSCRIPT rather than the first 240 chars of
+     the body, which were almost entirely 8x8 boilerplate.
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
 
 

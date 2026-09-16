@@ -12997,6 +12997,92 @@ test('spanishVmMatch_/Caller_/Query_ — exact sender, ci subject, both halves R
     'query quotes the filter and strips embedded quotes (no Gmail-query breakout)');
 });
 
+// SP4/SP5 (operator 2026-09-16) — the duration gate and the transcript snippet.
+// Both parse a VENDOR body: 8x8 owns the format and can restyle it in a release
+// note nobody here reads. The bodies below are the operator's two REAL samples,
+// transcribed from the notifications they sent — a parser pinned against
+// invented text proves the invention, not the format.
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmDurationSec_'), _vmCtx, { filename: 'spanishVmDurationSec_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmTooShort_'), _vmCtx, { filename: 'spanishVmTooShort_' });
+vm.runInContext(extractRawFunction('Code.js', 'spanishVmTranscript_'), _vmCtx, { filename: 'spanishVmTranscript_' });
+
+// The operator's samples. #1 is the one that must be FILTERED (a 1-second
+// hang-up, no transcript); #2 is the one that must be KEPT (18 seconds, with the
+// transcript that says what the call is about).
+const VM_SAMPLE_SHORT = 'New voicemail from Austin Abhishek Unnithan (125) Your extension 138 just '
+  + 'received a new voicemail. Tap the attachment to listen to your voicemail. '
+  + 'Received on: Monday, September 14, 2026 2:16:18 PM Duration: 00:01';
+const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your extension 138 just '
+  + 'received a new voicemail. Tap the attachment to listen to your voicemail. '
+  + 'Received on: Wednesday, September 9, 2026 2:10:01 PM Duration: 00:18 '
+  + 'Transcript Hi, we have this patient calling, asking for a Spanish representative. '
+  + "I only have their number or his number. It's 956-935-0289. Please call the patient back. Thank you.";
+
+test('SP4: spanishVmDurationSec_ parses RIGHT-TO-LEFT, so MM:SS and HH:MM:SS both read correctly — and anything else is null, never 0', () => {
+  const d = (body) => vm.runInContext('spanishVmDurationSec_(' + JSON.stringify(body) + ')', _vmCtx);
+
+  // The two real samples, first — everything else is a generalization of these.
+  assert.strictEqual(d(VM_SAMPLE_SHORT), 1, "the operator's 1-second hang-up reads as 1 second, NOT 1 minute");
+  assert.strictEqual(d(VM_SAMPLE_KEEP), 18, "and the 18-second request reads as 18 seconds");
+
+  // RIGHT-TO-LEFT is the load-bearing decision: neither sample is over a minute,
+  // so neither settles whether 8x8 writes 90s as `01:30` or `00:01:30`. Reading
+  // the LAST group as seconds is correct under both, with no sample needed.
+  assert.strictEqual(d('Duration: 01:30'), 90, 'MM:SS');
+  assert.strictEqual(d('Duration: 01:30:00'), 5400, 'HH:MM:SS — the SAME parser, no format flag');
+  assert.strictEqual(d('Duration: 00:00:45'), 45, 'a padded hour field does not shift the seconds');
+
+  assert.strictEqual(d('Duration: 00:00'), 0, 'a zero-length voicemail is 0, which is a real measurement');
+  assert.strictEqual(d('Duration: 00:05'), 5, 'the boundary value parses exactly');
+
+  // NULL IS NOT ZERO — the distinction the whole fail-open design rests on.
+  assert.strictEqual(d('no duration anywhere in this body'), null, 'absent → null');
+  assert.strictEqual(d('Duration: soon'), null, 'unparseable → null');
+  assert.strictEqual(d(''), null, 'empty → null');
+  assert.strictEqual(d('Duration: 00:00:00:01'), null, 'four groups is not a duration — say so rather than guess');
+});
+
+test('SP4: spanishVmTooShort_ FAILS OPEN — an unmeasurable voicemail is SHOWN and counted apart from a hidden one', () => {
+  const t = (dur, min) => vm.runInContext('spanishVmTooShort_(' + JSON.stringify(dur) + ',' + JSON.stringify(min) + ')', _vmCtx);
+
+  assert.strictEqual(t(1, 5), 'short', "the operator's hang-up is suppressed");
+  assert.strictEqual(t(18, 5), 'show', 'the real request is not');
+  assert.strictEqual(t(5, 5), 'show', '"under 5" excludes exactly 5 — the boundary is stated, not implied');
+  assert.strictEqual(t(0, 5), 'short', 'a measured zero IS short');
+
+  // THE ASSERTION THIS BATCH EXISTS FOR. If an unreadable duration suppressed
+  // the card, an 8x8 format change would silently drop Spanish-speaking
+  // patients out of the queue and nothing on screen would say so. Inverting
+  // this line must turn the harness red.
+  assert.strictEqual(t(null, 5), 'unparsed', 'an unreadable duration SHOWS the card (and is counted separately)');
+  assert.strictEqual(t(undefined, 5), 'unparsed', 'so does a missing one');
+  assert.strictEqual(t(NaN, 5), 'unparsed', 'and a NaN that slipped through');
+
+  // The operator's escape hatch: 0 disables the gate without a redeploy.
+  assert.strictEqual(t(1, 0), 'show', 'threshold 0 disables the gate outright');
+  assert.strictEqual(t(1, ''), 'show', 'so does an unset/blank threshold');
+  assert.strictEqual(t(null, 0), 'show', 'and with the gate off, nothing is even counted as unparsed');
+});
+
+test('SP5: spanishVmTranscript_ returns the transcript, and NOTHING when there is none (so the caller can fall back)', () => {
+  const tr = (body) => vm.runInContext('spanishVmTranscript_(' + JSON.stringify(body) + ')', _vmCtx);
+
+  const got = tr(VM_SAMPLE_KEEP);
+  assert.ok(/^Hi, we have this patient calling/.test(got), 'starts at the transcript, not at the 8x8 chrome');
+  assert.ok(got.indexOf('Duration') < 0 && got.indexOf('extension 138') < 0, 'and carries none of the boilerplate ahead of it');
+
+  // WHY THIS MATTERS: the first 240 chars of the RAW body are almost entirely
+  // vendor chrome, so the old snippet showed a rep a handful of transcript
+  // words at most. Assert the improvement rather than trusting it.
+  assert.ok(VM_SAMPLE_KEEP.slice(0, 240).indexOf('Spanish representative') < 0,
+    'the raw 240-char snippet does NOT reach the useful part (this is the defect)');
+  assert.ok(got.slice(0, 240).indexOf('Spanish representative') >= 0,
+    'the transcript snippet does (this is the fix)');
+
+  assert.strictEqual(tr(VM_SAMPLE_SHORT), '', 'a voicemail with no transcript returns empty, so the caller falls back');
+  assert.strictEqual(tr(''), '', 'and so does an empty body');
+});
+
 test('spanishThreadInScope_ — inbox-addressed OR configured VM shape, nothing else', () => {
   // The getters read Script Properties; stub them at the ctx level.
   vm.runInContext('var getSpanishVmSender_ = function () { return "no-reply@8x8.com"; };' +

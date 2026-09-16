@@ -58,6 +58,85 @@ function spanishVmCaller_(subject) {
   const m = String(subject || '').match(/^New voicemail from (.+?) via /i);
   return m ? m[1].trim() : '';
 }
+/** SP4 (operator 2026-09-16) — PURE (Node-pinned): seconds out of an 8x8
+ *  notification body's `Duration: MM:SS`, or NULL when it is not there or will
+ *  not parse.
+ *
+ *  PARSED RIGHT-TO-LEFT, and that is the load-bearing decision. The operator's
+ *  two real samples are `00:01` and `00:18` — both under a minute, so neither
+ *  reveals whether 8x8 renders 90 seconds as `01:30` (MM:SS) or `00:01:30`
+ *  (HH:MM:SS). Taking the LAST group as seconds, the second-to-last as minutes
+ *  and a third as hours is correct under either, so the parser does not depend
+ *  on a sample nobody has. Capped at three groups; a fourth means this is not
+ *  a duration and we say so by returning null.
+ *
+ *  NULL IS NOT ZERO. The caller must SHOW a card it cannot measure — see
+ *  spanishVmTooShort_. A body is a VENDOR artifact: 8x8 can restyle it in a
+ *  release note nobody here reads, and the failure that costs a patient a
+ *  callback is the silent one. */
+function spanishVmDurationSec_(body) {
+  // The trailing lookahead rejects a following DIGIT as well as a colon, and
+  // both halves are load-bearing. With `(?!\s*:)` alone, `00:00:00:01` matched
+  // `00:00:0` — the seconds group backtracks to ONE digit, and the next
+  // character then being a digit satisfies a colon-only lookahead. That read a
+  // malformed duration as 0 seconds, i.e. SUPPRESSED the card, which is the one
+  // direction this feature must never fail in. Found by the pin, not by reading.
+  const m = String(body || '').match(/Duration:\s*((?:\d{1,3}:){1,2}\d{1,2})(?![\d:])/i);
+  if (!m) return null;
+  const parts = m[1].split(':').map(function (x) { return parseInt(x, 10); });
+  if (parts.some(function (n) { return !isFinite(n); })) return null;
+  let sec = 0;
+  for (let i = 0; i < parts.length; i++) sec = sec * 60 + parts[i];   // right-to-left by construction
+  return sec;
+}
+
+/** SP4 — PURE: should this voicemail be suppressed from the pending list?
+ *
+ *  Extracted rather than inlined so a pin can DRIVE it, message and all: a pin
+ *  that asserts only the error text of an inline `if` stays green when the `if`
+ *  is deleted (g116, B14). Returns one of 'show' | 'short' | 'unparsed', which
+ *  is also why the caller can count the last two separately — a suppressed card
+ *  is invisible, so "three hang-ups" and "the parser is dead" must never arrive
+ *  as the same number.
+ *
+ *  `minSec <= 0` disables the gate outright (the operator's escape hatch if the
+ *  vendor format moves and they want the noise back while it is fixed). */
+function spanishVmTooShort_(durationSec, minSec) {
+  const min = Number(minSec);
+  if (!isFinite(min) || min <= 0) return 'show';
+  if (durationSec === null || durationSec === undefined) return 'unparsed';
+  const d = Number(durationSec);
+  if (!isFinite(d)) return 'unparsed';
+  return d < min ? 'short' : 'show';
+}
+
+/** SP5 (operator 2026-09-16) — PURE: the TRANSCRIPT out of an 8x8 body, or ''
+ *  when there is none.
+ *
+ *  WHY: the 240-char snippet for a voicemail was almost entirely vendor chrome
+ *  — the heading, "Your extension NNN just received…", "Received on: …",
+ *  "Duration: …" — so a rep saw a handful of transcript words at most, which is
+ *  the one part that says what the call is about. Not every voicemail is
+ *  transcribed, so '' is a normal answer and the caller falls back to the old
+ *  whole-body snippet: this can only ADD information, never remove it. */
+function spanishVmTranscript_(body) {
+  const txt = String(body || '');
+  const m = txt.match(/\bTranscript\b\s*:?\s*/i);
+  if (!m) return '';
+  return txt.slice(m.index + m[0].length).replace(/\s+/g, ' ').trim();
+}
+
+/** SP4 — the suppression threshold in SECONDS. CONFIG seed, Script Property
+ *  override (the SPANISH_VM_SENDER pattern); 0 or unparseable disables the
+ *  gate, which is deliberate: the operator can turn it off without a redeploy. */
+function getSpanishVmMinSeconds_() {
+  let v = null;
+  try { v = PropertiesService.getScriptProperties().getProperty('SPANISH_VM_MIN_SECONDS'); } catch (e) {}
+  if (v == null || String(v).trim() === '') v = CONFIG.SPANISH_VM_MIN_SECONDS;
+  const n = parseInt(v, 10);
+  return isFinite(n) && n > 0 ? n : 0;
+}
+
 /** The VM Gmail query — sender + quoted subject filter over the same window
  *  the main scan uses. */
 function spanishVmQuery_(sender, filter, days) {
@@ -273,6 +352,8 @@ function getSpanishInboxPending(days) {
     // member reply on the notification thread also counts, mirroring the main
     // loop. Both filter halves blank/unset → the fold is OFF (fail-quiet).
     let vmTruncated = false;
+    let vmSuppressed = 0, vmUnparsed = 0;   // SP4 — reported, never silent
+    const vmMinSec = getSpanishVmMinSeconds_();
     const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
     if (vmSender && vmFilter) {
       const seen = {};
@@ -293,14 +374,33 @@ function getSpanishInboxPending(days) {
           if (haveMembers ? !!members[from] : !!from) { resolved = true; break; }
         }
         if (resolved) return;
+        // ONE getPlainBody() — it used to be called twice here (snippet and
+        // hasMore each re-read and re-normalized it) where the loop above
+        // already hoists it. SP4/SP5 both read this same string, so the gate
+        // and the transcript cost no extra Gmail work.
+        const vmBody = String(req.getPlainBody() || '');
+        const vmFlat = vmBody.replace(/\s+/g, ' ').trim();
+
+        // SP4 — a hang-up never becomes a task. 'unparsed' SHOWS the card and
+        // is counted SEPARATELY, because a suppressed card is invisible: one
+        // number could not tell three hang-ups from a dead parser.
+        const vmVerdict = spanishVmTooShort_(spanishVmDurationSec_(vmBody), vmMinSec);
+        if (vmVerdict === 'short') { vmSuppressed++; return; }
+        if (vmVerdict === 'unparsed') vmUnparsed++;
+
+        // SP5 — the transcript is what the rep needs; the 8x8 chrome ahead of
+        // it ate almost the whole 240-char snippet. No transcript (not every
+        // voicemail is transcribed) falls back to the old whole-body snippet,
+        // so this can only ADD information.
+        const vmText = spanishVmTranscript_(vmBody) || vmFlat;
         out.push({
           threadId: th.getId(),
           kind: 'voicemail',
           requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
           ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
           subject: req.getSubject() || '(no subject)',
-          snippet: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().slice(0, 240),
-          hasMore: String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim().length > 240,
+          snippet: vmText.slice(0, 240),
+          hasMore: vmText.length > 240,
           permalink: th.getPermalink(),
           claim: claims[th.getId()] || null,
         });
@@ -313,6 +413,9 @@ function getSpanishInboxPending(days) {
     // "claimed by me" apart without a second identity source).
     return { address: addr, days: d, pending: out,
       truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmTruncated,
+      // SP4 — what the gate HID, and the threshold it hid it at. A filter
+      // nobody can see is a filter that can fail silently forever.
+      vmSuppressed: vmSuppressed, vmUnparsed: vmUnparsed, vmMinSeconds: vmMinSec,
       members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
