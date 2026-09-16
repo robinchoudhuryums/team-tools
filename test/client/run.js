@@ -13089,7 +13089,8 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   const H = ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
     'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
     'Area Eligibility', 'Comments', 'EffectiveDate'];
-  const R = ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel', '', '$920.00',
+  const R = ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel',
+    'https://drive.google.com/file/d/1AbC/view', '$920.00',
     '$150.00', '$920.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
   const o = obj(H, R);
 
@@ -13114,8 +13115,14 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   const det = o.details.map((d) => d.label).join(',');
   assert.ok(/Shipping/.test(det), 'Shipping is a detail, not a quotable price');
   assert.ok(/Category/.test(det) && /Comments/.test(det), 'unrecognised columns ride along verbatim');
+  // The Image cell here is a real Drive URL ON PURPOSE. It was blank at first,
+  // which made the drop unobservable — a bite-check removing the `image` skip
+  // left this green, because an empty cell is filtered by the blank guard
+  // either way. A pin cannot see a value being dropped unless there is a value.
   assert.ok(!/Image/.test(det),
     'the image column is DROPPED — left in, the first Drive URL the operator pastes renders beside a price');
+  assert.ok(!/drive\.google/.test(JSON.stringify(o)),
+    'and the URL reaches no field at all, not even as a detail value');
 
   // The FALLBACK contract, unchanged: no name-ish header → column A.
   const bare = obj(['Widget name', 'Price'], ['Widget', '$10']);
@@ -13203,6 +13210,21 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
       'and does NOT claim notFound — "you have not typed enough yet" is not "we do not stock it"');
   });
 }
+
+test('OOP-C: the diagnostics REPORT the name column — the panel that read CLEAN while every lookup returned nothing', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'getOopPricingDiagnostics'));
+  // Behaviour is covered by test_oop_diagnostics_… against a real sheet; this is
+  // the structural half, and it exists because the FINDING was an omission: the
+  // panel could not be wrong about itself, so the one assumption that was wrong
+  // was the one it never showed.
+  assert.ok(/nameCol:/.test(f), 'the diagnostics ship the name column');
+  assert.ok(/nameByHeader/.test(f),
+    'and whether it was FOUND by header or fallen back to — a sheet searchable only by code is a finding, not a default');
+  assert.ok(/oopNameCol_\(headers\)/.test(f), 'and it asks the same resolver the reader uses');
+  assert.ok(/i === nameCol \? 'name \(the searched column\)'/.test(f),
+    'the column listing marks the name column wherever it sits, not position 0');
+});
 
 test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — comparing the wrong one refuses in both directions', () => {
   const P = (prices, label) => JSON.parse(vm.runInContext(
