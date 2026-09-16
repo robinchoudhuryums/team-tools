@@ -1524,6 +1524,17 @@ function _registerIntegrationB_() {
   _integrationTest('intake_sentViewer_callerScopedAndManager',  test_intake_sentViewer_callerScopedAndManager);
   _integrationTest('metrics_cnCountNotesResult_countsToday',  test_metrics_cnCountNotesResult_countsToday);
 
+  // ── OOP pricing + area eligibility, against a REAL spreadsheet ─────────
+  // _withTestOop_ existed after OOP-A but nothing called it — the fixture was
+  // declared and unread, which is the g04 class exactly. These are the paths
+  // the Node harness structurally cannot reach: the getDisplayValues read, the
+  // header discovery against a real sheet, and the send-time re-verification a
+  // quoted price depends on.
+  _integrationTest('oop_search_findsSeededItemAtSheetPrice', test_oop_search_findsSeededItemAtSheetPrice);
+  _integrationTest('oop_verifyQuotes_currentStaleAndDeleted', test_oop_verifyQuotes_currentStaleAndDeleted);
+  _integrationTest('oop_diagnostics_reportsRolesAndEligibilityGrouping', test_oop_diagnostics_reportsRolesAndEligibilityGrouping);
+  _integrationTest('oop_eligibility_boundsTheAddressBeforeAnyRead', test_oop_eligibility_boundsTheAddressBeforeAnyRead);
+
   // ── Automation trigger gates (INV-44) ──────────────────────────────────
   _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
   _integrationTest('triggerGate_weeklyDigests_nonManagerThrows',test_triggerGate_weeklyDigests_nonManagerThrows);
@@ -7267,6 +7278,107 @@ function _withTestOop_(fn) {
   _TEST_OVERRIDE_OOP_SS_ID = ss.getId();
   try { return fn(); }
   finally { _TEST_OVERRIDE_OOP_SS_ID = null; }
+}
+
+// ── OOP pricing + area eligibility (operator 2026-09-16) ───────────────────
+// Every one of these runs against the REAL Sheets runtime through
+// _withTestOop_, because that is the half the Node harness cannot see: it pins
+// the pure parsers exactly, and stubs the sheet. A header the reader fails to
+// recognise, a currency cell handed back as a float, a display value that is
+// not the string the pure pin assumed — all of those live here.
+
+function test_oop_search_findsSeededItemAtSheetPrice() {
+  _withTestOop_(function () {
+    const res = searchOopPricing('TEST_OOP Widget');
+    _assertTrue(!res.error, 'lookup errored: ' + res.error);
+    _assertTrue(res.matches.length >= 1, 'the seeded widget was not found');
+    const m = res.matches[0];
+    _assertEq(m.name, 'TEST_OOP Widget', 'item name');
+    // THE getDisplayValues CONTRACT. A currency cell read as a raw value comes
+    // back 129 (or 129.0), and the rep quotes a different number from the one
+    // the operator is looking at. This assertion is the whole reason the reader
+    // uses getDisplayValues, and only a real sheet can make it.
+    _assertEq(m.price, '$129.00', 'the price must read EXACTLY as the sheet displays it');
+    _assertEq(m.eligibility, 'AZ NV', 'the Area Eligibility column resolved by header');
+    _assertEq(m.effective, '2026-09-01', 'the EffectiveDate column resolved by header');
+    // An unrecognised column rides along VERBATIM rather than being dropped.
+    const notes = m.details.filter(function (d) { return d.label === 'Notes'; });
+    _assertEq(notes.length, 1, 'the unrecognised Notes column rode along');
+    _assertEq(notes[0].value, 'sample row', 'verbatim');
+
+    const none = searchOopPricing('nothing_like_this_exists');
+    _assertTrue(none.notFound === true, 'a no-match says notFound rather than returning a near miss');
+    _assertEq(none.matches.length, 0, 'and no rows');
+  });
+}
+
+function test_oop_verifyQuotes_currentStaleAndDeleted() {
+  _withTestOop_(function () {
+    const line = oopQuoteLine_('TEST_OOP Widget', '$129.00', '2026-09-01');
+    _assertTrue(!!line, 'the canonical line was built');
+
+    // CURRENT — the line the picker would have inserted still matches the sheet.
+    const ok = oopVerifyQuotes_([{ name: 'TEST_OOP Widget', price: '$129.00', effective: '2026-09-01' }],
+      'Hello\n' + line + '\nthanks');
+    _assertTrue(!ok.error, 'a current quote must verify: ' + ok.error);
+    _assertEq(ok.quoted.length, 1, 'one verified quote');
+    _assertEq(ok.quoted[0].price, '$129.00', 'audited at the sheet price');
+
+    // STALE — the price moved between the lookup and the send. This is the
+    // failure the whole live-read design exists to catch.
+    const stale = oopVerifyQuotes_([{ name: 'TEST_OOP Widget', price: '$99.00', effective: '2026-09-01' }],
+      oopQuoteLine_('TEST_OOP Widget', '$99.00', '2026-09-01'));
+    _assertTrue(!!stale.error, 'a superseded price must refuse the send');
+    _assertTrue(stale.error.indexOf('$129.00') >= 0, 'and name the CURRENT price: ' + stale.error);
+
+    // GONE — the item is not in the sheet at all.
+    const gone = oopVerifyQuotes_([{ name: 'nothing_like_this_exists', price: '$1', effective: '' }], 'x');
+    _assertTrue(!!gone.error, 'a vanished item must refuse');
+
+    // DELETED — the rep inserted a line and thought better of it. Not an error;
+    // nothing was quoted, so nothing is audited.
+    const del = oopVerifyQuotes_([{ name: 'TEST_OOP Widget', price: '$129.00', effective: '2026-09-01' }],
+      'I decided not to quote anything');
+    _assertTrue(!del.error, 'a deleted line must not block the send: ' + del.error);
+    _assertEq(del.quoted.length, 0, 'and nothing is audited');
+  });
+}
+
+function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
+  _withTestOop_(function () {
+    const d = getOopPricingDiagnostics();
+    _assertTrue(!d.error, 'diagnostics errored: ' + d.error);
+    _assertEq(d.missing.length, 0, 'the seeded header has all three roles; missing: ' + d.missing.join(','));
+    const roleOf = {};
+    d.cols.forEach(function (c) { roleOf[c.header] = c.role; });
+    _assertEq(roleOf['Price'], 'price', 'Price resolved');
+    _assertEq(roleOf['Area Eligibility'], 'eligibility', 'Area Eligibility resolved');
+    _assertEq(roleOf['EffectiveDate'], 'effective', 'EffectiveDate resolved');
+
+    // The eligibility GROUPING is what makes the grammar visible to the
+    // operator. The fixture seeds one states row (AZ NV) and one open row (US).
+    _assertEq(d.eligibility.states, 1, 'one states row');
+    _assertEq(d.eligibility.open, 1, 'one open row');
+    _assertEq(d.eligibility.unknownCount, 0, 'nothing unreadable in the fixture');
+
+    // And the registry it matches radius values against is reported, so an
+    // operator can see why "100 miles of Houston" came out unknown.
+    _assertTrue(d.warehouses.length >= 1, 'the warehouse registry is reported');
+    _assertTrue(!!d.warehouses[0].name && !!d.warehouses[0].address, 'with names AND addresses');
+  });
+}
+
+function test_oop_eligibility_boundsTheAddressBeforeAnyRead() {
+  // The bound has to come FIRST: a geocode is a paid-for round trip and a sheet
+  // read is not free either, and neither is worth spending on a two-character
+  // address. Asserted without the fixture deliberately — if the bound were
+  // checked after the store read, this would surface as a not-configured error
+  // rather than the validation message.
+  const short = checkOopEligibility('ab', '');
+  _assertTrue(!!short.error, 'a two-character address must be refused');
+  _assertTrue(short.error.indexOf('ZIP') >= 0, 'with the validation message, not a store error: ' + short.error);
+  const long = checkOopEligibility(new Array(KB_MAP_QUERY_MAX + 20).join('x'), '');
+  _assertTrue(!!long.error && long.error.indexOf('ZIP') >= 0, 'and an oversized one likewise');
 }
 
 function _withTestQa_(fn) {
