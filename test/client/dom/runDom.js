@@ -2593,8 +2593,17 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
   // opening it would test the drawer's plumbing, which is not what this pin is
   // about, and would pass just as well with the section unmounted.
   assert.ok(h.$('#kb-oop-input'), 'the Reference landing carries the lookup');
-  assert.ok(/id="kb-oop-input-d"/.test(h.read('oopLookupSecHtml_')('-d')),
-    'and the drawer host builds its own copy — the drawer IS the mid-call surface');
+  // Drive the drawer's HOME RENDERER, not the section builder. The first
+  // version of this assertion called oopLookupSecHtml_('-d') directly — and a
+  // bite-check that DELETED the mount line left it green, because the builder
+  // still built. A pin that cannot see the section being unmounted is not
+  // pinning the thing that would actually break.
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+  assert.ok(kbdBody.querySelector('#kb-oop-input-d'),
+    'the drawer home MOUNTS the lookup — the drawer IS the mid-call surface');
 
   const inp = h.$('#kb-oop-input');
   inp.value = 'widget';
