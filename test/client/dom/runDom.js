@@ -2302,37 +2302,125 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   h.run.respond('getSpanishInboxThreadBody', (tid) => { bodyCalls++; return { threadId: tid, body: 'El paciente necesita ayuda con el formulario.\nGracias' }; });
   h.window.enterTool('metrics', 'metricsSpanish');
   h.flushTimers();
-  const sel = '.sp-more[data-thread="abc123"]';
+  const sel = '.sp-more.sp-toggle[data-thread="abc123"]';
   const btn = () => h.$(sel);
   // jsdom's outside-only mode never compiles an inline onclick (the documented
   // trap), so press the button the way its onclick does.
   const press = () => h.read('spanishExpand_')(btn());
-  assert.ok(btn(), 'the pending card renders an Expand button');
+  assert.ok(btn(), 'the pending card renders an expand toggle');
+  // SP3 (2026-09-16): the toggle is a CHEVRON now, so its label lives in
+  // aria-label rather than in textContent. `name()` is what this pin asserts
+  // from here on — an icon-only button with no accessible name is unusable,
+  // and a textContent assertion would now PASS against an unnamed button.
+  const name = () => btn().getAttribute('aria-label') || '';
   assert.strictEqual(btn().tagName, 'BUTTON', 'a real button (INV-173)');
-  assert.strictEqual(btn().textContent, 'Expand');
+  assert.ok(/Show the full request/.test(name()), 'named for what it does while collapsed');
+  assert.ok(btn().querySelector('svg'), 'and renders a chevron, not a word');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
   const bodyId = btn().getAttribute('aria-controls');
   assert.ok(bodyId && h.$('#' + bodyId), 'aria-controls names the body element it opens');
   assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'snippet + ellipsis while collapsed');
   press();
   assert.strictEqual(bodyCalls, 1, 'ONE RPC on the first Expand');
-  assert.strictEqual(btn().textContent, 'Collapse');
+  assert.ok(/Collapse the request/.test(name()), 'renamed on expand');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
   assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'the full body replaced the snippet');
   press();   // Collapse
   assert.strictEqual(bodyCalls, 1, 'Collapse makes no RPC');
-  assert.strictEqual(btn().textContent, 'Expand');
+  assert.ok(/Show the full request/.test(name()), 'and back again on collapse');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
   assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'the snippet is back, from the payload not the DOM');
   press();   // Expand again
   assert.strictEqual(bodyCalls, 1, 'the cached body serves the second Expand');
-  assert.strictEqual(btn().textContent, 'Collapse');
+  assert.ok(/Collapse the request/.test(name()));
   // A list re-render (a claim, a filter chip) keeps the open card open — the state is the source of truth.
   h.read('spanishRenderList_')();
-  assert.strictEqual(btn().textContent, 'Collapse', 'still expanded after a re-render');
+  assert.ok(/Collapse the request/.test(name()), 'still expanded after a re-render');
+  assert.ok(btn().querySelector('svg'), 'and the re-rendered markup agrees with the toggled markup');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
   assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'and still showing the body');
   assert.strictEqual(bodyCalls, 1, 'the re-render fetched nothing');
+});
+
+// SP1/SP2 (operator 2026-09-16) — Mark resolved used to end in `card.remove()`.
+// The DOM node went; SPANISH_STATE.pendingRes.pending did not. That array is
+// what the Auto-assign button's count folds, what the "Pending · N" header
+// counts, and — because cacheHalf shares the object by REFERENCE — what the SWR
+// cache serves on re-entry. g67.
+//
+// The count assertions below read the RENDERED button text, never
+// spanishUnclaimedCount_(). Calling the counter would prove the counter, which
+// was never broken — the bug was that nothing re-fed it.
+test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header and cache follow), the card shows an in-flight state then leaves, and a FAILED resolve keeps the row', async () => {
+  const mk = () => ({ pending: [
+    { threadId: 'r1', requester: 'a@x.com', ageHours: 5, subject: 'Uno', snippet: 'x', permalink: 'https://mail.google.com/1', claim: null },
+    { threadId: 'r2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: null }],
+    members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false });
+  const stats = () => ({ address: 'spanishcalls@x.com', days: 30, pending: 2, resolved: 0,
+    avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 2, truncated: false });
+
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', stats);
+  h.run.respond('getSpanishInboxPending', mk);
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
+  let fail = false, calls = 0;
+  h.run.respond('resolveSpanishThread', () => { calls++; return fail ? { error: 'Gmail said no' } : { success: true }; });
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+
+  const cards = () => h.$$('.sp-task');
+  const assignBtn = () => h.$('#sp-autoassign');
+  const header = () => (h.$$('.day-section-label').map((d) => d.textContent).join(' | '));
+  const press = (tid) => h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="' + tid + '"]'));
+
+  assert.strictEqual(cards().length, 2, 'two pending cards');
+  assert.ok(/Auto-assign 2 unclaimed/.test(assignBtn().textContent), 'the button counts both');
+  assert.ok(/Pending · 2/.test(header()), 'and so does the header');
+
+  // A FAILED resolve changes nothing — the row and the count both stay.
+  fail = true;
+  press('r1');
+  await tick(); await tick();
+  assert.strictEqual(calls, 1, 'the RPC was made');
+  assert.strictEqual(cards().length, 2, 'a failed resolve keeps the card');
+  assert.ok(/Auto-assign 2 unclaimed/.test(assignBtn().textContent), 'and the count is untouched');
+  assert.strictEqual(h.$$('.sp-task.is-busy').length, 0, 'the in-flight state is cleared on failure, not left stuck');
+
+  // A SUCCESSFUL resolve: state first, animation second.
+  fail = false;
+  press('r1');
+  await tick(); await tick();
+  // SP2 — the card is marked leaving, and the COUNT is already correct while
+  // it is still on screen. This is the ordering that matters: nothing a reader
+  // relies on waits for an animation.
+  assert.ok(h.$('.sp-task.is-leaving'), 'the resolved card is animating out');
+  assert.ok(/Auto-assign 1 unclaimed/.test(assignBtn().textContent),
+    'the count dropped BEFORE the animation finished — it is fed by state, not by the DOM');
+
+  // BE HONEST ABOUT WHAT THIS EXERCISES: jsdom does not run CSS animations,
+  // so `animationend` NEVER fires here and the re-render below arrives via
+  // the SP_LEAVE_FALLBACK_MS timeout. That is worth pinning — it is the path
+  // a browser with animations disabled also takes — but the animationend
+  // branch itself is NOT covered by this suite and only the visual matrix
+  // or a real browser can see it.
+  h.flushTimers();
+  assert.strictEqual(cards().length, 1, 'the row is gone after the re-render');
+  assert.ok(/Pending · 1/.test(header()), 'the header followed too');
+  assert.strictEqual(h.$('.sp-resolve[data-thread="r1"]'), null, 'and it is the resolved one that left');
+
+  // The state itself, not just the render — this is what the SWR cache shares
+  // by reference, and the half that made a resolved card come back on re-entry.
+  const left = h.read('SPANISH_STATE').pendingRes.pending.map((x) => x.threadId);
+  assert.deepStrictEqual(left.join(','), 'r2', 'pendingRes.pending no longer carries the resolved thread');
+
+  // A re-render from the SAME state must not resurrect it (the cache-half path).
+  h.read('spanishRenderList_')();
+  assert.strictEqual(cards().length, 1, 'a re-render does not bring it back');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

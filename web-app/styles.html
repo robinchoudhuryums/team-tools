@@ -1390,6 +1390,24 @@
      global prefers-reduced-motion block neutralizes the pulse wholesale. */
   .sp-task.is-busy { pointer-events: none; filter: grayscale(.6); animation: spTaskBusy 1.1s ease-in-out infinite; }
   @keyframes spTaskBusy { 0%, 100% { opacity: .62; } 50% { opacity: .88; } }
+  /* SP2 (operator 2026-09-16) — the EXIT half of the same idea. `is-busy`
+     above had been written for this action and never applied to a card (only
+     the auto-assign BUTTON used the class), so resolving a request gave no
+     in-flight signal at all and the row simply vanished. The card now dims
+     while the RPC is in flight and fades out before the list re-renders.
+     Transform/opacity only, one-shot via `forwards`; the global
+     prefers-reduced-motion block collapses the duration to 0.01ms, which
+     still fires `animationend` — and spanishResolveDone_ carries a timeout
+     fallback regardless, because no count may depend on an animation event. */
+  .sp-task.is-leaving { pointer-events: none; animation: spTaskLeave .22s var(--ease) forwards; }
+  @keyframes spTaskLeave { from { opacity: .88; transform: none; } to { opacity: 0; transform: translateY(-4px); } }
+  /* SP3 — the icon-only expand toggle. Scoped to .sp-toggle, never to .sp-more:
+     that class is shared with the Mark-resolved button, and a class-wide rule
+     assumes every member of the class is yours (g70). */
+  .sp-more.sp-toggle { display: inline-flex; align-items: center; }
+  .sp-more.sp-toggle:hover { text-decoration: none; opacity: .75; }
+  .sp-more.sp-toggle.is-loading { cursor: default; }
+  .sp-more.sp-toggle.is-loading .icon { animation: spin .8s linear infinite; }
   /* Pilot round 2 — advisory claim pill ("who is on this request") + the
      manager assign select. The pill sits in the flexed card head between the
      requester and the age; `.mine` tints the caller's own claim accent. */
