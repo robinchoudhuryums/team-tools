@@ -13324,6 +13324,11 @@ test('ELIG: locCityMatches_ requires the STATE when the row carries one, and an 
     { name: 'Springfield', state: 'TX', accepts: 'POV' },
     { name: 'Springfield', state: 'IL', accepts: 'scooter' },
     { name: 'Loose City', state: '', accepts: 'POV' },
+    // A NAMELESS row. getLocationAcceptance_ drops these, but the matcher must
+    // not depend on that — without it the blank-city assertion below is
+    // VACUOUS, because a blank query fails to equal any real name anyway.
+    // (Found by bite-check: deleting the guard bit nothing.)
+    { name: '', state: '', accepts: 'anything at all' },
   ];
 
   assert.strictEqual(M(CITIES, 'Springfield', 'TX').length, 1);
