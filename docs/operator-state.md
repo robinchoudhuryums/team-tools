@@ -1261,6 +1261,40 @@ entry says which it is.
   ribbon). Breaks + the break reminder still come from the per-tz schedule
   (the override changes start/length only). Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
+<a id="operator-set-script-property-oop-ss-id"></a>
+- **Set Script Property `OOP_SS_ID`** (operator 2026-09-16) to the OOP pricing
+  spreadsheet's id. **NO fallback** — unset, the lookup says it is not
+  configured. That is deliberate: a price lookup that silently resolves to some
+  other spreadsheet is worse than one that does not work.
+
+  **The app NEVER writes to this store.** It is the only one of the nine that is
+  read-only, and it is read LIVE on every lookup — not imported, and not cached.
+  A rep quotes an OOP price and takes payment on that call, so a copy that lags
+  your sheet by an upload is a rep collecting a superseded price.
+
+  **What the sheet needs:**
+  - The pricing rows on the spreadsheet's **FIRST sheet** (no tab name to
+    configure; the diagnostics below report which tab was read).
+  - **Column A = the item name** — that is the column the search scans.
+  - Then `Price`, `Area Eligibility` and `EffectiveDate`, matched **by header
+    STEM**, not by position: "Patient Cost" and "OOP Amount" both read as the
+    price, "Eligible Regions" as the area. Reorder freely. Any column the
+    matcher does not recognise is shown VERBATIM beside the result rather than
+    dropped.
+  - **The spreadsheet's timezone must equal `CONFIG.TIMEZONE`**, like every
+    other store — `EffectiveDate` is a date read, and a drifted tz shifts it.
+    File → Settings → Time zone. Storage Health shows the mismatch.
+
+  **Check it with Manage → Admin → the OOP pricing diagnostics**
+  (`getOopPricingDiagnostics`, admin-gated): it reports the tab it read, every
+  header and the role it assigned, and NAMES any role it could not find.
+  **Run it after renaming a column.** Header discovery is invisible when it
+  works and silent when it does not — a price column the matcher misses shows a
+  BLANK price on every result, and without this you would hear about it from a
+  rep mid-call rather than from the app.
+
+  Test twin `TEST_OOP_SS_ID` is auto-provisioned by `_withTestOop_`.
+
 <a id="operator-script-property-spanish-vm-min-seconds"></a>
 - **Script Property `SPANISH_VM_MIN_SECONDS`** (optional — operator 2026-09-16).
   An 8x8 A_Q_Spanish voicemail SHORTER than this many seconds is treated as a

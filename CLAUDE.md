@@ -498,12 +498,12 @@ for the reasoning, which is usually the part that matters.
 
 ### Spreadsheet / storage map (one-screen reference)
 
-Eight distinct spreadsheets, split deliberately along PHI / payroll / HR /
+NINE distinct spreadsheets, split deliberately along PHI / payroll / HR /
 PHI-free / external lines and by retention policy — **consolidation is NOT
 advised** (the boundaries are the point); manage them as a set instead. The
 manager **Call Notes → Admin → Storage Health** panel (`getStorageHealth`)
 shows each store's configured / reachable / **tz-vs-CONFIG** status live — the
-one-pane-of-glass for this table. Keep all eight in one Drive folder for sanity.
+one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
@@ -514,6 +514,7 @@ one-pane-of-glass for this table. Keep all eight in one Drive folder for sanity.
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, InsurancePayors (OPERATOR-IMPORTED payor-acceptance table — read-only, the insurance lookup, 2026-08-25) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
 | QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared; design handoff PR 5 added DurationSec + SkipReason, header self-heals), QaExemptions (PR 5 — the audit-period exemption ledger: EmpName/Period/GrantedBy/GrantedMs/Active, append-only, latest row per (name, period) wins; written only by the manager-gated `qaSetExemption`), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
+| OOP pricing | `OOP_SS_ID` (**no fallback**) | the spreadsheet's FIRST sheet — item name in column A, then Price / Area Eligibility / EffectiveDate discovered BY HEADER STEM, any other column passed through verbatim | PHI-free by policy | kept — **the app never writes to this store** | `getOopSS_` |
 | Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (one plain-text-pinned cell — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
 
 **Every store's timezone MUST equal `CONFIG.TIMEZONE`** (coerced date/time reads
@@ -525,6 +526,8 @@ since pilot round 2 this recommendation also covers the `ScheduledCalls` tab
 (reminder labels plausibly name patients, so they belong on the PHI store too).
 Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`,
 `TEST_KB_SS_ID` (cycle-10 M-9 — the KB fixture `_withTestKb_` provisions),
+`TEST_OOP_SS_ID` (2026-09-16 — `_withTestOop_`, which SEEDS a header row because
+the reader discovers columns by header),
 `TEST_FORMS_SS_ID` and `TEST_QA_SS_ID` (2026-09-16 — `_withTestForms_` /
 `_withTestQa_`; before them the forms tests wrote to the LIVE forms store,
 which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All six are
@@ -608,6 +611,7 @@ the dated round entries that used to sit here moved to
 - [`Employees` sheet column N = `Departments`](docs/operator-state.md#operator-employees-sheet-column-n-departments)
 - [`Employees` sheet column O = `Schedule`](docs/operator-state.md#operator-employees-sheet-column-o-schedule)
 - [Script Property `SPANISH_VM_MIN_SECONDS`](docs/operator-state.md#operator-script-property-spanish-vm-min-seconds)
+- [Set Script Property `OOP_SS_ID`](docs/operator-state.md#operator-set-script-property-oop-ss-id)
 - [Script Property `CDR_QUEUE_GROUPS`](docs/operator-state.md#operator-script-property-cdr-queue-groups)
 - [Script Property `DR_SLA_TARGETS`](docs/operator-state.md#operator-script-property-dr-sla-targets)
 - [Set Script Property `HR_DOCS_SS_ID`](docs/operator-state.md#operator-set-script-property-hr-docs-ss-id)
