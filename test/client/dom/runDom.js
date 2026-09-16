@@ -2873,7 +2873,7 @@ test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and sh
   assert.strictEqual(sent.length, 1, 'the send fired');
   const payload = sent[0].args[0];
   assert.strictEqual(JSON.stringify(payload.quotedOop),
-    JSON.stringify([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }]),
+    JSON.stringify([{ name: 'Widget', price: '$129.00', effective: '2026-09-01', label: '' }]),
     'the quote rides the payload for server-side re-verification');
   assert.ok(payload.message.indexOf(line) >= 0, 'and the message still carries the line the server will look for');
 });

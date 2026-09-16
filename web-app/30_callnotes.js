@@ -3221,7 +3221,11 @@ function sendExternalEmail(payload) {
   // DOMAIN only: g36's minimization is not relaxed by the quote being
   // commercially significant.
   const oopList = oopQuoted.map(function (q) {
-    return q.name + '@' + q.price + (q.effective ? ' eff ' + q.effective : '');
+    // The LABEL is part of the record: "$920" and "$1,070" are both correct
+    // prices for the same item, and a dispute is about which one the customer
+    // was told.
+    return q.name + (q.label ? ' [' + q.label + ']' : '') + '@' + q.price +
+      (q.effective ? ' eff ' + q.effective : '');
   }).join(' | ');
   writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
     'recipientDomain=' + recipientDomain + '; type=' + recipientType +
@@ -3234,7 +3238,7 @@ function sendExternalEmail(payload) {
     success: true,
     sentAt: sentAt,
     recipientEmail: recipientEmail,
-    oopQuoted: oopQuoted.map(function (q) { return { name: q.name, price: q.price, effective: q.effective }; }),
+    oopQuoted: oopQuoted.map(function (q) { return { name: q.name, price: q.price, effective: q.effective, label: q.label }; }),
     formsAttached: formNames,
     formLinks: formLinks.map(function(fl) { return { name: fl.name, url: fl.url, formType: fl.formType }; }),
   };
