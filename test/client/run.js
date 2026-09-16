@@ -13135,6 +13135,75 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing');
 });
 
+{
+  // searchOopPricing driven against a FAKE sheet, so the scoring is pinned
+  // behaviourally rather than by reading its source. The code half of it was
+  // covered ONLY by an editor test until a bite-check found nothing to fail:
+  // deleting the code lookup left the pure harness green.
+  const sCtx = { String: String, Array: Array, Math: Math, JSON: JSON, Object: Object,
+    OOP_MAX_ROWS: 5000, OOP_TOP: 8 };
+  vm.createContext(sCtx);
+  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'searchOopPricing']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx, { filename: f }));
+  const GRID = [
+    ['HCPCS', 'Category', 'Item', 'OOP Price', 'Area Eligibility', 'EffectiveDate'],
+    ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel', '$920.00', 'Open', '09/16/2026'],
+    ['E1234', 'Bath', 'Shower Chair', '$65.00', 'TX', '09/01/2026'],
+    ['', '', '', '', '', ''],                       // a blank row in the middle
+  ];
+  sCtx._grid = GRID;
+  vm.runInContext(`
+    function getEmployeeInfo_() { return { id: 'E1' }; }
+    function oopSheet_() {
+      return {
+        getLastColumn: function () { return _grid[0].length; },
+        getLastRow: function () { return _grid.length; },
+        getRange: function (r, c, nr, nc) {
+          return { getDisplayValues: function () {
+            var out = [];
+            for (var i = 0; i < nr; i++) out.push(_grid[r - 1 + i].slice(c - 1, c - 1 + nc));
+            return out;
+          } };
+        },
+      };
+    }`, sCtx);
+  const S = (q) => JSON.parse(vm.runInContext('JSON.stringify(searchOopPricing(' + JSON.stringify(q) + '))', sCtx));
+
+  test('OOP-C: searchOopPricing scans the ITEM NAME and the CODE — the defect was that it scanned column A, which is the billing code', () => {
+    // THE ORIGINAL DEFECT, pinned: before 2026-09-16 this scored 0 and rendered
+    // "not in the sheet -- do not quote a similar item" about an item that was.
+    const byName = S('Drive Scout');
+    assert.ok(!byName.error, byName.error);
+    assert.strictEqual(byName.matches.length, 1, 'the product name finds the row');
+    assert.strictEqual(byName.matches[0].name, 'Drive Scout 3 Wheel');
+    assert.strictEqual(byName.matches[0].code, 'K0800 (C/C)', 'and the code rides along');
+
+    // A partial name, the way a rep actually types mid-call.
+    assert.strictEqual(S('scout').matches.length, 1, 'a partial name matches');
+    assert.strictEqual(S('shower').matches[0].name, 'Shower Chair');
+
+    // THE CODE, because a rep has whichever the customer gave them.
+    const byCode = S('K0800');
+    assert.strictEqual(byCode.matches.length, 1, 'the HCPCS code finds the same row');
+    assert.strictEqual(byCode.matches[0].name, 'Drive Scout 3 Wheel',
+      'and resolves to the ITEM, not to the code');
+    assert.strictEqual(S('E1234').matches[0].name, 'Shower Chair');
+
+    // A no-match is NOT a near miss. This is the whole failure mode the refusal
+    // message names: quoting a similar item.
+    const none = S('nothing_like_this');
+    assert.strictEqual(none.notFound, true);
+    assert.strictEqual(none.matches.length, 0, 'no nearest-row fallback');
+
+    // A blank row contributes nothing rather than matching everything.
+    assert.ok(S('Drive Scout').matches.every((m) => !!m.name), 'no empty row in the results');
+    const tooShort = S('a');
+    assert.strictEqual(tooShort.total, 0, 'a one-character query does not scan');
+    assert.strictEqual(tooShort.notFound, undefined,
+      'and does NOT claim notFound — "you have not typed enough yet" is not "we do not stock it"');
+  });
+}
+
 test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — comparing the wrong one refuses in both directions', () => {
   const P = (prices, label) => JSON.parse(vm.runInContext(
     'JSON.stringify(oopPriceByLabel_(' + JSON.stringify(prices) + ',' + JSON.stringify(label) + ') || null)', _vmCtx));
