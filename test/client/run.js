@@ -13366,6 +13366,12 @@ test('ELIG: the delivery table has NO seed and NO fallback — a missing tab mak
   // An unreadable registry returns EMPTY + an error, never a default.
   assert.ok(/out\.error =/.test(f) && /return out;/.test(f), 'a missing tab yields the empty registry AND says why');
   assert.ok(!/\|\|\s*CONFIG\./.test(f), 'nothing falls back to CONFIG');
+  // THE REGISTRY STARTS EMPTY. Added after a bite-check: the three assertions
+  // above all watched for the OLD shape of the defect (a property, a CONFIG
+  // fallback) and none of them would have seen a warehouse hard-coded straight
+  // into this function — which is the same seed, one layer down.
+  assert.ok(/const out = \{ warehouses: \{\},/.test(f),
+    'the registry is built EMPTY and filled only from the sheet');
 
   // A warehouse row with no ADDRESS is dropped from the vocabulary rather than
   // registered unplaceable: its NAME is what the radius grammar matches, so
