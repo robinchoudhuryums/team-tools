@@ -2806,3 +2806,120 @@ test('D-N10 DOM: Team Right Now — the chip renders only for activeNotIn === tr
   h.document.body.dispatchEvent(new h.window.Event('keydown', { bubbles: true }));
   assert.strictEqual(h.run.pending('recordPresence').length, 2, 'past the gap the next gesture sends again');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('OOP-B — the external composer price picker (operator 2026-09-16)');
+
+// The claim this batch makes is narrow and testable: a price that reaches a
+// customer came from the SERVER, unedited. The server half is pinned in the
+// pure harness; this is the other end of it — that the picker inserts the
+// canonical line, records the quote, ships it for re-verification, and that
+// nothing the rep can click puts a number in the email that the RPC did not
+// return. A structural pin cannot see any of that (g118's lesson, applied to
+// the client): it reads the source, not the wiring.
+function bootExtComposer(matches) {
+  const h = bootLog();
+  h.run.drain();                                   // prewarm / ambient noise
+  h.window.cnOpenExternalEmailModal_(null);
+  h.run.flushSuccess({ forms: [] }, 'getFormCatalog');
+  if (matches) h.run.respond('searchOopPricing', () => ({ matches: matches }));
+  return h;
+}
+const OOP_MATCHES = [
+  { name: 'Widget', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },
+  { name: 'Priceless Thing', price: '', eligibility: '', effective: '', details: [] },
+];
+
+test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and ships it for re-verification — and an item with no price cannot be inserted at all', () => {
+  const h = bootExtComposer(OOP_MATCHES);
+  assert.ok(h.$('#cnX-oop-q'), 'the picker row mounts in the composer');
+
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();                                  // the 260ms debounce
+  const rows = Array.from(h.document.querySelectorAll('.cn-oop-row'));
+  assert.strictEqual(rows.length, 2, 'both matches render');
+
+  // The priceless row is LISTED but not insertable — "in the sheet with no
+  // price" is a different answer from "not in the sheet", and the rep needs to
+  // be able to tell them apart.
+  const insertBtns = Array.from(h.document.querySelectorAll('[data-oop-insert]'));
+  assert.strictEqual(insertBtns.length, 1, 'only the priced row offers Insert');
+  assert.ok(/no price on file/.test(rows[1].textContent), 'and the other says why');
+
+  insertBtns[0].dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  const line = h.read('cnOopQuoteLine_')('Widget', '$129.00', '2026-09-01');
+  const ta = h.$('#cnX-message');
+  assert.strictEqual(ta.value, line, 'the canonical line lands in the message');
+  assert.strictEqual(h.read('CN_STATE').extComposer.message, line, 'and state tracks it (a re-render must not lose it)');
+
+  // The chip is rendered from STATE, so a PDF/Fillable re-render cannot lose it.
+  assert.ok(/Widget/.test(h.$('#cnX-oop-chips').textContent), 'the quote is chipped');
+  h.window.cnRenderExternalEmailModal_();
+  assert.ok(/Widget/.test(h.$('#cnX-oop-chips').textContent), 'and survives a full modal re-render');
+  assert.strictEqual(h.$('#cnX-message').value, line, 'as does the message');
+
+  // Inserting the same item twice would duplicate the line; refused, not ignored.
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();
+  h.document.querySelector('[data-oop-insert]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.strictEqual(h.$('#cnX-message').value, line, 'a second insert of the same item adds nothing');
+  assert.strictEqual(h.read('CN_STATE').extComposer.oopQuotes.length, 1);
+
+  // The send ships the quote as a CLAIM for the server to re-verify.
+  h.setField('cnX-email', 'someone@example.com');
+  h.setField('cnX-subject', 'Your quote');
+  h.window.cnSendExternalEmail_();
+  const sent = h.run.pending('sendExternalEmail');
+  assert.strictEqual(sent.length, 1, 'the send fired');
+  const payload = sent[0].args[0];
+  assert.strictEqual(JSON.stringify(payload.quotedOop),
+    JSON.stringify([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }]),
+    'the quote rides the payload for server-side re-verification');
+  assert.ok(payload.message.indexOf(line) >= 0, 'and the message still carries the line the server will look for');
+});
+
+test('OOP-B DOM: removing a chip removes the LINE too — a chip without its line, or a line without its chip, each refuses at send time for a reason the rep cannot see', () => {
+  const h = bootExtComposer(OOP_MATCHES);
+  h.setField('cnX-message', 'Hi there');
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();
+  h.document.querySelector('[data-oop-insert]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  const line = h.read('cnOopQuoteLine_')('Widget', '$129.00', '2026-09-01');
+  assert.strictEqual(h.$('#cnX-message').value, 'Hi there\n' + line, 'the line appends below the typed message');
+
+  h.document.querySelector('[data-oop-remove]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.strictEqual(h.$('#cnX-message').value, 'Hi there', 'the line goes with the chip');
+  assert.strictEqual(h.read('CN_STATE').extComposer.oopQuotes.length, 0, 'and the state entry with it');
+  assert.strictEqual(h.$('#cnX-oop-chips').textContent, '', 'no chips left');
+});
+
+test('OOP-B DOM: a failed or empty lookup SAYS so — an empty results list would read as "no such item", which is a different answer', () => {
+  const h = bootExtComposer();
+  h.run.respond('searchOopPricing', () => ({ matches: [] }));
+  h.setField('cnX-oop-q', 'zzz');
+  h.flushTimers();
+  const host = h.$('#cnX-oop-results');
+  assert.ok(/No item matched/.test(host.textContent), 'a genuine no-match says so');
+  assert.ok(/Do not quote a similar item/.test(host.textContent),
+    'and tells the rep what NOT to do — the whole failure mode is quoting the near-miss');
+
+  h.run.respond('searchOopPricing', () => ({ error: 'OOP pricing lookup failed: not configured' }));
+  h.setField('cnX-oop-q', 'zzzz');
+  h.flushTimers();
+  assert.ok(/not configured/.test(h.$('#cnX-oop-results').textContent),
+    'and a store-level failure is surfaced verbatim rather than rendered as an empty list (g02)');
+  assert.ok(h.$('#cnX-oop-results .cn-oop-msg.bad'), 'toned as a failure, not as a result');
+
+  // A shortened query voids whatever is in flight (INV-156) rather than letting
+  // a stale answer paint over a cleared box.
+  h.run.clearResponder('searchOopPricing');
+  h.setField('cnX-oop-q', 'abc');
+  h.flushTimers();
+  const inFlight = h.run.pending('searchOopPricing');
+  assert.strictEqual(inFlight.length, 1, 'a search is in flight');
+  h.setField('cnX-oop-q', 'a');
+  h.flushTimers();
+  assert.strictEqual(h.$('#cnX-oop-results').textContent, '', 'the box clears');
+  h.run.flushSuccess({ matches: OOP_MATCHES }, 'searchOopPricing');
+  assert.strictEqual(h.$('#cnX-oop-results').textContent, '', 'and the late answer does not paint over it');
+});
