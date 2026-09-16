@@ -3056,6 +3056,26 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   assert.ok(rows[1].querySelectorAll('.kb-elig-v')[0].classList.contains('no'),
     'a listed delivery city does NOT flip a verdict');
 
+  // A DELIVERY TABLE that could not be read is surfaced. Without this every
+  // radius rule quietly reads "cannot tell", which looks like caution rather
+  // than like a tab nobody has created yet (g02) — and the items still render,
+  // so there is nothing else on screen to notice.
+  h.run.respond('checkOopEligibility', (a) => a === '00000' ? { error: 'Could not find that location \u2014 try a 5-digit ZIP code.' } : ({
+    success: true, formatted: 'Austin, TX', state: 'TX', total: 1, warehouses: [],
+    locationError: 'Delivery reach is not set up yet — create a tab named "LocationAcceptance".',
+    items: [{ name: 'Radius Item', price: '$30.00', eligibility: '100 miles of Dallas', rule: 'unknown',
+      insurance: { verdict: 'unknown', near: false, why: 'cannot read' },
+      oop:       { verdict: 'unknown', near: false, why: 'cannot read' } }],
+  }));
+  addr.value = '500 Main St, Austin TX';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const missing = h.$('#kb-elig-results').textContent;
+  assert.ok(/LocationAcceptance/.test(missing),
+    'an unreadable delivery table NAMES the tab to create, rather than leaving every radius rule reading "cannot tell"');
+  assert.ok(/Radius Item/.test(missing), 'and the items still render around it');
+
   // A failed geocode is an ERROR, never an empty eligible list — the two look
   // identical on screen and only one means "do not sell this here".
   addr.value = '00000';
