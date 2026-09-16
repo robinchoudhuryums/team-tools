@@ -7,10 +7,12 @@
     "test": "node test/client/run.js && node test/client/dom/runDom.js",
     "test:client": "node test/client/run.js",
     "test:dom": "node test/client/dom/runDom.js",
+    "lint:server": "node scripts/lint-server.mjs",
     "push:dev": "bash scripts/push-env.sh dev",
     "push:prod": "bash scripts/push-env.sh prod"
   },
   "devDependencies": {
+    "eslint": "^10.10.0",
     "jsdom": "^29.1.1"
   }
 }

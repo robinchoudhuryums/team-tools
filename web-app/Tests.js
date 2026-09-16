@@ -48,6 +48,17 @@ var _TEST_INTAKE_SS_ID = null;
 var _TEST_OVERRIDE_INTAKE_SS_ID = null;
 var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T3)
 
+// The remaining three store overrides. All three are READ by a resolver
+// (`getKbSS_`, `getFormsSS_`, `getQaSS_`) behind a `typeof … !== 'undefined'`
+// guard, which is why a missing declaration never threw — but `_withTestKb_`
+// ASSIGNS the KB one, and an assignment to an undeclared name only works
+// because Apps Script runs sloppy mode. Declaring them here makes the KB
+// fixture's redirect explicit instead of an implicit global, and puts all
+// eight overrides in one place. See g118 / `npm run lint:server`.
+var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_ below
+var _TEST_OVERRIDE_FORMS_SS_ID = null;   // read by getFormsSS_ — NO fixture assigns it yet
+var _TEST_OVERRIDE_QA_SS_ID = null;      // read by getQaSS_   — NO fixture assigns it yet
+
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
   const d = new Date(); d.setDate(d.getDate() - 3);

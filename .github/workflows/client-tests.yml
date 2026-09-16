@@ -53,6 +53,16 @@ jobs:
       - name: Install dev dependencies (jsdom for the DOM harness)
         run: npm ci
 
+      # g118: the undeclared-identifier net. `node --check` above parses each
+      # server file; this RESOLVES every identifier against the one global
+      # scope Apps Script actually loads them into, which is the only static
+      # way to catch a name that reads fine and throws ReferenceError. It sits
+      # after `npm ci` because it needs eslint. It is not part of the
+      # dependency-free floor, so it must never be the only thing between a
+      # broken server and prod — the floor above still runs first.
+      - name: Resolve every server identifier (no-undef over the one global scope)
+        run: node scripts/lint-server.mjs
+
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js
 

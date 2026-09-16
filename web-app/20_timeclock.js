@@ -726,7 +726,10 @@ function creditMonthlyPtoAccruals() {
     const rows = sheet.getDataRange().getValues();
     const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
     const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
-    const basis = run.basis;
+    // BOTH come from the resolver. `perDay` was left undeclared when the
+    // resolver was extracted (the credit used to compute both itself), and the
+    // reconcile call below threw ReferenceError on every run — see g118.
+    const basis = run.basis, perDay = run.perDay;
     if (run.entries.length === 0) return { success: true, credited: 0, seeded: 0 };
 
     let credited = 0, seeded = 0, zeroHourReps = 0;
