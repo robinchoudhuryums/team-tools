@@ -88,6 +88,11 @@
   .kb-dept.collapsed .kb-chevron { transform: rotate(-90deg); }
 
   /* Insurance payor lookup (operator 2026-08-25 — batch 3) */
+  /* OOP price lookup — the price is the thing the eye should land on, so it is
+     mono and emphasised. `none` is deliberately WARNING-toned rather than muted:
+     a row with no price must not read as "free" or as "nothing to say". */
+  .kb-oop-price { font-family: var(--mono); font-weight: 600; margin-left: 6px; }
+  .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
   .kb-ins-input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
   .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
   .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -2402,6 +2407,86 @@ function insToneCls_(value) {
   return '';
 }
 
+// ── OOP price lookup (operator 2026-09-16) ─────────────────────────────────
+// The mid-call price check. Rides BOTH hosts exactly like the insurance
+// lookup — the Reference landing ('' suffix) and the Ctrl/⌘+K drawer ('-d') —
+// because a price is looked up mid-call, which is what the drawer is for.
+//
+// A quoted price is a COMMITMENT (the rep takes payment on that call), so this
+// surface states its own limits rather than implying certainty: the effective
+// date rides every result, and a no-match says so plainly instead of offering
+// a near-miss as though it were the answer.
+var KB_OOP = { seq: 0, timer: null };
+
+function oopLookupSecHtml_(suffix) {
+  return '<label class="kb-land-h" for="kb-oop-input' + suffix + '">' + icon('search', 13) + ' OOP price lookup</label>' +
+    '<input type="text" class="kb-ins-input" id="kb-oop-input' + suffix + '" autocomplete="off" ' +
+      'placeholder="Item name…" oninput="oopLookupInput_(this)">' +
+    '<div class="kb-ins-results" id="kb-oop-results' + suffix + '"></div>';
+}
+
+/** Debounced search with a seq token — two hosts and out-of-order responses
+ *  must not cross-paint (INV-156, the insLookupInput_ discipline). */
+function oopLookupInput_(inp) {
+  var suffix = inp.id === 'kb-oop-input-d' ? '-d' : '';
+  var q = String(inp.value || '').trim();
+  if (KB_OOP.timer) clearTimeout(KB_OOP.timer);
+  var host = document.getElementById('kb-oop-results' + suffix);
+  if (q.length < 2) { if (host) host.innerHTML = ''; return; }
+  KB_OOP.timer = setTimeout(function () {
+    var mySeq = ++KB_OOP.seq;
+    if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (mySeq !== KB_OOP.seq) return;
+        oopRenderResults_(suffix, q, res);
+      })
+      .withFailureHandler(function (err) {
+        if (mySeq !== KB_OOP.seq) return;
+        var h = document.getElementById('kb-oop-results' + suffix);
+        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
+      })
+      .searchOopPricing(q);
+  }, 350);
+}
+
+function oopRenderResults_(suffix, q, res) {
+  var host = document.getElementById('kb-oop-results' + suffix);
+  if (!host) return;
+  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  if (res.notFound || !(res.matches || []).length) {
+    // A no-match is stated plainly. The alternative — showing the nearest item
+    // anyway — is how a rep quotes the price of something else.
+    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' No OOP price on file for “' + esc(q) + '”. ' +
+      'Check the spelling, or confirm with the team before quoting — do not quote a similar item.</div>';
+    return;
+  }
+  var html = '';
+  res.matches.forEach(function (m) {
+    // A MISSING price is called out rather than rendered as an empty cell: a
+    // blank where a number belongs reads as free, or as nothing to say.
+    var price = String(m.price || '').trim();
+    var priceHtml = price
+      ? '<span class="kb-oop-price">' + esc(price) + '</span>'
+      : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
+    var bits = [];
+    if (m.effective) bits.push('effective ' + esc(m.effective));
+    if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
+    (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
+    html += '<div class="kb-ins-row">' +
+      '<div class="kb-ins-name">' + esc(m.name) + ' ' + priceHtml + '</div>' +
+      (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
+      '</div>';
+  });
+  if (res.total > (res.matches || []).length) {
+    html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' matches — showing the top ' + esc(String(res.cap)) + '. Narrow the search.</div>';
+  }
+  if (res.truncated) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">The pricing sheet is longer than the scan limit — some items were not searched.</div>';
+  }
+  host.innerHTML = html;
+}
+
 var KB_INS = { seq: 0, timer: null };
 
 /** The lookup section (shared by both hosts; suffix '' = Reference landing,
@@ -2504,6 +2589,7 @@ function kbRenderLanding_() {
   // of the content blocks. The typed query is transient (a re-render clears
   // it) — the lookup is a point question, not state worth persisting.
   h += '<div class="kb-land-sec">' + insLookupSecHtml_('') + '</div>';
+  h += '<div class="kb-land-sec">' + oopLookupSecHtml_('') + '</div>';
 
   // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
   var bookmarks = prefs.bookmarks || [];
@@ -4026,6 +4112,7 @@ function kbDrawerRenderHome_() {
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
   html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
+  html += '<div class="kbd-sec">' + oopLookupSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';

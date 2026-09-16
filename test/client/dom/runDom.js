@@ -2565,6 +2565,67 @@ test('PTO1/PTO2 DOM: the leave balance renders on the live-status card and the c
     'and the contractor chip carries no balance — the SAME gate as the card, because they share one helper');
 });
 
+// OOP-A (operator 2026-09-16) — the price lookup on BOTH hosts.
+//
+// A quoted price is a COMMITMENT: the rep takes payment on that call. So the
+// assertions that matter are the ones about what the surface REFUSES to imply —
+// a no-match must not offer the nearest item, and a row with no price must not
+// render an empty space where a number belongs. Both would read as an answer.
+test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer a near-miss, and a row with no price says so instead of rendering blank', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  let asked = null;
+  h.run.respond('searchOopPricing', (q) => {
+    asked = q;
+    if (q === 'nothing') return { matches: [], total: 0, notFound: true, cap: 8 };
+    return { cap: 8, total: 2, matches: [
+      { name: 'Widget', price: '$129.00', eligibility: 'AZ NV', effective: '2026-09-01', details: [{ label: 'Manufacturer', value: 'Acme' }] },
+      { name: 'Gadget', price: '', eligibility: '', effective: '', details: [] },
+    ] };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+
+  // BOTH hosts. The landing is asserted from the rendered DOM; the DRAWER host
+  // is asserted from its section builder rather than by opening the drawer —
+  // opening it would test the drawer's plumbing, which is not what this pin is
+  // about, and would pass just as well with the section unmounted.
+  assert.ok(h.$('#kb-oop-input'), 'the Reference landing carries the lookup');
+  assert.ok(/id="kb-oop-input-d"/.test(h.read('oopLookupSecHtml_')('-d')),
+    'and the drawer host builds its own copy — the drawer IS the mid-call surface');
+
+  const inp = h.$('#kb-oop-input');
+  inp.value = 'widget';
+  h.read('oopLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+  assert.strictEqual(asked, 'widget', 'the query reaches the server verbatim');
+
+  const out = h.$('#kb-oop-results').textContent;
+  assert.ok(/\$129\.00/.test(out), 'the price renders as the SHEET displays it');
+  assert.ok(/effective 2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
+  assert.ok(/area: AZ NV/.test(out), 'and the area eligibility');
+  assert.ok(/Manufacturer: Acme/.test(out), 'an unrecognised column rides along verbatim');
+
+  // THE ROW WITH NO PRICE. An empty span here reads as free, or as nothing to
+  // say; both are worse than saying it plainly.
+  assert.ok(/no price on file/.test(out), 'a row with no price SAYS so');
+  assert.ok(h.$('.kb-oop-price.none'), 'and is toned as a warning, not muted away');
+
+  // THE NO-MATCH. It must not fall back to the nearest item.
+  inp.value = 'nothing';
+  h.read('oopLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+  const none = h.$('#kb-oop-results').textContent;
+  assert.ok(/No OOP price on file/.test(none), 'a no-match is stated');
+  assert.ok(/do not quote a similar item/i.test(none),
+    'and says NOT to quote a near-miss — the whole failure mode this guards');
+  assert.ok(!/Widget|\$129/.test(none), 'no prior result bleeds through');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Operator testing notes 2026-09-10 — Batch C (DOM)
 // ═════════════════════════════════════════════════════════════════════════════

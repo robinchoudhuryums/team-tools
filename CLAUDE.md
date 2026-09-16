@@ -832,7 +832,7 @@ this block, or the command that prints the number.
 | Count | Value | Derived from |
 |---|---|---|
 | Pure harness tests | 832 | `node test/client/run.js` |
-| DOM harness tests | 116 | `node test/client/dom/runDom.js` |
+| DOM harness tests | 117 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 323 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
