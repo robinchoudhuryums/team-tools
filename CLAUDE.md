@@ -165,6 +165,7 @@ Read a cell the wrong way and it does not throw — it silently lies. This famil
 - **CN coercion recovery formats in the HOST sheet's own tz — a drifted per-rep sheet tz no longer breaks note reads (Part A, operator 2026-08-27).** Fires when you recover a coerced CN cell — the tz you format in is the HOST sheet’s. Verify: PTA-1/2/3. [Detail](docs/gotchas.md#g12-cn-coercion-recovery-formats-in-the-host)
 - **Sheet LOCALE (not just timezone) can coerce stored ISO-T strings to Dates — and `SpreadsheetApp.create()` inherits the SCRIPT tz + deployer locale.** Fires when you create a spreadsheet, or read a stored ISO-T string. [Detail](docs/gotchas.md#g13-sheet-locale-not-just-timezone-can-coerce)
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** Fires when you read `CN.DATE_LOCAL`. [Detail](docs/gotchas.md#g16-cn-date-local-is-a-sheets-coerced)
+- **A positional tab read (`getSheets()[0]`) fails SILENTLY once the spreadsheet gains a second purpose — name the tab even when there is only one (2026-09-16).** Fires when you read a store by sheet POSITION, especially alongside header-discovered columns. Verify: the NAMED-TABS pin + `test_oop_pricingTab_isNAMEDnotTheFirstSheet`. [Detail](docs/gotchas.md#g121-a-positional-tab-read-is-correct)
 - **`normalizeType_` strips the `ADJ-` prefix.** Fires when you compare a punch type read from COMMENTS. [Detail](docs/gotchas.md#g18-normalizetype-strips-the-adj-prefix)
 
 ### Timezone frames
@@ -196,6 +197,7 @@ Every one of these guards an `innerHTML` sink or a template injection.
 
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.** Fires when you add a field to the call-note email builder. Verify: `test_cn_buildEmailHtml_escapesUserFields`. [Detail](docs/gotchas.md#g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field)
 - **Note marker formatting runs POST-escape, and its regexes are a client↔server MIRROR (operator 2026-08-25).** Fires when you add a formatting marker, or convert newlines. [Detail](docs/gotchas.md#g38-note-marker-formatting-runs-post-escape-and)
+- **A client↔server MIRROR whose drift BLOCKS needs a BEHAVIOURAL pin — the price line the composer inserts is rebuilt from the sheet at send time, so a drift refuses every OOP send rather than rendering oddly (OOP-B, 2026-09-16).** Fires when you mirror any value client↔server — ask first what a drift COSTS. [Detail](docs/gotchas.md#g120-a-client-server-mirror-whose-drift)
 - **Metrics client must `esc()` every server string before `innerHTML`.** Fires when you render a server string into the Metrics DOM. [Detail](docs/gotchas.md#g39-metrics-client-must-esc-every-server-string)
 - **Intake email builders must `esc_` every patient field; the justification is the ONE raw exception.** Fires when you add a field to an intake email builder. [Detail](docs/gotchas.md#g44-intake-email-builders-must-esc-every-patient)
 - **A value written to a `data-*` attribute comes back DECODED — never re-render it raw (cycle-18 F1).** Fires when a value round-trips through a `data-*` attribute back into `innerHTML`. [Detail](docs/gotchas.md#g49-a-value-written-to-a-data-attribute)
@@ -226,6 +228,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself (F4, cycle-16 — FIXED).** Fires when you wrap an overlay read in a bare `catch`. [Detail](docs/gotchas.md#g53-a-best-effort-overlay-whose-absence-is)
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
 - **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
+- **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than no seed — the warehouse registry's bare city names geocoded to city CENTRES (ELIG, shipped and removed 2026-09-16).** Fires when you seed a default — ask what it produces when nobody replaces it. Verify: the NO-seed pin. [Detail](docs/gotchas.md#g122-a-config-seed-that-is-a)
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
 - **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
@@ -422,6 +425,9 @@ for the reasoning, which is usually the part that matters.
 - [Manager cross-rep search in Team Notes](docs/design-decisions.md#manager-cross-rep-search-in-team-notes)
 - [Stats drill-down links to Per-Rep View](docs/design-decisions.md#stats-drill-down-links-to-per-rep-view)
 - [Email department display on note cards](docs/design-decisions.md#email-department-display-on-note-cards)
+- [A quoted price IS a commitment, so the picker inserts and the SEND re-verifies (OOP-B, operator 2026-09-16)](docs/design-decisions.md#a-quoted-price-is-a-commitment-so-the-picker-inserts-and)
+- [Which eligibility restrictions LIFT out of pocket is a RULE, not a table (ELIG, operator 2026-09-16)](docs/design-decisions.md#which-eligibility-restrictions-lift-out-of-pocket-is-a-rule)
+- [The operator-maintained lookup tables are NAMED TABS in the KB store, not stores of their own (operator 2026-09-16)](docs/design-decisions.md#the-operator-maintained-lookup-tables-are-named-tabs-in-the)
 - [External email for customers and providers](docs/design-decisions.md#external-email-for-customers-and-providers)
 - [Interactive fillable web forms via token-gated public route](docs/design-decisions.md#interactive-fillable-web-forms-via-token-gated-public-route)
 - [In-app form-submission viewer](docs/design-decisions.md#in-app-form-submission-viewer)

@@ -10,6 +10,59 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-16 — OOP pricing, the price picker, area eligibility, and the store move
+
+The back half of the same testing round (`OOP-A`, `OOP-B`, `ELIG`), plus a
+same-day store move the operator asked for once it had shipped. Blocks:
+`.cycle/blocks/20pre-OOP-broad-implement.md`.
+
+**Operator state ADDED — two tabs in the KB spreadsheet, and no new Script
+Property.** Full schemas in the Operator State Checklist's
+`OopPricing` / `LocationAcceptance` entry; the short version:
+
+- **`OopPricing`** — item name in column A, then `Price`, `Area Eligibility` and
+  `EffectiveDate` matched BY HEADER STEM (reorder freely; unrecognised columns
+  are shown verbatim beside the result rather than dropped).
+- **`LocationAcceptance`** — `Type` / `Name` / `Address` / `State` / `Accepts` /
+  `Notes`. `warehouse` rows carry the word you write in `Area Eligibility` plus
+  a **full street address** (it gets geocoded); `city` rows carry a POV/scooter
+  delivery city. Both are read on every eligibility check.
+
+**Operator state REMOVED:** `OOP_SS_ID` and `TEST_OOP_SS_ID` — both can be
+deleted; nothing reads them. The tables shipped that morning as a NINTH
+spreadsheet and moved into the KB store the same afternoon, so the property
+never outlived the day. **Nine stores became eight.**
+
+**Two things the operator must actually do, and why each matters:**
+
+1. **Put a REAL STREET ADDRESS on every warehouse row.** A bare city name
+   geocodes to the city CENTRE, so a warehouse twenty miles out of town measures
+   every distance from downtown and a near-boundary radius verdict is wrong by up
+   to twenty miles — in the permissive direction. The registry that shipped
+   in the morning had a CONFIG seed of exactly that shape and it was removed the
+   same day for exactly this reason (g122); the operator can reintroduce it by
+   hand in one cell.
+2. **Read Manage → Admin → the OOP pricing diagnostics ONCE after deploying.**
+   It lists every `Area Eligibility` value the parser could not read, BY ITEM,
+   plus the warehouse registry and any addressless or unreadable location row.
+   An unreadable value renders "cannot tell" on the rep's screen, which reads
+   like caution rather than like a typo — this panel is the only place the
+   difference is visible.
+
+**What the round changed for a rep.** The Reference landing and the Ctrl/⌘+K
+drawer each gained an OOP price lookup and an area-eligibility check; the Call
+Notes external email composer gained a price picker whose number is re-verified
+against the live sheet at SEND time and refuses the send if the price moved, the
+item vanished, the price was blanked, or the inserted line was hand-edited (a
+line the rep DELETED sends normally and audits nothing). Eligibility answers
+twice per item — through insurance and paying out of pocket — because the sheet's
+column states the insurance rule and paying OOP lifts a state limit but not a
+delivery radius.
+
+**What it did NOT change.** The `ExternalEmailSent` audit row still carries the
+recipient DOMAIN only; the quoted item and exact price were added beside it, and
+g36's minimization is not relaxed by a quote being commercially significant.
+
 ## 2026-09-16 — operator testing round (Spanish Inbox · manager PTO visibility)
 
 Five items from a testing pass, planned as nine findings in five batches

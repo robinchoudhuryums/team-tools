@@ -1743,6 +1743,90 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   ACTION button (sent state) is just the icon (click = send again). Used by both
   the rep card and the manager read-only card (its `sentPill`). Replaced the old
   truncated inline `.cn-email-depts` text-on-the-button (that class is gone).
+- <a id="a-quoted-price-is-a-commitment-so-the-picker-inserts-and"></a>**A quoted price IS a commitment, so the picker inserts and the SEND
+  re-verifies (OOP-B, operator 2026-09-16).** The operator's answer to "how
+  binding is a quoted OOP price?" was that the rep processes payment on that
+  same call. That single fact set the design. Three routes were considered:
+  (a) the rep looks the price up in the drawer and types it — no machinery, no
+  guardrail against a typo reaching a customer; (b) a picker in the external
+  composer that inserts a formatted line; (c) a real template token
+  (`{oop:ITEM}`). (c) is the most elegant and the most fragile — a template
+  outlives the catalog, and a token that no longer resolves, in an email already
+  sent, is the worst of the three. **(b) shipped**, with the number staying
+  server-sourced end to end, which is the entire point of not having reps read
+  the sheet.
+
+  What "server-sourced" had to mean is the non-obvious part. It is not enough
+  that the picker got the number from the server once: a lookup at 10:02 and a
+  send at 10:40 can straddle an operator edit, and a textarea is a textarea. So
+  `sendExternalEmail` rebuilds each quoted line from the LIVE sheet and refuses
+  unless the message still carries it — a stale price, a vanished item, a
+  blanked price, an unreadable store and a hand-edited line each refuse with
+  their own message, because they are five different problems with five
+  different fixes. A line the rep DELETED is not an error: nothing was quoted,
+  so nothing is audited.
+
+  **The boundary is stated rather than implied**, in the code and in a pin: a
+  rep who overtypes the figure defeats this, exactly as one who types a price
+  for an item they never picked does. The promise is that a price the PICKER
+  inserted is server-sourced and current — not that no wrong number can reach an
+  email. The second is unachievable from a free-text body, and claiming it would
+  be the more dangerous error. Verification runs before token creation, the PDF
+  fetches and the send, so a refusal costs nothing. The quoted prices ride the
+  existing `ExternalEmailSent` audit row — item, exact price, effective date,
+  and still the recipient DOMAIN only: g36's minimization is not relaxed by the
+  quote being commercially significant. INV-208.
+
+- <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
+  table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
+  states the rule for an order going THROUGH INSURANCE. Paying out of pocket
+  transforms it, and the operator gave three examples: `Open` stays open; `TX`
+  becomes the whole US; `100 miles of Dallas or San Antonio` stays 100 miles.
+
+  Writing down those three rows would have been the obvious move and the wrong
+  one — the fourth value, whenever it arrives, would get answered by whoever was
+  looking at the table that day. The generalisation is:
+
+  > **A restriction that exists because of WHO IS PAYING lifts when nobody is
+  > billing insurance. A restriction that exists because of HOW IT PHYSICALLY
+  > GETS THERE does not.**
+
+  A state limit is licensure and network — it lifts. A delivery radius is a van
+  — it does not. **UNKNOWN never lifts**, and that is the load-bearing line: a
+  value the parser could not read might be a delivery constraint, and lifting it
+  is the one guess that puts an undeliverable order in the system.
+
+  **Both verdicts are shown, labelled, rather than behind a payment-method
+  toggle.** The question a rep actually has mid-call is "can we deliver this, and
+  does paying out of pocket change the answer?" — a toggle makes them ask it
+  twice, and it is also the honest rendering of a column that genuinely means two
+  things. A radius NO is CERTAIN while a radius YES near the boundary is not,
+  which is the opposite of what "straight-line is only an estimate" suggests: a
+  straight line is never longer than the drive, so over-the-limit is over either
+  way, and a close YES says so rather than implying precision. INV-209.
+
+- <a id="the-operator-maintained-lookup-tables-are-named-tabs-in-the"></a>**The operator-maintained lookup tables are NAMED TABS in the KB store,
+  not stores of their own (operator 2026-09-16, decided the day OOP shipped).**
+  OOP pricing launched as a ninth spreadsheet with its own `OOP_SS_ID`. The
+  operator asked the same day whether it could fold into `INTAKE_SS_ID` to save a
+  Script Property. It could not, and the reasoning is worth keeping because the
+  question will be asked again about some other table:
+
+  - **Intake is PHI and the app WRITES to it.** Pricing there means anyone
+    maintaining prices needs edit access to patient submissions. That is the
+    disqualifier, and it applies to any read-only reference table.
+  - **The saving was not real.** Script Properties are capped by BYTES (g07);
+    per Batch Q the advertised entry caps were never the binding constraint. Two
+    string ids cost nothing, so "one fewer property" is never the argument.
+  - **The move would have failed silently.** See g121.
+
+  `KB_SS_ID` was the right home because `InsurancePayors` was already there: the
+  same class (PHI-free by policy), the same maintainer, the same read-only
+  access pattern, read through a named tab — and `searchOopPricing` already
+  reuses that lookup's scorer. **The test for "does this reference table belong
+  in the KB store" is that list, not the property count.** `OopPricing` and
+  `LocationAcceptance` joined it; nine stores became eight.
+
 - <a id="external-email-for-customers-and-providers"></a>**External email for customers and providers.** A standalone
   "Send External" button on the Call Notes Log view opens a modal
   for sending branded emails to customers or providers — not tied

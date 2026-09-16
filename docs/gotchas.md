@@ -2780,3 +2780,100 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   assignment, and every fixture ends `finally { X = null; }`, so the first
   version passed for a name nothing ever set. g116, inside the pin written to
   prevent a g116-shaped bug.
+
+<a id="g120-a-client-server-mirror-whose-drift"></a>
+- **A client↔server MIRROR whose drift BLOCKS is a different animal from one
+  whose drift DEGRADES — and the blocking kind needs a behavioural pin, not an
+  eyeball (OOP-B, operator 2026-09-16).** The two mirrors this project already
+  had both degrade on drift: `LEAVE_DEDUCTION_CLIENT` (g103) mis-previews a
+  balance, the note-marker regexes (g38) render a marker wrong. Annoying,
+  visible, survivable.
+
+  `oopQuoteLine_` is not like that. The composer price picker builds the line it
+  inserts into an email; `sendExternalEmail` rebuilds that same line from the
+  LIVE pricing sheet and refuses the send unless the message still contains it.
+  **The two agreeing character for character IS the verification** — that is the
+  whole mechanism, not an implementation detail. So an em dash quietly becoming
+  a hyphen on one side does not render slightly differently: every send carrying
+  a price refuses with "the inserted price line was edited", and the rep has no
+  way to satisfy it. A formatting nit becomes a hard outage on a payment path.
+
+  Two consequences worth carrying. First, **pin it behaviourally** — load BOTH
+  functions into one vm context and drive them over a table of inputs, rather
+  than asserting the shape of either. A structural pin over the client half
+  cannot see the server half drift away from it. Second, when you write one of
+  these, say in the code that the agreement is load-bearing; the next reader
+  sees two functions that look duplicated and the obvious "cleanup" is to make
+  one of them prettier.
+
+  **The rule: before you mirror anything client↔server, ask what a drift COSTS.
+  If the answer is "the feature stops working entirely", the mirror needs a
+  behavioural tripwire and a comment saying why it exists.** Verify: the OOP-B
+  mirror pin (both sides driven over a shared table, including an em dash inside
+  a NAME so the separator cannot be inferred from the data), bite-checked by
+  turning the server's em dash into a hyphen.
+
+<a id="g121-a-positional-tab-read-is-correct"></a>
+- **A positional tab read (`getSheets()[0]`) is correct right up until the
+  spreadsheet gains a second purpose — and then it fails SILENTLY (OOP-A → the
+  KB-store move, both 2026-09-16).** The OOP pricing reader shipped in a
+  spreadsheet of its own, so "the first sheet" needed no operator decision and
+  could not drift out of step with a constant. That reasoning was written down
+  and it was correct for the store it was written for.
+
+  The same day the operator asked to fold that spreadsheet into an existing one.
+  In the KB store, sheet 0 is the `KB` tab. **The reader would not have thrown:**
+  columns are discovered BY HEADER, so it would have found the KB tab, matched
+  no `price` header, and rendered every row "no price on file" — the exact
+  output a correctly-read sheet with an empty price column produces. A rep would
+  have reported "no prices are showing" and the diagnostics would have reported a
+  missing price column, both true and both pointing away from the cause.
+
+  The fix is a named tab (`OOP_PRICING_TAB`) that throws and names what to
+  create. Note the pairing that makes this dangerous: **header-discovered columns
+  plus a positional tab is a reader that cannot tell "wrong sheet" from "right
+  sheet, missing column".** Either mechanism alone is fine. Together they turn a
+  wrong-file error into plausible data.
+
+  **The rule: name the tab, even when there is only one. A spreadsheet with one
+  purpose today is a spreadsheet someone consolidates tomorrow, and the cost of
+  the constant is one line.** Verify: the `NAMED TABS in the KB store` pin
+  (`getSheetByName`, no `getSheets()[0]`, a throw that names the tab, and the
+  `InsurancePayors` precedent asserted alongside so all three stay in step) plus
+  `test_oop_pricingTab_isNAMEDnotTheFirstSheet`, which renames the tab aside on
+  a real spreadsheet and requires the error rather than a fall-through.
+
+<a id="g122-a-config-seed-that-is-a"></a>
+- **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than
+  no seed — it turns "unconfigured" into "configured slightly wrong", which
+  nothing reports (ELIG, shipped and removed 2026-09-16).** The warehouse
+  registry shipped as a Script Property with a CONFIG seed,
+  `{'Dallas': 'Dallas, TX', 'San Antonio': 'San Antonio, TX'}`, so the radius
+  grammar would work before the operator set anything. It reads like ordinary
+  defensive design.
+
+  A bare city name geocodes to the city CENTRE. A warehouse twenty miles out of
+  town therefore measured every distance from downtown — so a "100 miles of
+  Dallas" verdict was wrong by up to twenty miles near the boundary, in the
+  permissive direction, on a surface whose entire job is telling a rep whether a
+  delivery is possible. Nothing could report it: the property parsed, the
+  geocode succeeded, the arithmetic was right, and the answer was confident.
+  **It was the plausible-substitute failure (g114) sitting inside the one
+  verdict built to avoid it.**
+
+  The replacement has NO seed and NO fallback: a missing `LocationAcceptance`
+  tab yields an EMPTY registry, every radius rule parses as UNKNOWN, and the
+  missing tab is named both in the diagnostics and on the rep's screen — because
+  an unreadable registry left to quietly produce UNKNOWNs reads like caution
+  rather than like a tab nobody created (g02).
+
+  **The rule: a default is only safe when being wrong about it is VISIBLE. Ask
+  what the seed produces when nobody replaces it — if the answer is a confident
+  number rather than an obvious blank, delete the seed and fail closed.** Note
+  this is a refinement of g41 rather than a restatement: there the fail direction
+  on unreadable data had not been chosen, here it HAD been chosen and the choice
+  was wrong, because the fallback looked like data. Verify: the `NO seed and NO
+  fallback` pin, whose first three assertions all watched for the OLD shape of
+  the defect (a property, a `CONFIG.` fallback) — a bite-check showed none of
+  them would have caught a warehouse hard-coded one layer down, so it now
+  asserts the registry is BUILT EMPTY.
