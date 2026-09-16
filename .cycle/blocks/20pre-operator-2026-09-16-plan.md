@@ -278,64 +278,71 @@ straight-line distances via `kbMapDistances` (`70_kb.js:1947`) and a lazy keyles
 embed (`kb/script_kb.html:1204`). This batch adds the eligibility layer on top; it
 does not rebuild the map.
 
-### EL1 — the eligibility grammar, and its fail direction
-**g41 governs this**: an operator-maintained source that a DECISION ENGINE reads
-needs a shape check, and the fail direction on unreadable data must be CHOSEN
-rather than inherited.
+### EL1/EL2 — REVISED 2026-09-16 by the operator's real column values
 
-**The choice, stated: three states, never two.** ELIGIBLE / NOT ELIGIBLE /
-**UNKNOWN**. A blank or unparseable cell is UNKNOWN — it renders as "can't
-determine, check manually", and never as eligible. Telling a rep they can serve an
-address they cannot is the expensive direction, and a two-state engine has nowhere
-to put a typo (**g114** — a value a reader could reach by more than one route must
-say which).
+**Two things the operator's data changed, and both matter more than the
+original spec.**
 
-**v1 grammar — canonical values, not free text** (the **g42** posture: the intake
-controls are engine-safe because the values are canonical):
-- `US` / `ALL` — everywhere
-- `AZ NV CA` — two-letter state codes, space- or comma-separated
-- blank / anything else — UNKNOWN
+**(1) The radius form is BACK IN v1.** The plan deferred it because it coupled
+the pricing sheet to warehouse names living in a ```map article's `wh|` lines,
+with nothing checking they still matched. But the operator's own common values
+are `Open`, `TX`, and **`100 miles of Dallas or San Antonio warehouse`** — the
+radius is not an edge case, it is a third of the vocabulary. Shipping state
+codes alone would cover a fraction of the rows and quietly answer UNKNOWN for
+the rest, which is a non-feature dressed as a cautious one.
 
-**A radius form (`<=100mi Phoenix`) is deliberately NOT in v1.** It couples the
-pricing sheet to warehouse names that live in an article's `wh|` lines — a
-cross-store text dependency with no integrity check. State codes cover the common
-case, need no geocode call at all, and prove the shape first. Add the radius in v2,
-against a named article, once the state path is in use.
+The coupling worry is answered differently: a **`OOP_WAREHOUSES` registry**
+(CONFIG seed + Script Property override, `{name: address}`), NOT the article
+text. Self-contained, operator-editable without a redeploy, and it reuses the
+geocode + hashed-coordinate cache the ` ```map ` block already has.
 
-**Where the validator runs, now that OOP1 reads live.** There is no upload step to
-validate at, so the parse report moves to a lookup-time summary the operator can
-see on demand: how many rows parsed, how many are UNKNOWN, and a sample of the
-values that did not parse. Surface it in the Admin tab beside Storage Health —
-the operator edits the sheet directly, so they need a way to ask "did my edit
-parse?" that does not involve running a patient lookup and eyeballing the result.
+**(2) ELIGIBILITY HAS TWO ANSWERS PER ITEM, not one.** The column states what is
+eligible **through INSURANCE**. Paying OOP changes it:
 
-### EL2 — the address → eligible-items lookup
-Input an address or ZIP; return the items whose eligibility covers it, plus the
-UNKNOWN ones listed separately (never silently dropped — INV-169's spirit).
+| Column says | Through insurance | Paying OOP |
+|---|---|---|
+| `Open` | anywhere in the US | anywhere in the US |
+| `TX` | Texas only | **anywhere in the US** |
+| `100 miles of Dallas or San Antonio` | within 100 mi | **within 100 mi — unchanged** |
 
-**The state comes from the geocoder, not from string-parsing the address.**
-`kbGeocodeOne_` (`70_kb.js:1930`) currently returns `{lat, lng, formatted}`;
-extend it to capture `address_components` and read
-`administrative_area_level_1`'s short name. Parsing a state out of `formatted` is
-brittle and would fail quietly, which is the one failure mode this feature cannot
-have.
+**The rule that generalises — and it is the reason this is safe to extend:** a
+restriction that exists because of WHO IS PAYING lifts when nobody is billing
+insurance; a restriction that exists because of HOW IT PHYSICALLY GETS THERE
+does not. A state limit is licensure/network. A radius is a delivery van.
+Written that way, a value the operator adds next year still resolves correctly
+without anyone re-deriving the table.
 
-Distances keep coming from the existing haversine, and the block's existing
-warning stays: **straight-line is not drive distance.** If eligibility is ever
-contractual, straight-line is the wrong measure — another reason the radius form
-waits for v2.
+**SHOW BOTH, labelled — do not ask the rep to pick a payment method first.**
+The question a rep actually has mid-call is "can we deliver this, and does
+paying OOP change the answer?" A toggle makes them ask it twice; two labelled
+verdicts answer it once. It is also the honest rendering of a column that
+genuinely means two things.
 
-**Quota:** the geocoder is the quota'd Apps Script `Maps` service. The state-code
-path needs ONE geocode per lookup (the query), and the warehouse side is already
-cached by address hash. Note but do not pre-optimise; the query geocode is
-deliberately never stored (it is the patient-adjacent half).
+**The grammar, against the operator's real values:**
+- `Open` / `All` / `US` → OPEN.
+- Two-letter state codes, space- or comma-separated → STATES.
+- A number + `mile(s)`/`mi` + any name from the warehouse registry → RADIUS.
+  Warehouse names are matched as SUBSTRINGS against the REGISTRY rather than
+  parsed out of English, so "100 miles of Dallas or San Antonio warehouse",
+  "within 100mi of Dallas", and "Dallas/San Antonio — 100 miles" all resolve.
+  The registry is the vocabulary; a name not in it is not recognised.
+- Anything else, blank, or a radius naming NO known warehouse → **UNKNOWN**.
 
-**Verify:** the grammar parser is PURE and Node-pinned, with every branch driven —
-`US`, a state list, a mixed-case list, a blank, and a junk value — asserting the
-junk and blank cases return UNKNOWN rather than eligible. That assertion is the
-whole batch; bite-check it by inverting the default.
+**FAIL DIRECTION UNCHANGED and it is still the point:** UNKNOWN renders as
+"cannot determine — check manually", never as eligible. g41, pointed at a
+column the operator is *still filling in* — the values will keep changing.
 
----
+**EL2** takes an address or ZIP and returns each matching item with BOTH
+verdicts. The state comes from the geocoder's `address_components`
+(`administrative_area_level_1` short name), not from string-parsing the
+formatted address, which would fail quietly. Distances reuse `kbHaversineMiles_`
+and the block's existing warning stands: straight-line is not drive distance —
+so a radius verdict near the boundary says so rather than pretending precision.
+
+**ESTIMATE REVISED: M–L (~6 h) → L (~8 h).** The radius form returning to v1
+and the two-answer model are both real additions to what was specced. Recorded
+here rather than absorbed silently, because an estimate that moves without
+saying so is how calibration data stops meaning anything.
 
 ## What this plan does NOT do
 
