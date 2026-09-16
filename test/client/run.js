@@ -13653,15 +13653,26 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), mCtx, { filename: 'srv#oopQuoteLine_' });
   vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnOopQuoteLine_'), mCtx, { filename: 'cli#cnOopQuoteLine_' });
 
+  // FOUR-tuples since OOP-C: the LABEL joined the line, and a mirror that only
+  // drives three arguments cannot see the fourth drift. Not theoretical — if the
+  // client emits the label and the server does not, EVERY multi-price OOP send
+  // refuses with a message the rep cannot satisfy, which is exactly the failure
+  // this pin exists for.
   const table = [
-    ['Widget', '$129.00', '2026-09-01'],
-    ['Widget', '$129.00', ''],
-    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026'],
-    ['  padded  ', '  $5  ', '  x  '],
-    ['W', '', '2026-01-01'],
-    ['', '$1', ''],
-    ['Em — dash in the NAME', '$2', ''],
-    ['W', '$3', 'effective — whenever'],
+    ['Widget', '$129.00', '2026-09-01', ''],
+    ['Widget', '$129.00', '', ''],
+    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026', ''],
+    ['  padded  ', '  $5  ', '  x  ', '  L  '],
+    ['W', '', '2026-01-01', 'X'],
+    ['', '$1', '', 'X'],
+    ['Em — dash in the NAME', '$2', '', ''],
+    ['W', '$3', 'effective — whenever', ''],
+    // The operator's REAL labels, verbatim — including the slash and the
+    // parenthesis, which are the characters a "tidy this up" edit would touch.
+    ['Drive Scout 3 Wheel', '$1,070.00', '09/16/2026', 'W/ Shipping Cost'],
+    ['Drive Scout 3 Wheel', '$1,220.00', '09/16/2026', 'W/ Tech Delivery Cost'],
+    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'Pick-Up Cost'],
+    ['Widget (boxed)', '$9', '', 'OOP Price'],
   ];
   table.forEach((row) => {
     const args = row.map((x) => JSON.stringify(x)).join(',');
@@ -13672,6 +13683,8 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   });
   // And the mirror is not vacuous: both sides actually produced a line.
   assert.ok(vm.runInContext('oopQuoteLine_("W","$1","")', mCtx).length > 3, 'the pinned functions are real');
+  assert.ok(/W\/ Shipping Cost/.test(vm.runInContext('oopQuoteLine_("W","$1","","W/ Shipping Cost")', mCtx)),
+    'and the label actually reaches the line, so the new rows are not vacuous');
 });
 
 {
