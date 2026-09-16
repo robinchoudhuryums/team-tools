@@ -408,6 +408,16 @@ const CONFIG = {
                            // review (or, for legacy rows, its last edit) is older
                            // than this. Editing an item counts as reviewing it.
   },
+  // ELIG — the warehouse registry the OOP radius grammar matches against. SEED
+  // ONLY: Script Property OOP_WAREHOUSES (same {name: address} shape) replaces
+  // it wholesale. The NAMES are the vocabulary — "100 miles of Dallas or San
+  // Antonio warehouse" resolves because both names appear as substrings of the
+  // cell, so a name here has to be the word the operator actually writes in the
+  // sheet, not a formal site name.
+  OOP_WAREHOUSES: {
+    'Dallas': 'Dallas, TX',
+    'San Antonio': 'San Antonio, TX',
+  },
 };
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
@@ -1662,6 +1672,48 @@ const OOP_TOP = 8;              // top-N fetched full-width; ties ride along so 
 // in the audit row. The cap bounds both: the verification read and the audit
 // details string. Ten is far above any real quote and well under either limit.
 const OOP_QUOTE_MAX = 10;
+
+// ── ELIG (operator 2026-09-16) — area eligibility off the same column ───────
+// The OOP sheet's "Area Eligibility" column states the rule for an order going
+// THROUGH INSURANCE. Paying out of pocket TRANSFORMS it, and the transform is
+// not a lookup table — it is one rule that keeps working on values nobody has
+// written yet:
+//
+//   A restriction that exists because of WHO IS PAYING lifts when nobody is
+//   billing insurance. A restriction that exists because of HOW IT PHYSICALLY
+//   GETS THERE does not.
+//
+// A state limit is licensure and network: it lifts. A delivery radius is a van:
+// it does not. So `TX` means Texas through insurance and the whole US out of
+// pocket, while `100 miles of Dallas` means 100 miles either way. Both verdicts
+// are shown, labelled — a rep mid-call is usually deciding BETWEEN the two, and
+// a payment-method toggle would make them ask the question twice.
+//
+// UNKNOWN never lifts. A value the parser cannot read might be a delivery
+// constraint, and guessing in the permissive direction is the one guess that
+// puts an undeliverable order in the system.
+const OOP_ELIG_MAX_ITEMS = 60;      // items returned by one eligibility check
+// Straight-line distance is never LONGER than the drive, so a radius verdict of
+// NO is certain while a YES near the boundary is provisional. This is the band
+// (as a fraction of the limit) inside which a YES says so rather than implying
+// a precision the measurement does not have.
+const OOP_ELIG_NEAR_BAND = 0.8;
+// The warehouse registry the radius grammar matches against. CONFIG is the
+// seed; Script Property OOP_WAREHOUSES (same shape) overrides it, so the
+// operator can add a warehouse without a redeploy. Deliberately NOT parsed out
+// of the ```map article's wh| lines: the pricing sheet would then depend on
+// prose in an article nothing checks, and a renamed heading would silently turn
+// every radius row UNKNOWN.
+const OOP_WAREHOUSES_PROP = 'OOP_WAREHOUSES';
+// Two-letter codes the STATES grammar accepts. The 50 states plus DC and PR —
+// a token outside this list is not a state code, and a value made only of
+// tokens outside it parses as UNKNOWN rather than as a state rule.
+const US_STATE_CODES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC','PR',
+];
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
 const INS_PAYOR_MAX_ROWS = 5000;

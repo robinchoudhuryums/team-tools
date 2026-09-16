@@ -203,6 +203,30 @@
     "oopVerifyQuotes_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "ELIG: area eligibility off the OOP sheet's Area Eligibility column — the parse/transform/check trio, the warehouse registry, and kbGeocodeCached_ extracted from kbMapDistances so the radius check shares ONE coordinate cache rather than opening a second one",
+   "added": [
+    "OOP_ELIG_MAX_ITEMS",
+    "OOP_ELIG_NEAR_BAND",
+    "OOP_WAREHOUSES_PROP",
+    "US_STATE_CODES",
+    "checkOopEligibility",
+    "getOopWarehouses_",
+    "kbGeocodeCached_",
+    "oopEligibilityCheck_",
+    "oopEligibilityForPayment_",
+    "oopEligibilityParse_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getOopPricingDiagnostics",
+    "kbGeocodeOne_",
+    "kbMapDistances"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -590,7 +614,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "715207876246a4c8"
+   "sha": "9ee080a49dd0d57c"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -1337,6 +1361,16 @@
    "kind": "const",
    "sha": "7a0dc3c58da6b826"
   },
+  "OOP_ELIG_MAX_ITEMS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b8857f9a17e2925d"
+  },
+  "OOP_ELIG_NEAR_BAND": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f4999711dec09515"
+  },
   "OOP_MAX_ROWS": {
    "file": "00_config.js",
    "kind": "const",
@@ -1351,6 +1385,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "3829a39b37d5150e"
+  },
+  "OOP_WAREHOUSES_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7d25260da9e224bf"
   },
   "OPEN_PUNCH_EXPIRING_DAYS": {
    "file": "20_timeclock.js",
@@ -1921,6 +1960,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "8ea6b00e0573e20b"
+  },
+  "US_STATE_CODES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1d243440aa8829d3"
   },
   "VIEW_USAGE_RATE_MAX_PER_HOUR": {
    "file": "00_config.js",
@@ -2516,6 +2560,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "8c24fe4fdd46335a"
+  },
+  "checkOopEligibility": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "890e768dbb2e94b8"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -3790,12 +3839,17 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f1d7ed9b859294c2"
+   "sha": "4dd681c5f731100a"
   },
   "getOopSS_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "4c8f3c867800fefe"
+  },
+  "getOopWarehouses_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bd9149e65fa8d497"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -4587,10 +4641,15 @@
    "kind": "function",
    "sha": "758482cf0537a0c1"
   },
+  "kbGeocodeCached_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2765d8c12d1e18b0"
+  },
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5192857fd4994eae"
+   "sha": "3b5c248be4f1c31f"
   },
   "kbGetComments": {
    "file": "70_kb.js",
@@ -4665,7 +4724,7 @@
   "kbMapDistances": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "161ca02a4ddff030"
+   "sha": "1d61ae01484bd80c"
   },
   "kbMarkReviewed": {
    "file": "70_kb.js",
@@ -5076,6 +5135,21 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "b3357dc2e76ac45d"
+  },
+  "oopEligibilityCheck_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "464322af0dcf2755"
+  },
+  "oopEligibilityForPayment_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5062d0794c6c7cbc"
+  },
+  "oopEligibilityParse_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a6722ad0708a18b0"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",

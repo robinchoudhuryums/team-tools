@@ -2923,3 +2923,112 @@ test('OOP-B DOM: a failed or empty lookup SAYS so — an empty results list woul
   h.run.flushSuccess({ matches: OOP_MATCHES }, 'searchOopPricing');
   assert.strictEqual(h.$('#cnX-oop-results').textContent, '', 'and the late answer does not paint over it');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('ELIG — area eligibility, both verdicts (operator 2026-09-16)');
+
+test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundary yes reads differently from a flat yes, and "cannot tell" is never painted as "no"', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  let asked = null;
+  h.run.respond('checkOopEligibility', (addr, item) => {
+    asked = { addr: addr, item: item };
+    if (addr === '00000') return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    return {
+      success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', total: 4,
+      warehouses: [{ name: 'Dallas', miles: 182.4 }, { name: 'San Antonio', miles: 74.1 }],
+      items: [
+        // Open both ways.
+        { name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+          insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+          oop:       { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } },
+        // The operator's key case: a state limit that LIFTS out of pocket.
+        { name: 'State Item', price: '$20.00', eligibility: 'TX', rule: 'states',
+          insurance: { verdict: 'no', near: false, why: 'CA is outside TX.' },
+          oop:       { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to TX).' } },
+        // A radius that does NOT lift, sitting near the boundary.
+        { name: 'Radius Item', price: '$30.00', eligibility: '100 miles of Dallas or San Antonio', rule: 'radius',
+          insurance: { verdict: 'yes', near: true, why: '74.1 mi from San Antonio (limit 100 mi) — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' },
+          oop:       { verdict: 'yes', near: true, why: '74.1 mi from San Antonio (limit 100 mi) — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' } },
+        // Unreadable — never eligible, and never rendered as "no".
+        { name: 'Mystery Item', price: '', eligibility: 'ask a manager', rule: 'unknown',
+          insurance: { verdict: 'unknown', near: false, why: 'The eligibility column says "ask a manager", which this check cannot read — confirm manually.' },
+          oop:       { verdict: 'unknown', near: false, why: 'The eligibility column says "ask a manager", which this check cannot read — confirm manually.' } },
+      ],
+    };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+
+  assert.ok(h.$('#kb-elig-addr'), 'the Reference landing carries the eligibility check');
+  // The drawer host, driven through its HOME RENDERER — the OOP-A lesson: a
+  // pin that calls the section builder directly cannot see the mount deleted.
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+  assert.ok(kbdBody.querySelector('#kb-elig-addr-d'), 'and the drawer MOUNTS it — the drawer is the mid-call surface');
+
+  // A geocode is a real round trip, so a stem must not fire one.
+  const addr = h.$('#kb-elig-addr');
+  addr.value = 'aus';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick();
+  assert.strictEqual(asked, null, 'three characters does not fire a geocode');
+
+  addr.value = '500 Main St, Austin TX';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  assert.strictEqual(asked.addr, '500 Main St, Austin TX', 'the address reaches the server verbatim');
+  assert.strictEqual(asked.item, '', 'a blank item means "list everything"');
+
+  const host = h.$('#kb-elig-results');
+  const txt = host.textContent;
+
+  // BOTH verdicts, LABELLED. An unlabelled pair is worse than one answer.
+  const rows = Array.from(host.querySelectorAll('.kb-ins-row'));
+  assert.strictEqual(rows.length, 4, 'every item renders');
+  rows.forEach((r) => {
+    const vs = r.querySelectorAll('.kb-elig-v');
+    assert.strictEqual(vs.length, 2, 'two verdicts per item');
+    assert.ok(/Through insurance/.test(vs[0].textContent), 'the first is labelled');
+    assert.ok(/Paying out of pocket/.test(vs[1].textContent), 'and so is the second');
+  });
+
+  // The operator's key case, end to end: no through insurance, yes out of pocket.
+  const state = rows[1].querySelectorAll('.kb-elig-v');
+  assert.ok(state[0].classList.contains('no'), 'the insurance verdict is a NO');
+  assert.ok(state[1].classList.contains('yes'), 'and the out-of-pocket one a YES');
+  assert.ok(/no state restriction/.test(state[1].textContent), 'which explains ITSELF');
+
+  // THREE states, not two: a near-boundary yes must not look like a flat yes.
+  assert.ok(rows[0].querySelector('.kb-elig-v.yes'), 'a flat yes is toned as yes');
+  assert.ok(rows[2].querySelector('.kb-elig-v.maybe'), 'a near-boundary yes is toned apart from it');
+  assert.ok(/Yes — check/.test(rows[2].textContent), 'and worded apart from it too');
+  assert.ok(/drive is longer/.test(rows[2].textContent), 'with the reason on screen, not in a tooltip');
+
+  // UNKNOWN IS NOT NO. The two send a rep to different next actions.
+  assert.ok(rows[3].querySelector('.kb-elig-v.unknown'), 'an unreadable rule is its own state');
+  assert.strictEqual(rows[3].querySelector('.kb-elig-v.no'), null, 'and is NEVER painted as a no');
+  assert.ok(/Cannot tell/.test(rows[3].textContent), 'worded as what it is');
+  assert.ok(/ask a manager/.test(rows[3].textContent), 'showing the cell VERBATIM so the rep can see the typo');
+  assert.ok(/no price on file/.test(rows[3].textContent), 'and a blank price still says so');
+
+  // The warehouse strip, once, with its caveat.
+  assert.ok(/Dallas 182\.4 mi/.test(txt) && /San Antonio 74\.1 mi/.test(txt), 'distances render once, above the list');
+  assert.ok(/straight-line/.test(txt), 'with the caveat that makes them honest');
+
+  // A failed geocode is an ERROR, never an empty eligible list — the two look
+  // identical on screen and only one means "do not sell this here".
+  addr.value = '00000';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const err = h.$('#kb-elig-results').textContent;
+  assert.ok(/Could not find that location/.test(err), 'the failure is surfaced');
+  assert.ok(!/Open Item|State Item/.test(err), 'and no prior result bleeds through it');
+});

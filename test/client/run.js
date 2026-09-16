@@ -9593,22 +9593,48 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   assert.ok(/slice\(0, KB_MAP_MAX_WH\)/.test(f) && /KB_MAP_QUERY_MAX/.test(f), 'warehouse count + string lengths bounded');
   // THE PRIVACY CONTRACT: warehouse geocodes persist (operator-owned, static);
   // the rep's QUERY never does — a looked-up address may be a patient's.
-  // (a) the only property write is the warehouse-coordinate cache;
-  // Batch Q routed this through propSetBounded_ — the contract is "exactly ONE
-  // property write", whichever writer it goes through, so count both forms.
-  const setCalls = f.match(/props\.setProperty\([^)]*\)|propSetBounded_\([^,]*/g) || [];
-  assert.strictEqual(setCalls.length, 1, 'exactly one property write');
+  //
+  // ELIG (2026-09-16) extracted the cache into kbGeocodeCached_ and gave it a
+  // SECOND caller, checkOopEligibility, which geocodes a customer address for
+  // the radius check. The contract is the same and now spans all three, so the
+  // pin does too — and the load-bearing assertion had to change shape with it.
+  // The old form ("the write happens before the query is geocoded") was an
+  // argument about ONE function's statement order; checkOopEligibility geocodes
+  // its address FIRST and would have failed it while honouring the contract
+  // perfectly. What actually holds is structural: the cache is written in ONE
+  // place, and the only thing ever handed to it is operator-owned addresses.
+  const cache = nc(extractRawFunction('Code.js', 'kbGeocodeCached_'));
+  const elig = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+
+  // (a) the only property write is the warehouse-coordinate cache, and it lives
+  //     in the shared helper — neither caller writes a property of its own.
+  const setsIn = (src) => src.match(/props\.setProperty\([^)]*\)|PropertiesService[\s\S]{0,60}?setProperty\([^)]*\)|propSetBounded_\([^,]*/g) || [];
+  const setCalls = setsIn(cache);
+  assert.strictEqual(setCalls.length, 1, 'exactly one property write, in kbGeocodeCached_');
   assert.ok(/KB_MAP_GEOCODE_CACHE_PROP/.test(setCalls[0]), 'and it is the coordinate cache');
-  // (b) that write happens BEFORE the query is even geocoded, so the query
-  //     value cannot be in the serialized blob;
-  const writeAt = f.indexOf('propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP');
-  const qGeoAt = f.indexOf('kbGeocodeOne_(query)');
-  assert.ok(writeAt > 0 && qGeoAt > writeAt, 'cache write precedes the query geocode');
+  assert.strictEqual(setsIn(f).length, 0, 'kbMapDistances writes no property of its own');
+  assert.strictEqual(setsIn(elig).length, 0, 'checkOopEligibility writes no property of its own');
+
+  // (b) the cache is only ever handed OPERATOR-OWNED addresses. This is what
+  //     keeps the rep's query out of it, and it is the assertion that would
+  //     fail if someone "simplified" a caller into caching its own lookup.
+  const cachedArgs = (f + elig).match(/kbGeocodeCached_\(([^;]*?)\)/g) || [];
+  assert.ok(cachedArgs.length >= 2, 'both callers reach the shared cache (' + cachedArgs.length + ')');
+  cachedArgs.forEach((call) => {
+    assert.ok(!/\b(query|addr|address)\b/.test(call),
+      'the caller-supplied location must never be cached: ' + call);
+  });
+  //     and each caller geocodes its OWN query through the uncached path.
+  assert.ok(/kbGeocodeOne_\(query\)/.test(f), 'kbMapDistances geocodes the query uncached');
+  assert.ok(/kbGeocodeOne_\(addr\)/.test(elig), 'checkOopEligibility geocodes the address uncached');
+
   // (c) cache keys are address HASHES via kbMapCacheKey_, never raw strings;
-  assert.ok(/kbMapCacheKey_\(a\)/.test(f) && !/cache\[a\]/.test(f), 'keys are hashed addresses');
+  assert.ok(/kbMapCacheKey_\(a\)/.test(cache) && !/cache\[a\]/.test(cache), 'keys are hashed addresses');
   // (d) no audit row, no log line — nothing records what was looked up.
-  assert.ok(!/writeAuditLog_/.test(f) && !/Logger\.log/.test(f) && !/console\./.test(f),
-    'the lookup is never audited or logged');
+  [['kbMapDistances', f], ['kbGeocodeCached_', cache], ['checkOopEligibility', elig]].forEach(([name, src]) => {
+    assert.ok(!/writeAuditLog_/.test(src) && !/Logger\.log/.test(src) && !/console\./.test(src),
+      name + ': the lookup is never audited or logged');
+  });
   // The free built-in geocoder — the whole point of Tier A. Any Maps-API-key
   // path (UrlFetchApp to googleapis) would mean billing.
   const g = nc(extractRawFunction('Code.js', 'kbGeocodeOne_'));
@@ -9616,7 +9642,7 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   assert.ok(!/UrlFetchApp/.test(f) && !/UrlFetchApp/.test(g), 'no external HTTP — nothing to bill');
   // Hygiene reset keeps THIS run's entries warm (the current article's
   // warehouses are exactly the ones worth keeping).
-  assert.ok(/cache = fresh;/.test(f), 'an oversized cache resets to the fresh entries, not to nothing');
+  assert.ok(/cache = fresh;/.test(cache), 'an oversized cache resets to the fresh entries, not to nothing');
 });
 
 console.log('\nshell — settings flyout + view-as + tz-mismatch (operator 2026-08-13)');
@@ -13074,6 +13100,215 @@ test('OOP-A: oopRowObj_ takes the FIRST column as the item name, fills each role
   const blank = obj(['Item', '', 'Price'], ['W', 'junk', '$5']);
   assert.strictEqual(blank.price, '$5');
   assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing, not an unlabelled attribute');
+});
+
+// ELIG (operator 2026-09-16) — area eligibility off the SAME column. The
+// operator's clarification is what makes this two answers rather than one: the
+// Area Eligibility cell states the rule for an order going THROUGH INSURANCE,
+// and paying out of pocket transforms it. These pins drive the grammar, the
+// transform and the verdict separately, because each one fails differently and
+// the wrong permissive answer is the expensive one.
+vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
+  (serverSource().match(/const US_STATE_CODES = \[([\s\S]*?)\];/) || [, ''])[1]
+    .split(/[,\s]+/).map((t) => t.replace(/'/g, '')).filter(Boolean)) + ';', _vmCtx);
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
+vm.runInContext('var OOP_ELIG_NEAR_BAND = ' +
+  (serverSource().match(/const OOP_ELIG_NEAR_BAND = ([\d.]+);/) || [, '0.8'])[1] + ';', _vmCtx);
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityCheck_'), _vmCtx, { filename: 'oopEligibilityCheck_' });
+
+test('ELIG: oopEligibilityParse_ reads the operator REAL values, tests RADIUS first, and calls everything else UNKNOWN rather than guessing', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const P = (t, wh) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(wh === undefined ? WH : wh) + '))', _vmCtx));
+
+  // The operator's three common values, verbatim (2026-09-16).
+  assert.deepStrictEqual(P('Open'), { kind: 'open' });
+  assert.deepStrictEqual(P('TX'), { kind: 'states', states: ['TX'] });
+  assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] });
+
+  // RADIUS IS TESTED FIRST, and this is the case that proves why: a radius
+  // phrase containing a state code read as a STATE rule would be confidently
+  // wrong in the far more permissive direction.
+  assert.deepStrictEqual(P('100 miles of the Dallas TX warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas'] },
+    'a state code inside a radius phrase does not make it a state rule');
+
+  // Warehouse names match as SUBSTRINGS against the REGISTRY, so the phrasing
+  // is free. Every one of these is the same rule.
+  ['within 100mi of Dallas', 'Dallas/San Antonio — 100 miles', '100 mi (Dallas)'].forEach((t) => {
+    const r = P(t);
+    assert.strictEqual(r.kind, 'radius', t + ' → radius');
+    assert.strictEqual(r.miles, 100, t + ' → 100');
+  });
+
+  // A radius around a warehouse the registry does not know is UNKNOWN, not
+  // eligible: we cannot place it, so we cannot answer.
+  assert.strictEqual(P('100 miles of Houston').kind, 'unknown',
+    'a radius naming no registered warehouse is UNKNOWN, never open');
+  assert.strictEqual(P('100 miles of Dallas', []).kind, 'unknown',
+    'and an EMPTY registry makes every radius unknown rather than silently open');
+
+  // Open, with the operator's own parenthetical.
+  assert.deepStrictEqual(P('Open (anywhere in the US including Hawaii)'), { kind: 'open' });
+  ['All', 'US', 'nationwide', 'Anywhere'].forEach((t) => assert.strictEqual(P(t).kind, 'open', t));
+
+  // States: multi, separators, dedupe, canonical case.
+  assert.deepStrictEqual(P('TX, OK NM').states, ['TX', 'OK', 'NM']);
+  assert.deepStrictEqual(P('tx/TX').states, ['TX'], 'deduped and upper-cased');
+  assert.strictEqual(P('HI').states[0], 'HI', 'Hawaii is a state code, not a greeting');
+
+  // The WHOLE value must be state codes. A value that is partly codes and
+  // partly prose is not a state rule — it is one we cannot read, and reading
+  // the codes out of it would silently drop whatever the prose said.
+  assert.strictEqual(P('TX only if in network').kind, 'unknown');
+  assert.strictEqual(P('XX').kind, 'unknown', 'a two-letter non-state is not a state');
+  assert.strictEqual(P('').kind, 'unknown', 'a blank cell is UNKNOWN, not open');
+  assert.strictEqual(P('   ').kind, 'unknown');
+  assert.strictEqual(P(null).kind, 'unknown');
+  assert.strictEqual(P('ask a manager').raw, 'ask a manager', 'and UNKNOWN carries the cell VERBATIM so the rep sees what it said');
+});
+
+test('ELIG: oopEligibilityForPayment_ lifts a STATE limit out of pocket, never a RADIUS, and NEVER an unknown', () => {
+  const F = (rule, oop) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityForPayment_(' + JSON.stringify(rule) + ',' + JSON.stringify(oop) + '))', _vmCtx));
+
+  // The operator's table, 2026-09-16.
+  assert.strictEqual(F({ kind: 'open' }, false).kind, 'open');
+  assert.strictEqual(F({ kind: 'open' }, true).kind, 'open');
+
+  assert.strictEqual(F({ kind: 'states', states: ['TX'] }, false).kind, 'states',
+    'through insurance a state limit stands');
+  const lifted = F({ kind: 'states', states: ['TX'] }, true);
+  assert.strictEqual(lifted.kind, 'open', 'out of pocket it lifts — nobody is billing insurance');
+  assert.deepStrictEqual(lifted.liftedFrom, ['TX'], 'and it REMEMBERS what it lifted, so the reason can be shown');
+
+  const rad = { kind: 'radius', miles: 100, warehouses: ['Dallas'] };
+  assert.deepStrictEqual(F(rad, true), rad, 'a delivery radius is a van — paying differently does not move it');
+  assert.deepStrictEqual(F(rad, false), rad);
+
+  // THE LOAD-BEARING LINE. A value we could not read might be a delivery
+  // constraint; lifting it is the one guess that puts an undeliverable order
+  // in the system.
+  assert.strictEqual(F({ kind: 'unknown', raw: 'ask' }, true).kind, 'unknown',
+    'UNKNOWN NEVER LIFTS');
+  assert.strictEqual(F(null, true).kind, 'unknown', 'and a missing rule is unknown, not open');
+  assert.strictEqual(F({}, true).kind, 'unknown', 'as is a shapeless one');
+});
+
+test('ELIG: oopEligibilityCheck_ — a radius NO is CERTAIN and a radius YES near the boundary is not, because a straight line is never longer than the drive', () => {
+  const C = (rule, loc) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityCheck_(' + JSON.stringify(rule) + ',' + JSON.stringify(loc) + '))', _vmCtx));
+  const RAD = { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] };
+
+  // Comfortably inside: a flat yes.
+  const near = C(RAD, { state: 'TX', miles: { Dallas: 30, 'San Antonio': 250 } });
+  assert.strictEqual(near.verdict, 'yes');
+  assert.strictEqual(near.near, false, '30 of 100 mi is not near the boundary');
+  assert.ok(/Dallas/.test(near.why), 'and it names the warehouse it measured to');
+
+  // Inside but close: still yes, and it SAYS the drive is longer. This is the
+  // asymmetry — the measurement can only under-state the real distance.
+  const edge = C(RAD, { state: 'TX', miles: { Dallas: 95 } });
+  assert.strictEqual(edge.verdict, 'yes');
+  assert.strictEqual(edge.near, true, '95 of 100 mi is inside the near band');
+  assert.ok(/drive is longer/.test(edge.why), 'and the caveat is stated, not implied');
+
+  // Outside: a straight line already over the limit means the drive is too.
+  const out = C(RAD, { state: 'TX', miles: { Dallas: 140, 'San Antonio': 180 } });
+  assert.strictEqual(out.verdict, 'no');
+  assert.strictEqual(out.near, false, 'a NO is certain — no hedge');
+  assert.ok(/140/.test(out.why) && /Dallas/.test(out.why), 'and it shows the nearest, not an arbitrary one');
+
+  // Unplaceable warehouses: UNKNOWN when none could be measured, and a NOTE
+  // when only some could — a partial answer must not read as a whole one.
+  assert.strictEqual(C(RAD, { miles: {} }).verdict, 'unknown', 'no distances → cannot tell');
+  assert.strictEqual(C(RAD, { miles: { Dallas: null } }).verdict, 'unknown', 'a null distance is not a zero');
+  assert.ok(/could not be placed/.test(C(RAD, { miles: { Dallas: 30 } }).why),
+    'one measurable of two says the other is missing');
+
+  // States.
+  const ST = { kind: 'states', states: ['TX', 'OK'] };
+  assert.strictEqual(C(ST, { state: 'TX' }).verdict, 'yes');
+  assert.strictEqual(C(ST, { state: 'CA' }).verdict, 'no');
+  assert.ok(/TX, OK/.test(C(ST, { state: 'CA' }).why), 'and a NO names what IS covered');
+
+  // A missing state is UNKNOWN, never NO. This is the one that matters: a
+  // geocode that could not resolve a state and a state that is not on the list
+  // send the rep to two different next actions (g114 / INV-187).
+  const noState = C(ST, {});
+  assert.strictEqual(noState.verdict, 'unknown', 'an unresolved state is CANNOT TELL, not NO');
+  assert.ok(/Could not determine the state/.test(noState.why));
+  assert.strictEqual(C(ST, { state: '' }).verdict, 'unknown');
+
+  // Open, and the lifted variant explains ITSELF — the rep sees why out of
+  // pocket answers differently from insurance.
+  assert.strictEqual(C({ kind: 'open' }, {}).verdict, 'yes');
+  assert.ok(/no state restriction/.test(C({ kind: 'open', liftedFrom: ['TX'] }, {}).why),
+    'a lifted state limit says what it lifted');
+
+  // Unknown renders the cell VERBATIM and is never eligible.
+  const unk = C({ kind: 'unknown', raw: 'ask a manager' }, { state: 'TX' });
+  assert.strictEqual(unk.verdict, 'unknown');
+  assert.ok(/ask a manager/.test(unk.why) && /manually/.test(unk.why));
+  assert.ok(/No area eligibility on file/.test(C({ kind: 'unknown', raw: '' }, {}).why),
+    'a blank cell says it is blank rather than quoting an empty string');
+});
+
+test('ELIG: the endpoint is rep-gated and bounded, geocodes the customer address UNCACHED, and never returns an empty eligible list in place of an error', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'rep-gated');
+  assert.ok(/KB_MAP_QUERY_MAX/.test(f), 'the address length is bounded');
+  assert.ok(/OOP_MAX_ROWS/.test(f) && /OOP_ELIG_MAX_ITEMS/.test(f), 'the sheet read and the result list are both capped');
+
+  // An unreadable store or an ungeocodable address must ERROR. A list of zero
+  // eligible items and a lookup that did not run look identical on screen, and
+  // only one of them means "do not sell this here" (g02 / g48).
+  assert.ok(/return \{ error: 'OOP pricing could not be read/.test(f),
+    'an unreadable pricing sheet is an ERROR, not an empty list');
+  assert.ok(/Could not find that location/.test(f), 'and so is an address that will not geocode');
+
+  // The warehouse geocode is SKIPPED unless a picked row actually needs one —
+  // a state-only catalog must not pay for a round trip it cannot use.
+  assert.ok(/needRadius/.test(f) && /if \(needRadius/.test(f),
+    'warehouses are geocoded only when some row is a radius rule');
+
+  // BOTH verdicts, from the ONE parse. Parsing twice would be two chances to
+  // diverge, and the divergence would be invisible.
+  assert.ok(/oopEligibilityForPayment_\(rule, false\)/.test(f) && /oopEligibilityForPayment_\(rule, true\)/.test(f),
+    'both payment methods are answered');
+  assert.strictEqual((f.match(/oopEligibilityParse_\(/g) || []).length, 1,
+    'and BOTH come from ONE parse of the cell');
+});
+
+test('ELIG: the client shows both verdicts with three distinct states, and the compact override has its viewport twin (g50)', () => {
+  const cli = extractScript('kb/script_kb.html');
+  const verdict = extractFunction('kb/script_kb.html', 'eligVerdictHtml_');
+  assert.ok(/Cannot tell/.test(verdict), 'UNKNOWN is its own word, never folded into "No"');
+  assert.ok(/v\.near \? 'Yes — check' : 'Yes'/.test(verdict),
+    'a near-boundary yes reads differently from a flat yes');
+  assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
+
+  const render = extractFunction('kb/script_kb.html', 'eligRenderResults_');
+  assert.ok(/Through insurance/.test(render) && /Paying out of pocket/.test(render),
+    'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
+  assert.ok(/straight-line/.test(render), 'the distance caveat rides the warehouse strip');
+  assert.ok(/Could not place/.test(render), 'an unplaceable warehouse is surfaced, not silently dropped');
+  assert.ok(/Do not check a similar item/.test(render), 'a no-match refuses to offer a near-miss');
+
+  // g50, which this very file has been bitten by: data-compact is the POP-OUT,
+  // not a viewport breakpoint. The grid override needs both rules.
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/:root\[data-compact\] \.kb-elig-v \{[^}]*grid-template-columns: 1fr/.test(css),
+    'the pop-out stacks the verdict grid');
+  assert.ok(/@media \(max-width: \d+px\) \{\s*\.kb-elig-v \{[^}]*grid-template-columns: 1fr/.test(css),
+    'and so does a narrow VIEWPORT — one without the other is the g50 defect');
+
+  // Mounted on BOTH hosts, like every other lookup in this partial.
+  assert.ok(/eligSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
+  assert.ok(/eligSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/\u2318+K drawer');
 });
 
 // OOP-B (operator 2026-09-16) — the composer price picker. The operator's answer
@@ -20978,12 +21213,20 @@ test('Q-1: every JSON-blob property is written through propSetBounded_ — the s
     });
   // The geocode cache self-resets on BYTES, not only on entry count — 200
   // {lat,lng} entries sit on the order of the cap (the documented residual).
-  const map = stripJsComments_(extractRawFunction('Code.js', 'kbMapDistances'));
+  // ELIG moved this out of kbMapDistances into the shared kbGeocodeCached_ so
+  // a second caller could not open a second cache with its own hygiene rules.
+  const map = stripJsComments_(extractRawFunction('Code.js', 'kbGeocodeCached_'));
   assert.ok(/KB_MAP_GEOCODE_CACHE_MAX/.test(map) && /propSetBounded_\(KB_MAP_GEOCODE_CACHE_PROP[\s\S]{0,400}mode: 'degrade'/.test(map),
     'the geocode cache keeps its entry-count reset AND degrades on bytes');
-  // …and the privacy contract is untouched: still exactly one property write
-  // in that function, still before the query geocode (the INV-119 posture).
-  assert.strictEqual((map.match(/propSetBounded_\(|setProperty\(/g) || []).length, 1, 'kbMapDistances still makes exactly ONE property write');
+  // …and the privacy contract is untouched: ONE property write, in ONE place,
+  // and none in either caller (the INV-119 posture; the full contract is pinned
+  // in the kbHaversineMiles_ block).
+  assert.strictEqual((map.match(/propSetBounded_\(|setProperty\(/g) || []).length, 1, 'kbGeocodeCached_ makes exactly ONE property write');
+  ['kbMapDistances', 'checkOopEligibility'].forEach((fn) => {
+    const c = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.strictEqual((c.match(/propSetBounded_\(|setProperty\(/g) || []).length, 0,
+      fn + ' writes no property of its own — the cache has exactly one writer');
+  });
 });
 
 test('Q-1b: propSetBounded_ + its shrinkers, driven — refuse writes NOTHING and names the key/size/cap; degrade shrinks then clears; utf8Len_ counts BYTES', () => {

@@ -877,6 +877,284 @@ function oopVerifyQuotes_(quotes, message) {
   return { quoted: out };
 }
 
+/** The warehouse registry: CONFIG seed, wholly replaced by Script Property
+ *  OOP_WAREHOUSES when that parses to an object. Returns {name: address}.
+ *
+ *  Wholly replaced rather than merged, deliberately: a merge means a warehouse
+ *  the operator DELETED from the property comes back from the seed, and a
+ *  registry you cannot remove from is one that silently keeps matching a site
+ *  that closed. */
+function getOopWarehouses_() {
+  const seed = (CONFIG.OOP_WAREHOUSES && typeof CONFIG.OOP_WAREHOUSES === 'object')
+    ? CONFIG.OOP_WAREHOUSES : {};
+  let over = null;
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(OOP_WAREHOUSES_PROP);
+    if (raw) over = JSON.parse(raw);
+  } catch (e) { over = null; }
+  if (!over || typeof over !== 'object' || Array.isArray(over)) return seed;
+  const out = {};
+  Object.keys(over).forEach(function (k) {
+    const name = String(k || '').trim();
+    const addr = String(over[k] == null ? '' : over[k]).trim();
+    if (name && addr) out[name] = addr;
+  });
+  return Object.keys(out).length ? out : seed;
+}
+
+/** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
+ *
+ *  Returns one of:
+ *    { kind: 'open'   }
+ *    { kind: 'states', states: ['TX', …] }
+ *    { kind: 'radius', miles: 100, warehouses: ['Dallas', …] }
+ *    { kind: 'unknown', raw: '<the cell, verbatim>' }
+ *
+ *  ORDER MATTERS, and not obviously: RADIUS is tested FIRST, because a radius
+ *  phrase can contain a state code ("100 miles of the Dallas TX warehouse") and
+ *  reading that as a state rule would produce a confidently wrong, far more
+ *  permissive answer.
+ *
+ *  Warehouse names are matched as SUBSTRINGS against the registry rather than
+ *  parsed out of English. The operator writes "100 miles of Dallas or San
+ *  Antonio warehouse"; a grammar that had to understand "or", "warehouse" and
+ *  the word order would break on the next phrasing. The registry IS the
+ *  vocabulary, so a name it does not contain is not recognised — which is the
+ *  right failure: a radius around a warehouse we cannot place is UNKNOWN, not
+ *  eligible.
+ *
+ *  Everything unrecognised is UNKNOWN (g41 — the fail direction on
+ *  operator-maintained data is CHOSEN, and this column is one the operator is
+ *  still filling in, so unreadable values are the expected case, not the
+ *  exceptional one). */
+function oopEligibilityParse_(text, warehouseNames) {
+  const raw = String(text == null ? '' : text).trim();
+  if (!raw) return { kind: 'unknown', raw: '' };
+  const lc = raw.toLowerCase();
+
+  // 1. RADIUS — a distance and at least one registry name.
+  const m = lc.match(/(\d{1,4})\s*(?:miles|mile|mi)\b/);
+  if (m) {
+    const miles = parseInt(m[1], 10);
+    const hits = [];
+    (warehouseNames || []).forEach(function (n) {
+      const name = String(n || '').trim();
+      if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
+    });
+    if (miles > 0 && hits.length) return { kind: 'radius', miles: miles, warehouses: hits };
+    return { kind: 'unknown', raw: raw };
+  }
+
+  // 2. OPEN — the keyword, optionally followed by the operator's own
+  //    parenthetical ("Open (anywhere in the US including Hawaii)").
+  const bare = raw.replace(/\([^)]*\)/g, ' ').replace(/[.\s]+/g, ' ').trim();
+  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) return { kind: 'open' };
+
+  // 3. STATES — the WHOLE value must be state codes. A value that is partly
+  //    codes and partly prose is not a state rule; it is a value we cannot read.
+  const toks = raw.split(/[\s,;/|&+]+/).filter(function (t) { return !!t; });
+  if (toks.length) {
+    const codes = [];
+    let allCodes = true;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i].toUpperCase().replace(/[^A-Z]/g, '');
+      if (t.length !== 2 || US_STATE_CODES.indexOf(t) < 0) { allCodes = false; break; }
+      if (codes.indexOf(t) < 0) codes.push(t);
+    }
+    if (allCodes && codes.length) return { kind: 'states', states: codes };
+  }
+
+  return { kind: 'unknown', raw: raw };
+}
+
+/** PURE (Node-pinned): the rule as it applies to a given PAYMENT METHOD.
+ *
+ *  The operator's clarification, 2026-09-16, and the whole reason this exists:
+ *  the Area Eligibility column states the INSURANCE rule. `TX` means Texas
+ *  through insurance and the entire US out of pocket; `100 miles of Dallas`
+ *  means 100 miles either way.
+ *
+ *  ONE rule generalises it, so a value nobody has written yet still resolves:
+ *  a restriction that exists because of WHO IS PAYING lifts when nobody is
+ *  billing insurance; a restriction that exists because of HOW IT PHYSICALLY
+ *  GETS THERE does not. A state limit is licensure and network. A radius is a
+ *  delivery van.
+ *
+ *  UNKNOWN NEVER LIFTS, and that is the load-bearing line: a value we could not
+ *  read might be a delivery constraint, and lifting it would be the one guess
+ *  that puts an undeliverable order in the system. */
+function oopEligibilityForPayment_(rule, payingOop) {
+  const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
+  if (!payingOop) return r;
+  if (r.kind === 'states') return { kind: 'open', liftedFrom: (r.states || []).slice() };
+  return r;
+}
+
+/** PURE (Node-pinned): does `rule` cover `loc`?
+ *
+ *  `loc` is { state: 'TX', miles: { '<warehouse name>': 87.2, … } }, where a
+ *  missing or null distance means "we could not place that warehouse".
+ *  Returns { verdict: 'yes' | 'no' | 'unknown', why, near }.
+ *
+ *  THE ASYMMETRY IN A RADIUS VERDICT is real and worth stating, because it is
+ *  the opposite of what "straight-line is only an estimate" suggests. A
+ *  straight line is never LONGER than the drive. So a straight-line distance
+ *  over the limit means the drive is over the limit too — a radius NO is
+ *  CERTAIN. A YES is the provisional one, and a YES close to the boundary says
+ *  so rather than implying a precision the measurement does not have.
+ *
+ *  UNKNOWN is never folded into NO. "We cannot tell" and "not eligible" send a
+ *  rep to two different next actions, and the first one is a phone call
+ *  (INV-187 / g114 — a computed answer that could mean more than one thing has
+ *  to say which). */
+function oopEligibilityCheck_(rule, loc) {
+  const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
+  const where = loc || {};
+
+  if (r.kind === 'open') {
+    return { verdict: 'yes', near: false,
+      why: r.liftedFrom && r.liftedFrom.length
+        ? 'Out of pocket there is no state restriction (the sheet limits insurance orders to ' + r.liftedFrom.join(', ') + ').'
+        : 'Available anywhere in the US.' };
+  }
+
+  if (r.kind === 'states') {
+    const st = String(where.state || '').trim().toUpperCase();
+    const list = (r.states || []).join(', ');
+    if (!st) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not determine the state for that address — the sheet limits this to ' + list + '.' };
+    }
+    if ((r.states || []).indexOf(st) >= 0) {
+      return { verdict: 'yes', near: false, why: st + ' is covered (' + list + ').' };
+    }
+    return { verdict: 'no', near: false, why: st + ' is outside ' + list + '.' };
+  }
+
+  if (r.kind === 'radius') {
+    const miles = Number(r.miles) || 0;
+    let best = null, bestName = '';
+    let anyUnplaced = false;
+    (r.warehouses || []).forEach(function (n) {
+      const d = (where.miles || {})[n];
+      if (d == null || !isFinite(d)) { anyUnplaced = true; return; }
+      if (best === null || d < best) { best = d; bestName = n; }
+    });
+    if (best === null) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not measure the distance to ' + (r.warehouses || []).join(' or ') + '.' };
+    }
+    const shown = Math.round(best * 10) / 10;
+    if (best <= miles) {
+      const near = best > miles * OOP_ELIG_NEAR_BAND;
+      return { verdict: 'yes', near: near,
+        why: shown + ' mi from ' + bestName + ' (limit ' + miles + ' mi)' +
+          (near ? ' — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' : '.') +
+          (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+    }
+    // Straight-line already exceeds the limit, so the drive does too.
+    return { verdict: 'no', near: false,
+      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' +
+        (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+  }
+
+  return { verdict: 'unknown', near: false,
+    why: r.raw
+      ? 'The eligibility column says "' + r.raw + '", which this check cannot read — confirm manually.'
+      : 'No area eligibility on file for this item — confirm manually.' };
+}
+
+/** Rep-callable, read-only, no lock. Takes an address or ZIP and (optionally) a
+ *  item search term, and returns each matching item with BOTH verdicts.
+ *
+ *  BOTH, labelled, rather than a payment-method toggle: the question a rep
+ *  actually has mid-call is "can we deliver this, and does paying out of pocket
+ *  change the answer?" A toggle makes them ask it twice.
+ *
+ *  Failure posture matches the rest of the OOP reader: an unreadable store or an
+ *  ungeocodable address is an ERROR, never an empty eligible list. A list of
+ *  zero eligible items and a lookup that did not run look identical on screen,
+ *  and only one of them means "do not sell this here". */
+function checkOopEligibility(address, query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const addr = String(address || '').trim();
+    if (addr.length < 3 || addr.length > KB_MAP_QUERY_MAX) {
+      return { error: 'Enter an address or ZIP code (3–' + KB_MAP_QUERY_MAX + ' characters).' };
+    }
+    const q = String(query || '').trim();
+
+    const wh = getOopWarehouses_();
+    const whNames = Object.keys(wh);
+
+    // ── The pricing rows ──────────────────────────────────────────────
+    let headers, rows;
+    try {
+      const sh = oopSheet_();
+      const width = sh.getLastColumn();
+      const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+      if (last < 2) return { error: 'The OOP pricing sheet is empty.' };
+      headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+      rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+    } catch (err) {
+      return { error: 'OOP pricing could not be read: ' + err.message };
+    }
+
+    let picked = rows;
+    if (q.length >= 2) {
+      const scored = [];
+      for (let i = 0; i < rows.length; i++) {
+        const sc = insPayorScore_(rows[i][0], q);
+        if (sc > 0) scored.push({ i: i, score: sc });
+      }
+      scored.sort(function (a, b) { return b.score - a.score; });
+      picked = scored.map(function (t) { return rows[t.i]; });
+    }
+    const total = picked.length;
+    picked = picked.slice(0, OOP_ELIG_MAX_ITEMS);
+    if (!total) return { success: true, notFound: true, items: [], total: 0, warehouses: [] };
+
+    // ── The location ──────────────────────────────────────────────────
+    // The customer's address is geocoded, used and returned — deliberately
+    // never cached, the kbMapDistances rule. Only the WAREHOUSES are cached.
+    const qGeo = kbGeocodeOne_(addr);
+    if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+
+    // Warehouses are geocoded only when some picked row actually needs one, so
+    // a state-only catalog never pays for a geocode round trip.
+    const parsed = picked.map(function (row) { return oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames); });
+    const needRadius = parsed.some(function (r) { return r.kind === 'radius'; });
+    const milesByName = {};
+    const whOut = [];
+    if (needRadius && whNames.length) {
+      const geos = kbGeocodeCached_(whNames.map(function (n) { return wh[n]; }));
+      whNames.forEach(function (n, i) {
+        const g = geos[i];
+        const d = g ? Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 : null;
+        if (d != null) milesByName[n] = d;
+        whOut.push({ name: n, miles: d });
+      });
+    }
+    const loc = { state: qGeo.state, miles: milesByName };
+
+    const items = picked.map(function (row, i) {
+      const o = oopRowObj_(headers, row);
+      const rule = parsed[i];
+      return {
+        name: o.name, price: o.price, effective: o.effective, eligibility: o.eligibility,
+        rule: rule.kind,
+        insurance: oopEligibilityCheck_(oopEligibilityForPayment_(rule, false), loc),
+        oop: oopEligibilityCheck_(oopEligibilityForPayment_(rule, true), loc),
+      };
+    });
+
+    return { success: true, formatted: qGeo.formatted, state: qGeo.state,
+      warehouses: whOut, items: items, total: total,
+      cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
+  } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
+}
+
 /** Admin-gated: what the reader actually MATCHED in the operator's sheet.
  *
  *  This exists because header discovery is invisible until it goes wrong. The
@@ -902,8 +1180,30 @@ function getOopPricingDiagnostics() {
     const found = {};
     headers.forEach(function (h, i) { if (i > 0) { const r = oopHeaderRole_(h); if (r) found[r] = true; } });
     const missing = ['price', 'eligibility', 'effective'].filter(function (r) { return !found[r]; });
+    // ELIG: the eligibility GRAMMAR is invisible until it goes wrong in exactly
+    // the same way the header matching is, and worse — an unrecognised value
+    // renders "check manually", which reads like caution rather than like a
+    // typo. Report the registry the radius form matches against, and how EVERY
+    // eligibility value in the sheet parses, grouped. An operator who added
+    // "100 mi of Houston" sees it sitting under `unknown` here rather than
+    // finding out from a rep.
+    const wh = getOopWarehouses_();
+    const whNames = Object.keys(wh);
+    const elig = { open: 0, states: 0, radius: 0, unknown: [] };
+    if (rows) {
+      const all = sh.getRange(2, 1, rows, width).getDisplayValues();
+      all.forEach(function (row) {
+        const r = oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames);
+        if (r.kind === 'unknown') {
+          if (elig.unknown.length < 12) elig.unknown.push({ item: String(row[0] || ''), value: r.raw });
+        } else { elig[r.kind]++; }
+      });
+    }
     return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
       truncated: rows > OOP_MAX_ROWS,
+      warehouses: whNames.map(function (n) { return { name: n, address: wh[n] }; }),
+      eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
+        unknownCount: rows - elig.open - elig.states - elig.radius, unknown: elig.unknown },
       sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
   } catch (err) { return { error: String(err.message || err) }; }
 }
@@ -2184,15 +2484,74 @@ function kbHaversineMiles_(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 /** One geocode through the free built-in service. null on anything but a
- *  clean single-result hit — the caller treats null as "unavailable". */
+ *  clean single-result hit — the caller treats null as "unavailable".
+ *
+ *  ELIG added `state`, and WHERE it comes from is the point: the geocoder's
+ *  own `administrative_area_level_1` short name, never a string-parse of
+ *  `formatted_address`. Reading "TX" out of "123 Main St, Dallas, TX 75201,
+ *  USA" works until an address formats differently — a military address, a
+ *  PO box, a territory — and then it fails SILENTLY, which for an eligibility
+ *  check means a confident wrong answer. Absent components → state '' , which
+ *  every caller must treat as "could not determine", not as "not eligible". */
 function kbGeocodeOne_(addr) {
   try {
     const res = Maps.newGeocoder().setRegion('us').geocode(addr);
     if (!res || res.status !== 'OK' || !res.results || !res.results.length) return null;
     const r = res.results[0];
     if (!r.geometry || !r.geometry.location) return null;
-    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, formatted: String(r.formatted_address || '') };
+    let state = '';
+    const comps = r.address_components || [];
+    for (let i = 0; i < comps.length; i++) {
+      const types = comps[i].types || [];
+      if (types.indexOf('administrative_area_level_1') >= 0) {
+        state = String(comps[i].short_name || '').trim().toUpperCase();
+        break;
+      }
+    }
+    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
+      formatted: String(r.formatted_address || ''), state: state };
   } catch (e) { return null; }
+}
+
+/** Geocode a list of addresses through the permanent hashed-coordinate cache.
+ *
+ *  Extracted from kbMapDistances so ELIG's warehouse lookup shares ONE cache
+ *  rather than opening a second one with its own hygiene rules — two caches of
+ *  the same coordinates is two things to keep bounded, and the second would be
+ *  the one nobody remembered to bound. Entries are keyed by an address HASH and
+ *  hold lat/lng only; the CALLER'S query is never stored (kbMapDistances says
+ *  why, and that stays true here).
+ *
+ *  Returns an array positionally matching `addrs`, with null where a geocode
+ *  was unavailable. */
+function kbGeocodeCached_(addrs) {
+  const props = PropertiesService.getScriptProperties();
+  let cache = {};
+  try { cache = JSON.parse(props.getProperty(KB_MAP_GEOCODE_CACHE_PROP) || '{}') || {}; } catch (e) { cache = {}; }
+  if (typeof cache !== 'object' || Array.isArray(cache)) cache = {};
+  const fresh = {};
+  let dirty = false;
+  const out = addrs.map(function (a) {
+    if (!a) return null;
+    const key = kbMapCacheKey_(a);
+    const hit = cache[key];
+    if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
+    const geo = kbGeocodeOne_(a);
+    if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
+    return geo;
+  });
+  if (dirty) {
+    try {
+      if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
+      // Q1 — and the cache self-resets on BYTES, not only on entry count: 200
+      // entries of {lat,lng} keyed by hash sit on the order of the 9KB cap.
+      // Over the cap it falls back to THIS run's addresses, then to nothing.
+      const freshStr = JSON.stringify(fresh);
+      propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache), { mode: 'degrade',
+        shrink: function (str) { return str !== freshStr && Object.keys(fresh).length ? freshStr : null; } });
+    } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
+  }
+  return out;
 }
 function kbMapCacheKey_(addr) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(addr).toLowerCase()));
@@ -2213,35 +2572,9 @@ function kbMapDistances(query, addresses) {
     if (!Array.isArray(addresses) || !addresses.length) return { error: 'No warehouses to measure.' };
     const addrs = addresses.slice(0, KB_MAP_MAX_WH)
       .map(function (a) { return String(a || '').trim().substring(0, KB_MAP_QUERY_MAX); });
-    // Warehouse geocodes: permanent Script-Property cache. Fresh entries from
-    // this run survive a hygiene reset (the current article's warehouses are
-    // exactly the ones worth keeping warm).
-    const props = PropertiesService.getScriptProperties();
-    let cache = {};
-    try { cache = JSON.parse(props.getProperty(KB_MAP_GEOCODE_CACHE_PROP) || '{}') || {}; } catch (e) { cache = {}; }
-    if (typeof cache !== 'object' || Array.isArray(cache)) cache = {};
-    const fresh = {};
-    let dirty = false;
-    const whGeo = addrs.map(function (a) {
-      if (!a) return null;
-      const key = kbMapCacheKey_(a);
-      const hit = cache[key];
-      if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
-      const geo = kbGeocodeOne_(a);
-      if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
-      return geo;
-    });
-    if (dirty) {
-      try {
-        if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
-        // Q1 — and the cache self-resets on BYTES, not only on entry count: 200
-        // entries of {lat,lng} keyed by hash sit on the order of the 9KB cap.
-        // Over the cap it falls back to THIS article's warehouses, then to nothing.
-        const freshStr = JSON.stringify(fresh);
-        propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache), { mode: 'degrade',
-          shrink: function (str) { return str !== freshStr && Object.keys(fresh).length ? freshStr : null; } });
-      } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
-    }
+    // Warehouse geocodes: the permanent Script-Property cache, shared with the
+    // ELIG radius check through kbGeocodeCached_.
+    const whGeo = kbGeocodeCached_(addrs);
     // The QUERY geocode: computed, used, returned — deliberately never stored.
     const qGeo = kbGeocodeOne_(query);
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
