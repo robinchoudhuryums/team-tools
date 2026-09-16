@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushed to Apps Script, and the editor suite run in TWO HALVES on the real runtime: `runAllTestsPartA` **209/209** (`Expected: 209 registrations (118 smoke · 91 integration-A)`, 8.4 min) and `runAllTestsPartB` **107/107** (`Expected: 107 registrations (107 integration-B)`, 14.0 min) — 316 total, 0 failed, 0 skipped, matching the derived registration count exactly. **Part B's 107 is the discriminator that proves the deployment is CURRENT** (the pre-push suite read 315; Batch Q's extra registration lives in shard B, so Part A alone could not tell). Together the two halves ARE `runAllTests` (the S1/S4 pin holds the shards disjoint and their union equal to the registration list), so **regression scenarios S1 AND S2 are PASSED on the fourteen-file server** — the F2 deploy gate is CLOSED, and the Medium new failure mode the 19-c reflection logged (the split's cross-file load class guarded by a MODEL of Apps Script rather than by Apps Script) is DISCHARGED for this deployment: the fourteen files do load as one global scope in the real runtime. **ONE FINDING FROM THE RUN, and it is live operator state:** the suite-environment block read `INSTANCE_LABEL: unset · INSTANCE_IS_PROD: unset → UNMARKED (treated as prod; runAllTests still allowed)` against the REAL stores, so the full integration suite ran on PRODUCTION with the blue-green guard inert — `TEST_` rows into the live payroll/audit/PHI stores (cleaned up in `finally`, and the log confirms `3 re-onboarded`), the TEST accounts visible on team surfaces for ~22 minutes, and ScriptLock contention against live punches from 2:39 to 3:10 PM. See the Pending list. Preceding: implement — **Batch F2 + the four F1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-F2-followons-broad-implement.md`; net 0 − 0 = 0, a move). **`web-app/Code.js` IS GONE** — 30,789 lines split into fourteen files (`00_config.js` first, then one per module in the numeric order `filePushOrder` declares). Move-only is PROVEN, not claimed: 1,204 top-level units reassembled byte-identically, each checked standalone with `node --check`, and `test/client/server-split-manifest.json` (generated from Code.js at tag `pre-f2-split`) is re-derived by the F2c pin on every run — same names, same bodies, same files. Pure harness 818 → 822 (move-only, duplicate-name, split shape, the bite.sh guard); DOM 113 unchanged; every derived count identical; page.html byte-identical. `'Code.js'` is now an ALIAS for the server in the harness, so the ~500 pins naming it were untouched. **THE PLAN IS FINISHED: 0 → P → S → Q → C → D1 → D2 → F1 → F2 are all done**; only its Deferred set remains, which is operator/feature decisions. **NOT PUSHED/PR'd, and the DEPLOY IS BLOCKING: push to DEV and run `runAllTests` in that editor BEFORE prod** (F2d) — S1/S2 are the one check this container cannot run. Preceding: implement — **Batch F1 DONE 2026-09-14** (`.cycle/blocks/19-F1-broad-implement.md`; net 0 − 0 = 0, a deliberate no-op batch). The harness owns `serverSource()`, derived from `web-app/.clasp.json`'s `filePushOrder` (now `["Code.js"]`, was empty); the 73 direct server reads in run.js, `extractRawFunction`/`extractConstObject`, the two hand-listed server scans and `counts.mjs`'s two derivations all resolve through it, so F2 can move 40,000 lines between files without touching a pin. CI's `node --check` is a glob. Pure harness 814 → 818 (byte-equality, the filePushOrder declaration incl. the dev example, load-order evaluation, and a ban on reading the server by filename); DOM 113 unchanged; `build.mjs` reproduces page.html with no diff. INV-202's acceptance criterion is enforced by a pin rather than asserted. NOT PUSHED/PR'd yet. **REMAINING: F2 only** (the Code.js split — L, ~2 days). Preceding: implement — **Batch D2 + the four D1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-followons-D2-broad-implement.md`; net 1 − 0 = 1). CLAUDE.md 4,873 → 836 lines and is now MAPS AND INDEXES only: the gotcha narratives are `docs/gotchas.md` (113 entries, verbatim), the module narratives `docs/modules.md`, the operator entries `docs/operator-state.md` (74, verbatim — the D1c compression D1 deferred), the Test Command narrative `docs/test-harness-log.md`; a one-sided 1,000-line ceiling pin keeps it that way. Three NEW index↔entries pins (MODULE-MAP, GOTCHA-INDEX, OPERATOR-INDEX) plus the ceiling: pure harness 810 → 814, DOM 113 unchanged, `counts.mjs --check` green, 14 mutations / 14 bites + one inverse. Follow-ons: INV-202/203 written into the library; `counts.mjs` now reports a red harness in ONE line instead of a 70k-character stack trace; C4's ban gained pattern (d), a plain restated total. NOT PUSHED/PR'd yet. Preceding: implement — Batch D1 DONE 2026-09-14 (`.cycle/blocks/19-batchD1-broad-implement.md`; net 0 − 0 = 0, a structural batch shipping no deployable code). CLAUDE.md 12,662 → 4,873 lines; the Cycle Workflow Config is `.cycle/config.md`, the Key Design Decisions are `docs/design-decisions.md` (137-link index kept), the dated rounds are `docs/operator-log.md`. Pure harness 808 → 810 (two NEW pins on the index↔anchors coupling the split created). Preceding: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0, covering the four post-reflect next-steps batches P/S/Q/C; metrics + estimates rows appended; INV-202/203 proposed). Batch C MERGED as PR #244 (2026-09-14, f10c2ae) — every next-steps batch through C is now on main. Preceding: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: **IMPLEMENTATION COMPLETE AND MERGED — DEPLOY PENDING (2026-09-16).** Everything through PR #254 (866ffdc) is on `main` and the branch is fully merged into it. **SIX rounds are now stacked on ONE undeployed Apps Script project** (#251 the `perDay` accrual fix · #252 the FORMS/QA fixtures · #253 SP/SP2/PTO · OOP-A · OOP-B + ELIG + the KB-store move · #254's doc sync). The operator did the sheet-side setup on 2026-09-16 — the `OopPricing` and `LocationAcceptance` tabs exist, the warehouse rows carry real street addresses, and `OOP_SS_ID` / `TEST_OOP_SS_ID` are deleted — and will run the diagnostics + `clasp push -f` + a New-version deploy on 2026-09-17. **Read the consolidated post-deploy checklist in "Where I left off" rather than assembling it from the Pending list: six rounds each left their own "after the push" line, in six different places.** Preceding: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushed to Apps Script, and the editor suite run in TWO HALVES on the real runtime: `runAllTestsPartA` **209/209** (`Expected: 209 registrations (118 smoke · 91 integration-A)`, 8.4 min) and `runAllTestsPartB` **107/107** (`Expected: 107 registrations (107 integration-B)`, 14.0 min) — 316 total, 0 failed, 0 skipped, matching the derived registration count exactly. **Part B's 107 is the discriminator that proves the deployment is CURRENT** (the pre-push suite read 315; Batch Q's extra registration lives in shard B, so Part A alone could not tell). Together the two halves ARE `runAllTests` (the S1/S4 pin holds the shards disjoint and their union equal to the registration list), so **regression scenarios S1 AND S2 are PASSED on the fourteen-file server** — the F2 deploy gate is CLOSED, and the Medium new failure mode the 19-c reflection logged (the split's cross-file load class guarded by a MODEL of Apps Script rather than by Apps Script) is DISCHARGED for this deployment: the fourteen files do load as one global scope in the real runtime. **ONE FINDING FROM THE RUN, and it is live operator state:** the suite-environment block read `INSTANCE_LABEL: unset · INSTANCE_IS_PROD: unset → UNMARKED (treated as prod; runAllTests still allowed)` against the REAL stores, so the full integration suite ran on PRODUCTION with the blue-green guard inert — `TEST_` rows into the live payroll/audit/PHI stores (cleaned up in `finally`, and the log confirms `3 re-onboarded`), the TEST accounts visible on team surfaces for ~22 minutes, and ScriptLock contention against live punches from 2:39 to 3:10 PM. See the Pending list. Preceding: implement — **Batch F2 + the four F1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-F2-followons-broad-implement.md`; net 0 − 0 = 0, a move). **`web-app/Code.js` IS GONE** — 30,789 lines split into fourteen files (`00_config.js` first, then one per module in the numeric order `filePushOrder` declares). Move-only is PROVEN, not claimed: 1,204 top-level units reassembled byte-identically, each checked standalone with `node --check`, and `test/client/server-split-manifest.json` (generated from Code.js at tag `pre-f2-split`) is re-derived by the F2c pin on every run — same names, same bodies, same files. Pure harness 818 → 822 (move-only, duplicate-name, split shape, the bite.sh guard); DOM 113 unchanged; every derived count identical; page.html byte-identical. `'Code.js'` is now an ALIAS for the server in the harness, so the ~500 pins naming it were untouched. **THE PLAN IS FINISHED: 0 → P → S → Q → C → D1 → D2 → F1 → F2 are all done**; only its Deferred set remains, which is operator/feature decisions. **NOT PUSHED/PR'd, and the DEPLOY IS BLOCKING: push to DEV and run `runAllTests` in that editor BEFORE prod** (F2d) — S1/S2 are the one check this container cannot run. Preceding: implement — **Batch F1 DONE 2026-09-14** (`.cycle/blocks/19-F1-broad-implement.md`; net 0 − 0 = 0, a deliberate no-op batch). The harness owns `serverSource()`, derived from `web-app/.clasp.json`'s `filePushOrder` (now `["Code.js"]`, was empty); the 73 direct server reads in run.js, `extractRawFunction`/`extractConstObject`, the two hand-listed server scans and `counts.mjs`'s two derivations all resolve through it, so F2 can move 40,000 lines between files without touching a pin. CI's `node --check` is a glob. Pure harness 814 → 818 (byte-equality, the filePushOrder declaration incl. the dev example, load-order evaluation, and a ban on reading the server by filename); DOM 113 unchanged; `build.mjs` reproduces page.html with no diff. INV-202's acceptance criterion is enforced by a pin rather than asserted. NOT PUSHED/PR'd yet. **REMAINING: F2 only** (the Code.js split — L, ~2 days). Preceding: implement — **Batch D2 + the four D1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-followons-D2-broad-implement.md`; net 1 − 0 = 1). CLAUDE.md 4,873 → 836 lines and is now MAPS AND INDEXES only: the gotcha narratives are `docs/gotchas.md` (113 entries, verbatim), the module narratives `docs/modules.md`, the operator entries `docs/operator-state.md` (74, verbatim — the D1c compression D1 deferred), the Test Command narrative `docs/test-harness-log.md`; a one-sided 1,000-line ceiling pin keeps it that way. Three NEW index↔entries pins (MODULE-MAP, GOTCHA-INDEX, OPERATOR-INDEX) plus the ceiling: pure harness 810 → 814, DOM 113 unchanged, `counts.mjs --check` green, 14 mutations / 14 bites + one inverse. Follow-ons: INV-202/203 written into the library; `counts.mjs` now reports a red harness in ONE line instead of a 70k-character stack trace; C4's ban gained pattern (d), a plain restated total. NOT PUSHED/PR'd yet. Preceding: implement — Batch D1 DONE 2026-09-14 (`.cycle/blocks/19-batchD1-broad-implement.md`; net 0 − 0 = 0, a structural batch shipping no deployable code). CLAUDE.md 12,662 → 4,873 lines; the Cycle Workflow Config is `.cycle/config.md`, the Key Design Decisions are `docs/design-decisions.md` (137-link index kept), the dated rounds are `docs/operator-log.md`. Pure harness 808 → 810 (two NEW pins on the index↔anchors coupling the split created). Preceding: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0, covering the four post-reflect next-steps batches P/S/Q/C; metrics + estimates rows appended; INV-202/203 proposed). Batch C MERGED as PR #244 (2026-09-14, f10c2ae) — every next-steps batch through C is now on main. Preceding: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -24,7 +24,7 @@ Subsystem cycles since last Seams audit: 3 (cycle 18's F1–F5 round WAS the
   increment it — it closes a batch set INSIDE cycle 19, not a new subsystem
   cycle, and counting one cycle twice would pull the every-4 seams cadence
   forward by a cycle it did not earn. Do not "correct" this to 3.)
-Updated: 2026-09-11 (Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
+Updated: 2026-09-16 (PR #254 merged — OOP-A/OOP-B/ELIG, the KB-store move and `/sync-docs`; the operator completed the sheet-side setup the same day and deferred the deploy to 2026-09-17. Earlier: Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -151,6 +151,10 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
+- **OPERATOR (2026-09-17): the deploy, and the ONE ordered walk that discharges six
+  rounds' worth of scattered "after the push" lines below.** Every item further down
+  this list that begins "after the push" is covered by this walk; do this instead of
+  reading them separately. See "Where I left off" for the ordered version.
 - **OPERATOR (2026-09-15, Batch T): after the push, RE-RUN `installAutomationTriggers`.** `sendCallNotesUrgentDigest` moved into the new `runDailyChecks` dispatcher, so until the installer runs, `runDailyChecks` does not exist and the open-punch scan never fires. The reported count should be UNCHANGED. Then walk S109 and S97 after the first 8am scan. `.cycle/blocks/19-T-open-punch-prevention-broad-implement.md`; net 1 − 0 = 1; registrations 320 → **322**.
 - **OPERATOR (2026-09-15, Batch R): push the accrual reconciliation and walk S108 + S97.** `.cycle/blocks/19-R-accrual-resilience-broad-implement.md`; net 1 − 0 = 1. Registrations 319 → **320**. After the first 18:00 credit run, August should TOP UP on its own for Anne (15.82 h) and Margie — no column-R rewind needed. Julienne stays at zero until she has August punches, which is correct.
 - **OPERATOR (2026-09-15): run `previewPtoAccruals('2026-08')` after the push.** The 2026-09-01 run credited ZERO to all three PH reps (PH0001/2/3) — two with incomplete days (2 and 4), one with none — while the Timesheet now shows complete days assembled from `ADJ-` rows. Working hypothesis: the missing-punch adjustments were approved AFTER the 6pm Sep 1 credit, so the days were genuinely open at the time and the stamp then closed the month. The inspection confirms or refutes it; the AuditLog rows for those approvals (action = the punch type, column H `TRUE`, notes `approved adjustment request…`) carry the timestamps that settle it.
@@ -378,6 +382,25 @@ established by reading the code this session, so the next session need not re-de
 - The audit's Deferred set is untouched EXCEPT the diagnostics retention tier (now RT); the rest remain operator/feature decisions: agent-visible QA reviews, the blocked external form route, a per-rep working-days source, a manager pay-statement export. Also deliberately NOT implemented in the follow-ons round, as operator decisions: presence-chip schedule/PTO gating, BLOCKING an off-domain `MAIL_BCC_ALL`, the `getTeammateStatus` full-Timesheet read, the `dept_req_v1` cache-key bump, the quiz editor's "+ Question" per-block append.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **RESTART `claude/adoring-einstein-b3vs6c` FROM `origin/main` before the next batch.**
+  PR #254 is MERGED and the branch carries nothing beyond it (`git log
+  origin/main..claude/adoring-einstein-b3vs6c` is empty). A merged PR cannot track new
+  work, so follow-up is a FRESH change on the same branch name:
+  `git fetch origin main && git checkout -B claude/adoring-einstein-b3vs6c origin/main`.
+  Never stack new commits on the already-merged history — the same thing happened at
+  the #240 merge, and that branch had to be restarted too.
+- **The OOP/ELIG tables live in the KB store, and the test for a future reference table
+  is the reason list, not the property count** (2026-09-16) — PHI-free by policy, the
+  app never writes to the tab, operator-maintained, read through a NAMED tab, beside
+  `InsurancePayors`. The Intake store was rejected because it is PHI and the app writes
+  to it. Full reasoning in `docs/design-decisions.md`; do not re-derive it from "one
+  fewer Script Property", which was never the argument.
+- **`LocationAcceptance` city rows are INFORMATION ONLY and never change a verdict**
+  (operator decision, 2026-09-16). The operator also declined a county import from a
+  Google My Maps KML the same day: the map was one person's visualisation choice, not a
+  source of truth, and **the sheet is the truth.** If that comes back, the answer is
+  still not polygons — the geocoder returns the county in
+  `administrative_area_level_2`, so a county list is an exact lookup with no geometry.
 - F1's pairing is GREEDY, not positional: each `out` takes the earliest `in` that can close it, so an unpairable `in` is dropped ALONE. Greedy is also the conservative reading (the shortest break that can be attributed).
 - F6 DISCARDS the employee's cached index after a resume rather than patching the three stale keys — patching would require reasoning about which key a later request in the batch might read, and the read is rare enough that one extra Timesheet read is the cheaper correctness.
 - F2 adds `notConfigured[]` rather than widening `unavailable`'s meaning, so the CLIENT needs no change and deploy skew is safe in both directions. The UI stays SILENT about an unset store because Storage Health already reports it (INV-186).
@@ -399,48 +422,66 @@ established by reading the code this session, so the next session need not re-de
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-`/broad-implement OOP-A, OOP-B, ELIG` is complete, and the operator's follow-up
-question ("can the OOP sheet move into `INTAKE_SS_ID`?") landed a STORE MOVE on
-top of it. All pushed to `claude/adoring-einstein-b3vs6c`.
+**Nothing is in flight.** Tree clean, branch fully merged into `main` (PR #254,
+`866ffdc`), all three harnesses green, `lint-server` clean, `counts --check` green.
 
-**The move, and why it was not the store they asked about:** Intake is PHI and
-the app WRITES to it, so pricing there means anyone maintaining prices needs
-edit access to patient submissions. The saving was also not real — Script
-Properties are capped by BYTES (g07), and per Batch Q the entry caps were never
-binding. The counter-proposal they accepted was `KB_SS_ID`, which already holds
-`InsurancePayors`: same class, same maintainer, read through a NAMED tab, and
-its scorer is the one `searchOopPricing` already reuses.
+**The next session's first move depends on what the operator says:**
 
-`OopPricing` and `LocationAcceptance` are now tabs in the KB spreadsheet.
-`LocationAcceptance` replaced the `OOP_WAREHOUSES` Script Property, carries
-warehouse AND city rows, and has **no seed and no fallback** — the property fell
-back to bare city names, which geocode to city CENTRES, so a warehouse twenty
-miles out of town silently made every near-boundary radius answer wrong by up to
-twenty miles. City rows are information only and never move a verdict (operator
-decision). **Nine stores are now eight.**
+### If the deploy has NOT happened yet
+Nothing to build. The deploy is the gate, and it is the operator's step.
 
-**The next concrete step is `/sync-docs`**, and the owed list is now TWO items,
-not four — the store table and `docs/operator-state.md` were both rewritten as
-part of the move. What is still owed: a Common Gotchas index entry for the
-client↔server line mirror (INV-208, beside g38 and g103), and a
-`docs/design-decisions.md` entry for the WHO-IS-PAYING vs
-HOW-IT-PHYSICALLY-GETS-THERE rule — plus, beside it, why these tables live in
-the KB store and NOT the Intake one, because that is a question that will be
-asked again.
+### The post-deploy walk — ORDERED, and it discharges six rounds at once
+The Pending list carries an "after the push" line from each of six rounds, written
+on six different days. Do them in THIS order instead; the ordering matters twice,
+noted inline.
 
-**Then the operator owes a deploy** — `clasp push -f` + a New-version
-deployment, carrying five merged rounds plus OOP-A/B, ELIG and the move. Their
-remaining setup is now entirely in the KB spreadsheet: create the `OopPricing`
-and `LocationAcceptance` tabs (schemas are in `docs/operator-state.md`), put
-REAL STREET ADDRESSES on the warehouse rows — a bare city name is the failure
-the seed removal exists to prevent — and read the OOP diagnostics once, which
-now report both tabs, the registry, the city count, every addressless or
-unreadable location row by name, and how every Area Eligibility value parses.
-`OOP_SS_ID` can be deleted; it is read by nothing.
+1. `clasp push -f`, then **Deploy → Manage deployments → Edit → New version**. The
+   Web App URL serves the OLD code until that second step.
+2. **Confirm the editor lists FOURTEEN server files and no `Code.js`** — the Batch F2
+   split. If `Code.js` is still there, the push did not take and everything below is
+   measuring the wrong deployment.
+3. **Re-run `installAutomationTriggers()`** (Batch T). `sendCallNotesUrgentDigest`
+   moved into the `runDailyChecks` dispatcher, so **until the installer runs,
+   `runDailyChecks` does not exist and the 8am open-punch scan never fires.** The
+   reported trigger count should be UNCHANGED — a changed count is the finding.
+4. **`runSmokeTests`** on prod. Read the `Expected: N registrations` line OFF THE RUN,
+   never off a doc (the registration count moved three times this round). A run that
+   records fewer than expected prints `⚠ Recorded X of N`.
+5. **Manage → Admin → the OOP pricing diagnostics** (the operator's deferred item 4).
+   This is the highest-value single read of the whole walk: it lists every
+   `Area Eligibility` value the parser could not read, BY ITEM, plus the warehouse
+   registry and any addressless or unreadable `LocationAcceptance` row. An unreadable
+   value renders "cannot tell" to a rep, which looks like caution rather than a typo —
+   this panel is the only place the difference is visible. **Check the warehouse
+   addresses geocoded to real sites, not city centres** (g122).
+6. **`previewPtoAccruals('2026-08')`** (S107). Still un-recovered: the 2026-09-01 run
+   credited ZERO to all three PH reps. The preview now NAMES which of the three causes
+   it was. If the rep did work that month, fix the cause, set column R back to
+   `2026-07`, and let the daily job re-credit — column I is the balance of record and
+   the credit is a delta, so it composes.
+7. **Walk S110** (OOP pricing end to end — the lookup, the four send outcomes, both
+   eligibility verdicts, both distance bands, both tabs renamed aside). Then **S108**
+   (accrual reconciliation), **S109** (open-punch scan) and **S97** — but S109 and S97
+   only tell you anything **after the first 8am scan has run**, so they are a
+   next-morning check, not a same-session one.
+8. **Set `INSTANCE_IS_PROD=true`** and stand up the dev instance in the same pass. The
+   2026-09-14 run proved it unset — the full integration suite ran against live
+   payroll with the blue-green guard inert. Setting it makes every full-suite entry
+   point refuse on prod, which is why the dev instance has to exist first.
 
-The two follow-ons worth not forgetting are in the block: the shared geocode
-QUOTA (the eligibility box and the ```map block draw on one daily allowance,
-with no cap and no honest exhausted-message), and that neither new tab has an
-Admin editor while every other operator-editable registry in this app does —
-though a Sheet tab is a much better editing surface than the JSON property was,
-so this is weaker than it was when it was written.
+### Once the deploy is confirmed
+Cycle 19 is closed in substance and this block moves to `.cycle/HISTORY.md` when the
+next `/broad-scan` opens cycle 20 (the close-out procedure). **`/reflect` is owed
+before that** and has a real backlog: the estimates.csv rows for D1, D2, F1, F2 and
+every 2026-09-15/16 batch (R, T, SP, SP2, PTO, OOP-A, OOP-B, ELIG) — the
+`Estimates:` line above carries estimate AND actual for each, which is exactly the
+input `/reflect` has skipped for six consecutive reflections.
+
+**Two follow-ons that are real work, not bookkeeping** (both in
+`.cycle/blocks/20pre-OOP-broad-implement.md`): the geocode QUOTA is shared between the
+eligibility box and the ` ```map ` block's "Find nearest" with no cap and no honest
+exhausted-message — a rep leaning on one degrades the other to "could not find that
+location"; and the `Area Eligibility` RULE is not shown in the price lookup itself,
+only in the dedicated check, so an item's raw eligibility string renders unparsed
+where rendering the rule ("Texas only through insurance; anywhere out of pocket")
+would answer the common case with no geocode at all.
