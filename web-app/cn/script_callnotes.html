@@ -2196,6 +2196,51 @@
   .cn-ext-type-radios {
     display: flex; gap: 8px; margin-bottom: 12px;
   }
+
+  /* ── OOP-B: the price picker in the external composer ─────────────
+     The price itself is monospace on BOTH surfaces (.kb-oop-price does
+     the same in the Reference drawer): a number a customer will be
+     charged reads as a figure, not as prose. A row with no price on
+     file is warning-toned and carries no Insert button — it is listed
+     so "in the sheet without a price" stays distinguishable from "not
+     in the sheet", which are different problems with different fixes. */
+  .cn-oop-results { margin-top: 6px; }
+  .cn-oop-msg {
+    font-size: 12px; color: var(--muted); padding: 6px 0;
+  }
+  .cn-oop-msg.bad { color: var(--warning-deep); }
+  .cn-oop-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: var(--radius); margin-bottom: 4px;
+    background: var(--paper-card);
+  }
+  .cn-oop-row-main { flex: 1; min-width: 0; }
+  .cn-oop-row-name {
+    font-size: 13px; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cn-oop-row-price {
+    font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink);
+  }
+  .cn-oop-row-price.none { font-weight: 500; color: var(--warning-deep); }
+  .cn-oop-row-eff {
+    font-family: var(--ui); font-weight: 400; color: var(--muted);
+  }
+  .cn-oop-row-noins { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .cn-oop-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .cn-oop-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 6px 3px 8px; border-radius: var(--radius);
+    background: var(--paper); border: 1px solid var(--line);
+    font-size: 12px; color: var(--ink);
+  }
+  .cn-oop-chip strong { font-family: var(--mono); font-weight: 600; }
+  .cn-oop-chip-x {
+    appearance: none; border: none; background: none; cursor: pointer;
+    color: var(--muted); font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  .cn-oop-chip-x:hover { color: var(--ink); }
   .cn-ext-type-radio {
     appearance: none; border: 1px solid var(--line);
     background: var(--paper-card);
@@ -12883,6 +12928,7 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
     interactiveForms: [],     // fillable interactive form IDs
     prefillData: {},           // keyed by form ID: { formId: { field: value } }
     formModes: {},             // keyed by form ID: 'pdf' | 'fillable'
+    oopQuotes: [],             // OOP-B — [{name, price, effective, line}] inserted from the pricing sheet
     noteId: presetNoteId || null,
     sending: false,
   };
@@ -13054,6 +13100,186 @@ function cnExtLinkRowHtml_() {
   '</div>';
 }
 
+// ── OOP-B — the price picker (operator 2026-09-16) ──────────────────────────
+// A quoted price IS a commitment here: the rep takes payment on the same call.
+// So the number must be SERVER-SOURCED end to end — the rep searches, the
+// server answers, the picker inserts the line, and sendExternalEmail re-derives
+// that exact line from the live sheet and refuses the send if it does not still
+// match. Nothing in this picker types a price; nothing here formats one either.
+//
+// The row renders unconditionally (unlike the template + quick-link rows, which
+// hide when nothing is configured) because the client cannot know whether
+// OOP_SS_ID is set without an RPC, and a lookup box that is sometimes absent is
+// worse than one that says "not configured" when used.
+var CN_OOP_SEQ = 0;   // INV-156 — a stale search must not overwrite a newer one
+
+/** MIRROR of the server's oopQuoteLine_ (70_kb.js). These two must agree
+ *  character for character: the send verifies by rebuilding the line from the
+ *  sheet and looking for it in the message, so a formatting drift here does not
+ *  render slightly differently — it BLOCKS every OOP send with "the inserted
+ *  line was edited". Pinned behaviourally against the server function. */
+function cnOopQuoteLine_(name, price, effective) {
+  var n = String(name == null ? '' : name).trim();
+  var p = String(price == null ? '' : price).trim();
+  var e = String(effective == null ? '' : effective).trim();
+  if (!n || !p) return '';
+  return n + ' \u2014 ' + p + (e ? ' (price effective ' + e + ')' : '');
+}
+
+function cnExtOopQuotes_() {
+  var c = CN_STATE.extComposer;
+  if (!c) return [];
+  if (!Array.isArray(c.oopQuotes)) c.oopQuotes = [];
+  return c.oopQuotes;
+}
+
+/** The inserted-quote chips. Rendered from STATE (not from the textarea), so a
+ *  PDF/Fillable re-render cannot lose them. Each chip's remove button deletes
+ *  BOTH the state entry and the line from the message — a chip that survived
+ *  its line, or a line that survived its chip, would each produce a confusing
+ *  refusal at send time instead of here. */
+function cnExtOopChipsHtml_() {
+  var qs = cnExtOopQuotes_();
+  if (!qs.length) return '';
+  return qs.map(function (q, i) {
+    return '<span class="cn-oop-chip">' + esc(q.name) + ' ' +
+      '<strong>' + esc(q.price) + '</strong>' +
+      '<button type="button" class="cn-oop-chip-x" data-oop-remove="' + i + '"' +
+        ' aria-label="Remove the quoted price for ' + esc(q.name) + '">&times;</button>' +
+    '</span>';
+  }).join('');
+}
+
+function cnExtOopRowHtml_() {
+  return '<div class="field" style="margin-bottom:10px">' +
+    '<label for="cnX-oop-q">' + icon('search', 12) + ' OOP price (inserted from the pricing sheet)</label>' +
+    '<input type="text" id="cnX-oop-q" placeholder="Item name\u2026" autocomplete="off">' +
+    '<div class="cn-oop-results" id="cnX-oop-results"></div>' +
+    '<div class="cn-oop-chips" id="cnX-oop-chips">' + cnExtOopChipsHtml_() + '</div>' +
+  '</div>';
+}
+
+/** Renders one search response. Three states, and the two unhappy ones say so
+ *  rather than rendering an empty list (g02's rule — a result surface that
+ *  cannot distinguish "nothing matched" from "the lookup failed" reads as data
+ *  either way).
+ *
+ *  An item with NO price on file is listed but NOT insertable. Showing it is the
+ *  point: the rep searched for it, and "it is in the sheet with no price" is a
+ *  different answer from "it is not in the sheet" — one is a question for a
+ *  manager, the other is a wrong search term. */
+function cnExtOopRenderResults_(res) {
+  var host = document.getElementById('cnX-oop-results');
+  if (!host) return;
+  if (!res) { host.innerHTML = ''; return; }
+  if (res.error) {
+    host.innerHTML = '<div class="cn-oop-msg bad">' + esc(res.error) + '</div>';
+    return;
+  }
+  var matches = res.matches || [];
+  if (!matches.length) {
+    host.innerHTML = '<div class="cn-oop-msg">No item matched. Do not quote a similar item \u2014 check the pricing sheet or ask a manager.</div>';
+    return;
+  }
+  host.innerHTML = matches.map(function (m, i) {
+    var hasPrice = !!String(m.price || '').trim();
+    var eff = String(m.effective || '').trim();
+    return '<div class="cn-oop-row">' +
+      '<div class="cn-oop-row-main">' +
+        '<div class="cn-oop-row-name">' + esc(m.name) + '</div>' +
+        (hasPrice
+          ? '<div class="cn-oop-row-price">' + esc(m.price) + (eff ? ' <span class="cn-oop-row-eff">effective ' + esc(eff) + '</span>' : '') + '</div>'
+          : '<div class="cn-oop-row-price none">no price on file</div>') +
+      '</div>' +
+      (hasPrice
+        ? '<button type="button" class="refresh-btn cn-oop-ins" data-oop-insert="' + i + '">Insert</button>'
+        : '<span class="cn-oop-row-noins">not quotable</span>') +
+    '</div>';
+  }).join('');
+  // Park the payload the Insert buttons index into. Read back through this
+  // handle rather than from a data-* attribute: a price round-tripped through
+  // an attribute comes back DECODED (g49), and re-encoding a number a customer
+  // will be charged is exactly the round trip not to make.
+  host._oopMatches = matches;
+}
+
+var CN_OOP_TIMER = null;
+
+/** Debounced, seq-guarded — the oopLookupInput_ discipline from the Reference
+ *  drawer, so both surfaces behave the same way under a fast typist. */
+function cnExtOopInput_() {
+  if (CN_OOP_TIMER) clearTimeout(CN_OOP_TIMER);
+  CN_OOP_TIMER = setTimeout(cnExtOopSearch_, 260);
+}
+
+function cnExtOopSearch_() {
+  var input = document.getElementById('cnX-oop-q');
+  var q = input ? String(input.value || '').trim() : '';
+  var host = document.getElementById('cnX-oop-results');
+  if (q.length < 2) {
+    ++CN_OOP_SEQ;                 // a shortened query must void any search in flight
+    if (host) host.innerHTML = '';
+    return;
+  }
+  if (host) host.innerHTML = '<div class="cn-oop-msg">Searching\u2026</div>';
+  var seq = ++CN_OOP_SEQ;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== CN_OOP_SEQ) return;              // INV-156
+      if (!CN_STATE.extComposer) return;           // composer closed mid-flight
+      cnExtOopRenderResults_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== CN_OOP_SEQ) return;
+      if (!CN_STATE.extComposer) return;
+      cnExtOopRenderResults_({ error: 'Price lookup failed: ' + (err.message || 'Server error') });
+    })
+    .searchOopPricing(q);
+}
+
+/** Appends the canonical line to the message textarea and records the quote.
+ *  Inserting the SAME item twice is a no-op on the state (one commitment per
+ *  item per email) but would otherwise duplicate the line, so it is refused
+ *  with a toast rather than silently ignored. */
+function cnExtOopInsert_(m) {
+  var c = CN_STATE.extComposer;
+  if (!c || !m) return;
+  var line = cnOopQuoteLine_(m.name, m.price, m.effective);
+  if (!line) { showToast('That item has no price on file.', 'toast-error'); return; }
+  var qs = cnExtOopQuotes_();
+  for (var i = 0; i < qs.length; i++) {
+    if (qs[i].name === m.name) { showToast('That price is already in the email.', 'toast-info'); return; }
+  }
+  var ta = document.getElementById('cnX-message');
+  var cur = ta ? String(ta.value || '') : String(c.message || '');
+  var next = cur ? (cur.replace(/\s+$/, '') + '\n' + line) : line;
+  if (ta) { ta.value = next; }
+  c.message = next;
+  qs.push({ name: m.name, price: String(m.price || '').trim(), effective: String(m.effective || '').trim(), line: line });
+  var chips = document.getElementById('cnX-oop-chips');
+  if (chips) chips.innerHTML = cnExtOopChipsHtml_();
+  showToast('Price inserted \u2014 it is re-checked against the sheet when you send.', 'toast-success');
+}
+
+function cnExtOopRemove_(idx) {
+  var c = CN_STATE.extComposer;
+  if (!c) return;
+  var qs = cnExtOopQuotes_();
+  var q = qs[idx];
+  if (!q) return;
+  qs.splice(idx, 1);
+  var ta = document.getElementById('cnX-message');
+  var cur = ta ? String(ta.value || '') : String(c.message || '');
+  // Drop the line wherever it sits, and the newline that carried it. If the rep
+  // edited it the exact match misses — that is fine and deliberate: the chip
+  // goes, nothing is quoted, and their edited text stays theirs to deal with.
+  var next = cur.split('\n').filter(function (ln) { return ln !== q.line; }).join('\n');
+  if (ta) { ta.value = next; }
+  c.message = next;
+  var chips = document.getElementById('cnX-oop-chips');
+  if (chips) chips.innerHTML = cnExtOopChipsHtml_();
+}
+
 function cnBuildExternalEmailHtml_() {
   var c = CN_STATE.extComposer;
   var catalog = CN_STATE.formCatalog || [];
@@ -13176,6 +13402,7 @@ function cnBuildExternalEmailHtml_() {
       '</div>' +
       cnExtTemplateRowHtml_(c.recipientType) +
       cnExtLinkRowHtml_() +
+      cnExtOopRowHtml_() +
       '<div class="field" style="margin-bottom:0">' +
         '<label for="cnX-message">Custom Message (optional)</label>' +
         '<textarea id="cnX-message" rows="3" placeholder="Add a personal message…">' + esc(c.message) + '</textarea>' +
@@ -13343,6 +13570,40 @@ function cnWireExternalEmailModal_() {
     });
   }
 
+  // OOP-B — price picker. Debounced search (Enter skips the debounce); the results list and
+  // the chip row are delegated (they are rebuilt on every search/insert, so
+  // per-button listeners would be re-bound each time — the data-* delegation
+  // discipline g91 already imposes on the note cards).
+  var oopQ = document.getElementById('cnX-oop-q');
+  if (oopQ) {
+    oopQ.addEventListener('input', cnExtOopInput_);
+    oopQ.addEventListener('keydown', function (e) {
+      // Enter searches immediately rather than submitting anything — the rep's
+      // hands are on the keyboard mid-call and the debounce is a delay they
+      // should be able to skip.
+      if (e.key === 'Enter') { e.preventDefault(); if (CN_OOP_TIMER) clearTimeout(CN_OOP_TIMER); cnExtOopSearch_(); }
+    });
+  }
+  var oopResults = document.getElementById('cnX-oop-results');
+  if (oopResults) {
+    oopResults.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-oop-insert]');
+      if (!btn) return;
+      e.preventDefault();
+      var list = oopResults._oopMatches || [];
+      cnExtOopInsert_(list[parseInt(btn.dataset.oopInsert, 10)]);
+    });
+  }
+  var oopChips = document.getElementById('cnX-oop-chips');
+  if (oopChips) {
+    oopChips.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-oop-remove]');
+      if (!btn) return;
+      e.preventDefault();
+      cnExtOopRemove_(parseInt(btn.dataset.oopRemove, 10));
+    });
+  }
+
   // Send button
   var sendBtn = document.getElementById('cnX-send-btn');
   if (sendBtn) {
@@ -13443,6 +13704,12 @@ function cnSendExternalEmail_() {
     formIds: c.formIds,
     interactiveForms: c.interactiveForms,
     prefillData: c.prefillData,
+    // OOP-B: a CLAIM about what the picker inserted, never the source of the
+    // number. The server re-derives each line from the live sheet and refuses
+    // the send if the message no longer carries it.
+    quotedOop: cnExtOopQuotes_().map(function (q) {
+      return { name: q.name, price: q.price, effective: q.effective };
+    }),
     noteId: noteRef || null,
   };
 

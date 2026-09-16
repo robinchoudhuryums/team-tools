@@ -758,6 +758,125 @@ function searchOopPricing(query) {
   } catch (err) { return { error: 'OOP pricing lookup failed: ' + err.message }; }
 }
 
+/** PURE (Node-pinned): the ONE canonical rendering of a quoted price, used by
+ *  the composer picker to build the line it inserts AND by the send to rebuild
+ *  that line from LIVE sheet data. The two must agree character for character —
+ *  that is not a coincidence to preserve, it IS the verification: the send
+ *  refuses unless the message still contains the line this function derives
+ *  from the sheet as it reads right now.
+ *
+ *  The price is rendered VERBATIM as the sheet displays it. We do not add a
+ *  currency symbol, pad decimals or reformat: the operator's cell is how they
+ *  mean the number to read, and a price in front of a paying customer is the
+ *  last place to improve on their formatting (the getDisplayValues discipline
+ *  this whole reader is built on). */
+function oopQuoteLine_(name, price, effective) {
+  const n = String(name == null ? '' : name).trim();
+  const p = String(price == null ? '' : price).trim();
+  const e = String(effective == null ? '' : effective).trim();
+  if (!n || !p) return '';
+  return n + ' \u2014 ' + p + (e ? ' (price effective ' + e + ')' : '');
+}
+
+/** Re-verify every price line the composer says it inserted, against the sheet
+ *  as it reads AT SEND TIME. Returns `{ error }` to refuse the send, or
+ *  `{ quoted: [{name, price, effective, line}] }` on success.
+ *
+ *  WHY this exists, and why it refuses rather than warns: the operator's answer
+ *  on 2026-09-16 was that a quoted price IS a commitment — the rep processes
+ *  payment on the same call. So three things must be true of a number in a sent
+ *  email, and none of them is true without this function:
+ *
+ *   1. It came from the sheet, not from a rep's typing. The picker inserts it,
+ *      but a textarea is a textarea; nothing stops an edit afterwards.
+ *   2. It is still the price. A lookup at 10:02 and a send at 10:40 can
+ *      straddle an operator edit, and the failure — a rep collecting a
+ *      superseded price — is discovered from the customer, never from the app.
+ *   3. It is auditable. The sheet will have moved on by the time anyone
+ *      disputes the charge, so the row this send writes is the ONLY
+ *      reconstruction of what the customer was told.
+ *
+ *  FAIL DIRECTION (g41 — it is chosen, not inherited): CLOSED. An unreadable
+ *  store, a vanished item, a changed price and an edited line all REFUSE, with
+ *  a message saying which. The alternative — send anyway, note it in the audit —
+ *  trades a blocked send for a wrong commitment, which is the trade this
+ *  feature exists to refuse.
+ *
+ *  A quote whose line is NO LONGER IN THE MESSAGE at all and whose price is
+ *  unchanged is not an error: the rep inserted it, thought better of it and
+ *  deleted it. It is dropped from the audit, because nothing was quoted. */
+function oopVerifyQuotes_(quotes, message) {
+  const list = Array.isArray(quotes) ? quotes : [];
+  if (!list.length) return { quoted: [] };
+  if (list.length > OOP_QUOTE_MAX) {
+    return { error: 'Too many price lines on one email (max ' + OOP_QUOTE_MAX + ').' };
+  }
+  const body = String(message == null ? '' : message);
+
+  let sh, headers, rows, width;
+  try {
+    sh = oopSheet_();
+    width = sh.getLastColumn();
+    const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+    if (last < 2) return { error: 'The OOP pricing sheet is empty — the quoted price could not be verified.' };
+    headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+  } catch (err) {
+    // Deliberately NOT a best-effort skip. An unreachable pricing store at send
+    // time means the number in this email is unverified, and an unverified
+    // commitment is the thing we refuse (g53's rule, applied to a price).
+    return { error: 'The OOP pricing sheet could not be read, so the quoted price could not be verified: ' + err.message };
+  }
+
+  const byName = {};
+  for (let i = 0; i < rows.length; i++) {
+    const key = String(rows[i][0] == null ? '' : rows[i][0]).trim().toLowerCase();
+    if (key && !byName[key]) byName[key] = rows[i];
+  }
+
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const q = list[i] || {};
+    const name = String(q.name == null ? '' : q.name).trim();
+    if (!name) continue;
+    const row = byName[name.toLowerCase()];
+    if (!row) {
+      return { error: 'The pricing sheet no longer lists "' + name + '". Re-check the price before sending.' };
+    }
+    const live = oopRowObj_(headers, row);
+    if (!live.price) {
+      return { error: 'The pricing sheet has no price on file for "' + name + '" any more. Remove the line or check with a manager.' };
+    }
+    const line = oopQuoteLine_(live.name, live.price, live.effective);
+    if (body.indexOf(line) >= 0) { out.push({ name: live.name, price: live.price, effective: live.effective, line: line }); continue; }
+    // Not present as the sheet now renders it. Say WHICH of the two reasons.
+    const claimed = String(q.price == null ? '' : q.price).trim();
+    if (claimed && claimed !== live.price) {
+      return { error: 'The price for "' + name + '" changed since you looked it up (' + claimed +
+        ' \u2192 ' + live.price + '). Re-insert it and review the email before sending.' };
+    }
+    // The price is unchanged, so the line is not stale — it was either DELETED
+    // or EDITED, and those end very differently. A deleted line leaves nothing
+    // in the email; an edited one leaves a price-like figure that no longer
+    // matches anything we can verify. Discriminate on the PRICE STRING: if it
+    // still appears anywhere in the body, a number is being quoted that this
+    // function cannot vouch for, and an unverifiable commitment refuses.
+    //
+    // THE BOUNDARY, stated rather than implied: a rep who overtypes the figure
+    // with a DIFFERENT number defeats this, exactly as a rep who types a price
+    // for an item they never picked does. The promise this feature makes is
+    // that a price the PICKER inserted is server-sourced and current — not that
+    // no wrong number can ever reach an email. Pretending otherwise would be
+    // the more dangerous claim.
+    if (body.indexOf(live.price) >= 0 || (claimed && body.indexOf(claimed) >= 0)) {
+      return { error: 'The inserted price line for "' + name + '" was edited. Prices must be inserted by the picker \u2014 remove the line and re-insert it.' };
+    }
+    // Nothing price-like left: the rep inserted it and thought better of it.
+    // Nothing was quoted, so nothing is audited.
+  }
+  return { quoted: out };
+}
+
 /** Admin-gated: what the reader actually MATCHED in the operator's sheet.
  *
  *  This exists because header discovery is invisible until it goes wrong. The

@@ -13076,6 +13076,279 @@ test('OOP-A: oopRowObj_ takes the FIRST column as the item name, fills each role
   assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing, not an unlabelled attribute');
 });
 
+// OOP-B (operator 2026-09-16) — the composer price picker. The operator's answer
+// that "the quoted price IS a commitment" (the rep takes payment on the same
+// call) is what makes these pins load-bearing rather than cosmetic: the number
+// in a sent email must be one the SERVER returned, still current at send time,
+// and reconstructible from the audit row long after the sheet has moved on.
+vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), _vmCtx, { filename: 'oopQuoteLine_' });
+
+test('OOP-B: oopQuoteLine_ renders the price VERBATIM, and returns EMPTY rather than a line with a hole in it', () => {
+  const L = (n, p, e) => vm.runInContext('oopQuoteLine_(' + JSON.stringify(n) + ',' + JSON.stringify(p) + ',' + JSON.stringify(e) + ')', _vmCtx);
+
+  assert.strictEqual(L('Widget', '$129.00', '2026-09-01'), 'Widget — $129.00 (price effective 2026-09-01)');
+  assert.strictEqual(L('Widget', '$129.00', ''), 'Widget — $129.00',
+    'no effective date → no empty parenthetical');
+  assert.strictEqual(L('  Widget  ', '  $129.00  ', '  2026-09-01  '), 'Widget — $129.00 (price effective 2026-09-01)',
+    'every field is trimmed, so a stray space in the sheet cannot make the send-time rebuild miss');
+
+  // VERBATIM is the rule and it is deliberate: the operator's cell is how they
+  // mean the number to read. Adding a currency symbol here would put a figure
+  // in front of a paying customer that the sheet does not contain.
+  assert.strictEqual(L('W', '129', ''), 'W — 129', 'a bare number is NOT decorated into $129.00');
+  assert.strictEqual(L('W', 'Call for pricing', ''), 'W — Call for pricing', 'nor is a non-numeric cell rejected');
+
+  // A blank price is the one thing that must never reach an email, so the line
+  // does not exist at all — the caller has nothing to insert and says so.
+  assert.strictEqual(L('Widget', '', '2026-09-01'), '', 'no price → NO line (an item with no price is not quotable)');
+  assert.strictEqual(L('', '$129.00', ''), '', 'no name → no line');
+  assert.strictEqual(L(null, null, null), '', 'null-safe on every field');
+});
+
+test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the server line (a drift here does not look wrong — it BLOCKS every OOP send)', () => {
+  // This is the sharpest edge in the batch. sendExternalEmail verifies by
+  // rebuilding the line from the live sheet and requiring the message to
+  // CONTAIN it. So an em dash quietly becoming a hyphen on one side is not a
+  // rendering nit: every send carrying a price would refuse with "the inserted
+  // line was edited", and the rep would have no way to satisfy it.
+  const mCtx = { String: String };
+  vm.createContext(mCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), mCtx, { filename: 'srv#oopQuoteLine_' });
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnOopQuoteLine_'), mCtx, { filename: 'cli#cnOopQuoteLine_' });
+
+  const table = [
+    ['Widget', '$129.00', '2026-09-01'],
+    ['Widget', '$129.00', ''],
+    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026'],
+    ['  padded  ', '  $5  ', '  x  '],
+    ['W', '', '2026-01-01'],
+    ['', '$1', ''],
+    ['Em — dash in the NAME', '$2', ''],
+    ['W', '$3', 'effective — whenever'],
+  ];
+  table.forEach((row) => {
+    const args = row.map((x) => JSON.stringify(x)).join(',');
+    const srv = vm.runInContext('oopQuoteLine_(' + args + ')', mCtx);
+    const cli = vm.runInContext('cnOopQuoteLine_(' + args + ')', mCtx);
+    assert.strictEqual(cli, srv, 'client/server line drifted for ' + JSON.stringify(row) +
+      ' — client=' + JSON.stringify(cli) + ' server=' + JSON.stringify(srv));
+  });
+  // And the mirror is not vacuous: both sides actually produced a line.
+  assert.ok(vm.runInContext('oopQuoteLine_("W","$1","")', mCtx).length > 3, 'the pinned functions are real');
+});
+
+{
+  // oopVerifyQuotes_ drives against a FAKE sheet, so every branch is reachable
+  // without a spreadsheet. The fail direction is CHOSEN and it is CLOSED
+  // (g41): an unreadable store, a vanished item, a blank price and a changed
+  // price all REFUSE. The alternative — send anyway and note it — trades a
+  // blocked send for a wrong commitment, which is the trade this exists to
+  // refuse.
+  const vCtx = { String: String, Array: Array, Math: Math, JSON: JSON, OOP_MAX_ROWS: 5000, OOP_QUOTE_MAX: 10 };
+  vm.createContext(vCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopVerifyQuotes_'), vCtx, { filename: 'oopVerifyQuotes_' });
+
+  const GRID = [
+    ['Item', 'Price', 'EffectiveDate'],
+    ['Widget', '$129.00', '2026-09-01'],
+    ['Gadget', '$50.00', ''],
+    ['Priceless', '', '2026-09-01'],
+  ];
+  // The fake sheet is installed per case; `throws` makes oopSheet_ blow up.
+  const install = (grid, throws) => {
+    vCtx._grid = grid; vCtx._throws = !!throws;
+    vm.runInContext(`
+      function oopSheet_() {
+        if (_throws) throw new Error('boom');
+        return {
+          getLastColumn: function () { return _grid[0].length; },
+          getLastRow: function () { return _grid.length; },
+          getRange: function (r, c, nr, nc) {
+            return { getDisplayValues: function () {
+              var out = [];
+              for (var i = 0; i < nr; i++) out.push(_grid[r - 1 + i].slice(c - 1, c - 1 + nc));
+              return out;
+            } };
+          },
+        };
+      }`, vCtx);
+  };
+  const V = (quotes, message) => {
+    vCtx._q = quotes; vCtx._m = message;
+    return vm.runInContext('JSON.stringify(oopVerifyQuotes_(_q, _m))', vCtx);
+  };
+  const line = (n, p, e) => vm.runInContext('oopQuoteLine_(' + JSON.stringify(n) + ',' + JSON.stringify(p) + ',' + JSON.stringify(e) + ')', vCtx);
+
+  test('OOP-B: oopVerifyQuotes_ passes a line the LIVE sheet still produces — and never reads the sheet at all when nothing was quoted', () => {
+    install(GRID, true);   // a throwing sheet proves the no-quote path never touches it
+    assert.deepStrictEqual(JSON.parse(V([], 'hello')), { quoted: [] }, 'no quotes → no read, no error');
+    assert.deepStrictEqual(JSON.parse(V(null, 'hello')), { quoted: [] }, 'a missing field is not an error');
+
+    install(GRID, false);
+    const good = line('Widget', '$129.00', '2026-09-01');
+    const res = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }], 'Hi there\n' + good + '\nthanks'));
+    assert.ok(!res.error, 'a current line verifies: ' + res.error);
+    assert.strictEqual(res.quoted.length, 1);
+    assert.strictEqual(res.quoted[0].price, '$129.00');
+    assert.strictEqual(res.quoted[0].line, good, 'the verified line is the SERVER-derived one, not the claim');
+
+    // Case-insensitive on the item name, because the claim round-trips through
+    // a client and the sheet is the authority on spelling.
+    const ci = JSON.parse(V([{ name: 'wIdGeT', price: '$129.00', effective: '2026-09-01' }], good));
+    assert.ok(!ci.error, 'name match is case-insensitive');
+    assert.strictEqual(ci.quoted[0].name, 'Widget', 'and the SHEET spelling is what gets audited');
+  });
+
+  test('OOP-B: oopVerifyQuotes_ REFUSES a stale, vanished, priceless or edited quote — and says WHICH', () => {
+    install(GRID, false);
+    const good = line('Widget', '$129.00', '2026-09-01');
+
+    // 1. The price moved between the lookup and the send. This is the whole
+    //    reason the store is read LIVE rather than cached, so it must name both
+    //    numbers — "re-check the price" without them is unactionable mid-call.
+    const stale = JSON.parse(V([{ name: 'Widget', price: '$99.00', effective: '2026-09-01' }],
+      line('Widget', '$99.00', '2026-09-01')));
+    assert.ok(stale.error, 'a superseded price is refused');
+    assert.ok(/\$99\.00/.test(stale.error) && /\$129\.00/.test(stale.error),
+      'and the refusal names the old AND the new price: ' + stale.error);
+
+    // 2. The item is gone from the sheet.
+    const gone = JSON.parse(V([{ name: 'Nope', price: '$1', effective: '' }], 'Nope — $1'));
+    assert.ok(gone.error && /Nope/.test(gone.error), 'a vanished item is refused BY NAME: ' + gone.error);
+
+    // 3. The item is there with no price any more — a different problem with a
+    //    different fix, so a different message (g02's rule).
+    const none = JSON.parse(V([{ name: 'Priceless', price: '$7', effective: '' }], 'Priceless — $7'));
+    assert.ok(none.error && /no price on file/i.test(none.error), 'a blanked price is refused: ' + none.error);
+    assert.ok(!/changed/.test(none.error), 'and is NOT reported as a price change');
+
+    // 4. The rep edited the line by hand. The number is no longer
+    //    server-sourced, which is the one property this feature sells.
+    const edited = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'Widget — $129.00 or so, call us'));
+    assert.ok(edited.error && /edited/i.test(edited.error), 'an edited line is refused: ' + edited.error);
+    // Even with the item NAME gone, the surviving PRICE is what refuses — the
+    // discriminator against a deleted line is the figure, not the wording.
+    const priceOnly = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'it comes to $129.00 all in'));
+    assert.ok(priceOnly.error && /edited/i.test(priceOnly.error),
+      'a surviving price with the line dismantled around it still refuses: ' + priceOnly.error);
+
+    // 5. Over the cap.
+    const many = [];
+    for (let i = 0; i < 11; i++) many.push({ name: 'Widget', price: '$129.00', effective: '2026-09-01' });
+    const over = JSON.parse(V(many, good));
+    assert.ok(over.error && /Too many/i.test(over.error), 'the cap refuses rather than truncating silently');
+
+    // 6. The store itself is unreachable. NOT a best-effort skip: an
+    //    unverified commitment is exactly what must not be sent (g53 applied
+    //    to a price).
+    install(GRID, true);
+    const dead = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }], good));
+    assert.ok(dead.error && /could not be (read|verified)/i.test(dead.error),
+      'an unreadable pricing store REFUSES the send rather than sending unverified: ' + dead.error);
+
+    // 7. An empty sheet is the same refusal, not an empty pass.
+    install([['Item', 'Price']], false);
+    const empty = JSON.parse(V([{ name: 'Widget', price: '$1', effective: '' }], 'Widget — $1'));
+    assert.ok(empty.error, 'an empty pricing sheet refuses rather than verifying nothing: ' + JSON.stringify(empty));
+  });
+
+  test('OOP-B: a quote the rep DELETED from the message is dropped silently — deleting a line is a decision, not an error', () => {
+    install(GRID, false);
+    const res = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'I changed my mind, no price here'));
+    assert.ok(!res.error, 'a deleted line does not block the send: ' + res.error);
+    assert.deepStrictEqual(res.quoted, [], 'and nothing is audited, because nothing was quoted');
+
+    // The discrimination that makes this safe: the SAME missing line with a
+    // CHANGED price is an error, not a deletion. Without it, a rep who deleted
+    // nothing but whose price moved would sail through.
+    const moved = JSON.parse(V([{ name: 'Widget', price: '$99.00', effective: '2026-09-01' }],
+      'I changed my mind, no price here'));
+    assert.ok(moved.error, 'a stale price is still refused even when its line is absent');
+
+    // THE BOUNDARY, pinned so nobody later reads more into this than it does: a
+    // rep who OVERTYPES the figure with a different number is indistinguishable
+    // from one who deleted the line and wrote their own prose, and this passes.
+    // The promise is "a price the PICKER inserted is server-sourced and
+    // current", not "no wrong number can reach an email" — the second is not
+    // achievable from a free-text body, and claiming it would be the more
+    // dangerous error.
+    const overtyped = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'Widget — $88.00'));
+    assert.ok(!overtyped.error, 'a hand-typed number is out of reach of this check, by construction');
+    assert.deepStrictEqual(overtyped.quoted, [], 'and is audited as what it is: NOT a picker quote');
+  });
+}
+
+test('OOP-B: sendExternalEmail verifies quotes BEFORE anything irreversible, and the audit row carries item + exact price with the recipient DOMAIN only', () => {
+  const src = serverSource();
+  const fn = src.slice(src.indexOf('function sendExternalEmail('));
+  const body = fn.slice(0, fn.indexOf('\nfunction '));
+  assert.ok(body.length > 500 && body.indexOf('oopVerifyQuotes_') > 0, 'read the real sendExternalEmail body');
+
+  const at = (needle) => { const i = body.indexOf(needle); assert.ok(i > 0, 'missing: ' + needle); return i; };
+  const verify = at('oopVerifyQuotes_(');
+  // ORDERING IS THE POINT. A quote verified after a token exists leaves the rep
+  // a live fillable-form link for an email that never went out; verified after
+  // the PDF fetches it costs a UrlFetch round trip per refusal; verified after
+  // the send it is not a verification at all.
+  assert.ok(verify < at('createFormToken('), 'quotes verify BEFORE any form token is created');
+  assert.ok(verify < at('UrlFetchApp.fetch('), 'and before the PDF blobs are fetched');
+  assert.ok(verify < at('sendRepEmail_('), 'and before the email goes out');
+
+  // The refusal must actually return, not merely compute.
+  const window = body.slice(verify - 400, verify + 400);
+  assert.ok(/oopCheck\.error\)\s*return \{ success: false/.test(window),
+    'a failed verification RETURNS the refusal — computing it and sending anyway is the defect this guards');
+
+  // g36 is not relaxed by the quote being commercially significant: the audit
+  // row gains the item and the price, and still carries no recipient address.
+  const auditAt = at("writeAuditLog_(emp, 'ExternalEmailSent'");
+  const audit = body.slice(auditAt, body.indexOf(');', auditAt) + 2);
+  assert.ok(audit.length > 100 && audit.length < 800, 'isolated the audit CALL (' + audit.length + ' chars)');
+  assert.ok(/oopQuoted/.test(audit), 'the quoted prices reach the audit row');
+  assert.ok(/recipientDomain/.test(audit), 'the recipient is still logged as a DOMAIN');
+  assert.ok(!/\brecipientEmail\b/.test(audit),
+    'and the raw recipient address never enters the shared AuditLog (g36)');
+});
+
+test('OOP-B: the picker cannot insert a price the server did not return — the number never round-trips through the DOM', () => {
+  const cli = extractScript('cn/script_callnotes.html');
+
+  const render = extractFunction('cn/script_callnotes.html', 'cnExtOopRenderResults_');
+  const insert = extractFunction('cn/script_callnotes.html', 'cnExtOopInsert_');
+
+  // The rendered row carries an INDEX, never the price. g49: a value written to
+  // a data-* attribute comes back DECODED, and re-encoding a number a customer
+  // will be charged is exactly the round trip not to make.
+  assert.ok(/data-oop-insert="' \+ i \+ '"/.test(render),
+    'the Insert button carries the match INDEX');
+  assert.ok(!/data-oop-(price|name|eff)/.test(render),
+    'and no price, name or date is written into a data-* attribute for the handler to read back');
+
+  // The insert derives its line from cnOopQuoteLine_ over the RPC payload.
+  assert.ok(/cnOopQuoteLine_\(m\.name, m\.price, m\.effective\)/.test(insert),
+    'the inserted line is DERIVED from the server match object');
+  assert.ok(!/getElementById\('cnX-oop-results'\)[\s\S]*?(textContent|innerText)/.test(insert),
+    'and never scraped back out of the rendered results');
+
+  // The handler indexes into the parked RPC payload rather than any DOM text.
+  assert.ok(/_oopMatches/.test(render) && /_oopMatches/.test(cli),
+    'the match payload is parked on the results host and read back from there');
+  const handler = cli.slice(cli.indexOf("oopResults.addEventListener('click'"));
+  assert.ok(handler.indexOf('_oopMatches') > 0 && handler.indexOf('_oopMatches') < 400,
+    'the click handler resolves the match from the parked payload');
+
+  // And the send ships the claim, clearly marked as a claim rather than a source.
+  assert.ok(/quotedOop: cnExtOopQuotes_\(\)\.map\(/.test(cli),
+    'the send ships the recorded quotes for server-side re-verification');
+});
+
 test('SP4: spanishVmDurationSec_ parses RIGHT-TO-LEFT, so MM:SS and HH:MM:SS both read correctly — and anything else is null, never 0', () => {
   const d = (body) => vm.runInContext('spanishVmDurationSec_(' + JSON.stringify(body) + ')', _vmCtx);
 

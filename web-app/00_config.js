@@ -1656,6 +1656,12 @@ const OOP_TOP = 8;              // top-N fetched full-width; ties ride along so 
 // said "cache SHORT"; the honest answer on a price someone collects on is
 // "do not cache at all". One openById per lookup is what every other resolver
 // already costs.
+// OOP-B — the most price lines one external email may carry. A quote is a
+// COMMITMENT (the rep takes payment on that call), so every inserted line is
+// re-verified against the live sheet at send time and every one of them lands
+// in the audit row. The cap bounds both: the verification read and the audit
+// details string. Ten is far above any real quote and well under either limit.
+const OOP_QUOTE_MAX = 10;
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
 const INS_PAYOR_MAX_ROWS = 5000;

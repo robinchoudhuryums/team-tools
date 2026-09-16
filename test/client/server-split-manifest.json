@@ -179,6 +179,30 @@
     "getStorageHealth"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-B: the composer price picker adds OOP_QUOTE_MAX, oopQuoteLine_ and oopVerifyQuotes_ — a quoted price is a commitment, so every inserted line is re-derived from the live sheet at send time and the send refuses unless the message still carries it",
+   "added": [
+    "OOP_QUOTE_MAX",
+    "oopQuoteLine_",
+    "oopVerifyQuotes_"
+   ],
+   "removed": [],
+   "changed": [
+    "sendExternalEmail"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-B: oopVerifyQuotes_ discriminates an EDITED line from a DELETED one on the surviving price string — an edited line leaves an unverifiable figure in the email and must refuse, a deleted one leaves nothing and is a decision, not an error",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopVerifyQuotes_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1317,6 +1341,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "4cf733af4afd3548"
+  },
+  "OOP_QUOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bb23fd0902811421"
   },
   "OOP_TOP": {
    "file": "00_config.js",
@@ -5053,6 +5082,11 @@
    "kind": "function",
    "sha": "d64410e4fd5d8520"
   },
+  "oopQuoteLine_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e57dc903e2f01fb5"
+  },
   "oopRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5062,6 +5096,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "058b050020dbedad"
+  },
+  "oopVerifyQuotes_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "20c6bf7263454327"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",
@@ -5901,7 +5940,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "6a907d66cecbcbf5"
+   "sha": "beef519fe9757969"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
