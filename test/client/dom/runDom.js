@@ -2938,6 +2938,8 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
     return {
       success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', total: 4,
       warehouses: [{ name: 'Dallas', miles: 182.4 }, { name: 'San Antonio', miles: 74.1 }, { name: 'Phoenix', miles: null }],
+      city: 'Austin',
+      deliveryCities: [{ name: 'Austin', state: 'TX', accepts: 'POV, scooter', notes: '' }],
       items: [
         // Open both ways.
         { name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
@@ -3036,6 +3038,23 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   assert.ok(/Phoenix/.test(unplacedStrip.textContent), 'by name');
   assert.ok(/incomplete/.test(unplacedStrip.textContent), 'and what it means for the answer is stated');
   assert.ok(!/Phoenix/.test(distStrip.textContent), 'and it is not quietly listed among the measured ones');
+
+  // LISTED DELIVERY CITIES are INFORMATION, never a verdict (operator decision,
+  // 2026-09-16). The load-bearing assertions are the negative ones: it must sit
+  // OUTSIDE every item's answer, and it must say so, or a rep reads "Austin
+  // delivers POV" next to a No and takes it as the answer.
+  const cityLine = host.querySelector('.kb-elig-city');
+  assert.ok(cityLine, 'a listed delivery city is surfaced');
+  assert.ok(/Austin, TX/.test(cityLine.textContent) && /delivers POV, scooter/.test(cityLine.textContent),
+    'naming the city and what goes there');
+  assert.ok(/Reference only/.test(cityLine.textContent) && /Area Eligibility/.test(cityLine.textContent),
+    'and saying plainly that it is NOT the answer');
+  assert.strictEqual(cityLine.closest('.kb-ins-row'), null,
+    'it sits outside every item row — inside one it would read as that item\u2019s verdict');
+  assert.strictEqual(cityLine.querySelector('.kb-elig-v'), null, 'and carries no verdict of its own');
+  // The verdicts are UNCHANGED by it: the TX item still reads No on insurance.
+  assert.ok(rows[1].querySelectorAll('.kb-elig-v')[0].classList.contains('no'),
+    'a listed delivery city does NOT flip a verdict');
 
   // A failed geocode is an ERROR, never an empty eligible list — the two look
   // identical on screen and only one means "do not sell this here".

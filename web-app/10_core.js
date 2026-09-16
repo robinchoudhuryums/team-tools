@@ -1863,7 +1863,13 @@ function getStorageHealth(opts) {
 
     const kbProp = props.getProperty('KB_SS_ID');
     const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
-    const kbStore = probe({ label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs',
+    // OOP pricing and delivery reach are NAMED TABS in this store rather than a
+    // store of their own (operator 2026-09-16) — the InsurancePayors pattern.
+    // They are named in the role so this row's reachability and TIMEZONE verdict
+    // is visibly theirs too: an EffectiveDate column is a coerced date read, so
+    // a tz drift here shows a customer a different date than the sheet does.
+    const kbStore = probe({ label: 'Knowledge Base + Training',
+      role: 'KB, KbViews, Training/Quiz tabs, InsurancePayors, OopPricing, LocationAcceptance',
       cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID', id: kbId,
       source: kbProp ? 'Script Property' : (kbId ? 'CONFIG' : 'unset'),
       note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' });
@@ -1880,17 +1886,6 @@ function getStorageHealth(opts) {
     // enabled purge is visible where every other store's policy already is.
     // Review RECORDS only — the QaRecordings index + Drive audio files are
     // never purged (INV-196).
-    // OOP pricing (operator 2026-09-16) — the ninth store, and the only one
-    // the app never writes to. Read LIVE on every lookup precisely so a quoted
-    // price cannot lag the operator's sheet; the tz row matters as much here as
-    // anywhere, because an EffectiveDate column is a coerced date read.
-    const oopProp = props.getProperty('OOP_SS_ID');
-    stores.push(probe({ label: 'OOP pricing', role: 'Out-of-pocket item prices + area eligibility (read-only)',
-      cls: 'PHI-free by policy', prop: 'OOP_SS_ID', id: oopProp || '',
-      retention: 'kept — the app never writes to this store',
-      source: oopProp ? 'Script Property' : 'unset',
-      note: oopProp ? '' : 'Unset → the OOP price lookup says it is not configured (no fallback store, by design — a price lookup that silently resolves elsewhere is worse than one that does not work).' }));
-
     const qaProp = props.getProperty('QA_SS_ID');
     const qaDays = qaReviewRetentionDays_();
     stores.push(probe({ label: 'QA (recordings)', role: 'QaRecordings index + QaComments + QaScorecards',

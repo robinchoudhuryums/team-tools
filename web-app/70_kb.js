@@ -654,29 +654,23 @@ function insPayorRowObj_(headers, row) {
 //  OOP PRICING LOOKUP (operator 2026-09-16) — the NINTH store, read LIVE
 // ════════════════════════════════════════════════════════════════════════════
 
-/** The OOP pricing store — NO fallback, the `getQaSS_` / `getHrDocsSS_`
- *  posture. An unset property is a friendly not-configured error, never a
- *  silent read of some other spreadsheet: a price lookup that quietly resolves
- *  somewhere else is the one outcome worse than not working. */
-function getOopSS_() {
-  if (typeof _TEST_OVERRIDE_OOP_SS_ID !== 'undefined' && _TEST_OVERRIDE_OOP_SS_ID) {
-    return SpreadsheetApp.openById(_TEST_OVERRIDE_OOP_SS_ID);
-  }
-  const id = PropertiesService.getScriptProperties().getProperty('OOP_SS_ID');
-  if (!id) throw new Error('OOP pricing is not configured — set Script Property OOP_SS_ID to the pricing spreadsheet.');
-  return SpreadsheetApp.openById(id);
-}
-
-/** The pricing sheet: the spreadsheet's FIRST tab.
+/** The pricing table: a NAMED TAB in the KB store, the `InsurancePayors`
+ *  pattern exactly (same store, same class, same maintainer, and the search
+ *  below already reuses that lookup's scorer).
  *
- *  Deliberately not a configured tab name. This spreadsheet exists for one
- *  purpose, so "the first sheet" needs no operator decision and cannot drift
- *  out of step with a constant in here. The diagnostics endpoint REPORTS which
- *  tab it read, so the assumption is visible rather than silent. */
+ *  NAMED, not "the first sheet". The first version of this reader lived in a
+ *  spreadsheet of its own and took `getSheets()[0]`, which was fine while the
+ *  file existed for one purpose — and would have failed SILENTLY the moment it
+ *  moved, because columns are discovered by header: it would have found the KB
+ *  tab, matched no `price` header, and rendered every row blank rather than
+ *  throwing. A missing tab says exactly what to create. */
 function oopSheet_() {
-  const sheets = getOopSS_().getSheets();
-  if (!sheets || !sheets.length) throw new Error('The OOP pricing spreadsheet has no sheets.');
-  return sheets[0];
+  const sh = getKbSS_().getSheetByName(OOP_PRICING_TAB);
+  if (!sh) {
+    throw new Error('OOP pricing is not set up yet — create a tab named "' + OOP_PRICING_TAB +
+      '" in the KB spreadsheet, with the item name in column A.');
+  }
+  return sh;
 }
 
 /** PURE (Node-pinned): what ROLE a header column plays, or '' for none.
@@ -877,29 +871,129 @@ function oopVerifyQuotes_(quotes, message) {
   return { quoted: out };
 }
 
-/** The warehouse registry: CONFIG seed, wholly replaced by Script Property
- *  OOP_WAREHOUSES when that parses to an object. Returns {name: address}.
+/** PURE (Node-pinned): what ROLE a LocationAcceptance header plays, or ''.
  *
- *  Wholly replaced rather than merged, deliberately: a merge means a warehouse
- *  the operator DELETED from the property comes back from the seed, and a
- *  registry you cannot remove from is one that silently keeps matching a site
- *  that closed. */
-function getOopWarehouses_() {
-  const seed = (CONFIG.OOP_WAREHOUSES && typeof CONFIG.OOP_WAREHOUSES === 'object')
-    ? CONFIG.OOP_WAREHOUSES : {};
-  let over = null;
+ *  Header-stem discovery, the oopHeaderRole_ discipline and for the same
+ *  reason: the operator owns the tab and will reorder it. `accepts` is tested
+ *  BEFORE `name`, because "Accepted Items" contains both stems and reading an
+ *  item list as a place name would put a row in the warehouse vocabulary that
+ *  no radius phrase can ever match. */
+function locHeaderRole_(header) {
+  const h = String(header == null ? '' : header).trim();
+  if (!h) return '';
+  if (/^type$|kind|category|row\s*type/i.test(h)) return 'type';
+  if (/accept|item|deliver|product|equip/i.test(h)) return 'accepts';
+  if (/address|street|location/i.test(h)) return 'address';
+  if (/state|province|region/i.test(h)) return 'state';
+  if (/name|warehouse|city|site|town/i.test(h)) return 'name';
+  if (/note|comment/i.test(h)) return 'notes';
+  return '';
+}
+
+/** PURE (Node-pinned): classify one LocationAcceptance row.
+ *
+ *  Returns 'warehouse' | 'city' | '' (unreadable). The `Type` column decides;
+ *  when it is blank the row is classified by SHAPE — an address makes it a
+ *  warehouse, because an address is the thing only a warehouse row carries and
+ *  the thing the radius grammar cannot work without. A row with neither a
+ *  usable type nor an address is NOT guessed at: it returns '' and the
+ *  diagnostics list it, the same posture the eligibility grammar takes (g41). */
+function locRowKind_(typeCell, hasAddress) {
+  const t = String(typeCell == null ? '' : typeCell).trim().toLowerCase();
+  if (/^(warehouse|wh|depot|hub|dc)\b/.test(t)) return 'warehouse';
+  if (/^(city|town|metro|area)\b/.test(t)) return 'city';
+  if (t) return '';                      // a type we do not recognise is not a guess
+  return hasAddress ? 'warehouse' : '';
+}
+
+/** The delivery-reach table. Returns
+ *  `{ warehouses: {name: address}, cities: [{name, state, accepts, notes}], unreadable: [...], error }`.
+ *
+ *  **NO SEED AND NO FALLBACK, deliberately.** The previous version was a Script
+ *  Property that fell back to a CONFIG seed of bare city names when it failed to
+ *  parse — and bare city names geocode to city CENTRES, so a warehouse twenty
+ *  miles out of town silently made every near-boundary radius answer wrong by
+ *  up to twenty miles. That is g114 exactly: a plausible substitute for a
+ *  missing value, rendered as data. A missing tab now yields an EMPTY registry,
+ *  which makes every radius rule parse as UNKNOWN (never as eligible) and shows
+ *  up by name in the diagnostics.
+ *
+ *  A warehouse row with no address is dropped from the registry rather than
+ *  registered unplaceable: its NAME is the vocabulary the grammar matches, so
+ *  keeping it would turn "100 miles of X" from UNKNOWN (honest: we do not know
+ *  that place) into a radius we can never measure. */
+function getLocationAcceptance_() {
+  const out = { warehouses: {}, cities: [], unreadable: [], noAddress: [], error: '' };
+  let sh;
   try {
-    const raw = PropertiesService.getScriptProperties().getProperty(OOP_WAREHOUSES_PROP);
-    if (raw) over = JSON.parse(raw);
-  } catch (e) { over = null; }
-  if (!over || typeof over !== 'object' || Array.isArray(over)) return seed;
-  const out = {};
-  Object.keys(over).forEach(function (k) {
-    const name = String(k || '').trim();
-    const addr = String(over[k] == null ? '' : over[k]).trim();
-    if (name && addr) out[name] = addr;
+    sh = getKbSS_().getSheetByName(LOCATION_ACCEPTANCE_TAB);
+  } catch (err) {
+    out.error = 'The KB spreadsheet could not be read: ' + err.message;
+    return out;
+  }
+  if (!sh) {
+    out.error = 'Delivery reach is not set up yet — create a tab named "' + LOCATION_ACCEPTANCE_TAB +
+      '" in the KB spreadsheet (Type / Name / Address / State / Accepts).';
+    return out;
+  }
+  const last = Math.min(sh.getLastRow(), LOC_MAX_ROWS + 1);
+  if (last < 2) { out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab is empty.'; return out; }
+  const width = sh.getLastColumn();
+  const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+  const col = {};
+  for (let c = 0; c < width; c++) {
+    const role = locHeaderRole_(headers[c]);
+    if (role && col[role] === undefined) col[role] = c;
+  }
+  const at = function (row, role) {
+    return col[role] === undefined ? '' : String(row[col[role]] == null ? '' : row[col[role]]).trim();
+  };
+  const rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+  rows.forEach(function (row) {
+    const name = at(row, 'name');
+    const address = at(row, 'address');
+    if (!name && !address) return;                 // a blank row is not a finding
+    const kind = locRowKind_(at(row, 'type'), !!address);
+    if (kind === 'warehouse') {
+      if (!address) { out.noAddress.push(name); return; }
+      if (name && !out.warehouses[name]) out.warehouses[name] = address;
+      else if (!name) out.unreadable.push({ name: '', reason: 'a warehouse row with no name' });
+      return;
+    }
+    if (kind === 'city') {
+      if (!name) { out.unreadable.push({ name: '', reason: 'a city row with no name' }); return; }
+      out.cities.push({ name: name, state: at(row, 'state').toUpperCase(),
+        accepts: at(row, 'accepts'), notes: at(row, 'notes') });
+      return;
+    }
+    out.unreadable.push({ name: name, reason: 'Type is "' + at(row, 'type') + '" and there is no address' });
   });
-  return Object.keys(out).length ? out : seed;
+  out.truncated = sh.getLastRow() > LOC_MAX_ROWS + 1;
+  return out;
+}
+
+/** PURE (Node-pinned): the listed delivery cities that match a geocoded
+ *  location. Returns the matching rows, which the caller SHOWS — it never
+ *  changes a verdict (operator decision, 2026-09-16).
+ *
+ *  WHY IT ONLY SHOWS: a verdict that depended on two tables agreeing would let
+ *  a stale row in one of them make an undeliverable item read as deliverable,
+ *  and the rep would have no way to see which table said what. The Area
+ *  Eligibility column stays the single source of the answer; this is the same
+ *  reference material `InsurancePayors` is, surfaced at the moment it is
+ *  useful.
+ *
+ *  The STATE is required to match when the row carries one — there is a
+ *  Springfield in most of them. */
+function locCityMatches_(cities, city, state) {
+  const c = String(city || '').trim().toLowerCase();
+  if (!c) return [];
+  const st = String(state || '').trim().toUpperCase();
+  return (cities || []).filter(function (r) {
+    if (String(r.name || '').trim().toLowerCase() !== c) return false;
+    if (r.state && st && r.state !== st) return false;
+    return true;
+  });
 }
 
 /** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
@@ -1089,7 +1183,8 @@ function checkOopEligibility(address, query) {
     }
     const q = String(query || '').trim();
 
-    const wh = getOopWarehouses_();
+    const loc0 = getLocationAcceptance_();
+    const wh = loc0.warehouses;
     const whNames = Object.keys(wh);
 
     // ── The pricing rows ──────────────────────────────────────────────
@@ -1142,6 +1237,14 @@ function checkOopEligibility(address, query) {
     }
     const loc = { state: qGeo.state, miles: milesByName };
 
+    // Listed delivery cities for this address. INFORMATION ONLY — it never
+    // touches a verdict (operator decision, 2026-09-16). A verdict that
+    // depended on two tables agreeing would let a stale row in one of them make
+    // an undeliverable item read as deliverable, with nothing on screen saying
+    // which table decided. The Area Eligibility column stays the single source
+    // of the answer; this is reference material shown where it is useful.
+    const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
+
     const items = picked.map(function (row, i) {
       const o = oopRowObj_(headers, row);
       const rule = parsed[i];
@@ -1153,8 +1256,14 @@ function checkOopEligibility(address, query) {
       };
     });
 
-    return { success: true, formatted: qGeo.formatted, state: qGeo.state,
+    return { success: true, formatted: qGeo.formatted, state: qGeo.state, city: qGeo.city,
       warehouses: whOut, items: items, total: total,
+      deliveryCities: cityHits,
+      // A registry that could not be read is SURFACED rather than silently
+      // producing UNKNOWN radius verdicts that read like caution (g02): the
+      // rep needs to know the difference between "we do not deliver there" and
+      // "nobody has set up the delivery table".
+      locationError: loc0.error || '',
       cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
   } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
 }
@@ -1191,7 +1300,8 @@ function getOopPricingDiagnostics() {
     // eligibility value in the sheet parses, grouped. An operator who added
     // "100 mi of Houston" sees it sitting under `unknown` here rather than
     // finding out from a rep.
-    const wh = getOopWarehouses_();
+    const loc = getLocationAcceptance_();
+    const wh = loc.warehouses;
     const whNames = Object.keys(wh);
     const elig = { open: 0, states: 0, radius: 0, unknown: [] };
     if (rows) {
@@ -1206,6 +1316,15 @@ function getOopPricingDiagnostics() {
     return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
       truncated: rows > OOP_MAX_ROWS,
       warehouses: whNames.map(function (n) { return { name: n, address: wh[n] }; }),
+      // The delivery-reach tab, reported in the SAME breath as the pricing one:
+      // an operator who added "100 mi of Houston" and an operator who spelled a
+      // warehouse differently in the two tabs both see it here, by name, rather
+      // than finding out from a rep reading "cannot tell".
+      locationTab: LOCATION_ACCEPTANCE_TAB,
+      locationError: loc.error || '',
+      cities: loc.cities.length,
+      locUnreadable: loc.unreadable,
+      locNoAddress: loc.noAddress,
       eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
         unknownCount: rows - elig.open - elig.states - elig.radius, unknown: elig.unknown },
       sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
@@ -2503,17 +2622,23 @@ function kbGeocodeOne_(addr) {
     if (!res || res.status !== 'OK' || !res.results || !res.results.length) return null;
     const r = res.results[0];
     if (!r.geometry || !r.geometry.location) return null;
-    let state = '';
+    let state = '', city = '';
     const comps = r.address_components || [];
     for (let i = 0; i < comps.length; i++) {
       const types = comps[i].types || [];
-      if (types.indexOf('administrative_area_level_1') >= 0) {
+      if (!state && types.indexOf('administrative_area_level_1') >= 0) {
         state = String(comps[i].short_name || '').trim().toUpperCase();
-        break;
+      }
+      // `locality` is the city proper. `postal_town` is its counterpart where
+      // the geocoder does not emit one; a rural address may have neither, and
+      // '' is then the honest answer — the caller must treat it as "could not
+      // determine", never as "no match in the city list".
+      if (!city && (types.indexOf('locality') >= 0 || types.indexOf('postal_town') >= 0)) {
+        city = String(comps[i].long_name || '').trim();
       }
     }
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
-      formatted: String(r.formatted_address || ''), state: state };
+      formatted: String(r.formatted_address || ''), state: state, city: city };
   } catch (e) { return null; }
 }
 

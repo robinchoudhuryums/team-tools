@@ -98,6 +98,15 @@
      distance is never longer than the drive, so a NO is certain and a YES is
      the provisional one). "Cannot tell" is its own state for the same reason —
      folding it into "no" would send the rep to the wrong next action. */
+  /* Listed delivery cities. Deliberately NOT toned like a verdict: it is
+     reference material, and a rep must not read it as an answer. */
+  .kb-elig-city {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+    margin: 6px 0; padding: 6px 8px; border-radius: var(--radius);
+    background: var(--paper); border: 1px solid var(--line);
+    font-size: 12px; color: var(--ink);
+  }
+  .kb-elig-city-note { color: var(--muted); font-size: 11px; }
   .kb-elig-v {
     display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px;
     align-items: baseline; margin-top: 4px; font-size: 12px;
@@ -2601,6 +2610,28 @@ function eligRenderResults_(suffix, addr, res) {
     html += '<div class="kb-ins-more">' + wh.map(function (w) {
       return esc(w.name) + ' ' + esc(String(w.miles)) + ' mi';
     }).join(' · ') + ' (straight-line)</div>';
+  }
+  // LISTED DELIVERY CITIES. Information, never a verdict (operator decision,
+  // 2026-09-16) — so it renders as its own line ABOVE the items rather than
+  // inside any item's answer. A rep must never be able to read this as "and
+  // therefore it is eligible": the Area Eligibility column is the only thing
+  // that decides, and two tables that could disagree would leave nobody able
+  // to see which one did.
+  var dc = res.deliveryCities || [];
+  if (dc.length) {
+    html += '<div class="kb-elig-city">' + icon('checkCircle', 12) + ' ' +
+      dc.map(function (c) {
+        return esc(c.name) + (c.state ? ', ' + esc(c.state) : '') +
+          (c.accepts ? ' \u2014 delivers ' + esc(c.accepts) : ' \u2014 listed delivery city');
+      }).join(' \u00b7 ') +
+      '<span class="kb-elig-city-note">Reference only \u2014 the verdicts below come from the item\u2019s Area Eligibility.</span>' +
+    '</div>';
+  }
+  // A delivery table that could not be READ is surfaced. Without this, every
+  // radius rule quietly reads "cannot tell", which looks like caution rather
+  // than like a tab nobody created (g02).
+  if (res.locationError) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">' + esc(res.locationError) + '</div>';
   }
   var unplaced = (res.warehouses || []).filter(function (w) { return w.miles == null; });
   if (unplaced.length) {

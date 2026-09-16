@@ -227,6 +227,33 @@
     "kbMapDistances"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP/ELIG move into the KB store: the pricing table and the delivery-reach table are NAMED TABS beside InsurancePayors, so getOopSS_/OOP_WAREHOUSES_PROP/getOopWarehouses_ are gone and locHeaderRole_/locRowKind_/getLocationAcceptance_/locCityMatches_ replace them",
+   "added": [
+    "LOCATION_ACCEPTANCE_TAB",
+    "LOC_MAX_ROWS",
+    "OOP_PRICING_TAB",
+    "getLocationAcceptance_",
+    "locCityMatches_",
+    "locHeaderRole_",
+    "locRowKind_"
+   ],
+   "removed": [
+    "OOP_WAREHOUSES_PROP",
+    "getOopSS_",
+    "getOopWarehouses_"
+   ],
+   "changed": [
+    "CONFIG",
+    "checkOopEligibility",
+    "getOopPricingDiagnostics",
+    "getStorageHealth",
+    "kbGeocodeOne_",
+    "oopSheet_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -614,7 +641,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9ee080a49dd0d57c"
+   "sha": "715207876246a4c8"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -1351,6 +1378,16 @@
    "kind": "const",
    "sha": "f8cbf630ec1709fd"
   },
+  "LOCATION_ACCEPTANCE_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ed4ce4245c088257"
+  },
+  "LOC_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bf86c0f36d950537"
+  },
   "MANAGER_DAY_MAX_BREAKS": {
    "file": "00_config.js",
    "kind": "const",
@@ -1376,6 +1413,11 @@
    "kind": "const",
    "sha": "4cf733af4afd3548"
   },
+  "OOP_PRICING_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1d67b404202ea75c"
+  },
   "OOP_QUOTE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -1385,11 +1427,6 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "3829a39b37d5150e"
-  },
-  "OOP_WAREHOUSES_PROP": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "7d25260da9e224bf"
   },
   "OPEN_PUNCH_EXPIRING_DAYS": {
    "file": "20_timeclock.js",
@@ -2564,7 +2601,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "890e768dbb2e94b8"
+   "sha": "a83673f61d6ccfd2"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -3696,6 +3733,11 @@
    "kind": "function",
    "sha": "d2f943ea4b867ad3"
   },
+  "getLocationAcceptance_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c776b191e3452a64"
+  },
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -3839,17 +3881,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4dd681c5f731100a"
-  },
-  "getOopSS_": {
-   "file": "70_kb.js",
-   "kind": "function",
-   "sha": "4c8f3c867800fefe"
-  },
-  "getOopWarehouses_": {
-   "file": "70_kb.js",
-   "kind": "function",
-   "sha": "bd9149e65fa8d497"
+   "sha": "4560d450c28c1096"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -4119,7 +4151,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6591f67d509b24be"
+   "sha": "20729a7de3026f07"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -4649,7 +4681,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3b5c248be4f1c31f"
+   "sha": "3e7980ff073fcf6d"
   },
   "kbGetComments": {
    "file": "70_kb.js",
@@ -4860,6 +4892,21 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "c1119478e3152f94"
+  },
+  "locCityMatches_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "dd2a7a6154decfbe"
+  },
+  "locHeaderRole_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0b9743860ea8d4a8"
+  },
+  "locRowKind_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "819bf64dfc7e05ed"
   },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
@@ -5169,7 +5216,7 @@
   "oopSheet_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "058b050020dbedad"
+   "sha": "6bd62cb7369fb118"
   },
   "oopVerifyQuotes_": {
    "file": "70_kb.js",

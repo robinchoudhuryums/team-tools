@@ -408,16 +408,6 @@ const CONFIG = {
                            // review (or, for legacy rows, its last edit) is older
                            // than this. Editing an item counts as reviewing it.
   },
-  // ELIG — the warehouse registry the OOP radius grammar matches against. SEED
-  // ONLY: Script Property OOP_WAREHOUSES (same {name: address} shape) replaces
-  // it wholesale. The NAMES are the vocabulary — "100 miles of Dallas or San
-  // Antonio warehouse" resolves because both names appear as substrings of the
-  // cell, so a name here has to be the word the operator actually writes in the
-  // sheet, not a formal site name.
-  OOP_WAREHOUSES: {
-    'Dallas': 'Dallas, TX',
-    'San Antonio': 'San Antonio, TX',
-  },
 };
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
@@ -1644,8 +1634,8 @@ const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
 // never guessed at.
 // ── OOP pricing lookup (operator 2026-09-16) ────────────────────────────────
 // Out-of-pocket prices for items a patient is most likely to order OOP. The
-// operator maintains them in their OWN spreadsheet, read LIVE through
-// `OOP_SS_ID` — NOT imported the way the payor table is.
+// operator maintains them in a tab of the KB spreadsheet, read LIVE on every
+// lookup — NOT imported the way the payor table is.
 //
 // WHY LIVE, and it is the whole design: the payor table is ADVISORY (an
 // unlisted plan falls through to the TRY rules, and a stale copy costs a
@@ -1659,6 +1649,17 @@ const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
 // reorder it. The FIRST column is the item name the search scans. Anything
 // the role matcher does not recognise rides along as a verbatim attribute —
 // unknown tokens render as-is, never guessed at.
+// WHERE IT LIVES (operator 2026-09-16, revised same day): a NAMED TAB in the
+// KB spreadsheet, not a store of its own. `InsurancePayors` is already an
+// operator-imported, read-only lookup table in that store — same class
+// (PHI-free by policy), same maintainer, same access pattern, and the OOP
+// search literally reuses the payor scorer. A second spreadsheet bought a
+// Script Property and a Storage Health row and nothing else.
+//
+// It is NOT in the Intake store, which was the other candidate: Intake is PHI
+// and the app WRITES to it, so pricing there would mean anyone maintaining
+// prices needs edit access to patient submissions.
+const OOP_PRICING_TAB = 'OopPricing';
 const OOP_MAX_ROWS = 5000;      // bounded tail — the INV-46 family
 const OOP_TOP = 8;              // top-N fetched full-width; ties ride along so the REP judges
 // NO result cache, deliberately — searchInsurancePayors has none either, and
@@ -1698,13 +1699,22 @@ const OOP_ELIG_MAX_ITEMS = 60;      // items returned by one eligibility check
 // (as a fraction of the limit) inside which a YES says so rather than implying
 // a precision the measurement does not have.
 const OOP_ELIG_NEAR_BAND = 0.8;
-// The warehouse registry the radius grammar matches against. CONFIG is the
-// seed; Script Property OOP_WAREHOUSES (same shape) overrides it, so the
-// operator can add a warehouse without a redeploy. Deliberately NOT parsed out
-// of the ```map article's wh| lines: the pricing sheet would then depend on
-// prose in an article nothing checks, and a renamed heading would silently turn
-// every radius row UNKNOWN.
-const OOP_WAREHOUSES_PROP = 'OOP_WAREHOUSES';
+// The delivery-reach table, a NAMED TAB beside the pricing one. It carries TWO
+// row kinds under a `Type` column, because they answer the same question from
+// two directions:
+//   warehouse | Name + Address  → the vocabulary the radius grammar matches,
+//                                 and the address that gets geocoded
+//   city      | Name + State + Accepts → places we deliver POVs/scooters to
+//
+// A SHEET, not a Script Property, and the reason is a failure mode rather than
+// convenience: a malformed JSON property fell back to a CONFIG seed of bare
+// city names, which geocode to city CENTRES — so a warehouse twenty miles out
+// of town made every near-boundary radius answer wrong by up to twenty miles,
+// silently. That is the plausible-substitute failure (g114) the radius verdict
+// exists to avoid. **There is deliberately NO SEED and NO FALLBACK:** a missing
+// or empty tab makes radius rules read UNKNOWN and says so in the diagnostics.
+const LOCATION_ACCEPTANCE_TAB = 'LocationAcceptance';
+const LOC_MAX_ROWS = 2000;      // bounded tail — the INV-46 family
 // Two-letter codes the STATES grammar accepts. The 50 states plus DC and PR —
 // a token outside this list is not a state code, and a value made only of
 // tokens outside it parses as UNKNOWN rather than as a state rule.

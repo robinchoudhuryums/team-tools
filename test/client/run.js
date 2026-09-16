@@ -13258,6 +13258,154 @@ test('ELIG: oopEligibilityCheck_ — a radius NO is CERTAIN and a radius YES nea
     'a blank cell says it is blank rather than quoting an empty string');
 });
 
+vm.runInContext(extractRawFunction('Code.js', 'locHeaderRole_'), _vmCtx, { filename: 'locHeaderRole_' });
+vm.runInContext(extractRawFunction('Code.js', 'locRowKind_'), _vmCtx, { filename: 'locRowKind_' });
+vm.runInContext(extractRawFunction('Code.js', 'locCityMatches_'), _vmCtx, { filename: 'locCityMatches_' });
+
+test('ELIG: locHeaderRole_ / locRowKind_ read the LocationAcceptance shape, and never GUESS a row they cannot classify', () => {
+  const R = (h) => vm.runInContext('locHeaderRole_(' + JSON.stringify(h) + ')', _vmCtx);
+  const K = (t, hasAddr) => vm.runInContext('locRowKind_(' + JSON.stringify(t) + ',' + JSON.stringify(hasAddr) + ')', _vmCtx);
+
+  assert.strictEqual(R('Type'), 'type');
+  assert.strictEqual(R('Name'), 'name');
+  assert.strictEqual(R('Address'), 'address');
+  assert.strictEqual(R('State'), 'state');
+  assert.strictEqual(R('Accepts'), 'accepts');
+  assert.strictEqual(R('Notes'), 'notes');
+  // The operator's likely real headings, not just the canonical ones.
+  assert.strictEqual(R('Warehouse'), 'name');
+  assert.strictEqual(R('City'), 'name');
+  assert.strictEqual(R('Street Address'), 'address');
+  assert.strictEqual(R('Delivers'), 'accepts');
+
+  // ORDER MATTERS, and not obviously: "Accepted Items" contains both the
+  // accepts stem AND the item stem, and "Accepted Cities" contains the name
+  // stem. Reading either as a place NAME would put a row in the warehouse
+  // vocabulary that no radius phrase can ever match.
+  assert.strictEqual(R('Accepted Items'), 'accepts', 'accepts wins over item');
+  assert.strictEqual(R('Accepted Cities'), 'accepts', 'accepts wins over the name stem');
+  assert.strictEqual(R('unrelated column'), '', 'an unrecognised header plays no role');
+  assert.strictEqual(R(''), '');
+
+  // The Type column decides.
+  assert.strictEqual(K('warehouse', false), 'warehouse');
+  assert.strictEqual(K('Warehouse', true), 'warehouse', 'case-insensitive');
+  assert.strictEqual(K('WH', false), 'warehouse');
+  assert.strictEqual(K('city', false), 'city');
+  assert.strictEqual(K('Metro', false), 'city');
+
+  // A BLANK type is classified by SHAPE — an address is the thing only a
+  // warehouse row carries, and the thing the radius grammar cannot work
+  // without.
+  assert.strictEqual(K('', true), 'warehouse', 'blank type + an address is a warehouse');
+  assert.strictEqual(K('', false), '', 'blank type + no address is NOT guessed at');
+
+  // A type we do not recognise is never guessed into one we do — the g41
+  // posture the eligibility grammar already takes, applied one table over. The
+  // ADDRESS does not rescue it: shape only classifies a row whose Type is
+  // BLANK, because a filled-in Type the reader cannot read means the operator
+  // meant something, and we do not know what.
+  assert.strictEqual(K('supplier', true), '',
+    'an unrecognised Type is unreadable even WITH an address');
+  assert.strictEqual(K('supplier', false), '');
+  assert.strictEqual(K('pickup point', true), '');
+  // Matching is by PREFIX, so the operator's own elaborations still land. This
+  // is documented rather than accidental — it is why 'supplier' above is
+  // unreadable while 'warehouse (north)' is not.
+  assert.strictEqual(K('warehouse (north dock)', false), 'warehouse');
+  assert.strictEqual(K('city - metro area', false), 'city');
+  assert.strictEqual(K('whse', true), '', 'an abbreviation the list does not carry is NOT guessed');
+});
+
+test('ELIG: locCityMatches_ requires the STATE when the row carries one, and an UNDETERMINED city matches nothing', () => {
+  const M = (cities, city, st) => JSON.parse(vm.runInContext(
+    'JSON.stringify(locCityMatches_(' + JSON.stringify(cities) + ',' + JSON.stringify(city) + ',' + JSON.stringify(st) + '))', _vmCtx));
+  const CITIES = [
+    { name: 'Springfield', state: 'TX', accepts: 'POV' },
+    { name: 'Springfield', state: 'IL', accepts: 'scooter' },
+    { name: 'Loose City', state: '', accepts: 'POV' },
+  ];
+
+  assert.strictEqual(M(CITIES, 'Springfield', 'TX').length, 1);
+  assert.strictEqual(M(CITIES, 'Springfield', 'TX')[0].accepts, 'POV', 'the RIGHT Springfield');
+  assert.strictEqual(M(CITIES, 'Springfield', 'IL')[0].accepts, 'scooter');
+  assert.strictEqual(M(CITIES, 'springfield', 'tx').length, 1, 'case-insensitive both sides');
+
+  // A row with no state matches any state — the operator left it open.
+  assert.strictEqual(M(CITIES, 'Loose City', 'NV').length, 1);
+
+  // THE ONE THAT MATTERS. A rural address can geocode with no `locality`, and
+  // '' must mean "could not determine", never "match everything" — a blank
+  // matching the whole list would tell a rep we deliver to a place we have
+  // never heard of (INV-187/g114).
+  assert.strictEqual(M(CITIES, '', 'TX').length, 0, 'an undetermined city matches NOTHING');
+  assert.strictEqual(M(CITIES, null, 'TX').length, 0);
+  assert.strictEqual(M([], 'Springfield', 'TX').length, 0, 'an empty registry matches nothing');
+});
+
+test('ELIG: the delivery table has NO seed and NO fallback — a missing tab makes radius rules UNKNOWN, it does not resolve to a city centre', () => {
+  const src = serverSource();
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'getLocationAcceptance_'));
+
+  // THE DEFECT THIS REPLACED: a Script Property that fell back to a CONFIG
+  // seed of bare city names, which geocode to city CENTRES — so a warehouse
+  // twenty miles out of town made every near-boundary radius answer wrong by
+  // up to twenty miles, silently. A seed here is a plausible substitute for a
+  // missing value (g114), and the radius verdict exists to avoid exactly that.
+  assert.ok(!/OOP_WAREHOUSES/.test(src),
+    'the Script Property and its CONFIG seed are GONE from the server — not merely unread');
+  assert.ok(!/Dallas/.test(nc(src.slice(src.indexOf('const LOCATION_ACCEPTANCE_TAB'), src.indexOf('const LOCATION_ACCEPTANCE_TAB') + 2000))),
+    'no warehouse name is hard-coded near the tab constant');
+
+  // An unreadable registry returns EMPTY + an error, never a default.
+  assert.ok(/out\.error =/.test(f) && /return out;/.test(f), 'a missing tab yields the empty registry AND says why');
+  assert.ok(!/\|\|\s*CONFIG\./.test(f), 'nothing falls back to CONFIG');
+
+  // A warehouse row with no ADDRESS is dropped from the vocabulary rather than
+  // registered unplaceable: its NAME is what the radius grammar matches, so
+  // keeping it turns an honest UNKNOWN ("we do not know that place") into a
+  // radius that can never be measured.
+  assert.ok(/if \(!address\) \{ out\.noAddress\.push\(name\); return; \}/.test(f),
+    'an addressless warehouse is dropped and REPORTED');
+
+  // And the empty registry really does make a radius UNKNOWN — driven, not read.
+  const r = JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_("100 miles of Dallas", []))', _vmCtx));
+  assert.strictEqual(r.kind, 'unknown',
+    'with no registry, a radius rule is UNKNOWN — never open, never a guessed centre');
+});
+
+test('ELIG: the pricing + delivery tables are NAMED TABS in the KB store, beside InsurancePayors', () => {
+  const src = serverSource();
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // A STORE OF ITS OWN IS GONE. This is the move that would have failed
+  // silently the other way round: the old reader took getSheets()[0], which was
+  // correct while the file existed for one purpose and would have read the KB
+  // tab the moment it moved — matching no `price` header and rendering every
+  // row blank rather than throwing.
+  assert.ok(!/OOP_SS_ID/.test(src), 'OOP_SS_ID is gone from the server');
+  assert.ok(!/getOopSS_/.test(src), 'and so is its resolver');
+
+  const sheet = nc(extractRawFunction('Code.js', 'oopSheet_'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(OOP_PRICING_TAB\)/.test(sheet),
+    'the pricing table is a NAMED tab in the KB store');
+  assert.ok(!/getSheets\(\)\[0\]/.test(sheet), 'never "the first sheet" again');
+  assert.ok(/OOP_PRICING_TAB/.test(sheet) && /throw new Error/.test(sheet),
+    'a missing tab throws and NAMES the tab to create');
+
+  const loc = nc(extractRawFunction('Code.js', 'getLocationAcceptance_'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(LOCATION_ACCEPTANCE_TAB\)/.test(loc),
+    'and so is the delivery table');
+
+  // The InsurancePayors precedent, asserted so the three stay in step: all
+  // three operator-maintained lookup tables resolve the same way in one store.
+  const ins = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(INS_PAYOR_TAB\)/.test(ins),
+    'the payor table it was modelled on still resolves the same way');
+});
+
 test('ELIG: the endpoint is rep-gated and bounded, geocodes the customer address UNCACHED, and never returns an empty eligible list in place of an error', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const f = nc(extractRawFunction('Code.js', 'checkOopEligibility'));

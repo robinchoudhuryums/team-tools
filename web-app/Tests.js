@@ -58,7 +58,6 @@ var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T
 var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_
 var _TEST_OVERRIDE_FORMS_SS_ID = null;   // assigned by _withTestForms_
 var _TEST_OVERRIDE_QA_SS_ID = null;      // assigned by _withTestQa_
-var _TEST_OVERRIDE_OOP_SS_ID = null;     // assigned by _withTestOop_
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -410,7 +409,7 @@ function _suiteEnvCheck_() {
   lines.push('MANAGER_EMAILS: ' + (mgrRaw === undefined ? 'UNREADABLE' : mgrList.length ? mgrList.length + ' address(es)' + (mgrList.indexOf(_TEST_MGR_EMAIL.toLowerCase()) >= 0 ? ' (test manager listed)' : ' (test manager NOT listed — the trigger-gate tests append it per test)') : 'unset — NO manager passes assertManagerCaller_'));
   // Fixture stores (created on first use; a stale id re-provisions).
   ['TEST_CDR_SS_ID', 'TEST_INTAKE_SS_ID', 'TEST_KB_SS_ID', 'TEST_HRDOCS_SS_ID',
-   'TEST_FORMS_SS_ID', 'TEST_QA_SS_ID', 'TEST_OOP_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
+   'TEST_FORMS_SS_ID', 'TEST_QA_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
   // Properties individual tests save/override/restore — a value left behind by
   // a killed run is visible here rather than as a surprise mid-suite.
   lines.push(setOrNot('CN_FEATURE_FLAGS', 'tests override + restore it'));
@@ -1531,6 +1530,8 @@ function _registerIntegrationB_() {
   // header discovery against a real sheet, and the send-time re-verification a
   // quoted price depends on.
   _integrationTest('oop_search_findsSeededItemAtSheetPrice', test_oop_search_findsSeededItemAtSheetPrice);
+  _integrationTest('oop_pricingTab_isNAMEDnotTheFirstSheet', test_oop_pricingTab_isNAMEDnotTheFirstSheet);
+  _integrationTest('oop_locationAcceptance_readsBothRowKinds', test_oop_locationAcceptance_readsBothRowKinds);
   _integrationTest('oop_verifyQuotes_currentStaleAndDeleted', test_oop_verifyQuotes_currentStaleAndDeleted);
   _integrationTest('oop_diagnostics_reportsRolesAndEligibilityGrouping', test_oop_diagnostics_reportsRolesAndEligibilityGrouping);
   _integrationTest('oop_eligibility_boundsTheAddressBeforeAnyRead', test_oop_eligibility_boundsTheAddressBeforeAnyRead);
@@ -7245,41 +7246,48 @@ function _withTestForms_(fn) {
  *  `qa_reviewFlowOnFixture` drives this, so the fixture is exercised rather
  *  than merely declared. QA holds no CacheService state (unlike the KB tree
  *  cache), so there is nothing to invalidate on entry or exit. */
-/** The OOP pricing fixture — the `_withTestQa_` shape, for the ninth store.
+/** Seeds the OopPricing + LocationAcceptance tabs in the KB TEST twin and runs
+ *  `fn` against them.
  *
- *  It ASSIGNS the override rather than only declaring it, which is not
- *  boilerplate: g119 was written this week about exactly the branch that gets
- *  read by a resolver and set by nothing, and the `fixtures:` pin now fails the
- *  build for a read-only one. Adding `getOopSS_` without this would have
- *  reproduced the bug the pin exists to catch, one week later.
+ *  It rides `_withTestKb_` rather than owning a store: since 2026-09-16 both
+ *  tabs LIVE in the KB spreadsheet (the InsurancePayors pattern), so a separate
+ *  `_TEST_OVERRIDE_OOP_SS_ID` would have been a second override branch pointing
+ *  at a store that no longer exists — g119's shape exactly, one week after
+ *  g119 was written.
  *
- *  Unlike the other fixtures this one SEEDS the sheet: the OOP reader
- *  discovers its columns BY HEADER, so an empty spreadsheet would exercise the
- *  not-configured path rather than the reader. The header row here is the
- *  SHAPE the reader claims to handle — if the operator's real sheet ever stops
- *  matching it, that is a finding for getOopPricingDiagnostics, not a reason to
- *  loosen this. */
+ *  It SEEDS both tabs, unlike the store fixtures it replaced: the readers
+ *  discover their columns BY HEADER, so an empty tab exercises the
+ *  not-set-up path rather than the reader. The header rows here are the SHAPE
+ *  the readers claim to handle — if the operator's real tabs ever stop matching
+ *  them, that is a finding for getOopPricingDiagnostics, not a reason to loosen
+ *  this. */
 function _withTestOop_(fn) {
-  const props = PropertiesService.getScriptProperties();
-  let id = props.getProperty('TEST_OOP_SS_ID');
-  let ss = null;
-  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
-  if (!ss) {
-    ss = createPinnedSpreadsheet_('TEST_OOP_Fixture');
-    props.setProperty('TEST_OOP_SS_ID', ss.getId());
-  }
-  const sh = ss.getSheets()[0];
-  sh.clear();
-  sh.getRange(1, 1, 3, 5).setValues([
-    ['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Notes'],
-    ['TEST_OOP Widget', '$129.00', 'AZ NV', '2026-09-01', 'sample row'],
-    ['TEST_OOP Gadget', '$45.50', 'US', '2026-09-01', ''],
-  ]);
-  _TEST_OVERRIDE_OOP_SS_ID = ss.getId();
-  try { return fn(); }
-  finally { _TEST_OVERRIDE_OOP_SS_ID = null; }
+  return _withTestKb_(function () {
+    const ss = getKbSS_();
+    const seed = function (tab, values) {
+      let sh = ss.getSheetByName(tab);
+      if (!sh) sh = ss.insertSheet(tab);
+      sh.clear();
+      sh.getRange(1, 1, values.length, values[0].length).setValues(values);
+      return sh;
+    };
+    seed(OOP_PRICING_TAB, [
+      ['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Notes'],
+      ['TEST_OOP Widget', '$129.00', 'AZ NV', '2026-09-01', 'sample row'],
+      ['TEST_OOP Gadget', '$45.50', 'US', '2026-09-01', ''],
+    ]);
+    seed(LOCATION_ACCEPTANCE_TAB, [
+      ['Type', 'Name', 'Address', 'State', 'Accepts', 'Notes'],
+      ['warehouse', 'TEST_OOP Dallas', '1234 Test St, Dallas, TX 75201', 'TX', '', ''],
+      ['city', 'TEST_OOP Cityville', '', 'TX', 'POV, scooter', 'seeded'],
+      // A warehouse row with no address: its NAME would be vocabulary the
+      // radius grammar could match and then never measure, so the reader drops
+      // it and reports it instead.
+      ['warehouse', 'TEST_OOP Addressless', '', '', '', ''],
+    ]);
+    return fn();
+  });
 }
-
 // ── OOP pricing + area eligibility (operator 2026-09-16) ───────────────────
 // Every one of these runs against the REAL Sheets runtime through
 // _withTestOop_, because that is the half the Node harness cannot see: it pins
@@ -7312,6 +7320,64 @@ function test_oop_search_findsSeededItemAtSheetPrice() {
   });
 }
 
+function test_oop_pricingTab_isNAMEDnotTheFirstSheet() {
+  // The move into the KB store (2026-09-16) is exactly where "the first sheet"
+  // would have failed SILENTLY: the KB tab is sheet 0, and because columns are
+  // discovered by header the old reader would have matched no `price` and
+  // rendered every row blank rather than throwing. Assert the reader finds the
+  // pricing tab wherever it sits, and says what to create when it does not.
+  _withTestOop_(function () {
+    const ss = getKbSS_();
+    const sheets = ss.getSheets();
+    const firstName = sheets[0].getName();
+    const res = searchOopPricing('TEST_OOP Widget');
+    _assertTrue(!res.error, 'the named tab resolved: ' + res.error);
+    _assertEq(res.matches[0].price, '$129.00', 'from the pricing tab, whatever sheet 0 is (' + firstName + ')');
+
+    // And with the tab renamed away, the error NAMES the tab to create rather
+    // than falling through to some other sheet.
+    const sh = ss.getSheetByName(OOP_PRICING_TAB);
+    sh.setName('TEST_OOP_moved_aside');
+    try {
+      const gone = searchOopPricing('TEST_OOP Widget');
+      _assertTrue(!!gone.error, 'a missing pricing tab is an ERROR, not an empty result');
+      _assertContains(gone.error, OOP_PRICING_TAB, 'and it names the tab to create');
+    } finally { sh.setName(OOP_PRICING_TAB); }
+  });
+}
+
+function test_oop_locationAcceptance_readsBothRowKinds() {
+  _withTestOop_(function () {
+    const loc = getLocationAcceptance_();
+    _assertEq(loc.error, '', 'the seeded tab read cleanly: ' + loc.error);
+
+    // WAREHOUSE rows become the radius vocabulary, keyed by the NAME the
+    // operator writes in the pricing sheet.
+    _assertEq(loc.warehouses['TEST_OOP Dallas'], '1234 Test St, Dallas, TX 75201',
+      'the warehouse address is what gets geocoded');
+    // A warehouse row with NO address is dropped and REPORTED, never registered:
+    // its name would be vocabulary the grammar matches and then cannot measure,
+    // turning an honest UNKNOWN into an unmeasurable radius.
+    _assertTrue(loc.warehouses['TEST_OOP Addressless'] === undefined,
+      'an addressless warehouse is not in the registry');
+    _assertTrue(loc.noAddress.indexOf('TEST_OOP Addressless') >= 0,
+      'and it is reported by name');
+
+    // CITY rows carry what can be delivered there.
+    const city = loc.cities.filter(function (c) { return c.name === 'TEST_OOP Cityville'; })[0];
+    _assertNotNull(city, 'the city row parsed');
+    _assertEq(city.state, 'TX', 'state upper-cased');
+    _assertEq(city.accepts, 'POV, scooter', 'the accepted items ride along verbatim');
+
+    // The city match is INFORMATION — pinned here as a shape, exercised for
+    // real by the Node pin. A state mismatch must not match (there is a
+    // Springfield in most of them).
+    _assertEq(locCityMatches_(loc.cities, 'TEST_OOP Cityville', 'TX').length, 1, 'matches in state');
+    _assertEq(locCityMatches_(loc.cities, 'TEST_OOP Cityville', 'CA').length, 0, 'not out of state');
+    _assertEq(locCityMatches_(loc.cities, '', 'TX').length, 0, 'an undetermined city matches NOTHING');
+  });
+}
+
 function test_oop_verifyQuotes_currentStaleAndDeleted() {
   _withTestOop_(function () {
     const line = oopQuoteLine_('TEST_OOP Widget', '$129.00', '2026-09-01');
@@ -7329,7 +7395,7 @@ function test_oop_verifyQuotes_currentStaleAndDeleted() {
     const stale = oopVerifyQuotes_([{ name: 'TEST_OOP Widget', price: '$99.00', effective: '2026-09-01' }],
       oopQuoteLine_('TEST_OOP Widget', '$99.00', '2026-09-01'));
     _assertTrue(!!stale.error, 'a superseded price must refuse the send');
-    _assertTrue(stale.error.indexOf('$129.00') >= 0, 'and name the CURRENT price: ' + stale.error);
+    _assertContains(stale.error, '$129.00', 'and name the CURRENT price');
 
     // GONE — the item is not in the sheet at all.
     const gone = oopVerifyQuotes_([{ name: 'nothing_like_this_exists', price: '$1', effective: '' }], 'x');
@@ -7348,6 +7414,7 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
   _withTestOop_(function () {
     const d = getOopPricingDiagnostics();
     _assertTrue(!d.error, 'diagnostics errored: ' + d.error);
+    _assertEq(d.tab, OOP_PRICING_TAB, 'it names the tab it read');
     _assertEq(d.missing.length, 0, 'the seeded header has all three roles; missing: ' + d.missing.join(','));
     const roleOf = {};
     d.cols.forEach(function (c) { roleOf[c.header] = c.role; });
@@ -7361,10 +7428,15 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
     _assertEq(d.eligibility.open, 1, 'one open row');
     _assertEq(d.eligibility.unknownCount, 0, 'nothing unreadable in the fixture');
 
-    // And the registry it matches radius values against is reported, so an
-    // operator can see why "100 miles of Houston" came out unknown.
+    // BOTH tabs are reported in one breath — an operator who spelled a
+    // warehouse differently in the two tabs sees it here, not from a rep.
+    _assertEq(d.locationTab, LOCATION_ACCEPTANCE_TAB, 'the delivery-reach tab is named too');
+    _assertEq(d.locationError, '', 'and read cleanly');
     _assertTrue(d.warehouses.length >= 1, 'the warehouse registry is reported');
     _assertTrue(!!d.warehouses[0].name && !!d.warehouses[0].address, 'with names AND addresses');
+    _assertTrue(d.cities >= 1, 'and the city rows are counted');
+    _assertTrue(d.locNoAddress.indexOf('TEST_OOP Addressless') >= 0,
+      'an addressless warehouse row is a FINDING here, not a silent drop');
   });
 }
 
@@ -7372,11 +7444,11 @@ function test_oop_eligibility_boundsTheAddressBeforeAnyRead() {
   // The bound has to come FIRST: a geocode is a paid-for round trip and a sheet
   // read is not free either, and neither is worth spending on a two-character
   // address. Asserted without the fixture deliberately — if the bound were
-  // checked after the store read, this would surface as a not-configured error
+  // checked after the store read, this would surface as a not-set-up error
   // rather than the validation message.
   const short = checkOopEligibility('ab', '');
   _assertTrue(!!short.error, 'a two-character address must be refused');
-  _assertTrue(short.error.indexOf('ZIP') >= 0, 'with the validation message, not a store error: ' + short.error);
+  _assertContains(short.error, 'ZIP', 'with the validation message, not a store error: ' + short.error);
   const long = checkOopEligibility(new Array(KB_MAP_QUERY_MAX + 20).join('x'), '');
   _assertTrue(!!long.error && long.error.indexOf('ZIP') >= 0, 'and an oversized one likewise');
 }
