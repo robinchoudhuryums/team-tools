@@ -1116,3 +1116,59 @@ a guard's MESSAGE instead of RUNNING it, `deepStrictEqual` against a
 vm-sandbox value comparing realms, and the two ways `bite.sh` misreported a
 verdict. See g116 — all four were found by bite-checking, which is the only
 reason they are known at all.
+
+## 2026-09-16 — the FORMS and QA fixtures
+
+The `no-undef` net (g118) reported three `_TEST_OVERRIDE_*` names declared
+nowhere. Declaring them was the fix; what the declaration EXPOSED is this
+round. Two of the three — `_TEST_OVERRIDE_FORMS_SS_ID` and
+`_TEST_OVERRIDE_QA_SS_ID` — were read by `getFormsSS_` / `getQaSS_` and
+assigned by nothing, so neither redirect could ever fire.
+
+- **`_withTestForms_`.** Five integration tests (`publicForm_tokenLifecycle`,
+  `publicForm_blankExpiryFailsClosed`, `cn_getFormSubmission_callerScoped`,
+  `cn_managerGetFormSubmission_gatedAndScoped`, `scheduledCalls_flow`) were
+  writing FormTokens / FormSubmissions rows to the LIVE forms store — which,
+  when `FORMS_SS_ID` is unset, is the ADP/payroll spreadsheet itself. The
+  tell was already in the tree: `cleanupTestData` carries a hard-kill backstop
+  that sweeps those two tabs by the reserved `@example.invalid` domain, which
+  exists because those tabs have no `TEST_`-prefixed column for the standard
+  sweep and a 6-minute kill skips `finally`. The backstop STAYS — rows from
+  earlier runs are still out there — but it is now belt and braces rather than
+  the only thing standing between a killed run and orphaned PHI-class rows in
+  the payroll sheet.
+- **`_withTestQa_` + `qa_reviewFlowOnFixture`.** QA's dead branch was invisible
+  for a different reason: every QA test in the suite asserts a REFUSAL, so the
+  store was never reached. That is its own gap — the module had no coverage
+  past its gates, and the next person to write an integration test would have
+  written it against the live store while `getQaSS_` read as though isolation
+  existed. The new test drives manual recording → comment → list → scorecard →
+  soft-delete, and **asserts the isolation FIRST, before writing anything**: a
+  wrapper that silently failed to redirect would append to the live QA store
+  (where QaComments may name a patient) and every later assertion would pass
+  identically. It is store-only by construction — a manual recording needs no
+  Drive file — so it runs on a deployment with neither `QA_SS_ID` nor
+  `QA_RECORDINGS_FOLDER_ID` configured.
+
+**Wrapping idiom:** rename the body to `_test_X_body_` and add a one-line
+`function test_X() { return _withTestForms_(_test_X_body_); }` (the
+`test_kb_comments_flow` shape). Every wrapped body stays byte-identical, so the
+diff is the wrapper and nothing else.
+
+**The pin, and what bite-checking did to it.** `fixtures: every
+_TEST_OVERRIDE_* a resolver reads is also ASSIGNED by a fixture` derives the
+names from the `typeof … !== 'undefined'` guards in the server and requires
+each to be assigned. It took two tightenings, both found by bite-check and
+neither by reading:
+
+1. `var X = null;` is itself an assignment, so the first version passed for a
+   name nothing else touched — it needed a negative lookbehind on the
+   declaration keywords.
+2. Every fixture ends `finally { X = null; }`, so deleting the line that sets
+   the REAL id STILL left a matching assignment. The bite-check reported NO
+   BITE, which is the only reason this was found. The match now has to be an
+   assignment to a VALUE.
+
+Both are the g116 shape, in the pin written to prevent a g116-shaped bug. The
+three bite-checks that pass now: the QA override unassigned, the FORMS override
+unassigned, and the KB override reduced to its declaration plus its reset.

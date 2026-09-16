@@ -21004,6 +21004,53 @@ test('C4: CI runs `counts.mjs --check`', () => {
 // g118 (revert the fix, the net names 20_timeclock.js:780), and CI actually
 // running it. What this pin protects is the WIRING: a net nobody runs is worth
 // nothing, and the three ways it silently stops running are all checkable.
+// --- Fixtures (2026-09-16): a store override must be WIRED, not just declared -
+// The g118 net proves every `_TEST_OVERRIDE_*` RESOLVES. That is a weaker claim
+// than it looks: `_TEST_OVERRIDE_FORMS_SS_ID` and `_TEST_OVERRIDE_QA_SS_ID` were
+// read by getFormsSS_/getQaSS_ and assigned by NOTHING, so those redirect
+// branches could never fire — every forms integration test wrote token and
+// submission rows to the live PHI store (the ADP/payroll sheet itself, when
+// FORMS_SS_ID is unset) while the resolver read as though a fixture existed.
+// Declaring them fixes the resolution; only an ASSIGNMENT makes the branch real.
+//
+// So this pin derives the override names from the RESOLVERS that read them and
+// requires each to be assigned outside its own declaration. The exclusion is the
+// load-bearing part: `var _TEST_OVERRIDE_X = null;` is itself an assignment, so
+// matching assignments naively would pass for a name nothing ever sets — the
+// g116 shape, and the exact bug this pin exists to catch.
+test('fixtures: every _TEST_OVERRIDE_* a resolver reads is also ASSIGNED by a fixture', () => {
+  const webApp = path.resolve(__dirname, '../../web-app');
+  const files = fs.readdirSync(webApp).filter((f) => f.endsWith('.js'));
+  const all = files.map((f) => fs.readFileSync(path.join(webApp, f), 'utf8')).join('\n');
+
+  // READ sites: the fourteen server files guard with `typeof X !== 'undefined'`.
+  const read = [...serverSource().matchAll(/typeof (_TEST_OVERRIDE_[A-Z_]+) !== 'undefined'/g)]
+    .map((m) => m[1]);
+  const names = [...new Set(read)].sort();
+  assert.ok(names.length >= 6,
+    'the resolvers still guard their overrides with a typeof check (found ' + names.length + ')');
+
+  const unwired = names.filter((n) => {
+    // An assignment that is NOT the declaration and NOT a reset to empty.
+    //
+    // Both exclusions were found by bite-checking this pin, and each one is a
+    // way it would have passed while proving nothing:
+    //   • `var <n> = null;` is itself an assignment — without the negative
+    //     lookbehind, a name nothing else touches reads as wired.
+    //   • every fixture ends `finally { <n> = null; }`, so deleting the line
+    //     that sets the REAL id still left a matching assignment behind. The
+    //     first bite-check of this pin reported NO BITE for exactly that.
+    // So the match has to be an assignment to a VALUE. g116, twice over.
+    const re = new RegExp('(?<!\\b(?:var|let|const)\\s{1,20})\\b' + n +
+      '\\s*=\\s*(?!=)(?!\\s*(?:null|undefined|false|\'\'|""|0)\\s*;)');
+    return !re.test(all);
+  });
+  assert.deepStrictEqual(unwired, [],
+    'a store override is READ by a resolver but never ASSIGNED ("' + unwired.join('", "') +
+    '") — the redirect cannot fire, so those tests write to the LIVE store while the ' +
+    'resolver reads as though a fixture existed. Add a _withTest<Store>_ wrapper.');
+});
+
 test('g118: the undeclared-identifier net is wired, and can resolve its dependency when it runs', () => {
   const wf = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));

@@ -55,9 +55,9 @@ var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T
 // because Apps Script runs sloppy mode. Declaring them here makes the KB
 // fixture's redirect explicit instead of an implicit global, and puts all
 // eight overrides in one place. See g118 / `npm run lint:server`.
-var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_ below
-var _TEST_OVERRIDE_FORMS_SS_ID = null;   // read by getFormsSS_ — NO fixture assigns it yet
-var _TEST_OVERRIDE_QA_SS_ID = null;      // read by getQaSS_   — NO fixture assigns it yet
+var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_
+var _TEST_OVERRIDE_FORMS_SS_ID = null;   // assigned by _withTestForms_
+var _TEST_OVERRIDE_QA_SS_ID = null;      // assigned by _withTestQa_
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -408,7 +408,8 @@ function _suiteEnvCheck_() {
   const mgrList = String(mgrRaw || '').split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
   lines.push('MANAGER_EMAILS: ' + (mgrRaw === undefined ? 'UNREADABLE' : mgrList.length ? mgrList.length + ' address(es)' + (mgrList.indexOf(_TEST_MGR_EMAIL.toLowerCase()) >= 0 ? ' (test manager listed)' : ' (test manager NOT listed — the trigger-gate tests append it per test)') : 'unset — NO manager passes assertManagerCaller_'));
   // Fixture stores (created on first use; a stale id re-provisions).
-  ['TEST_CDR_SS_ID', 'TEST_INTAKE_SS_ID', 'TEST_KB_SS_ID', 'TEST_HRDOCS_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
+  ['TEST_CDR_SS_ID', 'TEST_INTAKE_SS_ID', 'TEST_KB_SS_ID', 'TEST_HRDOCS_SS_ID',
+   'TEST_FORMS_SS_ID', 'TEST_QA_SS_ID'].forEach(function (k) { lines.push(setOrNot(k, 'fixture; created on first use')); });
   // Properties individual tests save/override/restore — a value left behind by
   // a killed run is visible here rather than as a surprise mid-suite.
   lines.push(setOrNot('CN_FEATURE_FLAGS', 'tests override + restore it'));
@@ -1461,6 +1462,7 @@ function _registerIntegrationB_() {
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
   // ── QA module Phase 1: access gate ──
   _integrationTest('qa_gates_rejectNonMember',                test_qa_gates_rejectNonMember);
+  _integrationTest('qa_reviewFlowOnFixture',                  test_qa_reviewFlowOnFixture);
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
   _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
@@ -5520,7 +5522,12 @@ function test_metrics_cnCountNotesResult_countsToday() {
 // getFormSubmission is caller-scoped (INV-90): only the rep who created the
 // token may read the submission. This guards against a rep reading another
 // rep's form data via google.script.run.
-function test_cn_getFormSubmission_callerScoped() {
+// Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the rep-facing submission read
+// writes rows to the forms (PHI) store, which falls back to the ADP/payroll
+// spreadsheet when FORMS_SS_ID is unset.
+function test_cn_getFormSubmission_callerScoped() { return _withTestForms_(_test_cn_getFormSubmission_callerScoped_body_); }
+
+function _test_cn_getFormSubmission_callerScoped_body_() {
   // India (enrolled) creates a fillable-form token.
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
     const r = createFormToken({
@@ -5560,7 +5567,12 @@ function test_cn_getFormSubmission_callerScoped() {
 // deliberately called WITHOUT _asUser): consent enforcement (A9/INV-113),
 // recipient-payload size caps (INV-96), server-authoritative hash + consent
 // stamping, and the one-time-use token transition.
-function test_publicForm_tokenLifecycle() {
+// Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the full token → submit → read lifecycle
+// writes rows to the forms (PHI) store, which falls back to the ADP/payroll
+// spreadsheet when FORMS_SS_ID is unset.
+function test_publicForm_tokenLifecycle() { return _withTestForms_(_test_publicForm_tokenLifecycle_body_); }
+
+function _test_publicForm_tokenLifecycle_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
     const r = createFormToken({
       formType: 'eaa',
@@ -5664,7 +5676,12 @@ function _deleteFormWitnessAuditRow_(token) {
 // blank-expiry token perpetually valid for anonymous PHI submission. A blank
 // cell only arises from corruption / a lossy FORMS_SS_ID migration (createFormToken
 // always writes ExpiresAt atomically), so rejecting it is strictly safe.
-function test_publicForm_blankExpiryFailsClosed() {
+// Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the blank-expiry fail-closed path
+// writes rows to the forms (PHI) store, which falls back to the ADP/payroll
+// spreadsheet when FORMS_SS_ID is unset.
+function test_publicForm_blankExpiryFailsClosed() { return _withTestForms_(_test_publicForm_blankExpiryFailsClosed_body_); }
+
+function _test_publicForm_blankExpiryFailsClosed_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
     return createFormToken({
       formType: 'eaa',
@@ -5706,7 +5723,12 @@ function test_publicForm_blankExpiryFailsClosed() {
 
 // managerGetFormSubmission is manager-gated and scoped to the rep being viewed:
 // the token must have been created by that rep.
-function test_cn_managerGetFormSubmission_gatedAndScoped() {
+// Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the manager-scoped submission read
+// writes rows to the forms (PHI) store, which falls back to the ADP/payroll
+// spreadsheet when FORMS_SS_ID is unset.
+function test_cn_managerGetFormSubmission_gatedAndScoped() { return _withTestForms_(_test_cn_managerGetFormSubmission_gatedAndScoped_body_); }
+
+function _test_cn_managerGetFormSubmission_gatedAndScoped_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
     return createFormToken({
       formType: 'eaa',
@@ -6108,6 +6130,85 @@ function test_managerGates_rejectNonManager() {
 // every endpoint must reject with the QA-access error BEFORE any store/Drive
 // access — QA_SS_ID need not even be configured for this test to pass, which
 // is itself the property under test (the gate runs first).
+// The FIRST QA integration test (2026-09-16). Every other QA test in this
+// suite asserts a REFUSAL, so the store was never reached and
+// `_TEST_OVERRIDE_QA_SS_ID` — read by getQaSS_ — was assigned by nothing. Two
+// things were wrong with that at once: the override branch could not fire, and
+// the QA module had no coverage past its gates. This drives the review flow
+// end to end on the fixture, which exercises the redirect as a side effect of
+// testing something real.
+//
+// It asserts the ISOLATION FIRST, before writing anything. A fixture wrapper
+// that silently failed to redirect would otherwise append manual recordings,
+// comments and scorecards to the LIVE QA store — where QaComments may name a
+// patient — and the rest of the test would pass exactly the same way. The
+// claim "these writes go to the fixture" is the one with consequences, so it
+// is the one that is checked rather than assumed.
+//
+// Store-only by construction: a MANUAL recording (QA_MANUAL_ID_PREFIX) needs
+// no Drive file, so this exercises the real endpoints without QA_RECORDINGS_
+// FOLDER_ID being configured — and, because the fixture replaces the store
+// outright, without QA_SS_ID being set either.
+function test_qa_reviewFlowOnFixture() {
+  _withTestQa_(function () {
+    const fixtureId = PropertiesService.getScriptProperties().getProperty('TEST_QA_SS_ID');
+    _assertTrue(!!fixtureId, 'the QA fixture provisioned a spreadsheet');
+    _assertEq(getQaSS_().getId(), fixtureId,
+      'getQaSS_ must resolve to the FIXTURE inside the wrapper — if this fails, every write below lands in the live QA store');
+
+    const made = _asUser(_TEST_MGR_EMAIL, function () {
+      return qaCreateManualRecording('TEST_QA Agent', 'TEST_QA manual audit');
+    });
+    _assertTrue(made && made.success, 'a manager can log a manual audit: ' + JSON.stringify(made));
+    const fid = made.fileId;
+    _assertTrue(String(fid).indexOf(QA_MANUAL_ID_PREFIX) === 0, 'a manual recording carries the manual id prefix');
+
+    // Comment: add → list → soft-delete → gone from the list.
+    const added = _asUser(_TEST_MGR_EMAIL, function () { return qaAddComment(fid, 12.5, 'TEST_QA comment'); });
+    _assertTrue(added && added.success, 'qaAddComment succeeds against an existing recording: ' + JSON.stringify(added));
+    _assertEq(added.atSec, 12.5, 'the timestamp round-trips at 0.1s resolution');
+
+    const listed = _asUser(_TEST_MGR_EMAIL, function () { return qaListComments(fid); });
+    _assertTrue(!listed.error, 'qaListComments returns rows, not an error: ' + String(listed.error));
+    const mine = (listed.comments || []).filter(function (c) { return c.commentId === added.commentId; });
+    _assertEq(mine.length, 1, 'the comment just added is listed exactly once');
+    _assertEq(mine[0].text, 'TEST_QA comment', 'and its text round-trips');
+
+    // The target-must-exist rule: a junk fileId cannot seed rows.
+    const orphan = _asUser(_TEST_MGR_EMAIL, function () { return qaAddComment('no-such-recording', 1, 'nope'); });
+    _assertFailure(orphan, 'Recording not found', 'a comment on an unknown recording is refused, never appended');
+
+    // Scorecard. The criteria are OPERATOR-EDITABLE (Script Property
+    // QA_SCORECARD_CRITERIA), so drive the FIRST live criterion and answer it
+    // per its own type — hard-coding 'greeting' would fail on a deployment
+    // that renamed it, which is a test defect, not a product one.
+    const criteria = getQaScorecardCriteria_();
+    _assertTrue(criteria.length > 0, 'the deployment has at least one scorecard criterion');
+    const c0 = criteria[0];
+    const type = qaCritType_(c0);
+    const answer = type === 'scale' ? 5 : type === 'check' ? 'yes' : (c0.options || [])[0];
+    const ratings = {};
+    ratings[c0.key] = answer;
+    const saved = _asUser(_TEST_MGR_EMAIL, function () { return qaSaveScorecard(fid, ratings, 'TEST_QA notes'); });
+    _assertTrue(saved && saved.success, 'qaSaveScorecard accepts a rating on the live criteria: ' + JSON.stringify(saved));
+
+    const cards = _asUser(_TEST_MGR_EMAIL, function () { return qaListScorecards(fid); });
+    _assertTrue(!cards.error, 'qaListScorecards returns cards: ' + String(cards.error));
+    _assertEq((cards.scorecards || []).length, 1, 'exactly one latest card for this (recording, reviewer)');
+    _assertEq(String(cards.scorecards[0].notes), 'TEST_QA notes', 'and the notes round-trip');
+
+    // Soft delete: the row stays, the listing does not.
+    const del = _asUser(_TEST_MGR_EMAIL, function () { return qaDeleteComment(added.commentId); });
+    _assertTrue(del && del.success, 'qaDeleteComment soft-deletes: ' + JSON.stringify(del));
+    const after = _asUser(_TEST_MGR_EMAIL, function () { return qaListComments(fid); });
+    const still = (after.comments || []).filter(function (c) { return c.commentId === added.commentId; });
+    _assertEq(still.length, 0, 'a soft-deleted comment leaves the active listing');
+  });
+  // The wrapper restores the override, so a later test cannot accidentally
+  // keep writing to the fixture (or, worse, read the fixture as the live store).
+  _assertNull(_TEST_OVERRIDE_QA_SS_ID, 'the QA fixture clears its override on the way out');
+}
+
 function test_qa_gates_rejectNonMember() {
   [['getQaQueue', function () { return getQaQueue(); }],
    ['qaSyncRecordings', function () { return qaSyncRecordings(); }],
@@ -6317,7 +6418,12 @@ function test_presence_stampAndFlag() {
 // wall time is formatted in the TARGET rep's OWN tz — the same frame
 // createScheduledCall parses in — and "tomorrow 10:30" is future at every
 // possible run time, so the test is never time-of-day dependent.
-function test_scheduledCalls_flow() {
+// Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the ScheduledCalls reminder flow
+// writes rows to the forms (PHI) store, which falls back to the ADP/payroll
+// spreadsheet when FORMS_SS_ID is unset.
+function test_scheduledCalls_flow() { return _withTestForms_(_test_scheduledCalls_flow_body_); }
+
+function _test_scheduledCalls_flow_body_() {
   let createdId = null;
   try {
     // Create as the India rep, tomorrow 10:30 in THEIR tz.
@@ -7077,6 +7183,66 @@ function _withTestHrDocs_(fn) {
   _TEST_OVERRIDE_HRDOCS_SS_ID = ss.getId();
   try { return fn(); }
   finally { _TEST_OVERRIDE_HRDOCS_SS_ID = null; }
+}
+
+/** The FORMS (PHI) fixture — the `_withTestHrDocs_` shape, for the store that
+ *  holds FormTokens / FormSubmissions / ScheduledCalls.
+ *
+ *  WHY IT EXISTS (2026-09-16). `_TEST_OVERRIDE_FORMS_SS_ID` was READ by
+ *  `getFormsSS_` and assigned by nothing, so the branch could not fire and
+ *  every forms integration test wrote token + submission rows to the LIVE
+ *  store — which, when `FORMS_SS_ID` is unset, IS the ADP/payroll spreadsheet
+ *  (the back-compat fallback). `cleanupTestData` grew a hard-kill backstop
+ *  sweeping rows by the reserved `@example.invalid` domain precisely because
+ *  those rows had no other way home: a run killed by the 6-minute ceiling
+ *  skips `finally`, and FormTokens/FormSubmissions carry no TEST_-prefixed
+ *  column for the standard sweep to key on. Redirecting the store removes the
+ *  class rather than cleaning up after it; the backstop stays as belt and
+ *  braces for the rows earlier runs already left behind.
+ *
+ *  Tabs provision on first touch (getOrCreateFormTokensSheet_ et al), so a
+ *  fresh fixture needs no seeding. Routed through `createPinnedSpreadsheet_`
+ *  so tz AND locale match a production store — a bare create inherits the
+ *  script tz + deployer locale, and CreatedAt/ExpiresAt are exactly the
+ *  ISO-T cells g13 coerces differently under a drifted locale. */
+function _withTestForms_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_FORMS_SS_ID');
+  let ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = createPinnedSpreadsheet_('TEST_FORMS_Fixture');
+    props.setProperty('TEST_FORMS_SS_ID', ss.getId());
+  }
+  _TEST_OVERRIDE_FORMS_SS_ID = ss.getId();
+  try { return fn(); }
+  finally { _TEST_OVERRIDE_FORMS_SS_ID = null; }
+}
+
+/** The QA fixture — same shape, for QaRecordings / QaComments / QaScorecards /
+ *  QaExemptions.
+ *
+ *  `_TEST_OVERRIDE_QA_SS_ID` was likewise read by `getQaSS_` and assigned by
+ *  nothing. That branch was harmless ONLY because every QA test in this suite
+ *  was a gate test asserting a refusal, so the store was never reached — which
+ *  is its own gap: the QA module had no integration coverage at all, and the
+ *  next person to write some would have written it against the live store
+ *  while `getQaSS_` read as though isolation existed.
+ *  `qa_reviewFlowOnFixture` drives this, so the fixture is exercised rather
+ *  than merely declared. QA holds no CacheService state (unlike the KB tree
+ *  cache), so there is nothing to invalidate on entry or exit. */
+function _withTestQa_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_QA_SS_ID');
+  let ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = createPinnedSpreadsheet_('TEST_QA_Fixture');
+    props.setProperty('TEST_QA_SS_ID', ss.getId());
+  }
+  _TEST_OVERRIDE_QA_SS_ID = ss.getId();
+  try { return fn(); }
+  finally { _TEST_OVERRIDE_QA_SS_ID = null; }
 }
 
 function _cleanupEmpDocRows_(docId) {
