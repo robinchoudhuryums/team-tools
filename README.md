@@ -49,8 +49,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
     Metrics" (the team aggregate for everyone; the per-rep table
     and diagnostics stay manager-only — date-range and preset
     chips), "Spanish Inbox" (bilingual-assistance request
-    tracking with a per-member resolution-share chart and a manager
-    auto-assign of unclaimed requests), and "Dept
+    tracking with a per-member resolution-share chart, a manager
+    auto-assign of unclaimed requests, and 8x8 voicemail
+    notifications folded in as task cards — a voicemail shorter than
+    `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the
+    hidden count reported so the filter can never fail silently), and "Dept
     Requests" (inter-department request tracking with SLA status).
     CDR metrics also enrich the Call Notes Stats tab via a
     best-effort overlay.
