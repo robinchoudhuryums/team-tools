@@ -343,6 +343,7 @@ Ways the suite can be green and wrong, and ways a tool can eat your work.
 - **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B; `scripts/bite.sh` REFUSES a dirty file since Batch F2 — it fired a fourth time first).** Fires when you bite-check a pin. Verify: the F1-followon guard-ordering pin. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
 - **Your test TOOLING lies in both directions — a green pin is not a checked one (operator 2026-09-15).** Fires when you write a structural assertion, compare a value returned from the vm sandbox, or read a bite-check's verdict. [Detail](docs/gotchas.md#g116-your-test-tooling-lies-in-both)
 - **A structural pin cannot see a ReferenceError — `no-undef` over the ONE global scope is the only static net for it (operator 2026-09-15).** Fires when you rely on source-shape pins over a function, or move a declaration out of the scope that uses it. Verify: `npm run lint:server`, bite-checked against the live `perDay` defect. [Detail](docs/gotchas.md#g118-a-structural-pin-cannot-see-a)
+- **A store override that is READ but never ASSIGNED is not isolation — the resolver LOOKS isolated while every test writes to production (2026-09-16).** Fires when you add a `_TEST_OVERRIDE_*` branch to a store resolver, or find a cleanup routine reaching into a production store to undo test writes. Verify: the `fixtures: every _TEST_OVERRIDE_*` pin, bite-checked three ways. [Detail](docs/gotchas.md#g119-a-store-override-that-is-read)
 
 <!-- GOTCHA-INDEX:END -->
 
@@ -523,7 +524,12 @@ form PHI isn't co-located with the ADP/payroll sheet (the back-compat fallback) 
 since pilot round 2 this recommendation also covers the `ScheduledCalls` tab
 (reminder labels plausibly name patients, so they belong on the PHI store too).
 Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`,
-`TEST_KB_SS_ID` (cycle-10 M-9 — the KB fixture `_withTestKb_` provisions).
+`TEST_KB_SS_ID` (cycle-10 M-9 — the KB fixture `_withTestKb_` provisions),
+`TEST_FORMS_SS_ID` and `TEST_QA_SS_ID` (2026-09-16 — `_withTestForms_` /
+`_withTestQa_`; before them the forms tests wrote to the LIVE forms store,
+which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All six are
+auto-provisioned on first use and reported by the suite's `── Suite
+environment ──` block; delete one to force a fresh fixture.
 Auto-managed diagnostics: `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
 `{count, lastAt, lastAction}` lost-tamper-witness counter stamped by
 `writeWitnessAuditLog_` after a failed retry; surfaced in Automation Health +
@@ -824,10 +830,10 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 826 | `node test/client/run.js` |
+| Pure harness tests | 827 | `node test/client/run.js` |
 | DOM harness tests | 113 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 322 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 323 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 50 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |

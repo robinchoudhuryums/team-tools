@@ -2715,3 +2715,50 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   wrong — and the wrong one was in the pin written to guard against pins that
   cannot see what they claim to (g116). **Anchor an ordering compare on the
   executable line, never on a mention of it.**
+
+<a id="g119-a-store-override-that-is-read"></a>
+- **A store override that is READ but never ASSIGNED is not isolation — it is a
+  resolver that LOOKS isolated while every test writes to production
+  (2026-09-16).** `getFormsSS_` and `getQaSS_` both open with
+  `if (typeof _TEST_OVERRIDE_X !== 'undefined' && _TEST_OVERRIDE_X) return
+  SpreadsheetApp.openById(_TEST_OVERRIDE_X);`. Neither name was assigned
+  anywhere. The `typeof` guard means the read never throws, so the branch was
+  silently unreachable — and five forms integration tests wrote FormTokens and
+  FormSubmissions rows to the LIVE forms store, which is the **ADP/payroll
+  spreadsheet itself** when `FORMS_SS_ID` is unset.
+
+  This is [g04](#g04-a-declared-but-unread-config-key-enum) with the arrow
+  reversed. There, a declared-but-unread CONFIG key is a defect because
+  something was meant to consume it. Here a read-but-unwritten override is
+  worse than dead code, because the reader is a SAFETY mechanism: anyone
+  auditing `getFormsSS_` sees a test-redirect branch and concludes the tests
+  are isolated. The code documents a property it does not have.
+
+  The evidence was already in the tree and read as diligence instead of a
+  symptom: `cleanupTestData` carries a hard-kill backstop that sweeps
+  FormTokens/FormSubmissions by the reserved `@example.invalid` domain, with a
+  comment explaining that those tabs have no `TEST_`-prefixed column and that a
+  6-minute kill skips `finally`. **A cleanup routine that has to reach into a
+  production store to undo test writes is telling you the test was never
+  isolated.** Read a growing backstop as a question about the write, not as
+  the answer to it.
+
+  QA hid differently and is the more general warning. Its branch was equally
+  dead, but nothing had noticed because every QA test in the suite asserts a
+  REFUSAL — the store is never reached, so the dead branch left no trace. An
+  untested safety mechanism reads exactly like a working one; the module had no
+  coverage past its gates at all, and the first integration test anyone wrote
+  would have gone straight to the live store. So the fixture shipped WITH a
+  test that drives it (`qa_reviewFlowOnFixture`), which asserts the redirect
+  before it writes anything — a wrapper that silently failed would otherwise
+  append to the live QA store, where QaComments may name a patient, and every
+  later assertion would pass identically.
+
+  **The rule: a test-only escape hatch is wired only when something ASSIGNS it,
+  and it is trustworthy only when a test EXERCISES it.** Verify: the `fixtures:
+  every _TEST_OVERRIDE_* a resolver reads is also ASSIGNED by a fixture` pin,
+  which derives the names from the resolvers' `typeof` guards. It needed two
+  tightenings, both found by bite-check — a declaration is itself an
+  assignment, and every fixture ends `finally { X = null; }`, so the first
+  version passed for a name nothing ever set. g116, inside the pin written to
+  prevent a g116-shaped bug.
