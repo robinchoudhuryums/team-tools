@@ -844,8 +844,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 207 | `.cycle/config.md` |
-| Regression scenarios (S*) | 104 | `.cycle/config.md` |
+| Invariant library entries | 209 | `.cycle/config.md` |
+| Regression scenarios (S*) | 105 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
