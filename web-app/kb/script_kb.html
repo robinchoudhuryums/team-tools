@@ -88,6 +88,51 @@
   .kb-dept.collapsed .kb-chevron { transform: rotate(-90deg); }
 
   /* Insurance payor lookup (operator 2026-08-25 — batch 3) */
+  /* OOP price lookup — the price is the thing the eye should land on, so it is
+     mono and emphasised. `none` is deliberately WARNING-toned rather than muted:
+     a row with no price must not read as "free" or as "nothing to say". */
+  .kb-oop-price { font-family: var(--mono); font-weight: 600; margin-left: 6px; }
+  /* ELIG — two verdicts per item, and THREE visual states, not two. A
+     near-boundary "yes" must not look like a flat yes: the caveat is the whole
+     reason a radius answer near the limit is not a commitment (straight-line
+     distance is never longer than the drive, so a NO is certain and a YES is
+     the provisional one). "Cannot tell" is its own state for the same reason —
+     folding it into "no" would send the rep to the wrong next action. */
+  /* Listed delivery cities. Deliberately NOT toned like a verdict: it is
+     reference material, and a rep must not read it as an answer. */
+  .kb-elig-city {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+    margin: 6px 0; padding: 6px 8px; border-radius: var(--radius);
+    background: var(--paper); border: 1px solid var(--line);
+    font-size: 12px; color: var(--ink);
+  }
+  .kb-elig-city-note { color: var(--muted); font-size: 11px; }
+  .kb-elig-v {
+    display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px;
+    align-items: baseline; margin-top: 4px; font-size: 12px;
+  }
+  .kb-elig-v-lbl {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    white-space: nowrap;
+  }
+  .kb-elig-v-word { font-weight: 600; white-space: nowrap; }
+  .kb-elig-v-why { color: var(--muted); min-width: 0; }
+  .kb-elig-v.yes     .kb-elig-v-word { color: var(--success-deep); }
+  .kb-elig-v.maybe   .kb-elig-v-word { color: var(--warning-deep); }
+  .kb-elig-v.no      .kb-elig-v-word { color: var(--danger-deep); }
+  .kb-elig-v.unknown .kb-elig-v-word { color: var(--muted); }
+  /* The three-column verdict grid stacks below ~440px of available width,
+     rather than squeezing the reason to one word per line. TWO rules, because
+     g50 is precisely the mistake this file has made before: data-compact is
+     the POP-OUT, NOT a viewport breakpoint. A pop-out override alone leaves
+     the desktop tracks in place on a phone; the @media alone leaves them in
+     place in a 380px pop-out on a wide screen. Both, or neither works. */
+  :root[data-compact] .kb-elig-v { grid-template-columns: 1fr; gap: 1px; }
+  @media (max-width: 560px) {
+    .kb-elig-v { grid-template-columns: 1fr; gap: 1px; }
+  }
+  .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
   .kb-ins-input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
   .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
   .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -2402,6 +2447,217 @@ function insToneCls_(value) {
   return '';
 }
 
+// ── OOP price lookup (operator 2026-09-16) ─────────────────────────────────
+// The mid-call price check. Rides BOTH hosts exactly like the insurance
+// lookup — the Reference landing ('' suffix) and the Ctrl/⌘+K drawer ('-d') —
+// because a price is looked up mid-call, which is what the drawer is for.
+//
+// A quoted price is a COMMITMENT (the rep takes payment on that call), so this
+// surface states its own limits rather than implying certainty: the effective
+// date rides every result, and a no-match says so plainly instead of offering
+// a near-miss as though it were the answer.
+var KB_OOP = { seq: 0, timer: null };
+
+function oopLookupSecHtml_(suffix) {
+  return '<label class="kb-land-h" for="kb-oop-input' + suffix + '">' + icon('search', 13) + ' OOP price lookup</label>' +
+    '<input type="text" class="kb-ins-input" id="kb-oop-input' + suffix + '" autocomplete="off" ' +
+      'placeholder="Item name…" oninput="oopLookupInput_(this)">' +
+    '<div class="kb-ins-results" id="kb-oop-results' + suffix + '"></div>';
+}
+
+/** Debounced search with a seq token — two hosts and out-of-order responses
+ *  must not cross-paint (INV-156, the insLookupInput_ discipline). */
+function oopLookupInput_(inp) {
+  var suffix = inp.id === 'kb-oop-input-d' ? '-d' : '';
+  var q = String(inp.value || '').trim();
+  if (KB_OOP.timer) clearTimeout(KB_OOP.timer);
+  var host = document.getElementById('kb-oop-results' + suffix);
+  if (q.length < 2) { if (host) host.innerHTML = ''; return; }
+  KB_OOP.timer = setTimeout(function () {
+    var mySeq = ++KB_OOP.seq;
+    if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (mySeq !== KB_OOP.seq) return;
+        oopRenderResults_(suffix, q, res);
+      })
+      .withFailureHandler(function (err) {
+        if (mySeq !== KB_OOP.seq) return;
+        var h = document.getElementById('kb-oop-results' + suffix);
+        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
+      })
+      .searchOopPricing(q);
+  }, 350);
+}
+
+function oopRenderResults_(suffix, q, res) {
+  var host = document.getElementById('kb-oop-results' + suffix);
+  if (!host) return;
+  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  if (res.notFound || !(res.matches || []).length) {
+    // A no-match is stated plainly. The alternative — showing the nearest item
+    // anyway — is how a rep quotes the price of something else.
+    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' No OOP price on file for “' + esc(q) + '”. ' +
+      'Check the spelling, or confirm with the team before quoting — do not quote a similar item.</div>';
+    return;
+  }
+  var html = '';
+  res.matches.forEach(function (m) {
+    // A MISSING price is called out rather than rendered as an empty cell: a
+    // blank where a number belongs reads as free, or as nothing to say.
+    var price = String(m.price || '').trim();
+    var priceHtml = price
+      ? '<span class="kb-oop-price">' + esc(price) + '</span>'
+      : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
+    var bits = [];
+    if (m.effective) bits.push('effective ' + esc(m.effective));
+    if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
+    (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
+    html += '<div class="kb-ins-row">' +
+      '<div class="kb-ins-name">' + esc(m.name) + ' ' + priceHtml + '</div>' +
+      (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
+      '</div>';
+  });
+  if (res.total > (res.matches || []).length) {
+    html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' matches — showing the top ' + esc(String(res.cap)) + '. Narrow the search.</div>';
+  }
+  if (res.truncated) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">The pricing sheet is longer than the scan limit — some items were not searched.</div>';
+  }
+  host.innerHTML = html;
+}
+
+// ── ELIG (operator 2026-09-16) — area eligibility ──────────────────────────
+// The OOP sheet's Area Eligibility column states the rule for an order going
+// THROUGH INSURANCE. Paying out of pocket transforms it: a STATE limit lifts
+// (it is licensure and network, and nobody is billing insurance), a DELIVERY
+// RADIUS does not (it is a van). So every item has TWO answers, and both are
+// shown, labelled — the rep mid-call is usually deciding between the two, and a
+// payment-method toggle would make them ask the same question twice.
+//
+// UNKNOWN is rendered as its own thing, never as "no". "We cannot tell" and
+// "not eligible" send a rep to two different next actions, and the first one is
+// a phone call (INV-187).
+var KB_ELIG = { seq: 0, timer: null };
+
+function eligSecHtml_(suffix) {
+  return '<label class="kb-land-h" for="kb-elig-addr' + suffix + '">' + icon('grid', 13) + ' Area eligibility</label>' +
+    '<input type="text" class="kb-ins-input" id="kb-elig-addr' + suffix + '" autocomplete="off" ' +
+      'placeholder="Address or ZIP code…" oninput="eligInput_(this)">' +
+    '<input type="text" class="kb-ins-input" id="kb-elig-item' + suffix + '" autocomplete="off" ' +
+      'aria-label="Item name to check (optional \u2014 leave blank to list every item)" ' +
+      'placeholder="Item (optional — blank lists everything)" oninput="eligInput_(this)">' +
+    '<div class="kb-ins-results" id="kb-elig-results' + suffix + '"></div>';
+}
+
+function eligInput_(inp) {
+  var suffix = /-d$/.test(inp.id) ? '-d' : '';
+  var addrEl = document.getElementById('kb-elig-addr' + suffix);
+  var itemEl = document.getElementById('kb-elig-item' + suffix);
+  var addr = addrEl ? String(addrEl.value || '').trim() : '';
+  var item = itemEl ? String(itemEl.value || '').trim() : '';
+  if (KB_ELIG.timer) clearTimeout(KB_ELIG.timer);
+  var host = document.getElementById('kb-elig-results' + suffix);
+  // A geocode is a real round trip, so the threshold is higher than the payor
+  // lookup's and the debounce longer — a rep types a full address, not a stem.
+  if (addr.length < 4) { ++KB_ELIG.seq; if (host) host.innerHTML = ''; return; }
+  KB_ELIG.timer = setTimeout(function () {
+    var mySeq = ++KB_ELIG.seq;
+    if (host) host.innerHTML = '<div class="kb-ins-more">Checking…</div>';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (mySeq !== KB_ELIG.seq) return;
+        eligRenderResults_(suffix, addr, res);
+      })
+      .withFailureHandler(function (err) {
+        if (mySeq !== KB_ELIG.seq) return;
+        var h = document.getElementById('kb-elig-results' + suffix);
+        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Eligibility check failed.');
+      })
+      .checkOopEligibility(addr, item);
+  }, 700);
+}
+
+/** One verdict pill. The THREE states are visually distinct on purpose: a
+ *  yes-with-a-caveat and a flat yes must not look the same, because the caveat
+ *  is the whole reason a near-boundary radius answer is not a commitment. */
+function eligVerdictHtml_(label, v) {
+  var verdict = (v && v.verdict) || 'unknown';
+  var cls = verdict === 'yes' ? (v.near ? 'maybe' : 'yes') : (verdict === 'no' ? 'no' : 'unknown');
+  var word = verdict === 'yes' ? (v.near ? 'Yes — check' : 'Yes') : (verdict === 'no' ? 'No' : 'Cannot tell');
+  return '<div class="kb-elig-v ' + cls + '">' +
+    '<span class="kb-elig-v-lbl">' + esc(label) + '</span>' +
+    '<span class="kb-elig-v-word">' + esc(word) + '</span>' +
+    '<span class="kb-elig-v-why">' + esc((v && v.why) || '') + '</span>' +
+  '</div>';
+}
+
+function eligRenderResults_(suffix, addr, res) {
+  var host = document.getElementById('kb-elig-results' + suffix);
+  if (!host) return;
+  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Eligibility check failed.'); return; }
+  if (res.notFound || !(res.items || []).length) {
+    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' No item matched. ' +
+      'Do not check a similar item — confirm the name against the pricing sheet.</div>';
+    return;
+  }
+  var html = '<div class="kb-ins-more">' + esc(res.formatted || addr) +
+    (res.state ? ' · ' + esc(res.state) : '') + '</div>';
+  // Warehouse distances, once, above the list — every radius row measures
+  // against the same ones, so repeating them per item would be noise.
+  var wh = (res.warehouses || []).filter(function (w) { return w.miles != null; });
+  if (wh.length) {
+    html += '<div class="kb-ins-more">' + wh.map(function (w) {
+      return esc(w.name) + ' ' + esc(String(w.miles)) + ' mi';
+    }).join(' · ') + ' (straight-line)</div>';
+  }
+  // LISTED DELIVERY CITIES. Information, never a verdict (operator decision,
+  // 2026-09-16) — so it renders as its own line ABOVE the items rather than
+  // inside any item's answer. A rep must never be able to read this as "and
+  // therefore it is eligible": the Area Eligibility column is the only thing
+  // that decides, and two tables that could disagree would leave nobody able
+  // to see which one did.
+  var dc = res.deliveryCities || [];
+  if (dc.length) {
+    html += '<div class="kb-elig-city">' + icon('checkCircle', 12) + ' ' +
+      dc.map(function (c) {
+        return esc(c.name) + (c.state ? ', ' + esc(c.state) : '') +
+          (c.accepts ? ' \u2014 delivers ' + esc(c.accepts) : ' \u2014 listed delivery city');
+      }).join(' \u00b7 ') +
+      '<span class="kb-elig-city-note">Reference only \u2014 the verdicts below come from the item\u2019s Area Eligibility.</span>' +
+    '</div>';
+  }
+  // A delivery table that could not be READ is surfaced. Without this, every
+  // radius rule quietly reads "cannot tell", which looks like caution rather
+  // than like a tab nobody created (g02).
+  if (res.locationError) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">' + esc(res.locationError) + '</div>';
+  }
+  var unplaced = (res.warehouses || []).filter(function (w) { return w.miles == null; });
+  if (unplaced.length) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">Could not place: ' +
+      unplaced.map(function (w) { return esc(w.name); }).join(', ') +
+      ' — any radius answer involving it is incomplete.</div>';
+  }
+  res.items.forEach(function (it) {
+    var price = String(it.price || '').trim();
+    var priceHtml = price
+      ? '<span class="kb-oop-price">' + esc(price) + '</span>'
+      : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
+    html += '<div class="kb-ins-row">' +
+      '<div class="kb-ins-name">' + esc(it.name) + ' ' + priceHtml + '</div>' +
+      (it.eligibility ? '<div class="kb-ins-meta">sheet: ' + esc(it.eligibility) + '</div>' : '') +
+      eligVerdictHtml_('Through insurance', it.insurance) +
+      eligVerdictHtml_('Paying out of pocket', it.oop) +
+      '</div>';
+  });
+  if (res.truncated || res.total > res.items.length) {
+    html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' items — showing ' +
+      esc(String(res.items.length)) + '. Narrow with an item name.</div>';
+  }
+  host.innerHTML = html;
+}
+
 var KB_INS = { seq: 0, timer: null };
 
 /** The lookup section (shared by both hosts; suffix '' = Reference landing,
@@ -2504,6 +2760,8 @@ function kbRenderLanding_() {
   // of the content blocks. The typed query is transient (a re-render clears
   // it) — the lookup is a point question, not state worth persisting.
   h += '<div class="kb-land-sec">' + insLookupSecHtml_('') + '</div>';
+  h += '<div class="kb-land-sec">' + oopLookupSecHtml_('') + '</div>';
+  h += '<div class="kb-land-sec">' + eligSecHtml_('') + '</div>';
 
   // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
   var bookmarks = prefs.bookmarks || [];
@@ -4026,6 +4284,8 @@ function kbDrawerRenderHome_() {
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
   html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
+  html += '<div class="kbd-sec">' + oopLookupSecHtml_('-d') + '</div>';
+  html += '<div class="kbd-sec">' + eligSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';

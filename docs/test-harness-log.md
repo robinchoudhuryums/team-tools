@@ -1225,3 +1225,64 @@ PURE harness only, so a DOM pin must be bite-checked by hand (mutate, run
 so an `animationend` listener is never exercised there — the SP2 pin verifies
 the TIMEOUT fallback, and says so rather than implying coverage it does not
 have.
+
+## 2026-09-16 — OOP pricing, the price picker, area eligibility, the store move
+
+This round ADDED sixteen pure pins, four DOM pins and six editor registrations
+(the live totals are CLAUDE.md's running-totals block, not here). Thirty-two
+mutations bite-checked across it — 19 via `scripts/bite.sh`, 13 by hand on the
+DOM harness, which `bite.sh` does not drive.
+
+**What the harnesses gained.** Pure: the `oopQuoteLine_` behaviour pin; the
+client↔server MIRROR pin, which loads BOTH `oopQuoteLine_` and
+`cnOopQuoteLine_` into one vm context and drives them over a shared table
+(including an em dash inside a NAME, so the separator cannot be inferred from
+the data); `oopVerifyQuotes_` against a FAKE sheet installed per case, so every
+refusal branch is reachable without a spreadsheet; the eligibility
+parse/transform/verdict trio driven against the operator's REAL column values;
+`locHeaderRole_` / `locRowKind_` / `locCityMatches_`; and the NAMED-TABS and
+NO-SEED structural pins. DOM: three for the composer price picker, one for the
+eligibility verdicts on both hosts, and one for the delivery-city line.
+
+**SEVEN pins caught defects before the code shipped**, two of them in pins
+written in the same batch — the compact-mode grid override without its viewport
+twin (g50, in the very file that has been bitten by it, under a comment citing
+g50), an input shipped with a placeholder and no accessible name, and the
+`_withTestOop_` fixture that shipped with OOP-A and was never called by anything
+(g04, and a worse instance than a CONFIG key because a fixture LOOKS like
+coverage).
+
+**SIX pins did not bite on first check, and the repairs are the lesson:**
+
+1. **`deepStrictEqual` on a value out of the jsdom sandbox compares
+   PROTOTYPES** and failed on an identical payload. Compared as JSON instead —
+   g116 verbatim, in a harness that already carries g116's warning.
+2. **A host-wide regex for "straight-line"** stayed green with the warehouse
+   strip's caveat deleted, because those same words appear inside a
+   near-boundary verdict's own reason. Anchored on the strip ELEMENT.
+3. **The "could not place a warehouse" branch had no coverage at all** — the
+   fixture placed every warehouse, so the branch was unreachable and deleting it
+   bit nothing. The fixture now carries an unplaceable one.
+4. **`locCityMatches_`'s blank-city guard** passed for the wrong reason: a blank
+   query fails to equal any real name anyway, so the assertion was vacuous. The
+   fixture now carries a NAMELESS row, which is what the guard exists for.
+5. **The NO-SEED pin could not see a hard-coded seed.** All three of its
+   assertions watched for the OLD shape of the defect — a Script Property, a
+   `CONFIG.` fallback — and none would have caught a warehouse written straight
+   into `getLocationAcceptance_`. It now asserts the registry is BUILT EMPTY.
+6. **The unreadable-registry render had no assertion behind it**, so deleting it
+   bit nothing while on screen every radius rule would read "cannot tell" with
+   the items still rendering around it.
+
+Items 2–6 share a shape worth naming: **a pin written from the code rather than
+from the failure tends to assert what the code DOES, not what would be wrong if
+it stopped.** Four of the five were only found because the bite-check is a
+separate step from writing the pin.
+
+**One thing no pin caught, found by re-reading:** a comment claiming the
+radius-first ordering in `oopEligibilityParse_` is what stops a state code inside
+a radius phrase parsing as a state rule. It was wrong about today's code — the
+whole-value-is-codes rule already rejects it. The ordering is defence against a
+plausible future relaxation, and the comment now says that. An overclaiming
+comment is worse than none: the next reader trusts it and removes the thing that
+is actually load-bearing.

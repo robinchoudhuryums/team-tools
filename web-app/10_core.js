@@ -1863,7 +1863,13 @@ function getStorageHealth(opts) {
 
     const kbProp = props.getProperty('KB_SS_ID');
     const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
-    const kbStore = probe({ label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs',
+    // OOP pricing and delivery reach are NAMED TABS in this store rather than a
+    // store of their own (operator 2026-09-16) — the InsurancePayors pattern.
+    // They are named in the role so this row's reachability and TIMEZONE verdict
+    // is visibly theirs too: an EffectiveDate column is a coerced date read, so
+    // a tz drift here shows a customer a different date than the sheet does.
+    const kbStore = probe({ label: 'Knowledge Base + Training',
+      role: 'KB, KbViews, Training/Quiz tabs, InsurancePayors, OopPricing, LocationAcceptance',
       cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID', id: kbId,
       source: kbProp ? 'Script Property' : (kbId ? 'CONFIG' : 'unset'),
       note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' });

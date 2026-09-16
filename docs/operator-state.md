@@ -1261,6 +1261,86 @@ entry says which it is.
   ribbon). Breaks + the break reminder still come from the per-tz schedule
   (the override changes start/length only). Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
+<a id="operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet"></a>
+- **The `OopPricing` and `LocationAcceptance` tabs** (operator 2026-09-16) live
+  in the **KB spreadsheet** (`KB_SS_ID`) — no Script Property of their own.
+  They sit beside `InsurancePayors`, which is the same kind of thing: an
+  operator-maintained, read-only lookup table.
+
+  **The app NEVER writes to either tab.** Both are read LIVE on every lookup —
+  not imported, not cached. A rep quotes an OOP price and takes payment on that
+  call, so a copy that lags your sheet by an upload is a rep collecting a
+  superseded price.
+
+  They were briefly a separate spreadsheet (`OOP_SS_ID`, same day). Moving them
+  here dropped a Script Property, a test-twin property and a Storage Health row.
+  They are deliberately **not** in the Intake spreadsheet, which was the other
+  candidate: Intake is PHI and the app writes to it, so pricing there would mean
+  anyone maintaining prices needs edit access to patient submissions.
+
+  ### `OopPricing`
+  - **Column A = the item name** — the column the search scans.
+  - Then `Price`, `Area Eligibility` and `EffectiveDate`, matched **by header
+    STEM**, not by position: "Patient Cost" and "OOP Amount" both read as the
+    price, "Eligible Regions" as the area. Reorder freely. Any column the
+    matcher does not recognise is shown VERBATIM beside the result rather than
+    dropped.
+  - **`Area Eligibility` is READ BY AN ENGINE, not displayed.** It is parsed
+    into a rule and answered twice — once for an order through insurance and
+    once for one paid out of pocket. The grammar and what each value means is
+    INV-209; the short version is `Open` / a list of two-letter state codes /
+    `N miles of <warehouse name>`, and **anything else reads "cannot tell"**,
+    never "eligible". The warehouse NAME has to be one that appears in
+    `LocationAcceptance`.
+
+  ### `LocationAcceptance`
+  Columns, also by header stem: `Type`, `Name`, `Address`, `State`, `Accepts`,
+  `Notes`. Two row kinds under `Type`:
+
+  | Type | Name | Address | State | Accepts |
+  |---|---|---|---|---|
+  | `warehouse` | the word you write in Area Eligibility | **full street address** | | |
+  | `city` | the city | *(blank)* | two-letter code | e.g. `POV, scooter` |
+
+  - A **warehouse** row's `Name` is matched as a SUBSTRING of the Area
+    Eligibility text, so "100 miles of Dallas or San Antonio warehouse" resolves
+    when both names are listed. Its `Address` is what gets geocoded — **use a
+    real street address, not just the city.** A bare city name geocodes to the
+    city centre, and a warehouse twenty miles out of town then makes every
+    near-boundary radius answer wrong by up to twenty miles.
+  - A warehouse row with **no address is dropped and reported** — its name would
+    become vocabulary the grammar matches and can never measure.
+  - A **city** row lists somewhere POVs/scooters can be delivered. It is shown
+    to the rep when they check an address in that city and **never changes a
+    verdict** — the Area Eligibility column is the only thing that decides. Two
+    tables that could disagree would leave nobody able to see which one decided.
+  - `Type` matches by prefix, so `warehouse (north dock)` works. A `Type` the
+    reader does not recognise makes the row unreadable and it is REPORTED, not
+    guessed at. A blank `Type` is classified by shape: an address makes it a
+    warehouse.
+
+  **There is no default and no fallback.** A missing or empty
+  `LocationAcceptance` tab makes every radius rule read "cannot tell" — never
+  eligible, and never a guessed location.
+
+  **Both tabs' timezone is the KB spreadsheet's**, which must equal
+  `CONFIG.TIMEZONE` like every other store — `EffectiveDate` is a date read and
+  a drifted tz shifts it. File → Settings → Time zone; Storage Health shows the
+  mismatch on the Knowledge Base row.
+
+  **Check both with Manage → Admin → the OOP pricing diagnostics**
+  (`getOopPricingDiagnostics`, admin-gated). It reports the tab it read, every
+  header and the role it assigned, any role it could not find, the warehouse
+  registry, the city count, every addressless warehouse row — and **how every
+  Area Eligibility value in the sheet parses, with the unreadable ones listed by
+  item**. Run it after adding rows or renaming a column. Header discovery and
+  the eligibility grammar are both invisible when they work and silent when they
+  do not: an unreadable eligibility value renders "cannot tell", which reads
+  like caution rather than like a typo.
+
+  Both tabs are seeded into the KB test twin (`TEST_KB_SS_ID`) by
+  `_withTestOop_`.
+
 <a id="operator-script-property-spanish-vm-min-seconds"></a>
 - **Script Property `SPANISH_VM_MIN_SECONDS`** (optional — operator 2026-09-16).
   An 8x8 A_Q_Spanish voicemail SHORTER than this many seconds is treated as a

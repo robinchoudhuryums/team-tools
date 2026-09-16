@@ -9593,22 +9593,48 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   assert.ok(/slice\(0, KB_MAP_MAX_WH\)/.test(f) && /KB_MAP_QUERY_MAX/.test(f), 'warehouse count + string lengths bounded');
   // THE PRIVACY CONTRACT: warehouse geocodes persist (operator-owned, static);
   // the rep's QUERY never does — a looked-up address may be a patient's.
-  // (a) the only property write is the warehouse-coordinate cache;
-  // Batch Q routed this through propSetBounded_ — the contract is "exactly ONE
-  // property write", whichever writer it goes through, so count both forms.
-  const setCalls = f.match(/props\.setProperty\([^)]*\)|propSetBounded_\([^,]*/g) || [];
-  assert.strictEqual(setCalls.length, 1, 'exactly one property write');
+  //
+  // ELIG (2026-09-16) extracted the cache into kbGeocodeCached_ and gave it a
+  // SECOND caller, checkOopEligibility, which geocodes a customer address for
+  // the radius check. The contract is the same and now spans all three, so the
+  // pin does too — and the load-bearing assertion had to change shape with it.
+  // The old form ("the write happens before the query is geocoded") was an
+  // argument about ONE function's statement order; checkOopEligibility geocodes
+  // its address FIRST and would have failed it while honouring the contract
+  // perfectly. What actually holds is structural: the cache is written in ONE
+  // place, and the only thing ever handed to it is operator-owned addresses.
+  const cache = nc(extractRawFunction('Code.js', 'kbGeocodeCached_'));
+  const elig = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+
+  // (a) the only property write is the warehouse-coordinate cache, and it lives
+  //     in the shared helper — neither caller writes a property of its own.
+  const setsIn = (src) => src.match(/props\.setProperty\([^)]*\)|PropertiesService[\s\S]{0,60}?setProperty\([^)]*\)|propSetBounded_\([^,]*/g) || [];
+  const setCalls = setsIn(cache);
+  assert.strictEqual(setCalls.length, 1, 'exactly one property write, in kbGeocodeCached_');
   assert.ok(/KB_MAP_GEOCODE_CACHE_PROP/.test(setCalls[0]), 'and it is the coordinate cache');
-  // (b) that write happens BEFORE the query is even geocoded, so the query
-  //     value cannot be in the serialized blob;
-  const writeAt = f.indexOf('propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP');
-  const qGeoAt = f.indexOf('kbGeocodeOne_(query)');
-  assert.ok(writeAt > 0 && qGeoAt > writeAt, 'cache write precedes the query geocode');
+  assert.strictEqual(setsIn(f).length, 0, 'kbMapDistances writes no property of its own');
+  assert.strictEqual(setsIn(elig).length, 0, 'checkOopEligibility writes no property of its own');
+
+  // (b) the cache is only ever handed OPERATOR-OWNED addresses. This is what
+  //     keeps the rep's query out of it, and it is the assertion that would
+  //     fail if someone "simplified" a caller into caching its own lookup.
+  const cachedArgs = (f + elig).match(/kbGeocodeCached_\(([^;]*?)\)/g) || [];
+  assert.ok(cachedArgs.length >= 2, 'both callers reach the shared cache (' + cachedArgs.length + ')');
+  cachedArgs.forEach((call) => {
+    assert.ok(!/\b(query|addr|address)\b/.test(call),
+      'the caller-supplied location must never be cached: ' + call);
+  });
+  //     and each caller geocodes its OWN query through the uncached path.
+  assert.ok(/kbGeocodeOne_\(query\)/.test(f), 'kbMapDistances geocodes the query uncached');
+  assert.ok(/kbGeocodeOne_\(addr\)/.test(elig), 'checkOopEligibility geocodes the address uncached');
+
   // (c) cache keys are address HASHES via kbMapCacheKey_, never raw strings;
-  assert.ok(/kbMapCacheKey_\(a\)/.test(f) && !/cache\[a\]/.test(f), 'keys are hashed addresses');
+  assert.ok(/kbMapCacheKey_\(a\)/.test(cache) && !/cache\[a\]/.test(cache), 'keys are hashed addresses');
   // (d) no audit row, no log line — nothing records what was looked up.
-  assert.ok(!/writeAuditLog_/.test(f) && !/Logger\.log/.test(f) && !/console\./.test(f),
-    'the lookup is never audited or logged');
+  [['kbMapDistances', f], ['kbGeocodeCached_', cache], ['checkOopEligibility', elig]].forEach(([name, src]) => {
+    assert.ok(!/writeAuditLog_/.test(src) && !/Logger\.log/.test(src) && !/console\./.test(src),
+      name + ': the lookup is never audited or logged');
+  });
   // The free built-in geocoder — the whole point of Tier A. Any Maps-API-key
   // path (UrlFetchApp to googleapis) would mean billing.
   const g = nc(extractRawFunction('Code.js', 'kbGeocodeOne_'));
@@ -9616,7 +9642,7 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   assert.ok(!/UrlFetchApp/.test(f) && !/UrlFetchApp/.test(g), 'no external HTTP — nothing to bill');
   // Hygiene reset keeps THIS run's entries warm (the current article's
   // warehouses are exactly the ones worth keeping).
-  assert.ok(/cache = fresh;/.test(f), 'an oversized cache resets to the fresh entries, not to nothing');
+  assert.ok(/cache = fresh;/.test(cache), 'an oversized cache resets to the fresh entries, not to nothing');
 });
 
 console.log('\nshell — settings flyout + view-as + tz-mismatch (operator 2026-08-13)');
@@ -13017,6 +13043,707 @@ const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your exten
   + 'Received on: Wednesday, September 9, 2026 2:10:01 PM Duration: 00:18 '
   + 'Transcript Hi, we have this patient calling, asking for a Spanish representative. '
   + "I only have their number or his number. It's 956-935-0289. Please call the patient back. Thank you.";
+
+// OOP-A (operator 2026-09-16) — the pricing reader resolves its columns BY
+// HEADER NAME, because the operator owns the spreadsheet and may reorder it.
+// That flexibility is the whole risk: a header the role matcher misses shows a
+// BLANK price rather than an error, and a rep quoting a blank is a rep quoting
+// nothing. These drive the matcher directly so a stem change is caught here
+// rather than mid-call.
+vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), _vmCtx, { filename: 'oopHeaderRole_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), _vmCtx, { filename: 'oopRowObj_' });
+
+test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `price` so a date column can never be read as money', () => {
+  const r = (h) => vm.runInContext('oopHeaderRole_(' + JSON.stringify(h) + ')', _vmCtx);
+
+  // The operator's own column names, and the obvious variants of each.
+  assert.strictEqual(r('Price'), 'price');
+  assert.strictEqual(r('Patient Cost'), 'price');
+  assert.strictEqual(r('OOP Amount'), 'price');
+  assert.strictEqual(r('Area Eligibility'), 'eligibility');
+  assert.strictEqual(r('Eligible Regions'), 'eligibility');
+  assert.strictEqual(r('EffectiveDate'), 'effective');
+  assert.strictEqual(r('As of'), 'effective');
+
+  // THE ORDERING ASSERTION. "Effective Price Date" contains BOTH stems. Read as
+  // `price` it would put a DATE in front of a customer as a dollar figure, so
+  // the date reading has to win. Inverting the two tests in oopHeaderRole_ must
+  // turn this red.
+  assert.strictEqual(r('Effective Price Date'), 'effective',
+    'a header carrying both stems reads as the DATE — never as the money');
+
+  // Unrecognised is '' (the row object then carries it verbatim), not a guess.
+  assert.strictEqual(r('Manufacturer'), '');
+  assert.strictEqual(r(''), '');
+  assert.strictEqual(r(null), '');
+});
+
+test('OOP-A: oopRowObj_ takes the FIRST column as the item name, fills each role ONCE, and passes unknown columns through verbatim', () => {
+  const obj = (h, row) => vm.runInContext('oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + ')', _vmCtx);
+
+  const o = obj(['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Manufacturer'],
+    ['Widget', '$129.00', 'AZ NV', '2026-09-01', 'Acme']);
+  assert.strictEqual(o.name, 'Widget', 'the first column is the item name whatever it is headed');
+  assert.strictEqual(o.price, '$129.00', 'the price is carried as the sheet DISPLAYS it, not reformatted');
+  assert.strictEqual(o.eligibility, 'AZ NV');
+  assert.strictEqual(o.effective, '2026-09-01');
+  assert.deepStrictEqual(o.details.map((d) => d.label + '=' + d.value).join('|'), 'Manufacturer=Acme',
+    'an unrecognised column rides along VERBATIM — shown, never dropped, never guessed at');
+
+  // FIRST match per role wins, so a second price-ish column cannot overwrite
+  // the real one further down the row.
+  const two = obj(['Item', 'Price', 'List Cost'], ['W', '$10', '$99']);
+  assert.strictEqual(two.price, '$10', 'the first price-role column wins');
+  assert.strictEqual(two.details.map((d) => d.value).join(), '$99', 'and the second rides along as an attribute');
+
+  // A blank header is skipped entirely rather than producing a blank-labelled row.
+  const blank = obj(['Item', '', 'Price'], ['W', 'junk', '$5']);
+  assert.strictEqual(blank.price, '$5');
+  assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing, not an unlabelled attribute');
+});
+
+// ELIG (operator 2026-09-16) — area eligibility off the SAME column. The
+// operator's clarification is what makes this two answers rather than one: the
+// Area Eligibility cell states the rule for an order going THROUGH INSURANCE,
+// and paying out of pocket transforms it. These pins drive the grammar, the
+// transform and the verdict separately, because each one fails differently and
+// the wrong permissive answer is the expensive one.
+vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
+  (serverSource().match(/const US_STATE_CODES = \[([\s\S]*?)\];/) || [, ''])[1]
+    .split(/[,\s]+/).map((t) => t.replace(/'/g, '')).filter(Boolean)) + ';', _vmCtx);
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
+vm.runInContext('var OOP_ELIG_NEAR_BAND = ' +
+  (serverSource().match(/const OOP_ELIG_NEAR_BAND = ([\d.]+);/) || [, '0.8'])[1] + ';', _vmCtx);
+vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityCheck_'), _vmCtx, { filename: 'oopEligibilityCheck_' });
+
+test('ELIG: oopEligibilityParse_ reads the operator REAL values, tests RADIUS first, and calls everything else UNKNOWN rather than guessing', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const P = (t, wh) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(wh === undefined ? WH : wh) + '))', _vmCtx));
+
+  // The operator's three common values, verbatim (2026-09-16).
+  assert.deepStrictEqual(P('Open'), { kind: 'open' });
+  assert.deepStrictEqual(P('TX'), { kind: 'states', states: ['TX'] });
+  assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] });
+
+  // A radius phrase containing a STATE CODE. Two things hold it: the STATES
+  // branch requires the WHOLE value to be codes, and RADIUS is tested first.
+  // Today the first alone is enough — but "extract any codes present" is a very
+  // plausible future relaxation (someone will want "TX only" to work), and the
+  // ordering is what keeps this case right when it lands.
+  assert.deepStrictEqual(P('100 miles of the Dallas TX warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas'] },
+    'a state code inside a radius phrase does not make it a state rule');
+
+  // Warehouse names match as SUBSTRINGS against the REGISTRY, so the phrasing
+  // is free. Every one of these is the same rule.
+  ['within 100mi of Dallas', 'Dallas/San Antonio — 100 miles', '100 mi (Dallas)'].forEach((t) => {
+    const r = P(t);
+    assert.strictEqual(r.kind, 'radius', t + ' → radius');
+    assert.strictEqual(r.miles, 100, t + ' → 100');
+  });
+
+  // A radius around a warehouse the registry does not know is UNKNOWN, not
+  // eligible: we cannot place it, so we cannot answer.
+  assert.strictEqual(P('100 miles of Houston').kind, 'unknown',
+    'a radius naming no registered warehouse is UNKNOWN, never open');
+  assert.strictEqual(P('100 miles of Dallas', []).kind, 'unknown',
+    'and an EMPTY registry makes every radius unknown rather than silently open');
+
+  // Open, with the operator's own parenthetical.
+  assert.deepStrictEqual(P('Open (anywhere in the US including Hawaii)'), { kind: 'open' });
+  ['All', 'US', 'nationwide', 'Anywhere'].forEach((t) => assert.strictEqual(P(t).kind, 'open', t));
+
+  // States: multi, separators, dedupe, canonical case.
+  assert.deepStrictEqual(P('TX, OK NM').states, ['TX', 'OK', 'NM']);
+  assert.deepStrictEqual(P('tx/TX').states, ['TX'], 'deduped and upper-cased');
+  assert.strictEqual(P('HI').states[0], 'HI', 'Hawaii is a state code, not a greeting');
+
+  // The WHOLE value must be state codes. A value that is partly codes and
+  // partly prose is not a state rule — it is one we cannot read, and reading
+  // the codes out of it would silently drop whatever the prose said.
+  assert.strictEqual(P('TX only if in network').kind, 'unknown');
+  assert.strictEqual(P('XX').kind, 'unknown', 'a two-letter non-state is not a state');
+  assert.strictEqual(P('').kind, 'unknown', 'a blank cell is UNKNOWN, not open');
+  assert.strictEqual(P('   ').kind, 'unknown');
+  assert.strictEqual(P(null).kind, 'unknown');
+  assert.strictEqual(P('ask a manager').raw, 'ask a manager', 'and UNKNOWN carries the cell VERBATIM so the rep sees what it said');
+});
+
+test('ELIG: oopEligibilityForPayment_ lifts a STATE limit out of pocket, never a RADIUS, and NEVER an unknown', () => {
+  const F = (rule, oop) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityForPayment_(' + JSON.stringify(rule) + ',' + JSON.stringify(oop) + '))', _vmCtx));
+
+  // The operator's table, 2026-09-16.
+  assert.strictEqual(F({ kind: 'open' }, false).kind, 'open');
+  assert.strictEqual(F({ kind: 'open' }, true).kind, 'open');
+
+  assert.strictEqual(F({ kind: 'states', states: ['TX'] }, false).kind, 'states',
+    'through insurance a state limit stands');
+  const lifted = F({ kind: 'states', states: ['TX'] }, true);
+  assert.strictEqual(lifted.kind, 'open', 'out of pocket it lifts — nobody is billing insurance');
+  assert.deepStrictEqual(lifted.liftedFrom, ['TX'], 'and it REMEMBERS what it lifted, so the reason can be shown');
+
+  const rad = { kind: 'radius', miles: 100, warehouses: ['Dallas'] };
+  assert.deepStrictEqual(F(rad, true), rad, 'a delivery radius is a van — paying differently does not move it');
+  assert.deepStrictEqual(F(rad, false), rad);
+
+  // THE LOAD-BEARING LINE. A value we could not read might be a delivery
+  // constraint; lifting it is the one guess that puts an undeliverable order
+  // in the system.
+  assert.strictEqual(F({ kind: 'unknown', raw: 'ask' }, true).kind, 'unknown',
+    'UNKNOWN NEVER LIFTS');
+  assert.strictEqual(F(null, true).kind, 'unknown', 'and a missing rule is unknown, not open');
+  assert.strictEqual(F({}, true).kind, 'unknown', 'as is a shapeless one');
+});
+
+test('ELIG: oopEligibilityCheck_ — a radius NO is CERTAIN and a radius YES near the boundary is not, because a straight line is never longer than the drive', () => {
+  const C = (rule, loc) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityCheck_(' + JSON.stringify(rule) + ',' + JSON.stringify(loc) + '))', _vmCtx));
+  const RAD = { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] };
+
+  // Comfortably inside: a flat yes.
+  const near = C(RAD, { state: 'TX', miles: { Dallas: 30, 'San Antonio': 250 } });
+  assert.strictEqual(near.verdict, 'yes');
+  assert.strictEqual(near.near, false, '30 of 100 mi is not near the boundary');
+  assert.ok(/Dallas/.test(near.why), 'and it names the warehouse it measured to');
+
+  // Inside but close: still yes, and it SAYS the drive is longer. This is the
+  // asymmetry — the measurement can only under-state the real distance.
+  const edge = C(RAD, { state: 'TX', miles: { Dallas: 95 } });
+  assert.strictEqual(edge.verdict, 'yes');
+  assert.strictEqual(edge.near, true, '95 of 100 mi is inside the near band');
+  assert.ok(/drive is longer/.test(edge.why), 'and the caveat is stated, not implied');
+
+  // Outside: a straight line already over the limit means the drive is too.
+  const out = C(RAD, { state: 'TX', miles: { Dallas: 140, 'San Antonio': 180 } });
+  assert.strictEqual(out.verdict, 'no');
+  assert.strictEqual(out.near, false, 'a NO is certain — no hedge');
+  assert.ok(/140/.test(out.why) && /Dallas/.test(out.why), 'and it shows the nearest, not an arbitrary one');
+
+  // Unplaceable warehouses: UNKNOWN when none could be measured, and a NOTE
+  // when only some could — a partial answer must not read as a whole one.
+  assert.strictEqual(C(RAD, { miles: {} }).verdict, 'unknown', 'no distances → cannot tell');
+  assert.strictEqual(C(RAD, { miles: { Dallas: null } }).verdict, 'unknown', 'a null distance is not a zero');
+  assert.ok(/could not be placed/.test(C(RAD, { miles: { Dallas: 30 } }).why),
+    'one measurable of two says the other is missing');
+
+  // States.
+  const ST = { kind: 'states', states: ['TX', 'OK'] };
+  assert.strictEqual(C(ST, { state: 'TX' }).verdict, 'yes');
+  assert.strictEqual(C(ST, { state: 'CA' }).verdict, 'no');
+  assert.ok(/TX, OK/.test(C(ST, { state: 'CA' }).why), 'and a NO names what IS covered');
+
+  // A missing state is UNKNOWN, never NO. This is the one that matters: a
+  // geocode that could not resolve a state and a state that is not on the list
+  // send the rep to two different next actions (g114 / INV-187).
+  const noState = C(ST, {});
+  assert.strictEqual(noState.verdict, 'unknown', 'an unresolved state is CANNOT TELL, not NO');
+  assert.ok(/Could not determine the state/.test(noState.why));
+  assert.strictEqual(C(ST, { state: '' }).verdict, 'unknown');
+
+  // Open, and the lifted variant explains ITSELF — the rep sees why out of
+  // pocket answers differently from insurance.
+  assert.strictEqual(C({ kind: 'open' }, {}).verdict, 'yes');
+  assert.ok(/no state restriction/.test(C({ kind: 'open', liftedFrom: ['TX'] }, {}).why),
+    'a lifted state limit says what it lifted');
+
+  // Unknown renders the cell VERBATIM and is never eligible.
+  const unk = C({ kind: 'unknown', raw: 'ask a manager' }, { state: 'TX' });
+  assert.strictEqual(unk.verdict, 'unknown');
+  assert.ok(/ask a manager/.test(unk.why) && /manually/.test(unk.why));
+  assert.ok(/No area eligibility on file/.test(C({ kind: 'unknown', raw: '' }, {}).why),
+    'a blank cell says it is blank rather than quoting an empty string');
+});
+
+vm.runInContext(extractRawFunction('Code.js', 'locHeaderRole_'), _vmCtx, { filename: 'locHeaderRole_' });
+vm.runInContext(extractRawFunction('Code.js', 'locRowKind_'), _vmCtx, { filename: 'locRowKind_' });
+vm.runInContext(extractRawFunction('Code.js', 'locCityMatches_'), _vmCtx, { filename: 'locCityMatches_' });
+
+test('ELIG: locHeaderRole_ / locRowKind_ read the LocationAcceptance shape, and never GUESS a row they cannot classify', () => {
+  const R = (h) => vm.runInContext('locHeaderRole_(' + JSON.stringify(h) + ')', _vmCtx);
+  const K = (t, hasAddr) => vm.runInContext('locRowKind_(' + JSON.stringify(t) + ',' + JSON.stringify(hasAddr) + ')', _vmCtx);
+
+  assert.strictEqual(R('Type'), 'type');
+  assert.strictEqual(R('Name'), 'name');
+  assert.strictEqual(R('Address'), 'address');
+  assert.strictEqual(R('State'), 'state');
+  assert.strictEqual(R('Accepts'), 'accepts');
+  assert.strictEqual(R('Notes'), 'notes');
+  // The operator's likely real headings, not just the canonical ones.
+  assert.strictEqual(R('Warehouse'), 'name');
+  assert.strictEqual(R('City'), 'name');
+  assert.strictEqual(R('Street Address'), 'address');
+  assert.strictEqual(R('Delivers'), 'accepts');
+
+  // ORDER MATTERS, and not obviously: "Accepted Items" contains both the
+  // accepts stem AND the item stem, and "Accepted Cities" contains the name
+  // stem. Reading either as a place NAME would put a row in the warehouse
+  // vocabulary that no radius phrase can ever match.
+  assert.strictEqual(R('Accepted Items'), 'accepts', 'accepts wins over item');
+  assert.strictEqual(R('Accepted Cities'), 'accepts', 'accepts wins over the name stem');
+  assert.strictEqual(R('unrelated column'), '', 'an unrecognised header plays no role');
+  assert.strictEqual(R(''), '');
+
+  // The Type column decides.
+  assert.strictEqual(K('warehouse', false), 'warehouse');
+  assert.strictEqual(K('Warehouse', true), 'warehouse', 'case-insensitive');
+  assert.strictEqual(K('WH', false), 'warehouse');
+  assert.strictEqual(K('city', false), 'city');
+  assert.strictEqual(K('Metro', false), 'city');
+
+  // A BLANK type is classified by SHAPE — an address is the thing only a
+  // warehouse row carries, and the thing the radius grammar cannot work
+  // without.
+  assert.strictEqual(K('', true), 'warehouse', 'blank type + an address is a warehouse');
+  assert.strictEqual(K('', false), '', 'blank type + no address is NOT guessed at');
+
+  // A type we do not recognise is never guessed into one we do — the g41
+  // posture the eligibility grammar already takes, applied one table over. The
+  // ADDRESS does not rescue it: shape only classifies a row whose Type is
+  // BLANK, because a filled-in Type the reader cannot read means the operator
+  // meant something, and we do not know what.
+  assert.strictEqual(K('supplier', true), '',
+    'an unrecognised Type is unreadable even WITH an address');
+  assert.strictEqual(K('supplier', false), '');
+  assert.strictEqual(K('pickup point', true), '');
+  // Matching is by PREFIX, so the operator's own elaborations still land. This
+  // is documented rather than accidental — it is why 'supplier' above is
+  // unreadable while 'warehouse (north)' is not.
+  assert.strictEqual(K('warehouse (north dock)', false), 'warehouse');
+  assert.strictEqual(K('city - metro area', false), 'city');
+  assert.strictEqual(K('whse', true), '', 'an abbreviation the list does not carry is NOT guessed');
+});
+
+test('ELIG: locCityMatches_ requires the STATE when the row carries one, and an UNDETERMINED city matches nothing', () => {
+  const M = (cities, city, st) => JSON.parse(vm.runInContext(
+    'JSON.stringify(locCityMatches_(' + JSON.stringify(cities) + ',' + JSON.stringify(city) + ',' + JSON.stringify(st) + '))', _vmCtx));
+  const CITIES = [
+    { name: 'Springfield', state: 'TX', accepts: 'POV' },
+    { name: 'Springfield', state: 'IL', accepts: 'scooter' },
+    { name: 'Loose City', state: '', accepts: 'POV' },
+    // A NAMELESS row. getLocationAcceptance_ drops these, but the matcher must
+    // not depend on that — without it the blank-city assertion below is
+    // VACUOUS, because a blank query fails to equal any real name anyway.
+    // (Found by bite-check: deleting the guard bit nothing.)
+    { name: '', state: '', accepts: 'anything at all' },
+  ];
+
+  assert.strictEqual(M(CITIES, 'Springfield', 'TX').length, 1);
+  assert.strictEqual(M(CITIES, 'Springfield', 'TX')[0].accepts, 'POV', 'the RIGHT Springfield');
+  assert.strictEqual(M(CITIES, 'Springfield', 'IL')[0].accepts, 'scooter');
+  assert.strictEqual(M(CITIES, 'springfield', 'tx').length, 1, 'case-insensitive both sides');
+
+  // A row with no state matches any state — the operator left it open.
+  assert.strictEqual(M(CITIES, 'Loose City', 'NV').length, 1);
+
+  // THE ONE THAT MATTERS. A rural address can geocode with no `locality`, and
+  // '' must mean "could not determine", never "match everything" — a blank
+  // matching the whole list would tell a rep we deliver to a place we have
+  // never heard of (INV-187/g114).
+  assert.strictEqual(M(CITIES, '', 'TX').length, 0, 'an undetermined city matches NOTHING');
+  assert.strictEqual(M(CITIES, null, 'TX').length, 0);
+  assert.strictEqual(M([], 'Springfield', 'TX').length, 0, 'an empty registry matches nothing');
+});
+
+test('ELIG: the delivery table has NO seed and NO fallback — a missing tab makes radius rules UNKNOWN, it does not resolve to a city centre', () => {
+  const src = serverSource();
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'getLocationAcceptance_'));
+
+  // THE DEFECT THIS REPLACED: a Script Property that fell back to a CONFIG
+  // seed of bare city names, which geocode to city CENTRES — so a warehouse
+  // twenty miles out of town made every near-boundary radius answer wrong by
+  // up to twenty miles, silently. A seed here is a plausible substitute for a
+  // missing value (g114), and the radius verdict exists to avoid exactly that.
+  assert.ok(!/OOP_WAREHOUSES/.test(src),
+    'the Script Property and its CONFIG seed are GONE from the server — not merely unread');
+  assert.ok(!/Dallas/.test(nc(src.slice(src.indexOf('const LOCATION_ACCEPTANCE_TAB'), src.indexOf('const LOCATION_ACCEPTANCE_TAB') + 2000))),
+    'no warehouse name is hard-coded near the tab constant');
+
+  // An unreadable registry returns EMPTY + an error, never a default.
+  assert.ok(/out\.error =/.test(f) && /return out;/.test(f), 'a missing tab yields the empty registry AND says why');
+  assert.ok(!/\|\|\s*CONFIG\./.test(f), 'nothing falls back to CONFIG');
+  // THE REGISTRY STARTS EMPTY. Added after a bite-check: the three assertions
+  // above all watched for the OLD shape of the defect (a property, a CONFIG
+  // fallback) and none of them would have seen a warehouse hard-coded straight
+  // into this function — which is the same seed, one layer down.
+  assert.ok(/const out = \{ warehouses: \{\},/.test(f),
+    'the registry is built EMPTY and filled only from the sheet');
+
+  // A warehouse row with no ADDRESS is dropped from the vocabulary rather than
+  // registered unplaceable: its NAME is what the radius grammar matches, so
+  // keeping it turns an honest UNKNOWN ("we do not know that place") into a
+  // radius that can never be measured.
+  assert.ok(/if \(!address\) \{ out\.noAddress\.push\(name\); return; \}/.test(f),
+    'an addressless warehouse is dropped and REPORTED');
+
+  // And the empty registry really does make a radius UNKNOWN — driven, not read.
+  const r = JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_("100 miles of Dallas", []))', _vmCtx));
+  assert.strictEqual(r.kind, 'unknown',
+    'with no registry, a radius rule is UNKNOWN — never open, never a guessed centre');
+});
+
+test('ELIG: the pricing + delivery tables are NAMED TABS in the KB store, beside InsurancePayors', () => {
+  const src = serverSource();
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // A STORE OF ITS OWN IS GONE. This is the move that would have failed
+  // silently the other way round: the old reader took getSheets()[0], which was
+  // correct while the file existed for one purpose and would have read the KB
+  // tab the moment it moved — matching no `price` header and rendering every
+  // row blank rather than throwing.
+  assert.ok(!/OOP_SS_ID/.test(src), 'OOP_SS_ID is gone from the server');
+  assert.ok(!/getOopSS_/.test(src), 'and so is its resolver');
+
+  const sheet = nc(extractRawFunction('Code.js', 'oopSheet_'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(OOP_PRICING_TAB\)/.test(sheet),
+    'the pricing table is a NAMED tab in the KB store');
+  assert.ok(!/getSheets\(\)\[0\]/.test(sheet), 'never "the first sheet" again');
+  assert.ok(/OOP_PRICING_TAB/.test(sheet) && /throw new Error/.test(sheet),
+    'a missing tab throws and NAMES the tab to create');
+
+  const loc = nc(extractRawFunction('Code.js', 'getLocationAcceptance_'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(LOCATION_ACCEPTANCE_TAB\)/.test(loc),
+    'and so is the delivery table');
+
+  // The InsurancePayors precedent, asserted so the three stay in step: all
+  // three operator-maintained lookup tables resolve the same way in one store.
+  const ins = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/getKbSS_\(\)\.getSheetByName\(INS_PAYOR_TAB\)/.test(ins),
+    'the payor table it was modelled on still resolves the same way');
+});
+
+test('ELIG: the endpoint is rep-gated and bounded, geocodes the customer address UNCACHED, and never returns an empty eligible list in place of an error', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/getEmployeeInfo_\(\)/.test(f) && /Not authorized/.test(f), 'rep-gated');
+  assert.ok(/KB_MAP_QUERY_MAX/.test(f), 'the address length is bounded');
+  assert.ok(/OOP_MAX_ROWS/.test(f) && /OOP_ELIG_MAX_ITEMS/.test(f), 'the sheet read and the result list are both capped');
+
+  // An unreadable store or an ungeocodable address must ERROR. A list of zero
+  // eligible items and a lookup that did not run look identical on screen, and
+  // only one of them means "do not sell this here" (g02 / g48).
+  assert.ok(/return \{ error: 'OOP pricing could not be read/.test(f),
+    'an unreadable pricing sheet is an ERROR, not an empty list');
+  assert.ok(/Could not find that location/.test(f), 'and so is an address that will not geocode');
+
+  // The warehouse geocode is SKIPPED unless a picked row actually needs one —
+  // a state-only catalog must not pay for a round trip it cannot use.
+  assert.ok(/needRadius/.test(f) && /if \(needRadius/.test(f),
+    'warehouses are geocoded only when some row is a radius rule');
+
+  // BOTH verdicts, from the ONE parse. Parsing twice would be two chances to
+  // diverge, and the divergence would be invisible.
+  assert.ok(/oopEligibilityForPayment_\(rule, false\)/.test(f) && /oopEligibilityForPayment_\(rule, true\)/.test(f),
+    'both payment methods are answered');
+  assert.strictEqual((f.match(/oopEligibilityParse_\(/g) || []).length, 1,
+    'and BOTH come from ONE parse of the cell');
+});
+
+test('ELIG: the client shows both verdicts with three distinct states, and the compact override has its viewport twin (g50)', () => {
+  const cli = extractScript('kb/script_kb.html');
+  const verdict = extractFunction('kb/script_kb.html', 'eligVerdictHtml_');
+  assert.ok(/Cannot tell/.test(verdict), 'UNKNOWN is its own word, never folded into "No"');
+  assert.ok(/v\.near \? 'Yes — check' : 'Yes'/.test(verdict),
+    'a near-boundary yes reads differently from a flat yes');
+  assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
+
+  const render = extractFunction('kb/script_kb.html', 'eligRenderResults_');
+  assert.ok(/Through insurance/.test(render) && /Paying out of pocket/.test(render),
+    'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
+  assert.ok(/straight-line/.test(render), 'the distance caveat rides the warehouse strip');
+  assert.ok(/Could not place/.test(render), 'an unplaceable warehouse is surfaced, not silently dropped');
+  assert.ok(/Do not check a similar item/.test(render), 'a no-match refuses to offer a near-miss');
+
+  // g50, which this very file has been bitten by: data-compact is the POP-OUT,
+  // not a viewport breakpoint. The grid override needs both rules.
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/:root\[data-compact\] \.kb-elig-v \{[^}]*grid-template-columns: 1fr/.test(css),
+    'the pop-out stacks the verdict grid');
+  assert.ok(/@media \(max-width: \d+px\) \{\s*\.kb-elig-v \{[^}]*grid-template-columns: 1fr/.test(css),
+    'and so does a narrow VIEWPORT — one without the other is the g50 defect');
+
+  // Mounted on BOTH hosts, like every other lookup in this partial.
+  assert.ok(/eligSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
+  assert.ok(/eligSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/\u2318+K drawer');
+});
+
+// OOP-B (operator 2026-09-16) — the composer price picker. The operator's answer
+// that "the quoted price IS a commitment" (the rep takes payment on the same
+// call) is what makes these pins load-bearing rather than cosmetic: the number
+// in a sent email must be one the SERVER returned, still current at send time,
+// and reconstructible from the audit row long after the sheet has moved on.
+vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), _vmCtx, { filename: 'oopQuoteLine_' });
+
+test('OOP-B: oopQuoteLine_ renders the price VERBATIM, and returns EMPTY rather than a line with a hole in it', () => {
+  const L = (n, p, e) => vm.runInContext('oopQuoteLine_(' + JSON.stringify(n) + ',' + JSON.stringify(p) + ',' + JSON.stringify(e) + ')', _vmCtx);
+
+  assert.strictEqual(L('Widget', '$129.00', '2026-09-01'), 'Widget — $129.00 (price effective 2026-09-01)');
+  assert.strictEqual(L('Widget', '$129.00', ''), 'Widget — $129.00',
+    'no effective date → no empty parenthetical');
+  assert.strictEqual(L('  Widget  ', '  $129.00  ', '  2026-09-01  '), 'Widget — $129.00 (price effective 2026-09-01)',
+    'every field is trimmed, so a stray space in the sheet cannot make the send-time rebuild miss');
+
+  // VERBATIM is the rule and it is deliberate: the operator's cell is how they
+  // mean the number to read. Adding a currency symbol here would put a figure
+  // in front of a paying customer that the sheet does not contain.
+  assert.strictEqual(L('W', '129', ''), 'W — 129', 'a bare number is NOT decorated into $129.00');
+  assert.strictEqual(L('W', 'Call for pricing', ''), 'W — Call for pricing', 'nor is a non-numeric cell rejected');
+
+  // A blank price is the one thing that must never reach an email, so the line
+  // does not exist at all — the caller has nothing to insert and says so.
+  assert.strictEqual(L('Widget', '', '2026-09-01'), '', 'no price → NO line (an item with no price is not quotable)');
+  assert.strictEqual(L('', '$129.00', ''), '', 'no name → no line');
+  assert.strictEqual(L(null, null, null), '', 'null-safe on every field');
+});
+
+test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the server line (a drift here does not look wrong — it BLOCKS every OOP send)', () => {
+  // This is the sharpest edge in the batch. sendExternalEmail verifies by
+  // rebuilding the line from the live sheet and requiring the message to
+  // CONTAIN it. So an em dash quietly becoming a hyphen on one side is not a
+  // rendering nit: every send carrying a price would refuse with "the inserted
+  // line was edited", and the rep would have no way to satisfy it.
+  const mCtx = { String: String };
+  vm.createContext(mCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), mCtx, { filename: 'srv#oopQuoteLine_' });
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnOopQuoteLine_'), mCtx, { filename: 'cli#cnOopQuoteLine_' });
+
+  const table = [
+    ['Widget', '$129.00', '2026-09-01'],
+    ['Widget', '$129.00', ''],
+    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026'],
+    ['  padded  ', '  $5  ', '  x  '],
+    ['W', '', '2026-01-01'],
+    ['', '$1', ''],
+    ['Em — dash in the NAME', '$2', ''],
+    ['W', '$3', 'effective — whenever'],
+  ];
+  table.forEach((row) => {
+    const args = row.map((x) => JSON.stringify(x)).join(',');
+    const srv = vm.runInContext('oopQuoteLine_(' + args + ')', mCtx);
+    const cli = vm.runInContext('cnOopQuoteLine_(' + args + ')', mCtx);
+    assert.strictEqual(cli, srv, 'client/server line drifted for ' + JSON.stringify(row) +
+      ' — client=' + JSON.stringify(cli) + ' server=' + JSON.stringify(srv));
+  });
+  // And the mirror is not vacuous: both sides actually produced a line.
+  assert.ok(vm.runInContext('oopQuoteLine_("W","$1","")', mCtx).length > 3, 'the pinned functions are real');
+});
+
+{
+  // oopVerifyQuotes_ drives against a FAKE sheet, so every branch is reachable
+  // without a spreadsheet. The fail direction is CHOSEN and it is CLOSED
+  // (g41): an unreadable store, a vanished item, a blank price and a changed
+  // price all REFUSE. The alternative — send anyway and note it — trades a
+  // blocked send for a wrong commitment, which is the trade this exists to
+  // refuse.
+  const vCtx = { String: String, Array: Array, Math: Math, JSON: JSON, OOP_MAX_ROWS: 5000, OOP_QUOTE_MAX: 10 };
+  vm.createContext(vCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopVerifyQuotes_'), vCtx, { filename: 'oopVerifyQuotes_' });
+
+  const GRID = [
+    ['Item', 'Price', 'EffectiveDate'],
+    ['Widget', '$129.00', '2026-09-01'],
+    ['Gadget', '$50.00', ''],
+    ['Priceless', '', '2026-09-01'],
+  ];
+  // The fake sheet is installed per case; `throws` makes oopSheet_ blow up.
+  const install = (grid, throws) => {
+    vCtx._grid = grid; vCtx._throws = !!throws;
+    vm.runInContext(`
+      function oopSheet_() {
+        if (_throws) throw new Error('boom');
+        return {
+          getLastColumn: function () { return _grid[0].length; },
+          getLastRow: function () { return _grid.length; },
+          getRange: function (r, c, nr, nc) {
+            return { getDisplayValues: function () {
+              var out = [];
+              for (var i = 0; i < nr; i++) out.push(_grid[r - 1 + i].slice(c - 1, c - 1 + nc));
+              return out;
+            } };
+          },
+        };
+      }`, vCtx);
+  };
+  const V = (quotes, message) => {
+    vCtx._q = quotes; vCtx._m = message;
+    return vm.runInContext('JSON.stringify(oopVerifyQuotes_(_q, _m))', vCtx);
+  };
+  const line = (n, p, e) => vm.runInContext('oopQuoteLine_(' + JSON.stringify(n) + ',' + JSON.stringify(p) + ',' + JSON.stringify(e) + ')', vCtx);
+
+  test('OOP-B: oopVerifyQuotes_ passes a line the LIVE sheet still produces — and never reads the sheet at all when nothing was quoted', () => {
+    install(GRID, true);   // a throwing sheet proves the no-quote path never touches it
+    assert.deepStrictEqual(JSON.parse(V([], 'hello')), { quoted: [] }, 'no quotes → no read, no error');
+    assert.deepStrictEqual(JSON.parse(V(null, 'hello')), { quoted: [] }, 'a missing field is not an error');
+
+    install(GRID, false);
+    const good = line('Widget', '$129.00', '2026-09-01');
+    const res = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }], 'Hi there\n' + good + '\nthanks'));
+    assert.ok(!res.error, 'a current line verifies: ' + res.error);
+    assert.strictEqual(res.quoted.length, 1);
+    assert.strictEqual(res.quoted[0].price, '$129.00');
+    assert.strictEqual(res.quoted[0].line, good, 'the verified line is the SERVER-derived one, not the claim');
+
+    // Case-insensitive on the item name, because the claim round-trips through
+    // a client and the sheet is the authority on spelling.
+    const ci = JSON.parse(V([{ name: 'wIdGeT', price: '$129.00', effective: '2026-09-01' }], good));
+    assert.ok(!ci.error, 'name match is case-insensitive');
+    assert.strictEqual(ci.quoted[0].name, 'Widget', 'and the SHEET spelling is what gets audited');
+  });
+
+  test('OOP-B: oopVerifyQuotes_ REFUSES a stale, vanished, priceless or edited quote — and says WHICH', () => {
+    install(GRID, false);
+    const good = line('Widget', '$129.00', '2026-09-01');
+
+    // 1. The price moved between the lookup and the send. This is the whole
+    //    reason the store is read LIVE rather than cached, so it must name both
+    //    numbers — "re-check the price" without them is unactionable mid-call.
+    const stale = JSON.parse(V([{ name: 'Widget', price: '$99.00', effective: '2026-09-01' }],
+      line('Widget', '$99.00', '2026-09-01')));
+    assert.ok(stale.error, 'a superseded price is refused');
+    assert.ok(/\$99\.00/.test(stale.error) && /\$129\.00/.test(stale.error),
+      'and the refusal names the old AND the new price: ' + stale.error);
+
+    // 2. The item is gone from the sheet.
+    const gone = JSON.parse(V([{ name: 'Nope', price: '$1', effective: '' }], 'Nope — $1'));
+    assert.ok(gone.error && /Nope/.test(gone.error), 'a vanished item is refused BY NAME: ' + gone.error);
+
+    // 3. The item is there with no price any more — a different problem with a
+    //    different fix, so a different message (g02's rule).
+    const none = JSON.parse(V([{ name: 'Priceless', price: '$7', effective: '' }], 'Priceless — $7'));
+    assert.ok(none.error && /no price on file/i.test(none.error), 'a blanked price is refused: ' + none.error);
+    assert.ok(!/changed/.test(none.error), 'and is NOT reported as a price change');
+
+    // 4. The rep edited the line by hand. The number is no longer
+    //    server-sourced, which is the one property this feature sells.
+    const edited = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'Widget — $129.00 or so, call us'));
+    assert.ok(edited.error && /edited/i.test(edited.error), 'an edited line is refused: ' + edited.error);
+    // Even with the item NAME gone, the surviving PRICE is what refuses — the
+    // discriminator against a deleted line is the figure, not the wording.
+    const priceOnly = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'it comes to $129.00 all in'));
+    assert.ok(priceOnly.error && /edited/i.test(priceOnly.error),
+      'a surviving price with the line dismantled around it still refuses: ' + priceOnly.error);
+
+    // 5. Over the cap.
+    const many = [];
+    for (let i = 0; i < 11; i++) many.push({ name: 'Widget', price: '$129.00', effective: '2026-09-01' });
+    const over = JSON.parse(V(many, good));
+    assert.ok(over.error && /Too many/i.test(over.error), 'the cap refuses rather than truncating silently');
+
+    // 6. The store itself is unreachable. NOT a best-effort skip: an
+    //    unverified commitment is exactly what must not be sent (g53 applied
+    //    to a price).
+    install(GRID, true);
+    const dead = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }], good));
+    assert.ok(dead.error && /could not be (read|verified)/i.test(dead.error),
+      'an unreadable pricing store REFUSES the send rather than sending unverified: ' + dead.error);
+
+    // 7. An empty sheet is the same refusal, not an empty pass.
+    install([['Item', 'Price']], false);
+    const empty = JSON.parse(V([{ name: 'Widget', price: '$1', effective: '' }], 'Widget — $1'));
+    assert.ok(empty.error, 'an empty pricing sheet refuses rather than verifying nothing: ' + JSON.stringify(empty));
+  });
+
+  test('OOP-B: a quote the rep DELETED from the message is dropped silently — deleting a line is a decision, not an error', () => {
+    install(GRID, false);
+    const res = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'I changed my mind, no price here'));
+    assert.ok(!res.error, 'a deleted line does not block the send: ' + res.error);
+    assert.deepStrictEqual(res.quoted, [], 'and nothing is audited, because nothing was quoted');
+
+    // The discrimination that makes this safe: the SAME missing line with a
+    // CHANGED price is an error, not a deletion. Without it, a rep who deleted
+    // nothing but whose price moved would sail through.
+    const moved = JSON.parse(V([{ name: 'Widget', price: '$99.00', effective: '2026-09-01' }],
+      'I changed my mind, no price here'));
+    assert.ok(moved.error, 'a stale price is still refused even when its line is absent');
+
+    // THE BOUNDARY, pinned so nobody later reads more into this than it does: a
+    // rep who OVERTYPES the figure with a different number is indistinguishable
+    // from one who deleted the line and wrote their own prose, and this passes.
+    // The promise is "a price the PICKER inserted is server-sourced and
+    // current", not "no wrong number can reach an email" — the second is not
+    // achievable from a free-text body, and claiming it would be the more
+    // dangerous error.
+    const overtyped = JSON.parse(V([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }],
+      'Widget — $88.00'));
+    assert.ok(!overtyped.error, 'a hand-typed number is out of reach of this check, by construction');
+    assert.deepStrictEqual(overtyped.quoted, [], 'and is audited as what it is: NOT a picker quote');
+  });
+}
+
+test('OOP-B: sendExternalEmail verifies quotes BEFORE anything irreversible, and the audit row carries item + exact price with the recipient DOMAIN only', () => {
+  const src = serverSource();
+  const fn = src.slice(src.indexOf('function sendExternalEmail('));
+  const body = fn.slice(0, fn.indexOf('\nfunction '));
+  assert.ok(body.length > 500 && body.indexOf('oopVerifyQuotes_') > 0, 'read the real sendExternalEmail body');
+
+  const at = (needle) => { const i = body.indexOf(needle); assert.ok(i > 0, 'missing: ' + needle); return i; };
+  const verify = at('oopVerifyQuotes_(');
+  // ORDERING IS THE POINT. A quote verified after a token exists leaves the rep
+  // a live fillable-form link for an email that never went out; verified after
+  // the PDF fetches it costs a UrlFetch round trip per refusal; verified after
+  // the send it is not a verification at all.
+  assert.ok(verify < at('createFormToken('), 'quotes verify BEFORE any form token is created');
+  assert.ok(verify < at('UrlFetchApp.fetch('), 'and before the PDF blobs are fetched');
+  assert.ok(verify < at('sendRepEmail_('), 'and before the email goes out');
+
+  // The refusal must actually return, not merely compute.
+  const window = body.slice(verify - 400, verify + 400);
+  assert.ok(/oopCheck\.error\)\s*return \{ success: false/.test(window),
+    'a failed verification RETURNS the refusal — computing it and sending anyway is the defect this guards');
+
+  // g36 is not relaxed by the quote being commercially significant: the audit
+  // row gains the item and the price, and still carries no recipient address.
+  const auditAt = at("writeAuditLog_(emp, 'ExternalEmailSent'");
+  const audit = body.slice(auditAt, body.indexOf(');', auditAt) + 2);
+  assert.ok(audit.length > 100 && audit.length < 800, 'isolated the audit CALL (' + audit.length + ' chars)');
+  assert.ok(/oopQuoted/.test(audit), 'the quoted prices reach the audit row');
+  assert.ok(/recipientDomain/.test(audit), 'the recipient is still logged as a DOMAIN');
+  assert.ok(!/\brecipientEmail\b/.test(audit),
+    'and the raw recipient address never enters the shared AuditLog (g36)');
+});
+
+test('OOP-B: the picker cannot insert a price the server did not return — the number never round-trips through the DOM', () => {
+  const cli = extractScript('cn/script_callnotes.html');
+
+  const render = extractFunction('cn/script_callnotes.html', 'cnExtOopRenderResults_');
+  const insert = extractFunction('cn/script_callnotes.html', 'cnExtOopInsert_');
+
+  // The rendered row carries an INDEX, never the price. g49: a value written to
+  // a data-* attribute comes back DECODED, and re-encoding a number a customer
+  // will be charged is exactly the round trip not to make.
+  assert.ok(/data-oop-insert="' \+ i \+ '"/.test(render),
+    'the Insert button carries the match INDEX');
+  assert.ok(!/data-oop-(price|name|eff)/.test(render),
+    'and no price, name or date is written into a data-* attribute for the handler to read back');
+
+  // The insert derives its line from cnOopQuoteLine_ over the RPC payload.
+  assert.ok(/cnOopQuoteLine_\(m\.name, m\.price, m\.effective\)/.test(insert),
+    'the inserted line is DERIVED from the server match object');
+  assert.ok(!/getElementById\('cnX-oop-results'\)[\s\S]*?(textContent|innerText)/.test(insert),
+    'and never scraped back out of the rendered results');
+
+  // The handler indexes into the parked RPC payload rather than any DOM text.
+  assert.ok(/_oopMatches/.test(render) && /_oopMatches/.test(cli),
+    'the match payload is parked on the results host and read back from there');
+  const handler = cli.slice(cli.indexOf("oopResults.addEventListener('click'"));
+  assert.ok(handler.indexOf('_oopMatches') > 0 && handler.indexOf('_oopMatches') < 400,
+    'the click handler resolves the match from the parked payload');
+
+  // And the send ships the claim, clearly marked as a claim rather than a source.
+  assert.ok(/quotedOop: cnExtOopQuotes_\(\)\.map\(/.test(cli),
+    'the send ships the recorded quotes for server-side re-verification');
+});
 
 test('SP4: spanishVmDurationSec_ parses RIGHT-TO-LEFT, so MM:SS and HH:MM:SS both read correctly — and anything else is null, never 0', () => {
   const d = (body) => vm.runInContext('spanishVmDurationSec_(' + JSON.stringify(body) + ')', _vmCtx);
@@ -20647,12 +21374,20 @@ test('Q-1: every JSON-blob property is written through propSetBounded_ — the s
     });
   // The geocode cache self-resets on BYTES, not only on entry count — 200
   // {lat,lng} entries sit on the order of the cap (the documented residual).
-  const map = stripJsComments_(extractRawFunction('Code.js', 'kbMapDistances'));
+  // ELIG moved this out of kbMapDistances into the shared kbGeocodeCached_ so
+  // a second caller could not open a second cache with its own hygiene rules.
+  const map = stripJsComments_(extractRawFunction('Code.js', 'kbGeocodeCached_'));
   assert.ok(/KB_MAP_GEOCODE_CACHE_MAX/.test(map) && /propSetBounded_\(KB_MAP_GEOCODE_CACHE_PROP[\s\S]{0,400}mode: 'degrade'/.test(map),
     'the geocode cache keeps its entry-count reset AND degrades on bytes');
-  // …and the privacy contract is untouched: still exactly one property write
-  // in that function, still before the query geocode (the INV-119 posture).
-  assert.strictEqual((map.match(/propSetBounded_\(|setProperty\(/g) || []).length, 1, 'kbMapDistances still makes exactly ONE property write');
+  // …and the privacy contract is untouched: ONE property write, in ONE place,
+  // and none in either caller (the INV-119 posture; the full contract is pinned
+  // in the kbHaversineMiles_ block).
+  assert.strictEqual((map.match(/propSetBounded_\(|setProperty\(/g) || []).length, 1, 'kbGeocodeCached_ makes exactly ONE property write');
+  ['kbMapDistances', 'checkOopEligibility'].forEach((fn) => {
+    const c = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.strictEqual((c.match(/propSetBounded_\(|setProperty\(/g) || []).length, 0,
+      fn + ' writes no property of its own — the cache has exactly one writer');
+  });
 });
 
 test('Q-1b: propSetBounded_ + its shrinkers, driven — refuse writes NOTHING and names the key/size/cap; degrade shrinks then clears; utf8Len_ counts BYTES', () => {

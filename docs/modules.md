@@ -270,6 +270,37 @@ not restate it. Server endpoints live in the fourteen server files
      warn; not-accepted/OON bad) and a legend disclosure spells out the
      operator's definitions. The rep's QUERY is never persisted (the
      kbMapDistances posture).
+     **OOP price lookup + area eligibility (operator 2026-09-16):** two more
+     cards on the SAME two surfaces, over two more operator-maintained tabs in
+     the KB spreadsheet — `OopPricing` and `LocationAcceptance`.
+     `searchOopPricing` reuses `insPayorScore_` rather than copying it (two
+     scorers for two lookups is two things to keep in step and nobody would
+     notice them diverging) and shares the payor lookup's whole posture:
+     `getDisplayValues` throughout, header-NAME column discovery
+     (`oopHeaderRole_` — /price/, /area|eligib/, /effective/, with `effective`
+     tested BEFORE `price` so "Effective Price Date" cannot put a date in front
+     of a customer as money), a bounded scan, and a no-match that says NOT to
+     quote a similar item. A row with a BLANK price says "no price on file" in
+     warning tone rather than rendering an empty cell that reads as free. Read
+     LIVE, no cache — the payor table is ADVISORY, but a rep QUOTES an OOP price
+     and takes payment on that call, so a copy that lags the sheet is a rep
+     collecting a superseded price. The same number is re-verified against the
+     live sheet when the Call Notes external composer SENDS it (INV-208).
+     `checkOopEligibility` takes an address or ZIP and answers TWICE per item —
+     once through insurance, once paying out of pocket — because the
+     `Area Eligibility` column states the INSURANCE rule, and paying OOP lifts a
+     STATE limit but not a delivery RADIUS (INV-209; the rule that generalises
+     it is a Key Design Decision). Warehouse distances come from
+     `kbGeocodeCached_`, the coordinate cache extracted from the ` ```map `
+     block's `kbMapDistances` so both share ONE cache with one set of hygiene
+     rules; the customer's own address is geocoded UNCACHED, which is that
+     block's privacy rule unchanged. `LocationAcceptance` also carries CITY rows
+     — the POV/scooter delivery list — shown beside the verdicts and never
+     changing one. `getOopPricingDiagnostics` (admin) is the visibility half of
+     both: it names the tabs read, every header and the role assigned, the
+     warehouse registry, any addressless or unreadable location row BY NAME, and
+     how every eligibility value in the sheet parses — because an unreadable
+     value renders "cannot tell", which reads like caution rather than a typo.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):

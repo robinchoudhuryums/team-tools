@@ -12,7 +12,7 @@ Phase: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushe
   `/reflect`.
 Scope: broad
 Test Command: manual
-Estimates: **Batch PTO (PTO1 manager-visible leave balance on the live-status card · PTO2 the same on the team calendar) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The balance is ALREADY built per rep in getManagerDashboard; liveStatus just does not carry it, so this is a projection + render, not new data). · **Batch SP2 (SP4 voicemail duration gate + SP5 transcript snippet) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The body is ALREADY fetched at list time, so both ride one parse of a string already in hand; the cost is the two pure parsers, the fail-open counts and their pins, not a new Gmail read). · **Batch SP (operator round 2026-09-16 — the Spanish resolve-count bug, the card fade, the chevron toggle) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** (SP1 is the only defect: spanishResolve_ removes the DOM node without mutating the state the unclaimed count folds; SP2 and SP3 are polish riding the same partial) — **~1.5 h ACTUAL**. · **Batch T (prevention — the open-punch check) — M (~4 h) estimate vs ~2.5 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (a read-only daily scan for days with no usable clock-in/clock-out pair, riding a NEW count-neutral `runDailyChecks` dispatcher at 8am so the 9am health digest pushes it the same morning; window bounded by CONFIG.ADJUST_WINDOW_DAYS because a day older than that cannot be fixed in-app). · **Batch R (accrual resilience — the AuditLog ledger + top-up reconciliation) — M (~4–5 h) estimate vs ~3 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (proposed and approved in chat: top-up over a trailing window, ledger derived from the PtoAccrualCredit audit rows, never claws back, fails closed). · Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE the first edit and carried into the implement block as the template requires (the first batch to do BOTH halves; Batch C's block shipped without them). `/reflect` owes the estimates.csv row for D1, D2, F1 AND F2 (F2 — L/~6 h estimate vs **~2.5 h actual**) (F1 — S–M/~3 h estimate vs **~1.5 h actual**) (D2 + D1 follow-ons — L/~7 h estimate vs **~3 h actual**, both lines carried into `.cycle/blocks/19-followons-D2-broad-implement.md`). ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit · **Batch D2 + D1 follow-ons — L (~7 h), recorded 2026-09-14 17:05Z BEFORE the first edit** (D2 is M/~6 h in the plan; the four D1 follow-on items add ~1 h). · **Batch F1 — S–M (~3 h), recorded 2026-09-14 18:05Z BEFORE the first edit** (F1 is S/~2 h in the plan; INV-202 adds `counts. · **Batch F2 + the F1 follow-on items — L (~6 h), recorded 2026-09-14 18:40Z BEFORE the first edit** (the plan says L/~2 days incl. re-verification; the split is mechanical and script-driven here, and the four F1 follow-ons are small).mjs`'s two `Code.js` derivations to its scope).
+Estimates: **Batch OOP-B (OOP3 the composer price picker) — S–M (~3 h)** and **Batch ELIG (EL1/EL2) — REVISED L (~8 h) from M–L (~6 h)**, both recorded 2026-09-16 BEFORE the first edit. ELIG moved because the operator's real column values put the RADIUS form back into v1 (it is a third of their vocabulary, not an edge case) and revealed that eligibility has TWO answers per item — the column states the INSURANCE rule, and paying OOP lifts a STATE restriction but not a DISTANCE one. · **Batch OOP-A (OOP1 the ninth store read live · OOP2 the dual-surface lookup) — M (~5 h), recorded 2026-09-16 BEFORE the first edit** (a new store + resolver + fixture + Storage Health row + a deterministic reader mirroring searchInsurancePayors on BOTH the Reference tab and the Ctrl/⌘+K drawer). OOP-B S–M (~3 h) and ELIG M–L (~6 h) follow. · **Batch PTO (PTO1 manager-visible leave balance on the live-status card · PTO2 the same on the team calendar) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The balance is ALREADY built per rep in getManagerDashboard; liveStatus just does not carry it, so this is a projection + render, not new data). · **Batch SP2 (SP4 voicemail duration gate + SP5 transcript snippet) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** — **~1.5 h ACTUAL**. (The body is ALREADY fetched at list time, so both ride one parse of a string already in hand; the cost is the two pure parsers, the fail-open counts and their pins, not a new Gmail read). · **Batch SP (operator round 2026-09-16 — the Spanish resolve-count bug, the card fade, the chevron toggle) — S (~2 h), recorded 2026-09-16 BEFORE the first edit** (SP1 is the only defect: spanishResolve_ removes the DOM node without mutating the state the unclaimed count folds; SP2 and SP3 are polish riding the same partial) — **~1.5 h ACTUAL**. · **Batch T (prevention — the open-punch check) — M (~4 h) estimate vs ~2.5 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (a read-only daily scan for days with no usable clock-in/clock-out pair, riding a NEW count-neutral `runDailyChecks` dispatcher at 8am so the 9am health digest pushes it the same morning; window bounded by CONFIG.ADJUST_WINDOW_DAYS because a day older than that cannot be fixed in-app). · **Batch R (accrual resilience — the AuditLog ledger + top-up reconciliation) — M (~4–5 h) estimate vs ~3 h ACTUAL, recorded 2026-09-15 BEFORE the first edit** (proposed and approved in chat: top-up over a trailing window, ledger derived from the PtoAccrualCredit audit rows, never claws back, fails closed). · Batch D1 — M (~6 h) estimate vs **~3.5 h actual**, recorded BEFORE the first edit and carried into the implement block as the template requires (the first batch to do BOTH halves; Batch C's block shipped without them). `/reflect` owes the estimates.csv row for D1, D2, F1 AND F2 (F2 — L/~6 h estimate vs **~2.5 h actual**) (F1 — S–M/~3 h estimate vs **~1.5 h actual**) (D2 + D1 follow-ons — L/~7 h estimate vs **~3 h actual**, both lines carried into `.cycle/blocks/19-followons-D2-broad-implement.md`). ALL FOUR rows (P/S/Q/C) APPENDED to `.cycle/estimates.csv` on 2026-09-14 — the first calibration rows since cycle 17, ending a six-reflection gap; every batch ran 2–3.3x UNDER its estimate. Batch P — S (~2 h), recorded 2026-09-11 20:24Z BEFORE the first edit · Batch S — M (~4 h), recorded 2026-09-11 BEFORE the first edit · Batch Q — M (~5 h), recorded 2026-09-11 BEFORE the first edit · Batch C — S–M (~3 h), recorded 2026-09-14 15:10Z BEFORE the first edit · **Batch D2 + D1 follow-ons — L (~7 h), recorded 2026-09-14 17:05Z BEFORE the first edit** (D2 is M/~6 h in the plan; the four D1 follow-on items add ~1 h). · **Batch F1 — S–M (~3 h), recorded 2026-09-14 18:05Z BEFORE the first edit** (F1 is S/~2 h in the plan; INV-202 adds `counts. · **Batch F2 + the F1 follow-on items — L (~6 h), recorded 2026-09-14 18:40Z BEFORE the first edit** (the plan says L/~2 days incl. re-verification; the split is mechanical and script-driven here, and the four F1 follow-ons are small).mjs`'s two `Code.js` derivations to its scope).
   (P1's own rule, applied to itself; the plan's figure). The remaining
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
@@ -120,6 +120,8 @@ D (note 10 — a new presence signal on the Team-right-now card).
   next concrete step after that is `/reflect`.
 
 ## Completed this cycle
+- STORE MOVE | web-app/{00_config,10_core,70_kb,Tests}.js, web-app/kb/script_kb.html, web-app/cn/script_callnotes.html, test/client/{run.js,dom/runDom.js,server-split-manifest.json}, CLAUDE.md, docs/operator-state.md, .cycle/config.md | `OopPricing` + `LocationAcceptance` are NAMED TABS in the KB store beside `InsurancePayors`, not a spreadsheet of their own. NOT the Intake store the operator asked about (PHI, and the app writes to it). `LocationAcceptance` replaced the `OOP_WAREHOUSES` property with NO seed and NO fallback — the seed's bare city names geocoded to city CENTRES, which is g114 inside the one verdict built to avoid it. City rows (POV/scooter delivery) are information only and never move a verdict. `oopSheet_` no longer takes `getSheets()[0]`, which in a shared spreadsheet would have read sheet 0 and rendered every row blank rather than throwing. Nine stores → eight. 848 pure / 121 DOM / 329 registrations; 12 mutations / 12 bites, after four pins were repaired for not biting.
+- OOP-A/OOP-B/ELIG | web-app/{00_config,10_core,30_callnotes,70_kb,Tests}.js, web-app/cn/script_callnotes.html, web-app/kb/script_kb.html, test/client/{run.js,dom/runDom.js,server-split-manifest.json}, .cycle/config.md, CLAUDE.md | The OOP pricing feature, end to end. A NINTH store read LIVE (a cache is the staleness this design exists to remove — a rep collects on these numbers); the dual-surface lookup on the Reference landing AND the drawer; the composer price picker whose number is re-derived from the live sheet at SEND time and refused if the message no longer carries it; and area eligibility with TWO verdicts per item, because the sheet's column states the INSURANCE rule and paying out of pocket lifts a state limit but not a delivery radius. `kbGeocodeCached_` extracted from `kbMapDistances` so the radius check shares ONE coordinate cache; the privacy contract's pin now spans three functions and anchors on "ONE writer, only operator-owned addresses in" rather than one function's statement order. INV-208 + INV-209 written; S110 written (the feature had NO manual scenario). Harnesses 832→844 pure, 117→121 DOM, 323→327 editor registrations. 20 mutations / 20 bites. Block: `.cycle/blocks/20pre-OOP-broad-implement.md`.
 - DEPLOY | web-app/* (Apps Script) | PR #245 pushed and VALIDATED on the real runtime — PartA 209/209 + PartB 107/107 = 316, 0 failed; S1/S2 passed on the fourteen-file server; the F2 gate is closed
 - F2 + F1 follow-ons | web-app/*.js (Code.js split into 14), .clasp.json(+dev example), test/client/{harness.js,run.js,server-split-manifest.json}, test/visual/mock.js, scripts/bite.sh, CLAUDE.md, README.md, docs/{modules,design-decisions}.md, .cycle/config.md | the server split, proven move-only; 4 pins; the bite helper committed with its guard
 - F1 | test/client/{harness.js,run.js,README.md}, scripts/counts.mjs, web-app/.clasp.json + .clasp.dev.json.example, .github/workflows/client-tests.yml | the server-source shim, derived from filePushOrder; 4 pins; INV-202 enforced
@@ -397,349 +399,48 @@ established by reading the code this session, so the next session need not re-de
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
+`/broad-implement OOP-A, OOP-B, ELIG` is complete, and the operator's follow-up
+question ("can the OOP sheet move into `INTAKE_SS_ID`?") landed a STORE MOVE on
+top of it. All pushed to `claude/adoring-einstein-b3vs6c`.
 
-**Batch T — open-punch PREVENTION — DONE 2026-09-15, NOT yet pushed** (`.cycle/blocks/19-T-open-punch-prevention-broad-implement.md`; net 1 − 0 = 1; M/~4 h est vs ~2.5 h actual). The reconcile pass recovers late data; nothing stopped a day sitting open for five days, and the in-progress month had no visibility at all. `checkOpenPunches` scans the whole roster daily, read-only, bounded to what can still be fixed, riding a COUNT-NEUTRAL new `runDailyChecks` dispatcher at 8am so the 9am health digest emails it. 825 pure + 113 DOM green, 6 bite-checks all biting, gotcha g117, INV-206, scenario S109. **The installer MUST be re-run after the push or the scan never fires.**
+**The move, and why it was not the store they asked about:** Intake is PHI and
+the app WRITES to it, so pricing there means anyone maintaining prices needs
+edit access to patient submissions. The saving was also not real — Script
+Properties are capped by BYTES (g07), and per Batch Q the entry caps were never
+binding. The counter-proposal they accepted was `KB_SS_ID`, which already holds
+`InsurancePayors`: same class, same maintainer, read through a NAMED tab, and
+its scorer is the one `searchOopPricing` already reuses.
 
-**Batch R — accrual resilience — DONE 2026-09-15, NOT yet pushed** (`.cycle/blocks/19-R-accrual-resilience-broad-implement.md`; net 1 − 0 = 1; M/~4–5 h est vs ~3 h actual). The credit is now idempotent on the HOURS ALREADY PAID FOR rather than on "this month was processed": every run re-values the last 3 completed months against the `PtoAccrualCredit` audit rows (which ARE the ledger — no new store) and credits the difference. Upward only; a shortfall is reported, never clawed back; anything it cannot value fails closed. 824 pure + 113 DOM green, 8 bite-checks all biting, gotcha g115, INV-205, scenario S108. The live 2026-08 loss heals itself on the next 18:00 run after the push. **Prevention is still a follow-on** — nothing yet stops a day sitting open for a week.
+`OopPricing` and `LocationAcceptance` are now tabs in the KB spreadsheet.
+`LocationAcceptance` replaced the `OOP_WAREHOUSES` Script Property, carries
+warehouse AND city rows, and has **no seed and no fallback** — the property fell
+back to bare city names, which geocode to city CENTRES, so a warehouse twenty
+miles out of town silently made every near-boundary radius answer wrong by up to
+twenty miles. City rows are information only and never move a verdict (operator
+decision). **Nine stores are now eight.**
 
-**Inspect mode shipped 2026-09-15** — `previewPtoAccruals('2026-08')` reports a
-completed month ignoring the column-R stamp, because the first live run showed
-all three accruing reps stamped through 2026-08 and therefore invisible to an
-owed-months report. The month guard is a pure helper after a bite-check proved
-the inline version's pin could not fail. Next: push, then inspect 2026-08.
+**The next concrete step is `/sync-docs`**, and the owed list is now TWO items,
+not four — the store table and `docs/operator-state.md` were both rewritten as
+part of the move. What is still owed: a Common Gotchas index entry for the
+client↔server line mirror (INV-208, beside g38 and g103), and a
+`docs/design-decisions.md` entry for the WHO-IS-PAYING vs
+HOW-IT-PHYSICALLY-GETS-THERE rule — plus, beside it, why these tables live in
+the KB store and NOT the Intake one, because that is a question that will be
+asked again.
 
-**`previewPtoAccruals` shipped 2026-09-14 and MERGED as PR #246 (1a7d35f).** A live `PtoAccrualCredit` row reading `hoursWorked=0 … no worked
-hours in the period` turned out to cover three unrelated causes with one
-sentence, and the month was already closed by the column-R stamp. The batch adds
-a read-only dry run that shares the credit's own resolver (`planPtoAccrualRun_`,
-extracted, not copied), makes the zero audit row name which cause it saw, and
-stops the range index from dropping a clock-out-with-no-clock-in without trace.
-823 pure + 113 DOM green; seven bite-checks; INV-204, gotcha g114, scenario S107.
-Two side-findings fixed in their own commits: `bite.sh` silently mangled any
-mutation containing a double quote, and its `grep -q` over a pipe reported a
-real bite as NO BITE whenever the match landed early in an 83KB output
-(SIGPIPE under `pipefail`). **Next: push, New version, then walk S107 against
-the real roster.**
+**Then the operator owes a deploy** — `clasp push -f` + a New-version
+deployment, carrying five merged rounds plus OOP-A/B, ELIG and the move. Their
+remaining setup is now entirely in the KB spreadsheet: create the `OopPricing`
+and `LocationAcceptance` tabs (schemas are in `docs/operator-state.md`), put
+REAL STREET ADDRESSES on the warehouse rows — a bare city name is the failure
+the seed removal exists to prevent — and read the OOP diagnostics once, which
+now report both tabs, the registry, the city count, every addressless or
+unreadable location row by name, and how every Area Eligibility value parses.
+`OOP_SS_ID` can be deleted; it is read by nothing.
 
-**The cycle-19 deploy gate is CLOSED (2026-09-14).** Everything through PR #245
-is merged, pushed and validated on the real Apps Script runtime — 316/316 across
-Part A + Part B, which is S1 and S2 passed on the split server. Nothing is
-outstanding on the code.
-
-**TWO OPERATOR ACTIONS REMAIN, and the first is the one that matters:**
-
-1. **Set `INSTANCE_IS_PROD=true` on the prod project.** The 2026-09-14 run
-   proved it is unset: `assertNotProdInstance_` did not fire, which is the only
-   thing standing between a stray `runAllTests` and the live payroll sheet.
-   Know the consequence before setting it — `runAllTests`, `runAllTestsPartA`
-   and `runAllTestsPartB` all REFUSE on prod afterwards, so a future full run
-   needs the dev instance, which `INSTANCE_LABEL: unset` says has not been stood
-   up (`docs/deployment.md` has the procedure; the nightly self-test wants it
-   too, and `isDevInstance_` needs BOTH properties).
-2. **Confirm the New version was cut** and that the editor's file list shows the
-   fourteen server files and no `Code.js` — a push updates the code, but the Web
-   App URL keeps serving the previous deployment until a New version is cut, and
-   a leftover `Code.js` in the project would shadow every declaration in it.
-
-Worth a glance while the run is fresh: Admin → Automation Health → Client errors
-for the 2:39–3:10 PM window. A punch attempted inside that window waits 15s on
-the one ScriptLock and then FAILS rather than queueing.
-
-**Batch F2 + the F1 follow-ons are DONE, committed on `claude/adoring-einstein-b3vs6c`,
-NOT pushed and with no PR.** The server is fourteen files; the split is proven
-move-only by a manifest the CI pin re-derives; `scripts/bite.sh` is committed
-with the dirty-file guard (and refuses to bite itself — bash reads a script as
-it runs). **The next step is a DEPLOY, and it is the blocking one: `npm run
-push:dev`, then `runAllTests` in the dev project's editor.** That is regression
-scenarios S1/S2, the only check this container cannot perform, and F2d requires
-it before prod. After a green dev run: `clasp push -f` to prod, confirm the
-editor's file list shows fourteen files and NO `Code.js` (a leftover project
-file would shadow every declaration in it), then cut a New version. The
-next-steps plan is otherwise complete — cycle 19 is ready to close with a
-`/reflect` covering D1, D2, F1 and F2.
-
-**Batch F1 is DONE, committed on `claude/adoring-einstein-b3vs6c`, NOT pushed and
-with no PR.** The shim is proven inert: `serverSource()` is byte-identical to
-Code.js while `filePushOrder` has one entry, every pin and both `counts.mjs`
-derivations read through it, and all three harnesses plus `counts --check` are
-green. Push, then **F2 is the last batch in the plan** — the move-only split of
-Code.js into `00_config.js` + thirteen prefixed files, with `filePushOrder`
-listing them in load order. Two things F1 learned that F2 needs: (a) F2c should
-pin that no top-level function NAME is declared twice across server files —
-`serverSource()` resolves a collision to the FIRST declaration while Apps Script
-resolves it to the LAST, which is the one way the shim could hide a real defect;
-(b) `test/visual/mock.js`'s banner and `.cycle/config.md`'s Subsystems list both
-name Code.js and are F2e's to update.
-
-**Batch D2 + the four D1 follow-ons are DONE, committed on `claude/adoring-einstein-b3vs6c`
-(head after `362403a`), NOT pushed and with no PR.** The doc split is finished:
-CLAUDE.md is 836 lines of maps and indexes, every narrative moved VERBATIM
-(each move diff-verified byte-identical) into `docs/gotchas.md`,
-`docs/modules.md`, `docs/operator-state.md`, `docs/test-harness-log.md`, and
-each index↔entries coupling is held by a pin that checks BOTH directions.
-Push, then the plan's sequence has **F1 then F2 remaining** — and INV-202 (now
-written) binds F1: `scripts/counts.mjs` reads `web-app/Code.js` by hardcoded
-path in `gatedEndpoints()` and `triggers()`, so F1's scope must grow those
-derivations through `serverSource()` BEFORE F2 splits that file, or the split
-lands with CI red on a false drift. The block's FOLLOW-ON ITEMS list four
-smaller things, of which INV-203's estimate scan is the one with a real design
-question (the grandfather boundary).
-BATCH D1 DONE (2026-09-14, NOT yet merged — 5 commits on
-`claude/adoring-einstein-b3vs6c`, block in
-`.cycle/blocks/19-batchD1-broad-implement.md`). CLAUDE.md is 4,873 lines, down
-from 12,662. The Cycle Workflow Config is `.cycle/config.md` (CLAUDE.md keeps a
-redirecting stub under the same heading, because the eleven workflow commands
-that name it are synced byte-identical and cannot be edited here); the 137 Key
-Design Decisions are `docs/design-decisions.md` (CLAUDE.md keeps a 137-link
-index); the 67 dated rounds are `docs/operator-log.md`. Everything moved
-VERBATIM — fidelity verified by diff, not by reading: 137 links resolve to 137
-anchors, and 74 property entries + 67 round entries = the 141 HEAD carried.
-
-TWO THINGS TO KNOW BEFORE THE NEXT BATCH. (1) **D1c's compression of the 74
-operator property entries was deliberately NOT done and is deferred to D2.**
-Compression is a lossy rewrite inside a batch whose method is "move verbatim",
-and those entries carry deploy-critical procedure (the ALL-CST roster runbook,
-the tz-repair run ORDER, the 24-handler trigger list) that a one-line summary
-cannot express. The line reduction D1 wanted came from moving the 67 ROUND
-entries instead. D2's own method — "rule + trigger + verify pointer" — is the
-right shape for it. (2) **Batch C's running-totals ban would have silently
-narrowed** to the 3,800 lines left in CLAUDE.md the moment the prose it guards
-moved out — INV-179's exact failure mode, one week after INV-179 was written.
-It now derives its file set from the Doc map and its archive exclusion from a
-declaration in that map, and an UNDECLARED file is scanned. Any future doc
-split must check the same thing.
-
-Pure harness 808 → 810: the split CREATED a parallel source (the index vs the
-anchors) and D1 pinned it in the same batch, in both directions, rather than
-leaving it to the hand-run script that verified it. 14 mutations, 14 bites —
-one of which found a pin that had been passing VACUOUSLY since PR 3 (PR3-5's
-coverage assert is negative-only, so a moved marker never made it red; its
-first replacement was vacuous too, matching the prose that DESCRIBES the
-marker). Also caught: `test/visual/README`'s hand-typed "all 44 scenarios",
-stale by 58, which the C4 ban's three patterns do not reach — a follow-on.
-
-REMAINING: D2, F1, F2. INV-202 still applies — F1's scope must grow
-`scripts/counts.mjs`'s `Code.js` derivations BEFORE F2 splits that file.
-
-PRECEDING — REFLECTED + MERGED (2026-09-14). Batch C is MERGED as PR #244 (f10c2ae, both
-CI checks green) and the branch `claude/adoring-einstein-b3vs6c` now equals
-origin/main. `/reflect` ran as the SECOND reflection of cycle 19:
-`.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0 over the four post-reflect
-next-steps batches P/S/Q/C. One production fix (Batch S's shadowed gate test,
-which reported a clean 315 on every run since #239 while one gate went
-unverified); two new capabilities (Q's budget badge, Q's Storage Health line);
-thirteen defensive/structural; and ONE new failure mode CORRECTED INTO the
-tally against Batch C's own 0-0 self-report — see the next paragraph, it is a
-pre-requisite for F1. estimates.csv finally has rows again (P/S/Q/C, the first
-since cycle 17, all 2–3.3x under estimate). The seam counter was deliberately
-NOT incremented (second reflection of ONE subsystem cycle).
-
-CARRY INTO F1 — THE ONE THING THIS REFLECTION FOUND: `scripts/counts.mjs`
-reads `web-app/Code.js` by HARDCODED PATH in `gatedEndpoints()` (L91) and
-`triggers()` (L107). Batch F2 splits Code.js into ~13 files, after which the
-admin count collapses from 50, `counts.mjs --check` goes red on a FALSE drift,
-and F7's INV-136 pin (which Batch C rewired to CONSUME that derivation) goes
-red with it. F1's scope list as written in the plan names "the 69 direct reads
-+ mock's F4 mirror + CI node --check" but NOT counts.mjs — it did not exist
-when the plan was drafted. Add it to F1's scope: `serverSource()` must be what
-counts.mjs resolves through too, and `--check` green on the post-F2 tree is the
-acceptance test. Proposed as INV-202; INV-203 proposes deriving the estimate
-obligation rather than reminding about it (P1's reminder did not work — Batch
-C's own block shipped without the Estimate:/Actual: lines it requires).
-
-NEXT: `/broad-implement D1` (CLAUDE.md structural moves, M ~6 h) per the plan's
-sequence — or F1 first if the operator would rather close INV-202 before the
-doc moves. OPERATOR, unchanged and still owed: the Drive revoke-and-re-consent
-(0b), the one `installAutomationTriggers()` re-run (0c), `reportBreakPairingChanges()`
-once (0d), the Admin → System mail-routing look (0e), the DEV instance (0f — the
-precondition that makes Batch S's "full on dev nightly" runbook line true), and
-a New version deploy carrying #236/#237/#239/#240 plus #242/#243/#244's docs.
-Post-deploy `runAllTests()` expects whatever the run's own `Expected:` line says
-(316 today).
-
-SYNC-DOCS DONE + MERGED as PR #242 (2026-09-14, 1421c5b -> merge 1e7ea9e on main).
-Batches S and Q are now on main WITH their documentation. Applied: two Common
-Gotchas (Script Properties capped ~9KB/value + propSetBounded_'s refuse/degrade
-split; a test function defined twice hoists over the first while the count stays
-right), the Drive gotcha's FOURTH outcome (no prompt at all -> revoke-then-
-re-consent, and the probe is TESTED and trustworthy so the proposed rewrite must
-NOT be implemented), two KDDs (the sharded editor suite; the one-home budget
-badge), INV-201 (the size guard), Storage Health's THIRD capability line, a dated
-operator entry for S+Q plus one for the Drive remedy, and scenario extensions
-S1/S2 (Expected line, env block, Part A+B variant), S51/S56 (badge, tones, skew,
-the refusal leaving value+AuditLog untouched) and S97 (three capability lines).
-README needed NO change — Batch S's own commit updated it and it reads counts off
-the run. Harnesses re-run AFTER the doc edits (F7 + VIS-COVER read CLAUDE.md):
-804 pure / 113 DOM, 0 failed. Every number measured: 804 / 113 / 102 scenarios /
-316 registrations. Checks 2 and 3 of /sync-docs came back clean.
-BATCH C DONE (2026-09-14) — `.cycle/blocks/19-batchC-broad-implement.md`, net
-0 - 0 = 0 (it ships no deployable code; its value is that the drift class can no
-longer be merged). 7 commits on `claude/adoring-einstein-b3vs6c`, NOT yet pushed
-and NO PR — Batch C's invocation carried no PR/merge authorization, unlike the
-sync-docs one. All green: 808 pure / 113 DOM / 0 failed, `counts.mjs --check`
-agrees with the tree, node --check OK on all three Apps Script files. No
-`web-app/` file changed, so nothing deploys and S1/S2 are NOT APPLICABLE by
-construction (Tests.js and Code.js are byte-identical to main).
-The one thing worth carrying forward: the recursion guard was FALSE COMFORT on
-its first write. counts.mjs spawns run.js and run.js calls counts.mjs back, so a
-dropped `--static` HANGS rather than fails; the obvious pin (assert run.js's own
-invocation carries the flag) can never fire, because countsJson_() is first
-called by the C1/C2 test that runs BEFORE it. The guard that works is a
-COUNTS_NO_SPAWN sentinel inside counts.mjs, bite-checked in three halves and
-proven end-to-end to turn the hang into an exit-1 naming the cycle.
-STILL OWED: `/reflect`'s estimates.csv rows for P (S 2 h / ~0.6 h), S (M 4 h /
-~1.3 h), Q (M 5 h / ~2.5 h) and now C (S-M 3 h / ~1.5 h) — SIX consecutive
-reflections have skipped that row, with the hook reminding every session. The
-reminder is not working; consider making the row a derived obligation rather
-than a remembered one, which is the move this very batch made for counts.
-NEXT: the operator decides — push/PR Batch C, or run `/reflect`. OPERATOR: the
-Drive fix is one revoke-and-re-consent (see the dated entry in CLAUDE.md's
-Operator State Checklist); post-deploy `runAllTests()` expects 316, or whatever
-the run's own `Expected:` line says.
-
-DRIVE FOLLOW-ON: SETTLED, NOT A FALSE POSITIVE (operator ran the block's
-one-paste `driveDiag_` in the editor, 2026-09-14). In ONE execution:
-`DriveApp.getRootFolder()` FAILED with the runtime's missing-scope refusal
-(`Required permissions: (.../auth/drive.readonly || .../auth/drive)`) AND
-`driveAccessStatus_()` returned `granted:false` with an EMPTY `error` — i.e.
-tokeninfo answered 200 and simply did not list the scope, which is a positive
-signal rather than a probe failure. The two AGREE, so the narrow-execution-token
-hypothesis is FALSIFIED and the proposed probe rewrite (attempt a read-only
-DriveApp call, classify through `driveScopeError_`) is NOT needed — do not
-implement it. The Admin -> System BLOCKING Drive finding is CORRECT: this
-deployment genuinely lacks `/auth/drive`, `KB_IMAGES_FOLDER_ID` is unset, so
-article images stay placeholders and the `kbGetImageData` fallback is inert
-(no folder id to scope against). Running a function produced no prompt because
-the stored authorization record already reads as authorized while the granted
-set is short (granular consent with Drive unticked) — the remedy is to REVOKE
-and re-consent, not to run another function: myaccount.google.com -> Data &
-privacy -> Third-party apps & services -> the script -> Remove access, then run
-any function in the editor AS THE DEPLOYING ACCOUNT and accept the consent
-screen with every permission ticked. No code change is owed; INV-197 / DRV-1..4
-/ S104 all held, and the probe reported the truth.
-
-Batch Q is DONE (2026-09-11, 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`, pushed,
-not yet merged) and Batch S before it (84379ee). Q: `propSetBounded_` is the ONE writer for
-every JSON-blob Script Property — 14 operator blobs refuse by name with nothing written, 6
-auto-managed ones degrade through a named shrinker and clear rather than leave a stale value,
-9 scalar writers are allowlisted by name; every Admin editor and the Reference synonyms modal
-render the serialized budget through ONE shared builder; Storage Health carries a Script
-Properties line; both DeptRequests resolve paths use the bounded RequestId lookup. 804 pure /
-113 DOM, 9 mutations with 8 bites (the 9th an equivalent mutant, re-run as bypass+allowlist,
-which bit), the affected visual scenarios re-shot clean and the badge tones MEASURED in
-Chromium. Registration count 315 → 316; the summary prints the derived expectation, so no
-doc number needs hand-carrying. `/sync-docs` owes the Batch S text AND Batch Q's (a Common
-Gotchas entry, a KDD for the one-home badge, a new INV for the guard, the 316 count, and the
-S51/S56/S97 scenario extensions). `/reflect` owes estimates.csv rows for P (S 2 h / ~0.6 h),
-S (M 4 h / ~1.3 h) and Q (M 5 h / ~2.5 h). NEXT: `/broad-implement C` (derived counts).
-OPERATOR, mid-session report worth acting on before 0b: the Drive finding may be a FALSE
-POSITIVE — they redeployed, ran a function in the editor and got NO re-auth prompt, which
-usually means the grant already covers /auth/drive. `driveAccessStatus_` introspects the
-RUNNING EXECUTION's token, and a Storage Health run that never touches DriveApp (this
-deployment: `KB_IMAGES_FOLDER_ID` unset, so the probe's own getFolderById is skipped) can
-yield a token without the scope while Drive works. The decisive one-paste test and the
-suggested fix (probe by attempting a read-only DriveApp call and classifying through the
-existing `driveScopeError_` — still side-effect free, so DRV-3 holds) are in the Batch Q
-block's follow-ons. Out of Batch Q's scope; logged, not fixed.
-STOPPING POINT (2026-09-11, end of session): the tree is clean, every commit is
-in `origin/main` (PR #240 was the last merge; `origin/main` = 6667223), and the
-GitHub branch `claude/broad-scan-fw462g` was deleted at that merge — the next
-session restarts it from `origin/main` (`git checkout -B claude/broad-scan-fw462g
-origin/main`). The operator's post-deploy `runAllTests()` read 315/315, which
-closes the trigger-quota round's documented check. Nothing is half-done. NEXT is
-`/broad-implement S` (suite operability) — see the paragraph below for its
-Batch 0f dependency; the estimates.csv row for Batch P (S 2 h vs ~0.6 h actual)
-is still owed by the next `/reflect`. One small logged follow-on stays open:
-the Admin → System findings read `e.error` where `stampAutomationError_` writes
-`message`, so a stamped automation failure renders "unknown error".
-Batch P is DONE (2026-09-11, d111b10 + the checkpoint commit, MERGED as PR #240 on
-`claude/broad-scan-fw462g` restarted from origin/main after #239 merged):
-P1 the estimate convention (hook + template + this file's `Estimates:` line),
-P2 the TW-B ratchet retired + `--warn-glow` + the ribbon fallbacks on the glow
-tokens (byte-identical shots, 4/4 bites, INV-200). Actual ~0.6 h against the
-S (2 h) estimate — the first estimate-vs-actual pair since cycle 12; `/reflect`
-owes the estimates.csv row. NEXT: `/broad-implement S` (suite operability),
-once the operator confirms Batch 0f (the DEV instance) — S1's nightly full run
-on dev depends on it; S2–S4 do not and can land first if 0f is still pending.
-Earlier: next-steps plan written (2026-09-11, `.cycle/blocks/19-next-steps-plan.md`;
-the sequence is in the section above): 0 → P → S → Q → C → D1 → D2 → F1 → F2.
-Pick up with Batch 0 (operator) and then `/broad-implement P` — the process
-batch is two hours and its estimate rule applies to everything after it. Batch
-Q is the only latent DEFECT in the set (Script Properties cap values at ~9KB;
-the template caps admit 200KB) and should not slip behind the doc work.
-Post-merge follow-up (2026-09-11, after PR #237 merged and the operator
-pushed): the post-push `runAllTests` read 302/312 — all ten failures
-`Admin access required.` from admin-tier endpoints called as the manager
-fixture (`kbSaveItem` behind the four "…created" ones). Diagnosis: the
-deployment's `ADMIN_EMAILS` is SET to a real address (the operator narrowed
-Admin to themselves — the property entry invites it) and the suite assumed it
-unset; no commit in #236/#237 touched a gate. Fix landed on the branch:
-`setupTestEnvironment` appends `_TEST_MGR_EMAIL` to a real list for the run,
-`cleanupTestData` strips `@example.invalid` entries back out, ONE predicate
-`_testAdminEmailsSplit_` on both sides; CLAUDE.md (residue gotcha, INV-21,
-the `ADMIN_EMAILS` entry, a dated operator entry) + a run.js pin. NEXT for the
-operator: `clasp push -f`, re-run `runAllTests()` alone, expect 312/312, keep
-`ADMIN_EMAILS` as is. Cycle 19 stays closed in substance; the next
-`/broad-scan` opens cycle 20 and moves this block to HISTORY.md.
-Follow-ons round (2026-09-11): RT / BP / SA / TW / DR are implemented,
-bite-checked (26 mutations, 26 bites, every one against a committed tree),
-committed on `claude/broad-scan-fw462g` and pushed; harnesses 796 pure /
-113 DOM; the summary block is at
-`.cycle/blocks/19-followons-retention-broad-implement.md`. NEXT: `/sync-docs`
-for that block's DOCUMENTATION UPDATES (the trigger count is twenty-one now,
-INV-44's list, the diagnostics-tab entries, INV-176/159/155/138/31 amendments,
-the harness totals, README's matrix count), then `/reflect` to close cycle 19
-with SIX blocks as inputs (batch 1+2, batch 3+4, operator A–D, this one).
-Post-deploy `runAllTests()` expects **312**; `installAutomationTriggers()`
-must be re-run once for triggers #20/#21; `reportBreakPairingChanges()`
-should be run once from the editor (read-only).
-Earlier: Operator testing-notes round: Batches A (notes 1/5/7/9, a96fe16), B
-(notes 2/3, c525c89), C (notes 4/6/8, 155dd02) and D (note 10, 9176908 +
-1961691) are ALL implemented, bite-checked, committed and pushed on
-`claude/broad-scan-fw462g` (reset onto origin/main after PR #235 merged),
-and `/sync-docs` (2026-09-11) has applied every documentation update the four
-blocks owed: INV-31 (expand toggle, manual resolves untimed,
-`autoAssignSpanishThreads` on the MANAGER tier), INV-138 (`ResolvedVia`,
-`PatientTrx` — the store is no longer PHI-free, `drCanAct_`,
-`getDeptRequestDetail`), INV-196 + the QA operator-state entry (`saveQaMembers`,
-`qaCanReviewEmail_`), INV-134 (six sinks + the derived message), the T2 /
-Coach-button / Spanish / Dept Requests / business-hours / Time Clock KDDs, a
-new Common Gotcha (the two measured layout lessons), the manager-gated list
-gotcha, the 2026-09-10 Operator State entry, the running totals
-785 / 113 / 102 / 310 + the harness-hazard wording, scenarios
-S26/S68/S74/S80/S90/S93/S101 and the new S105, and two README lines. The
-pure harness was re-run after the doc edits (785 / 0) because its F7 and
-VIS-COVER pins read CLAUDE.md. Pick up with `/reflect` to close cycle 19 —
-the four operator blocks' self-reported nets are the inputs. The N4
-scheduled trigger and the chip's schedule/PTO gating are logged follow-ons,
-not open work.
-Earlier state (still true): all four audit batches are implemented, bite-checked and pushed to
-`claude/broad-scan-fw462g` (blocks at `.cycle/blocks/19-batch1-2-*` and
-`19-batch3-4-*`), and `/sync-docs` has now applied every documentation update
-they owed. Nothing is half-done and no finding from the plan is outstanding.
-Pick up with `/reflect` to close cycle 19. The single `clasp push -f` + New
-version owed for PRs #230/#232/#233 now also carries all four batches; after
-deploying, open Manage → Admin → System to learn whether MAIL_BCC_ALL is
-actually set on this deployment — nothing in the container can read a live
-Script Property, so that one look is the only way to settle it.
-
-`/broad-implement Batch 0` was invoked on 2026-09-11 (post-plan) and found
-NOTHING to implement: Batch 0 is the operator batch, "no code" by its own
-heading, and none of 0a–0f can run from the container (no clasp, no Apps
-Script auth, no Google account). Every precondition was VERIFIED on the branch
-instead — #238 merged, the accommodation in Tests.js, triggers #20/#21 in
-`installAutomationTriggers`, `reportBreakPairingChanges()`, `mailBccStatus_`,
-the dev-setup doc — and both Node harnesses are green on HEAD (797 / 113). The
-record is `.cycle/blocks/19-batch0-operator-broad-implement.md`. Do NOT re-run
-Batch 0 as a code batch; the operator does it, then `/broad-implement P`.
-
-Trigger-quota fix (2026-09-11, after the operator reported 312/312 and then
-`This script has too many triggers` from `installAutomationTriggers()`): landed
-on the branch as 114a16e + the docs commit; block at
-`.cycle/blocks/19-trigger-quota-broad-implement.md`. MERGED as PR #239; the
-operator's `runAllTests()` → 315/315 is CONFIRMED (2026-09-11); the one
-`installAutomationTriggers()` re-run (restores the missing accrual trigger) is
-the piece still awaiting the operator's word. The
-one logged follow-on worth doing next: the Admin → System findings read
-`e.error` where the stamp writes `message` (every stamped automation failure
-renders "unknown error").
+The two follow-ons worth not forgetting are in the block: the shared geocode
+QUOTA (the eligibility box and the ```map block draw on one daily allowance,
+with no cap and no honest exhausted-message), and that neither new tab has an
+Admin editor while every other operator-editable registry in this app does —
+though a Sheet tab is a much better editing surface than the JSON property was,
+so this is weaker than it was when it was written.

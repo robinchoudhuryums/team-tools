@@ -165,6 +165,7 @@ Read a cell the wrong way and it does not throw — it silently lies. This famil
 - **CN coercion recovery formats in the HOST sheet's own tz — a drifted per-rep sheet tz no longer breaks note reads (Part A, operator 2026-08-27).** Fires when you recover a coerced CN cell — the tz you format in is the HOST sheet’s. Verify: PTA-1/2/3. [Detail](docs/gotchas.md#g12-cn-coercion-recovery-formats-in-the-host)
 - **Sheet LOCALE (not just timezone) can coerce stored ISO-T strings to Dates — and `SpreadsheetApp.create()` inherits the SCRIPT tz + deployer locale.** Fires when you create a spreadsheet, or read a stored ISO-T string. [Detail](docs/gotchas.md#g13-sheet-locale-not-just-timezone-can-coerce)
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** Fires when you read `CN.DATE_LOCAL`. [Detail](docs/gotchas.md#g16-cn-date-local-is-a-sheets-coerced)
+- **A positional tab read (`getSheets()[0]`) fails SILENTLY once the spreadsheet gains a second purpose — name the tab even when there is only one (2026-09-16).** Fires when you read a store by sheet POSITION, especially alongside header-discovered columns. Verify: the NAMED-TABS pin + `test_oop_pricingTab_isNAMEDnotTheFirstSheet`. [Detail](docs/gotchas.md#g121-a-positional-tab-read-is-correct)
 - **`normalizeType_` strips the `ADJ-` prefix.** Fires when you compare a punch type read from COMMENTS. [Detail](docs/gotchas.md#g18-normalizetype-strips-the-adj-prefix)
 
 ### Timezone frames
@@ -196,6 +197,7 @@ Every one of these guards an `innerHTML` sink or a template injection.
 
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.** Fires when you add a field to the call-note email builder. Verify: `test_cn_buildEmailHtml_escapesUserFields`. [Detail](docs/gotchas.md#g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field)
 - **Note marker formatting runs POST-escape, and its regexes are a client↔server MIRROR (operator 2026-08-25).** Fires when you add a formatting marker, or convert newlines. [Detail](docs/gotchas.md#g38-note-marker-formatting-runs-post-escape-and)
+- **A client↔server MIRROR whose drift BLOCKS needs a BEHAVIOURAL pin — the price line the composer inserts is rebuilt from the sheet at send time, so a drift refuses every OOP send rather than rendering oddly (OOP-B, 2026-09-16).** Fires when you mirror any value client↔server — ask first what a drift COSTS. [Detail](docs/gotchas.md#g120-a-client-server-mirror-whose-drift)
 - **Metrics client must `esc()` every server string before `innerHTML`.** Fires when you render a server string into the Metrics DOM. [Detail](docs/gotchas.md#g39-metrics-client-must-esc-every-server-string)
 - **Intake email builders must `esc_` every patient field; the justification is the ONE raw exception.** Fires when you add a field to an intake email builder. [Detail](docs/gotchas.md#g44-intake-email-builders-must-esc-every-patient)
 - **A value written to a `data-*` attribute comes back DECODED — never re-render it raw (cycle-18 F1).** Fires when a value round-trips through a `data-*` attribute back into `innerHTML`. [Detail](docs/gotchas.md#g49-a-value-written-to-a-data-attribute)
@@ -226,6 +228,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A best-effort overlay whose ABSENCE is reassuring must announce itself (F4, cycle-16 — FIXED).** Fires when you wrap an overlay read in a bare `catch`. [Detail](docs/gotchas.md#g53-a-best-effort-overlay-whose-absence-is)
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
 - **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
+- **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than no seed — the warehouse registry's bare city names geocoded to city CENTRES (ELIG, shipped and removed 2026-09-16).** Fires when you seed a default — ask what it produces when nobody replaces it. Verify: the NO-seed pin. [Detail](docs/gotchas.md#g122-a-config-seed-that-is-a)
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
 - **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
@@ -422,6 +425,9 @@ for the reasoning, which is usually the part that matters.
 - [Manager cross-rep search in Team Notes](docs/design-decisions.md#manager-cross-rep-search-in-team-notes)
 - [Stats drill-down links to Per-Rep View](docs/design-decisions.md#stats-drill-down-links-to-per-rep-view)
 - [Email department display on note cards](docs/design-decisions.md#email-department-display-on-note-cards)
+- [A quoted price IS a commitment, so the picker inserts and the SEND re-verifies (OOP-B, operator 2026-09-16)](docs/design-decisions.md#a-quoted-price-is-a-commitment-so-the-picker-inserts-and)
+- [Which eligibility restrictions LIFT out of pocket is a RULE, not a table (ELIG, operator 2026-09-16)](docs/design-decisions.md#which-eligibility-restrictions-lift-out-of-pocket-is-a-rule)
+- [The operator-maintained lookup tables are NAMED TABS in the KB store, not stores of their own (operator 2026-09-16)](docs/design-decisions.md#the-operator-maintained-lookup-tables-are-named-tabs-in-the)
 - [External email for customers and providers](docs/design-decisions.md#external-email-for-customers-and-providers)
 - [Interactive fillable web forms via token-gated public route](docs/design-decisions.md#interactive-fillable-web-forms-via-token-gated-public-route)
 - [In-app form-submission viewer](docs/design-decisions.md#in-app-form-submission-viewer)
@@ -498,12 +504,12 @@ for the reasoning, which is usually the part that matters.
 
 ### Spreadsheet / storage map (one-screen reference)
 
-Eight distinct spreadsheets, split deliberately along PHI / payroll / HR /
+EIGHT distinct spreadsheets, split deliberately along PHI / payroll / HR /
 PHI-free / external lines and by retention policy — **consolidation is NOT
 advised** (the boundaries are the point); manage them as a set instead. The
 manager **Call Notes → Admin → Storage Health** panel (`getStorageHealth`)
 shows each store's configured / reachable / **tz-vs-CONFIG** status live — the
-one-pane-of-glass for this table. Keep all eight in one Drive folder for sanity.
+one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
@@ -511,7 +517,7 @@ one-pane-of-glass for this table. Keep all eight in one Drive folder for sanity.
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
-| Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, InsurancePayors (OPERATOR-IMPORTED payor-acceptance table — read-only, the insurance lookup, 2026-08-25) | PHI-free by policy | kept | `getKbSS_` |
+| Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — item name in col A, then Price / Area Eligibility / EffectiveDate discovered BY HEADER STEM, any other column passed through verbatim; **the Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209) and LocationAcceptance (delivery reach — `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
 | QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared; design handoff PR 5 added DurationSec + SkipReason, header self-heals), QaExemptions (PR 5 — the audit-period exemption ledger: EmpName/Period/GrantedBy/GrantedMs/Active, append-only, latest row per (name, period) wins; written only by the manager-gated `qaSetExemption`), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
 | Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (one plain-text-pinned cell — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
@@ -527,7 +533,7 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`,
 `TEST_KB_SS_ID` (cycle-10 M-9 — the KB fixture `_withTestKb_` provisions),
 `TEST_FORMS_SS_ID` and `TEST_QA_SS_ID` (2026-09-16 — `_withTestForms_` /
 `_withTestQa_`; before them the forms tests wrote to the LIVE forms store,
-which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All six are
+which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All five are
 auto-provisioned on first use and reported by the suite's `── Suite
 environment ──` block; delete one to force a fresh fixture.
 Auto-managed diagnostics: `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
@@ -608,6 +614,7 @@ the dated round entries that used to sit here moved to
 - [`Employees` sheet column N = `Departments`](docs/operator-state.md#operator-employees-sheet-column-n-departments)
 - [`Employees` sheet column O = `Schedule`](docs/operator-state.md#operator-employees-sheet-column-o-schedule)
 - [Script Property `SPANISH_VM_MIN_SECONDS`](docs/operator-state.md#operator-script-property-spanish-vm-min-seconds)
+- [The `OopPricing` and `LocationAcceptance` tabs (KB spreadsheet)](docs/operator-state.md#operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet)
 - [Script Property `CDR_QUEUE_GROUPS`](docs/operator-state.md#operator-script-property-cdr-queue-groups)
 - [Script Property `DR_SLA_TARGETS`](docs/operator-state.md#operator-script-property-dr-sla-targets)
 - [Set Script Property `HR_DOCS_SS_ID`](docs/operator-state.md#operator-set-script-property-hr-docs-ss-id)
@@ -831,17 +838,17 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 830 | `node test/client/run.js` |
-| DOM harness tests | 116 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 848 | `node test/client/run.js` |
+| DOM harness tests | 121 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 323 | `Tests.js`; a run prints its own `Expected:` line |
-| Admin-tier endpoints (INV-136) | 50 | `'Admin access required.'` in the server source |
+| Editor suite registrations | 329 | `Tests.js`; a run prints its own `Expected:` line |
+| Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 207 | `.cycle/config.md` |
-| Regression scenarios (S*) | 104 | `.cycle/config.md` |
+| Invariant library entries | 209 | `.cycle/config.md` |
+| Regression scenarios (S*) | 105 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

@@ -3040,6 +3040,11 @@ function sendExternalEmail(payload) {
   const interactiveForms = Array.isArray(p.interactiveForms) ? p.interactiveForms : [];
   const prefillData    = (p.prefillData && typeof p.prefillData === 'object') ? p.prefillData : {};
   const noteId         = p.noteId || null;
+  // OOP-B — the price lines the composer picker says it inserted into `message`.
+  // Advisory ONLY as a claim; oopVerifyQuotes_ re-derives each line from the
+  // live sheet below and refuses the send if the message does not still carry
+  // it. Never trusted as the source of the number.
+  const quotedOop      = Array.isArray(p.quotedOop) ? p.quotedOop : [];
 
   // ── Validate ──────────────────────────────────────────────────────
   if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
@@ -3051,6 +3056,15 @@ function sendExternalEmail(payload) {
   if (!subject) {
     return { success: false, error: 'Subject line is required.' };
   }
+
+  // ── Verify quoted OOP prices BEFORE anything irreversible ─────────
+  // Ordering is load-bearing: this runs ahead of token creation, the PDF
+  // fetches and the send, so a refused quote costs nothing. A quote verified
+  // after a token exists would leave the rep a live form link for an email
+  // that never went out.
+  const oopCheck = oopVerifyQuotes_(quotedOop, message);
+  if (oopCheck.error) return { success: false, error: oopCheck.error };
+  const oopQuoted = oopCheck.quoted;
 
   // ── Resolve form catalog entries (PDF attachments) ────────────────
   const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
@@ -3200,16 +3214,27 @@ function sendExternalEmail(payload) {
   const interactiveList = interactiveForms.length > 0 ? interactiveForms.join(',') : 'none';
   const recipientDomain = recipientEmail.indexOf('@') >= 0
     ? recipientEmail.slice(recipientEmail.indexOf('@') + 1) : '(none)';
+  // OOP-B: the quoted prices ride the SAME row rather than a new action, for
+  // two reasons — the compliance panel already covers ExternalEmailSent
+  // (CN_AUDIT_ACTIONS), and a quote only means anything attached to the send it
+  // travelled on. Item + exact price + effective date, and still the recipient
+  // DOMAIN only: g36's minimization is not relaxed by the quote being
+  // commercially significant.
+  const oopList = oopQuoted.map(function (q) {
+    return q.name + '@' + q.price + (q.effective ? ' eff ' + q.effective : '');
+  }).join(' | ');
   writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
     'recipientDomain=' + recipientDomain + '; type=' + recipientType +
     '; pdfForms=' + formsList +
     '; interactiveForms=' + interactiveList +
+    (oopList ? '; oopQuoted=' + oopList : '') +
     (noteId ? '; noteId=' + noteId : ''));
 
   return {
     success: true,
     sentAt: sentAt,
     recipientEmail: recipientEmail,
+    oopQuoted: oopQuoted.map(function (q) { return { name: q.name, price: q.price, effective: q.effective }; }),
     formsAttached: formNames,
     formLinks: formLinks.map(function(fl) { return { name: fl.name, url: fl.url, formType: fl.formType }; }),
   };

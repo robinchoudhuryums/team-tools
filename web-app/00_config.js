@@ -1632,6 +1632,98 @@ const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
 // grid, the Hawaii marker, whatever a future import adds) passed through
 // VERBATIM — the operator rule: unknown tokens render as-is in neutral tone,
 // never guessed at.
+// ── OOP pricing lookup (operator 2026-09-16) ────────────────────────────────
+// Out-of-pocket prices for items a patient is most likely to order OOP. The
+// operator maintains them in a tab of the KB spreadsheet, read LIVE on every
+// lookup — NOT imported the way the payor table is.
+//
+// WHY LIVE, and it is the whole design: the payor table is ADVISORY (an
+// unlisted plan falls through to the TRY rules, and a stale copy costs a
+// re-check), but a rep QUOTES an OOP price and TAKES PAYMENT on that call.
+// Under an import model the app's copy lags the operator's sheet by however
+// long since the last upload, and the failure is a rep collecting a superseded
+// price — discovered from the customer, never from the app.
+//
+// Columns are discovered BY HEADER NAME, not by position (the
+// searchInsurancePayors discipline): the operator owns the file and may
+// reorder it. The FIRST column is the item name the search scans. Anything
+// the role matcher does not recognise rides along as a verbatim attribute —
+// unknown tokens render as-is, never guessed at.
+// WHERE IT LIVES (operator 2026-09-16, revised same day): a NAMED TAB in the
+// KB spreadsheet, not a store of its own. `InsurancePayors` is already an
+// operator-imported, read-only lookup table in that store — same class
+// (PHI-free by policy), same maintainer, same access pattern, and the OOP
+// search literally reuses the payor scorer. A second spreadsheet bought a
+// Script Property and a Storage Health row and nothing else.
+//
+// It is NOT in the Intake store, which was the other candidate: Intake is PHI
+// and the app WRITES to it, so pricing there would mean anyone maintaining
+// prices needs edit access to patient submissions.
+const OOP_PRICING_TAB = 'OopPricing';
+const OOP_MAX_ROWS = 5000;      // bounded tail — the INV-46 family
+const OOP_TOP = 8;              // top-N fetched full-width; ties ride along so the REP judges
+// NO result cache, deliberately — searchInsurancePayors has none either, and
+// here a cache is the staleness this whole design exists to remove. The plan
+// said "cache SHORT"; the honest answer on a price someone collects on is
+// "do not cache at all". One openById per lookup is what every other resolver
+// already costs.
+// OOP-B — the most price lines one external email may carry. A quote is a
+// COMMITMENT (the rep takes payment on that call), so every inserted line is
+// re-verified against the live sheet at send time and every one of them lands
+// in the audit row. The cap bounds both: the verification read and the audit
+// details string. Ten is far above any real quote and well under either limit.
+const OOP_QUOTE_MAX = 10;
+
+// ── ELIG (operator 2026-09-16) — area eligibility off the same column ───────
+// The OOP sheet's "Area Eligibility" column states the rule for an order going
+// THROUGH INSURANCE. Paying out of pocket TRANSFORMS it, and the transform is
+// not a lookup table — it is one rule that keeps working on values nobody has
+// written yet:
+//
+//   A restriction that exists because of WHO IS PAYING lifts when nobody is
+//   billing insurance. A restriction that exists because of HOW IT PHYSICALLY
+//   GETS THERE does not.
+//
+// A state limit is licensure and network: it lifts. A delivery radius is a van:
+// it does not. So `TX` means Texas through insurance and the whole US out of
+// pocket, while `100 miles of Dallas` means 100 miles either way. Both verdicts
+// are shown, labelled — a rep mid-call is usually deciding BETWEEN the two, and
+// a payment-method toggle would make them ask the question twice.
+//
+// UNKNOWN never lifts. A value the parser cannot read might be a delivery
+// constraint, and guessing in the permissive direction is the one guess that
+// puts an undeliverable order in the system.
+const OOP_ELIG_MAX_ITEMS = 60;      // items returned by one eligibility check
+// Straight-line distance is never LONGER than the drive, so a radius verdict of
+// NO is certain while a YES near the boundary is provisional. This is the band
+// (as a fraction of the limit) inside which a YES says so rather than implying
+// a precision the measurement does not have.
+const OOP_ELIG_NEAR_BAND = 0.8;
+// The delivery-reach table, a NAMED TAB beside the pricing one. It carries TWO
+// row kinds under a `Type` column, because they answer the same question from
+// two directions:
+//   warehouse | Name + Address  → the vocabulary the radius grammar matches,
+//                                 and the address that gets geocoded
+//   city      | Name + State + Accepts → places we deliver POVs/scooters to
+//
+// A SHEET, not a Script Property, and the reason is a failure mode rather than
+// convenience: a malformed JSON property fell back to a CONFIG seed of bare
+// city names, which geocode to city CENTRES — so a warehouse twenty miles out
+// of town made every near-boundary radius answer wrong by up to twenty miles,
+// silently. That is the plausible-substitute failure (g114) the radius verdict
+// exists to avoid. **There is deliberately NO SEED and NO FALLBACK:** a missing
+// or empty tab makes radius rules read UNKNOWN and says so in the diagnostics.
+const LOCATION_ACCEPTANCE_TAB = 'LocationAcceptance';
+const LOC_MAX_ROWS = 2000;      // bounded tail — the INV-46 family
+// Two-letter codes the STATES grammar accepts. The 50 states plus DC and PR —
+// a token outside this list is not a state code, and a value made only of
+// tokens outside it parses as UNKNOWN rather than as a state rule.
+const US_STATE_CODES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC','PR',
+];
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
 const INS_PAYOR_MAX_ROWS = 5000;

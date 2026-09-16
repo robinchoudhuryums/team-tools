@@ -80,7 +80,13 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (Anthropic API, whitelisted call facets only — no note text ever
     leaves the app; feature-flagged off by default). Managers edit
     inline; reps browse read-only, and get a usage-sorted "Review due"
-    queue for re-confirming stale articles. PHI-free by policy.
+    queue for re-confirming stale articles. Three operator-maintained
+    lookup tables ride the same store and the same two surfaces
+    (landing + drawer): an insurance payor check, an out-of-pocket
+    price lookup, and an area-eligibility check that takes an address
+    and answers twice per item — once through insurance, once paying
+    out of pocket, because a state limit lifts when nobody is billing
+    insurance and a delivery radius does not. PHI-free by policy.
   - **Training & Employee Docs** — manager-assigned training built on
     the Reference content layer: assign any KB article/embed to
     employees (or everyone) with an optional due date; reps work a

@@ -650,6 +650,687 @@ function insPayorRowObj_(headers, row) {
   }
   return out;
 }
+// ════════════════════════════════════════════════════════════════════════════
+//  OOP PRICING LOOKUP (operator 2026-09-16) — the NINTH store, read LIVE
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The pricing table: a NAMED TAB in the KB store, the `InsurancePayors`
+ *  pattern exactly (same store, same class, same maintainer, and the search
+ *  below already reuses that lookup's scorer).
+ *
+ *  NAMED, not "the first sheet". The first version of this reader lived in a
+ *  spreadsheet of its own and took `getSheets()[0]`, which was fine while the
+ *  file existed for one purpose — and would have failed SILENTLY the moment it
+ *  moved, because columns are discovered by header: it would have found the KB
+ *  tab, matched no `price` header, and rendered every row blank rather than
+ *  throwing. A missing tab says exactly what to create. */
+function oopSheet_() {
+  const sh = getKbSS_().getSheetByName(OOP_PRICING_TAB);
+  if (!sh) {
+    throw new Error('OOP pricing is not set up yet — create a tab named "' + OOP_PRICING_TAB +
+      '" in the KB spreadsheet, with the item name in column A.');
+  }
+  return sh;
+}
+
+/** PURE (Node-pinned): what ROLE a header column plays, or '' for none.
+ *
+ *  Header-name discovery rather than fixed positions, because the operator owns
+ *  the file and may reorder it — the same reason searchInsurancePayors matches
+ *  `waystar|network|qualif|reimbur` on the stem rather than the exact string.
+ *
+ *  ORDER MATTERS in one place and it is not obvious: `effective` is tested
+ *  BEFORE `price`, because a header like "Effective Price Date" contains both
+ *  stems and the date reading is the safe one — mistaking a date column for the
+ *  price would put a date in front of a customer as a dollar figure. */
+function oopHeaderRole_(header) {
+  const h = String(header == null ? '' : header).trim();
+  if (!h) return '';
+  if (/effective|as[\s_-]*of/i.test(h)) return 'effective';
+  if (/area|eligib|region|territor/i.test(h)) return 'eligibility';
+  if (/price|cost|oop|amount|charge|\$/i.test(h)) return 'price';
+  return '';
+}
+
+/** PURE (Node-pinned): one pricing row → the result object. The FIRST column is
+ *  always the item name (the column the search scans). Every other column
+ *  resolves through oopHeaderRole_; anything unrecognised rides along in
+ *  `details` VERBATIM — an unknown column is shown, never dropped and never
+ *  guessed at (the payor-row discipline, INV-169's spirit). */
+function oopRowObj_(headers, row) {
+  const out = { name: String(row[0] == null ? '' : row[0]).trim(),
+    price: '', eligibility: '', effective: '', details: [] };
+  for (let c = 1; c < headers.length; c++) {
+    const h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (!h) continue;
+    const v = String(row[c] == null ? '' : row[c]).trim();
+    const role = oopHeaderRole_(h);
+    if (role === 'price' && !out.price) out.price = v;
+    else if (role === 'eligibility' && !out.eligibility) out.eligibility = v;
+    else if (role === 'effective' && !out.effective) out.effective = v;
+    else if (v) out.details.push({ label: h, value: v });
+  }
+  return out;
+}
+
+/** Rep-callable, read-only, no lock. Top-N item matches for a query.
+ *
+ *  Scores through `insPayorScore_` — the SAME scorer the payor lookup uses,
+ *  reused rather than copied: two scorers for two lookups is two things to keep
+ *  in step, and nobody would notice them diverging.
+ *
+ *  FAILURE POSTURE, inherited deliberately: a wrong price is a billing error, so
+ *  the failure mode is "no match" (visible) and never a confident wrong number.
+ *  Ties and near-misses ride along so the REP judges ambiguity. */
+function searchOopPricing(query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const q = String(query || '').trim();
+    if (q.length < 2) return { matches: [], total: 0 };
+    const sh = oopSheet_();
+    const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+    if (last < 2) return { matches: [], total: 0, notFound: true };
+    const width = sh.getLastColumn();
+    // getDisplayValues throughout — the operator's sheet formats a price the way
+    // they mean it to read, and reinterpreting a foreign-authored cell is the
+    // INV-64 mistake. A currency cell handed back as a raw float would show a
+    // customer a different number than the sheet does.
+    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    const scored = [];
+    for (let i = 0; i < names.length; i++) {
+      const sc = insPayorScore_(names[i][0], q);
+      if (sc > 0) scored.push({ i: i, score: sc });
+    }
+    scored.sort(function (a, b) { return b.score - a.score; });
+    const matches = scored.slice(0, OOP_TOP).map(function (t) {
+      return oopRowObj_(headers, sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0]);
+    });
+    return { matches: matches, total: scored.length, notFound: scored.length === 0,
+      cap: OOP_TOP, truncated: sh.getLastRow() > OOP_MAX_ROWS + 1 };
+  } catch (err) { return { error: 'OOP pricing lookup failed: ' + err.message }; }
+}
+
+/** PURE (Node-pinned): the ONE canonical rendering of a quoted price, used by
+ *  the composer picker to build the line it inserts AND by the send to rebuild
+ *  that line from LIVE sheet data. The two must agree character for character —
+ *  that is not a coincidence to preserve, it IS the verification: the send
+ *  refuses unless the message still contains the line this function derives
+ *  from the sheet as it reads right now.
+ *
+ *  The price is rendered VERBATIM as the sheet displays it. We do not add a
+ *  currency symbol, pad decimals or reformat: the operator's cell is how they
+ *  mean the number to read, and a price in front of a paying customer is the
+ *  last place to improve on their formatting (the getDisplayValues discipline
+ *  this whole reader is built on). */
+function oopQuoteLine_(name, price, effective) {
+  const n = String(name == null ? '' : name).trim();
+  const p = String(price == null ? '' : price).trim();
+  const e = String(effective == null ? '' : effective).trim();
+  if (!n || !p) return '';
+  return n + ' \u2014 ' + p + (e ? ' (price effective ' + e + ')' : '');
+}
+
+/** Re-verify every price line the composer says it inserted, against the sheet
+ *  as it reads AT SEND TIME. Returns `{ error }` to refuse the send, or
+ *  `{ quoted: [{name, price, effective, line}] }` on success.
+ *
+ *  WHY this exists, and why it refuses rather than warns: the operator's answer
+ *  on 2026-09-16 was that a quoted price IS a commitment — the rep processes
+ *  payment on the same call. So three things must be true of a number in a sent
+ *  email, and none of them is true without this function:
+ *
+ *   1. It came from the sheet, not from a rep's typing. The picker inserts it,
+ *      but a textarea is a textarea; nothing stops an edit afterwards.
+ *   2. It is still the price. A lookup at 10:02 and a send at 10:40 can
+ *      straddle an operator edit, and the failure — a rep collecting a
+ *      superseded price — is discovered from the customer, never from the app.
+ *   3. It is auditable. The sheet will have moved on by the time anyone
+ *      disputes the charge, so the row this send writes is the ONLY
+ *      reconstruction of what the customer was told.
+ *
+ *  FAIL DIRECTION (g41 — it is chosen, not inherited): CLOSED. An unreadable
+ *  store, a vanished item, a changed price and an edited line all REFUSE, with
+ *  a message saying which. The alternative — send anyway, note it in the audit —
+ *  trades a blocked send for a wrong commitment, which is the trade this
+ *  feature exists to refuse.
+ *
+ *  A quote whose line is NO LONGER IN THE MESSAGE at all and whose price is
+ *  unchanged is not an error: the rep inserted it, thought better of it and
+ *  deleted it. It is dropped from the audit, because nothing was quoted. */
+function oopVerifyQuotes_(quotes, message) {
+  const list = Array.isArray(quotes) ? quotes : [];
+  if (!list.length) return { quoted: [] };
+  if (list.length > OOP_QUOTE_MAX) {
+    return { error: 'Too many price lines on one email (max ' + OOP_QUOTE_MAX + ').' };
+  }
+  const body = String(message == null ? '' : message);
+
+  let sh, headers, rows, width;
+  try {
+    sh = oopSheet_();
+    width = sh.getLastColumn();
+    const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+    if (last < 2) return { error: 'The OOP pricing sheet is empty — the quoted price could not be verified.' };
+    headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+  } catch (err) {
+    // Deliberately NOT a best-effort skip. An unreachable pricing store at send
+    // time means the number in this email is unverified, and an unverified
+    // commitment is the thing we refuse (g53's rule, applied to a price).
+    return { error: 'The OOP pricing sheet could not be read, so the quoted price could not be verified: ' + err.message };
+  }
+
+  const byName = {};
+  for (let i = 0; i < rows.length; i++) {
+    const key = String(rows[i][0] == null ? '' : rows[i][0]).trim().toLowerCase();
+    if (key && !byName[key]) byName[key] = rows[i];
+  }
+
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const q = list[i] || {};
+    const name = String(q.name == null ? '' : q.name).trim();
+    if (!name) continue;
+    const row = byName[name.toLowerCase()];
+    if (!row) {
+      return { error: 'The pricing sheet no longer lists "' + name + '". Re-check the price before sending.' };
+    }
+    const live = oopRowObj_(headers, row);
+    if (!live.price) {
+      return { error: 'The pricing sheet has no price on file for "' + name + '" any more. Remove the line or check with a manager.' };
+    }
+    const line = oopQuoteLine_(live.name, live.price, live.effective);
+    if (body.indexOf(line) >= 0) { out.push({ name: live.name, price: live.price, effective: live.effective, line: line }); continue; }
+    // Not present as the sheet now renders it. Say WHICH of the two reasons.
+    const claimed = String(q.price == null ? '' : q.price).trim();
+    if (claimed && claimed !== live.price) {
+      return { error: 'The price for "' + name + '" changed since you looked it up (' + claimed +
+        ' \u2192 ' + live.price + '). Re-insert it and review the email before sending.' };
+    }
+    // The price is unchanged, so the line is not stale — it was either DELETED
+    // or EDITED, and those end very differently. A deleted line leaves nothing
+    // in the email; an edited one leaves a price-like figure that no longer
+    // matches anything we can verify. Discriminate on the PRICE STRING: if it
+    // still appears anywhere in the body, a number is being quoted that this
+    // function cannot vouch for, and an unverifiable commitment refuses.
+    //
+    // THE BOUNDARY, stated rather than implied: a rep who overtypes the figure
+    // with a DIFFERENT number defeats this, exactly as a rep who types a price
+    // for an item they never picked does. The promise this feature makes is
+    // that a price the PICKER inserted is server-sourced and current — not that
+    // no wrong number can ever reach an email. Pretending otherwise would be
+    // the more dangerous claim.
+    if (body.indexOf(live.price) >= 0 || (claimed && body.indexOf(claimed) >= 0)) {
+      return { error: 'The inserted price line for "' + name + '" was edited. Prices must be inserted by the picker \u2014 remove the line and re-insert it.' };
+    }
+    // Nothing price-like left: the rep inserted it and thought better of it.
+    // Nothing was quoted, so nothing is audited.
+  }
+  return { quoted: out };
+}
+
+/** PURE (Node-pinned): what ROLE a LocationAcceptance header plays, or ''.
+ *
+ *  Header-stem discovery, the oopHeaderRole_ discipline and for the same
+ *  reason: the operator owns the tab and will reorder it. `accepts` is tested
+ *  BEFORE `name`, because "Accepted Items" contains both stems and reading an
+ *  item list as a place name would put a row in the warehouse vocabulary that
+ *  no radius phrase can ever match. */
+function locHeaderRole_(header) {
+  const h = String(header == null ? '' : header).trim();
+  if (!h) return '';
+  if (/^type$|kind|category|row\s*type/i.test(h)) return 'type';
+  if (/accept|item|deliver|product|equip/i.test(h)) return 'accepts';
+  if (/address|street|location/i.test(h)) return 'address';
+  if (/state|province|region/i.test(h)) return 'state';
+  if (/name|warehouse|city|site|town/i.test(h)) return 'name';
+  if (/note|comment/i.test(h)) return 'notes';
+  return '';
+}
+
+/** PURE (Node-pinned): classify one LocationAcceptance row.
+ *
+ *  Returns 'warehouse' | 'city' | '' (unreadable). The `Type` column decides;
+ *  when it is blank the row is classified by SHAPE — an address makes it a
+ *  warehouse, because an address is the thing only a warehouse row carries and
+ *  the thing the radius grammar cannot work without. A row with neither a
+ *  usable type nor an address is NOT guessed at: it returns '' and the
+ *  diagnostics list it, the same posture the eligibility grammar takes (g41). */
+function locRowKind_(typeCell, hasAddress) {
+  const t = String(typeCell == null ? '' : typeCell).trim().toLowerCase();
+  if (/^(warehouse|wh|depot|hub|dc)\b/.test(t)) return 'warehouse';
+  if (/^(city|town|metro|area)\b/.test(t)) return 'city';
+  if (t) return '';                      // a type we do not recognise is not a guess
+  return hasAddress ? 'warehouse' : '';
+}
+
+/** The delivery-reach table. Returns
+ *  `{ warehouses: {name: address}, cities: [{name, state, accepts, notes}], unreadable: [...], error }`.
+ *
+ *  **NO SEED AND NO FALLBACK, deliberately.** The previous version was a Script
+ *  Property that fell back to a CONFIG seed of bare city names when it failed to
+ *  parse — and bare city names geocode to city CENTRES, so a warehouse twenty
+ *  miles out of town silently made every near-boundary radius answer wrong by
+ *  up to twenty miles. That is g114 exactly: a plausible substitute for a
+ *  missing value, rendered as data. A missing tab now yields an EMPTY registry,
+ *  which makes every radius rule parse as UNKNOWN (never as eligible) and shows
+ *  up by name in the diagnostics.
+ *
+ *  A warehouse row with no address is dropped from the registry rather than
+ *  registered unplaceable: its NAME is the vocabulary the grammar matches, so
+ *  keeping it would turn "100 miles of X" from UNKNOWN (honest: we do not know
+ *  that place) into a radius we can never measure. */
+function getLocationAcceptance_() {
+  const out = { warehouses: {}, cities: [], unreadable: [], noAddress: [], error: '' };
+  let sh;
+  try {
+    sh = getKbSS_().getSheetByName(LOCATION_ACCEPTANCE_TAB);
+  } catch (err) {
+    out.error = 'The KB spreadsheet could not be read: ' + err.message;
+    return out;
+  }
+  if (!sh) {
+    out.error = 'Delivery reach is not set up yet — create a tab named "' + LOCATION_ACCEPTANCE_TAB +
+      '" in the KB spreadsheet (Type / Name / Address / State / Accepts).';
+    return out;
+  }
+  const last = Math.min(sh.getLastRow(), LOC_MAX_ROWS + 1);
+  if (last < 2) { out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab is empty.'; return out; }
+  const width = sh.getLastColumn();
+  const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+  const col = {};
+  for (let c = 0; c < width; c++) {
+    const role = locHeaderRole_(headers[c]);
+    if (role && col[role] === undefined) col[role] = c;
+  }
+  const at = function (row, role) {
+    return col[role] === undefined ? '' : String(row[col[role]] == null ? '' : row[col[role]]).trim();
+  };
+  const rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+  rows.forEach(function (row) {
+    const name = at(row, 'name');
+    const address = at(row, 'address');
+    if (!name && !address) return;                 // a blank row is not a finding
+    const kind = locRowKind_(at(row, 'type'), !!address);
+    if (kind === 'warehouse') {
+      if (!address) { out.noAddress.push(name); return; }
+      if (name && !out.warehouses[name]) out.warehouses[name] = address;
+      else if (!name) out.unreadable.push({ name: '', reason: 'a warehouse row with no name' });
+      return;
+    }
+    if (kind === 'city') {
+      if (!name) { out.unreadable.push({ name: '', reason: 'a city row with no name' }); return; }
+      out.cities.push({ name: name, state: at(row, 'state').toUpperCase(),
+        accepts: at(row, 'accepts'), notes: at(row, 'notes') });
+      return;
+    }
+    out.unreadable.push({ name: name, reason: 'Type is "' + at(row, 'type') + '" and there is no address' });
+  });
+  out.truncated = sh.getLastRow() > LOC_MAX_ROWS + 1;
+  return out;
+}
+
+/** PURE (Node-pinned): the listed delivery cities that match a geocoded
+ *  location. Returns the matching rows, which the caller SHOWS — it never
+ *  changes a verdict (operator decision, 2026-09-16).
+ *
+ *  WHY IT ONLY SHOWS: a verdict that depended on two tables agreeing would let
+ *  a stale row in one of them make an undeliverable item read as deliverable,
+ *  and the rep would have no way to see which table said what. The Area
+ *  Eligibility column stays the single source of the answer; this is the same
+ *  reference material `InsurancePayors` is, surfaced at the moment it is
+ *  useful.
+ *
+ *  The STATE is required to match when the row carries one — there is a
+ *  Springfield in most of them. */
+function locCityMatches_(cities, city, state) {
+  const c = String(city || '').trim().toLowerCase();
+  if (!c) return [];
+  const st = String(state || '').trim().toUpperCase();
+  return (cities || []).filter(function (r) {
+    if (String(r.name || '').trim().toLowerCase() !== c) return false;
+    if (r.state && st && r.state !== st) return false;
+    return true;
+  });
+}
+
+/** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
+ *
+ *  Returns one of:
+ *    { kind: 'open'   }
+ *    { kind: 'states', states: ['TX', …] }
+ *    { kind: 'radius', miles: 100, warehouses: ['Dallas', …] }
+ *    { kind: 'unknown', raw: '<the cell, verbatim>' }
+ *
+ *  RADIUS IS TESTED FIRST, and the honest reason is defence against a future
+ *  edit rather than a defect in today's code: the STATES branch below requires
+ *  the WHOLE value to be state codes, which already rejects "100 miles of the
+ *  Dallas TX warehouse". But relaxing that to "extract any state codes present"
+ *  is a very plausible next change (someone will want "TX only" to work), and
+ *  the moment it happens, a radius phrase containing a state code would parse
+ *  as a state rule — confidently wrong, in the far more permissive direction.
+ *  The order costs nothing and makes that edit safe.
+ *
+ *  Warehouse names are matched as SUBSTRINGS against the registry rather than
+ *  parsed out of English. The operator writes "100 miles of Dallas or San
+ *  Antonio warehouse"; a grammar that had to understand "or", "warehouse" and
+ *  the word order would break on the next phrasing. The registry IS the
+ *  vocabulary, so a name it does not contain is not recognised — which is the
+ *  right failure: a radius around a warehouse we cannot place is UNKNOWN, not
+ *  eligible.
+ *
+ *  Everything unrecognised is UNKNOWN (g41 — the fail direction on
+ *  operator-maintained data is CHOSEN, and this column is one the operator is
+ *  still filling in, so unreadable values are the expected case, not the
+ *  exceptional one). */
+function oopEligibilityParse_(text, warehouseNames) {
+  const raw = String(text == null ? '' : text).trim();
+  if (!raw) return { kind: 'unknown', raw: '' };
+  const lc = raw.toLowerCase();
+
+  // 1. RADIUS — a distance and at least one registry name.
+  const m = lc.match(/(\d{1,4})\s*(?:miles|mile|mi)\b/);
+  if (m) {
+    const miles = parseInt(m[1], 10);
+    const hits = [];
+    (warehouseNames || []).forEach(function (n) {
+      const name = String(n || '').trim();
+      if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
+    });
+    if (miles > 0 && hits.length) return { kind: 'radius', miles: miles, warehouses: hits };
+    return { kind: 'unknown', raw: raw };
+  }
+
+  // 2. OPEN — the keyword, optionally followed by the operator's own
+  //    parenthetical ("Open (anywhere in the US including Hawaii)").
+  const bare = raw.replace(/\([^)]*\)/g, ' ').replace(/[.\s]+/g, ' ').trim();
+  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) return { kind: 'open' };
+
+  // 3. STATES — the WHOLE value must be state codes. A value that is partly
+  //    codes and partly prose is not a state rule; it is a value we cannot read.
+  const toks = raw.split(/[\s,;/|&+]+/).filter(function (t) { return !!t; });
+  if (toks.length) {
+    const codes = [];
+    let allCodes = true;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i].toUpperCase().replace(/[^A-Z]/g, '');
+      if (t.length !== 2 || US_STATE_CODES.indexOf(t) < 0) { allCodes = false; break; }
+      if (codes.indexOf(t) < 0) codes.push(t);
+    }
+    if (allCodes && codes.length) return { kind: 'states', states: codes };
+  }
+
+  return { kind: 'unknown', raw: raw };
+}
+
+/** PURE (Node-pinned): the rule as it applies to a given PAYMENT METHOD.
+ *
+ *  The operator's clarification, 2026-09-16, and the whole reason this exists:
+ *  the Area Eligibility column states the INSURANCE rule. `TX` means Texas
+ *  through insurance and the entire US out of pocket; `100 miles of Dallas`
+ *  means 100 miles either way.
+ *
+ *  ONE rule generalises it, so a value nobody has written yet still resolves:
+ *  a restriction that exists because of WHO IS PAYING lifts when nobody is
+ *  billing insurance; a restriction that exists because of HOW IT PHYSICALLY
+ *  GETS THERE does not. A state limit is licensure and network. A radius is a
+ *  delivery van.
+ *
+ *  UNKNOWN NEVER LIFTS, and that is the load-bearing line: a value we could not
+ *  read might be a delivery constraint, and lifting it would be the one guess
+ *  that puts an undeliverable order in the system. */
+function oopEligibilityForPayment_(rule, payingOop) {
+  const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
+  if (!payingOop) return r;
+  if (r.kind === 'states') return { kind: 'open', liftedFrom: (r.states || []).slice() };
+  return r;
+}
+
+/** PURE (Node-pinned): does `rule` cover `loc`?
+ *
+ *  `loc` is { state: 'TX', miles: { '<warehouse name>': 87.2, … } }, where a
+ *  missing or null distance means "we could not place that warehouse".
+ *  Returns { verdict: 'yes' | 'no' | 'unknown', why, near }.
+ *
+ *  THE ASYMMETRY IN A RADIUS VERDICT is real and worth stating, because it is
+ *  the opposite of what "straight-line is only an estimate" suggests. A
+ *  straight line is never LONGER than the drive. So a straight-line distance
+ *  over the limit means the drive is over the limit too — a radius NO is
+ *  CERTAIN. A YES is the provisional one, and a YES close to the boundary says
+ *  so rather than implying a precision the measurement does not have.
+ *
+ *  UNKNOWN is never folded into NO. "We cannot tell" and "not eligible" send a
+ *  rep to two different next actions, and the first one is a phone call
+ *  (INV-187 / g114 — a computed answer that could mean more than one thing has
+ *  to say which). */
+function oopEligibilityCheck_(rule, loc) {
+  const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
+  const where = loc || {};
+
+  if (r.kind === 'open') {
+    return { verdict: 'yes', near: false,
+      why: r.liftedFrom && r.liftedFrom.length
+        ? 'Out of pocket there is no state restriction (the sheet limits insurance orders to ' + r.liftedFrom.join(', ') + ').'
+        : 'Available anywhere in the US.' };
+  }
+
+  if (r.kind === 'states') {
+    const st = String(where.state || '').trim().toUpperCase();
+    const list = (r.states || []).join(', ');
+    if (!st) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not determine the state for that address — the sheet limits this to ' + list + '.' };
+    }
+    if ((r.states || []).indexOf(st) >= 0) {
+      return { verdict: 'yes', near: false, why: st + ' is covered (' + list + ').' };
+    }
+    return { verdict: 'no', near: false, why: st + ' is outside ' + list + '.' };
+  }
+
+  if (r.kind === 'radius') {
+    const miles = Number(r.miles) || 0;
+    let best = null, bestName = '';
+    let anyUnplaced = false;
+    (r.warehouses || []).forEach(function (n) {
+      const d = (where.miles || {})[n];
+      if (d == null || !isFinite(d)) { anyUnplaced = true; return; }
+      if (best === null || d < best) { best = d; bestName = n; }
+    });
+    if (best === null) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not measure the distance to ' + (r.warehouses || []).join(' or ') + '.' };
+    }
+    const shown = Math.round(best * 10) / 10;
+    if (best <= miles) {
+      const near = best > miles * OOP_ELIG_NEAR_BAND;
+      return { verdict: 'yes', near: near,
+        why: shown + ' mi from ' + bestName + ' (limit ' + miles + ' mi)' +
+          (near ? ' — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' : '.') +
+          (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+    }
+    // Straight-line already exceeds the limit, so the drive does too.
+    return { verdict: 'no', near: false,
+      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' +
+        (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+  }
+
+  return { verdict: 'unknown', near: false,
+    why: r.raw
+      ? 'The eligibility column says "' + r.raw + '", which this check cannot read — confirm manually.'
+      : 'No area eligibility on file for this item — confirm manually.' };
+}
+
+/** Rep-callable, read-only, no lock. Takes an address or ZIP and (optionally) a
+ *  item search term, and returns each matching item with BOTH verdicts.
+ *
+ *  BOTH, labelled, rather than a payment-method toggle: the question a rep
+ *  actually has mid-call is "can we deliver this, and does paying out of pocket
+ *  change the answer?" A toggle makes them ask it twice.
+ *
+ *  Failure posture matches the rest of the OOP reader: an unreadable store or an
+ *  ungeocodable address is an ERROR, never an empty eligible list. A list of
+ *  zero eligible items and a lookup that did not run look identical on screen,
+ *  and only one of them means "do not sell this here". */
+function checkOopEligibility(address, query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const addr = String(address || '').trim();
+    if (addr.length < 3 || addr.length > KB_MAP_QUERY_MAX) {
+      return { error: 'Enter an address or ZIP code (3–' + KB_MAP_QUERY_MAX + ' characters).' };
+    }
+    const q = String(query || '').trim();
+
+    const loc0 = getLocationAcceptance_();
+    const wh = loc0.warehouses;
+    const whNames = Object.keys(wh);
+
+    // ── The pricing rows ──────────────────────────────────────────────
+    let headers, rows;
+    try {
+      const sh = oopSheet_();
+      const width = sh.getLastColumn();
+      const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+      if (last < 2) return { error: 'The OOP pricing sheet is empty.' };
+      headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+      rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+    } catch (err) {
+      return { error: 'OOP pricing could not be read: ' + err.message };
+    }
+
+    let picked = rows;
+    if (q.length >= 2) {
+      const scored = [];
+      for (let i = 0; i < rows.length; i++) {
+        const sc = insPayorScore_(rows[i][0], q);
+        if (sc > 0) scored.push({ i: i, score: sc });
+      }
+      scored.sort(function (a, b) { return b.score - a.score; });
+      picked = scored.map(function (t) { return rows[t.i]; });
+    }
+    const total = picked.length;
+    picked = picked.slice(0, OOP_ELIG_MAX_ITEMS);
+    if (!total) return { success: true, notFound: true, items: [], total: 0, warehouses: [] };
+
+    // ── The location ──────────────────────────────────────────────────
+    // The customer's address is geocoded, used and returned — deliberately
+    // never cached, the kbMapDistances rule. Only the WAREHOUSES are cached.
+    const qGeo = kbGeocodeOne_(addr);
+    if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+
+    // Warehouses are geocoded only when some picked row actually needs one, so
+    // a state-only catalog never pays for a geocode round trip.
+    const parsed = picked.map(function (row) { return oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames); });
+    const needRadius = parsed.some(function (r) { return r.kind === 'radius'; });
+    const milesByName = {};
+    const whOut = [];
+    if (needRadius && whNames.length) {
+      const geos = kbGeocodeCached_(whNames.map(function (n) { return wh[n]; }));
+      whNames.forEach(function (n, i) {
+        const g = geos[i];
+        const d = g ? Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 : null;
+        if (d != null) milesByName[n] = d;
+        whOut.push({ name: n, miles: d });
+      });
+    }
+    const loc = { state: qGeo.state, miles: milesByName };
+
+    // Listed delivery cities for this address. INFORMATION ONLY — it never
+    // touches a verdict (operator decision, 2026-09-16). A verdict that
+    // depended on two tables agreeing would let a stale row in one of them make
+    // an undeliverable item read as deliverable, with nothing on screen saying
+    // which table decided. The Area Eligibility column stays the single source
+    // of the answer; this is reference material shown where it is useful.
+    const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
+
+    const items = picked.map(function (row, i) {
+      const o = oopRowObj_(headers, row);
+      const rule = parsed[i];
+      return {
+        name: o.name, price: o.price, effective: o.effective, eligibility: o.eligibility,
+        rule: rule.kind,
+        insurance: oopEligibilityCheck_(oopEligibilityForPayment_(rule, false), loc),
+        oop: oopEligibilityCheck_(oopEligibilityForPayment_(rule, true), loc),
+      };
+    });
+
+    return { success: true, formatted: qGeo.formatted, state: qGeo.state, city: qGeo.city,
+      warehouses: whOut, items: items, total: total,
+      deliveryCities: cityHits,
+      // A registry that could not be read is SURFACED rather than silently
+      // producing UNKNOWN radius verdicts that read like caution (g02): the
+      // rep needs to know the difference between "we do not deliver there" and
+      // "nobody has set up the delivery table".
+      locationError: loc0.error || '',
+      cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
+  } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
+}
+
+/** Admin-gated: what the reader actually MATCHED in the operator's sheet.
+ *
+ *  This exists because header discovery is invisible until it goes wrong. The
+ *  operator edits the spreadsheet directly — rename "Price" to "Patient Cost"
+ *  and the lookup keeps working; rename it to something the stem list misses
+ *  and every result silently shows a blank price. Without this they would find
+ *  out from a rep mid-call. It reports the tab it read, every header and the
+ *  role assigned to it, and NAMES the roles it could not find — an absent price
+ *  column is the finding, not an empty column.
+ *
+ *  Read-only, no lock, no row content beyond a couple of sample values. */
+function getOopPricingDiagnostics() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const sh = oopSheet_();
+    const width = sh.getLastColumn();
+    const rows = Math.max(0, sh.getLastRow() - 1);
+    const headers = width ? sh.getRange(1, 1, 1, width).getDisplayValues()[0] : [];
+    const cols = headers.map(function (h, i) {
+      return { header: String(h || ''), role: i === 0 ? 'name (the searched column)' : (oopHeaderRole_(h) || '—') };
+    });
+    const found = {};
+    headers.forEach(function (h, i) { if (i > 0) { const r = oopHeaderRole_(h); if (r) found[r] = true; } });
+    const missing = ['price', 'eligibility', 'effective'].filter(function (r) { return !found[r]; });
+    // ELIG: the eligibility GRAMMAR is invisible until it goes wrong in exactly
+    // the same way the header matching is, and worse — an unrecognised value
+    // renders "check manually", which reads like caution rather than like a
+    // typo. Report the registry the radius form matches against, and how EVERY
+    // eligibility value in the sheet parses, grouped. An operator who added
+    // "100 mi of Houston" sees it sitting under `unknown` here rather than
+    // finding out from a rep.
+    const loc = getLocationAcceptance_();
+    const wh = loc.warehouses;
+    const whNames = Object.keys(wh);
+    const elig = { open: 0, states: 0, radius: 0, unknown: [] };
+    if (rows) {
+      const all = sh.getRange(2, 1, rows, width).getDisplayValues();
+      all.forEach(function (row) {
+        const r = oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames);
+        if (r.kind === 'unknown') {
+          if (elig.unknown.length < 12) elig.unknown.push({ item: String(row[0] || ''), value: r.raw });
+        } else { elig[r.kind]++; }
+      });
+    }
+    return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
+      truncated: rows > OOP_MAX_ROWS,
+      warehouses: whNames.map(function (n) { return { name: n, address: wh[n] }; }),
+      // The delivery-reach tab, reported in the SAME breath as the pricing one:
+      // an operator who added "100 mi of Houston" and an operator who spelled a
+      // warehouse differently in the two tabs both see it here, by name, rather
+      // than finding out from a rep reading "cannot tell".
+      locationTab: LOCATION_ACCEPTANCE_TAB,
+      locationError: loc.error || '',
+      cities: loc.cities.length,
+      locUnreadable: loc.unreadable,
+      locNoAddress: loc.noAddress,
+      eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
+        unknownCount: rows - elig.open - elig.states - elig.radius, unknown: elig.unknown },
+      sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
+  } catch (err) { return { error: String(err.message || err) }; }
+}
+
 /** Rep-callable, read-only, no lock. Returns the top-N payor matches for a
  *  query — never a single confident guess: ties and near-misses ride along so
  *  the REP judges ambiguity. A no-match result carries notFound:true (the
@@ -1926,15 +2607,80 @@ function kbHaversineMiles_(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 /** One geocode through the free built-in service. null on anything but a
- *  clean single-result hit — the caller treats null as "unavailable". */
+ *  clean single-result hit — the caller treats null as "unavailable".
+ *
+ *  ELIG added `state`, and WHERE it comes from is the point: the geocoder's
+ *  own `administrative_area_level_1` short name, never a string-parse of
+ *  `formatted_address`. Reading "TX" out of "123 Main St, Dallas, TX 75201,
+ *  USA" works until an address formats differently — a military address, a
+ *  PO box, a territory — and then it fails SILENTLY, which for an eligibility
+ *  check means a confident wrong answer. Absent components → state '' , which
+ *  every caller must treat as "could not determine", not as "not eligible". */
 function kbGeocodeOne_(addr) {
   try {
     const res = Maps.newGeocoder().setRegion('us').geocode(addr);
     if (!res || res.status !== 'OK' || !res.results || !res.results.length) return null;
     const r = res.results[0];
     if (!r.geometry || !r.geometry.location) return null;
-    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng, formatted: String(r.formatted_address || '') };
+    let state = '', city = '';
+    const comps = r.address_components || [];
+    for (let i = 0; i < comps.length; i++) {
+      const types = comps[i].types || [];
+      if (!state && types.indexOf('administrative_area_level_1') >= 0) {
+        state = String(comps[i].short_name || '').trim().toUpperCase();
+      }
+      // `locality` is the city proper. `postal_town` is its counterpart where
+      // the geocoder does not emit one; a rural address may have neither, and
+      // '' is then the honest answer — the caller must treat it as "could not
+      // determine", never as "no match in the city list".
+      if (!city && (types.indexOf('locality') >= 0 || types.indexOf('postal_town') >= 0)) {
+        city = String(comps[i].long_name || '').trim();
+      }
+    }
+    return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
+      formatted: String(r.formatted_address || ''), state: state, city: city };
   } catch (e) { return null; }
+}
+
+/** Geocode a list of addresses through the permanent hashed-coordinate cache.
+ *
+ *  Extracted from kbMapDistances so ELIG's warehouse lookup shares ONE cache
+ *  rather than opening a second one with its own hygiene rules — two caches of
+ *  the same coordinates is two things to keep bounded, and the second would be
+ *  the one nobody remembered to bound. Entries are keyed by an address HASH and
+ *  hold lat/lng only; the CALLER'S query is never stored (kbMapDistances says
+ *  why, and that stays true here).
+ *
+ *  Returns an array positionally matching `addrs`, with null where a geocode
+ *  was unavailable. */
+function kbGeocodeCached_(addrs) {
+  const props = PropertiesService.getScriptProperties();
+  let cache = {};
+  try { cache = JSON.parse(props.getProperty(KB_MAP_GEOCODE_CACHE_PROP) || '{}') || {}; } catch (e) { cache = {}; }
+  if (typeof cache !== 'object' || Array.isArray(cache)) cache = {};
+  const fresh = {};
+  let dirty = false;
+  const out = addrs.map(function (a) {
+    if (!a) return null;
+    const key = kbMapCacheKey_(a);
+    const hit = cache[key];
+    if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
+    const geo = kbGeocodeOne_(a);
+    if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
+    return geo;
+  });
+  if (dirty) {
+    try {
+      if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
+      // Q1 — and the cache self-resets on BYTES, not only on entry count: 200
+      // entries of {lat,lng} keyed by hash sit on the order of the 9KB cap.
+      // Over the cap it falls back to THIS run's addresses, then to nothing.
+      const freshStr = JSON.stringify(fresh);
+      propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache), { mode: 'degrade',
+        shrink: function (str) { return str !== freshStr && Object.keys(fresh).length ? freshStr : null; } });
+    } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
+  }
+  return out;
 }
 function kbMapCacheKey_(addr) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(addr).toLowerCase()));
@@ -1955,35 +2701,9 @@ function kbMapDistances(query, addresses) {
     if (!Array.isArray(addresses) || !addresses.length) return { error: 'No warehouses to measure.' };
     const addrs = addresses.slice(0, KB_MAP_MAX_WH)
       .map(function (a) { return String(a || '').trim().substring(0, KB_MAP_QUERY_MAX); });
-    // Warehouse geocodes: permanent Script-Property cache. Fresh entries from
-    // this run survive a hygiene reset (the current article's warehouses are
-    // exactly the ones worth keeping warm).
-    const props = PropertiesService.getScriptProperties();
-    let cache = {};
-    try { cache = JSON.parse(props.getProperty(KB_MAP_GEOCODE_CACHE_PROP) || '{}') || {}; } catch (e) { cache = {}; }
-    if (typeof cache !== 'object' || Array.isArray(cache)) cache = {};
-    const fresh = {};
-    let dirty = false;
-    const whGeo = addrs.map(function (a) {
-      if (!a) return null;
-      const key = kbMapCacheKey_(a);
-      const hit = cache[key];
-      if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
-      const geo = kbGeocodeOne_(a);
-      if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
-      return geo;
-    });
-    if (dirty) {
-      try {
-        if (Object.keys(cache).length > KB_MAP_GEOCODE_CACHE_MAX) cache = fresh;
-        // Q1 — and the cache self-resets on BYTES, not only on entry count: 200
-        // entries of {lat,lng} keyed by hash sit on the order of the 9KB cap.
-        // Over the cap it falls back to THIS article's warehouses, then to nothing.
-        const freshStr = JSON.stringify(fresh);
-        propSetBounded_(KB_MAP_GEOCODE_CACHE_PROP, JSON.stringify(cache), { mode: 'degrade',
-          shrink: function (str) { return str !== freshStr && Object.keys(fresh).length ? freshStr : null; } });
-      } catch (e) { /* best-effort — a lost cache write only costs quota later */ }
-    }
+    // Warehouse geocodes: the permanent Script-Property cache, shared with the
+    // ELIG radius check through kbGeocodeCached_.
+    const whGeo = kbGeocodeCached_(addrs);
     // The QUERY geocode: computed, used, returned — deliberately never stored.
     const qGeo = kbGeocodeOne_(query);
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };

@@ -2565,6 +2565,76 @@ test('PTO1/PTO2 DOM: the leave balance renders on the live-status card and the c
     'and the contractor chip carries no balance — the SAME gate as the card, because they share one helper');
 });
 
+// OOP-A (operator 2026-09-16) — the price lookup on BOTH hosts.
+//
+// A quoted price is a COMMITMENT: the rep takes payment on that call. So the
+// assertions that matter are the ones about what the surface REFUSES to imply —
+// a no-match must not offer the nearest item, and a row with no price must not
+// render an empty space where a number belongs. Both would read as an answer.
+test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer a near-miss, and a row with no price says so instead of rendering blank', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  let asked = null;
+  h.run.respond('searchOopPricing', (q) => {
+    asked = q;
+    if (q === 'nothing') return { matches: [], total: 0, notFound: true, cap: 8 };
+    return { cap: 8, total: 2, matches: [
+      { name: 'Widget', price: '$129.00', eligibility: 'AZ NV', effective: '2026-09-01', details: [{ label: 'Manufacturer', value: 'Acme' }] },
+      { name: 'Gadget', price: '', eligibility: '', effective: '', details: [] },
+    ] };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+
+  // BOTH hosts. The landing is asserted from the rendered DOM; the DRAWER host
+  // is asserted from its section builder rather than by opening the drawer —
+  // opening it would test the drawer's plumbing, which is not what this pin is
+  // about, and would pass just as well with the section unmounted.
+  assert.ok(h.$('#kb-oop-input'), 'the Reference landing carries the lookup');
+  // Drive the drawer's HOME RENDERER, not the section builder. The first
+  // version of this assertion called oopLookupSecHtml_('-d') directly — and a
+  // bite-check that DELETED the mount line left it green, because the builder
+  // still built. A pin that cannot see the section being unmounted is not
+  // pinning the thing that would actually break.
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+  assert.ok(kbdBody.querySelector('#kb-oop-input-d'),
+    'the drawer home MOUNTS the lookup — the drawer IS the mid-call surface');
+
+  const inp = h.$('#kb-oop-input');
+  inp.value = 'widget';
+  h.read('oopLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+  assert.strictEqual(asked, 'widget', 'the query reaches the server verbatim');
+
+  const out = h.$('#kb-oop-results').textContent;
+  assert.ok(/\$129\.00/.test(out), 'the price renders as the SHEET displays it');
+  assert.ok(/effective 2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
+  assert.ok(/area: AZ NV/.test(out), 'and the area eligibility');
+  assert.ok(/Manufacturer: Acme/.test(out), 'an unrecognised column rides along verbatim');
+
+  // THE ROW WITH NO PRICE. An empty span here reads as free, or as nothing to
+  // say; both are worse than saying it plainly.
+  assert.ok(/no price on file/.test(out), 'a row with no price SAYS so');
+  assert.ok(h.$('.kb-oop-price.none'), 'and is toned as a warning, not muted away');
+
+  // THE NO-MATCH. It must not fall back to the nearest item.
+  inp.value = 'nothing';
+  h.read('oopLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+  const none = h.$('#kb-oop-results').textContent;
+  assert.ok(/No OOP price on file/.test(none), 'a no-match is stated');
+  assert.ok(/do not quote a similar item/i.test(none),
+    'and says NOT to quote a near-miss — the whole failure mode this guards');
+  assert.ok(!/Widget|\$129/.test(none), 'no prior result bleeds through');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Operator testing notes 2026-09-10 — Batch C (DOM)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2735,4 +2805,284 @@ test('D-N10 DOM: Team Right Now — the chip renders only for activeNotIn === tr
   h.read('PRESENCE').sentAt = Date.now() - h.read('PRESENCE_MIN_GAP_MS') - 1;
   h.document.body.dispatchEvent(new h.window.Event('keydown', { bubbles: true }));
   assert.strictEqual(h.run.pending('recordPresence').length, 2, 'past the gap the next gesture sends again');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('OOP-B — the external composer price picker (operator 2026-09-16)');
+
+// The claim this batch makes is narrow and testable: a price that reaches a
+// customer came from the SERVER, unedited. The server half is pinned in the
+// pure harness; this is the other end of it — that the picker inserts the
+// canonical line, records the quote, ships it for re-verification, and that
+// nothing the rep can click puts a number in the email that the RPC did not
+// return. A structural pin cannot see any of that (g118's lesson, applied to
+// the client): it reads the source, not the wiring.
+function bootExtComposer(matches) {
+  const h = bootLog();
+  h.run.drain();                                   // prewarm / ambient noise
+  h.window.cnOpenExternalEmailModal_(null);
+  h.run.flushSuccess({ forms: [] }, 'getFormCatalog');
+  if (matches) h.run.respond('searchOopPricing', () => ({ matches: matches }));
+  return h;
+}
+const OOP_MATCHES = [
+  { name: 'Widget', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },
+  { name: 'Priceless Thing', price: '', eligibility: '', effective: '', details: [] },
+];
+
+test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and ships it for re-verification — and an item with no price cannot be inserted at all', () => {
+  const h = bootExtComposer(OOP_MATCHES);
+  assert.ok(h.$('#cnX-oop-q'), 'the picker row mounts in the composer');
+
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();                                  // the 260ms debounce
+  const rows = Array.from(h.document.querySelectorAll('.cn-oop-row'));
+  assert.strictEqual(rows.length, 2, 'both matches render');
+
+  // The priceless row is LISTED but not insertable — "in the sheet with no
+  // price" is a different answer from "not in the sheet", and the rep needs to
+  // be able to tell them apart.
+  const insertBtns = Array.from(h.document.querySelectorAll('[data-oop-insert]'));
+  assert.strictEqual(insertBtns.length, 1, 'only the priced row offers Insert');
+  assert.ok(/no price on file/.test(rows[1].textContent), 'and the other says why');
+
+  insertBtns[0].dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  const line = h.read('cnOopQuoteLine_')('Widget', '$129.00', '2026-09-01');
+  const ta = h.$('#cnX-message');
+  assert.strictEqual(ta.value, line, 'the canonical line lands in the message');
+  assert.strictEqual(h.read('CN_STATE').extComposer.message, line, 'and state tracks it (a re-render must not lose it)');
+
+  // The chip is rendered from STATE, so a PDF/Fillable re-render cannot lose it.
+  assert.ok(/Widget/.test(h.$('#cnX-oop-chips').textContent), 'the quote is chipped');
+  h.window.cnRenderExternalEmailModal_();
+  assert.ok(/Widget/.test(h.$('#cnX-oop-chips').textContent), 'and survives a full modal re-render');
+  assert.strictEqual(h.$('#cnX-message').value, line, 'as does the message');
+
+  // Inserting the same item twice would duplicate the line; refused, not ignored.
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();
+  h.document.querySelector('[data-oop-insert]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.strictEqual(h.$('#cnX-message').value, line, 'a second insert of the same item adds nothing');
+  assert.strictEqual(h.read('CN_STATE').extComposer.oopQuotes.length, 1);
+
+  // The send ships the quote as a CLAIM for the server to re-verify.
+  h.setField('cnX-email', 'someone@example.com');
+  h.setField('cnX-subject', 'Your quote');
+  h.window.cnSendExternalEmail_();
+  const sent = h.run.pending('sendExternalEmail');
+  assert.strictEqual(sent.length, 1, 'the send fired');
+  const payload = sent[0].args[0];
+  assert.strictEqual(JSON.stringify(payload.quotedOop),
+    JSON.stringify([{ name: 'Widget', price: '$129.00', effective: '2026-09-01' }]),
+    'the quote rides the payload for server-side re-verification');
+  assert.ok(payload.message.indexOf(line) >= 0, 'and the message still carries the line the server will look for');
+});
+
+test('OOP-B DOM: removing a chip removes the LINE too — a chip without its line, or a line without its chip, each refuses at send time for a reason the rep cannot see', () => {
+  const h = bootExtComposer(OOP_MATCHES);
+  h.setField('cnX-message', 'Hi there');
+  h.setField('cnX-oop-q', 'wid');
+  h.flushTimers();
+  h.document.querySelector('[data-oop-insert]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  const line = h.read('cnOopQuoteLine_')('Widget', '$129.00', '2026-09-01');
+  assert.strictEqual(h.$('#cnX-message').value, 'Hi there\n' + line, 'the line appends below the typed message');
+
+  h.document.querySelector('[data-oop-remove]').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+  assert.strictEqual(h.$('#cnX-message').value, 'Hi there', 'the line goes with the chip');
+  assert.strictEqual(h.read('CN_STATE').extComposer.oopQuotes.length, 0, 'and the state entry with it');
+  assert.strictEqual(h.$('#cnX-oop-chips').textContent, '', 'no chips left');
+});
+
+test('OOP-B DOM: a failed or empty lookup SAYS so — an empty results list would read as "no such item", which is a different answer', () => {
+  const h = bootExtComposer();
+  h.run.respond('searchOopPricing', () => ({ matches: [] }));
+  h.setField('cnX-oop-q', 'zzz');
+  h.flushTimers();
+  const host = h.$('#cnX-oop-results');
+  assert.ok(/No item matched/.test(host.textContent), 'a genuine no-match says so');
+  assert.ok(/Do not quote a similar item/.test(host.textContent),
+    'and tells the rep what NOT to do — the whole failure mode is quoting the near-miss');
+
+  h.run.respond('searchOopPricing', () => ({ error: 'OOP pricing lookup failed: not configured' }));
+  h.setField('cnX-oop-q', 'zzzz');
+  h.flushTimers();
+  assert.ok(/not configured/.test(h.$('#cnX-oop-results').textContent),
+    'and a store-level failure is surfaced verbatim rather than rendered as an empty list (g02)');
+  assert.ok(h.$('#cnX-oop-results .cn-oop-msg.bad'), 'toned as a failure, not as a result');
+
+  // A shortened query voids whatever is in flight (INV-156) rather than letting
+  // a stale answer paint over a cleared box.
+  h.run.clearResponder('searchOopPricing');
+  h.setField('cnX-oop-q', 'abc');
+  h.flushTimers();
+  const inFlight = h.run.pending('searchOopPricing');
+  assert.strictEqual(inFlight.length, 1, 'a search is in flight');
+  h.setField('cnX-oop-q', 'a');
+  h.flushTimers();
+  assert.strictEqual(h.$('#cnX-oop-results').textContent, '', 'the box clears');
+  h.run.flushSuccess({ matches: OOP_MATCHES }, 'searchOopPricing');
+  assert.strictEqual(h.$('#cnX-oop-results').textContent, '', 'and the late answer does not paint over it');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('ELIG — area eligibility, both verdicts (operator 2026-09-16)');
+
+test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundary yes reads differently from a flat yes, and "cannot tell" is never painted as "no"', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  let asked = null;
+  h.run.respond('checkOopEligibility', (addr, item) => {
+    asked = { addr: addr, item: item };
+    if (addr === '00000') return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    return {
+      success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', total: 4,
+      warehouses: [{ name: 'Dallas', miles: 182.4 }, { name: 'San Antonio', miles: 74.1 }, { name: 'Phoenix', miles: null }],
+      city: 'Austin',
+      deliveryCities: [{ name: 'Austin', state: 'TX', accepts: 'POV, scooter', notes: '' }],
+      items: [
+        // Open both ways.
+        { name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+          insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+          oop:       { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } },
+        // The operator's key case: a state limit that LIFTS out of pocket.
+        { name: 'State Item', price: '$20.00', eligibility: 'TX', rule: 'states',
+          insurance: { verdict: 'no', near: false, why: 'CA is outside TX.' },
+          oop:       { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to TX).' } },
+        // A radius that does NOT lift, sitting near the boundary.
+        { name: 'Radius Item', price: '$30.00', eligibility: '100 miles of Dallas or San Antonio', rule: 'radius',
+          insurance: { verdict: 'yes', near: true, why: '74.1 mi from San Antonio (limit 100 mi) — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' },
+          oop:       { verdict: 'yes', near: true, why: '74.1 mi from San Antonio (limit 100 mi) — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' } },
+        // Unreadable — never eligible, and never rendered as "no".
+        { name: 'Mystery Item', price: '', eligibility: 'ask a manager', rule: 'unknown',
+          insurance: { verdict: 'unknown', near: false, why: 'The eligibility column says "ask a manager", which this check cannot read — confirm manually.' },
+          oop:       { verdict: 'unknown', near: false, why: 'The eligibility column says "ask a manager", which this check cannot read — confirm manually.' } },
+      ],
+    };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+
+  assert.ok(h.$('#kb-elig-addr'), 'the Reference landing carries the eligibility check');
+  // The drawer host, driven through its HOME RENDERER — the OOP-A lesson: a
+  // pin that calls the section builder directly cannot see the mount deleted.
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+  assert.ok(kbdBody.querySelector('#kb-elig-addr-d'), 'and the drawer MOUNTS it — the drawer is the mid-call surface');
+
+  // A geocode is a real round trip, so a stem must not fire one.
+  const addr = h.$('#kb-elig-addr');
+  addr.value = 'aus';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick();
+  assert.strictEqual(asked, null, 'three characters does not fire a geocode');
+
+  addr.value = '500 Main St, Austin TX';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  assert.strictEqual(asked.addr, '500 Main St, Austin TX', 'the address reaches the server verbatim');
+  assert.strictEqual(asked.item, '', 'a blank item means "list everything"');
+
+  const host = h.$('#kb-elig-results');
+  const txt = host.textContent;
+
+  // BOTH verdicts, LABELLED. An unlabelled pair is worse than one answer.
+  const rows = Array.from(host.querySelectorAll('.kb-ins-row'));
+  assert.strictEqual(rows.length, 4, 'every item renders');
+  rows.forEach((r) => {
+    const vs = r.querySelectorAll('.kb-elig-v');
+    assert.strictEqual(vs.length, 2, 'two verdicts per item');
+    assert.ok(/Through insurance/.test(vs[0].textContent), 'the first is labelled');
+    assert.ok(/Paying out of pocket/.test(vs[1].textContent), 'and so is the second');
+  });
+
+  // The operator's key case, end to end: no through insurance, yes out of pocket.
+  const state = rows[1].querySelectorAll('.kb-elig-v');
+  assert.ok(state[0].classList.contains('no'), 'the insurance verdict is a NO');
+  assert.ok(state[1].classList.contains('yes'), 'and the out-of-pocket one a YES');
+  assert.ok(/no state restriction/.test(state[1].textContent), 'which explains ITSELF');
+
+  // THREE states, not two: a near-boundary yes must not look like a flat yes.
+  assert.ok(rows[0].querySelector('.kb-elig-v.yes'), 'a flat yes is toned as yes');
+  assert.ok(rows[2].querySelector('.kb-elig-v.maybe'), 'a near-boundary yes is toned apart from it');
+  assert.ok(/Yes — check/.test(rows[2].textContent), 'and worded apart from it too');
+  assert.ok(/drive is longer/.test(rows[2].textContent), 'with the reason on screen, not in a tooltip');
+
+  // UNKNOWN IS NOT NO. The two send a rep to different next actions.
+  assert.ok(rows[3].querySelector('.kb-elig-v.unknown'), 'an unreadable rule is its own state');
+  assert.strictEqual(rows[3].querySelector('.kb-elig-v.no'), null, 'and is NEVER painted as a no');
+  assert.ok(/Cannot tell/.test(rows[3].textContent), 'worded as what it is');
+  assert.ok(/ask a manager/.test(rows[3].textContent), 'showing the cell VERBATIM so the rep can see the typo');
+  assert.ok(/no price on file/.test(rows[3].textContent), 'and a blank price still says so');
+
+  // The warehouse strip, once, with its caveat. Asserted against the STRIP
+  // ELEMENT, not the host: the word "straight-line" also appears inside a
+  // near-boundary verdict's reason, so a host-wide regex stayed green with the
+  // strip's own caveat deleted (found by bite-check).
+  const strips = Array.from(host.querySelectorAll('.kb-ins-more'));
+  const distStrip = strips.filter((d) => /Dallas 182\.4 mi/.test(d.textContent))[0];
+  assert.ok(distStrip, 'the distances render once, above the list');
+  assert.ok(/San Antonio 74\.1 mi/.test(distStrip.textContent), 'every placed warehouse, in one strip');
+  assert.ok(/straight-line/.test(distStrip.textContent), 'with the caveat that makes them honest');
+
+  // An UNPLACEABLE warehouse is surfaced, not silently dropped — a radius
+  // answer measured against some of the warehouses is not a whole answer, and
+  // a strip that just omits one looks complete.
+  const unplacedStrip = strips.filter((d) => /Could not place/.test(d.textContent))[0];
+  assert.ok(unplacedStrip, 'a warehouse that could not be geocoded is NAMED');
+  assert.ok(/Phoenix/.test(unplacedStrip.textContent), 'by name');
+  assert.ok(/incomplete/.test(unplacedStrip.textContent), 'and what it means for the answer is stated');
+  assert.ok(!/Phoenix/.test(distStrip.textContent), 'and it is not quietly listed among the measured ones');
+
+  // LISTED DELIVERY CITIES are INFORMATION, never a verdict (operator decision,
+  // 2026-09-16). The load-bearing assertions are the negative ones: it must sit
+  // OUTSIDE every item's answer, and it must say so, or a rep reads "Austin
+  // delivers POV" next to a No and takes it as the answer.
+  const cityLine = host.querySelector('.kb-elig-city');
+  assert.ok(cityLine, 'a listed delivery city is surfaced');
+  assert.ok(/Austin, TX/.test(cityLine.textContent) && /delivers POV, scooter/.test(cityLine.textContent),
+    'naming the city and what goes there');
+  assert.ok(/Reference only/.test(cityLine.textContent) && /Area Eligibility/.test(cityLine.textContent),
+    'and saying plainly that it is NOT the answer');
+  assert.strictEqual(cityLine.closest('.kb-ins-row'), null,
+    'it sits outside every item row — inside one it would read as that item\u2019s verdict');
+  assert.strictEqual(cityLine.querySelector('.kb-elig-v'), null, 'and carries no verdict of its own');
+  // The verdicts are UNCHANGED by it: the TX item still reads No on insurance.
+  assert.ok(rows[1].querySelectorAll('.kb-elig-v')[0].classList.contains('no'),
+    'a listed delivery city does NOT flip a verdict');
+
+  // A DELIVERY TABLE that could not be read is surfaced. Without this every
+  // radius rule quietly reads "cannot tell", which looks like caution rather
+  // than like a tab nobody has created yet (g02) — and the items still render,
+  // so there is nothing else on screen to notice.
+  h.run.respond('checkOopEligibility', (a) => a === '00000' ? { error: 'Could not find that location \u2014 try a 5-digit ZIP code.' } : ({
+    success: true, formatted: 'Austin, TX', state: 'TX', total: 1, warehouses: [],
+    locationError: 'Delivery reach is not set up yet — create a tab named "LocationAcceptance".',
+    items: [{ name: 'Radius Item', price: '$30.00', eligibility: '100 miles of Dallas', rule: 'unknown',
+      insurance: { verdict: 'unknown', near: false, why: 'cannot read' },
+      oop:       { verdict: 'unknown', near: false, why: 'cannot read' } }],
+  }));
+  addr.value = '500 Main St, Austin TX';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const missing = h.$('#kb-elig-results').textContent;
+  assert.ok(/LocationAcceptance/.test(missing),
+    'an unreadable delivery table NAMES the tab to create, rather than leaving every radius rule reading "cannot tell"');
+  assert.ok(/Radius Item/.test(missing), 'and the items still render around it');
+
+  // A failed geocode is an ERROR, never an empty eligible list — the two look
+  // identical on screen and only one means "do not sell this here".
+  addr.value = '00000';
+  h.read('eligInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const err = h.$('#kb-elig-results').textContent;
+  assert.ok(/Could not find that location/.test(err), 'the failure is surfaced');
+  assert.ok(!/Open Item|State Item/.test(err), 'and no prior result bleeds through it');
 });
