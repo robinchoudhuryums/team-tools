@@ -1966,6 +1966,34 @@ function spanishTruncNote_(d) {
   return ' · <span style="color:var(--warning-deep)">scan capped at 200 threads — figures may be incomplete; narrow the window</span>';
 }
 
+/** SP4 (operator 2026-09-16) — what the voicemail duration gate HID, on the
+ *  Pending header beside the truncation note.
+ *
+ *  THIS IS THE WHOLE POINT OF THE FEATURE BEING SAFE. A suppressed card is
+ *  invisible by definition: without a count, the gate silently eating every
+ *  voicemail (8x8 restyles the body, the parser stops matching, everything
+ *  reads as 0 seconds) looks exactly like a quiet day. The two numbers are
+ *  reported SEPARATELY for the same reason — "3 hang-ups hidden" and "3 could
+ *  not be measured" are different facts, and only the second one means
+ *  something is broken. The unparsed note is WARNING-toned; the hidden count
+ *  is neutral, because hiding hang-ups is the feature working. */
+function spanishVmNote_(d) {
+  if (!d) return '';
+  var out = '';
+  var n = Number(d.vmSuppressed) || 0;
+  var u = Number(d.vmUnparsed) || 0;
+  if (n) {
+    out += ' · <span title="8x8 voicemails shorter than the threshold are treated as hang-ups and never become tasks. Set Script Property SPANISH_VM_MIN_SECONDS to 0 to show them all.">' +
+      esc(String(n)) + ' short voicemail' + (n === 1 ? '' : 's') + ' hidden (under ' +
+      esc(String(Number(d.vmMinSeconds) || 0)) + 's)</span>';
+  }
+  if (u) {
+    out += ' · <span style="color:var(--warning-deep)" title="The notification body carried no readable Duration, so these were SHOWN rather than hidden. If this number keeps climbing, 8x8 has changed the email format and the duration filter has stopped working.">' +
+      esc(String(u)) + ' voicemail' + (u === 1 ? '' : 's') + ' with no readable duration — shown</span>';
+  }
+  return out;
+}
+
 /** The stats note + telemetry strip + filter tabs — extracted so a background
  *  SWR stats refresh can swap the head alone (#spanish-head) without touching
  *  the list below it. */
@@ -2312,10 +2340,13 @@ function spanishRenderList_() {
       if (!pending.length) {
         html += '<div class="day-section-label" style="margin:6px 0 8px">Pending</div>' +
           '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">' + icon('checkCircle', 14) +
-          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + '</div>';
+          // "All caught up" with three voicemails suppressed is EXACTLY the
+          // state the count exists for — an empty list is the most misleading
+          // place to omit it.
+          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>';
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
-          spanishTruncNote_(pd) + '</div>' +
+          spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>' +
           spCappedTasksHtml_(pending.map(spanishTaskCard_), (SPANISH_STATE.shown || {}).pending,
             "spanishShowMore_('pending')", 'margin-bottom:16px');
       }

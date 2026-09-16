@@ -125,6 +125,22 @@
     "creditMonthlyPtoAccruals"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "SP4/SP5: the voicemail duration gate (spanishVmDurationSec_, spanishVmTooShort_, getSpanishVmMinSeconds_) and the transcript snippet (spanishVmTranscript_)",
+   "added": [
+    "getSpanishVmMinSeconds_",
+    "spanishVmDurationSec_",
+    "spanishVmTooShort_",
+    "spanishVmTranscript_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getSpanishInboxPending"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -512,7 +528,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0ad0d28959103e0d"
+   "sha": "715207876246a4c8"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -3922,7 +3938,7 @@
   "getSpanishInboxPending": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "abce310393910b28"
+   "sha": "a04a54775c2e9dd4"
   },
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
@@ -3943,6 +3959,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "fbed8f014c3d49d1"
+  },
+  "getSpanishVmMinSeconds_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f2e806c21a78523e"
   },
   "getSpanishVmSender_": {
    "file": "51_spanish.js",
@@ -5949,6 +5970,11 @@
    "kind": "function",
    "sha": "d37a00676d33a869"
   },
+  "spanishVmDurationSec_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "07575f230f04ff40"
+  },
   "spanishVmMatch_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -5958,6 +5984,16 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "6ab826efc77ef200"
+  },
+  "spanishVmTooShort_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "c91a6e04bea07eb3"
+  },
+  "spanishVmTranscript_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5de83c5b4a6b5abe"
   },
   "splitDayRepairPlan_": {
    "file": "20_timeclock.js",

@@ -90,6 +90,46 @@ non-empty in both states and that `aria-expanded` tracks.
 
 ---
 
+## Batch SP2 — voicemail duration gate + transcript snippet (SP4 · SP5) — S (~2 h)
+
+Added 2026-09-16 after the operator supplied two real 8x8 notification bodies.
+
+### SP4 — suppress voicemail cards under `SPANISH_VM_MIN_SECONDS`
+An 8x8 A_Q_Spanish voicemail notification carries `Duration: MM:SS` in its body.
+A 1-second voicemail is a hang-up and should never become a task.
+
+**It costs no new Gmail read.** `getSpanishInboxPending` already calls
+`getPlainBody()` for every voicemail thread to build the snippet
+(`51_spanish.js:302-303`, twice — the non-VM loop at `:256` correctly hoists it
+once). The gate reads a string already in hand.
+
+**Parse RIGHT-TO-LEFT.** Both samples are under a minute (`00:01`, `00:18`), so
+they do not reveal whether 8x8 renders 90s as `01:30` or `00:01:30`. Reading the
+LAST group as seconds, the second-to-last as minutes and a third as hours is
+correct under either, and needs no sample to settle. (Fail-open covers the rest:
+every plausible misparse of a long duration still lands far above the threshold.)
+
+**Fail direction, chosen:** an unparseable duration SHOWS the card. The source is
+a VENDOR body — 8x8 can change it in a release note nobody here reads — so the
+failure has to be "hang-ups reappear" (annoying), never "voicemails stop
+appearing" (a Spanish-speaking patient dropped from the queue). g41, pointed at a
+source the operator does not even own.
+
+**TWO counts, not one.** A suppressed card is invisible by definition, so the
+list reports `vmSuppressed` (parsed, genuinely short) and `vmUnparsed` (no
+Duration found) SEPARATELY, with the threshold named. One count could not tell
+"three hang-ups today" from "8x8 changed the format and the parser is dead" —
+and the second reads as a quiet day. The g02 class aimed at a filter.
+
+### SP5 — the transcript is the snippet
+The 240-char snippet for a voicemail is almost entirely 8x8 boilerplate: the
+heading, "Your extension 138 just received…", "Received on: …", "Duration: …"
+consume roughly 220 of it, so the rep sees a few words of the transcript at most
+— the one part that says what the call is about. Since SP4 already parses the
+body, extracting the transcript and using THAT as the snippet is the same line.
+Falls back to the existing whole-body snippet when no transcript section exists
+(not every voicemail is transcribed), so the change can only add information.
+
 ## Batch PTO — manager-visible leave balances (PTO1 · PTO2) — S (~2 h)
 
 The operator's read is correct, and it is a projection gap rather than a missing

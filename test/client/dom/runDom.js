@@ -2423,6 +2423,67 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   assert.strictEqual(cards().length, 1, 'a re-render does not bring it back');
 });
 
+// SP4 (operator 2026-09-16) — a suppressed voicemail card is invisible BY
+// DEFINITION, so the count is the only thing standing between "3 hang-ups
+// hidden" and "8x8 changed the body format and the gate is eating every
+// voicemail". Both states render an identical list; only the note tells them
+// apart. The empty-list case is pinned too — "all caught up" with three
+// suppressed voicemails is the most misleading place to omit the count.
+test('SP4 DOM: the Pending header reports what the voicemail gate hid and what it could not measure, separately — on a full list AND on an empty one', () => {
+  const stats = () => ({ address: 'spanishcalls@x.com', days: 30, pending: 1, resolved: 0,
+    avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 4, truncated: false });
+  const mk = (pending, extra) => () => Object.assign({
+    pending: pending, members: ['sam@x.com'], self: 'me@x.com', truncated: false,
+    vmSuppressed: 0, vmUnparsed: 0, vmMinSeconds: 5 }, extra || {});
+  const one = [{ threadId: 'v1', kind: 'voicemail', requester: 'Jake', ageHours: 2,
+    subject: 'New voicemail from Jake via A_Q_Spanish', snippet: 'Hi, we have this patient calling', permalink: 'https://mail.google.com/v1', claim: null }];
+
+  const boot1 = (pendingFn) => {
+    const h = boot();
+    h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+    h.bootShell({ isManager: true, canSeeSpanish: true });
+    h.run.respond('getSpanishInboxStats', stats);
+    h.run.respond('getSpanishInboxPending', pendingFn);
+    h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
+    h.window.enterTool('metrics', 'metricsSpanish');
+    h.flushTimers();
+    return h;
+  };
+  const labels = (h) => h.$$('.day-section-label').map((d) => d.textContent).join(' | ');
+
+  // Nothing suppressed → no note at all. A gate that always announces itself
+  // is noise, and noise is how a real signal stops being read (INV-186).
+  assert.ok(!/hidden/.test(labels(boot1(mk(one)))), 'a clean run says nothing about the gate');
+
+  // Hidden hang-ups: counted, NEUTRAL-toned (the feature working), and the
+  // threshold NAMED so the reader knows what "short" meant.
+  const hSup = boot1(mk(one, { vmSuppressed: 3 }));
+  assert.ok(/3 short voicemails hidden \(under 5s\)/.test(labels(hSup)), 'the count and the threshold both render');
+  assert.ok(!/warning-deep/.test(hSup.$$('.day-section-label').map((d) => d.innerHTML).join('')),
+    'and it is NOT warning-toned — hiding hang-ups is the feature working, not a problem');
+
+  // Unmeasurable ones: a DIFFERENT number, warning-toned, and it says they were
+  // SHOWN. This is the one that means 8x8 moved the goalposts.
+  const hUnp = boot1(mk(one, { vmUnparsed: 2 }));
+  assert.ok(/2 voicemails with no readable duration — shown/.test(labels(hUnp)), 'unparsed is reported separately');
+  assert.ok(/warning-deep/.test(hUnp.$$('.day-section-label').map((d) => d.innerHTML).join('')),
+    'and IS warning-toned — this one means the parser may be dead');
+
+  // Singular/plural, because "1 short voicemails" is how a reader learns the
+  // number is generated rather than checked.
+  assert.ok(/1 short voicemail hidden/.test(labels(boot1(mk(one, { vmSuppressed: 1 })))), 'singular reads correctly');
+
+  // THE CASE THE COUNT EXISTS FOR: an EMPTY pending list with suppressions.
+  // Without the note this renders as "all caught up" while three Spanish
+  // voicemails sit unhandled — indistinguishable from a quiet day.
+  const hEmpty = boot1(mk([], { vmSuppressed: 3 }));
+  const emptyText = hEmpty.$('#spanish-list').textContent;
+  assert.ok(/Nothing pending/.test(emptyText), 'the empty state still renders');
+  assert.ok(/3 short voicemails hidden \(under 5s\)/.test(emptyText),
+    'and it STILL reports the suppressions — an empty list is the worst place to hide them');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Operator testing notes 2026-09-10 — Batch C (DOM)
 // ═════════════════════════════════════════════════════════════════════════════
