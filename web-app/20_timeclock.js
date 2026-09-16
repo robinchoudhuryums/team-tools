@@ -1617,6 +1617,9 @@ function getManagerDashboard() {
     });
 
     // Live status with manager-tz conversion
+    // PTO1 (operator 2026-09-16) — read the feature flag ONCE. The map below
+    // runs per rep, and the balance line needs the flag on every pass.
+    const ptoTracking = getFlag_('enablePtoTracking');
     const liveStatus = employees.map(e => {
       const punches = todayPunchesByEmp[e.id] || [];
       const last = punches.length ? punches[punches.length - 1] : null;
@@ -1642,6 +1645,24 @@ function getManagerDashboard() {
         // reps' in-progress local day every CT afternoon). Manager-only
         // surface, so no INV-24 low-privilege leak concern.
         timezone: e.timezone,
+        // PTO1 (operator 2026-09-16) — the leave balance, which a manager
+        // previously could only see on a rep who happened to have a PENDING
+        // request (the `12 → 11 d` chip). The numbers were already built on
+        // `employees` above; this projection simply did not carry them.
+        //
+        // `ptoEnabled` is the CONJUNCTION (the flag AND the per-row column),
+        // the same one the pending-card projection makes below. A contractor
+        // must render NO balance line rather than a zero — `adjustLeaveBalance_`
+        // no-ops for them, so a 0 would read as "used it all" when the truth is
+        // "this does not apply" (INV-187 / g114). The client asserts the
+        // ABSENCE, not a value.
+        //
+        // This rides the MANAGER dashboard only. It must never reach
+        // `getTeammateStatus`, which is the low-privilege peer view (g33) —
+        // the same boundary the `timezone` note above records.
+        ptoEnabled: !!(ptoTracking && e.ptoEnabled),
+        annualLeave: e.annualLeave,
+        sickLeave: e.sickLeave,
       };
     });
     const statusRank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
@@ -2071,7 +2092,11 @@ function getTeamCalendar(monthIso) {
       const st = String(toRows[i][TO.STATUS] || '').trim().toLowerCase();
       if (st !== 'approved' && st !== 'pending') continue;
       if (!days[dateIso]) days[dateIso] = { reps: [], off: [] };
-      days[dateIso].off.push({ name: reps[id].name,
+      // PTO2 (operator 2026-09-16): `empId` so the client can join this chip to
+      // the balance on `liveStatus` BY ID. The table above already merges
+      // absent reps by NAME, which works until two people share one — an id is
+      // here because it costs nothing and does not inherit that fragility.
+      days[dateIso].off.push({ empId: id, name: reps[id].name,
         type: String(toRows[i][TO.TYPE] || '').trim(), status: st });
     }
     Object.keys(days).forEach(d => days[d].off.sort((a, b) => a.name.localeCompare(b.name)));

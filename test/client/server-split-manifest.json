@@ -141,6 +141,17 @@
     "getSpanishInboxPending"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "PTO1/PTO2: getManagerDashboard carries the leave balance on liveStatus (hoisted flag read); getTeamCalendar carries empId on the off entries",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "getTeamCalendar"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3573,7 +3584,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ba737ab3314445d3"
+   "sha": "4db1dafcbc2c018e"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -3983,7 +3994,7 @@
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3a349d6a2816cc52"
+   "sha": "4d30414f88d9855e"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",

@@ -2484,6 +2484,87 @@ test('SP4 DOM: the Pending header reports what the voicemail gate hid and what i
     'and it STILL reports the suppressions — an empty list is the worst place to hide them');
 });
 
+// PTO1/PTO2 (operator 2026-09-16) — a manager could only ever see a leave
+// balance on a rep who happened to have a PENDING request. The numbers were
+// already built per rep in getManagerDashboard; liveStatus simply did not carry
+// them.
+//
+// THE ASSERTION THAT MATTERS IS AN ABSENCE. A pto-disabled rep must render NO
+// balance line — not a zero. adjustLeaveBalance_ no-ops for them, so a 0 reads
+// as "used it all" when the truth is "this does not apply" (INV-187 / g114),
+// and the cycle-8 bug was exactly that: a contractor's pending card showed a
+// `12 → 11 d` projection for a deduction that never happened. Asserting a
+// rendered VALUE for the enabled rep would pass just as well with the gate
+// deleted; only the absent case can fail.
+test('PTO1/PTO2 DOM: the leave balance renders on the live-status card and the calendar off-chip — and is ABSENT, never zero, for a rep it does not apply to', () => {
+  const live = [
+    { id: 'E1', name: 'Ana Reyes', status: 'clocked_in', lastPunchType: 'ClockIn', lastPunchTime: '09:00:00',
+      lastPunchTimeMgr: '09:00:00', empTzAbbr: 'CST', mgrTzAbbr: 'CST', timezone: 'America/Chicago',
+      ptoEnabled: true, annualLeave: 12.5, sickLeave: 3 },
+    // A contractor: the server folded the flag AND the per-row column into
+    // ptoEnabled:false, and HAS a balance figure. The card must ignore it.
+    { id: 'E2', name: 'Bo Contractor', status: 'not_in', lastPunchType: null, lastPunchTime: null,
+      lastPunchTimeMgr: null, empTzAbbr: 'CST', mgrTzAbbr: 'CST', timezone: 'America/Chicago',
+      ptoEnabled: false, annualLeave: 0, sickLeave: 0 },
+    // An older server, or a rep whose balance could not be read: null is not 0.
+    { id: 'E3', name: 'Cy Unknown', status: 'not_in', lastPunchType: null, lastPunchTime: null,
+      lastPunchTimeMgr: null, empTzAbbr: 'CST', mgrTzAbbr: 'CST', timezone: 'America/Chicago',
+      ptoEnabled: true, annualLeave: null, sickLeave: null },
+  ];
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getManagerDashboard', () => ({
+    liveStatus: live, pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30,
+  }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+
+  // NOT '.emp-card' alone: the pre-load SKELETON uses the same class, and the
+  // first version of this pin asserted against three skeletons because
+  // enterTool('timeClock','manager') left currentView='clock' and
+  // loadManagerDashboard's own guard skipped the render. Requiring a real
+  // name element is what makes the count mean what it says.
+  const cards = h.$$('.emp-card').filter((c) => !!c.querySelector('.emp-name'));
+  assert.strictEqual(cards.length, 3, 'three REAL cards render (not skeletons)');
+  const cardFor = (name) => cards.filter((c) => (c.querySelector('.emp-name') || {}).textContent === name)[0];
+
+  const ana = cardFor('Ana Reyes');
+  assert.ok(ana && ana.querySelector('.emp-pto'), 'the enabled rep gets a balance line');
+  assert.ok(/12\.5 d/.test(ana.querySelector('.emp-pto').textContent), 'showing the days remaining');
+
+  // The two that must render NOTHING.
+  const bo = cardFor('Bo Contractor');
+  assert.strictEqual(bo.querySelector('.emp-pto'), null,
+    'a pto-DISABLED rep gets no balance line at all — a rendered 0 would read as "used it all"');
+  assert.ok(!/\b0 d\b/.test(bo.textContent), 'and no stray zero anywhere on the card');
+  const cy = cardFor('Cy Unknown');
+  assert.strictEqual(cy.querySelector('.emp-pto'), null,
+    'a NULL balance is absence, not zero (INV-187) — it renders nothing rather than guessing');
+
+  // PTO2 — the calendar off-chip, joined BY ID.
+  h.run.respond('getTeamCalendar', () => ({
+    month: '2026-09', rosterCount: 3, adjustWindowDays: 30, holidays: {},
+    days: { '2026-09-16': { reps: [], off: [
+      { empId: 'E1', name: 'Ana Reyes', type: 'PTO', status: 'pending' },
+      { empId: 'E2', name: 'Bo Contractor', type: 'PTO', status: 'approved' },
+    ] } },
+  }));
+  h.read('TEAMCAL').month = '2026-09';
+  h.read('TEAMCAL').selDate = '2026-09-16';
+  h.read('tcalFetch_')('2026-09');
+  h.flushTimers();
+
+  const chips = h.$$('.tcal-off-chip');
+  assert.strictEqual(chips.length, 2, 'both off chips render');
+  const chipFor = (name) => chips.filter((c) => c.textContent.indexOf(name) >= 0)[0];
+  assert.ok(/12\.5 d/.test(chipFor('Ana Reyes').textContent),
+    'the balance rides the chip where the approve decision is actually made');
+  assert.strictEqual(chipFor('Bo Contractor').querySelector('.tcal-off-bal'), null,
+    'and the contractor chip carries no balance — the SAME gate as the card, because they share one helper');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Operator testing notes 2026-09-10 — Batch C (DOM)
 // ═════════════════════════════════════════════════════════════════════════════
