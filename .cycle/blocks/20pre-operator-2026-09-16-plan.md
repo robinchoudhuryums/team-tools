@@ -7,6 +7,19 @@ which OOP-B and ELIG both need before they can exist.
 
 Every finding appears exactly once. Nothing is Deferred.
 
+## Operator decisions, 2026-09-16
+
+1. **A quoted OOP price is a COMMITMENT.** The sheet exists so the agent can
+   reference it while processing payment on the call.
+2. **The OOP sheet is a SEPARATE spreadsheet**, in the same Workspace as the other
+   eight stores.
+
+**These interact, and (1) changed the architecture of (2).** The original OOP1
+reused the payor sheet's CSV-upload pattern; a price that is collected on cannot
+be served from a copy that lags its source, so OOP1 is now a ninth store read
+LIVE. The estimate below is unchanged — the store pattern is well-trodden here and
+replaces work the upload path would have needed.
+
 **Estimates are recorded here BEFORE the first edit** (Batch P's rule), so
 `/reflect` has a measurement rather than a memory:
 SP — S (~2 h) · PTO — S (~2 h) · OOP-A — M (~5 h) · OOP-B — S–M (~3 h) ·
@@ -114,24 +127,48 @@ leave field, which is the g33 tripwire.
 
 ## Batch OOP-A — the pricing table and its lookup (OOP1 · OOP2) — M (~5 h)
 
-### OOP1 — register the OOP price table
-`KB_DATA_TABLES` (`web-app/00_config.js:1648`) is the allowlist-gated
-CSV → named KB tab pattern, built for the insurance payor sheet. Its own comment
-says the allowlist IS the security boundary and that adding an entry is "a
-deliberate code change beside the reader that consumes it" — so this is the
-intended second entry, not a workaround.
+### OOP1 — a NINTH store, read LIVE (revised 2026-09-16 by the operator's answers)
 
-Add an `OopPricing` spec: `tab`, `label`, `describe`, a `nameHeader` regex for the
-searched first column (item/product/description), `minCols`. `kbImportDataTable`
-(`70_kb.js:765`) then gives us admin gating, a DRY RUN BY DEFAULT, the row/column
-caps and the plain-text format set BEFORE the write — which matters here more than
-it did for payors: a price like `1/2` or an item code would otherwise be coerced
-to a date and handed to a rep reformatted (INV-64).
+**The original plan had this as a `KB_DATA_TABLES` entry — a CSV the operator
+uploads into a tab on the KB spreadsheet. The commitment answer kills that
+design, and it is worth being explicit about why, because the two operator
+answers interact.**
 
-Extend `kbDataTableSummary_` (`:726`) with the price-column check: warn when the
-price column does not parse as currency in most rows. **Warn, do not block** — the
-operator owns the file (the `nameHeader` precedent, and INV-186: a check that
-false-alarms stops being read).
+The payor sheet is ADVISORY: an unlisted plan falls through to the TRY rules, and
+a copy that lags the source costs a re-check. A price the rep **takes payment on
+during the call** is not advisory. Under an upload model the app's copy can lag
+the operator's spreadsheet by however long it has been since the last upload, and
+the failure mode is a rep quoting — and collecting — a superseded price. Nobody
+finds out from the app; they find out from the customer.
+
+So: **read the operator's spreadsheet live.** It already lives in the same
+Workspace as the other eight stores, so this is the standard store pattern, not a
+new integration.
+
+- Script Property **`OOP_SS_ID`**, **no fallback** — the `getHrDocsSS_` / `getQaSS_`
+  posture. An unset property is a friendly not-configured error, never a silent
+  read of the wrong sheet. A price lookup that quietly resolves somewhere else is
+  the one outcome worse than not working.
+- Resolver `getOopSS_`, plus a `_TEST_OVERRIDE_OOP_SS_ID` **that a `_withTestOop_`
+  fixture actually assigns** — g119 was written this week about exactly the branch
+  that gets declared and never wired, and the new `fixtures:` pin will fail the
+  build if this one is added read-only.
+- A row in the storage map, a Storage Health entry, and the tz-equals-
+  `CONFIG.TIMEZONE` requirement every other store carries. PHI-free by policy,
+  same class as KB; retention: kept.
+- The sheet should carry an **`EffectiveDate`** column. With a live read the "as
+  of" is implicit, but a dispute is reconstructed from what was effective *then*,
+  not from what the sheet says today.
+
+Cost of the change: one cross-spreadsheet `openById` per lookup, which is what
+every other resolver already does. Cache it the way the payor read is cached, but
+**cache SHORT** — a long TTL re-introduces exactly the staleness this design
+exists to remove.
+
+**The shape check still applies**, it just moves: the column-semantics-by-header
+discovery and the price-parse warning come out of `kbDataTableSummary_` and into
+the reader, reported on the lookup rather than at upload time. `KB_DATA_TABLES`
+stays untouched — this batch adds no entry to it.
 
 ### OOP2 — the deterministic lookup, on BOTH surfaces
 Mirror `searchInsurancePayors` (`70_kb.js:658`): bounded scan of the name column,
@@ -169,14 +206,19 @@ considered; **this batch builds (b)**:
   outlives the catalog, and a token that no longer resolves — in an email already
   sent to a customer — is the worst of the three failure modes.
 
-**Two decisions the operator owns before this ships:**
-1. **Is a quoted price a commitment?** If yes it needs an effective-date in the
-   inserted line and an audit row naming the item and the version quoted. If no,
-   the inserted line needs explicit "estimate, subject to change" wording. The
-   engineering differs; the answer does not come from the code.
-2. **The KB store is PHI-free BY POLICY.** Prices are fine there. A quote tied to a
-   patient is not — so the picker inserts into the email body and writes nothing
-   patient-linked back to the KB store.
+**Both decisions are now ANSWERED (operator, 2026-09-16) and they raise the bar
+on this batch:**
+
+1. **A quoted price IS a commitment** — the tool exists so the agent can process
+   payment on that call. So the inserted line carries the **effective date**, and
+   the send writes an **audit row naming the item and the exact price quoted**.
+   That row is not bookkeeping: it is the only way to reconstruct what a customer
+   was told when they dispute a charge, and the sheet will have moved on by then.
+   Follow the `ExternalEmailSent` posture (**g36**) — log the item and price, and
+   the recipient DOMAIN only, never the customer's address.
+2. **The OOP sheet is its own spreadsheet in the same Workspace** (see OOP1), so
+   the picker reads through `getOopSS_` and writes nothing back. It inserts into
+   the email body; nothing patient-linked goes near the pricing store.
 
 **Verify:** the inserted line is `esc_`-escaped like every other composer field
 (**g44** family), and a pin that the picker cannot insert a price the server did
@@ -220,9 +262,12 @@ cross-store text dependency with no integrity check. State codes cover the commo
 case, need no geocode call at all, and prove the shape first. Add the radius in v2,
 against a named article, once the state path is in use.
 
-The validator runs at DRY-RUN time in `kbDataTableSummary_`, so the operator sees —
-before the write — how many rows parsed, how many are UNKNOWN, and a sample of the
-values that did not parse.
+**Where the validator runs, now that OOP1 reads live.** There is no upload step to
+validate at, so the parse report moves to a lookup-time summary the operator can
+see on demand: how many rows parsed, how many are UNKNOWN, and a sample of the
+values that did not parse. Surface it in the Admin tab beside Storage Health —
+the operator edits the sheet directly, so they need a way to ask "did my edit
+parse?" that does not involve running a patient lookup and eyeballing the result.
 
 ### EL2 — the address → eligible-items lookup
 Input an address or ZIP; return the items whose eligibility covers it, plus the

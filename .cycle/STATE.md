@@ -282,7 +282,17 @@ established by reading the code this session, so the next session need not re-de
   carry the balance, so PTO1 adds `annualLeave`/`sickLeave`/`ptoEnabled` to it.
   TWO CONSTRAINTS: gate the display on `EMP.PTO_ENABLED` (the cycle-8 bug showed a
   contractor a projection), and never add it to `getTeammateStatus` (g33 — low-privilege).
-- **OOP1–OOP3 — the OOP pricing sheet has a ready-made home.** `KB_DATA_TABLES`
+- **OOP1–OOP3 — REVISED 2026-09-16: a NINTH store, read LIVE.** The operator
+  confirmed a quoted price is a COMMITMENT (payment is processed on the call) and
+  that the sheet is its own spreadsheet in the same Workspace. Those two answers
+  rule out the CSV-upload pattern below: a price that is collected on cannot be
+  served from a copy that lags its source. So OOP1 is `OOP_SS_ID` + `getOopSS_`
+  with NO fallback (the `getQaSS_` posture), a `_withTestOop_` fixture that
+  actually assigns its override (g119 — the new `fixtures:` pin will catch a
+  read-only branch), a storage-map row, and a SHORT cache. The send writes an
+  audit row naming the item and exact price quoted, recipient DOMAIN only (g36).
+  Kept for reference, because the reader and its failure posture still apply:
+  `KB_DATA_TABLES`
   (`web-app/00_config.js:1648`) is the allowlist-gated CSV → named KB tab pattern built
   for the insurance lookup; its own comment says adding an entry is "a deliberate code
   change beside the reader that consumes it". `kbImportDataTable` (`70_kb.js:765`) is
