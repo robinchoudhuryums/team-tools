@@ -120,6 +120,7 @@ D (note 10 — a new presence signal on the Team-right-now card).
   next concrete step after that is `/reflect`.
 
 ## Completed this cycle
+- STORE MOVE | web-app/{00_config,10_core,70_kb,Tests}.js, web-app/kb/script_kb.html, web-app/cn/script_callnotes.html, test/client/{run.js,dom/runDom.js,server-split-manifest.json}, CLAUDE.md, docs/operator-state.md, .cycle/config.md | `OopPricing` + `LocationAcceptance` are NAMED TABS in the KB store beside `InsurancePayors`, not a spreadsheet of their own. NOT the Intake store the operator asked about (PHI, and the app writes to it). `LocationAcceptance` replaced the `OOP_WAREHOUSES` property with NO seed and NO fallback — the seed's bare city names geocoded to city CENTRES, which is g114 inside the one verdict built to avoid it. City rows (POV/scooter delivery) are information only and never move a verdict. `oopSheet_` no longer takes `getSheets()[0]`, which in a shared spreadsheet would have read sheet 0 and rendered every row blank rather than throwing. Nine stores → eight. 848 pure / 121 DOM / 329 registrations; 12 mutations / 12 bites, after four pins were repaired for not biting.
 - OOP-A/OOP-B/ELIG | web-app/{00_config,10_core,30_callnotes,70_kb,Tests}.js, web-app/cn/script_callnotes.html, web-app/kb/script_kb.html, test/client/{run.js,dom/runDom.js,server-split-manifest.json}, .cycle/config.md, CLAUDE.md | The OOP pricing feature, end to end. A NINTH store read LIVE (a cache is the staleness this design exists to remove — a rep collects on these numbers); the dual-surface lookup on the Reference landing AND the drawer; the composer price picker whose number is re-derived from the live sheet at SEND time and refused if the message no longer carries it; and area eligibility with TWO verdicts per item, because the sheet's column states the INSURANCE rule and paying out of pocket lifts a state limit but not a delivery radius. `kbGeocodeCached_` extracted from `kbMapDistances` so the radius check shares ONE coordinate cache; the privacy contract's pin now spans three functions and anchors on "ONE writer, only operator-owned addresses in" rather than one function's statement order. INV-208 + INV-209 written; S110 written (the feature had NO manual scenario). Harnesses 832→844 pure, 117→121 DOM, 323→327 editor registrations. 20 mutations / 20 bites. Block: `.cycle/blocks/20pre-OOP-broad-implement.md`.
 - DEPLOY | web-app/* (Apps Script) | PR #245 pushed and VALIDATED on the real runtime — PartA 209/209 + PartB 107/107 = 316, 0 failed; S1/S2 passed on the fourteen-file server; the F2 gate is closed
 - F2 + F1 follow-ons | web-app/*.js (Code.js split into 14), .clasp.json(+dev example), test/client/{harness.js,run.js,server-split-manifest.json}, test/visual/mock.js, scripts/bite.sh, CLAUDE.md, README.md, docs/{modules,design-decisions}.md, .cycle/config.md | the server split, proven move-only; 4 pins; the bite helper committed with its guard
@@ -398,34 +399,48 @@ established by reading the code this session, so the next session need not re-de
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-`/broad-implement OOP-A, OOP-B, ELIG` is COMPLETE and pushed to
-`claude/adoring-einstein-b3vs6c` (a06ede9 + the block/invariant/scenario commit
-that follows it). All three harnesses green, `lint-server` clean, `counts
---check` green.
+`/broad-implement OOP-A, OOP-B, ELIG` is complete, and the operator's follow-up
+question ("can the OOP sheet move into `INTAKE_SS_ID`?") landed a STORE MOVE on
+top of it. All pushed to `claude/adoring-einstein-b3vs6c`.
 
-**The next concrete step is `/sync-docs`** — the block's DOCUMENTATION UPDATES
-list has four owed items, and three of them are the kind that go stale silently:
-the store table does not say the `Area Eligibility` column is now read by an
-ENGINE rather than displayed; the Common Gotchas index has no entry for the
-client↔server line mirror (it belongs beside g38 and g103); `OOP_WAREHOUSES`
-has no operator-state entry or inventory line; and the WHO-IS-PAYING vs
-HOW-IT-PHYSICALLY-GETS-THERE rule belongs in `docs/design-decisions.md`, because
-it is precisely the thing a future reader would otherwise re-derive from the
-three-row table and get wrong on the fourth value.
+**The move, and why it was not the store they asked about:** Intake is PHI and
+the app WRITES to it, so pricing there means anyone maintaining prices needs
+edit access to patient submissions. The saving was also not real — Script
+Properties are capped by BYTES (g07), and per Batch Q the entry caps were never
+binding. The counter-proposal they accepted was `KB_SS_ID`, which already holds
+`InsurancePayors`: same class, same maintainer, read through a NAMED tab, and
+its scorer is the one `searchOopPricing` already reuses.
+
+`OopPricing` and `LocationAcceptance` are now tabs in the KB spreadsheet.
+`LocationAcceptance` replaced the `OOP_WAREHOUSES` Script Property, carries
+warehouse AND city rows, and has **no seed and no fallback** — the property fell
+back to bare city names, which geocode to city CENTRES, so a warehouse twenty
+miles out of town silently made every near-boundary radius answer wrong by up to
+twenty miles. City rows are information only and never move a verdict (operator
+decision). **Nine stores are now eight.**
+
+**The next concrete step is `/sync-docs`**, and the owed list is now TWO items,
+not four — the store table and `docs/operator-state.md` were both rewritten as
+part of the move. What is still owed: a Common Gotchas index entry for the
+client↔server line mirror (INV-208, beside g38 and g103), and a
+`docs/design-decisions.md` entry for the WHO-IS-PAYING vs
+HOW-IT-PHYSICALLY-GETS-THERE rule — plus, beside it, why these tables live in
+the KB store and NOT the Intake one, because that is a question that will be
+asked again.
 
 **Then the operator owes a deploy** — `clasp push -f` + a New-version
-deployment. That deploy now carries FIVE merged rounds (#251 the perDay accrual
-fix, #252 the FORMS/QA fixtures, #253 SP/SP2/PTO, plus OOP-A and this batch).
-Two optional operator steps ride with it, both in the block: set
-`OOP_WAREHOUSES` to real warehouse ADDRESSES (the CONFIG seed uses bare city
-names, which geocode to the city centre — fine for a 100-mile radius, not fine
-for a near-boundary verdict), and read the OOP diagnostics ONCE to see which
-eligibility values the parser could not read. That list is the whole point of
-the panel: an unreadable value renders "cannot tell", which reads like caution
-rather than like a typo.
+deployment, carrying five merged rounds plus OOP-A/B, ELIG and the move. Their
+remaining setup is now entirely in the KB spreadsheet: create the `OopPricing`
+and `LocationAcceptance` tabs (schemas are in `docs/operator-state.md`), put
+REAL STREET ADDRESSES on the warehouse rows — a bare city name is the failure
+the seed removal exists to prevent — and read the OOP diagnostics once, which
+now report both tabs, the registry, the city count, every addressless or
+unreadable location row by name, and how every Area Eligibility value parses.
+`OOP_SS_ID` can be deleted; it is read by nothing.
 
 The two follow-ons worth not forgetting are in the block: the shared geocode
-QUOTA (the eligibility box and the ```map block draw on the same daily
-allowance, and neither has a cap or an honest exhausted-message), and
-`OOP_WAREHOUSES` having no Admin editor while every other operator-editable
-registry in this app has one.
+QUOTA (the eligibility box and the ```map block draw on one daily allowance,
+with no cap and no honest exhausted-message), and that neither new tab has an
+Admin editor while every other operator-editable registry in this app does —
+though a Sheet tab is a much better editing surface than the JSON property was,
+so this is weaker than it was when it was written.

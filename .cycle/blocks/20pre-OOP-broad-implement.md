@@ -97,9 +97,74 @@ FOLLOW-ON ITEMS:
 - **Eligibility is not shown in the OOP price lookup itself** — only in the dedicated check, which needs an address. An item's raw eligibility string shows on the price row, unparsed. Rendering the RULE there (without an address: "Texas only through insurance; anywhere out of pocket") would answer the common case with no geocode at all.
 
 DOCUMENTATION UPDATES NEEDED:
-- CLAUDE.md's store table: the OOP row exists (added by OOP-A) but does not yet mention that the `Area Eligibility` column is now READ BY AN ENGINE rather than displayed.
-- The Common Gotchas index has no entry for the client↔server line mirror (INV-208) — it belongs in the "Escaping & injection"/mirror family alongside g38 and g103.
-- `docs/operator-state.md` needs the `OOP_WAREHOUSES` entry and its inventory line in CLAUDE.md.
-- `docs/design-decisions.md` should carry the WHO-IS-PAYING vs HOW-IT-GETS-THERE rule as a decision, since it is the thing a future reader would otherwise re-derive from a table.
+- ~~CLAUDE.md's store table~~ **DONE in the store move (below)** — the OOP row is gone, the KB row names all three lookup tables, and the `Area Eligibility` column is now flagged as READ BY AN ENGINE.
+- ~~`docs/operator-state.md`~~ **DONE in the store move** — the `OOP_SS_ID` entry was replaced by an `OopPricing` + `LocationAcceptance` entry carrying both tab schemas, and CLAUDE.md's inventory line follows it.
+- The Common Gotchas index has no entry for the client↔server line mirror (INV-208) — it belongs in the "Escaping & injection"/mirror family alongside g38 and g103. **STILL OWED.**
+- `docs/design-decisions.md` should carry the WHO-IS-PAYING vs HOW-IT-GETS-THERE rule as a decision, since it is the thing a future reader would otherwise re-derive from a table. **STILL OWED**, and the store-placement reasoning (why the KB store and NOT the Intake store) belongs beside it.
 (→ `/sync-docs`)
+
+---
+
+## ADDENDUM — the store move (operator, same day)
+
+The operator asked whether the OOP spreadsheet could fold into `INTAKE_SS_ID`
+to save a Script Property. It could not, for three reasons — and the third is
+the one that would have been silent:
+
+1. **The Intake store is PHI and the app WRITES to it** (`getIntakeSubmissionSheet_`
+   appends submissions and calls `insertSheet`). Pricing there means anyone
+   maintaining prices needs edit access to patient submissions.
+2. **The saving was not real.** Script Properties are capped by BYTES (g07);
+   per Batch Q the advertised entry caps were never the binding constraint.
+3. **`oopSheet_` took `getSheets()[0]`.** Correct while the file existed for one
+   purpose; in any shared spreadsheet it reads sheet 0 — and because columns are
+   discovered BY HEADER it would not have thrown. It would have matched no
+   `price` header and rendered every row "no price on file".
+
+The counter-proposal the operator accepted: **`KB_SS_ID`**, which already holds
+`InsurancePayors` — an operator-imported, read-only lookup table of the same
+class, same maintainer, same access pattern, read through a NAMED tab, and whose
+scorer `searchOopPricing` already reuses. Same saving, no boundary crossed.
+
+Landed as `OopPricing` + `LocationAcceptance`:
+- Both are NAMED tabs; `oopSheet_` throws and names the tab to create.
+- `LocationAcceptance` REPLACES the `OOP_WAREHOUSES` Script Property and carries
+  TWO row kinds under `Type` — warehouse (Name + geocoded Address) and city
+  (Name + State + Accepts, the POV/scooter delivery list).
+- **NO seed, NO fallback.** The property fell back to a CONFIG seed of bare city
+  names, which geocode to city CENTRES: a warehouse twenty miles out of town
+  silently made every near-boundary radius answer wrong by up to twenty miles.
+  That is g114 inside the one verdict built to avoid it. A missing tab now yields
+  an empty registry (every radius rule UNKNOWN) and is surfaced to the rep by
+  name, because an unreadable registry left to produce UNKNOWNs reads like
+  caution rather than like a tab nobody created (g02).
+- **City rows are INFORMATION ONLY** (operator decision): shown outside every
+  item row, labelled "reference only", never changing a verdict. Two tables that
+  could disagree would leave nobody able to see which one decided.
+- `kbGeocodeOne_` also returns the city (`locality`); `locCityMatches_` treats an
+  undetermined city as matching NOTHING.
+- `_withTestOop_` now rides `_withTestKb_` and seeds both tabs; the
+  `_TEST_OVERRIDE_OOP_SS_ID` branch is gone rather than left reading a store that
+  no longer exists (g119's shape, one week after g119 was written).
+
+**Nine stores become eight.** Harnesses 844 → 848 pure, 121 DOM, 327 → 329
+editor registrations.
+
+FOUR MORE BITE-CHECK FINDINGS in the move, all fixed:
+  1. `locCityMatches_`'s blank-city guard did NOT bite — a blank query fails to
+     equal any real name anyway, so the assertion passed for the wrong reason.
+     The fixture now carries a nameless row, which is what the guard is for.
+  2. The no-seed pin would NOT have caught a warehouse hard-coded straight into
+     `getLocationAcceptance_`. All three of its assertions watched for the OLD
+     shape of the defect (a property, a CONFIG fallback). It now asserts the
+     registry is BUILT EMPTY.
+  3. The `locationError` render had no assertion behind it — deleting it bit
+     nothing, while on screen every radius rule would read "cannot tell" with
+     the items still rendering around it.
+  4. My own `locRowKind_` assertion was wrong rather than the code: an
+     unrecognised `Type` IS unreadable, but matching is by PREFIX, so
+     "warehouse (north dock)" still lands. Documented rather than accidental.
+
+Bite-checks for the move: 12 mutations, 12 bites (7 via `scripts/bite.sh`, 5 by
+hand on the DOM harness) after the four pins above were repaired.
 ---END BROAD SCAN IMPLEMENTATION SUMMARY---
