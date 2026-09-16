@@ -2937,7 +2937,7 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
     if (addr === '00000') return { error: 'Could not find that location — try a 5-digit ZIP code.' };
     return {
       success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', total: 4,
-      warehouses: [{ name: 'Dallas', miles: 182.4 }, { name: 'San Antonio', miles: 74.1 }],
+      warehouses: [{ name: 'Dallas', miles: 182.4 }, { name: 'San Antonio', miles: 74.1 }, { name: 'Phoenix', miles: null }],
       items: [
         // Open both ways.
         { name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
@@ -3018,9 +3018,24 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   assert.ok(/ask a manager/.test(rows[3].textContent), 'showing the cell VERBATIM so the rep can see the typo');
   assert.ok(/no price on file/.test(rows[3].textContent), 'and a blank price still says so');
 
-  // The warehouse strip, once, with its caveat.
-  assert.ok(/Dallas 182\.4 mi/.test(txt) && /San Antonio 74\.1 mi/.test(txt), 'distances render once, above the list');
-  assert.ok(/straight-line/.test(txt), 'with the caveat that makes them honest');
+  // The warehouse strip, once, with its caveat. Asserted against the STRIP
+  // ELEMENT, not the host: the word "straight-line" also appears inside a
+  // near-boundary verdict's reason, so a host-wide regex stayed green with the
+  // strip's own caveat deleted (found by bite-check).
+  const strips = Array.from(host.querySelectorAll('.kb-ins-more'));
+  const distStrip = strips.filter((d) => /Dallas 182\.4 mi/.test(d.textContent))[0];
+  assert.ok(distStrip, 'the distances render once, above the list');
+  assert.ok(/San Antonio 74\.1 mi/.test(distStrip.textContent), 'every placed warehouse, in one strip');
+  assert.ok(/straight-line/.test(distStrip.textContent), 'with the caveat that makes them honest');
+
+  // An UNPLACEABLE warehouse is surfaced, not silently dropped — a radius
+  // answer measured against some of the warehouses is not a whole answer, and
+  // a strip that just omits one looks complete.
+  const unplacedStrip = strips.filter((d) => /Could not place/.test(d.textContent))[0];
+  assert.ok(unplacedStrip, 'a warehouse that could not be geocoded is NAMED');
+  assert.ok(/Phoenix/.test(unplacedStrip.textContent), 'by name');
+  assert.ok(/incomplete/.test(unplacedStrip.textContent), 'and what it means for the answer is stated');
+  assert.ok(!/Phoenix/.test(distStrip.textContent), 'and it is not quietly listed among the measured ones');
 
   // A failed geocode is an ERROR, never an empty eligible list — the two look
   // identical on screen and only one means "do not sell this here".

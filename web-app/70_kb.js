@@ -910,10 +910,14 @@ function getOopWarehouses_() {
  *    { kind: 'radius', miles: 100, warehouses: ['Dallas', …] }
  *    { kind: 'unknown', raw: '<the cell, verbatim>' }
  *
- *  ORDER MATTERS, and not obviously: RADIUS is tested FIRST, because a radius
- *  phrase can contain a state code ("100 miles of the Dallas TX warehouse") and
- *  reading that as a state rule would produce a confidently wrong, far more
- *  permissive answer.
+ *  RADIUS IS TESTED FIRST, and the honest reason is defence against a future
+ *  edit rather than a defect in today's code: the STATES branch below requires
+ *  the WHOLE value to be state codes, which already rejects "100 miles of the
+ *  Dallas TX warehouse". But relaxing that to "extract any state codes present"
+ *  is a very plausible next change (someone will want "TX only" to work), and
+ *  the moment it happens, a radius phrase containing a state code would parse
+ *  as a state rule — confidently wrong, in the far more permissive direction.
+ *  The order costs nothing and makes that edit safe.
  *
  *  Warehouse names are matched as SUBSTRINGS against the registry rather than
  *  parsed out of English. The operator writes "100 miles of Dallas or San

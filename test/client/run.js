@@ -13128,9 +13128,11 @@ test('ELIG: oopEligibilityParse_ reads the operator REAL values, tests RADIUS fi
   assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse'),
     { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] });
 
-  // RADIUS IS TESTED FIRST, and this is the case that proves why: a radius
-  // phrase containing a state code read as a STATE rule would be confidently
-  // wrong in the far more permissive direction.
+  // A radius phrase containing a STATE CODE. Two things hold it: the STATES
+  // branch requires the WHOLE value to be codes, and RADIUS is tested first.
+  // Today the first alone is enough — but "extract any codes present" is a very
+  // plausible future relaxation (someone will want "TX only" to work), and the
+  // ordering is what keeps this case right when it lands.
   assert.deepStrictEqual(P('100 miles of the Dallas TX warehouse'),
     { kind: 'radius', miles: 100, warehouses: ['Dallas'] },
     'a state code inside a radius phrase does not make it a state rule');
