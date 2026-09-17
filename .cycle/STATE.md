@@ -4,13 +4,14 @@
 Cycle: 20 — OPEN (the /broad-scan of 2026-09-17 opened it; cycle 19's whole
 block moved to `.cycle/HISTORY.md` at that point, per the close-out procedure —
 **with cycle 19's `/reflect` still OWED; it reads the archived block**).
-Phase: implement — Batch 1 of the scan's IMPLEMENTATION BATCH PLAN is DONE
-(`.cycle/blocks/20-batch1-broad-implement.md`, net 5 − 0 = 5); Batches 2–7 are
+Phase: implement — Batches 1 and 2 of the scan's IMPLEMENTATION BATCH PLAN are
+DONE (`.cycle/blocks/20-batch1-broad-implement.md`, net 5 − 0 = 5;
+`.cycle/blocks/20-batch2-broad-implement.md`, net 6 − 0 = 6); Batches 3–7 are
 in `.cycle/blocks/20-scan-batch-plan.md`. NOT DEPLOYED: everything in Batch 1 is
 live only after `clasp push -f` + a New version.
 Scope: broad
 Test Command: manual
-Estimates: **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
+Estimates: **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
 Subsystem cycles since last Seams audit: 4 — **the every-4 cadence was met at 19-d;
 the next `/audit` should be a Seams & Invariants audit** (carried forward; the
 2026-09-17 /broad-scan was a broad scan, not the seams round).
@@ -22,8 +23,8 @@ Updated: 2026-09-17
   a11y-names and print-check clean). Fifty-three findings, none Critical, three
   High — all three re-verified by me, two by execution (F-02 reproduced in
   jsdom; F-03 by running `calcHours_`).
-- Batch 1 is committed on `claude/festive-noether-unougu` (67cbe2d + this
-  checkpoint) and NOT merged, NOT deployed.
+- Batches 1 and 2 are committed on `claude/festive-noether-unougu` (67cbe2d,
+  263a0fe, 22342f8 + this checkpoint) and NOT merged, NOT deployed.
 - The next concrete step: merge, push, New version; then walk S110 FIRST (the
   composer send and the by-name eligibility check both failed before Batch 1),
   then S7's two new Day Edit steps, then run the sheet doctor once for any
@@ -37,9 +38,18 @@ Updated: 2026-09-17
 - F-05 | web-app/tc/script_manager.html | Day Edit Save disabled until the prefill lands
 - F-44 | web-app/intake/script_intake.html | the default control branch reads ariaLabel
 - pins | web-app/Tests.js, test/client/run.js, test/client/dom/runDom.js | registrations 336 → 337; pure 865 → 867; DOM 121 → 122; seven bite-checks bite
+- F-06 | web-app/cn/script_callnotes.html | a failed dept-config fetch is not cached as an empty config
+- F-13 | web-app/tc/script_clock.html | dashboard carousels render a failed read as the warn card, never "No call data"
+- F-18 | web-app/intake/script_intake.html | Sent detail: an untouched toggle is blank, only FALSE is No
+- F-15 | web-app/70_kb.js | geocoder service failure is `{unavailable, status}` + kbGeocodeUnavailableMsg_; both callers and the cache honour it
+- F-47 | web-app/40_metrics.js, web-app/20_timeclock.js | getMyMetrics ships cdrUnavailable; pending tasks treat it as unavailable
+- F-41 | web-app/tc/script_clock.html | coverage strip renders "coverage unavailable" on a failed read
+- F-25 | web-app/70_kb.js, web-app/kb/script_kb.html | the four KB count helpers return {map, unavailable}; both endpoints and the landing name the failed reads
+- F-45 | web-app/kb/script_kb.html | feedback bar thanks only after the server records it
+- pins (Batch 2) | test/client/run.js, test/client/dom/runDom.js | pure 867 → 871; DOM 122 → 126; eight bite-checks bite
 
 ## Pending / not yet done
-- Batches 2–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
+- Batches 3–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S110, then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - **`/reflect` for cycle 19 is OWED** and reads the archived block: the estimates.csv rows for D1, D2, F1, F2, R, T, SP, SP2, PTO, OOP-A, OOP-B, ELIG, OOP-C and H1–H3 (the archived `Estimates:` line carries estimate AND actual for each).
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -59,9 +69,10 @@ Updated: 2026-09-17
 - Cycle 19 was closed in substance by the 2026-09-17 deploy; the new /broad-scan opened cycle 20 and the block moved to HISTORY.md even though 19's /reflect is owed — the reflection reads the archive.
 
 ## Where I left off
-Batch 1 is implemented, pinned, bite-checked and committed on
-`claude/festive-noether-unougu`; the harnesses, lint, manifest and counts are all
-green. Next: push the branch and open the PR; after the merge + New version, walk
-S110 first, then S7's two new steps, then the sheet doctor. Then pick the next
-batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 2, honest failure on the
-client, is the suggested next) — and cycle 19's `/reflect` is still owed.
+Batches 1 and 2 are implemented, pinned, bite-checked and committed on
+`claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
+are all green. Next: open the PR when the operator asks; after the merge + New
+version, walk S110 first (Batch 1's send + Batch 2's geocoder message), then S7's
+two new steps, then the sheet doctor. Then pick the next batch from
+`.cycle/blocks/20-scan-batch-plan.md` (Batch 3, the H1/H2 follow-through, is the
+suggested next) — and cycle 19's `/reflect` is still owed.
