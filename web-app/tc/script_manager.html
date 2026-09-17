@@ -1724,7 +1724,11 @@ function deSetLoading_(on, note) {
   var sub = document.getElementById('day-edit-subtitle');
   if (sub) sub.textContent = _deEmpName + (note ? ' · ' + note : '');
   var save = document.getElementById('de-save');
+  // A PENDING prefill is the same saveable-blank form as a FAILED one (g68):
+  // a Save before the punches land sends blank slots, and a blank slot
+  // DELETES that punch. Save is live only once the load has landed.
   if (save && on === 'failed') { save.disabled = true; save.textContent = 'Reopen to retry'; }
+  else if (save && on === true) { save.disabled = true; save.textContent = 'Loading\u2026'; }
   else if (save) { save.disabled = false; save.textContent = 'Save Changes'; }
 }
 function openDayEditModal(empId, empName, prefillDate) {

@@ -391,6 +391,26 @@
     "getTeamMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "Batch 1 of the 2026-09-17 broad-scan: oopMatchScore_ (F-04, one scorer for both OopPricing search surfaces) and managerClockOrderError_ (F-03, the equal-clock-pair refusal both manager writers apply)",
+   "added": [
+    "managerClockOrderError_",
+    "oopMatchScore_"
+   ],
+   "removed": [],
+   "changed": [
+    "calcHours_",
+    "checkOopEligibility",
+    "getOopPricingDiagnostics",
+    "getTimesheetDoctor",
+    "managerSaveDay",
+    "managerSaveDayRange",
+    "oopVerifyQuotes_",
+    "searchOopPricing"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2703,7 +2723,7 @@
   "calcHours_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f81a6a71446f3f25"
+   "sha": "f22129a205292779"
   },
   "callDataFromNote_": {
    "file": "30_callnotes.js",
@@ -2803,7 +2823,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a83673f61d6ccfd2"
+   "sha": "38dbe4ecac588557"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -4113,7 +4133,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b5adae0f883c79dc"
+   "sha": "426bb560239e940e"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -4413,7 +4433,7 @@
   "getTimesheetDoctor": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "bc76ccf0b9d6aadc"
+   "sha": "97d29690b7a29e78"
   },
   "getTodayPunches_": {
    "file": "20_timeclock.js",
@@ -5180,6 +5200,11 @@
    "kind": "function",
    "sha": "01c3bb0a1b4e667b"
   },
+  "managerClockOrderError_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b4eaed133e7101ae"
+  },
   "managerDeleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -5233,12 +5258,12 @@
   "managerSaveDay": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d9b581170ce076a6"
+   "sha": "bc6ba122cff6ad25"
   },
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9d096ea392226bf0"
+   "sha": "919582bacc83b63c"
   },
   "managerSearchCallNotes": {
    "file": "30_callnotes.js",
@@ -5435,6 +5460,11 @@
    "kind": "function",
    "sha": "30065044fee2478e"
   },
+  "oopMatchScore_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "df037b2e3e32a22a"
+  },
   "oopNameCol_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5463,7 +5493,7 @@
   "oopVerifyQuotes_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c58c4e1853bb02d5"
+   "sha": "a81afbf4017efda9"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",
@@ -6238,7 +6268,7 @@
   "searchOopPricing": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b618308f98c52fc8"
+   "sha": "17e1bb2ebb75ae3f"
   },
   "searchReference": {
    "file": "70_kb.js",

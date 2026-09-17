@@ -746,8 +746,9 @@ const TIMEOFF_RANGE_MAX_DAYS = 31;
 //     findExistingPunch_ updates and managerSaveDay's snapshot displays —
 //     and deletes the rest with `duplicate collapsed` audit rows.
 //   • INVERTED PAIRS — a day whose last ClockOut is at-or-before its first
-//     ClockIn. calcHours_ deliberately wraps out<=in as an overnight +24h
-//     (the pinned C3 decision), so a mis-keyed AM/PM pair silently computes
+//     ClockIn. calcHours_ deliberately wraps out<in as an overnight +24h
+//     (the pinned C3 decision; an EQUAL minute pair is zero hours since
+//     2026-09-17, not a wrap), so a mis-keyed AM/PM pair silently computes
 //     a huge day. REPORT-ONLY: the doctor can't know intent — the fix is a
 //     manager Day Edit, never an auto-swap.
 var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period

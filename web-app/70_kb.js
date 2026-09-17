@@ -794,6 +794,17 @@ function oopPriceByLabel_(prices, label) {
  *  FAILURE POSTURE, inherited deliberately: a wrong price is a billing error, so
  *  the failure mode is "no match" (visible) and never a confident wrong number.
  *  Ties and near-misses ride along so the REP judges ambiguity. */
+/** PURE (Node-pinned): the ONE match score for an OopPricing row — the item
+ *  NAME or the CODE, whichever scores higher. Both `searchOopPricing` and
+ *  `checkOopEligibility` call this; before 2026-09-17 the eligibility check
+ *  still scored `rows[i][0]` (the HCPCS column on the operator's sheet), so a
+ *  filtered eligibility query returned "No item matched" for a listed item —
+ *  the OOP-C defect again, on the second surface. Two readers of one operator
+ *  sheet share ONE resolver (`oopRowObj_`) and ONE scorer (this). */
+function oopMatchScore_(o, q) {
+  if (!o) return 0;
+  return Math.max(o.name ? insPayorScore_(o.name, q) : 0, o.code ? insPayorScore_(o.code, q) : 0);
+}
 function searchOopPricing(query) {
   try {
     const emp = getEmployeeInfo_();
@@ -814,7 +825,7 @@ function searchOopPricing(query) {
     for (let i = 0; i < rows.length; i++) {
       const o = oopRowObj_(headers, rows[i]);
       if (!o.name && !o.code) continue;                 // a blank row is not a miss
-      const sc = Math.max(insPayorScore_(o.name, q), o.code ? insPayorScore_(o.code, q) : 0);
+      const sc = oopMatchScore_(o, q);
       if (sc > 0) scored.push({ i: i, score: sc, o: o });
     }
     scored.sort(function (a, b) { return b.score - a.score; });
@@ -900,9 +911,17 @@ function oopVerifyQuotes_(quotes, message) {
     return { error: 'The OOP pricing sheet could not be read, so the quoted price could not be verified: ' + err.message };
   }
 
+  // Keyed by the header-discovered NAME column — the same column the picker's
+  // `searchOopPricing` match carried as `name`. Until 2026-09-17 this keyed on
+  // column A, which on the operator's real sheet is HCPCS, so `byName` held
+  // billing codes and EVERY quoted send was refused with "no longer lists" for
+  // an item that was listed. The fail direction was closed (no wrong price
+  // shipped), but the feature was dead. Two readers of one operator sheet
+  // share ONE column resolver: oopNameCol_.
+  const nameCol = oopNameCol_(headers);
   const byName = {};
   for (let i = 0; i < rows.length; i++) {
-    const key = String(rows[i][0] == null ? '' : rows[i][0]).trim().toLowerCase();
+    const key = String(rows[i][nameCol] == null ? '' : rows[i][nameCol]).trim().toLowerCase();
     if (key && !byName[key]) byName[key] = rows[i];
   }
 
@@ -1296,7 +1315,7 @@ function checkOopEligibility(address, query) {
     if (q.length >= 2) {
       const scored = [];
       for (let i = 0; i < rows.length; i++) {
-        const sc = insPayorScore_(rows[i][0], q);
+        const sc = oopMatchScore_(oopRowObj_(headers, rows[i]), q);   // name OR code — never column A (the OOP-C rule)
         if (sc > 0) scored.push({ i: i, score: sc });
       }
       scored.sort(function (a, b) { return b.score - a.score; });
@@ -1412,9 +1431,10 @@ function getOopPricingDiagnostics() {
     if (rows) {
       const all = sh.getRange(2, 1, rows, width).getDisplayValues();
       all.forEach(function (row) {
-        const r = oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames);
+        const o = oopRowObj_(headers, row);
+        const r = oopEligibilityParse_(o.eligibility, whNames);
         if (r.kind === 'unknown') {
-          if (elig.unknown.length < 12) elig.unknown.push({ item: String(row[0] || ''), value: r.raw });
+          if (elig.unknown.length < 12) elig.unknown.push({ item: o.name || o.code || '', value: r.raw });
         } else { elig[r.kind]++; }
       });
     }

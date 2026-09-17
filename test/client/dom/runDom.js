@@ -1838,6 +1838,11 @@ test('the async prefill never overwrites what the manager already typed, ignores
   const h = boot();
   h.read('openDayEditModal')('E-1077', 'Nina Patel');
   assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 1, 'the prefill is in flight');
+  // F-05 (2026-09-17): a PENDING prefill is the same saveable-blank form as a
+  // failed one — a Save before the punches land sends blank slots, and a blank
+  // slot DELETES that punch. Save must be dead until the load lands.
+  assert.strictEqual(h.document.getElementById('de-save').disabled, true, 'Save is DISABLED while the prefill is pending');
+  assert.match(h.document.getElementById('de-save').textContent, /Loading/, 'and says so');
   const ci = h.document.getElementById('de-clockin');
   ci.value = '08:30'; ci.dispatchEvent(new h.window.Event('input'));
   const date = h.read('_deDate');
@@ -2829,6 +2834,64 @@ const OOP_MATCHES = [
   { name: 'Widget', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },
   { name: 'Priceless Thing', price: '', eligibility: '', effective: '', details: [] },
 ];
+
+test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE — Close button, Escape and the hook path all remove the overlay', () => {
+  // closeOverlay delegates ENTIRELY to a registered onClose hook (INV-145: a
+  // hook may refuse). Both hooks here returned without removing anything, so
+  // every close affordance was a no-op and the only way out was a reload.
+  const h = boot();
+  const doc = h.document;
+  h.window.schedFetch_ = function () {};   // the open refreshes the shell list; not under test
+  h.read('cnOpenSchedModal_')();
+  let ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'sched modal opens');
+  h.window.closeOverlay(ov);
+  ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(!ov || !ov.classList.contains('open'), 'closeOverlay CLOSES the sched modal');
+  // Escape, through the shell's document handler.
+  h.read('cnOpenSchedModal_')();
+  assert.ok(doc.getElementById('cn-sched-overlay').classList.contains('open'), 'reopened');
+  doc.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(!ov || !ov.classList.contains('open'), 'Escape closes the sched modal');
+  // The Close button the modal renders routes through closeOverlay too.
+  h.read('cnOpenSchedModal_')();
+  // jsdom under runScripts:'outside-only' never executes inline onclick
+  // attributes, so the button is checked for its WIRING: it routes through
+  // closeOverlay (whose behaviour is asserted above), not a private path.
+  const btn = Array.from(doc.querySelectorAll('#cn-sched-overlay button')).find((b) => /^Close$/.test(b.textContent.trim()));
+  assert.ok(btn, 'the modal has a Close button');
+  assert.match(btn.getAttribute('onclick') || '', /closeOverlay\(document\.getElementById\('cn-sched-overlay'\)\)/,
+    'the Close button routes through closeOverlay');
+  h.window.closeOverlay(doc.getElementById('cn-sched-overlay'));
+
+  // Scratchpad: same contract, plus the flush-on-close it already had.
+  h.read('cnOpenScratchpadModal_')();
+  let sp = doc.getElementById('cn-scratch-overlay');
+  assert.ok(sp && sp.classList.contains('open'), 'scratchpad opens');
+  h.run.flushSuccess({ success: true, content: 'notes', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  const ta = doc.getElementById('cn-scratch-text');
+  ta.value = 'edited'; ta.dispatchEvent(new h.window.Event('input'));
+  h.window.closeOverlay(sp);
+  sp = doc.getElementById('cn-scratch-overlay');
+  assert.ok(!sp || !sp.classList.contains('open'), 'closeOverlay CLOSES the scratchpad');
+  assert.strictEqual(h.run.pending('saveMyScratchpad').length, 1, 'and the dirty pad was flushed on the way out (INV-148)');
+
+  // Generic sweep: every hook registered right now closes its overlay when
+  // nothing is in flight. A hook that legitimately REFUSES (the composer
+  // mid-send, INV-145) is not in this state, so the sweep is a floor, not a
+  // claim that no hook may ever refuse.
+  h.read('cnOpenSchedModal_')();
+  h.read('cnOpenScratchpadModal_')();
+  const hooks = h.read('OVERLAY_CLOSE_HOOKS');
+  Object.keys(hooks).forEach((id) => {
+    const el = doc.getElementById(id);
+    if (!el || !el.classList.contains('open')) return;
+    h.window.closeOverlay(el);
+    const after = doc.getElementById(id);
+    assert.ok(!after || !after.classList.contains('open'), 'hook for #' + id + ' closes its overlay');
+  });
+});
 
 test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and ships it for re-verification — and an item with no price cannot be inserted at all', () => {
   const h = bootExtComposer(OOP_MATCHES);

@@ -1205,6 +1205,7 @@ function _registerSmokeTests_() {
   _smokeTest('calcHours_overnight',                test_calcHours_overnight);
   _smokeTest('calcHours_overnightWithLunch',       test_calcHours_overnightWithLunch);
   _smokeTest('calcHours_multipleBreaks',           test_calcHours_multipleBreaks);
+  _smokeTest('calcHours_equalMinuteIsZeroNotADay', test_calcHours_equalMinuteIsZeroNotADay);
   _smokeTest('timeToMins_nullOnUnparseable',       test_timeToMins_nullOnUnparseable);
 
   _smokeTest('daysBetween_basic',                  test_daysBetween_basic);
@@ -1723,6 +1724,21 @@ function test_calcHours_withLunch() {
 function test_calcHours_overnight() {
   // 22:00 → 06:00 next day = 8 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
+}
+/** 2026-09-17 broad-scan F-03: timeToMins_ drops seconds, so a clock-in at
+ *  09:00:10 and a clock-out at 09:00:45 compared EQUAL and the `<=` wrap paid
+ *  a 24-hour day. An equal minute pair is zero hours; the strict overnight
+ *  wrap (22:00 → 06:00) is unchanged. */
+function test_calcHours_equalMinuteIsZeroNotADay() {
+  _assertEqClose(calcHours_('09:00:10','09:00:45',null,null), 0.0);
+  _assertEqClose(calcHours_('09:00','09:00',null,null), 0.0);
+  _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
+  _assertEq(managerClockOrderError_({ ClockIn: '09:00', ClockOut: '09:00' }) !== null, true,
+    'the manager writers refuse an equal pair');
+  _assertEq(managerClockOrderError_({ ClockIn: '22:00', ClockOut: '06:00' }), null,
+    'a reversed pair stays the overnight wrap');
+  _assertEq(managerClockOrderError_({ ClockIn: '09:00', ClockOut: '' }), null,
+    'a single slot is not this rule\'s call');
 }
 function test_calcHours_overnightWithLunch() {
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours

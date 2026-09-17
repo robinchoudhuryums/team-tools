@@ -2598,11 +2598,15 @@ function getTimesheetDoctor() {
     });
     Object.keys(scan.days).forEach(function (k) {
       const d = scan.days[k];
-      // HH:mm:ss lexicographic = chronological (the INV-155 convention).
+      // HH:mm:ss lexicographic = chronological (the INV-155 convention) for
+      // the PICK; the COMPARE is at minute granularity, because that is the
+      // frame calcHours_ pays in — an equal-minute pair (09:00:10 → 09:00:45)
+      // is a zero-hour day the manager should see here, not a valid shift.
       if (d.in.length && d.out.length) {
         const firstIn = d.in.slice().sort()[0];
         const lastOut = d.out.slice().sort()[d.out.length - 1];
-        if (lastOut <= firstIn) {
+        const inM = timeToMins_(firstIn), outM = timeToMins_(lastOut);
+        if (inM !== null && outM !== null && outM <= inM) {
           totalInverted++;
           if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
             inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
@@ -3585,6 +3589,20 @@ function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
  * managerSaveDayRange, which stays deliberately single-pair). The server diffs
  * against current state and applies add/edit/delete, one audit row per change.
  */
+/** PURE (Node-pinned): the ONE clock-order rule the manager writers apply
+ *  after format validation. An equal Clock In / Clock Out is refused — it is
+ *  not a shift, and calcHours_ used to pay it as 24 hours — while a reversed
+ *  pair is still accepted as the C3 overnight wrap. Returns an error string
+ *  or null. Both slots blank, or only one present, is not this rule's call. */
+function managerClockOrderError_(cleanSlots) {
+  const ci = String((cleanSlots && cleanSlots.ClockIn) || '').trim();
+  const co = String((cleanSlots && cleanSlots.ClockOut) || '').trim();
+  if (!ci || !co) return null;
+  const a = timeToMins_(ci), b = timeToMins_(co);
+  if (a === null || b === null) return null;   // format errors are reported before this
+  if (a === b) return 'Clock Out must differ from Clock In (' + ci + ') — an equal pair is not a shift.';
+  return null;
+}
 function managerSaveDay(targetEmpId, date, slots, reason) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -3622,6 +3640,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       if (cleanSlots[t] && cleanSlots[t].bad !== undefined)
         return { success: false, error: `Invalid time for ${t}: "${cleanSlots[t].bad}" (expected HH:mm, 24-hour)` };
     }
+    const orderErr = managerClockOrderError_(cleanSlots);
+    if (orderErr) return { success: false, error: orderErr };
     const parsedBreaks = managerParseBreakSlots_(slots);
     if (parsedBreaks.error) return { success: false, error: parsedBreaks.error };
     const cleanBreaks = parsedBreaks.breaks;   // [{out, in}] in submitted order
@@ -6752,6 +6772,8 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
       if (raw) anyTime = true;
     }
     if (!anyTime) return { success: false, error: 'Enter at least one punch time to apply across the range.' };
+    const orderErrRange = managerClockOrderError_(cleanSlots);
+    if (orderErrRange) return { success: false, error: orderErrRange };
 
     const dates = [];
     let d = fromDate;
@@ -6987,7 +7009,14 @@ function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   // already have a "hours not computed" branch (the incomplete-day path), so
   // null routes a corrupt cell there instead of poisoning a running total.
   if (inMins === null || outMins === null) return null;
-  if (outMins <= inMins) outMins += 1440;
+  // Overnight wrap on a STRICT reversal only (2026-09-17). timeToMins_ drops
+  // seconds, so a clock-in at 09:00:10 and a clock-out at 09:00:45 — legal on
+  // the live path once the 30s debounce clears — compared EQUAL and the old
+  // `<=` paid a 24-hour day into timesheet totals, the pay statement, the
+  // accrual index and the sparkline. An equal-minute pair is zero hours, not a
+  // shift that ended a day later; the manager writers refuse it outright
+  // (managerClockOrderError_) and the sheet doctor reports it.
+  if (outMins < inMins) outMins += 1440;
   // EVERY break pair is deducted, not just the last (operator 2026-09-01).
   let lunchMins = 0;
   breakPairs_(lunchOut, lunchIn, inMins).forEach((b) => { lunchMins += b.minutes; });

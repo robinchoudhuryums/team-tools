@@ -5688,6 +5688,36 @@ console.log('\ncycle 13 — A1 / A2 / A3 / A11 / A12 fix pins');
 // are ALL false — so getPunctualityReport scored the day ON TIME (it fell
 // through `lateMin > grace` into the else) and calcHours_ poisoned the running
 // total. Behavioural: drive the real extracted functions.
+test('F-03 (2026-09-17): managerClockOrderError_ refuses an equal clock pair, keeps the overnight wrap, and BOTH manager writers apply it after format validation', () => {
+  const ctx = vm.createContext({ String: String });
+  ['timeToMins_', 'managerClockOrderError_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const E = (slots) => vm.runInContext('managerClockOrderError_(' + JSON.stringify(slots) + ')', ctx);
+  assert.ok(typeof E({ ClockIn: '09:00', ClockOut: '09:00' }) === 'string', 'an equal pair is refused with a message');
+  assert.ok(/09:00/.test(E({ ClockIn: '09:00', ClockOut: '09:00' })), 'and the message names the time');
+  assert.strictEqual(E({ ClockIn: '22:00', ClockOut: '06:00' }), null, 'a reversed pair is the C3 overnight wrap — allowed');
+  assert.strictEqual(E({ ClockIn: '08:00', ClockOut: '17:00' }), null, 'an ordinary day passes');
+  assert.strictEqual(E({ ClockIn: '09:00', ClockOut: '' }), null, 'one slot blank is not this rule');
+  assert.strictEqual(E({}), null, 'no slots is not this rule');
+  assert.strictEqual(E(null), null, 'null-safe');
+  const src = serverSource();
+  const day = extractRawFunction('Code.js', 'managerSaveDay');
+  const range = extractRawFunction('Code.js', 'managerSaveDayRange');
+  assert.ok(/managerClockOrderError_\(cleanSlots\)/.test(day), 'managerSaveDay applies the rule');
+  assert.ok(/managerClockOrderError_\(cleanSlots\)/.test(range), 'managerSaveDayRange applies the rule');
+  // After the format check, before the plan: the rule must see CLEAN slots.
+  assert.ok(day.indexOf('managerClockOrderError_(cleanSlots)') > day.indexOf('expected HH:mm, 24-hour'), 'day: after format validation');
+  assert.ok(day.indexOf('managerClockOrderError_(cleanSlots)') < day.indexOf('managerParseBreakSlots_(slots)'), 'day: before the plan');
+  assert.ok(range.indexOf('managerClockOrderError_(cleanSlots)') > range.indexOf('expected HH:mm, 24-hour'), 'range: after format validation');
+  // And the wrap itself is now STRICT in the source — the equal case cannot reach +1440.
+  assert.ok(/if \(outMins < inMins\) outMins \+= 1440;/.test(extractRawFunction('Code.js', 'calcHours_')), 'calcHours_ wraps on strict <');
+  assert.ok(!/outMins <= inMins/.test(src.slice(src.indexOf('function calcHours_'), src.indexOf('function calcHours_') + 1200)), 'the <= wrap is gone');
+  // The sheet doctor compares at MINUTE granularity — the frame calcHours_ pays in.
+  const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
+  assert.ok(/const inM = timeToMins_\(firstIn\), outM = timeToMins_\(lastOut\);/.test(doctor) && /outM <= inM/.test(doctor),
+    'the doctor reports an equal-minute pair as inverted (report-only)');
+});
+
 test('A3: timeToMins_ returns null (never NaN) for an unparseable time', () => {
   const b = buildSandbox([]);
   vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), b, { filename: 'Code.js#timeToMins_' });
@@ -13153,7 +13183,7 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   const sCtx = { String: String, Array: Array, Math: Math, JSON: JSON, Object: Object,
     OOP_MAX_ROWS: 5000, OOP_TOP: 8 };
   vm.createContext(sCtx);
-  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'searchOopPricing']
+  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'oopMatchScore_', 'searchOopPricing']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx, { filename: f }));
   const GRID = [
     ['HCPCS', 'Category', 'Item', 'OOP Price', 'Area Eligibility', 'EffectiveDate'],
@@ -13213,6 +13243,35 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
       'and does NOT claim notFound — "you have not typed enough yet" is not "we do not stock it"');
   });
 }
+
+test('F-04 (2026-09-17): checkOopEligibility scores the NAME and the CODE through the ONE scorer searchOopPricing uses — never column A', () => {
+  // Behavioural half: the scorer itself, driven with the operator's row shape.
+  const sCtx2 = { String: String, Math: Math };
+  vm.createContext(sCtx2);
+  ['insPayorScore_', 'oopMatchScore_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx2, { filename: f }));
+  const M = (o, q) => vm.runInContext('oopMatchScore_(' + JSON.stringify(o) + ',' + JSON.stringify(q) + ')', sCtx2);
+  assert.ok(M({ name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)' }, 'scout') > 0, 'the item name scores');
+  assert.ok(M({ name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)' }, 'K0800') > 0, 'the code scores');
+  assert.strictEqual(M({ name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)' }, 'shower'), 0, 'a miss is 0');
+  assert.strictEqual(M({ name: '', code: '' }, 'scout'), 0, 'a blank row never matches');
+  assert.strictEqual(M(null, 'scout'), 0, 'no row, no score');
+  // Structural half: BOTH surfaces call it on the header-discovered row object,
+  // and neither reads column A by position any more.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const elig = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+  const search = nc(extractRawFunction('Code.js', 'searchOopPricing'));
+  const diag = nc(extractRawFunction('Code.js', 'getOopPricingDiagnostics'));
+  const verify = nc(extractRawFunction('Code.js', 'oopVerifyQuotes_'));
+  assert.ok(/oopMatchScore_\(oopRowObj_\(headers, rows\[i\]\), q\)/.test(elig), 'eligibility scores the row OBJECT');
+  assert.ok(/oopMatchScore_\(o, q\)/.test(search), 'search uses the same scorer');
+  [['checkOopEligibility', elig], ['searchOopPricing', search], ['getOopPricingDiagnostics', diag], ['oopVerifyQuotes_', verify]].forEach(([n, f]) => {
+    assert.ok(!/rows\[i\]\[0\]|row\[0\]/.test(f), n + ' reads no OopPricing cell by POSITION 0 (the column-A assumption)');
+  });
+  assert.ok(/item: o\.name \|\| o\.code \|\| ''/.test(diag), 'the diagnostics name the ITEM, not whatever sits in column A');
+  // F-01: the verify path keys the sheet by the SAME resolver the picker used.
+  assert.ok(/const nameCol = oopNameCol_\(headers\);/.test(verify) && /rows\[i\]\[nameCol\]/.test(verify),
+    'oopVerifyQuotes_ keys byName on the header-discovered name column');
+});
 
 test('OOP-C: the diagnostics REPORT the name column — the panel that read CLEAN while every lookup returned nothing', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
@@ -13711,12 +13770,19 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopVerifyQuotes_'), vCtx, { filename: 'oopVerifyQuotes_' });
 
+  // THE OPERATOR'S SHAPE: the code in column A, the item in column C (the
+  // OOP-C rule — "a fixture that agrees with the assumption cannot test it").
+  // Until 2026-09-17 this grid had `Item` in A, which is exactly why the
+  // verify path's column-A key survived: every quoted send on the real sheet
+  // was refused as "no longer lists" while this pin stayed green.
   const GRID = [
-    ['Item', 'Price', 'EffectiveDate'],
-    ['Widget', '$129.00', '2026-09-01'],
-    ['Gadget', '$50.00', ''],
-    ['Priceless', '', '2026-09-01'],
+    ['HCPCS', 'Category', 'Item', 'Price', 'EffectiveDate'],
+    ['W-100', 'Widgets', 'Widget', '$129.00', '2026-09-01'],
+    ['G-200', 'Gadgets', 'Gadget', '$50.00', ''],
+    ['P-300', 'Other', 'Priceless', '', '2026-09-01'],
   ];
+  assert.notStrictEqual(String(GRID[0][0]).toLowerCase(), 'item',
+    'the fixture must NOT put the item in column A — that is the shape the defect hid behind');
   // The fake sheet is installed per case; `throws` makes oopSheet_ blow up.
   const install = (grid, throws) => {
     vCtx._grid = grid; vCtx._throws = !!throws;
@@ -16903,6 +16969,11 @@ test('A1: calcHours_ deducts EVERY break pair, and breakPairs_ is the one pairin
   close(ch('22:00:00', '06:00:00', null, null), 8.0, 'overnight clock pair');
   close(ch('22:00:00', '06:00:00', '02:00:00', '03:00:00'), 7.0, 'overnight with a break');
   assert.strictEqual(ch('bogus', '17:00:00', null, null), null, 'corrupt clock pair -> null');
+  // F-03 (2026-09-17): timeToMins_ drops seconds, so 09:00:10 → 09:00:45 is an
+  // EQUAL pair; the old `<=` paid it as a 24-hour day.
+  close(ch('09:00:10', '09:00:45', null, null), 0, 'an equal-minute pair is ZERO hours, not a day');
+  close(ch('09:00', '09:00', null, null), 0, 'equal HH:mm is zero too');
+  close(ch('09:01', '09:00', null, null), 23 + 59 / 60, 'a one-minute reversal is still the overnight wrap (strict <)');
   close(ch('09:00:00', '17:00:00', 'bogus', '13:00:00'), 8.0,
     'a corrupt break never voids a good clock pair (INV-176)');
 

@@ -4937,7 +4937,14 @@ function cnOpenSchedModal_(opts) {
   if (typeof schedFetch_ === 'function') schedFetch_(true);
 }
 
-function cnCloseSchedModal_() { /* idempotent — no module state to clear */ }
+/** onClose — the hook OWNS the close (closeOverlay delegates entirely to a
+ *  registered hook; INV-145 lets a hook refuse). No module state to clear;
+ *  the one thing it must do is REMOVE the overlay — until 2026-09-17 this was
+ *  a no-op, so Close, Escape and the backdrop all left the modal open. */
+function cnCloseSchedModal_() {
+  var o = document.getElementById('cn-sched-overlay');
+  if (o) o.remove();
+}
 
 /** Hook the shell's schedFetch_ calls after every list refresh (typeof-guarded
  *  there). Re-renders only while the modal is actually open. */
@@ -5081,7 +5088,11 @@ function cnOpenScratchpadModal_() {
 /** onClose — flush a pending debounce so typed text never dies with the
  *  modal (the INV-148 rule). Idempotent (safe when already closed). */
 function cnCloseScratchpadModal_() {
-  if (CN_SCRATCH.dirty) cnScratchSave_(true);
+  if (CN_SCRATCH.dirty) cnScratchSave_(true);   // reads the field synchronously, BEFORE the DOM goes
+  // The hook OWNS the close (closeOverlay delegates to it) — remove the
+  // overlay, or Close / Escape / backdrop do nothing (fixed 2026-09-17).
+  var o = document.getElementById('cn-scratch-overlay');
+  if (o) o.remove();
 }
 
 function cnScratchStatus_(msg, warn) {

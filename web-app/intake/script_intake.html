@@ -1063,7 +1063,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'ynnum':     return intakeYnNumControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
-    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(text) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(ariaLabel) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
 }
 
