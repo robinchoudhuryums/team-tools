@@ -25,7 +25,7 @@ Updated: 2026-09-17
   jsdom; F-03 by running `calcHours_`).
 - Batches 1 and 2 are committed on `claude/festive-noether-unougu` (67cbe2d,
   263a0fe, 22342f8 + this checkpoint) and NOT merged, NOT deployed.
-- The next concrete step: merge, push, New version; then walk S110 FIRST (the
+- The next concrete step: merge, push, New version; then walk S112 FIRST (OOP — renumbered from the duplicate S110; the
   composer send and the by-name eligibility check both failed before Batch 1),
   then S7's two new Day Edit steps, then run the sheet doctor once for any
   equal-minute day that was paying 24 h.
@@ -50,7 +50,7 @@ Updated: 2026-09-17
 
 ## Pending / not yet done
 - Batches 3–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
-- **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S110, then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
+- **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - **`/reflect` for cycle 19 is OWED** and reads the archived block: the estimates.csv rows for D1, D2, F1, F2, R, T, SP, SP2, PTO, OOP-A, OOP-B, ELIG, OOP-C and H1–H3 (the archived `Estimates:` line carries estimate AND actual for each).
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
   (no cap, no honest exhausted-message — now also scan finding F-15) and the
@@ -59,7 +59,7 @@ Updated: 2026-09-17
 ## Open follow-on items
 - Test Suite: the integration tier is the only place `test_oop_verifyQuotes_currentStaleAndDeleted` executes; it was RED for a day and unrun. Until the dev instance exists, every "integration pin touched by a round" should be run by hand from the editor after a push.
 - 20_timeclock.js: the LIVE punch path still accepts a Clock Out in the same minute as a Clock In (it now pays 0 h and the doctor reports it). A live-path refusal is a UX decision not taken in Batch 1.
-- docs: two new gotcha rules are owed (one column resolver per operator sheet; a registered onClose hook OWNS the close), the C3 wrap decision's equal-minute clause, S7's two new steps, and a modal open→close scenario — listed in the Batch 1 block's DOCUMENTATION UPDATES.
+- docs: `/sync-docs` ran 2026-09-17 after Batch 2 — g126–g130, INV-213–215 (+ INV-159/209 amendments), S7/S19/S112/S113 (the OOP scenario was a duplicate `S110`, renumbered S112), the two decision entries, modules.md, operator-log.md and test-harness-log.md; the two Dashboard error scenarios are on camera. Nothing outstanding from Batches 1–2.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - An equal-minute Clock In / Clock Out is ZERO hours, not an overnight wrap and not null — it is a genuine zero the doctor reports; the manager writers refuse it by name; the live path keeps accepting it (a rep may legitimately clock straight back out).
@@ -72,7 +72,7 @@ Updated: 2026-09-17
 Batches 1 and 2 are implemented, pinned, bite-checked and committed on
 `claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
 are all green. Next: open the PR when the operator asks; after the merge + New
-version, walk S110 first (Batch 1's send + Batch 2's geocoder message), then S7's
+version, walk S112 first (OOP — Batch 1's send + Batch 2's geocoder message), then S7's
 two new steps, then the sheet doctor. Then pick the next batch from
 `.cycle/blocks/20-scan-batch-plan.md` (Batch 3, the H1/H2 follow-through, is the
 suggested next) — and cycle 19's `/reflect` is still owed.

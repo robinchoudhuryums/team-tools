@@ -10,6 +10,27 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-17 (later still) — the cycle-20 /broad-scan, Batches 1 and 2
+
+Adds NO Script Property and no sheet change. Fourteen fixes from the scan, all
+in code; what an operator notices after the push + New version: (1) a quoted
+price SENDS again from the external composer on the real `OopPricing` sheet
+(every quoted send had been refused as "no longer lists" since OOP-C, because
+the verifier still keyed column A); (2) the eligibility check finds an item by
+NAME; (3) the Scheduled-reminders and Scratchpad modals CLOSE (Close, Escape,
+backdrop had all been dead since 2026-09-02); (4) an equal Clock In / Clock
+Out is zero hours, not a 24-hour day — run the sheet doctor once and read
+"inverted pairs" for any such day that was paying 24 h, then Day Edit it; Day
+Edit refuses an equal pair by name and its Save waits for the punches to load;
+(5) a failed read no longer looks like data on the Dashboard carousels, the
+coverage chip, the Needs-you notes row, the composer's department list, the
+Intake Sent viewer (an untouched toggle is N/A, not "No"), the Reference
+landing's manager blocks, the "Was this helpful?" bar, and the eligibility /
+map geocoder (a quota or outage says "the address service could not be
+reached", not "wrong address"). Walk S112 (OOP, renumbered from the duplicate
+S110) first, then S7's two new steps, then S113 (the two modals). Registrations
+337 (one new smoke test); read the count off the run.
+
 ## 2026-09-17 (later) — H2: one answer rate, one standard, shared with the Department Dashboard
 
 Adds NO Script Property that must be set (`CDR_DASHBOARD_DEPT` is an optional

@@ -166,6 +166,7 @@ Read a cell the wrong way and it does not throw — it silently lies. This famil
 - **Sheet LOCALE (not just timezone) can coerce stored ISO-T strings to Dates — and `SpreadsheetApp.create()` inherits the SCRIPT tz + deployer locale.** Fires when you create a spreadsheet, or read a stored ISO-T string. [Detail](docs/gotchas.md#g13-sheet-locale-not-just-timezone-can-coerce)
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** Fires when you read `CN.DATE_LOCAL`. [Detail](docs/gotchas.md#g16-cn-date-local-is-a-sheets-coerced)
 - **A positional tab read (`getSheets()[0]`) fails SILENTLY once the spreadsheet gains a second purpose — name the tab even when there is only one (2026-09-16).** Fires when you read a store by sheet POSITION, especially alongside header-discovered columns. Verify: the NAMED-TABS pin + `test_oop_pricingTab_isNAMEDnotTheFirstSheet`. [Detail](docs/gotchas.md#g121-a-positional-tab-read-is-correct)
+- **Two readers of ONE operator sheet share ONE column resolver — the send-time price verifier keyed column A while the picker resolved the item by header, so every quoted send was refused for a listed item (Batch 1, 2026-09-17).** Fires when a second function reads an operator-maintained tab another function already reads by header. Verify: the F-04 shared-scorer pin + the OOP-B real-shape grid. [Detail](docs/gotchas.md#g126-two-readers-of-one-operator-sheet)
 - **`normalizeType_` strips the `ADJ-` prefix.** Fires when you compare a punch type read from COMMENTS. [Detail](docs/gotchas.md#g18-normalizetype-strips-the-adj-prefix)
 
 ### Timezone frames
@@ -216,6 +217,7 @@ Who waits for whom, and what goes stale.
 - **Tag admin operations hold the global ScriptLock across all enrolled rep Sheets.** Fires when you add reps in volume, or add a cross-rep tag transform. [Detail](docs/gotchas.md#g90-tag-admin-operations-hold-the-global-scriptlock)
 - **Clock view coverage strip is SWR-cached per day (cycle-9 M-6).** Fires when you cache the Clock coverage strip. [Detail](docs/gotchas.md#g104-clock-view-coverage-strip-is-swr-cached)
 - **`getMyMetrics` is ALSO server-result-cached (L-1).** Fires when you wonder why a Metrics re-enter costs nothing. [Detail](docs/gotchas.md#g105-getmymetrics-is-also-server-result-cached-l)
+- **Never cache a FAILURE as a value — a truthy empty stub satisfies every later `if (cached)` guard, so one transient RPC failure left the composer with no departments for the whole session (Batch 2, 2026-09-17).** Fires when a failure handler assigns a default into a cache slot. Verify: the F-06 DOM pin. [Detail](docs/gotchas.md#g129-never-cache-a-failure-as-a-value)
 
 ### Honest failure — a degraded read must never read as data
 
@@ -229,6 +231,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute "now − start" for a missing END timestamp (F8, cycle-16 — FIXED).** Fires when a duration needs two timestamps and one is missing. [Detail](docs/gotchas.md#g54-an-unknown-duration-is-not-the-same)
 - **A computed ZERO that could mean three different things must say WHICH — the accrual audit row (operator 2026-09-14).** Fires when you record or render a zero a reader could reach by more than one route. Verify: the `previewPtoAccruals` pin. [Detail](docs/gotchas.md#g114-a-zero-that-could-mean-three-different)
 - **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than no seed — the warehouse registry's bare city names geocoded to city CENTRES (ELIG, shipped and removed 2026-09-16).** Fires when you seed a default — ask what it produces when nobody replaces it. Verify: the NO-seed pin. [Detail](docs/gotchas.md#g122-a-config-seed-that-is-a)
+- **"Not found" and "could not look up" are DIFFERENT answers — the geocoder's quota, denial and throw all collapsed to null, and every caller told the rep the ADDRESS was wrong (Batch 2, 2026-09-17).** Fires when a lookup's miss and its failure share one return value. Verify: the F-15 geocoder pin. [Detail](docs/gotchas.md#g128-not-found-and-could-not-look-up)
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
 - **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
@@ -239,6 +242,7 @@ The payroll-facing rules. Getting one wrong costs money or a balance.
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate (cycle-15 F3).** Fires when you read the roster email column to decide who counts as a person. [Detail](docs/gotchas.md#g03-roster-inclusion-goes-through-emprosteremail-row-the)
 - **Timesheet rows are in APPEND order, not time order.** Fires when you consume same-day punch rows. Verify: `test_getTodayPunches_sortsOutOfOrderBackfill`. [Detail](docs/gotchas.md#g14-timesheet-rows-are-in-append-order-not)
 - **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1).** Fires when you add a punch path, or reconcile a day. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
+- **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO hours — `timeToMins_` drops seconds, so a same-minute in/out compared equal and paid a 24-hour day (Batch 1, 2026-09-17).** Fires when you compare two clock stamps at minute granularity, or add a clock writer. Verify: the A1 equal-minute cases, the `managerClockOrderError_` pin, `calcHours_equalMinuteIsZeroNotADay`. [Detail](docs/gotchas.md#g127-calchours-wraps-out-in-as-overnight)
 - **`PtoEnabled` defaults to TRUE.** Fires when you touch PTO display OR the deduction. [Detail](docs/gotchas.md#g20-ptoenabled-defaults-to-true)
 - **Sick leave is UI-removed but backend-dormant (deferred #2 / C1).** Fires when you are tempted to re-add `Sick Leave` to `TIME_OFF_TYPES`. [Detail](docs/gotchas.md#g21-sick-leave-is-ui-removed-but-backend)
 - **PTO balance transitions.** Fires when you change a time-off status. [Detail](docs/gotchas.md#g27-pto-balance-transitions)
@@ -314,6 +318,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.** Fires when a badge poller queries the sidebar. [Detail](docs/gotchas.md#g99-sidebar-badge-selectors-use-data-tool-not)
 - **Modals close on Escape THROUGH their close hook — dynamic overlays must be created via `ensureOverlay`.** Fires when you create an overlay dynamically. [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
+- **A registered `onClose` hook OWNS the close, removal included — `closeOverlay` delegates to it entirely (INV-145 lets a hook refuse), so a hook that clears state and returns leaves the modal open under Close, Escape and the backdrop (Batch 1, 2026-09-17).** Fires when you register an `onClose` hook, or add a dynamic overlay. Verify: the F-02 DOM close-path pin, which sweeps every registered hook. [Detail](docs/gotchas.md#g130-a-registered-onclose-hook-owns-the-close)
 - **Apps Script's HtmlService iframe sandboxes `window.location.search`.** Fires when client code reads the URL or the app’s own address. Verify: a Node tripwire. [Detail](docs/gotchas.md#g107-apps-script-s-htmlservice-iframe-sandboxes-window)
 - **`form_public.html`'s signature canvas must be resized when its section becomes visible.** Fires when a hidden section containing a canvas becomes visible. [Detail](docs/gotchas.md#g109-form-public-html-s-signature-canvas-must)
 - **Client-side persistence is localStorage only, every key `ums…`-prefixed and every read/write in a try/catch** (a privacy-mode browser must not break the app; the KEY COUNT is in the running-totals block, not here). Fires when you add a client-side persisted key. [Detail](docs/gotchas.md#g112-eighteen-client-side-localstorage-keys-total)
@@ -852,8 +857,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 212 | `.cycle/config.md` |
-| Regression scenarios (S*) | 107 | `.cycle/config.md` |
+| Invariant library entries | 215 | `.cycle/config.md` |
+| Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

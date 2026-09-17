@@ -1776,6 +1776,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   existing `ExternalEmailSent` audit row — item, exact price, effective date,
   and still the recipient DOMAIN only: g36's minimization is not relaxed by the
   quote being commercially significant. INV-208.
+  **Batch 1 of the 2026-09-17 /broad-scan (F-01):** the verify path keyed the
+  live sheet by column A while OOP-C had moved the picker's name to the
+  header-discovered Item column, so on the operator's sheet every quoted send
+  was refused — closed, as designed, but for a listed item. The verifier now
+  keys `byName` on `oopNameCol_(headers)`; INV-213 makes "one resolver per
+  operator tab" the rule and the OOP-B fixture carries the operator's shape.
 
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
@@ -1804,6 +1810,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   which is the opposite of what "straight-line is only an estimate" suggests: a
   straight line is never longer than the drive, so over-the-limit is over either
   way, and a close YES says so rather than implying precision. INV-209.
+
+  **Batch 2 of the 2026-09-17 /broad-scan (F-15):** the geocoder's SERVICE
+  failure (quota, denial, throw) is its own return shape and reaches the rep as
+  "the address service could not be reached (<status>) — not a problem with
+  the address"; the bad-address message is reserved for ZERO_RESULTS. Same
+  batch, F-04: the eligibility filter scores through the ONE scorer the price
+  lookup uses (name OR code), so a by-name query no longer reports "No item
+  matched" for a listed item (INV-213).
 
 - <a id="the-operator-maintained-lookup-tables-are-named-tabs-in-the"></a>**The operator-maintained lookup tables are NAMED TABS in the KB store,
   not stores of their own (operator 2026-09-16, decided the day OOP shipped).**

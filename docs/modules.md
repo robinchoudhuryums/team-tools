@@ -41,6 +41,18 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="call-notes"></a>
+     **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
+     Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
+     (INV-215 — the manager writers refuse it by name and the sheet doctor
+     reports it at minute granularity); Day Edit's Save is disabled until the
+     prefill lands (a Save in that window sent blank slots, which delete
+     punches); the Dashboard's two metric carousels render a failed read as the
+     warn card, never "No call data for this period"; the shift-strip coverage
+     chip says "coverage unavailable" on a failed read instead of the blank that
+     means "no call activity"; and the Needs-you "calls without a note" row
+     treats a failed DQE read as "couldn't check", never "0 missing"
+     (`getMyMetrics.cdrUnavailable`).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -313,6 +325,14 @@ not restate it. Server endpoints live in the fourteen server files
      warehouse registry, any addressless or unreadable location row BY NAME, and
      how every eligibility value in the sheet parses — because an unreadable
      value renders "cannot tell", which reads like caution rather than a typo.
+     **2026-09-17 (the /broad-scan's Batches 1 + 2):** both search surfaces
+     score through ONE helper (`oopMatchScore_`, name OR code) on the
+     header-resolved row (INV-213 — the eligibility filter and the send-time
+     verifier had each kept a column-A read OOP-C removed from the lookup); a
+     geocoder SERVICE failure is named as such, never as a bad address (g128);
+     the manager landing's "Most used" / "Review due" blocks say which count
+     reads FAILED instead of "No opens recorded" or an empty queue; and "Was
+     this helpful?" thanks the rep only once the server has recorded it.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):

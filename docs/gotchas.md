@@ -342,7 +342,8 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   audit rows (the S7 full-day-reconcile contract; note this also collapses a
   legitimate multi-lunch day to the 4 displayed slots — the modal can only
   express one pair). RELATED DECISION (C3, retracted finding): `calcHours_`'s
-  overnight wrap (`out <= in` → +24h) is DELIBERATE, pinned by
+  overnight wrap (`out < in` → +24h; STRICT since Batch 1, 2026-09-17 — an
+  EQUAL minute pair is zero hours, see g127) is DELIBERATE, pinned by
   `test_calcHours_overnight` — it trades mis-keyed AM/PM pairs rendering as
   long days for same-date overnight pairs computing correctly; don't "fix"
   one direction without an operator decision. Pinned by
@@ -2636,6 +2637,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   bite-check claim more or less than it proved. Both halves matter, because a
   bite-check is the ONLY evidence that a pin can fail — and a project that
   writes pins as its main defence has no second line when the checker is wrong.
+  **A third direction, 2026-09-17:** a pin that is RED but never RUN counts
+  as green. `test_oop_verifyQuotes_currentStaleAndDeleted` used the operator's
+  real-shape fixture and would have failed on the column-A verifier (g126),
+  but it is an integration test, the deploy walk ran smoke only, and the walk
+  recorded "green". A round's integration pins are owed a run from the editor
+  after the push until the dev instance makes the nightly full run real.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -2993,3 +3000,127 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   behavioural, the real reader over an out-of-order fixture equal to the old
   full scan, both readers routed with the filter kept) and
   `test_metrics_cdrRowDateIso_serial`.
+
+<a id="g126-two-readers-of-one-operator-sheet"></a>
+
+- **Two readers of ONE operator sheet share ONE column resolver (Batch 1 of the
+  2026-09-17 /broad-scan, F-01 + F-04).** OOP-C (2026-09-16) taught
+  `searchOopPricing` to find the item name BY HEADER because the operator's real
+  `OopPricing` sheet has `HCPCS` in column A and the item in C. Two sibling
+  readers of the same tab were not taught: `oopVerifyQuotes_` — the send-time
+  re-verify that INV-208 makes load-bearing — still keyed its lookup on
+  `rows[i][0]`, so on the real sheet `byName` held billing codes, the picker's
+  name never matched, and EVERY price-quoted external send was refused with
+  "The pricing sheet no longer lists…" for an item that was listed; and
+  `checkOopEligibility` still scored column A, so a filtered eligibility query
+  said "No item matched — do not check a similar item" about a listed item. The
+  fail direction was closed both times (no wrong price shipped), but the
+  features were dead on the deployed sheet, and the OOP-B Node pin could not
+  see it because ITS fake sheet had the item in column A — the exact shape the
+  OOP-C entry in `docs/test-harness-log.md` warns "cannot test it". g120 frames
+  the mirror hazard as client↔server; this one was server↔server: two functions
+  reading one operator tab through different column assumptions. RULE: an
+  operator-maintained tab gets ONE row resolver (`oopRowObj_`) and ONE scorer
+  (`oopMatchScore_`), every reader goes through them, and no OOP function reads
+  a cell at position 0. The fixture rule follows: a fake sheet for that tab
+  carries the OPERATOR'S column order, never the code's assumption. Fires when
+  a second function reads an operator-maintained tab another function already
+  reads by header. Verify: the F-04 shared-scorer pin (behavioural on the
+  scorer, structural on all four readers — no `rows[i][0]` / `row[0]`), the
+  OOP-B grid guard (`column A is never the item`), and the editor test
+  `test_oop_verifyQuotes_currentStaleAndDeleted` against the real-shape fixture.
+
+<a id="g127-calchours-wraps-out-in-as-overnight"></a>
+
+- **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO
+  hours (Batch 1 of the 2026-09-17 /broad-scan, F-03).** `timeToMins_` drops
+  seconds, so a clock-in at 09:00:10 and a clock-out at 09:00:45 — legal on the
+  live path the moment the 30-second debounce clears — compared EQUAL, and the
+  C3 wrap (`out <= in` → +1440) paid a 24-hour day into the timesheet total,
+  the pay statement's estimated gross, the accrual hours index and the manager
+  sparkline. The sheet doctor did not see it: its inverted-pair test compared
+  full `HH:mm:ss` strings, where `09:00:45 <= 09:00:10` is false. Executed in
+  the scan: `calcHours_('09:00:10','09:00:45')` → 24. The rule now has three
+  parts, each pinned: the wrap is STRICT (an equal pair is a genuine zero, not
+  a shift that ended a day later and not `null`); both manager writers refuse an
+  equal Clock In / Clock Out by name through the one pure rule
+  `managerClockOrderError_`, after format validation and before the plan; and
+  the doctor compares at MINUTE granularity — the frame `calcHours_` pays in —
+  so an equal-minute pair is reported (report-only, Day Edit is the fix). The
+  live punch path still ACCEPTS a same-minute clock-out (a rep may legitimately
+  clock straight back out); it now pays zero and the doctor lists it. Fires when
+  you compare two clock stamps at minute granularity, or add a clock writer.
+  Verify: the A1 pin's equal-minute cases (both sides of the boundary), the
+  `managerClockOrderError_` pin (behavioural + both writers + the strict wrap +
+  the doctor's minute compare), and the smoke test
+  `calcHours_equalMinuteIsZeroNotADay`.
+
+<a id="g128-not-found-and-could-not-look-up"></a>
+
+- **"Not found" and "could not look up" are DIFFERENT answers (Batch 2 of the
+  2026-09-17 /broad-scan, F-15).** `kbGeocodeOne_` returned `null` for every
+  non-OK outcome — a place that does not exist (ZERO_RESULTS), the shared daily
+  quota (OVER_QUERY_LIMIT), a denial, a service error, and a thrown "Service
+  invoked too many times" alike — and both callers turned `null` into "Could
+  not find that location — try a 5-digit ZIP code." So a quota event mid-shift
+  told every rep that every customer's address was wrong, and the eligibility
+  box and the map block, which share the geocoder with no cap between them,
+  degraded each other into the same false message. The two answers ask the rep
+  to do different things (fix the address / wait and retry), and collapsing
+  them sends the rep to fix the wrong one. RULE: a lookup's MISS and its
+  FAILURE never share a return value. `kbGeocodeOne_` returns
+  `{unavailable:true, status}` for a service failure (ZERO_RESULTS stays
+  `null`), `kbGeocodeUnavailableMsg_` is the ONE message every caller uses
+  (names the status; says "not a problem with the address"; mentions the
+  quota), both query callers return it BEFORE the bad-address branch, and the
+  shared coordinate cache never stores a failure. The same shape closed seven
+  more sites in the same batch (F-06, F-13, F-18, F-41, F-47, F-25, F-45): a
+  failed read rendered as an empty config, "No call data", "No", a blank
+  coverage chip, zero missing calls, no usage, and a premature "Thanks". Fires
+  when a lookup's miss and its failure share one return value, or a failure
+  handler renders the success path's empty state. Verify: the F-15 geocoder pin
+  (a stubbed Maps through OK / ZERO_RESULTS / OVER_QUERY_LIMIT / REQUEST_DENIED
+  / throw; the cache; both callers' branch order) and the Batch 2 DOM pins.
+
+<a id="g129-never-cache-a-failure-as-a-value"></a>
+
+- **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
+  F-06).** `cnFetchDeptConfigIfNeeded_` guarded on `if (CN_STATE.deptConfig)`
+  and its failure handler assigned an EMPTY config `{departments: [], …}` —
+  truthy, so the guard honoured it for the rest of the session. One transient
+  RPC failure on the first Log enter (a routine event) left the composer with
+  zero Recipients, Preview refusing ("Pick at least one recipient first"), no
+  state options, no templates, no quick links and no auto-tags until a reload —
+  and the structured `{error}` shape was stored as the config verbatim. The
+  external composer had already fixed its own copy of this class
+  (`CN_STATE.formCatalog = null` on failure, F(L-26)); this was the sibling.
+  RULE: a failure handler stores NOTHING in a slot a truthiness guard reads;
+  every consumer of that slot already tolerates null, and the next open re-asks.
+  A structured `{error}` from the success handler is a failure too. Fires when
+  a failure handler assigns a default into a cache slot, or a success handler
+  stores a payload without checking `.error`. Verify: the F-06 DOM pin
+  (failure → null → refetch; `{error}` → null; a real config → stored and then
+  honoured).
+
+<a id="g130-a-registered-onclose-hook-owns-the-close"></a>
+
+- **A registered `onClose` hook OWNS the close, removal included (Batch 1 of
+  the 2026-09-17 /broad-scan, F-02).** `closeOverlay` delegates ENTIRELY to a
+  hook registered through `ensureOverlay(id, {onClose})` — it strips the `open`
+  class itself only when no hook exists or the hook throws — because INV-145
+  lets a hook REFUSE (the composer mid-send). The Scheduled-reminders and
+  Scratchpad modals registered hooks that cleared module state and returned,
+  so Close, Escape and the backdrop click all ran the hook and nothing else:
+  the overlay stayed `open`, `aria-modal`, focus-trapped over the Log view, and
+  the only exit was a reload (g69's blank iframe). Both shipped that way on
+  2026-09-02 and were deployed twice; the pin asserted the hook EXISTED and the
+  visual scenario only OPENED the modal (g116). Reproduced in jsdom: after
+  `closeOverlay` and after an Escape keydown, both overlays still read
+  `overlay open`. RULE: a hook that does not refuse must REMOVE its overlay (the
+  sibling pattern — `cnCloseComposerModal_`, `cnCloseFormSubOverlay_`,
+  `cnCloseTimelineOverlay_` all `overlay.remove()`); `ensureOverlay` recreates
+  the node on the next open. Fires when you register an `onClose` hook, or add
+  a dynamic overlay. Verify: the F-02 DOM pin — both modals through
+  `closeOverlay`, Escape and the Close button's wiring, the scratchpad's
+  flush-on-close, and a SWEEP that closes every hook registered at that moment
+  (a floor, not a claim that no hook may ever refuse).

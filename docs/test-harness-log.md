@@ -1333,3 +1333,39 @@ recreated by `git push` from the stale pre-merge tip, silently diverging from
 `main`. GitHub deletes the branch at merge; a push recreates it wherever the
 local ref happens to point. Restart from `origin/main` after a merge — it is now
 a Decisions entry in STATE.md rather than something to rediscover.
+
+## 2026-09-17 — the cycle-20 /broad-scan, Batches 1 and 2, and two Dashboard error scenarios
+
+Pure +6, DOM +5, visual +2, one smoke registration; the live totals are
+CLAUDE.md's running-totals block. Fifteen mutations bite-checked, fifteen bite
+(eleven through `scripts/bite.sh`, four DOM by hand). Three things worth
+recording.
+
+**The pin that would have caught the High never ran.** Batch 1's F-01 (the
+send-time price verifier keyed column A) had an editor pin against the
+real-shape fixture that would have FAILED — but it is an integration test, the
+2026-09-17 deploy ran smoke, and the walk recorded green (g116's third
+direction). The Node twin could not see it either: its fake sheet had `Item`
+in column A. The OOP-B grid now carries the operator's shape with a guard that
+the item is never in A, and the F-04 pin forbids a position-0 read in any of
+the four OopPricing readers.
+
+**`bite.sh` refuses a mutation with a double quote — quote the JS with regex
+instead.** Six Batch 2 bites were silently skipped on the first pass because
+the mutation strings quoted JavaScript string literals (`'…'` inside `"…"`),
+which the helper refuses by design. Rewriting each as `re.sub(r'…', …, s,
+count=1)` with `.` for the quote characters (and `chr(39)` in a lambda when the
+replacement needs one) got every bite through. A refused bite prints REFUSING
+and exits 2; a loop that only greps for BITES reads that as silence — grep for
+`BITE|REFUS|FAILED`.
+
+**jsdom under `runScripts: 'outside-only'` never executes inline `onclick`
+attributes.** The first F-02 DOM pin clicked the modal's Close button and
+asserted it closed; it did not, because the handler never ran. The pin now
+asserts the button's WIRING (`onclick` routes through `closeOverlay`) and
+exercises the same path via `closeOverlay` and the document Escape handler.
+Any DOM pin that clicks an inline-handler button is testing nothing.
+
+**Visual:** `clock-dash-error-light-wide` (`?failrpc=getDashboardMetrics`) and
+`clock-coverage-error-light-wide` (`?failrpc=getMyMetrics`) put Batch 2's two
+Dashboard warn states on camera; both rendered clean on the first shoot.
