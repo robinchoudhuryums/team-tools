@@ -5,7 +5,7 @@ Cycle: 19 — OPEN (the /broad-scan of 2026-09-09 opened it; cycle 18's block
 moved to HISTORY.md at that point, per the close-out procedure). The
 between-cycles operator work that preceded it is closed and reflected as
 `19pre` (net +12; `.cycle/blocks/19pre-a-reflect.md`).
-Phase: **IMPLEMENTATION COMPLETE AND MERGED — DEPLOY PENDING (2026-09-17).** **SEVEN rounds are stacked on ONE undeployed Apps Script project** (#251 the `perDay` accrual fix · #252 the FORMS/QA fixtures · #253 SP/SP2/PTO · OOP-A · OOP-B + ELIG + the KB-store move · #254's doc sync · **#255 OOP-C**, which found the reader did not work against the operator's real `OopPricing` headers — column A is `HCPCS`, so every product-name search scored zero — caught the day before the deploy). **THE SHEET CHANGED TWICE ON 2026-09-17 and the fixtures follow it:** the `Pick-Up Cost` column is GONE (it was always equal to the base price, and two columns that must stay equal is an invariant the spreadsheet cannot enforce), and the base-price header is now `OOP Price – pick-up` with an EN DASH, so the quote line self-documents the fulfilment. Verified end to end: the stem matcher resolves it, the by-label lookup matches it exactly, the label survives the JSON round trip. **Read the consolidated post-deploy checklist in "Where I left off" rather than assembling it from the Pending list: seven rounds each left their own "after the push" line, in seven different places.** The operator did the sheet-side setup on 2026-09-16 — the `OopPricing` and `LocationAcceptance` tabs exist, the warehouse rows carry real street addresses, and `OOP_SS_ID` / `TEST_OOP_SS_ID` are deleted — and will run the diagnostics + `clasp push -f` + a New-version deploy on 2026-09-17. **Read the consolidated post-deploy checklist in "Where I left off" rather than assembling it from the Pending list: six rounds each left their own "after the push" line, in six different places.** Preceding: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushed to Apps Script, and the editor suite run in TWO HALVES on the real runtime: `runAllTestsPartA` **209/209** (`Expected: 209 registrations (118 smoke · 91 integration-A)`, 8.4 min) and `runAllTestsPartB` **107/107** (`Expected: 107 registrations (107 integration-B)`, 14.0 min) — 316 total, 0 failed, 0 skipped, matching the derived registration count exactly. **Part B's 107 is the discriminator that proves the deployment is CURRENT** (the pre-push suite read 315; Batch Q's extra registration lives in shard B, so Part A alone could not tell). Together the two halves ARE `runAllTests` (the S1/S4 pin holds the shards disjoint and their union equal to the registration list), so **regression scenarios S1 AND S2 are PASSED on the fourteen-file server** — the F2 deploy gate is CLOSED, and the Medium new failure mode the 19-c reflection logged (the split's cross-file load class guarded by a MODEL of Apps Script rather than by Apps Script) is DISCHARGED for this deployment: the fourteen files do load as one global scope in the real runtime. **ONE FINDING FROM THE RUN, and it is live operator state:** the suite-environment block read `INSTANCE_LABEL: unset · INSTANCE_IS_PROD: unset → UNMARKED (treated as prod; runAllTests still allowed)` against the REAL stores, so the full integration suite ran on PRODUCTION with the blue-green guard inert — `TEST_` rows into the live payroll/audit/PHI stores (cleaned up in `finally`, and the log confirms `3 re-onboarded`), the TEST accounts visible on team surfaces for ~22 minutes, and ScriptLock contention against live punches from 2:39 to 3:10 PM. See the Pending list. Preceding: implement — **Batch F2 + the four F1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-F2-followons-broad-implement.md`; net 0 − 0 = 0, a move). **`web-app/Code.js` IS GONE** — 30,789 lines split into fourteen files (`00_config.js` first, then one per module in the numeric order `filePushOrder` declares). Move-only is PROVEN, not claimed: 1,204 top-level units reassembled byte-identically, each checked standalone with `node --check`, and `test/client/server-split-manifest.json` (generated from Code.js at tag `pre-f2-split`) is re-derived by the F2c pin on every run — same names, same bodies, same files. Pure harness 818 → 822 (move-only, duplicate-name, split shape, the bite.sh guard); DOM 113 unchanged; every derived count identical; page.html byte-identical. `'Code.js'` is now an ALIAS for the server in the harness, so the ~500 pins naming it were untouched. **THE PLAN IS FINISHED: 0 → P → S → Q → C → D1 → D2 → F1 → F2 are all done**; only its Deferred set remains, which is operator/feature decisions. **NOT PUSHED/PR'd, and the DEPLOY IS BLOCKING: push to DEV and run `runAllTests` in that editor BEFORE prod** (F2d) — S1/S2 are the one check this container cannot run. Preceding: implement — **Batch F1 DONE 2026-09-14** (`.cycle/blocks/19-F1-broad-implement.md`; net 0 − 0 = 0, a deliberate no-op batch). The harness owns `serverSource()`, derived from `web-app/.clasp.json`'s `filePushOrder` (now `["Code.js"]`, was empty); the 73 direct server reads in run.js, `extractRawFunction`/`extractConstObject`, the two hand-listed server scans and `counts.mjs`'s two derivations all resolve through it, so F2 can move 40,000 lines between files without touching a pin. CI's `node --check` is a glob. Pure harness 814 → 818 (byte-equality, the filePushOrder declaration incl. the dev example, load-order evaluation, and a ban on reading the server by filename); DOM 113 unchanged; `build.mjs` reproduces page.html with no diff. INV-202's acceptance criterion is enforced by a pin rather than asserted. NOT PUSHED/PR'd yet. **REMAINING: F2 only** (the Code.js split — L, ~2 days). Preceding: implement — **Batch D2 + the four D1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-followons-D2-broad-implement.md`; net 1 − 0 = 1). CLAUDE.md 4,873 → 836 lines and is now MAPS AND INDEXES only: the gotcha narratives are `docs/gotchas.md` (113 entries, verbatim), the module narratives `docs/modules.md`, the operator entries `docs/operator-state.md` (74, verbatim — the D1c compression D1 deferred), the Test Command narrative `docs/test-harness-log.md`; a one-sided 1,000-line ceiling pin keeps it that way. Three NEW index↔entries pins (MODULE-MAP, GOTCHA-INDEX, OPERATOR-INDEX) plus the ceiling: pure harness 810 → 814, DOM 113 unchanged, `counts.mjs --check` green, 14 mutations / 14 bites + one inverse. Follow-ons: INV-202/203 written into the library; `counts.mjs` now reports a red harness in ONE line instead of a 70k-character stack trace; C4's ban gained pattern (d), a plain restated total. NOT PUSHED/PR'd yet. Preceding: implement — Batch D1 DONE 2026-09-14 (`.cycle/blocks/19-batchD1-broad-implement.md`; net 0 − 0 = 0, a structural batch shipping no deployable code). CLAUDE.md 12,662 → 4,873 lines; the Cycle Workflow Config is `.cycle/config.md`, the Key Design Decisions are `docs/design-decisions.md` (137-link index kept), the dated rounds are `docs/operator-log.md`. Pure harness 808 → 810 (two NEW pins on the index↔anchors coupling the split created). Preceding: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0, covering the four post-reflect next-steps batches P/S/Q/C; metrics + estimates rows appended; INV-202/203 proposed). Batch C MERGED as PR #244 (2026-09-14, f10c2ae) — every next-steps batch through C is now on main. Preceding: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
+Phase: **DEPLOYED 2026-09-17 — SMOKE GREEN; the post-deploy walk is IN PROGRESS (steps 1, 3 and 4 DONE · step 2 unreported · steps 5–8 outstanding — the walk is in "Where I left off").** The operator ran `clasp push -f` + a New-version deploy; then `installAutomationTriggers()` → **16 triggers, UNCHANGED**, which is exactly what step 3 said to expect (CLAUDE.md's running-totals block derives 16 from the installer, and a CHANGED count was the finding); then `runSmokeTests` on prod → **Passed 118 · Failed 0 · Skipped 211 · Total 329**, with `Expected: 329 registrations (118 smoke · 91 integration-A · 120 integration-B)` matching the repo on ALL THREE shards. **That `Expected:` line is the discriminator that proves the deployed `Tests.js` is current** — it is DERIVED from the whole registration list, and integration-B moved 107 → 120 across the seven rounds, so a stale push would still print 107 (the same trick Part B's 107 played on 2026-09-14, one shard finer). **What smoke does NOT prove:** every OOP editor test is integration and therefore SKIPPED, so the fourteen server files are INFERRED current, not measured. Step 5's OOP diagnostics is the first read that measures them, and step 2 (fourteen files, no `Code.js`) is still unreported. **SEVEN rounds were stacked on ONE undeployed Apps Script project and went out together** (#251 the `perDay` accrual fix · #252 the FORMS/QA fixtures · #253 SP/SP2/PTO · OOP-A · OOP-B + ELIG + the KB-store move · #254's doc sync · **#255 OOP-C**, which found the reader did not work against the operator's real `OopPricing` headers — column A is `HCPCS`, so every product-name search scored zero — caught the day before the deploy). **THE SHEET CHANGED TWICE ON 2026-09-17 and the fixtures follow it:** the `Pick-Up Cost` column is GONE (it was always equal to the base price, and two columns that must stay equal is an invariant the spreadsheet cannot enforce), and the base-price header is now `OOP Price – pick-up` with an EN DASH, so the quote line self-documents the fulfilment. Verified end to end: the stem matcher resolves it, the by-label lookup matches it exactly, the label survives the JSON round trip. **Read the consolidated post-deploy checklist in "Where I left off" rather than assembling it from the Pending list: seven rounds each left their own "after the push" line, in seven different places.** The operator did the sheet-side setup on 2026-09-16 — the `OopPricing` and `LocationAcceptance` tabs exist, the warehouse rows carry real street addresses, and `OOP_SS_ID` / `TEST_OOP_SS_ID` are deleted — and ran `clasp push -f` + the New-version deploy on 2026-09-17. **The diagnostics read is walk step 5 and is STILL OWED.** **The full "Preceding:" chain for this cycle — every earlier phase verbatim, including the 2026-09-14 deploy and the F2 split — moved to "## Phase history" at the end of this file (2026-09-17), because the SessionStart hook prints THIS section into every fresh session and 9,000 characters of closed history is the part a reader skips. Nothing was rewritten in the move.**
   are DONE and committed, and `/sync-docs` has reconciled the documentation
   behind them. Nothing from the plan remains except its Deferred set, which is
   operator/feature decisions rather than defect work. The cycle is ready for
@@ -24,7 +24,7 @@ Subsystem cycles since last Seams audit: 3 (cycle 18's F1–F5 round WAS the
   increment it — it closes a batch set INSIDE cycle 19, not a new subsystem
   cycle, and counting one cycle twice would pull the every-4 seams cadence
   forward by a cycle it did not earn. Do not "correct" this to 3.)
-Updated: 2026-09-17 (PR #255 merged — OOP-C, the operator's real OopPricing headers; then the `Pick-Up Cost` column dropped and the base-price header renamed, fixtures following both. Earlier: PR #254 merged — OOP-A/OOP-B/ELIG, the KB-store move and `/sync-docs`; the operator completed the sheet-side setup the same day and deferred the deploy to 2026-09-17. Earlier: Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
+Updated: 2026-09-17 (**DEPLOYED — push + New-version deploy done, `installAutomationTriggers()` 16 unchanged, `runSmokeTests` 118/118 with the three-shard `Expected:` line matching the repo exactly**. Earlier the same day: PR #256 merged — the `Pick-Up Cost` column dropped and the base-price header renamed. Earlier: PR #255 merged — OOP-C, the operator's real OopPricing headers; then the `Pick-Up Cost` column dropped and the base-price header renamed, fixtures following both. Earlier: PR #254 merged — OOP-A/OOP-B/ELIG, the KB-store move and `/sync-docs`; the operator completed the sheet-side setup the same day and deferred the deploy to 2026-09-17. Earlier: Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
 The operator posted ten testing notes (nine + a tenth in the follow-up) after
@@ -100,24 +100,20 @@ D (note 10 — a new presence signal on the Team-right-now card).
   Property; the operator (a manager) already sees all four QA tabs.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Operator round: ALL FOUR batches (A + B + C + D) landed and pushed. Both
-  harnesses are green (785 pure / 113 DOM), the tree is committed on
-  `claude/broad-scan-fw462g`; every change was bite-checked
-  (6 + 8 + 13 + 11 mutations, all biting). The round's documentation is
-  NOT yet reconciled — each block's DOCUMENTATION UPDATES list is owed to
-  `/sync-docs` (INV-24/S14 were amended in-batch; the rest are listed).
-- Nothing else in flight. The four AUDIT batches were bite-checked too (20
-  mutations / 20 bites across the two sessions).
-- `/sync-docs` is DONE and applied for the operator round (all fourteen owed
-  updates plus three drifts the four checks turned up on their own).
-- The FOLLOW-ONS round (`/broad-implement retention tier for ViewUsage and
-  ClientErrors tabs, suggestion follow-ons`, 2026-09-11) is landed: RT
-  (b9c0e9b), BP (dab2999), SA (cafae41), TW (e5576da), DR (cd94af3) — all
-  on `claude/broad-scan-fw462g`, every pin bite-checked against a committed
-  tree (6 + 6 + 5 + 6 + 3 mutations, all biting). Harnesses: pure 796 / DOM
-  113; editor suite now expects 312 (two new trigger-gate tests). Its
-  DOCUMENTATION UPDATES list (in the block) is owed to `/sync-docs`; the
-  next concrete step after that is `/reflect`.
+- **NOTHING IS IN FLIGHT IN THE REPO.** Tree clean; `main` carries every round
+  through PR #256 (`2960f99`); all three harnesses green, `lint-server` clean,
+  `counts --check` green. A fresh session starts by READING, not by resuming an
+  edit.
+- **The open work is on the DEPLOYMENT, not in the tree.** The 2026-09-17 deploy
+  happened and the post-deploy walk in "Where I left off" is PART DONE: steps 1,
+  3 and 4 complete, step 2 unreported, steps 5–8 outstanding. **Start at step 5.**
+- Harness counts as of this commit are the running-totals block in CLAUDE.md
+  (851 pure · 121 DOM · 102 visual · 329 editor registrations) — read them there,
+  never off the prose in this file, which quotes historical figures by design.
+- Everything below this section is a DATED RECORD, not a live claim. Where a
+  round wrote "NOT PUSHED TO APPS SCRIPT" or "NOT yet merged", it has since been
+  corrected in place with the date it landed; if you find one that has not been,
+  the Phase line and this section are the authority.
 
 ## Completed this cycle
 - OOP-C | web-app/{70_kb,30_callnotes,Tests}.js, web-app/cn/script_callnotes.html, web-app/kb/script_kb.html, test/client/{run.js,dom/runDom.js}, CLAUDE.md, docs/{operator-state,operator-log,test-harness-log}.md, .cycle/config.md | The operator's REAL `OopPricing` headers, supplied after the round merged, RAN THROUGH THE LIVE READER rather than read against the code — which is how three defects fell out in one pass. Column A is `HCPCS`, the item is column C, so every product-name search scored 0 and rendered "not in the sheet" about an item that was, and the composer would have quoted a billing code. The sheet also carries THREE customer-facing totals per item and the picker inserted the leftmost — a $150 shortfall for any customer whose item ships. Name found by header (column A the fallback), search matches name OR code, one labelled Insert per priced column, `oopPriceByLabel_` verifying against the column a quote NAMES. The diagnostics said `missing: []` and read CLEAN throughout; they now report the name column. FIVE pins agreed with the bug — the fixture worst of all, with `Item` in column A. Block: `.cycle/blocks/20pre-OOP-C-broad-implement.md`; net +1; 11 mutations / 11 bites after five repairs.
@@ -152,33 +148,42 @@ D (note 10 — a new presence signal on the Team-right-now card).
 - P2 | test/client/run.js, web-app/styles_design_tokens.html, web-app/tc/script_clock.html, CLAUDE.md | TW-B's ratchet half retired (ban + FROZEN + canvas rule kept); `--warn-glow` beside `--accent-glow` in the two base blocks only; the ribbon's three fallbacks ride the glow tokens under their unchanged color-mix lines — clock-light-wide + clock-dark-wide re-shot BYTE-IDENTICAL; INV-200 written; new pin P2; 4/4 bites. Commit d111b10.
 
 ## Pending / not yet done
-- **OPERATOR (2026-09-17): the deploy, and the ONE ordered walk that discharges six
-  rounds' worth of scattered "after the push" lines below.** Every item further down
-  this list that begins "after the push" is covered by this walk; do this instead of
-  reading them separately. See "Where I left off" for the ordered version.
-- **OPERATOR (2026-09-15, Batch T): after the push, RE-RUN `installAutomationTriggers`.** `sendCallNotesUrgentDigest` moved into the new `runDailyChecks` dispatcher, so until the installer runs, `runDailyChecks` does not exist and the open-punch scan never fires. The reported count should be UNCHANGED. Then walk S109 and S97 after the first 8am scan. `.cycle/blocks/19-T-open-punch-prevention-broad-implement.md`; net 1 − 0 = 1; registrations 320 → **322**.
+- **OPERATOR (2026-09-17): the deploy is DONE and the ordered walk is PART DONE —
+  steps 1, 3 and 4 complete, step 2 unreported, steps 5–8 outstanding.** Every item
+  further down this list that begins "after the push" is covered by that walk; do it
+  instead of reading them separately. See "Where I left off" for the ordered version,
+  which now carries the result of each finished step.
+  - Step 1 (push + New version): **DONE**.
+  - Step 3 (`installAutomationTriggers`): **DONE — 16, unchanged**, the pass condition.
+  - Step 4 (`runSmokeTests` on prod): **DONE — 118 passed / 0 failed / 211 skipped /
+    329 total**, `Expected: 329 registrations (118 smoke · 91 integration-A · 120
+    integration-B)`, matching the repo on all three shards.
+  - Steps 2 and 5–8: still owed. Step 5 (the OOP diagnostics) is the next one and the
+    first that measures the deployed SERVER — smoke skipped every OOP test, because
+    they are all integration.
+- **(RE-RUN DONE 2026-09-17 — 16 triggers, unchanged; S109/S97 still owed next morning.) OPERATOR (2026-09-15, Batch T): after the push, RE-RUN `installAutomationTriggers`.** `sendCallNotesUrgentDigest` moved into the new `runDailyChecks` dispatcher, so until the installer runs, `runDailyChecks` does not exist and the open-punch scan never fires. The reported count should be UNCHANGED. Then walk S109 and S97 after the first 8am scan. `.cycle/blocks/19-T-open-punch-prevention-broad-implement.md`; net 1 − 0 = 1; registrations 320 → **322**.
 - **OPERATOR (2026-09-15, Batch R): push the accrual reconciliation and walk S108 + S97.** `.cycle/blocks/19-R-accrual-resilience-broad-implement.md`; net 1 − 0 = 1. Registrations 319 → **320**. After the first 18:00 credit run, August should TOP UP on its own for Anne (15.82 h) and Margie — no column-R rewind needed. Julienne stays at zero until she has August punches, which is correct.
 - **OPERATOR (2026-09-15): run `previewPtoAccruals('2026-08')` after the push.** The 2026-09-01 run credited ZERO to all three PH reps (PH0001/2/3) — two with incomplete days (2 and 4), one with none — while the Timesheet now shows complete days assembled from `ADJ-` rows. Working hypothesis: the missing-punch adjustments were approved AFTER the 6pm Sep 1 credit, so the days were genuinely open at the time and the stamp then closed the month. The inspection confirms or refutes it; the AuditLog rows for those approvals (action = the punch type, column H `TRUE`, notes `approved adjustment request…`) carry the timestamps that settle it.
 - **OPERATOR (new, 2026-09-14): deploy the `previewPtoAccruals` batch.** `clasp push -f` + a New version. Two things move with it: the editor suite is now **318** registrations (Part A 209 + Part B **109**), and the PTO accrual audit rows gain a reason clause. Then run `previewPtoAccruals` from the editor (regression scenario S107) against the real roster — that is the first real answer to "does the accrual tally correctly", and the rep whose 2026-08 row read `hoursWorked=0` is the one to look at.
 - **OPERATOR (new): the 2026-08 zero row is still un-recovered.** The preview will now say WHICH of the three causes it was. If the rep did work that month, fix the cause, then set their column R back to `2026-07` and let the daily job re-credit; column I is the balance of record and the credit is a delta, so it composes.
 - OPERATOR: set `INSTANCE_IS_PROD=true` on prod (the 2026-09-14 run proved it unset — the full suite ran against live payroll with the guard inert). Setting it makes every full-suite entry point refuse on prod, so stand up the dev instance in the same pass.
-- OPERATOR: confirm the New version was cut, and that the editor lists fourteen server files with no `Code.js`.
+- **(New version CONFIRMED CUT 2026-09-17; the fourteen-files check is STILL OWED — walk step 2.)** OPERATOR: confirm the editor lists fourteen server files with no `Code.js`.
 - (DONE 2026-09-14) BATCH D1 of the next-steps plan — `.cycle/blocks/19-batchD1-broad-implement.md`;
   net 0 − 0 = 0 (structural; ships no deployable code). Estimate M (6 h) vs Actual ~3.5 h.
   On branch `claude/adoring-einstein-b3vs6c` (0e5b688, 9edcdef, 5236f5f, eca9455 + the inventory
-  line), NOT yet merged. D1c's entry compression is DEFERRED TO D2 on purpose — see
+  line), **MERGED as part of PR #245 and DEPLOYED 2026-09-14/17.** D1c's entry compression is DEFERRED TO D2 on purpose — see
   "Where I left off". NEXT in the plan: D2, then F1 (whose scope must grow `counts.mjs`
   per INV-202), then F2.
 - (DONE 2026-09-11) BATCH Q of the next-steps plan — `.cycle/blocks/19-batchQ-broad-implement.md`;
   net 0 − 0 = 0, PREVENTIVE by construction (the plan classified it as the one latent DEFECT, and a
   latent defect has by definition not fired). Estimate M (5 h) vs Actual ~2.5 h. On branch
-  `claude/adoring-einstein-b3vs6c` (3ab7018 + 3afeea6), NOT yet merged.
+  `claude/adoring-einstein-b3vs6c` (3ab7018 + 3afeea6), **MERGED and DEPLOYED since.**
   Batches P, S, Q and C are ALL MERGED to main as of 2026-09-14 (#240, #242/#243, #244).
   NEXT in the plan: D1 (CLAUDE.md structural moves) — but read INV-202 in
   `19-b-reflect.md` first: F1's scope must grow `scripts/counts.mjs` before F2 runs.
 - (DONE 2026-09-11) BATCH S of the next-steps plan — `.cycle/blocks/19-batchS-broad-implement.md`;
   net 1 − 0 = 1 (the shadowed gate test); Estimate M (4 h) vs Actual ~1.3 h. On branch
-  `claude/adoring-einstein-b3vs6c` (84379ee), NOT yet merged. The "full on dev nightly" half of
+  `claude/adoring-einstein-b3vs6c` (84379ee), **MERGED and DEPLOYED since.** The "full on dev nightly" half of
   its runbook sentence becomes TRUE only once the operator's Batch 0f (the DEV instance) exists.
 - (DONE 2026-09-11) BATCH P of the next-steps plan — `.cycle/blocks/19-batchP-broad-implement.md`;
   net 0 − 0 = 0 (both items defensive/structural by design); Estimate S (2 h) vs Actual ~0.6 h.
@@ -256,10 +261,18 @@ SEQUENCE: 0 → P → S → Q → C → D1 → D2 → F1 → F2 — each batch o
 
 ## Open follow-on items
 
+**READ THIS SECTION AS A DATED RECORD.** Every batch below shipped, merged and
+DEPLOYED on 2026-09-17; the "not pushed" lines were true on the day they were
+written and are annotated in place. What is still genuinely OPEN here is the
+non-bookkeeping work at the very end of "Where I left off" (the shared geocode
+quota with no honest exhausted-message, and the `Area Eligibility` rule not being
+shown in the price lookup itself) plus `/reflect`'s estimates backlog.
+
+
 ### Operator testing round 2026-09-16 — SP + SP2 + PTO DONE, THREE remain
 **Batch PTO (PTO1 live-status card · PTO2 calendar off-chip) is IMPLEMENTED** —
 `.cycle/blocks/20pre-PTO-broad-implement.md`, net 2 − 0 = 2, 4 mutations / 4 bites,
-pure 830 unchanged · DOM 115 → 116. NOT PUSHED TO APPS SCRIPT.
+pure 830 unchanged · DOM 115 → 116. **PUSHED AND DEPLOYED 2026-09-17** (was "NOT PUSHED TO APPS SCRIPT" when written).
 Carry forward: (a) **g33 is already held tighter than planned** — `getTeammateStatus`
 has a strict four-key allow-list pin (`activeNotIn|isSelf|name|status`), so a balance
 leaked there turns the harness red with no new pin. (b) Three defects the pins caught
@@ -273,7 +286,7 @@ deliberate while sick leave is dormant, but it is a declared-and-unread field.
 
 **Batch SP2 (SP4 voicemail duration gate · SP5 transcript snippet) is IMPLEMENTED** —
 `.cycle/blocks/20pre-SP2-broad-implement.md`, net 2 − 0 = 2, 7 mutations / 7 bites,
-pure 827 → 830 · DOM 114 → 115. NOT PUSHED TO APPS SCRIPT.
+pure 827 → 830 · DOM 114 → 115. **PUSHED AND DEPLOYED 2026-09-17** (was "NOT PUSHED TO APPS SCRIPT" when written).
 Three things to carry forward: (a) **auto-assign inherits the gate** — INV-31 and S105
 both say voicemails are deliberately included, and auto-assign distributes whatever
 `getSpanishInboxPending` returns, so a suppressed hang-up is no longer assignable
@@ -286,8 +299,9 @@ entry plus its CLAUDE.md inventory line (the OPERATOR-INDEX pin needs both halve
 an INV-31 amendment, and the S105 setup fix.
 
 **Batch SP (SP1 · SP2 · SP3) is IMPLEMENTED** — `.cycle/blocks/20pre-SP-broad-implement.md`,
-net 2 − 0 = 2, 5 mutations / 5 bites, pure 827 · DOM 113 → 114. NOT PUSHED TO APPS SCRIPT:
-it is client-only and inert until `clasp push -f` + a New version deployment.
+net 2 − 0 = 2, 5 mutations / 5 bites, pure 827 · DOM 113 → 114. **PUSHED AND DEPLOYED
+2026-09-17** — when written it was client-only and inert until `clasp push -f` + a New
+version deployment; both have now happened.
 Two things worth carrying forward from it: `.sp-task.is-busy` had been DEAD CSS since
 2026-08-24 (written for this action, applied only to the auto-assign BUTTON), and
 `scripts/bite.sh` drives the PURE harness only — DOM pins must be bitten by hand.
@@ -423,8 +437,10 @@ established by reading the code this session, so the next session need not re-de
 - CORRECTION recorded in the 19-batch3-4 block: `robin@umsupply.com` read out of a live-DOM probe is MY fixture value in `test/visual/mock.js`, not evidence about the deployed Script Property. Nothing in the container can read live properties — whether `MAIL_BCC_ALL` is set is settled by opening Admin → System after the deploy.
 
 ## Where I left off
-**Nothing is in flight.** Tree clean, branch fully merged into `main` (PR #254,
-`866ffdc`), all three harnesses green, `lint-server` clean, `counts --check` green.
+**Nothing is in flight in the REPO.** Tree clean, branch fully merged into `main`
+(PRs #254 `866ffdc` · #255 `e8f99cb` · #256 `2960f99`), all three harnesses green,
+`lint-server` clean, `counts --check` green. The remaining work is on the DEPLOYMENT,
+not in the tree — see the walk below.
 
 **The sheet itself changed on 2026-09-17, AFTER OOP-C merged** — `Pick-Up Cost` deleted and the base-price header renamed to `OOP Price – pick-up`. Both are fixture-and-docs only; no code changed, because the reader is header-driven. **If the fixture and the real sheet ever disagree again, fix the fixture** — a fixture that agrees with the code's assumption instead of with the operator's sheet is what let the column-A bug survive two batches.
 
@@ -433,35 +449,40 @@ their real `OopPricing` header row and the reader did not work against it. Fixed
 documented and merged before the deploy; the post-deploy walk below is unchanged
 except that step 5's diagnostics now also show which column is the item name.
 
-**The next session's first move depends on what the operator says:**
-
-### If the deploy has NOT happened yet
-Nothing to build. The deploy is the gate, and it is the operator's step.
+**THE DEPLOY HAPPENED ON 2026-09-17 and the walk is PART DONE** — steps 1, 3 and 4
+are complete (see the Phase line for the numbers); step 2 was never reported; steps
+5–8 are the work. **Start at step 5**, and take step 2 on the way past if the editor
+is already open — it costs one glance and it is the only thing that would invalidate
+steps 5–7.
 
 ### The post-deploy walk — ORDERED, and it discharges six rounds at once
 The Pending list carries an "after the push" line from each of six rounds, written
 on six different days. Do them in THIS order instead; the ordering matters twice,
 noted inline.
 
-1. `clasp push -f`, then **Deploy → Manage deployments → Edit → New version**. The
+1. **DONE 2026-09-17.** `clasp push -f`, then **Deploy → Manage deployments → Edit → New version**. The
    Web App URL serves the OLD code until that second step.
-2. **Confirm the editor lists FOURTEEN server files and no `Code.js`** — the Batch F2
+2. **NOT REPORTED — still owed.** **Confirm the editor lists FOURTEEN server files and no `Code.js`** — the Batch F2
    split. If `Code.js` is still there, the push did not take and everything below is
    measuring the wrong deployment.
-3. **Re-run `installAutomationTriggers()`** (Batch T). `sendCallNotesUrgentDigest`
+3. **DONE 2026-09-17 — 16 triggers, UNCHANGED, which is the pass condition.** Re-run `installAutomationTriggers()` (Batch T). `sendCallNotesUrgentDigest`
    moved into the `runDailyChecks` dispatcher, so **until the installer runs,
    `runDailyChecks` does not exist and the 8am open-punch scan never fires.** The
    reported trigger count should be UNCHANGED — a changed count is the finding.
-4. **`runSmokeTests`** on prod. Read the `Expected: N registrations` line OFF THE RUN,
+4. **DONE 2026-09-17 — 118/118, `Expected: 329 (118 · 91 · 120)`, all three shards matching the repo.** `runSmokeTests` on prod. Read the `Expected: N registrations` line OFF THE RUN,
    never off a doc (the registration count moved three times this round). A run that
    records fewer than expected prints `⚠ Recorded X of N`.
-5. **Manage → Admin → the OOP pricing diagnostics** (the operator's deferred item 4).
+5. **NEXT — and it is the first read that MEASURES the fourteen server files, since every OOP editor test is integration and smoke skipped it.** Manage → Admin → the OOP pricing diagnostics (the operator's deferred item 4).
    This is the highest-value single read of the whole walk: it lists every
    `Area Eligibility` value the parser could not read, BY ITEM, plus the warehouse
    registry and any addressless or unreadable `LocationAcceptance` row. An unreadable
    value renders "cannot tell" to a rep, which looks like caution rather than a typo —
    this panel is the only place the difference is visible. **Check the warehouse
    addresses geocoded to real sites, not city centres** (g122).
+   **Against the operator's real sheet it should report `nameCol` = the `Item` column
+   with `nameByHeader: true` (NOT column A — that is `HCPCS`), and THREE price columns,
+   the first labelled `OOP Price – pick-up`. A `nameCol` of 0/`HCPCS`, or one price column,
+   means the deployed server predates OOP-C and steps 6–7 are measuring the wrong code.**
 6. **`previewPtoAccruals('2026-08')`** (S107). Still un-recovered: the 2026-09-01 run
    credited ZERO to all three PH reps. The preview now NAMES which of the three causes
    it was. If the rep did work that month, fix the cause, set column R back to
@@ -493,3 +514,12 @@ location"; and the `Area Eligibility` RULE is not shown in the price lookup itse
 only in the dedicated check, so an item's raw eligibility string renders unparsed
 where rendering the rule ("Texas only through insurance; anywhere out of pocket")
 would answer the common case with no geocode at all.
+
+## Phase history (dated record — verbatim, NOT a live claim)
+Split out of the `Phase:` line on 2026-09-17 with no rewriting. The
+SessionStart hook prints `## Current`, `## Where I left off` and
+`## Pending / not yet done` into every fresh session; this chain is history,
+so it lives where it can be read on purpose rather than loaded by default.
+Newest first, exactly as the `Phase:` line carried it.
+
+Preceding: **DEPLOYED AND VALIDATED 2026-09-14** — PR #245 merged (bd4fc8c), pushed to Apps Script, and the editor suite run in TWO HALVES on the real runtime: `runAllTestsPartA` **209/209** (`Expected: 209 registrations (118 smoke · 91 integration-A)`, 8.4 min) and `runAllTestsPartB` **107/107** (`Expected: 107 registrations (107 integration-B)`, 14.0 min) — 316 total, 0 failed, 0 skipped, matching the derived registration count exactly. **Part B's 107 is the discriminator that proves the deployment is CURRENT** (the pre-push suite read 315; Batch Q's extra registration lives in shard B, so Part A alone could not tell). Together the two halves ARE `runAllTests` (the S1/S4 pin holds the shards disjoint and their union equal to the registration list), so **regression scenarios S1 AND S2 are PASSED on the fourteen-file server** — the F2 deploy gate is CLOSED, and the Medium new failure mode the 19-c reflection logged (the split's cross-file load class guarded by a MODEL of Apps Script rather than by Apps Script) is DISCHARGED for this deployment: the fourteen files do load as one global scope in the real runtime. **ONE FINDING FROM THE RUN, and it is live operator state:** the suite-environment block read `INSTANCE_LABEL: unset · INSTANCE_IS_PROD: unset → UNMARKED (treated as prod; runAllTests still allowed)` against the REAL stores, so the full integration suite ran on PRODUCTION with the blue-green guard inert — `TEST_` rows into the live payroll/audit/PHI stores (cleaned up in `finally`, and the log confirms `3 re-onboarded`), the TEST accounts visible on team surfaces for ~22 minutes, and ScriptLock contention against live punches from 2:39 to 3:10 PM. See the Pending list. Preceding: implement — **Batch F2 + the four F1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-F2-followons-broad-implement.md`; net 0 − 0 = 0, a move). **`web-app/Code.js` IS GONE** — 30,789 lines split into fourteen files (`00_config.js` first, then one per module in the numeric order `filePushOrder` declares). Move-only is PROVEN, not claimed: 1,204 top-level units reassembled byte-identically, each checked standalone with `node --check`, and `test/client/server-split-manifest.json` (generated from Code.js at tag `pre-f2-split`) is re-derived by the F2c pin on every run — same names, same bodies, same files. Pure harness 818 → 822 (move-only, duplicate-name, split shape, the bite.sh guard); DOM 113 unchanged; every derived count identical; page.html byte-identical. `'Code.js'` is now an ALIAS for the server in the harness, so the ~500 pins naming it were untouched. **THE PLAN IS FINISHED: 0 → P → S → Q → C → D1 → D2 → F1 → F2 are all done**; only its Deferred set remains, which is operator/feature decisions. **NOT PUSHED/PR'd, and the DEPLOY IS BLOCKING: push to DEV and run `runAllTests` in that editor BEFORE prod** (F2d) — S1/S2 are the one check this container cannot run. Preceding: implement — **Batch F1 DONE 2026-09-14** (`.cycle/blocks/19-F1-broad-implement.md`; net 0 − 0 = 0, a deliberate no-op batch). The harness owns `serverSource()`, derived from `web-app/.clasp.json`'s `filePushOrder` (now `["Code.js"]`, was empty); the 73 direct server reads in run.js, `extractRawFunction`/`extractConstObject`, the two hand-listed server scans and `counts.mjs`'s two derivations all resolve through it, so F2 can move 40,000 lines between files without touching a pin. CI's `node --check` is a glob. Pure harness 814 → 818 (byte-equality, the filePushOrder declaration incl. the dev example, load-order evaluation, and a ban on reading the server by filename); DOM 113 unchanged; `build.mjs` reproduces page.html with no diff. INV-202's acceptance criterion is enforced by a pin rather than asserted. NOT PUSHED/PR'd yet. **REMAINING: F2 only** (the Code.js split — L, ~2 days). Preceding: implement — **Batch D2 + the four D1 follow-on items DONE 2026-09-14** (`.cycle/blocks/19-followons-D2-broad-implement.md`; net 1 − 0 = 1). CLAUDE.md 4,873 → 836 lines and is now MAPS AND INDEXES only: the gotcha narratives are `docs/gotchas.md` (113 entries, verbatim), the module narratives `docs/modules.md`, the operator entries `docs/operator-state.md` (74, verbatim — the D1c compression D1 deferred), the Test Command narrative `docs/test-harness-log.md`; a one-sided 1,000-line ceiling pin keeps it that way. Three NEW index↔entries pins (MODULE-MAP, GOTCHA-INDEX, OPERATOR-INDEX) plus the ceiling: pure harness 810 → 814, DOM 113 unchanged, `counts.mjs --check` green, 14 mutations / 14 bites + one inverse. Follow-ons: INV-202/203 written into the library; `counts.mjs` now reports a red harness in ONE line instead of a 70k-character stack trace; C4's ban gained pattern (d), a plain restated total. NOT PUSHED/PR'd yet. Preceding: implement — Batch D1 DONE 2026-09-14 (`.cycle/blocks/19-batchD1-broad-implement.md`; net 0 − 0 = 0, a structural batch shipping no deployable code). CLAUDE.md 12,662 → 4,873 lines; the Cycle Workflow Config is `.cycle/config.md`, the Key Design Decisions are `docs/design-decisions.md` (137-link index kept), the dated rounds are `docs/operator-log.md`. Pure harness 808 → 810 (two NEW pins on the index↔anchors coupling the split created). Preceding: reflect — DONE 2026-09-14 (SECOND reflection of cycle 19, `.cycle/blocks/19-b-reflect.md`, net 1 − 1 = 0, covering the four post-reflect next-steps batches P/S/Q/C; metrics + estimates rows appended; INV-202/203 proposed). Batch C MERGED as PR #244 (2026-09-14, f10c2ae) — every next-steps batch through C is now on main. Preceding: implement — Batch C DONE 2026-09-14 (see "Where I left off"). Preceding: reflect — DONE 2026-09-11 (`.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; metrics row appended; INV-198/199 written, INV-200..204 proposed). Cycle 19 is CLOSED in substance; its STATE block moves to HISTORY.md when the next `/broad-scan` opens cycle 20 (the close-out procedure). The follow-ons round MERGED as PR #237 (2026-09-11 17:10Z, merged by the operator); the operator then `clasp push`ed and ran `runAllTests` → 302/312, whose ten `Admin access required.` failures were `ADMIN_EMAILS` narrowed on the deployment (operator state, not the round — first failure #97 of 312, before the adminEmails test at #247) — the suite accommodation (setup appends / cleanup strips the test manager) MERGED as PR #238 and the re-run read 312/312. THEN the operator's `installAutomationTriggers()` threw `This script has too many triggers` — the trigger-quota fix (three same-slot dispatchers, 16 triggers for 24 handlers) MERGED as PR #239, Batch P of the next-steps plan MERGED as PR #240, and the operator's post-push `runAllTests()` read **315/315** (2026-09-11 — the documented expected count after #239; the three dispatcher gate tests only exist in #239's Tests.js and only pass against #239's Code.js, so both files are on the deployment). The branch `claude/broad-scan-fw462g` was DELETED on GitHub at the #240 merge — restart it from `origin/main` for the next batch. Preceding phase, for the record: the follow-ons round (retention tier + suggestion follow-ons) LANDED on the branch (5 commits, bite-checked) and `/sync-docs` applied its documentation the same day. Before it: the OPERATOR testing-notes round (see the section below; all four batches A–D done, and `/sync-docs` has applied every documentation update the four blocks owed, 2026-09-11). Before it: ALL FOUR batches of the audit's IMPLEMENTATION BATCH PLAN
