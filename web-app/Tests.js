@@ -7271,10 +7271,19 @@ function _withTestOop_(fn) {
       sh.getRange(1, 1, values.length, values[0].length).setValues(values);
       return sh;
     };
+    // MIRRORS THE OPERATOR'S REAL HEADER ROW (supplied 2026-09-16): the code in
+    // column A, the item in column C, and FOUR price-role columns. The fixture
+    // used to be `Item` in column A, which is exactly the shape that let the
+    // column-A name assumption survive — a fixture that agrees with the
+    // assumption cannot test it.
     seed(OOP_PRICING_TAB, [
-      ['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Notes'],
-      ['TEST_OOP Widget', '$129.00', 'AZ NV', '2026-09-01', 'sample row'],
-      ['TEST_OOP Gadget', '$45.50', 'US', '2026-09-01', ''],
+      ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
+       'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
+       'Area Eligibility', 'Comments', 'EffectiveDate'],
+      ['TEST_K0800', 'POV/Scooter', 'TEST_OOP Widget', '', '$129.00', '$20.00',
+       '$129.00', '$149.00', '$179.00', 'AZ NV', 'sample row', '2026-09-01'],
+      ['TEST_K0801', 'POV/Scooter', 'TEST_OOP Gadget', '', '$45.50', '',
+       '$45.50', '', '', 'US', '', '2026-09-01'],
     ]);
     seed(LOCATION_ACCEPTANCE_TAB, [
       ['Type', 'Name', 'Address', 'State', 'Accepts', 'Notes'],
@@ -7307,12 +7316,27 @@ function test_oop_search_findsSeededItemAtSheetPrice() {
     // the operator is looking at. This assertion is the whole reason the reader
     // uses getDisplayValues, and only a real sheet can make it.
     _assertEq(m.price, '$129.00', 'the price must read EXACTLY as the sheet displays it');
+    _assertEq(m.code, 'TEST_K0800', 'the HCPCS column resolved by header');
     _assertEq(m.eligibility, 'AZ NV', 'the Area Eligibility column resolved by header');
     _assertEq(m.effective, '2026-09-01', 'the EffectiveDate column resolved by header');
+    // FOUR price columns, labelled and in sheet order — the operator's shape.
+    _assertEq(m.prices.length, 4, 'every price-role column is kept');
+    _assertEq(m.prices[2].label, 'W/ Shipping Cost', 'labelled by header');
+    _assertEq(m.prices[2].value, '$149.00', 'and read as the sheet displays it');
     // An unrecognised column rides along VERBATIM rather than being dropped.
-    const notes = m.details.filter(function (d) { return d.label === 'Notes'; });
-    _assertEq(notes.length, 1, 'the unrecognised Notes column rode along');
+    const notes = m.details.filter(function (d) { return d.label === 'Comments'; });
+    _assertEq(notes.length, 1, 'the unrecognised Comments column rode along');
     _assertEq(notes[0].value, 'sample row', 'verbatim');
+
+    // THE DEFECT THIS FIXTURE NOW CATCHES: searching by ITEM NAME must work,
+    // against a sheet whose column A is a billing code.
+    const byName = searchOopPricing('Drive'.length ? 'TEST_OOP Widget' : '');
+    _assertTrue(byName.matches.length >= 1, 'an item-name search finds the row');
+    _assertEq(byName.matches[0].name, 'TEST_OOP Widget', 'by NAME, not by column A');
+    // …and searching by the CODE must work too, because a rep may have either.
+    const byCode = searchOopPricing('TEST_K0800');
+    _assertTrue(byCode.matches.length >= 1, 'a code search finds the same row');
+    _assertEq(byCode.matches[0].name, 'TEST_OOP Widget');
 
     const none = searchOopPricing('nothing_like_this_exists');
     _assertTrue(none.notFound === true, 'a no-match says notFound rather than returning a near miss');
@@ -7418,7 +7442,9 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
     _assertEq(d.missing.length, 0, 'the seeded header has all three roles; missing: ' + d.missing.join(','));
     const roleOf = {};
     d.cols.forEach(function (c) { roleOf[c.header] = c.role; });
-    _assertEq(roleOf['Price'], 'price', 'Price resolved');
+    _assertEq(roleOf['OOP Price'], 'price', 'OOP Price resolved');
+    _assertEq(roleOf['HCPCS'], 'code', 'HCPCS resolved');
+    _assertEq(roleOf['Item'], 'name (the searched column)', 'and the NAME column is NAMED');
     _assertEq(roleOf['Area Eligibility'], 'eligibility', 'Area Eligibility resolved');
     _assertEq(roleOf['EffectiveDate'], 'effective', 'EffectiveDate resolved');
 

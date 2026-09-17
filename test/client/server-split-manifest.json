@@ -254,6 +254,34 @@
     "oopSheet_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-C: the operator's real OopPricing header row (HCPCS in column A, the item in column C, five price-ish columns) broke the column-A name assumption, so oopNameCol_ discovers the name by header and oopPriceByLabel_ resolves a quote against the column it names",
+   "added": [
+    "oopNameCol_",
+    "oopPriceByLabel_"
+   ],
+   "removed": [],
+   "changed": [
+    "oopHeaderRole_",
+    "oopQuoteLine_",
+    "oopRowObj_",
+    "oopVerifyQuotes_",
+    "searchOopPricing",
+    "sendExternalEmail"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-16",
+   "why": "OOP-C: the diagnostics REPORT the name column and whether it was found by header — against the operator's real sheet the old version said missing:[] and read clean while every lookup returned nothing",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getOopPricingDiagnostics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3881,7 +3909,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4560d450c28c1096"
+   "sha": "b5adae0f883c79dc"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -5201,17 +5229,27 @@
   "oopHeaderRole_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d64410e4fd5d8520"
+   "sha": "30065044fee2478e"
+  },
+  "oopNameCol_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d4ee46be714b2662"
+  },
+  "oopPriceByLabel_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bcdd1f4df54f1219"
   },
   "oopQuoteLine_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e57dc903e2f01fb5"
+   "sha": "599578bb22445077"
   },
   "oopRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "fc5954dd2cdb9e6c"
+   "sha": "e3081e04c9bc0c2b"
   },
   "oopSheet_": {
    "file": "70_kb.js",
@@ -5221,7 +5259,7 @@
   "oopVerifyQuotes_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "20c6bf7263454327"
+   "sha": "90ab3f4dcf7398ec"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",
@@ -5996,7 +6034,7 @@
   "searchOopPricing": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d3d02b11a9ab3e2e"
+   "sha": "b618308f98c52fc8"
   },
   "searchReference": {
    "file": "70_kb.js",
@@ -6061,7 +6099,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "beef519fe9757969"
+   "sha": "a8798e6f7ace2ad3"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",

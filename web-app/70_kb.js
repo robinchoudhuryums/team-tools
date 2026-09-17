@@ -679,38 +679,104 @@ function oopSheet_() {
  *  the file and may reorder it — the same reason searchInsurancePayors matches
  *  `waystar|network|qualif|reimbur` on the stem rather than the exact string.
  *
- *  ORDER MATTERS in one place and it is not obvious: `effective` is tested
- *  BEFORE `price`, because a header like "Effective Price Date" contains both
- *  stems and the date reading is the safe one — mistaking a date column for the
- *  price would put a date in front of a customer as a dollar figure. */
+ *  ORDER IS LOAD-BEARING IN THREE PLACES, none of them obvious:
+ *
+ *   1. `effective` before `price` — "Effective Price Date" contains both stems
+ *      and the date reading is the safe one; mistaking a date column for the
+ *      price would put a date in front of a customer as a dollar figure.
+ *   2. `price` before `name` — "Item Price" contains the item stem, and reading
+ *      a money column as the product name would make every row unsearchable
+ *      AND put a price where the name belongs.
+ *   3. `code` before `name` — a header like "Item Code" is the code.
+ *
+ *  `name` and `code` were added 2026-09-16 when the operator supplied their real
+ *  header row. The reader had ASSUMED column A was the item name; theirs is
+ *  `HCPCS`, with the item in column C — so every search by product name scored
+ *  zero and the composer would have quoted a billing code to a customer. */
 function oopHeaderRole_(header) {
   const h = String(header == null ? '' : header).trim();
   if (!h) return '';
   if (/effective|as[\s_-]*of/i.test(h)) return 'effective';
   if (/area|eligib|region|territor/i.test(h)) return 'eligibility';
   if (/price|cost|oop|amount|charge|\$/i.test(h)) return 'price';
+  if (/hcpcs|\bcode\b|\bsku\b|catalog|part\s*(no|num|#)/i.test(h)) return 'code';
+  if (/^\s*(item|product|equipment|device|name|description)\b/i.test(h)) return 'name';
+  // An image column is RECOGNISED so it can be DROPPED. Left unrecognised it
+  // rides along as a "detail" beside the price, and the first time the operator
+  // fills it the rep sees a raw Drive URL in a price result.
+  if (/^\s*(image|photo|picture|thumbnail|img)\b/i.test(h)) return 'image';
   return '';
 }
 
-/** PURE (Node-pinned): one pricing row → the result object. The FIRST column is
- *  always the item name (the column the search scans). Every other column
- *  resolves through oopHeaderRole_; anything unrecognised rides along in
- *  `details` VERBATIM — an unknown column is shown, never dropped and never
- *  guessed at (the payor-row discipline, INV-169's spirit). */
+/** PURE (Node-pinned): which column holds the item NAME.
+ *
+ *  Returns the index of the first `name`-role header, or 0 when there is none —
+ *  the original contract (column A is the item) kept as the fallback, because a
+ *  single-purpose sheet with a bare "Item" in A1 has no name header to find and
+ *  must keep working.
+ *
+ *  Reported by the diagnostics. That is not decoration: against the operator's
+ *  real sheet the diagnostics said `missing: []` and read CLEAN while every
+ *  lookup returned nothing, because the one assumption that was wrong was the
+ *  one it never showed. */
+function oopNameCol_(headers) {
+  for (let c = 0; c < (headers || []).length; c++) {
+    if (oopHeaderRole_(headers[c]) === 'name') return c;
+  }
+  return 0;
+}
+
+/** PURE (Node-pinned): one pricing row → the result object.
+ *
+ *  `prices` is EVERY price-role column in sheet order, each with its header as
+ *  the label, because the operator's sheet carries three customer-facing totals
+ *  for one item — pick-up, with shipping, with tech delivery. Collapsing them to
+ *  one number is not a simplification, it is a wrong quote: the base price is
+ *  correct only for a customer collecting in person. `price` remains the FIRST
+ *  of them, which is what a single-price sheet has and what the eligibility
+ *  surface shows.
+ *
+ *  Anything unrecognised rides along in `details` VERBATIM — an unknown column
+ *  is shown, never dropped and never guessed at (the payor-row discipline,
+ *  INV-169's spirit). `image` is the one deliberate exception. */
 function oopRowObj_(headers, row) {
-  const out = { name: String(row[0] == null ? '' : row[0]).trim(),
-    price: '', eligibility: '', effective: '', details: [] };
-  for (let c = 1; c < headers.length; c++) {
+  const nameCol = oopNameCol_(headers);
+  const out = { name: String(row[nameCol] == null ? '' : row[nameCol]).trim(),
+    code: '', price: '', prices: [], eligibility: '', effective: '', details: [] };
+  for (let c = 0; c < headers.length; c++) {
+    if (c === nameCol) continue;
     const h = String(headers[c] == null ? '' : headers[c]).trim();
     if (!h) continue;
     const v = String(row[c] == null ? '' : row[c]).trim();
     const role = oopHeaderRole_(h);
-    if (role === 'price' && !out.price) out.price = v;
+    if (role === 'image') continue;
+    if (role === 'price') { if (v) out.prices.push({ label: h, value: v }); }
+    else if (role === 'code' && !out.code) out.code = v;
     else if (role === 'eligibility' && !out.eligibility) out.eligibility = v;
     else if (role === 'effective' && !out.effective) out.effective = v;
     else if (v) out.details.push({ label: h, value: v });
   }
+  out.price = out.prices.length ? out.prices[0].value : '';
   return out;
+}
+
+/** PURE (Node-pinned): the price entry a quote claims, by LABEL.
+ *
+ *  A quote names the column it came from, so re-verification compares the price
+ *  the customer was actually shown rather than whichever column happens to be
+ *  leftmost today. Without this, editing "W/ Shipping Cost" would not refuse a
+ *  send quoting it, and editing "Pick-Up Cost" WOULD refuse one quoting
+ *  shipping — both wrong, in opposite directions.
+ *
+ *  A blank label means a single-price sheet: the first entry. */
+function oopPriceByLabel_(prices, label) {
+  const list = prices || [];
+  const l = String(label == null ? '' : label).trim();
+  if (!l) return list.length ? list[0] : null;
+  for (let i = 0; i < list.length; i++) {
+    if (String(list[i].label).trim() === l) return list[i];
+  }
+  return null;
 }
 
 /** Rep-callable, read-only, no lock. Top-N item matches for a query.
@@ -718,6 +784,12 @@ function oopRowObj_(headers, row) {
  *  Scores through `insPayorScore_` — the SAME scorer the payor lookup uses,
  *  reused rather than copied: two scorers for two lookups is two things to keep
  *  in step, and nobody would notice them diverging.
+ *
+ *  Scans the item NAME and the CODE, taking the better of the two, because a rep
+ *  mid-call has whichever the customer gave them. Before 2026-09-16 it scanned
+ *  column A only; against the operator's real sheet that is `HCPCS`, so a search
+ *  for "Drive Scout" scored 0 and rendered the deliberate "not in the sheet"
+ *  refusal about an item that was in the sheet.
  *
  *  FAILURE POSTURE, inherited deliberately: a wrong price is a billing error, so
  *  the failure mode is "no match" (visible) and never a confident wrong number.
@@ -737,16 +809,16 @@ function searchOopPricing(query) {
     // INV-64 mistake. A currency cell handed back as a raw float would show a
     // customer a different number than the sheet does.
     const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
-    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    const rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
     const scored = [];
-    for (let i = 0; i < names.length; i++) {
-      const sc = insPayorScore_(names[i][0], q);
-      if (sc > 0) scored.push({ i: i, score: sc });
+    for (let i = 0; i < rows.length; i++) {
+      const o = oopRowObj_(headers, rows[i]);
+      if (!o.name && !o.code) continue;                 // a blank row is not a miss
+      const sc = Math.max(insPayorScore_(o.name, q), o.code ? insPayorScore_(o.code, q) : 0);
+      if (sc > 0) scored.push({ i: i, score: sc, o: o });
     }
     scored.sort(function (a, b) { return b.score - a.score; });
-    const matches = scored.slice(0, OOP_TOP).map(function (t) {
-      return oopRowObj_(headers, sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0]);
-    });
+    const matches = scored.slice(0, OOP_TOP).map(function (t) { return t.o; });
     return { matches: matches, total: scored.length, notFound: scored.length === 0,
       cap: OOP_TOP, truncated: sh.getLastRow() > OOP_MAX_ROWS + 1 };
   } catch (err) { return { error: 'OOP pricing lookup failed: ' + err.message }; }
@@ -764,12 +836,18 @@ function searchOopPricing(query) {
  *  mean the number to read, and a price in front of a paying customer is the
  *  last place to improve on their formatting (the getDisplayValues discipline
  *  this whole reader is built on). */
-function oopQuoteLine_(name, price, effective) {
+function oopQuoteLine_(name, price, effective, label) {
   const n = String(name == null ? '' : name).trim();
   const p = String(price == null ? '' : price).trim();
   const e = String(effective == null ? '' : effective).trim();
+  const l = String(label == null ? '' : label).trim();
   if (!n || !p) return '';
-  return n + ' \u2014 ' + p + (e ? ' (price effective ' + e + ')' : '');
+  // The LABEL is the operator's own column header, VERBATIM, for the same
+  // reason the price is: inventing friendlier wording for "W/ Tech Delivery
+  // Cost" means guessing at what they meant, in an email a customer pays
+  // against. A single-price sheet passes no label and reads exactly as before.
+  return n + (l ? ' (' + l + ')' : '') + ' \u2014 ' + p +
+    (e ? ' (price effective ' + e + ')' : '');
 }
 
 /** Re-verify every price line the composer says it inserted, against the sheet
@@ -838,16 +916,29 @@ function oopVerifyQuotes_(quotes, message) {
       return { error: 'The pricing sheet no longer lists "' + name + '". Re-check the price before sending.' };
     }
     const live = oopRowObj_(headers, row);
-    if (!live.price) {
-      return { error: 'The pricing sheet has no price on file for "' + name + '" any more. Remove the line or check with a manager.' };
+    // Resolve the price BY THE LABEL the quote names, not by whichever column is
+    // leftmost today. A sheet with pick-up / shipped / tech-delivery totals has
+    // three right answers per item, and comparing the wrong one refuses in BOTH
+    // directions: an edit to the column actually quoted would sail through,
+    // while an edit to a column nobody quoted would block an honest send.
+    const label = String(q.label == null ? '' : q.label).trim();
+    const entry = oopPriceByLabel_(live.prices, label);
+    if (!entry || !entry.value) {
+      return label
+        ? { error: 'The pricing sheet no longer has a "' + label + '" for "' + name + '". Remove the line and re-insert it.' }
+        : { error: 'The pricing sheet has no price on file for "' + name + '" any more. Remove the line or check with a manager.' };
     }
-    const line = oopQuoteLine_(live.name, live.price, live.effective);
-    if (body.indexOf(line) >= 0) { out.push({ name: live.name, price: live.price, effective: live.effective, line: line }); continue; }
+    const line = oopQuoteLine_(live.name, entry.value, live.effective, label);
+    if (body.indexOf(line) >= 0) {
+      out.push({ name: live.name, price: entry.value, effective: live.effective, label: label, line: line });
+      continue;
+    }
     // Not present as the sheet now renders it. Say WHICH of the two reasons.
     const claimed = String(q.price == null ? '' : q.price).trim();
-    if (claimed && claimed !== live.price) {
-      return { error: 'The price for "' + name + '" changed since you looked it up (' + claimed +
-        ' \u2192 ' + live.price + '). Re-insert it and review the email before sending.' };
+    if (claimed && claimed !== entry.value) {
+      return { error: 'The price for "' + name + '"' + (label ? ' (' + label + ')' : '') +
+        ' changed since you looked it up (' + claimed +
+        ' \u2192 ' + entry.value + '). Re-insert it and review the email before sending.' };
     }
     // The price is unchanged, so the line is not stale — it was either DELETED
     // or EDITED, and those end very differently. A deleted line leaves nothing
@@ -862,7 +953,7 @@ function oopVerifyQuotes_(quotes, message) {
     // that a price the PICKER inserted is server-sourced and current — not that
     // no wrong number can ever reach an email. Pretending otherwise would be
     // the more dangerous claim.
-    if (body.indexOf(live.price) >= 0 || (claimed && body.indexOf(claimed) >= 0)) {
+    if (body.indexOf(entry.value) >= 0 || (claimed && body.indexOf(claimed) >= 0)) {
       return { error: 'The inserted price line for "' + name + '" was edited. Prices must be inserted by the picker \u2014 remove the line and re-insert it.' };
     }
     // Nothing price-like left: the rep inserted it and thought better of it.
@@ -1287,12 +1378,25 @@ function getOopPricingDiagnostics() {
     const width = sh.getLastColumn();
     const rows = Math.max(0, sh.getLastRow() - 1);
     const headers = width ? sh.getRange(1, 1, 1, width).getDisplayValues()[0] : [];
+    // THE NAME COLUMN IS REPORTED, and that is the finding this panel exists for.
+    // Against the operator's real sheet the old version said `missing: []` and
+    // read CLEAN while every lookup returned nothing — because the one
+    // assumption that was wrong (column A is the item) was the one it never
+    // showed. A diagnostic that cannot be wrong about itself is not a
+    // diagnostic.
+    const nameCol = oopNameCol_(headers);
     const cols = headers.map(function (h, i) {
-      return { header: String(h || ''), role: i === 0 ? 'name (the searched column)' : (oopHeaderRole_(h) || '—') };
+      return { header: String(h || ''),
+        role: i === nameCol ? 'name (the searched column)' : (oopHeaderRole_(h) || '—') };
     });
     const found = {};
-    headers.forEach(function (h, i) { if (i > 0) { const r = oopHeaderRole_(h); if (r) found[r] = true; } });
+    headers.forEach(function (h, i) { if (i !== nameCol) { const r = oopHeaderRole_(h); if (r) found[r] = true; } });
     const missing = ['price', 'eligibility', 'effective'].filter(function (r) { return !found[r]; });
+    // An item column that was FOUND by header reads differently from one we fell
+    // back to. A sheet whose column A is a billing code and which carries no
+    // `Item` header is searchable only by code, and the operator needs to know
+    // that rather than discover it from a rep.
+    const nameByHeader = oopHeaderRole_(headers[nameCol]) === 'name';
     // ELIG: the eligibility GRAMMAR is invisible until it goes wrong in exactly
     // the same way the header matching is, and worse — an unrecognised value
     // renders "check manually", which reads like caution rather than like a
@@ -1314,6 +1418,7 @@ function getOopPricingDiagnostics() {
       });
     }
     return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
+      nameCol: String(headers[nameCol] || '(column A)'), nameByHeader: nameByHeader,
       truncated: rows > OOP_MAX_ROWS,
       warehouses: whNames.map(function (n) { return { name: n, address: wh[n] }; }),
       // The delivery-reach tab, reported in the SAME breath as the pricing one:

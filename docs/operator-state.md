@@ -1279,7 +1279,22 @@ entry says which it is.
   anyone maintaining prices needs edit access to patient submissions.
 
   ### `OopPricing`
-  - **Column A = the item name** — the column the search scans.
+  - **Every column is found BY HEADER, including the item name.** A header like
+    `Item` / `Product` / `Description` is the name; column A is only the
+    FALLBACK for a sheet that has no such header. This matters because the real
+    sheet has `HCPCS` in column A and the item in column C — before 2026-09-16
+    the reader assumed column A, so every search by product name found nothing
+    and the composer would have quoted a billing code to a customer.
+  - **The search matches the item name OR the code**, so a rep can use whichever
+    the customer gave them.
+  - **EVERY price-role column is kept, and the picker offers one labelled Insert
+    per column.** `OOP Price`, `Pick-Up Cost`, `W/ Shipping Cost` and
+    `W/ Tech Delivery Cost` are all correct — for different fulfilments — so the
+    inserted line names which one: `Drive Scout 3 Wheel (W/ Shipping Cost) —
+    $1,070.00 (price effective 09/16/2026)`. A column that is a COMPONENT rather
+    than a total (`Shipping` on its own) matches no price stem and stays a
+    detail, which is right: it is not a number to quote.
+  - **An `Image` column is dropped** rather than shown beside the price.
   - Then `Price`, `Area Eligibility` and `EffectiveDate`, matched **by header
     STEM**, not by position: "Patient Cost" and "OOP Amount" both read as the
     price, "Eligible Regions" as the area. Reorder freely. Any column the

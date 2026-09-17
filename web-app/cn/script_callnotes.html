@@ -2228,6 +2228,24 @@
     font-family: var(--ui); font-weight: 400; color: var(--muted);
   }
   .cn-oop-row-noins { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  /* One row per priced column. The LABEL is monospace-muted and the price
+     monospace-strong, so the figure is what the eye lands on while the
+     fulfilment it belongs to stays readable beside it. */
+  .cn-oop-price-line {
+    display: flex; align-items: baseline; gap: 8px; margin-top: 3px;
+  }
+  .cn-oop-price-lbl {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cn-oop-price-line .cn-oop-row-price { margin-left: auto; }
+  .cn-oop-price-line .cn-oop-row-noins { margin-left: auto; }
+  .cn-oop-chip-lbl { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  @media (max-width: 560px) {
+    .cn-oop-price-line { flex-wrap: wrap; gap: 4px; }
+  }
+  :root[data-compact] .cn-oop-price-line { flex-wrap: wrap; gap: 4px; }
   .cn-oop-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .cn-oop-chip {
     display: inline-flex; align-items: center; gap: 6px;
@@ -13118,12 +13136,14 @@ var CN_OOP_SEQ = 0;   // INV-156 — a stale search must not overwrite a newer o
  *  sheet and looking for it in the message, so a formatting drift here does not
  *  render slightly differently — it BLOCKS every OOP send with "the inserted
  *  line was edited". Pinned behaviourally against the server function. */
-function cnOopQuoteLine_(name, price, effective) {
+function cnOopQuoteLine_(name, price, effective, label) {
   var n = String(name == null ? '' : name).trim();
   var p = String(price == null ? '' : price).trim();
   var e = String(effective == null ? '' : effective).trim();
+  var l = String(label == null ? '' : label).trim();
   if (!n || !p) return '';
-  return n + ' \u2014 ' + p + (e ? ' (price effective ' + e + ')' : '');
+  return n + (l ? ' (' + l + ')' : '') + ' \u2014 ' + p +
+    (e ? ' (price effective ' + e + ')' : '');
 }
 
 function cnExtOopQuotes_() {
@@ -13143,6 +13163,7 @@ function cnExtOopChipsHtml_() {
   if (!qs.length) return '';
   return qs.map(function (q, i) {
     return '<span class="cn-oop-chip">' + esc(q.name) + ' ' +
+      (q.label ? '<span class="cn-oop-chip-lbl">' + esc(q.label) + '</span> ' : '') +
       '<strong>' + esc(q.price) + '</strong>' +
       '<button type="button" class="cn-oop-chip-x" data-oop-remove="' + i + '"' +
         ' aria-label="Remove the quoted price for ' + esc(q.name) + '">&times;</button>' +
@@ -13182,18 +13203,38 @@ function cnExtOopRenderResults_(res) {
     return;
   }
   host.innerHTML = matches.map(function (m, i) {
-    var hasPrice = !!String(m.price || '').trim();
+    var prices = (m.prices && m.prices.length) ? m.prices
+      : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
     var eff = String(m.effective || '').trim();
+    // ONE Insert per priced column, each LABELLED. The operator's sheet carries
+    // three customer-facing totals for one item (pick-up / with shipping / with
+    // tech delivery), and they are all correct — for different fulfilments.
+    // Picking one for the rep would quote the base price to a customer whose
+    // item ships, which is a real shortfall on a number they pay against.
+    // Multi-price rows show the label; a single-price sheet reads as before.
+    var multi = prices.length > 1;
+    var lines = prices.length
+      ? prices.map(function (pr, pi) {
+          return '<div class="cn-oop-price-line">' +
+            (multi ? '<span class="cn-oop-price-lbl">' + esc(pr.label) + '</span>' : '') +
+            '<span class="cn-oop-row-price">' + esc(pr.value) + '</span>' +
+            '<button type="button" class="refresh-btn cn-oop-ins" data-oop-insert="' + i + '"' +
+              ' data-oop-pidx="' + pi + '">Insert</button>' +
+          '</div>';
+        }).join('')
+      : '<div class="cn-oop-price-line">' +
+          '<span class="cn-oop-row-price none">no price on file</span>' +
+          '<span class="cn-oop-row-noins">not quotable</span>' +
+        '</div>';
+    var sub = [];
+    if (m.code) sub.push(esc(m.code));
+    if (eff) sub.push('effective ' + esc(eff));
     return '<div class="cn-oop-row">' +
       '<div class="cn-oop-row-main">' +
         '<div class="cn-oop-row-name">' + esc(m.name) + '</div>' +
-        (hasPrice
-          ? '<div class="cn-oop-row-price">' + esc(m.price) + (eff ? ' <span class="cn-oop-row-eff">effective ' + esc(eff) + '</span>' : '') + '</div>'
-          : '<div class="cn-oop-row-price none">no price on file</div>') +
+        (sub.length ? '<div class="cn-oop-row-eff">' + sub.join(' \u00b7 ') + '</div>' : '') +
+        lines +
       '</div>' +
-      (hasPrice
-        ? '<button type="button" class="refresh-btn cn-oop-ins" data-oop-insert="' + i + '">Insert</button>'
-        : '<span class="cn-oop-row-noins">not quotable</span>') +
     '</div>';
   }).join('');
   // Park the payload the Insert buttons index into. Read back through this
@@ -13241,21 +13282,34 @@ function cnExtOopSearch_() {
  *  Inserting the SAME item twice is a no-op on the state (one commitment per
  *  item per email) but would otherwise duplicate the line, so it is refused
  *  with a toast rather than silently ignored. */
-function cnExtOopInsert_(m) {
+function cnExtOopInsert_(m, priceIdx) {
   var c = CN_STATE.extComposer;
   if (!c || !m) return;
-  var line = cnOopQuoteLine_(m.name, m.price, m.effective);
+  var prices = (m.prices && m.prices.length) ? m.prices
+    : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
+  var pr = prices[priceIdx || 0];
+  if (!pr) { showToast('That item has no price on file.', 'toast-error'); return; }
+  // The label rides the line ONLY when the item has more than one price. A
+  // single-price sheet inserts exactly what it did before this existed.
+  var label = prices.length > 1 ? String(pr.label || '') : '';
+  var line = cnOopQuoteLine_(m.name, pr.value, m.effective, label);
   if (!line) { showToast('That item has no price on file.', 'toast-error'); return; }
   var qs = cnExtOopQuotes_();
   for (var i = 0; i < qs.length; i++) {
-    if (qs[i].name === m.name) { showToast('That price is already in the email.', 'toast-info'); return; }
+    // Keyed on item AND label: quoting both the pick-up and the shipped price
+    // for one item is a legitimate thing to do on a call, and refusing the
+    // second as a duplicate would be wrong.
+    if (qs[i].name === m.name && String(qs[i].label || '') === label) {
+      showToast('That price is already in the email.', 'toast-info'); return;
+    }
   }
   var ta = document.getElementById('cnX-message');
   var cur = ta ? String(ta.value || '') : String(c.message || '');
   var next = cur ? (cur.replace(/\s+$/, '') + '\n' + line) : line;
   if (ta) { ta.value = next; }
   c.message = next;
-  qs.push({ name: m.name, price: String(m.price || '').trim(), effective: String(m.effective || '').trim(), line: line });
+  qs.push({ name: m.name, price: String(pr.value || '').trim(),
+    effective: String(m.effective || '').trim(), label: label, line: line });
   var chips = document.getElementById('cnX-oop-chips');
   if (chips) chips.innerHTML = cnExtOopChipsHtml_();
   showToast('Price inserted \u2014 it is re-checked against the sheet when you send.', 'toast-success');
@@ -13591,7 +13645,8 @@ function cnWireExternalEmailModal_() {
       if (!btn) return;
       e.preventDefault();
       var list = oopResults._oopMatches || [];
-      cnExtOopInsert_(list[parseInt(btn.dataset.oopInsert, 10)]);
+      cnExtOopInsert_(list[parseInt(btn.dataset.oopInsert, 10)],
+        parseInt(btn.dataset.oopPidx, 10) || 0);
     });
   }
   var oopChips = document.getElementById('cnX-oop-chips');
@@ -13708,7 +13763,7 @@ function cnSendExternalEmail_() {
     // number. The server re-derives each line from the live sheet and refuses
     // the send if the message no longer carries it.
     quotedOop: cnExtOopQuotes_().map(function (q) {
-      return { name: q.name, price: q.price, effective: q.effective };
+      return { name: q.name, price: q.price, effective: q.effective, label: q.label };
     }),
     noteId: noteRef || null,
   };

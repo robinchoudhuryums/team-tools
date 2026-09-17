@@ -13051,6 +13051,8 @@ const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your exten
 // nothing. These drive the matcher directly so a stem change is caught here
 // rather than mid-call.
 vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), _vmCtx, { filename: 'oopHeaderRole_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), _vmCtx, { filename: 'oopNameCol_' });
+vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), _vmCtx, { filename: 'oopPriceByLabel_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), _vmCtx, { filename: 'oopRowObj_' });
 
 test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `price` so a date column can never be read as money', () => {
@@ -13078,36 +13080,175 @@ test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `pric
   assert.strictEqual(r(null), '');
 });
 
-test('OOP-A: oopRowObj_ takes the FIRST column as the item name, fills each role ONCE, and passes unknown columns through verbatim', () => {
-  const obj = (h, row) => vm.runInContext('oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + ')', _vmCtx);
+test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is found BY HEADER, every price is kept, and the code is searchable", () => {
+  const obj = (h, row) => JSON.parse(vm.runInContext('JSON.stringify(oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + '))', _vmCtx));
 
-  const o = obj(['Item', 'Price', 'Area Eligibility', 'EffectiveDate', 'Manufacturer'],
-    ['Widget', '$129.00', 'AZ NV', '2026-09-01', 'Acme']);
-  assert.strictEqual(o.name, 'Widget', 'the first column is the item name whatever it is headed');
-  assert.strictEqual(o.price, '$129.00', 'the price is carried as the sheet DISPLAYS it, not reformatted');
-  assert.strictEqual(o.eligibility, 'AZ NV');
-  assert.strictEqual(o.effective, '2026-09-01');
-  assert.deepStrictEqual(o.details.map((d) => d.label + '=' + d.value).join('|'), 'Manufacturer=Acme',
-    'an unrecognised column rides along VERBATIM — shown, never dropped, never guessed at');
+  // THE OPERATOR'S ACTUAL SHEET (supplied 2026-09-16, after OOP-A had shipped).
+  // This exact row is why the pin was rewritten: the reader ASSUMED column A was
+  // the item name, and here column A is the billing code.
+  const H = ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
+    'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
+    'Area Eligibility', 'Comments', 'EffectiveDate'];
+  const R = ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel',
+    'https://drive.google.com/file/d/1AbC/view', '$920.00',
+    '$150.00', '$920.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
+  const o = obj(H, R);
 
-  // FIRST match per role wins, so a second price-ish column cannot overwrite
-  // the real one further down the row.
-  const two = obj(['Item', 'Price', 'List Cost'], ['W', '$10', '$99']);
-  assert.strictEqual(two.price, '$10', 'the first price-role column wins');
-  assert.strictEqual(two.details.map((d) => d.value).join(), '$99', 'and the second rides along as an attribute');
+  assert.strictEqual(o.name, 'Drive Scout 3 Wheel',
+    'the NAME comes from the Item column, not column A — quoting "K0800 (C/C)" to a customer is what this prevents');
+  assert.strictEqual(o.code, 'K0800 (C/C)', 'and the HCPCS code is kept, because a rep may have either');
 
-  // A blank header is skipped entirely rather than producing a blank-labelled row.
+  // EVERY price column, in sheet order, each carrying its own header as label.
+  // Collapsing these to one number is not a simplification: $920 is correct only
+  // for a customer collecting in person.
+  assert.deepStrictEqual(o.prices.map((p) => p.label + '=' + p.value),
+    ['OOP Price=$920.00', 'Pick-Up Cost=$920.00', 'W/ Shipping Cost=$1,070.00', 'W/ Tech Delivery Cost=$1,220.00'],
+    'all four price-role columns are kept, labelled and in sheet order');
+  assert.strictEqual(o.price, '$920.00', 'and `price` is the first of them (what a single-price sheet has)');
+
+  assert.strictEqual(o.eligibility, 'Open');
+  assert.strictEqual(o.effective, '09/16/2026', 'a US-format date rides through as the sheet DISPLAYS it');
+
+  // `Shipping` ($150) is a COMPONENT, not a total — it matches no price stem, so
+  // it stays a detail. Worth pinning: promoting it would offer the rep a $150
+  // "price" to quote.
+  const det = o.details.map((d) => d.label).join(',');
+  assert.ok(/Shipping/.test(det), 'Shipping is a detail, not a quotable price');
+  assert.ok(/Category/.test(det) && /Comments/.test(det), 'unrecognised columns ride along verbatim');
+  // The Image cell here is a real Drive URL ON PURPOSE. It was blank at first,
+  // which made the drop unobservable — a bite-check removing the `image` skip
+  // left this green, because an empty cell is filtered by the blank guard
+  // either way. A pin cannot see a value being dropped unless there is a value.
+  assert.ok(!/Image/.test(det),
+    'the image column is DROPPED — left in, the first Drive URL the operator pastes renders beside a price');
+  assert.ok(!/drive\.google/.test(JSON.stringify(o)),
+    'and the URL reaches no field at all, not even as a detail value');
+
+  // The FALLBACK contract, unchanged: no name-ish header → column A.
+  const bare = obj(['Widget name', 'Price'], ['Widget', '$10']);
+  assert.strictEqual(bare.name, 'Widget', 'no `name`-role header → column A, the original contract');
+
+  // ORDER IS LOAD-BEARING: "Item Price" is money, not a name.
+  const trap = obj(['SKU', 'Item Price', 'Item'], ['S1', '$5', 'Real Name']);
+  assert.strictEqual(trap.name, 'Real Name', '"Item Price" must not be read as the name column');
+  assert.strictEqual(trap.price, '$5');
+  assert.strictEqual(trap.code, 'S1', 'and SKU is a code');
+
+  const two = obj(['Item', 'Area Eligibility', 'Region'], ['W', 'TX', 'ignored']);
+  assert.strictEqual(two.eligibility, 'TX', 'the first eligibility column wins');
+
   const blank = obj(['Item', '', 'Price'], ['W', 'junk', '$5']);
   assert.strictEqual(blank.price, '$5');
-  assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing, not an unlabelled attribute');
+  assert.strictEqual(blank.details.length, 0, 'a blank header contributes nothing');
+});
+
+{
+  // searchOopPricing driven against a FAKE sheet, so the scoring is pinned
+  // behaviourally rather than by reading its source. The code half of it was
+  // covered ONLY by an editor test until a bite-check found nothing to fail:
+  // deleting the code lookup left the pure harness green.
+  const sCtx = { String: String, Array: Array, Math: Math, JSON: JSON, Object: Object,
+    OOP_MAX_ROWS: 5000, OOP_TOP: 8 };
+  vm.createContext(sCtx);
+  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'searchOopPricing']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx, { filename: f }));
+  const GRID = [
+    ['HCPCS', 'Category', 'Item', 'OOP Price', 'Area Eligibility', 'EffectiveDate'],
+    ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel', '$920.00', 'Open', '09/16/2026'],
+    ['E1234', 'Bath', 'Shower Chair', '$65.00', 'TX', '09/01/2026'],
+    ['', '', '', '', '', ''],                       // a blank row in the middle
+  ];
+  sCtx._grid = GRID;
+  vm.runInContext(`
+    function getEmployeeInfo_() { return { id: 'E1' }; }
+    function oopSheet_() {
+      return {
+        getLastColumn: function () { return _grid[0].length; },
+        getLastRow: function () { return _grid.length; },
+        getRange: function (r, c, nr, nc) {
+          return { getDisplayValues: function () {
+            var out = [];
+            for (var i = 0; i < nr; i++) out.push(_grid[r - 1 + i].slice(c - 1, c - 1 + nc));
+            return out;
+          } };
+        },
+      };
+    }`, sCtx);
+  const S = (q) => JSON.parse(vm.runInContext('JSON.stringify(searchOopPricing(' + JSON.stringify(q) + '))', sCtx));
+
+  test('OOP-C: searchOopPricing scans the ITEM NAME and the CODE — the defect was that it scanned column A, which is the billing code', () => {
+    // THE ORIGINAL DEFECT, pinned: before 2026-09-16 this scored 0 and rendered
+    // "not in the sheet -- do not quote a similar item" about an item that was.
+    const byName = S('Drive Scout');
+    assert.ok(!byName.error, byName.error);
+    assert.strictEqual(byName.matches.length, 1, 'the product name finds the row');
+    assert.strictEqual(byName.matches[0].name, 'Drive Scout 3 Wheel');
+    assert.strictEqual(byName.matches[0].code, 'K0800 (C/C)', 'and the code rides along');
+
+    // A partial name, the way a rep actually types mid-call.
+    assert.strictEqual(S('scout').matches.length, 1, 'a partial name matches');
+    assert.strictEqual(S('shower').matches[0].name, 'Shower Chair');
+
+    // THE CODE, because a rep has whichever the customer gave them.
+    const byCode = S('K0800');
+    assert.strictEqual(byCode.matches.length, 1, 'the HCPCS code finds the same row');
+    assert.strictEqual(byCode.matches[0].name, 'Drive Scout 3 Wheel',
+      'and resolves to the ITEM, not to the code');
+    assert.strictEqual(S('E1234').matches[0].name, 'Shower Chair');
+
+    // A no-match is NOT a near miss. This is the whole failure mode the refusal
+    // message names: quoting a similar item.
+    const none = S('nothing_like_this');
+    assert.strictEqual(none.notFound, true);
+    assert.strictEqual(none.matches.length, 0, 'no nearest-row fallback');
+
+    // A blank row contributes nothing rather than matching everything.
+    assert.ok(S('Drive Scout').matches.every((m) => !!m.name), 'no empty row in the results');
+    const tooShort = S('a');
+    assert.strictEqual(tooShort.total, 0, 'a one-character query does not scan');
+    assert.strictEqual(tooShort.notFound, undefined,
+      'and does NOT claim notFound — "you have not typed enough yet" is not "we do not stock it"');
+  });
+}
+
+test('OOP-C: the diagnostics REPORT the name column — the panel that read CLEAN while every lookup returned nothing', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractRawFunction('Code.js', 'getOopPricingDiagnostics'));
+  // Behaviour is covered by test_oop_diagnostics_… against a real sheet; this is
+  // the structural half, and it exists because the FINDING was an omission: the
+  // panel could not be wrong about itself, so the one assumption that was wrong
+  // was the one it never showed.
+  assert.ok(/nameCol:/.test(f), 'the diagnostics ship the name column');
+  assert.ok(/nameByHeader/.test(f),
+    'and whether it was FOUND by header or fallen back to — a sheet searchable only by code is a finding, not a default');
+  assert.ok(/oopNameCol_\(headers\)/.test(f), 'and it asks the same resolver the reader uses');
+  assert.ok(/i === nameCol \? 'name \(the searched column\)'/.test(f),
+    'the column listing marks the name column wherever it sits, not position 0');
+});
+
+test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — comparing the wrong one refuses in both directions', () => {
+  const P = (prices, label) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopPriceByLabel_(' + JSON.stringify(prices) + ',' + JSON.stringify(label) + ') || null)', _vmCtx));
+  const PRICES = [
+    { label: 'OOP Price', value: '$920.00' },
+    { label: 'W/ Shipping Cost', value: '$1,070.00' },
+  ];
+  assert.strictEqual(P(PRICES, 'W/ Shipping Cost').value, '$1,070.00', 'by label');
+  assert.strictEqual(P(PRICES, 'OOP Price').value, '$920.00');
+  assert.strictEqual(P(PRICES, '').value, '$920.00', 'no label (a single-price sheet) → the first entry');
+  // A label the sheet no longer has is NOT silently swapped for another price.
+  // Falling back to prices[0] here would verify a $920 line against a quote the
+  // customer was actually given for $1,070.
+  assert.strictEqual(P(PRICES, 'W/ Tech Delivery Cost'), null,
+    'a vanished column returns NULL rather than the nearest price');
+  assert.strictEqual(P([], 'anything'), null);
+  assert.strictEqual(P([], ''), null);
 });
 
 // ELIG (operator 2026-09-16) — area eligibility off the SAME column. The
 // operator's clarification is what makes this two answers rather than one: the
 // Area Eligibility cell states the rule for an order going THROUGH INSURANCE,
-// and paying out of pocket transforms it. These pins drive the grammar, the
-// transform and the verdict separately, because each one fails differently and
-// the wrong permissive answer is the expensive one.
+// and paying out of pocket transforms it.
 vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
   (serverSource().match(/const US_STATE_CODES = \[([\s\S]*?)\];/) || [, ''])[1]
     .split(/[,\s]+/).map((t) => t.replace(/'/g, '')).filter(Boolean)) + ';', _vmCtx);
@@ -13512,15 +13653,26 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), mCtx, { filename: 'srv#oopQuoteLine_' });
   vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnOopQuoteLine_'), mCtx, { filename: 'cli#cnOopQuoteLine_' });
 
+  // FOUR-tuples since OOP-C: the LABEL joined the line, and a mirror that only
+  // drives three arguments cannot see the fourth drift. Not theoretical — if the
+  // client emits the label and the server does not, EVERY multi-price OOP send
+  // refuses with a message the rep cannot satisfy, which is exactly the failure
+  // this pin exists for.
   const table = [
-    ['Widget', '$129.00', '2026-09-01'],
-    ['Widget', '$129.00', ''],
-    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026'],
-    ['  padded  ', '  $5  ', '  x  '],
-    ['W', '', '2026-01-01'],
-    ['', '$1', ''],
-    ['Em — dash in the NAME', '$2', ''],
-    ['W', '$3', 'effective — whenever'],
+    ['Widget', '$129.00', '2026-09-01', ''],
+    ['Widget', '$129.00', '', ''],
+    ['Sea-Long CPAP Mask (large)', '1,299.50', '09/01/2026', ''],
+    ['  padded  ', '  $5  ', '  x  ', '  L  '],
+    ['W', '', '2026-01-01', 'X'],
+    ['', '$1', '', 'X'],
+    ['Em — dash in the NAME', '$2', '', ''],
+    ['W', '$3', 'effective — whenever', ''],
+    // The operator's REAL labels, verbatim — including the slash and the
+    // parenthesis, which are the characters a "tidy this up" edit would touch.
+    ['Drive Scout 3 Wheel', '$1,070.00', '09/16/2026', 'W/ Shipping Cost'],
+    ['Drive Scout 3 Wheel', '$1,220.00', '09/16/2026', 'W/ Tech Delivery Cost'],
+    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'Pick-Up Cost'],
+    ['Widget (boxed)', '$9', '', 'OOP Price'],
   ];
   table.forEach((row) => {
     const args = row.map((x) => JSON.stringify(x)).join(',');
@@ -13531,6 +13683,8 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   });
   // And the mirror is not vacuous: both sides actually produced a line.
   assert.ok(vm.runInContext('oopQuoteLine_("W","$1","")', mCtx).length > 3, 'the pinned functions are real');
+  assert.ok(/W\/ Shipping Cost/.test(vm.runInContext('oopQuoteLine_("W","$1","","W/ Shipping Cost")', mCtx)),
+    'and the label actually reaches the line, so the new rows are not vacuous');
 });
 
 {
@@ -13542,6 +13696,8 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   // refuse.
   const vCtx = { String: String, Array: Array, Math: Math, JSON: JSON, OOP_MAX_ROWS: 5000, OOP_QUOTE_MAX: 10 };
   vm.createContext(vCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), vCtx, { filename: 'oopNameCol_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), vCtx, { filename: 'oopPriceByLabel_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
@@ -13724,11 +13880,17 @@ test('OOP-B: the picker cannot insert a price the server did not return — the 
   // will be charged is exactly the round trip not to make.
   assert.ok(/data-oop-insert="' \+ i \+ '"/.test(render),
     'the Insert button carries the match INDEX');
-  assert.ok(!/data-oop-(price|name|eff)/.test(render),
+  assert.ok(!/data-oop-(price|name|eff)=/.test(render),
     'and no price, name or date is written into a data-* attribute for the handler to read back');
+  // The per-price Insert carries a SECOND index (which priced column), never the
+  // figure. Named `pidx` rather than `price-idx` precisely so the ban above stays
+  // a literal read — an attribute with "price" in its name is the thing a future
+  // reader should have to justify.
+  assert.ok(/data-oop-pidx="' \+ pi \+ '"/.test(render),
+    'the price choice is an INDEX into the parked payload');
 
   // The insert derives its line from cnOopQuoteLine_ over the RPC payload.
-  assert.ok(/cnOopQuoteLine_\(m\.name, m\.price, m\.effective\)/.test(insert),
+  assert.ok(/cnOopQuoteLine_\(m\.name, pr\.value, m\.effective, label\)/.test(insert),
     'the inserted line is DERIVED from the server match object');
   assert.ok(!/getElementById\('cnX-oop-results'\)[\s\S]*?(textContent|innerText)/.test(insert),
     'and never scraped back out of the rendered results');

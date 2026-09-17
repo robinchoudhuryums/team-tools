@@ -133,6 +133,7 @@
     .kb-elig-v { grid-template-columns: 1fr; gap: 1px; }
   }
   .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
+  .kb-oop-price-lbl { font-weight: 400; font-size: 10px; color: var(--muted); }
   .kb-ins-input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
   .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
   .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -2505,11 +2506,21 @@ function oopRenderResults_(suffix, q, res) {
   res.matches.forEach(function (m) {
     // A MISSING price is called out rather than rendered as an empty cell: a
     // blank where a number belongs reads as free, or as nothing to say.
-    var price = String(m.price || '').trim();
-    var priceHtml = price
-      ? '<span class="kb-oop-price">' + esc(price) + '</span>'
+    // EVERY priced column, labelled when there is more than one. The operator's
+    // sheet carries pick-up / with-shipping / with-tech-delivery totals for one
+    // item, and showing only the first would answer a rep's "how much is it?"
+    // with the number that is right solely for a customer collecting in person.
+    var prices = (m.prices && m.prices.length) ? m.prices
+      : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
+    var priceHtml = prices.length
+      ? prices.map(function (pr) {
+          return '<span class="kb-oop-price">' +
+            (prices.length > 1 ? '<span class="kb-oop-price-lbl">' + esc(pr.label) + '</span> ' : '') +
+            esc(pr.value) + '</span>';
+        }).join(' ')
       : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
     var bits = [];
+    if (m.code) bits.push(esc(m.code));
     if (m.effective) bits.push('effective ' + esc(m.effective));
     if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
     (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
