@@ -10,6 +10,42 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-16 (late) — the REAL OopPricing shape (OOP-C)
+
+The operator supplied their actual header row after the round had merged.
+Running it through the live reader found the feature **did not work against it**
+— found before the deploy, not after.
+
+  `HCPCS | Category | Item | Image | OOP Price | Shipping | Pick-Up Cost |`
+  `W/ Shipping Cost | W/ Tech Delivery Cost | Area Eligibility | Comments |`
+  `EffectiveDate`
+
+**Adds NO operator state** — it makes the reader match the sheet the operator
+already built. Three things changed for them:
+
+1. **Searching by product name works.** The reader had assumed column A is the
+   item; theirs is the billing code, with the item in column C. Every name
+   search scored zero and rendered the deliberate "not in the sheet — do not
+   quote a similar item" refusal about an item that WAS in the sheet. The name
+   column is now found by header, column A kept only as the fallback, and the
+   search matches the item name OR the HCPCS code so a rep can use whichever the
+   customer gave them.
+2. **The quote names the item, not the billing code.** The composer would have
+   inserted `K0800 (C/C) — $920.00` into a customer email.
+3. **The picker offers one labelled Insert per priced column.** The sheet
+   carries pick-up / with-shipping / with-tech-delivery totals, all correct for
+   different fulfilments, and the reader was quoting the leftmost — a $150
+   shortfall for any customer whose item ships. The inserted line now names
+   which: `Drive Scout 3 Wheel (W/ Shipping Cost) — $1,070.00 (price effective
+   09/16/2026)`. A component column (a bare `Shipping`) matches no price stem
+   and stays a detail; an `Image` column is dropped rather than rendered beside
+   a price.
+
+**And a gap in the diagnostics.** Against this sheet the panel reported
+`missing: []` and read CLEAN while every lookup returned nothing — the one
+assumption that was wrong was the one it never showed. It now reports the name
+column and whether it was FOUND by header or fallen back to.
+
 ## 2026-09-16 — OOP pricing, the price picker, area eligibility, and the store move
 
 The back half of the same testing round (`OOP-A`, `OOP-B`, `ELIG`), plus a

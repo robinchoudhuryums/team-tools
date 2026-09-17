@@ -1286,3 +1286,50 @@ whole-value-is-codes rule already rejects it. The ordering is defence against a
 plausible future relaxation, and the comment now says that. An overclaiming
 comment is worse than none: the next reader trusts it and removes the thing that
 is actually load-bearing.
+
+## 2026-09-16 (late) — OOP-C, and five pins that agreed with the bug
+
+Added five pure pins; the round's live totals are CLAUDE.md's running-totals
+block. Eleven mutations bite-checked, but only AFTER five repairs — and the
+repairs are the entry, because they share one shape.
+
+**The fixture agreed with the assumption it was supposed to test.** The OOP
+fixture had `Item` in column A, which is exactly the layout that let "column A
+is the item name" survive OOP-A and OOP-B unchallenged. The operator's real
+sheet has `HCPCS` there. **A fixture built from the same belief as the code
+cannot falsify it** — it is not coverage, it is a second copy of the assumption.
+The fixture now mirrors the operator's real header row, and the editor tests
+search by name AND by code.
+
+**Four more pins could not see their own subject:**
+
+1. The `Image` drop was unobservable because the fixture's Image cell was
+   BLANK — an empty cell is filtered by the blank guard whether or not the
+   `image` role exists. Now a real Drive URL, plus an assertion that the URL
+   reaches no field at all.
+2. The code half of the search was covered ONLY by an editor test this
+   container cannot run, so deleting the code lookup left the pure harness
+   green. `searchOopPricing` is now driven against a fake sheet.
+3. The diagnostics' name-column report had no pure pin whatsoever — and that
+   report IS the fix for the panel reading `missing: []` while every lookup
+   returned nothing.
+4. **The client↔server mirror table drove three arguments when the label is the
+   fourth.** That is g120's failure mode with a new field: if the two sides
+   disagree about the label, every multi-price OOP send refuses with a message
+   the rep cannot satisfy. The table now carries the operator's real labels
+   verbatim — including the slash and parenthesis a "tidy this up" edit would
+   touch — plus an assertion that the label reaches the line, so the new rows
+   are not vacuous.
+
+**Two harness-side mistakes worth recording**, both the same shape and both
+caught only because the harness went red immediately: replacing a test block by
+slicing from "this test" to "the next test" DELETED the `vm.runInContext` loader
+lines that sat between them — once taking out every ELIG and OOP-B pin, once the
+ELIG function loaders. **The region between two tests is not empty**; anchor a
+block replacement on the block, not on its neighbours.
+
+And one mechanical one, outside the harness: a branch whose PR had merged was
+recreated by `git push` from the stale pre-merge tip, silently diverging from
+`main`. GitHub deletes the branch at merge; a push recreates it wherever the
+local ref happens to point. Restart from `origin/main` after a merge — it is now
+a Decisions entry in STATE.md rather than something to rediscover.
