@@ -20,6 +20,13 @@ Running it through the live reader found the feature **did not work against it**
   `W/ Shipping Cost | W/ Tech Delivery Cost | Area Eligibility | Comments |`
   `EffectiveDate`
 
+  (**`Pick-Up Cost` was dropped 2026-09-17** — it was always equal to
+  `OOP Price`, existing to show that collecting from the warehouse costs no
+  extra. Two columns that must stay equal is an invariant the spreadsheet cannot
+  enforce, and the day they diverge the picker offers a rep two different
+  correct prices for one item. The distinction belongs in the header wording,
+  which is what the customer reads.)
+
 **Adds NO operator state** — it makes the reader match the sheet the operator
 already built. Three things changed for them:
 

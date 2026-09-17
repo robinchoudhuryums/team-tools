@@ -13087,11 +13087,11 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   // This exact row is why the pin was rewritten: the reader ASSUMED column A was
   // the item name, and here column A is the billing code.
   const H = ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
-    'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
+    'W/ Shipping Cost', 'W/ Tech Delivery Cost',
     'Area Eligibility', 'Comments', 'EffectiveDate'];
   const R = ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel',
     'https://drive.google.com/file/d/1AbC/view', '$920.00',
-    '$150.00', '$920.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
+    '$150.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
   const o = obj(H, R);
 
   assert.strictEqual(o.name, 'Drive Scout 3 Wheel',
@@ -13102,8 +13102,8 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   // Collapsing these to one number is not a simplification: $920 is correct only
   // for a customer collecting in person.
   assert.deepStrictEqual(o.prices.map((p) => p.label + '=' + p.value),
-    ['OOP Price=$920.00', 'Pick-Up Cost=$920.00', 'W/ Shipping Cost=$1,070.00', 'W/ Tech Delivery Cost=$1,220.00'],
-    'all four price-role columns are kept, labelled and in sheet order');
+    ['OOP Price=$920.00', 'W/ Shipping Cost=$1,070.00', 'W/ Tech Delivery Cost=$1,220.00'],
+    'all three price-role columns are kept, labelled and in sheet order');
   assert.strictEqual(o.price, '$920.00', 'and `price` is the first of them (what a single-price sheet has)');
 
   assert.strictEqual(o.eligibility, 'Open');
@@ -13671,7 +13671,7 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
     // parenthesis, which are the characters a "tidy this up" edit would touch.
     ['Drive Scout 3 Wheel', '$1,070.00', '09/16/2026', 'W/ Shipping Cost'],
     ['Drive Scout 3 Wheel', '$1,220.00', '09/16/2026', 'W/ Tech Delivery Cost'],
-    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'Pick-Up Cost'],
+    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'OOP Price'],
     ['Widget (boxed)', '$9', '', 'OOP Price'],
   ];
   table.forEach((row) => {

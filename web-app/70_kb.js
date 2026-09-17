@@ -765,7 +765,7 @@ function oopRowObj_(headers, row) {
  *  A quote names the column it came from, so re-verification compares the price
  *  the customer was actually shown rather than whichever column happens to be
  *  leftmost today. Without this, editing "W/ Shipping Cost" would not refuse a
- *  send quoting it, and editing "Pick-Up Cost" WOULD refuse one quoting
+ *  send quoting it, and editing the base price WOULD refuse one quoting
  *  shipping — both wrong, in opposite directions.
  *
  *  A blank label means a single-price sheet: the first entry. */
@@ -918,9 +918,10 @@ function oopVerifyQuotes_(quotes, message) {
     const live = oopRowObj_(headers, row);
     // Resolve the price BY THE LABEL the quote names, not by whichever column is
     // leftmost today. A sheet with pick-up / shipped / tech-delivery totals has
-    // three right answers per item, and comparing the wrong one refuses in BOTH
-    // directions: an edit to the column actually quoted would sail through,
-    // while an edit to a column nobody quoted would block an honest send.
+    // several right answers per item, and comparing the wrong one refuses in
+    // BOTH directions: an edit to the column actually quoted would sail
+    // through, while an edit to a column nobody quoted would block an honest
+    // send.
     const label = String(q.label == null ? '' : q.label).trim();
     const entry = oopPriceByLabel_(live.prices, label);
     if (!entry || !entry.value) {
