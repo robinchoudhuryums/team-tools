@@ -36,6 +36,11 @@
     // server every ~15 min and prompts a reload on mismatch. Empty = the
     // hash failed server-side and the check is disabled for this session.
     window.SERVER_BUILD_STAMP = <?!= JSON.stringify(buildStamp || '').replace(/</g, '\\u003c') ?>;
+    // H1 (2026-09-17): the company holiday calendar as flat ISO dates (last
+    // year, this year, next), read server-side from the CDR Report workbook's
+    // Company Holidays tab (federal fallback). mPrevWorkdayIso_ steps over
+    // these so "Yesterday" never lands on a holiday. Empty = weekends only.
+    window.SERVER_COMPANY_HOLIDAYS = <?!= JSON.stringify(companyHolidays || []).replace(/</g, '\\u003c') ?>;
     (function () {
       try {
         if (window.SERVER_QUERY_PARAMS && window.SERVER_QUERY_PARAMS.compact === '1') {

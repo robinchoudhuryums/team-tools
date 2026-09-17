@@ -198,6 +198,18 @@ const CONFIG = {
   // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
   // fixed 2h holds year-round). Change both or the two dashboards disagree.
   CDR_INBOUND_PST_TO_CST_HOURS: 2,
+  // Company holidays (H1, 2026-09-17). The CDR Report workbook carries a
+  // `Company Holidays` tab (call-data-reporting's setup() creates it; its
+  // Operator State #27 is the grammar: one range per row, `2026-12-25` or
+  // `2026-11-26..2026-11-27`, a comma list in one cell also parses, Active
+  // FALSE parks a row). getCdrCompanyHolidayRanges_ (40_metrics.js) reads it
+  // by HEADER NAME and getCompanyHolidays_ (10_core.js) layers it over the
+  // computed US-federal list: the tab WINS the moment it holds one range
+  // (never a union), the federal list is only the fail-open when the tab is
+  // absent, empty or unreadable. The point is ONE calendar for both apps --
+  // Metrics "previous workday" used to walk weekends only and landed on the
+  // holiday the morning after every one.
+  CDR_HOLIDAYS_TAB:  'Company Holidays',
   BREAK_COVERAGE_SLOT_MIN: 15,        // strip granularity — breaks land on quarter hours
   BREAK_COVERAGE_VOLUME_DAYS: 28,     // trailing window the demand layer averages over
   BREAK_COVERAGE_VOLUME_MAX_ROWS: 40000,  // tail-scan bound on the export tab (truncation REPORTED)
@@ -1415,6 +1427,9 @@ var _cdrColumnsValidated = false;
 var _cdrColumnWarning = null;
 var _cdrNameMapCache = null;
 var _cdrNameMapExpiry = 0;
+// H1: the Company Holidays tab, memoized per execution (the CacheService tier
+// is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
+var _cdrHolidaysMemo = null;
 // Once-per-session like _cdrColumnsValidated (the validateCdrColumns_ pattern).
 var _csrTransferValidated = false;
 var _csrTransferWarning = null;

@@ -16394,6 +16394,7 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     normalizeDate_: (v) => String(v || ''),
     normalizeTime_: (v) => String(v || ''),
     getUsHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],
+    getCompanyHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],   // H1: consumers read the company calendar
     getAdpSS_: () => ({ getSheetByName: (tab) => ({ getDataRange: () => ({ getValues:
       () => (tab === 'Timesheet' ? adpRows : toRows) }) }) }),
     CONFIG: { ADP_TAB: 'Timesheet', TIMEOFF_TAB: 'TimeOffRequests', ADJUST_WINDOW_DAYS: 30 },
@@ -16685,8 +16686,8 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
     'a missing/zero stamp yields null — the F8 "a gap beats a substitute" rule');
   assert.ok(/catch \(e\)/.test(wrap) && /return null;\s*\n\s*\}/.test(wrap),
     'any failure degrades to unknown rather than throwing into the caller');
-  assert.ok(/getUsHolidays_\(y\)/.test(wrap) && /\(y - y0\) <= 2/.test(wrap),
-    'holidays are built for the spanned years, bounded');
+  assert.ok(/getCompanyHolidays_\(y\)/.test(wrap) && /\(y - y0\) <= 2/.test(wrap),
+    'holidays are built for the spanned years, bounded -- from the COMPANY calendar (H1), not the federal list');
 
   // (a) Spanish stats — the surface the operator asked about.
   const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
@@ -17978,7 +17979,7 @@ test('PR3-1: getPunctualityReport — dayDetail is ADDITIVE beside `days`, cappe
   assert.ok(/prevTo = addDaysIso_\(fromDate, -1\)/.test(src) && /prevFrom = addDaysIso_\(prevTo, -\(numDays - 1\)\)/.test(src), 'the previous EQUIVALENT range');
   assert.ok(/ptoUnavailable = true/.test(src) && /ptoUnavailable: ptoUnavailable/.test(src), 'a failed PTO read is reported (F4 rule)');
   assert.ok(/days: dates\.length,/.test(src) && /dayDetail: dayDetail,/.test(src), '`days` stays the count; the array is `dayDetail`');
-  assert.ok(/getUsHolidays_\(/.test(src), 'holidays from the Coverage source');
+  assert.ok(/getCompanyHolidays_\(/.test(src), 'holidays from the Coverage source (the company calendar, H1)');
   assert.ok(/if \(!empRosterEmail_\(roster\[i\]\)\) continue;/.test(src), 'F3 roster predicate kept');
   assert.ok(/if \(mins === null\) continue;/.test(src), 'A3 unparseable-time skip kept');
   const code = serverSource();
@@ -19543,6 +19544,167 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.strictEqual((t30.match(/if \(isWeekendIso\(daysAgo\(i\)\)\) continue;/g) || []).length, 2, 'the fixture trend + KPI series skip weekends — the server shape, not a paraphrase (INV-185)');
   const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
   assert.ok(/30 days · workdays/.test(mp) && /workdays in the 30 days ending/.test(mp), 'the trend headings say workdays');
+});
+
+test('H1-1: prevWorkdayIso_ / metricsWorkdayIsos_ step over COMPANY HOLIDAYS -- behavioural, bounded, and the one-arg form stays pure', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'prevWorkdayIso_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'metricsWorkdayIsos_'), ctx);
+  // 2026-09-07 is a Monday (Labor Day). The Tuesday after it must land on
+  // Friday the 4th, not on the holiday -- the morning-after-a-holiday bug.
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tuesday after a Monday holiday -> the Friday before');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'an empty map is weekends-only (the pre-H1 walk)');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08'), '2026-09-07', 'the one-arg form in a bare vm (no companyHolidayMap_) is still pure and weekends-only');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-11-30', { '2026-11-26': true, '2026-11-27': true }), '2026-11-25', 'a two-day holiday plus the weekend is walked over');
+  // Bounded: a pathological everything-is-a-holiday map returns the 14th day
+  // back rather than looping (the dashboard's prevBusinessDayIso_ rule).
+  const all = {}; for (let i = 1; i <= 20; i++) all['2026-09-' + String(i).padStart(2, '0')] = true;
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-20', all), '2026-09-06', 'bounded at 14 steps');
+  const W = ctx.metricsWorkdayIsos_;
+  assert.strictEqual(W('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a weekday holiday drops out of the trend axis');
+  assert.strictEqual(W('2026-08-31', '2026-09-06').join('|'), '2026-08-31|2026-09-01|2026-09-02|2026-09-03|2026-09-04', 'no map + no companyHolidayMap_ in scope = weekends-only (pure for the MW-1 pin)');
+  // In the real scope the map comes from companyHolidayMap_ (typeof-guarded).
+  const wired = foNc(extractRawFunction('Code.js', 'metricsWorkdayIsos_')) + foNc(extractRawFunction('Code.js', 'prevWorkdayIso_'));
+  assert.strictEqual((wired.match(/typeof companyHolidayMap_ === 'function'/g) || []).length, 2, 'both walks consult the company calendar through the typeof guard');
+});
+
+test('H1-2: companyHolidayDatesInYear_ (pure) clips ranges to the year, de-dupes, sorts, drops malformed, defaults the name', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_'), ctx);
+  const out = ctx.companyHolidayDatesInYear_([
+    { from: '2026-12-31', to: '2027-01-02', name: 'New Year' },   // straddles the year edge
+    { from: '2026-11-26', to: '2026-11-27', name: 'Thanksgiving' },
+    { from: '2026-07-03', to: '2026-07-03' },                       // no name
+    { from: '2026-07-03', to: '2026-07-03', name: 'dup' },          // duplicate day
+    { from: 'garbage', to: '2026-01-01' },                          // malformed
+    { from: '2025-12-25', to: '2025-12-25', name: 'last year' },    // outside
+  ], 2026);
+  assert.strictEqual(out.map((h) => h.date).join('|'), '2026-07-03|2026-11-26|2026-11-27|2026-12-31', 'in-year days only, sorted, de-duplicated');   // string compare: vm-realm arrays (g116)
+  assert.strictEqual(out[0].name, 'Company holiday', 'a nameless range gets the default label');
+  assert.strictEqual(out[3].name, 'New Year', 'a straddling range keeps its name');
+  assert.strictEqual(ctx.companyHolidayDatesInYear_([{ from: '2027-01-01', to: '2027-01-01' }], 2026).length, 0, 'a range wholly outside the year yields nothing');
+  assert.strictEqual(ctx.companyHolidayDatesInYear_(null, 2026).length, 0, 'null ranges -> []');
+});
+
+test('H1-3: getCompanyHolidays_ -- the CDR tab WINS (never a union); every other source shape falls back to the federal list', () => {
+  const federal = [{ date: '2026-10-12', name: 'Columbus Day' }];
+  const mk = (src) => {
+    const ctx = { getUsHolidays_: () => federal, getCdrCompanyHolidayRanges_: () => src };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getCompanyHolidays_'), ctx);
+    return ctx.getCompanyHolidays_(2026).map((h) => h.date).join('|');
+  };
+  assert.strictEqual(mk({ source: 'sheet', ranges: [{ from: '2026-11-26', to: '2026-11-27', name: 'T' }] }), '2026-11-26|2026-11-27',
+    'the tab replaces the federal list -- Columbus Day is NOT unioned in');
+  assert.strictEqual(mk({ source: 'empty', ranges: [] }), '2026-10-12', 'an empty tab -> federal');
+  assert.strictEqual(mk({ source: 'no-tab', ranges: [] }), '2026-10-12', 'a pre-H1 workbook -> federal');
+  assert.strictEqual(mk({ source: 'unavailable', ranges: [] }), '2026-10-12', 'an unreadable workbook -> federal (fail-open)');
+  assert.strictEqual(mk(null), '2026-10-12', 'a null reader result -> federal');
+  const ctxT = { getUsHolidays_: () => federal, getCdrCompanyHolidayRanges_: () => { throw new Error('boom'); } };
+  vm.createContext(ctxT);
+  vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_') + extractRawFunction('Code.js', 'getCompanyHolidays_'), ctxT);
+  assert.strictEqual(ctxT.getCompanyHolidays_(2026)[0].date, '2026-10-12', 'a throwing reader -> federal, never a throw into the consumer');
+  // Every former getUsHolidays_ consumer now reads the company calendar: the
+  // federal computer is referenced exactly twice in the server -- its own
+  // definition and the fallback inside getCompanyHolidays_.
+  const src = foNc(serverSource());
+  assert.strictEqual((src.match(/getUsHolidays_\(/g) || []).length, 2, 'no consumer reads the federal list directly (definition + the one fallback)');
+  assert.ok((src.match(/getCompanyHolidays_\(/g) || []).length >= 8, 'the company accessor feeds the timeclock / coverage / punctuality / business-minutes / metrics consumers');
+});
+
+test('H1-4: getCdrCompanyHolidayRanges_ -- header-name read, Active parked, coerced Date keyed in the SPREADSHEET tz, fail-open source shape, cache discipline', () => {
+  const grammar = extractRawFunction('Code.js', 'cdrParseDateRanges_');
+  const reader = extractRawFunction('Code.js', 'getCdrCompanyHolidayRanges_');
+  const mkCtx = (rows, opts) => {
+    opts = opts || {};
+    const puts = [];
+    const ctx = {
+      CONFIG: { CDR_HOLIDAYS_TAB: 'Company Holidays' },
+      CDR_HOLIDAYS_CACHE_KEY_: 'cdr_holidays_v1', CDR_HOLIDAYS_CACHE_TTL_: 3600, CDR_HOLIDAYS_MAX_RANGES_: 400,
+      _cdrHolidaysMemo: null,
+      _TEST_OVERRIDE_CDR_SS_ID: opts.override || null,
+      Logger: { log() {} },
+      JSON: JSON, Date: Date,
+      Utilities: { formatDate: (d, tz, fmt) => { ctx._fmtTz = tz; return '2026-07-05'; } },
+      CacheService: { getScriptCache: () => ({ get: () => opts.cached || null, put: (k, v, ttl) => puts.push({ k: k, v: v, ttl: ttl }) }) },
+      getCdrSS_: () => {
+        if (opts.throws) throw new Error('Service Spreadsheets timed out');
+        return {
+          getSpreadsheetTimeZone: () => 'America/Mexico_City',
+          getSheetByName: (n) => (n === 'Company Holidays' && rows) ? { getDataRange: () => ({ getValues: () => rows }) } : null,
+        };
+      },
+      _puts: puts,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(grammar + '\n' + reader, ctx);
+    return ctx;
+  };
+  // Headers in a DIFFERENT order than the owner's, plus an extra column: read by name.
+  const ctx = mkCtx([
+    ['Notes', 'Active', 'Label', 'Dates', 'Extra'],
+    ['', '', 'Thanksgiving', '2026-11-26..2026-11-27', 'x'],
+    ['', 'FALSE', 'parked', '2026-01-01', ''],
+    ['', false, 'parked bool', '2026-05-25', ''],
+    ['', 'TRUE', 'Christmas', '2026-12-24, 2026-12-25', ''],
+    ['', '', 'coerced', new Date('2026-07-06T05:30:00Z'), ''],   // 23:30 Mexico City on Jul 5
+    ['', '', 'blank', '', ''],
+    ['', '', 'junk', 'garbage', ''],
+  ]);
+  const out = ctx.getCdrCompanyHolidayRanges_();
+  assert.strictEqual(out.source, 'sheet');
+  assert.strictEqual(out.ranges.map((r) => r.from + '..' + r.to + ':' + r.name).join('|'),
+    '2026-11-26..2026-11-27:Thanksgiving|2026-12-24..2026-12-24:Christmas|2026-12-25..2026-12-25:Christmas|2026-07-05..2026-07-05:coerced',
+    'named columns, parked rows skipped, comma list and range parsed, blank/junk dropped, Date cell formatted');
+  assert.strictEqual(ctx._fmtTz, 'America/Mexico_City', 'a coerced Date cell is keyed in the CDR SPREADSHEET tz, not the script tz (g00 twin)');
+  assert.strictEqual(ctx._puts.length, 1, 'a clean read is cached');
+  assert.strictEqual(ctx._puts[0].k, 'cdr_holidays_v1');
+  assert.strictEqual(ctx.getCdrCompanyHolidayRanges_(), out, 'memoized per execution');
+  // Empty tab / no tab / unreadable: the SOURCE says which, ranges stay [].
+  assert.strictEqual(mkCtx([['Dates', 'Label', 'Active', 'Notes']]).getCdrCompanyHolidayRanges_().source, 'empty');
+  assert.strictEqual(mkCtx(null).getCdrCompanyHolidayRanges_().source, 'no-tab');
+  const bad = mkCtx(null, { throws: true });
+  assert.strictEqual(bad.getCdrCompanyHolidayRanges_().source, 'unavailable');
+  assert.strictEqual(bad._puts.length, 0, 'an unavailable read is NEVER cached -- the next request retries');
+  // Cache tiers: a hit short-circuits the read; the test override bypasses it.
+  const hit = mkCtx(null, { cached: JSON.stringify({ ranges: [{ from: '2026-01-01', to: '2026-01-01', name: 'c' }], source: 'sheet' }) });
+  assert.strictEqual(hit.getCdrCompanyHolidayRanges_().ranges[0].from, '2026-01-01', 'a CacheService hit serves without opening the workbook');
+  const ov = mkCtx([['Dates'], ['2026-03-03']], { cached: JSON.stringify({ ranges: [], source: 'empty' }), override: 'fixture-id' });
+  assert.strictEqual(ov.getCdrCompanyHolidayRanges_().ranges.length, 1, 'under _TEST_OVERRIDE_CDR_SS_ID the cache is bypassed -- a fixture read never serves prod\'s list');
+  assert.strictEqual(ov._puts.length, 0, '...and never writes it either');
+  // The grammar mirrors call-data-reporting's parseSkipDateRanges_ (reversed range swapped).
+  assert.strictEqual(JSON.stringify(ctx.cdrParseDateRanges_(' 2026-07-06..2026-07-03 , x, 2026-12-25 ')), JSON.stringify([{ from: '2026-07-03', to: '2026-07-06' }, { from: '2026-12-25', to: '2026-12-25' }]));
+  // CONFIG key is read (the F1 declared-but-unread rule) and the reset helper knows the memo.
+  assert.ok(/CONFIG\.CDR_HOLIDAYS_TAB/.test(reader));
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_cdrHolidaysMemo = null;/.test(tests.slice(tests.indexOf('function _resetCdrCaches_'), tests.indexOf('function _clearCdrCacheForDate_'))), '_resetCdrCaches_ clears the holiday memo across the override boundary');
+});
+
+test('H1-5: the client walk agrees with the server -- doGet ships SERVER_COMPANY_HOLIDAYS, mPrevWorkdayIso_ steps over it, the harness page strips it before the straggler strip', () => {
+  const ctx = { isoDateTz: () => '2026-09-08', empTz: () => 'America/Chicago', window: { SERVER_COMPANY_HOLIDAYS: ['2026-09-07'] } };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mPrevWorkdayIso_'), ctx);
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-09-08'), '2026-09-04', 'Tuesday after Labor Day -> the Friday before (the server\'s answer)');
+  assert.strictEqual(ctx.mPrevWorkdayIso_(), '2026-09-04', 'zero-arg default walks the same list');
+  ctx.window.SERVER_COMPANY_HOLIDAYS = undefined;
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-09-08'), '2026-09-07', 'no list -> weekends-only (the pre-H1 walk, never a throw)');
+  const doGet = foNc(extractRawFunction('Code.js', 'doGet'));
+  assert.ok(/try \{ tpl\.companyHolidays = companyHolidayIsoList_\(\); \} catch \(_\) \{ tpl\.companyHolidays = \[\]; \}/.test(doGet),
+    'doGet injects the list with catch -> [] (a holiday read can never break boot)');
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(/window\.SERVER_COMPANY_HOLIDAYS = <\?!= JSON\.stringify\(companyHolidays \|\| \[\]\)\.replace\(\/<\/g, '\\\\u003c'\) \?>/.test(idx),
+    'the injection uses the unescaped <?!= form with the < guard (INV-78)');
+  const bld = fs.readFileSync(path.join(__dirname, '../visual/build.mjs'), 'utf8');
+  const at = bld.indexOf('companyHolidays');
+  const stragglerAt = bld.indexOf('Any straggler scriptlets');
+  assert.ok(at > -1 && stragglerAt > -1 && at < stragglerAt,
+    'build.mjs replaces the holidays scriptlet BEFORE the straggler strip -- the strip alone leaves `window.SERVER_COMPANY_HOLIDAYS = ;`, a head SyntaxError');
+  const listFn = foNc(extractRawFunction('Code.js', 'companyHolidayIsoList_'));
+  assert.ok(/getCompanyHolidays_\(yy\)/.test(listFn) && /y - 1/.test(listFn) && /y \+ 1/.test(listFn), 'the shipped list is last year, this year, next -- from the ONE accessor');
 });
 
 test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {

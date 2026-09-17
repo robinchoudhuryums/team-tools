@@ -257,6 +257,107 @@ function getCdrNameMap_() {
   _cdrNameMapExpiry = now + (CONFIG.CDR_CACHE_TTL * 1000);
   return map;
 }
+// ── Company holidays (H1, 2026-09-17) ────────────────────────────────────
+// The dashboard repo publishes its holiday list as a `Company Holidays` tab in
+// the CDR Report workbook (its Operator State #27; the tab replaced a Script
+// Property nothing outside that project could read). This reader is the one
+// place team-tools consumes it. Read BY HEADER NAME (the Inbound / Transfer
+// tab discipline -- a column added on the owner's side cannot shift ours),
+// one range per row in the owner's Skip Dates grammar, Active FALSE parked.
+// A Dates cell Sheets coerced to a Date is keyed in the SPREADSHEET's tz
+// (the CDR sheet is America/Mexico_City; the g00/INV-64 twin for dates).
+// Fail-OPEN by shape: `source` says what happened -- 'sheet' (ranges came
+// from the tab), 'empty' (tab present, no active range), 'no-tab' (a pre-H1
+// workbook), 'unavailable' (the read threw; NOT cached, so the next request
+// retries) -- and getCompanyHolidays_ falls back to the federal list on
+// anything but 'sheet'. Cached one hour (a holiday edit is not urgent to
+// the minute; a page load must not open a second workbook every time), and
+// the CacheService tier is BYPASSED under _TEST_OVERRIDE_CDR_SS_ID like the
+// other CDR readers, so a fixture read never serves prod's list or vice versa.
+var CDR_HOLIDAYS_CACHE_KEY_ = 'cdr_holidays_v1';
+var CDR_HOLIDAYS_CACHE_TTL_ = 3600;
+var CDR_HOLIDAYS_MAX_RANGES_ = 400;   // a runaway tab must not become a runaway payload
+
+/** PURE (Node-pinned): the owner's Skip Dates grammar -- single ISO dates,
+ *  inclusive `a..b` ranges, comma lists, whitespace anywhere; malformed tokens
+ *  dropped, reversed ranges swapped. Mirrors call-data-reporting's
+ *  parseSkipDateRanges_ so the two apps read one cell the same way. */
+function cdrParseDateRanges_(raw) {
+  if (!raw) return [];
+  var iso = /^\d{4}-\d{2}-\d{2}$/;
+  var out = [];
+  String(raw).split(',').forEach(function (tok) {
+    tok = tok.trim();
+    if (!tok) return;
+    var parts = tok.split('..').map(function (x) { return x.trim(); });
+    var from = '', to = '';
+    if (parts.length === 1 && iso.test(parts[0])) { from = to = parts[0]; }
+    else if (parts.length === 2 && iso.test(parts[0]) && iso.test(parts[1])) {
+      from = parts[0]; to = parts[1];
+      if (from > to) { var t = from; from = to; to = t; }
+    } else return;
+    out.push({ from: from, to: to });
+  });
+  return out;
+}
+
+/** { ranges: [{from, to, name}], source } -- see the block comment above. */
+function getCdrCompanyHolidayRanges_() {
+  if (_cdrHolidaysMemo) return _cdrHolidaysMemo;
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  if (useCache) {
+    try {
+      var hit = CacheService.getScriptCache().get(CDR_HOLIDAYS_CACHE_KEY_);
+      if (hit) { _cdrHolidaysMemo = JSON.parse(hit); return _cdrHolidaysMemo; }
+    } catch (_) {}
+  }
+  var out = { ranges: [], source: 'no-tab' };
+  try {
+    var ss = getCdrSS_();
+    var sheet = ss.getSheetByName(CONFIG.CDR_HOLIDAYS_TAB);
+    if (sheet) {
+      var rows = sheet.getDataRange().getValues();
+      out.source = 'empty';
+      if (rows.length >= 2) {
+        var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var iDates = hdr.indexOf('dates');
+        if (iDates < 0) iDates = hdr.findIndex(function (h) { return /^date/.test(h); });
+        if (iDates < 0) iDates = 0;
+        var iLabel = hdr.indexOf('label');
+        var iActive = hdr.indexOf('active');
+        var tz = ss.getSpreadsheetTimeZone();
+        for (var i = 1; i < rows.length && out.ranges.length < CDR_HOLIDAYS_MAX_RANGES_; i++) {
+          var r = rows[i];
+          if (iActive >= 0) {
+            var a = r[iActive];
+            if (a === false || String(a == null ? '' : a).trim().toLowerCase() === 'false') continue;
+          }
+          var cell = r[iDates];
+          if (cell instanceof Date) {
+            if (isNaN(cell.getTime())) continue;
+            cell = Utilities.formatDate(cell, tz, 'yyyy-MM-dd');
+          }
+          var spec = String(cell == null ? '' : cell).trim();
+          if (!spec) continue;
+          var name = iLabel >= 0 ? String(r[iLabel] == null ? '' : r[iLabel]).trim() : '';
+          cdrParseDateRanges_(spec).forEach(function (rg) {
+            out.ranges.push({ from: rg.from, to: rg.to, name: name || 'Company holiday' });
+          });
+        }
+        if (out.ranges.length) out.source = 'sheet';
+      }
+    }
+  } catch (e) {
+    out = { ranges: [], source: 'unavailable', error: String(e && e.message || e) };
+    Logger.log('getCdrCompanyHolidayRanges_ unavailable (federal list serves): ' + out.error);
+  }
+  if (useCache && out.source !== 'unavailable') {
+    try { CacheService.getScriptCache().put(CDR_HOLIDAYS_CACHE_KEY_, JSON.stringify(out), CDR_HOLIDAYS_CACHE_TTL_); } catch (_) {}
+  }
+  _cdrHolidaysMemo = out;
+  return out;
+}
+
 function cdrRosterHash_(rosterNames) {
   if (!rosterNames || rosterNames.length === 0) return 'all';
   var digest = Utilities.computeDigest(
@@ -506,13 +607,24 @@ function metricsParsePercent_(s) {
  *  walk rendered two gaps per week on every sparkline. Weekends only — the
  *  manager trends (mgrWorkdaysEnding_) draw the same line. A reversed range
  *  yields []. */
-function metricsWorkdayIsos_(fromIso, toIso) {
+function metricsWorkdayIsos_(fromIso, toIso, holidays) {
   const out = [];
+  // H1: company holidays are not workdays either -- a holiday in the axis is
+  // an empty CDR day that reads as a zero. `holidays` is an {iso:true} map;
+  // omitted, the company calendar is consulted (federal fallback inside it).
+  // The typeof guard keeps the function PURE for the Node pin's bare vm.
+  let hol = holidays;
+  if (!hol) {
+    try { hol = (typeof companyHolidayMap_ === 'function') ? companyHolidayMap_(fromIso, toIso) : {}; }
+    catch (e) { hol = {}; }
+  }
   const endD = new Date(toIso + 'T12:00:00Z');
   for (let d = new Date(fromIso + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
     const dow = d.getUTCDay();
     if (dow === 0 || dow === 6) continue;
-    out.push(isoFromUtc_(d));
+    const iso = isoFromUtc_(d);
+    if (hol && hol[iso]) continue;
+    out.push(iso);
   }
   return out;
 }

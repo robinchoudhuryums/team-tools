@@ -267,6 +267,7 @@ A foreign spreadsheet owned by another repo. Its shape is a constraint, not a ch
 - **CDR duration columns MUST use `getDisplayValues()`.** Fires when you read any CDR duration column (TTT col I, ATT col J). [Detail](docs/gotchas.md#g00-cdr-duration-columns-must-use-getdisplayvalues)
 - **DQE has ONE row per (agent, date) — per-queue rep metrics do not exist (cycle-14 Phase 0).** Fires when you try to break a rep metric down by queue, or read `CDR.QUEUE_EXT`. [Detail](docs/gotchas.md#g01-dqe-has-one-row-per-agent-date)
 - **Metrics enters call `stopClock` to avoid an interval leak.** Fires when you add a view enter that leaves the Clock view. [Detail](docs/gotchas.md#g106-metrics-enters-call-stopclock-to-avoid-an)
+- **The holiday calendar is the CDR Report's `Company Holidays` tab, read through ONE accessor (`getCompanyHolidays_`) that REPLACES the federal list rather than adding to it (H1, 2026-09-17).** Fires when you compute a "previous workday", walk business days, or read `getUsHolidays_` directly. Verify: the H1-1..H1-5 pins + `test_companyHolidays_*`. [Detail](docs/gotchas.md#g123-the-holiday-calendar-is-the-cdr-report-s)
 
 ### Intake contracts
 
@@ -514,7 +515,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
 | Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
-| CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
+| CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable) | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16) | PHI-free by policy | kept | `getKbSS_` |
@@ -570,6 +571,7 @@ the dated round entries that used to sit here moved to
 - [The QA module Phase 1 (operator 2026-08-27) needs THREE Script Properties and one Drive folder before it does anything](docs/operator-state.md#operator-the-qa-module-phase-1-operator-2026-08-27-needs-three-script)
 - [Set Script Property `ADP_SS_ID`](docs/operator-state.md#operator-set-script-property-adp-ss-id)
 - [Set Script Property `CDR_SS_ID`](docs/operator-state.md#operator-set-script-property-cdr-ss-id)
+- [The `Company Holidays` tab (CDR Report workbook) — ONE holiday calendar shared with the Department Dashboard (H1, 2026-09-17)](docs/operator-state.md#operator-the-company-holidays-tab-cdr-report-workbook)
 - [Script Property `TEST_CDR_SS_ID`](docs/operator-state.md#operator-script-property-test-cdr-ss-id)
 - [Set Script Property `INTAKE_SS_ID`](docs/operator-state.md#operator-set-script-property-intake-ss-id)
 - [Intake recipient addresses are Script-Property-backed](docs/operator-state.md#operator-intake-recipient-addresses-are-script-property-backed)
@@ -838,17 +840,17 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 851 | `node test/client/run.js` |
+| Pure harness tests | 856 | `node test/client/run.js` |
 | DOM harness tests | 121 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 329 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 332 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 209 | `.cycle/config.md` |
-| Regression scenarios (S*) | 105 | `.cycle/config.md` |
+| Invariant library entries | 210 | `.cycle/config.md` |
+| Regression scenarios (S*) | 106 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

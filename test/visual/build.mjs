@@ -25,6 +25,9 @@ html = html.replace(/<\?!=\s*JSON\.stringify\(webAppUrl[\s\S]*?\?>/,
 // no reload prompt in screenshots). Must precede the straggler strip, which
 // would otherwise leave `window.SERVER_BUILD_STAMP = ;` — a head SyntaxError.
 html = html.replace(/<\?!=\s*JSON\.stringify\(buildStamp[\s\S]*?\?>/, "''");
+// H1: no company holidays in the harness page (the walk is weekends-only);
+// same ordering rule as the stamp -- must precede the straggler strip.
+html = html.replace(/<\?!=\s*JSON\.stringify\(companyHolidays[\s\S]*?\?>/, '[]');
 // Any straggler scriptlets
 html = html.replace(/<\?[\s\S]*?\?>/g, '');
 

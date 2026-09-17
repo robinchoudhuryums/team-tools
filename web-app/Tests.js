@@ -247,6 +247,9 @@ function _resetCdrCaches_() {
     // execution, including computeAutomationHealth_'s probe.
     _csrTransferValidated = false;
     _csrTransferWarning = null;
+    // H1: the Company Holidays tab memo -- a fixture's (or prod's) list must
+    // not leak across the override boundary.
+    _cdrHolidaysMemo = null;
   } catch (e) {}
 }
 
@@ -1222,6 +1225,8 @@ function _registerSmokeTests_() {
 
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
+  _smokeTest('companyHolidays_tabWinsElseFederal',   test_companyHolidays_tabWinsElseFederal);
+  _smokeTest('prevWorkdayIso_stepsOverHolidays',     test_prevWorkdayIso_stepsOverHolidays);
 
   // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
   // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
@@ -1477,6 +1482,7 @@ function _registerIntegrationB_() {
   _integrationTest('kb_comments_flow',                        test_kb_comments_flow);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
+  _integrationTest('companyHolidays_readsFixtureTab',           test_companyHolidays_readsFixtureTab);
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
@@ -1817,6 +1823,66 @@ function test_holidays_2026_dates() {
   _assertEq(byName['Veterans Day'],              '2026-11-11');  // Wed
   _assertEq(byName['Thanksgiving Day'],          '2026-11-26');  // 4th Thu
   _assertEq(byName['Christmas Day'],             '2026-12-25');  // Fri
+}
+
+/** H1 (2026-09-17): the ONE company calendar. Drives getCompanyHolidays_
+ *  through the per-execution memo (no workbook read, so smoke-safe): the CDR
+ *  tab REPLACES the federal list when it holds a range; every other source
+ *  shape falls back to getUsHolidays_. */
+function test_companyHolidays_tabWinsElseFederal() {
+  const saved = _cdrHolidaysMemo;
+  try {
+    _cdrHolidaysMemo = { ranges: [], source: 'no-tab' };
+    _assertEq(getCompanyHolidays_(2026).map(h => h.date), getUsHolidays_(2026).map(h => h.date), 'no tab -> the federal list');
+    _cdrHolidaysMemo = { ranges: [], source: 'unavailable', error: 'x' };
+    _assertEq(getCompanyHolidays_(2026).length, getUsHolidays_(2026).length, 'unreadable workbook -> the federal list (fail-open)');
+    _cdrHolidaysMemo = { ranges: [{ from: '2026-11-26', to: '2026-11-27', name: 'Thanksgiving' }, { from: '2026-12-25', to: '2026-12-25', name: 'Christmas' }], source: 'sheet' };
+    _assertEq(getCompanyHolidays_(2026).map(h => h.date), ['2026-11-26', '2026-11-27', '2026-12-25'], 'the tab WINS -- Columbus / Veterans Day are not unioned in');
+    _assertEq(getCompanyHolidays_(2027).length, 0, 'an unlisted year has no holidays (the dashboard rule; the tab is maintained yearly)');
+  } finally { _cdrHolidaysMemo = saved; }
+}
+
+/** H1: the previous-workday walk steps over company holidays -- the
+ *  morning-after-a-holiday "Yesterday" bug. */
+function test_prevWorkdayIso_stepsOverHolidays() {
+  _assertEq(prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tue after Labor Day -> Fri');
+  _assertEq(prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'empty map -> weekends only');
+  _assertEq(metricsWorkdayIsos_('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a holiday drops out of the trend axis');
+}
+
+/** H1 (integration): the reader against a REAL `Company Holidays` tab in the
+ *  TEST CDR fixture -- header-name read, a coerced Date cell keyed in the
+ *  spreadsheet tz, and the consumers downstream. The tab is deleted after. */
+function test_companyHolidays_readsFixtureTab() {
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_HOLIDAYS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_HOLIDAYS_TAB);
+    try {
+      tab.getRange(1, 1, 1, 4).setValues([['Dates', 'Label', 'Active', 'Notes']]);
+      tab.getRange(2, 1, 3, 1).setNumberFormat('@');
+      tab.getRange(2, 1, 3, 4).setValues([
+        ['2026-11-26..2026-11-27', 'Thanksgiving', '', ''],
+        ['2026-01-01', 'parked', 'FALSE', ''],
+        ['2026-12-25', 'Christmas', 'TRUE', ''],
+      ]);
+      // A cell WITHOUT the text pin, as an operator typing a date would leave it:
+      // Sheets coerces it to a Date; the reader must key it in the sheet's tz.
+      tab.getRange(5, 1).setValue('2026-07-03');
+      tab.getRange(5, 2).setValue('Observed 4th');
+      SpreadsheetApp.flush();
+      _cdrHolidaysMemo = null;
+      const out = getCdrCompanyHolidayRanges_();
+      _assertEq(out.source, 'sheet');
+      _assertEq(out.ranges.map(r => r.from + '..' + r.to).sort(), ['2026-07-03..2026-07-03', '2026-11-26..2026-11-27', '2026-12-25..2026-12-25'], 'parked row skipped; range, plain and coerced cells all parse');
+      _assertEq(getCompanyHolidays_(2026).map(h => h.date), ['2026-07-03', '2026-11-26', '2026-11-27', '2026-12-25']);
+      _assertEq(prevWorkdayIso_('2026-11-30'), '2026-11-25', 'the Monday after Thanksgiving week looks back to Wednesday');
+    } finally {
+      _cdrHolidaysMemo = null;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
 }
 
 function test_holidays_independenceDay_weekendShift() {

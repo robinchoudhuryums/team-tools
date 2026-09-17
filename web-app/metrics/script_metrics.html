@@ -506,15 +506,27 @@ function mDaysAgo_(n) {
 /** The previous WORKDAY before baseIso (default: employee-tz today) — CDR data
  *  is never populated same-day (operator 2026-08-17), so the My Stats
  *  single-day preset points here: Monday shows Friday, not Sunday. Weekends
- *  step back to Friday; weekdays step back one day. Pure over its argument
- *  (Node-pinned); UTC-noon anchor like mDaysAgo_. */
+ *  step back to Friday; weekdays step back one day; and (H1) so do company
+ *  holidays, read from window.SERVER_COMPANY_HOLIDAYS (index.html injects the
+ *  server's list, so this walk and the server's prevWorkdayIso_ agree). With
+ *  no list the walk is weekends-only. Pure over its argument (Node-pinned);
+ *  UTC-noon anchor like mDaysAgo_; bounded at 14 steps. */
 function mPrevWorkdayIso_(baseIso) {
   try {
+    var hol = {};
+    try {
+      var list = (typeof window !== 'undefined' && window.SERVER_COMPANY_HOLIDAYS) || [];
+      for (var i = 0; i < list.length; i++) hol[list[i]] = true;
+    } catch (_) { hol = {}; }
     var d = new Date((baseIso || isoDateTz(empTz())) + 'T12:00:00Z');
-    do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
-    return d.getUTCFullYear() + '-' +
-      String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getUTCDate()).padStart(2, '0');
+    var fmt = function (x) {
+      return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0');
+    };
+    for (var steps = 0; steps < 14; steps++) {
+      d.setUTCDate(d.getUTCDate() - 1);
+      if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !hol[fmt(d)]) return fmt(d);
+    }
+    return fmt(d);
   } catch (_) { return ''; }
 }
 

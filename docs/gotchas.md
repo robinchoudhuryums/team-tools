@@ -2877,3 +2877,44 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the defect (a property, a `CONFIG.` fallback) — a bite-check showed none of
   them would have caught a warehouse hard-coded one layer down, so it now
   asserts the registry is BUILT EMPTY.
+
+<a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
+
+- **The holiday calendar is the CDR Report's `Company Holidays` tab, and it
+  REPLACES the federal list rather than adding to it (H1, 2026-09-17).** A
+  cross-repo evaluation against `call-data-reporting` found the two apps on
+  different calendars: the Department Dashboard walked its business days over
+  an operator-curated holiday list that lived in a Script Property nothing
+  outside that project could read, while this app's Metrics "previous workday"
+  (`prevWorkdayIso_`, `mPrevWorkdayIso_`, `metricsWorkdayIsos_`) walked
+  WEEKENDS ONLY -- so the morning after every company holiday, My Stats
+  "Yesterday" landed on the holiday, an empty CDR day, and every rate read
+  zero -- and every OTHER business-day walk here (coverage, punctuality, PTO
+  conflict labels, the business-minutes core) used a hard-coded US-FEDERAL
+  list (`getUsHolidays_`) the company does not close for (Columbus Day,
+  Veterans Day). Two calendars inside one app, a third in the other. The
+  dashboard now publishes its list as a `Company Holidays` tab in the CDR
+  Report workbook (its Operator State #27: one range per row, `2026-12-25` or
+  `2026-11-26..2026-11-27`, a comma list in one cell also parses, `Active`
+  FALSE parks a row). `getCdrCompanyHolidayRanges_` (40_metrics.js) reads it
+  BY HEADER NAME with a one-hour CacheService tier that the
+  `_TEST_OVERRIDE_CDR_SS_ID` seam bypasses, keys a coerced Date cell in the
+  SPREADSHEET's tz (the g00 twin for dates), and reports a `source` --
+  `sheet` / `empty` / `no-tab` / `unavailable` -- rather than a bare `[]`, and
+  an `unavailable` read is never cached so the next request retries.
+  `getCompanyHolidays_(year)` (10_core.js) is the ONE accessor every consumer
+  reads: the tab WINS the moment it holds one range, and the federal list is
+  only the fail-open for `empty` / `no-tab` / `unavailable`. **Never a union:**
+  merging would keep Columbus Day a holiday after the operator listed the real
+  closures, which is the bug being closed; and the dashboard has NO federal
+  fallback at all, so an unlisted year is a year with no holidays on both
+  sides and the tab is maintained yearly. The client gets the same list as
+  `window.SERVER_COMPANY_HOLIDAYS` (doGet → index.html, catch → `[]`), so
+  `mPrevWorkdayIso_` and the server agree; `test/visual/build.mjs` strips that
+  scriptlet BEFORE the straggler strip, the SERVER_BUILD_STAMP rule.
+  `getUsHolidays_` is referenced exactly twice in the server -- its own
+  definition and the fallback -- and the H1-3 pin counts them. Fires when you
+  compute a "previous workday", walk business days, or read `getUsHolidays_`
+  directly. Verify: the H1-1..H1-5 pins, `test_companyHolidays_tabWinsElseFederal`,
+  `test_companyHolidays_readsFixtureTab`; the dashboard side is pinned in
+  call-data-reporting's `util.test.js` / `setup.test.js`.

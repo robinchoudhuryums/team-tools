@@ -214,6 +214,33 @@ entry says which it is.
   `call-data-reporting` repo now surfaces as "Column drift in CSR Transfer
   Historical Data" in Admin → Automation Health (`cdr.transferColumnWarning`)
   instead of silently feeding wrong cells into the Transfer KPI.
+<a id="operator-the-company-holidays-tab-cdr-report-workbook"></a>
+- **The `Company Holidays` tab (CDR Report workbook) — ONE holiday calendar
+  shared with the Department Dashboard (H1, 2026-09-17).** Nothing to set in
+  team-tools: the tab is created and maintained on the `call-data-reporting`
+  side (its `setup()` creates it; its Operator State #27 is the grammar — one
+  range per row in column `Dates`, `2026-12-25` or `2026-11-26..2026-11-27`,
+  a comma list in one cell also parses; `Label` free text; `Active` blank/TRUE
+  counts, FALSE parks a row). This app reads it read-only through `CDR_SS_ID`
+  via `getCdrCompanyHolidayRanges_` (header-name read, one-hour CacheService
+  tier `cdr_holidays_v1`, bypassed under the test override) and
+  `getCompanyHolidays_(year)` is the ONE accessor every business-day consumer
+  reads — Metrics "previous workday" + trend axes, the coverage planner,
+  punctuality, the PTO conflict labels, the business-minutes core, the pay
+  statement, and the client's `mPrevWorkdayIso_` via
+  `window.SERVER_COMPANY_HOLIDAYS`. **Precedence: the tab WINS the moment it
+  holds one range; the computed US-federal list (`getUsHolidays_`) serves ONLY
+  while the tab is absent, empty or unreadable — never merged.** So after the
+  dashboard operator populates the tab, Columbus Day and Veterans Day stop
+  being holidays here (they were never company closures), and an UNLISTED
+  YEAR is a year with no holidays in both apps — the tab is maintained yearly,
+  which is the dashboard's rule too. A tab the deployer account cannot read
+  (or a `CDR_SS_ID` that is unset) degrades to the federal list with a
+  `Logger` line, never a thrown error; there is no health row for it yet
+  (the dashboard's Health page has one, `company-holidays`, which also warns
+  when its old property is still set beside the tab). Before renaming the
+  tab or a header on the dashboard side, read its Operator State #68 — this
+  app is the external reader it names.
 <a id="operator-script-property-test-cdr-ss-id"></a>
 - **Script Property `TEST_CDR_SS_ID`** (test-only, auto-managed). The
   CDR fixture spreadsheet `setupTestEnvironment` / `_setupTestCdrFixture_`

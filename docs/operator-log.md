@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-17 — H1: one holiday calendar, shared with the Department Dashboard
+
+Adds NO Script Property. The `call-data-reporting` repo now publishes its
+company-holiday list as a `Company Holidays` tab in the CDR Report workbook
+(its `setup()` creates it), and this app reads that tab through
+`getCompanyHolidays_` — the accessor every business-day walk now uses in place
+of the hard-coded US-federal list, which survives only as the fail-open when
+the tab is absent, empty or unreadable. Operator steps: none here; on the
+dashboard side, re-run `setup()`, move the dates from the old
+`COMPANY_HOLIDAYS` property into the tab, clear the property. Until the tab
+holds a row this app behaves exactly as before (federal list). The Metrics
+"previous workday" walk and the 30-day trend axes are the visible change: the
+morning after a company holiday, "Yesterday" is the last real workday.
+
 ## 2026-09-16 (late) — the REAL OopPricing shape (OOP-C)
 
 The operator supplied their actual header row after the round had merged.

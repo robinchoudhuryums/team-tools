@@ -96,7 +96,10 @@ not restate it. Server endpoints live in the fourteen server files
      WORKDAY (Monday shows Friday; operator 2026-08-17: CDR data is never
      populated same-day, so a Today preset always showed an empty day; the
      manager Team Metrics tab deliberately keeps Today for same-day note
-     counts) — (server-aggregated via
+     counts; since H1 (2026-09-17) the walk ALSO steps over company holidays,
+     read from the CDR Report's `Company Holidays` tab — the same calendar the
+     Department Dashboard uses, so the morning after a holiday "Yesterday" is
+     the last real workday, not an empty day; g123) — (server-aggregated via
      `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
      line/series), rail-row sparklines, and a sortable + sticky-header team
      table with tri-tone % cells (the table renders via the shared

@@ -206,6 +206,7 @@ function boot(opts) {
   // Stubs jsdom doesn't provide / we want controllable.
   window.SERVER_QUERY_PARAMS = opts.serverQueryParams || {};
   window.SERVER_WEB_APP_URL = 'https://example.test/exec';
+  window.SERVER_COMPANY_HOLIDAYS = opts.companyHolidays || [];
   window.google = { script: { get run() { return run.runner; } } };
   if (!window.matchMedia) {
     window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
