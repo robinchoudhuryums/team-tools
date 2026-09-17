@@ -1288,7 +1288,7 @@ entry says which it is.
   - **The search matches the item name OR the code**, so a rep can use whichever
     the customer gave them.
   - **EVERY price-role column is kept, and the picker offers one labelled Insert
-    per column.** `OOP Price`, `W/ Shipping Cost` and
+    per column.** `OOP Price – pick-up`, `W/ Shipping Cost` and
     `W/ Tech Delivery Cost` are all correct — for different fulfilments — so the
     inserted line names which one: `Drive Scout 3 Wheel (W/ Shipping Cost) —
     $1,070.00 (price effective 09/16/2026)`. A column that is a COMPONENT rather
@@ -1300,7 +1300,8 @@ entry says which it is.
     `Drive Scout 3 Wheel (W/ Shipping Cost) — $1,070.00`. Two consequences worth
     knowing before you edit a header. A PAREN in the header nests inside the one
     the line adds — `(OOP Price (pick-up))` — so use a dash or comma instead:
-    `OOP Price – pick-up`. And **do not keep two columns that must always hold
+    `OOP Price – pick-up` — which is what the base-price column is now called,
+    for exactly this reason. And **do not keep two columns that must always hold
     the same figure** (a `Pick-Up Cost` equal to `OOP Price` was dropped
     2026-09-17): that is an invariant the spreadsheet cannot enforce, and the
     day they diverge the picker offers a rep two different correct prices for

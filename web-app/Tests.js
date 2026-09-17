@@ -7277,7 +7277,7 @@ function _withTestOop_(fn) {
     // column-A name assumption survive — a fixture that agrees with the
     // assumption cannot test it.
     seed(OOP_PRICING_TAB, [
-      ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
+      ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price – pick-up', 'Shipping',
        'W/ Shipping Cost', 'W/ Tech Delivery Cost',
        'Area Eligibility', 'Comments', 'EffectiveDate'],
       ['TEST_K0800', 'POV/Scooter', 'TEST_OOP Widget', '', '$129.00', '$20.00',
@@ -7447,7 +7447,10 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
     _assertEq(d.missing.length, 0, 'the seeded header has all three roles; missing: ' + d.missing.join(','));
     const roleOf = {};
     d.cols.forEach(function (c) { roleOf[c.header] = c.role; });
-    _assertEq(roleOf['OOP Price'], 'price', 'OOP Price resolved');
+    // The operator renamed this 2026-09-17 so the label self-documents in the
+    // quote line; the EN DASH is part of the header and must survive the stem
+    // match, the payload round trip and the by-label lookup.
+    _assertEq(roleOf['OOP Price – pick-up'], 'price', 'the renamed base-price column resolved');
     _assertEq(roleOf['HCPCS'], 'code', 'HCPCS resolved');
     _assertEq(roleOf['Item'], 'name (the searched column)', 'and the NAME column is NAMED');
     _assertEq(roleOf['Area Eligibility'], 'eligibility', 'Area Eligibility resolved');
