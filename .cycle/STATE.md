@@ -17,13 +17,16 @@ Estimates: **Batch OOP-C (the REAL OopPricing shape — operator headers supplie
   batches, as estimated at planning time in `.cycle/blocks/19-next-steps-plan.md`:
   S — M (~4 h) · Q — M (~5 h) · C — S–M (~3 h) · D1 — M (~6 h) · D2 — M (~6 h)
   · F1 — S (~2 h) · F2 — L (~2 days).
-Subsystem cycles since last Seams audit: 3 (cycle 18's F1–F5 round WAS the
-  seams audit; cycle 19 is the first subsystem cycle after it — REFLECTED
-  2026-09-11, `.cycle/blocks/19-a-reflect.md`, net 8 − 0 = 8; the counter
-  moved 1 → 2 at that reflection; the 2026-09-14 SECOND reflection (19-b) did NOT
-  increment it — it closes a batch set INSIDE cycle 19, not a new subsystem
-  cycle, and counting one cycle twice would pull the every-4 seams cadence
-  forward by a cycle it did not earn. Do not "correct" this to 3.)
+Subsystem cycles since last Seams audit: **4 — THE EVERY-4 CADENCE IS MET, so
+  the next `/audit` should be a Seams & Invariants audit.** History, recorded
+  because it is inconsistent and a reader will otherwise re-derive it wrongly:
+  cycle 18's F1–F5 round WAS the seams audit; 19-a (2026-09-11) moved the counter
+  1 → 2; 19-b (2026-09-14) deliberately did NOT increment, on the stated ground
+  that a reflection closing a batch set INSIDE a cycle is not a new subsystem
+  cycle; 19-c (2026-09-14) then moved it 2 → 3 while leaving 19-b's "do not
+  correct this to 3" warning standing underneath the new value — which is the
+  contradiction this line replaces. 19-d (2026-09-17, `.cycle/blocks/19-d-reflect.md`,
+  net 9 − 4 = 5) follows 19-c and the command, moving it 3 → 4.
 Updated: 2026-09-17 (**DEPLOYED — push + New-version deploy done, `installAutomationTriggers()` 16 unchanged, `runSmokeTests` 118/118 with the three-shard `Expected:` line matching the repo exactly**. Earlier the same day: PR #256 merged — the `Pick-Up Cost` column dropped and the base-price header renamed. Earlier: PR #255 merged — OOP-C, the operator's real OopPricing headers; then the `Pick-Up Cost` column dropped and the base-price header renamed, fixtures following both. Earlier: PR #254 merged — OOP-A/OOP-B/ELIG, the KB-store move and `/sync-docs`; the operator completed the sheet-side setup the same day and deferred the deploy to 2026-09-17. Earlier: Batch Q landed — 3ab7018 + 3afeea6 on `claude/adoring-einstein-b3vs6c`; earlier: Batch S — 84379ee; earlier: operator post-deploy confirmation: `runAllTests()` → 315/315 after PRs #239 + #240 merged; earlier the same day: Batch P landed — d111b10, merged as #240; the trigger-quota fix — 114a16e, merged as #239; the `ADMIN_EMAILS` suite accommodation — #238, 312/312 confirmed)
 
 ## Operator testing notes 2026-09-10 (a four-batch round inside cycle 19, PRE-reflect)
