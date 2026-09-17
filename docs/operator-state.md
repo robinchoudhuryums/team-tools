@@ -420,17 +420,37 @@ entry says which it is.
   a warehouse address changes meaning (e.g. the geocoder had it wrong);
   over `KB_MAP_GEOCODE_CACHE_MAX` (200) entries it self-resets to the
   current article's warehouses. No manual setup.
-<a id="operator-cdr-alert-threshold"></a>
-- **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
-  % Answered cutoff for the Metrics sidebar alert badge. Below
-  this value, `getMetricsAmbient()` returns a warn badge showing
-  yesterday's team answer rate. **Since the 2026-08-06 operator #4 batch it
-  is ALSO shipped to the Metrics clients** (`alertThreshold` on
-  `getMyMetrics`/`getMyMetricsRange`/`getTeamMetrics`): it draws the dashed
-  target line on both hero sparklines and starts the team table's GREEN
-  band — so changing it moves the in-page target AND the banding, not just
-  the badge. CONFIG-only (no Script Property equivalent yet); changing it
-  requires a redeploy.
+<a id="operator-the-dashboard-standards-tab-cdr-report-workbook"></a>
+- **The `Dashboard Standards` tab (CDR Report workbook) + `CDR_DASHBOARD_DEPT`
+  — the answer target / amber band / team-avg excludes are the Department
+  Dashboard's, published (H2, 2026-09-17; replaced `CDR_ALERT_THRESHOLD`).**
+  The `call-data-reporting` repo's `setup()` creates the tab and republishes
+  it whenever an admin saves the dashboard's Display standards or Dept Config
+  (its Operator State #37): one row per dashboard dept plus a `*` global row
+  — `Department | Answer Target | Amber Band | Team Avg Excludes | Published
+  At | Published By`. This app reads it read-only via `CDR_SS_ID`
+  (`getCdrDashboardStandard_`, header-name read, one-hour CacheService tier
+  `cdr_standards_v1:<dept>`, bypassed under the test override) for the row
+  named by `CONFIG.CDR_DASHBOARD_DEPT` (seed `CSR` — the DASHBOARD's roster
+  header for this team, not this app's own department labels; the Script
+  Property `CDR_DASHBOARD_DEPT` overrides it without a redeploy), falling
+  back to the `*` row. The four metrics endpoints ship the result as
+  `alertThreshold` / `alertBand` / `standardSource`: the dashed target line
+  on both hero sparklines, the team table's three-tier band (green at/above
+  target, amber within the band, red below), the Clock dashboard's %
+  Answered tone, and the manager sidebar badge (`getMetricsAmbient`, which
+  fires below the target) all judge against it, and the anonymized team
+  benchmark subtracts the row's Team Avg Excludes. **Nothing to set here
+  once the dashboard has run `setup()`.** Until it has (or if the deployer
+  cannot read the workbook, or the dept has no row and there is no `*`
+  row), the standard is UNAVAILABLE: no target line, no tone, no badge, and
+  `getMetricsAmbient` answers `{ badge: null, unavailable: 'standard' }` —
+  never a fallback number. The dashboard's Health page has a
+  `dashboard-standards` row that warns when its published tab is stale
+  (a standard edited outside its Alerts modal); this app has no row for it
+  yet — an absent target line on My Stats is the visible symptom. The
+  formula behind every rate is the dashboard's, `answered / (answered +
+  missed)` (`cdrAnswerPct_`, g124).
 <a id="operator-set-script-property-manager-emails"></a>
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`

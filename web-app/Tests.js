@@ -250,6 +250,7 @@ function _resetCdrCaches_() {
     // H1: the Company Holidays tab memo -- a fixture's (or prod's) list must
     // not leak across the override boundary.
     _cdrHolidaysMemo = null;
+    _cdrStandardsMemo = null;   // H2
   } catch (e) {}
 }
 
@@ -1227,6 +1228,8 @@ function _registerSmokeTests_() {
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
   _smokeTest('companyHolidays_tabWinsElseFederal',   test_companyHolidays_tabWinsElseFederal);
   _smokeTest('prevWorkdayIso_stepsOverHolidays',     test_prevWorkdayIso_stepsOverHolidays);
+  _smokeTest('cdrAnswerPct_isTheDashboardFormula',   test_cdrAnswerPct_isTheDashboardFormula);
+  _smokeTest('teamBenchmark_subtractsPublishedExcludes', test_teamBenchmark_subtractsPublishedExcludes);
 
   // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
   // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
@@ -1483,6 +1486,7 @@ function _registerIntegrationB_() {
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('companyHolidays_readsFixtureTab',           test_companyHolidays_readsFixtureTab);
+  _integrationTest('dashboardStandard_readsFixtureTab',         test_dashboardStandard_readsFixtureTab);
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
@@ -1848,6 +1852,66 @@ function test_prevWorkdayIso_stepsOverHolidays() {
   _assertEq(prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tue after Labor Day -> Fri');
   _assertEq(prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'empty map -> weekends only');
   _assertEq(metricsWorkdayIsos_('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a holiday drops out of the trend axis');
+}
+
+/** H2 (2026-09-17): Answer % is the Department Dashboard's formula. */
+function test_cdrAnswerPct_isTheDashboardFormula() {
+  _assertEq(cdrAnswerPct_(8, 2), 80, '8/(8+2)');
+  _assertEq(cdrAnswerPct_(8, 1), 89, 'rung is NOT the denominator: 10 rung / 8 ans / 1 missed reads 89, not 80');
+  _assertEq(cdrAnswerPct_(11, 1), 92, 'whole percent, like the dashboard cell (91.67 -> 92, never 91.7)');
+  _assertEq(cdrAnswerPct_(0, 0), 0, 'nothing to divide -> 0');
+  const saved = _cdrStandardsMemo;
+  try {
+    _cdrStandardsMemo = { dept: 'CSR', target: null, band: null, teamAvgExcludes: [], source: 'no-tab' };
+    const sh = cdrStandardShip_(getCdrDashboardStandard_());
+    _assertEq(sh.alertThreshold, null, 'no published standard -> null target (no line, no tone, no badge)');
+    _assertEq(sh.standardSource, 'no-tab');
+  } finally { _cdrStandardsMemo = saved; }
+}
+
+/** H2: the published Team Avg Excludes leave the BENCHMARK, never the totals. */
+function test_teamBenchmark_subtractsPublishedExcludes() {
+  const agents = {
+    A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
+    B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
+    Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },
+  };
+  _assertEq(dashboardTeamAggregate_(agents, 2, ['Mgr']).team.pctAnswered, 85, 'benchmark without the manager');
+  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 85.7, 'with the manager it drifts');
+  const ser = metricsTeamAvgSeries_({ '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } }, ['2026-05-15'], 'v', 3, ['Mgr']);
+  _assertEq(ser[0].avg, 90, 'the anonymized series excludes too');
+}
+
+/** H2 (integration): the standard against a REAL `Dashboard Standards` tab in
+ *  the TEST CDR fixture -- header-name read, own dept row, excludes parsed --
+ *  and the endpoints ship it. The tab is deleted after. */
+function test_dashboardStandard_readsFixtureTab() {
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_STANDARDS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_STANDARDS_TAB);
+    try {
+      tab.getRange(1, 1, 3, 6).setValues([
+        ['Department', 'Answer Target', 'Amber Band', 'Team Avg Excludes', 'Published At', 'Published By'],
+        [cdrDashboardDept_(), 92, 2, _TEST_PH_NAME, '2026-09-17T00:00:00', 'test'],
+        ['*', 80, 10, '', '2026-09-17T00:00:00', 'test'],
+      ]);
+      SpreadsheetApp.flush();
+      _cdrStandardsMemo = null;
+      const std = getCdrDashboardStandard_();
+      _assertEq(std.source, 'sheet');
+      _assertEq(std.target, 92); _assertEq(std.band, 2);
+      _assertEq(std.teamAvgExcludes, [_TEST_PH_NAME], 'the excludes list parses');
+      const my = _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
+      _assertEq(my.alertThreshold, 92, 'getMyMetrics ships the published target');
+      _assertEq(my.alertBand, 2, '...and its band');
+      _assertEq(my.standardSource, 'sheet');
+    } finally {
+      _cdrStandardsMemo = null;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
 }
 
 /** H1 (integration): the reader against a REAL `Company Holidays` tab in the

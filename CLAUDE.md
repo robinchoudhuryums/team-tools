@@ -268,6 +268,7 @@ A foreign spreadsheet owned by another repo. Its shape is a constraint, not a ch
 - **DQE has ONE row per (agent, date) — per-queue rep metrics do not exist (cycle-14 Phase 0).** Fires when you try to break a rep metric down by queue, or read `CDR.QUEUE_EXT`. [Detail](docs/gotchas.md#g01-dqe-has-one-row-per-agent-date)
 - **Metrics enters call `stopClock` to avoid an interval leak.** Fires when you add a view enter that leaves the Clock view. [Detail](docs/gotchas.md#g106-metrics-enters-call-stopclock-to-avoid-an)
 - **The holiday calendar is the CDR Report's `Company Holidays` tab, read through ONE accessor (`getCompanyHolidays_`) that REPLACES the federal list rather than adding to it (H1, 2026-09-17).** Fires when you compute a "previous workday", walk business days, or read `getUsHolidays_` directly. Verify: the H1-1..H1-5 pins + `test_companyHolidays_*`. [Detail](docs/gotchas.md#g123-the-holiday-calendar-is-the-cdr-report-s)
+- **Answer % is the Department Dashboard's formula (`answered / (answered + missed)`), and the target, amber band and team-average exclusions come from the dashboard's published `Dashboard Standards` tab -- a null standard renders NO tone, line or badge, never a hand-carried number (H2, 2026-09-17).** Fires when you compute or tone an answer rate, add a KPI band, or read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins + `test_cdrAnswerPct_isTheDashboardFormula` / `test_dashboardStandard_readsFixtureTab`. [Detail](docs/gotchas.md#g124-answer-is-the-dashboard-s-formula-and)
 
 ### Intake contracts
 
@@ -500,6 +501,7 @@ for the reasoning, which is usually the part that matters.
 - [Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`)](docs/design-decisions.md#unified-loader-motion-system-2nd-pass-styles-html-script-cor)
 - [Cross-view hints are PARKED on `window`, consumed-and-nulled on the target's enter, never persisted (design handoff C8 — named 2026-09-02)](docs/design-decisions.md#cross-view-hints-are-parked-on-window-consumed-and-nulled-on)
 - [Tag-suggestion autocomplete on the Log view](docs/design-decisions.md#tag-suggestion-autocomplete-on-the-log-view)
+- [The answer standard is the Department Dashboard's, PUBLISHED and read -- never mirrored, and no standard means no verdict (H2, 2026-09-17)](docs/design-decisions.md#the-answer-standard-is-the-department-dashboard-s-published)
 
 ## Operator State Checklist
 
@@ -515,7 +517,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
 | Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
-| CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable) | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
+| CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable), Dashboard Standards (H2 — the answer target / amber band / team-avg excludes this app tones and benchmarks against, `getCdrDashboardStandard_`; no tab = no standard, never a fallback number) | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16) | PHI-free by policy | kept | `getKbSS_` |
@@ -585,7 +587,7 @@ the dated round entries that used to sit here moved to
 - [Script Properties `KB_AI_DAILY_CAP` / `KB_AI_MODEL`](docs/operator-state.md#operator-script-properties-kb-ai-daily-cap-kb-ai-model)
 - [Script Properties `KB_AI_GENERATION` / `KB_AI_SPEND`](docs/operator-state.md#operator-script-properties-kb-ai-generation-kb-ai-spend)
 - [Script Property `KB_MAP_GEOCODE_CACHE`](docs/operator-state.md#operator-script-property-kb-map-geocode-cache)
-- [`CDR_ALERT_THRESHOLD`](docs/operator-state.md#operator-cdr-alert-threshold)
+- [The `Dashboard Standards` tab (CDR Report workbook) + `CDR_DASHBOARD_DEPT` — the answer target / amber band / team-avg excludes are the Department Dashboard's, published (H2, 2026-09-17; replaced `CDR_ALERT_THRESHOLD`)](docs/operator-state.md#operator-the-dashboard-standards-tab-cdr-report-workbook)
 - [Set Script Property `MANAGER_EMAILS`](docs/operator-state.md#operator-set-script-property-manager-emails)
 - [Script Property `ADMIN_EMAILS`](docs/operator-state.md#operator-script-property-admin-emails)
 - [Punctuality tracking (Manage module tab)](docs/operator-state.md#operator-punctuality-tracking-manage-module-tab)
@@ -840,17 +842,17 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 856 | `node test/client/run.js` |
+| Pure harness tests | 860 | `node test/client/run.js` |
 | DOM harness tests | 121 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 332 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 335 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 210 | `.cycle/config.md` |
-| Regression scenarios (S*) | 106 | `.cycle/config.md` |
+| Invariant library entries | 211 | `.cycle/config.md` |
+| Regression scenarios (S*) | 107 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

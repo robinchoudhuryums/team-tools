@@ -761,7 +761,7 @@ function mRenderMyStats_(data) {
     deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)';
   }
   var targetBit = (thr != null)
-    ? '<span class="m-hero-target" title="The sidebar alert fires below this">target ' + esc(thr) + '%</span>' : '';
+    ? '<span class="m-hero-target" title="The Department Dashboard standard for this team (published from call-data-reporting); the sidebar alert fires below it">target ' + esc(thr) + '%</span>' : '';
   var deltaHtml = (deltaCore || targetBit)
     ? '<div class="m-hero-delta">' + deltaCore + (deltaCore && targetBit ? ' · ' : '') + targetBit + '</div>' : '';
 
@@ -1117,12 +1117,16 @@ function mRailRow_(label, value, toneOrSub, sub, spark) {
     '</div>';
 }
 
-/** Tri-tone class for a % Answered value. #4: the GREEN band starts at the
- *  server-shipped alert threshold when provided (so the table can never paint
- *  a rep green while they sit below the line the sidebar alert fires on);
- *  absent (older cached payload) → the legacy 80 band. Mid stays ≥50. */
-function mPctClass_(p, thr) {
-  return mtPctTone_(p, (thr != null) ? thr : 80, 50);   // the shared band rule (script_core)
+/** Tri-tone class for a % Answered value. H2: the SAME three tiers the
+ *  Department Dashboard paints -- green at/above the published target, amber
+ *  within the band below it, red past that -- so a rep and their manager see
+ *  one verdict on one number. No target (the standard is unavailable or a
+ *  pre-H2 cached payload) → NO class: a colour is a verdict, and the app must
+ *  not render one against a number nobody set (the old legacy 80/50 did). */
+function mPctClass_(p, thr, band) {
+  if (thr == null) return '';
+  var b = (band != null) ? band : 0;
+  return mtPctTone_(p, thr, thr - b);   // the shared band rule (script_core)
 }
 
 // §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
@@ -1427,6 +1431,7 @@ function mRenderTeamMetrics_(data) {
   var multiDay = !!(data.from && data.to && data.from !== data.to);
   var avg = data.trend ? mTrendAvg_(data.trend, 'pctAnswered') : null;
   var thr = data.alertThreshold;   // #4 — guarded like My Stats (absent → no line)
+  var band = data.alertBand;       // H2 — the amber width below the target
   var deltaCore = '';
   if (avg != null && t.pctAnswered != null) {
     var d = t.pctAnswered - avg;
@@ -1438,7 +1443,7 @@ function mRenderTeamMetrics_(data) {
       (multiDay ? 'period daily average' : '30-day team average') + ' (' + avg.toFixed(1) + '%)';
   }
   var targetBit = (thr != null)
-    ? '<span class="m-hero-target" title="The sidebar alert fires below this">target ' + esc(thr) + '%</span>' : '';
+    ? '<span class="m-hero-target" title="The Department Dashboard standard for this team (published from call-data-reporting); the sidebar alert fires below it">target ' + esc(thr) + '%</span>' : '';
   var deltaHtml = (deltaCore || targetBit)
     ? '<div class="m-hero-delta">' + deltaCore + (deltaCore && targetBit ? ' · ' : '') + targetBit + '</div>' : '';
   // F(cycle-8): esc() the echoed dates — server-validated shapes today, but
@@ -1611,7 +1616,7 @@ function mRenderTeamMetrics_(data) {
         { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
         { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
         { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
-        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered, thr) + '">' + esc(r.pctAnswered) + '%</span>'; } },
+        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered, thr, band) + '">' + esc(r.pctAnswered) + '%</span>'; } },
         { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
         // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
         // not "0" — a zero here reads as a rep who logged nothing.

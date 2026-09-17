@@ -806,7 +806,7 @@ test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {
 });
 
 console.log('\nCode.js — dashboard metrics pure helpers (period range + cohort-guarded team)');
-['dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
+['cdrAnswerPct_', 'cdrExcludeSet_', 'dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
 const dashboardPeriodRange_ = sb.dashboardPeriodRange_;
 const dashboardTeamAggregate_ = sb.dashboardTeamAggregate_;
@@ -3495,7 +3495,7 @@ test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; 
 
 // T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
 console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
-['metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
+['cdrExcludeSet_', 'metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
 });
 test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
@@ -7581,15 +7581,18 @@ test('#3: the two permanently-non-empty CDR reference lists fold behind a disclo
 test('#4: the alert threshold is server-shipped (never client-mirrored) and drives banding + the target line', () => {
   // Four ships since 2026-08-12: the three Metrics endpoints plus
   // getDashboardMetrics, whose KPI banding uses the same operator-set target.
-  const ships = (mopCode.match(/alertThreshold: CONFIG\.CDR_ALERT_THRESHOLD \|\| 85/g) || []).length;
-  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships CONFIG.CDR_ALERT_THRESHOLD');
+  // H2 (2026-09-17): the target is the PUBLISHED dashboard standard (the
+  // Dashboard Standards tab), shipped through the one cdrStandardShip_ shape.
+  const ships = (mopCode.match(/alertThreshold: ship\.alertThreshold/g) || []).length;
+  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships the published standard through cdrStandardShip_');
+  assert.ok(!/CDR_ALERT_THRESHOLD/.test(mopCode), 'the hand-carried CDR_ALERT_THRESHOLD is gone (H2)');
   // No client mirror: the partial must not hardcode 85 as a fallback — absent
   // field (a ≤5-min stale cached payload) degrades to the LEGACY behavior.
   assert.ok(!/alertThreshold \|\| 85|thr \|\| 85/.test(mopPartial), 'the client never invents its own 85');
   // Behavioral: banding follows the shipped threshold; legacy 80 when absent.
   const mPctClass_ = loadFunction(sb, 'metrics/script_metrics.html', 'mPctClass_');
-  assert.strictEqual(mPctClass_(84), 'm-pct-high', 'absent threshold → legacy 80 band (old cached payloads)');
-  assert.strictEqual(mPctClass_(84, 85), 'm-pct-mid', 'below the shipped threshold is NOT green');
+  assert.strictEqual(mPctClass_(84), '', 'absent threshold → NO tone (H2: a colour is a verdict against a number nobody set)');
+  assert.strictEqual(mPctClass_(84, 85, 5), 'm-pct-mid', 'below the shipped threshold is NOT green (within the band → amber)');
   assert.strictEqual(mPctClass_(85, 85), 'm-pct-high', 'at threshold is green');
   assert.strictEqual(mPctClass_(49, 85), 'm-pct-low', 'mid band floor stays 50');
   assert.strictEqual(mPctClass_(null, 85), '', 'null stays unclassed');
@@ -7713,9 +7716,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v4:/.test(dash) && !/dash_metrics_v[123]:/.test(dash),
+  assert.ok(/dash_metrics_v5:/.test(dash) && !/dash_metrics_v[1234]:/.test(dash),
     'the cache key bumped with the payload semantics');
-  assert.ok(/dash_metrics_v4:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v5:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -9825,7 +9828,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v2:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v2: workday-only trend, INV-85)');
+  assert.ok(/team_metrics_v3:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -9845,7 +9848,7 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   };
   const rep = ctx.teamMetricsRepView_(full);
   assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
-    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold'].sort().join('|'),
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),
     'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
   assert.strictEqual(rep.repView, true);
   // Registry: the tab is visible to everyone now (the server shape is the
@@ -17706,18 +17709,23 @@ test('PR1-1: no var(--token, fallback) on a token the tokens partial defines (de
 test('PR1-2: mtPctTone_(p, hi, lo) is the ONE band rule; mPctClass_ delegates byte-identically', () => {
   const mtPctTone_ = sb.mtPctTone_;
   assert.strictEqual(typeof mtPctTone_, 'function', 'shared helper lives in script_core');
-  const legacy = (p, thr) => { const hi = (thr != null) ? thr : 80; return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low'); };
+  // H2: the wrapper is the dashboard's THREE-tier rule -- green at/above the
+  // published target, amber within the band below it, red past it; no target
+  // = no class. Modelled here and compared over a grid.
+  const model = (p, thr, band) => { if (thr == null || p == null) return ''; const lo = thr - (band != null ? band : 0); return p >= thr ? 'm-pct-high' : p >= lo ? 'm-pct-mid' : 'm-pct-low'; };
   const mPctClass_ = sb.mPctClass_;
-  for (const p of [null, undefined, 0, 49, 49.9, 50, 79.9, 80, 84, 85, 100]) for (const thr of [undefined, null, 80, 85, 90]) {
-    assert.strictEqual(mPctClass_(p, thr), legacy(p, thr), 'mPctClass_(' + p + ', ' + thr + ')');
+  for (const p of [null, undefined, 0, 49, 79.9, 80, 84, 85, 89.9, 90, 100]) for (const thr of [undefined, null, 80, 85, 92]) for (const band of [undefined, null, 0, 2, 10]) {
+    assert.strictEqual(mPctClass_(p, thr, band), model(p, thr, band), 'mPctClass_(' + p + ', ' + thr + ', ' + band + ')');
   }
+  assert.strictEqual(mPctClass_(90.5, 92, 2), 'm-pct-mid', 'the CSR standard: 90.5 is amber');
+  assert.strictEqual(mPctClass_(89.9, 92, 2), 'm-pct-low', '...and 89.9 is red');
   // Punctuality's own numbers (90 / 75) — the mid band is no longer pinned at 50.
   assert.strictEqual(mtPctTone_(76, 90, 75), 'm-pct-mid', '76% with a 75 floor is mid, not low');
   assert.strictEqual(mtPctTone_(74, 90, 75), 'm-pct-low');
   assert.strictEqual(mtPctTone_(90, 90, 75), 'm-pct-high');
   assert.strictEqual(mtPctTone_(null, 90, 75), '', 'absence stays unclassed (INV-187)');
   const src = extractFunction('metrics/script_metrics.html', 'mPctClass_');
-  assert.ok(/mtPctTone_\(p, \(thr != null\) \? thr : 80, 50\)/.test(src), 'the Metrics wrapper delegates, keeping its legacy 80/50');
+  assert.ok(/mtPctTone_\(p, thr, thr - b\)/.test(src) && /if \(thr == null\) return '';/.test(src), 'the Metrics wrapper delegates to the ONE band rule against the published target/band, and refuses to tone without a target');
 });
 
 // PR1-3 — the shared range control, driven behaviourally: real <button>s
@@ -19537,8 +19545,8 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v2:/.test(my) && /metrics_range_v2:/.test(rng) && /team_metrics_v2:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85)');
-  assert.ok(!/metrics_my_v1|metrics_range_v1|team_metrics_v1/.test(my + rng + team), 'no v1 key survives');
+  assert.ok(/metrics_my_v3:/.test(my) && /metrics_range_v3:/.test(rng) && /team_metrics_v3:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2)');
+  assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
   assert.strictEqual((t30.match(/if \(isWeekendIso\(daysAgo\(i\)\)\) continue;/g) || []).length, 2, 'the fixture trend + KPI series skip weekends — the server shape, not a paraphrase (INV-185)');
@@ -19705,6 +19713,125 @@ test('H1-5: the client walk agrees with the server -- doGet ships SERVER_COMPANY
     'build.mjs replaces the holidays scriptlet BEFORE the straggler strip -- the strip alone leaves `window.SERVER_COMPANY_HOLIDAYS = ;`, a head SyntaxError');
   const listFn = foNc(extractRawFunction('Code.js', 'companyHolidayIsoList_'));
   assert.ok(/getCompanyHolidays_\(yy\)/.test(listFn) && /y - 1/.test(listFn) && /y \+ 1/.test(listFn), 'the shipped list is last year, this year, next -- from the ONE accessor');
+});
+
+test('H2-1: cdrAnswerPct_ is the dashboard formula, and every rate site routes through it', () => {
+  const f = sb.cdrAnswerPct_;
+  assert.strictEqual(f(8, 2), 80, '8 answered / (8 + 2)');
+  assert.strictEqual(f(90, 10), 90);
+  assert.strictEqual(f(1, 2), 33, 'a WHOLE percent -- the dashboard cell rounds to the integer, and a 91.7 vs 92 would tint differently on the same row');
+  assert.strictEqual(f(11, 1), 92, '91.67 -> 92, never 91.7');
+  assert.strictEqual(f(0, 0), 0, 'nothing to divide -> 0');
+  assert.strictEqual(f('7', '3'), 70, 'coerces numeric strings');
+  // The DIFFERENCE that mattered: rung counts every window leg. With 10 rung,
+  // 8 answered, 1 missed (one leg carried a third disposition) the old
+  // answered/rung read 80; the manager's dashboard reads 89.
+  assert.strictEqual(f(8, 1), 89);
+  const src = foNc(serverSource());
+  assert.ok((src.match(/cdrAnswerPct_\(/g) || []).length >= 8, 'agent, daily, per-rep-day, team aggregate, team totals and the ambient badge all route through it');
+  assert.ok(!/\(\w+\.totalAnswered \/ \w+\.totalRung\)|\(\w+\.answered \/ \w+\.rung\)|\(totalAns \/ totalRung\)/.test(src), 'no answered/rung division survives (H2)');
+});
+
+test('H2-2: the team BENCHMARK subtracts the published Team Avg Excludes; dept TOTALS keep everyone', () => {
+  const agents = {
+    A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
+    B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
+    Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },   // the INV-26 case: a manager with token volume
+  };
+  const all = dashboardTeamAggregate_(agents, 2);
+  assert.strictEqual(all.cohort, 3);
+  const ex = dashboardTeamAggregate_(agents, 2, ['Mgr']);
+  assert.strictEqual(ex.cohort, 2, 'the excluded name leaves the cohort');
+  assert.strictEqual(ex.team.answered, 170);
+  assert.strictEqual(ex.team.pctAnswered, 85, '170/(170+30) without the manager');
+  assert.strictEqual(all.team.pctAnswered, 86, 'with the manager the benchmark drifts up (180/210 = 85.7 -> 86, a whole percent)');
+  assert.strictEqual(dashboardTeamAggregate_(agents, 2, [' Mgr ', '']).cohort, 2, 'names are trimmed, blanks ignored');
+  const perRepDaily = { '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } };
+  const ser = sb.metricsTeamAvgSeries_(perRepDaily, ['2026-05-15'], 'v', 3, ['Mgr']);
+  assert.strictEqual(ser[0].cohort, 3); assert.strictEqual(ser[0].avg, 90, 'the series benchmark excludes too');
+  const kpi = sb.metricsBuildKpiSeries_(perRepDaily, ['2026-05-15'], 'Mgr', 'v', 3, ['Mgr']);
+  assert.strictEqual(kpi[0].own, 100, 'an excluded rep still sees their OWN value');
+  assert.strictEqual(kpi[0].team, 90, '...against a benchmark that does not include them');
+  // Totals keep everyone: getTeamMetrics.teamTotals is built from every rep on the table.
+  const team = foNc(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/teamTotals\.pctAnswered = cdrAnswerPct_\(teamTotals\.answered, teamTotals\.missed\)/.test(team), 'dept totals use the formula over EVERY rep (no excludes)');
+  assert.ok(!/teamTotals[\s\S]{0,400}teamAvgExcludes/.test(team.slice(team.indexOf('teamTotals.pctAnswered'))), 'no exclusion touches the totals');
+});
+
+test('H2-3: getCdrDashboardStandard_ -- header-name read, own dept row else `*`, null target on every non-sheet verdict, unavailable never cached', () => {
+  const dept = extractRawFunction('Code.js', 'cdrDashboardDept_');
+  const reader = extractRawFunction('Code.js', 'getCdrDashboardStandard_');
+  const ship = extractRawFunction('Code.js', 'cdrStandardShip_');
+  const mk = (rows, opts) => {
+    opts = opts || {};
+    const puts = [];
+    const ctx = {
+      CONFIG: { CDR_STANDARDS_TAB: 'Dashboard Standards', CDR_DASHBOARD_DEPT: 'CSR' },
+      CDR_STANDARDS_CACHE_KEY_: 'cdr_standards_v1', CDR_STANDARDS_CACHE_TTL_: 3600,
+      _cdrStandardsMemo: null, _TEST_OVERRIDE_CDR_SS_ID: opts.override || null,
+      Logger: { log() {} }, JSON: JSON,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'CDR_DASHBOARD_DEPT' ? (opts.deptProp || null) : null) }) },
+      CacheService: { getScriptCache: () => ({ get: () => opts.cached || null, put: (k, v, ttl) => puts.push({ k, v, ttl }) }) },
+      getCdrSS_: () => { if (opts.throws) throw new Error('timed out'); return { getSheetByName: (n) => (n === 'Dashboard Standards' && rows) ? { getDataRange: () => ({ getValues: () => rows }) } : null }; },
+      _puts: puts,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(dept + '\n' + reader + '\n' + ship, ctx);
+    return ctx;
+  };
+  const H = ['Published By', 'Team Avg Excludes', 'Amber Band', 'Answer Target', 'Department', 'Published At'];   // owner's columns, scrambled
+  const rows = [H, ['a', 'Robin Choudhury, Pat Lead', 2, 92, 'CSR', 't'], ['a', '', 10, 80, '*', 't'], ['a', '', 4, 88, 'Sales', 't']];
+  let c = mk(rows);
+  let out = c.getCdrDashboardStandard_();
+  assert.strictEqual(out.source, 'sheet'); assert.strictEqual(out.target, 92); assert.strictEqual(out.band, 2);
+  assert.strictEqual(out.teamAvgExcludes.join('|'), 'Robin Choudhury|Pat Lead');
+  assert.strictEqual(c._puts.length, 1); assert.strictEqual(c._puts[0].k, 'cdr_standards_v1:CSR');
+  assert.strictEqual(c.getCdrDashboardStandard_(), out, 'memoized');
+  const sh = c.cdrStandardShip_(out);
+  assert.strictEqual(JSON.stringify(sh), JSON.stringify({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }));
+  // A dept with no row falls back to the `*` global row and SAYS so.
+  c = mk(rows, { deptProp: 'PAP' });
+  out = c.getCdrDashboardStandard_();
+  assert.strictEqual(out.source, 'global'); assert.strictEqual(out.target, 80); assert.strictEqual(out.band, 10); assert.strictEqual(out.dept, 'PAP', 'the Script Property names the dept');
+  // No `*` and no own row → no-row; empty tab; no tab; unreadable → null target everywhere.
+  assert.strictEqual(mk([H, ['a', '', 4, 88, 'Sales', 't']]).getCdrDashboardStandard_().source, 'no-row');
+  assert.strictEqual(mk([H]).getCdrDashboardStandard_().source, 'empty');
+  assert.strictEqual(mk(null).getCdrDashboardStandard_().source, 'no-tab');
+  const bad = mk(null, { throws: true });
+  const un = bad.getCdrDashboardStandard_();
+  assert.strictEqual(un.source, 'unavailable'); assert.strictEqual(un.target, null);
+  assert.strictEqual(bad._puts.length, 0, 'unavailable is never cached');
+  assert.strictEqual(JSON.stringify(bad.cdrStandardShip_(un)), JSON.stringify({ alertThreshold: null, alertBand: null, standardSource: 'unavailable' }), 'a null target ships as null, never a substitute');
+  assert.strictEqual(mk([['Department', 'Answer Target'], ['CSR', 'n/a']]).getCdrDashboardStandard_().source, 'unavailable', 'an unusable target is unavailable, not 0');
+  assert.strictEqual(mk([['Dept', 'Target'], ['CSR', 92]]).getCdrDashboardStandard_().source, 'unavailable', 'header drift is named, not guessed');
+  // Cache tiers: a hit short-circuits; the test override bypasses.
+  assert.strictEqual(mk(null, { cached: JSON.stringify({ target: 91, band: 3, teamAvgExcludes: [], source: 'sheet', dept: 'CSR' }) }).getCdrDashboardStandard_().target, 91);
+  const ov = mk(rows, { cached: JSON.stringify({ target: 1, source: 'sheet' }), override: 'fixture' });
+  assert.strictEqual(ov.getCdrDashboardStandard_().target, 92, 'under _TEST_OVERRIDE_CDR_SS_ID the cache is bypassed');
+  assert.strictEqual(ov._puts.length, 0);
+  // Reset seam + the memo global + the CONFIG keys are read (F1 rule).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_cdrStandardsMemo = null;/.test(tests.slice(tests.indexOf('function _resetCdrCaches_'), tests.indexOf('function _clearCdrCacheForDate_'))), '_resetCdrCaches_ clears the standards memo');
+  assert.ok(/CONFIG\.CDR_STANDARDS_TAB/.test(reader) && /CONFIG\.CDR_DASHBOARD_DEPT/.test(dept));
+});
+
+test('H2-4: the ambient badge and the Clock KPI tone judge against the published standard, and go SILENT without one', () => {
+  const amb = foNc(extractRawFunction('Code.js', 'getMetricsAmbient'));
+  assert.ok(/var ambientStd = getCdrDashboardStandard_\(\);/.test(amb) && /if \(ambientThreshold == null\) return \{ badge: null, unavailable: 'standard'/.test(amb),
+    'no standard → no badge, and the response names why (never a hand-carried cutoff)');
+  assert.ok(/metrics_ambient_v2:' \+ ambientThreshold/.test(amb) && !/metrics_ambient_v1/.test(amb), 'the ambient key bumped and still carries the cutoff (INV-88)');
+  assert.ok(/cdrAnswerPct_\(totalAns, totalMissed\)/.test(amb), 'the badge rate is the dashboard formula');
+  const dashPctTone_ = loadFunction(sb, 'tc/script_clock.html', 'dashPctTone_');
+  assert.strictEqual(dashPctTone_(90.5, 92, false, 2), 'warn', 'CSR: 90.5 is within the 2-pt band');
+  assert.strictEqual(dashPctTone_(89.9, 92, false, 2), 'crit');
+  assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'no band passed → the local 5pp slack (Transfer % keeps it)');
+  const clk = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.ok(/dashPctTone_\(value, res && res\.alertThreshold, false, res && res\.alertBand\)/.test(clk), 'the Clock card passes the published band for % Answered');
+  const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/mPctClass_\(r\.pctAnswered, thr, band\)/.test(mp) && /var band = data\.alertBand;/.test(mp), 'the team table bands with the shipped band');
+  assert.ok(!/alertThreshold \|\| \d|thr \|\| \d|alertBand \|\| \d/.test(mp + clk), 'no client mirror of any standard');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/alertBand: 5/.test(mock), 'the visual fixture mirrors the band field (INV-185)');
 });
 
 test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {

@@ -10,6 +10,21 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-17 (later) — H2: one answer rate, one standard, shared with the Department Dashboard
+
+Adds NO Script Property that must be set (`CDR_DASHBOARD_DEPT` is an optional
+override of the CONFIG seed `CSR`). RETIRES `CDR_ALERT_THRESHOLD`. Answer % is
+now the dashboard's `answered / (answered + missed)` (it divided by rung, a
+different number whenever a leg carried a third disposition), and the target
+line, the table band, the Clock KPI tone and the manager sidebar badge all
+judge against the dashboard's PUBLISHED per-dept standard (its new `Dashboard
+Standards` tab in the CDR Report workbook — for CSR that is 92 with a 2-pt
+amber band, not 85 with a 50-floor), while the anonymized team benchmark
+subtracts the dashboard's Team Avg Excludes. Operator steps: none here; on the
+dashboard side, re-run `setup()` (creates + publishes the tab) — until then
+this app shows NO target line, tone or badge rather than the old 85. Every
+rate-carrying cache key bumped, so the first load after the deploy recomputes.
+
 ## 2026-09-17 — H1: one holiday calendar, shared with the Department Dashboard
 
 Adds NO Script Property. The `call-data-reporting` repo now publishes its

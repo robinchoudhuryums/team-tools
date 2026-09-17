@@ -217,15 +217,27 @@ const CONFIG = {
   // Entry queues that count as THIS team's demand (the export covers the whole
   // phone system). Empty = every non-internal inbound call.
   BREAK_COVERAGE_VOLUME_QUEUES: ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
-  CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
-  CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
-  // Dashboard KPI banding (operator 2026-08-12). % Answered reuses the target
-  // above; Transfer % had NO threshold anywhere in the app, so this one is a
+  CDR_CACHE_KEY:     'cdr_metrics_v4',   // v4 — H2: pctAnswered = answered/(answered+missed) (INV-85: bump on shape change)
+  // H2 (2026-09-17): the answer STANDARD is the Department Dashboard's, read
+  // from the CDR Report workbook's `Dashboard Standards` tab (call-data-
+  // reporting's setup() creates and republishes it: one row per dashboard
+  // dept + a `*` global row -- Answer Target / Amber Band / Team Avg
+  // Excludes). CDR_DASHBOARD_DEPT names THIS team's row (the dashboard's
+  // roster header, not team-tools' own dept labels); Script Property
+  // CDR_DASHBOARD_DEPT overrides it. No tab / no row / unreadable → NO
+  // target, NO tone and NO badge, never a hand-carried number (the old
+  // CDR_ALERT_THRESHOLD=85 was exactly that, and the CSR manager's dashboard
+  // was tinting the same rate against 92 with a 2-pt band).
+  CDR_STANDARDS_TAB: 'Dashboard Standards',
+  CDR_DASHBOARD_DEPT: 'CSR',
+  // Dashboard KPI banding (operator 2026-08-12). % Answered is judged against
+  // the published standard above; Transfer % had NO threshold anywhere in the app, so this one is a
   // starting number the operator should confirm — set it to null to render
   // Transfer % with NO tone rather than a tone nobody chose (a colour is a
   // verdict, and a verdict on a number nobody set is worse than no colour).
-  // The band is: at/better than target = good, within DASH_TONE_SLACK_PP = warn,
-  // beyond = crit. LOWER Transfer % is treated as better.
+  // The band is: at/better than target = good, within the slack = warn, beyond
+  // = crit -- the slack is the published Amber Band for % Answered (H2) and
+  // DASH_TONE_SLACK_PP for Transfer %. LOWER Transfer % is treated as better.
   CDR_TRANSFER_TARGET_PCT: 20,
   // Cycle-14 Phase 4 — queue → department grouping for the Metrics
   // "By department" view. OPERATOR-SUPPLIED (2026-07-31), not inferred: Phase 1
@@ -1430,6 +1442,8 @@ var _cdrNameMapExpiry = 0;
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;
+// H2: the Dashboard Standards tab, memoized per execution likewise.
+var _cdrStandardsMemo = null;
 // Once-per-session like _cdrColumnsValidated (the validateCdrColumns_ pattern).
 var _csrTransferValidated = false;
 var _csrTransferWarning = null;

@@ -2027,7 +2027,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   independent chips and two adjacent cards opening on different periods reads
   as a bug rather than a default. **KPI banding + month-over-month deltas
   (same round):** `dashPctTone_(value, target, lowerIsBetter)` tri-tones ONLY
-  the two rate metrics — % Answered against the shipped `CDR_ALERT_THRESHOLD`
+  the two rate metrics — % Answered against the shipped `CDR_ALERT_THRESHOLD` (since H2: the PUBLISHED dashboard target, with its amber band as the slack)
   (higher better) and Transfer % against `CONFIG.CDR_TRANSFER_TARGET_PCT`
   (LOWER better) — at/better than target = good, within `DASH_TONE_SLACK_PP`
   (5 points) = warn, beyond = crit. **Both thresholds RIDE THE PAYLOAD and are
@@ -2298,7 +2298,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   bottom of Team Metrics. Shared helpers: `mTrendAvg_`,
   `mBuildHeroSparkSvg_`, `mRailRow_`.
   **Operator improvements #1–#10 (2026-08-06) extended both pages:** all
-  three metrics endpoints ship `alertThreshold` (=`CDR_ALERT_THRESHOLD`) and
+  three metrics endpoints ship `alertThreshold` (=`CDR_ALERT_THRESHOLD` then; since H2 the published dashboard standard, plus `alertBand`) and
   the client draws a dashed TARGET line on both hero sparklines
   (`mBuildHeroSparkSvg_`'s optional 4th arg — the y-domain EXTENDS to
   include the target so an above-all-data target renders instead of
@@ -4150,3 +4150,46 @@ pick them up without re-deriving the context.
   aggregate is the expensive, manager-gated path); own-history keeps it cheap
   and leak-free. A future enhancement could surface team-wide active tags via
   a short-TTL cached cross-rep variant.
+
+- <a id="the-answer-standard-is-the-department-dashboard-s-published"></a>**The answer standard is the Department Dashboard's, PUBLISHED and read -- never mirrored, and no standard means no verdict (H2, 2026-09-17)**
+
+  A CSR rep opens this app every day; their manager opens the Department
+  Dashboard (`call-data-reporting`). Both show the same DQE row's answer rate,
+  and until H2 they disagreed three ways: the formula (rung vs answered+missed,
+  and one decimal vs the dashboard's whole percent -- the same rounding now),
+  the target (a CONFIG `85` here vs the dashboard's per-dept standard, CSR 92
+  with a 2-pt amber band, which its admin can change without a redeploy), and
+  the team benchmark (the dashboard subtracts a manager's token volume; this
+  app did not). The decision has three parts.
+
+  **The dashboard owns the standard; this app reads it.** The target, band and
+  exclusions live in the dashboard's Script Properties and its Dept Config
+  sheet -- nothing an external reader can see -- so the dashboard PUBLISHES its
+  resolution into a `Dashboard Standards` tab in the CDR Report workbook (its
+  Operator State #37), and `getCdrDashboardStandard_` reads that tab for
+  `CONFIG.CDR_DASHBOARD_DEPT` (the dashboard's roster header, overridable by
+  Script Property) with the `*` global row as the fallback. Publishing beats the
+  alternatives: mirroring a number here re-creates the drift the moment the
+  admin edits it; asking the dashboard's server for it is not viable (both apps
+  resolve identity from `Session.getActiveUser()`, so one app's UrlFetch to the
+  other arrives as the deployer); and a shared sheet is the channel the two
+  apps already use for holidays (H1).
+
+  **No standard means no verdict.** When the tab is absent, empty, unreadable
+  or has neither the dept row nor `*`, the endpoints ship a NULL target and the
+  clients render no target line, no tone and no sidebar badge -- the
+  `getMetricsAmbient` response says `unavailable: 'standard'`. The legacy
+  80/50 band and the 85 cutoff were verdicts on numbers nobody set (g122's
+  rule, INV-187's spirit): a colour is a verdict, and a wrong one on a rep's own
+  KPI is worse than none.
+
+  **Exclusions leave the benchmark, never the totals.** The dashboard's R18
+  ruling: `TEAM_AVG_EXCLUDES` applies to per-agent averages and benchmarks
+  only, while dept totals and rates keep everyone. Here that is
+  `dashboardTeamAggregate_` / `metricsTeamAvgSeries_` (the anonymized team
+  line and the cohort benchmark) vs `getTeamMetrics.teamTotals`. An excluded
+  rep still sees their OWN numbers against a benchmark that does not include
+  them.
+
+  Recorded in `.cycle/config.md` as INV-211 and scenario S107; the gotcha is
+  g124. The formula change bumped every rate-carrying cache key (INV-85).

@@ -99,7 +99,12 @@ not restate it. Server endpoints live in the fourteen server files
      counts; since H1 (2026-09-17) the walk ALSO steps over company holidays,
      read from the CDR Report's `Company Holidays` tab — the same calendar the
      Department Dashboard uses, so the morning after a holiday "Yesterday" is
-     the last real workday, not an empty day; g123) — (server-aggregated via
+     the last real workday, not an empty day; g123). Since H2 (2026-09-17) Answer % is the dashboard's formula
+     (`answered / (answered + missed)`) and the target line, table band,
+     Clock tone and sidebar badge judge against the dashboard's PUBLISHED
+     per-dept standard (the CDR Report's `Dashboard Standards` tab; no tab =
+     no verdict), with the team benchmark subtracting its Team Avg Excludes
+     (g124) — (server-aggregated via
      `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
      line/series), rail-row sparklines, and a sortable + sticky-header team
      table with tri-tone % cells (the table renders via the shared

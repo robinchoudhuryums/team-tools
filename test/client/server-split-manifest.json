@@ -322,6 +322,57 @@
     "prevWorkdayIso_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: Answer % = answered/(answered+missed) via cdrAnswerPct_ at every rate site; the answer standard (target/band/team-avg excludes) is read from the CDR Report's Dashboard Standards tab (getCdrDashboardStandard_/cdrStandardShip_/cdrDashboardDept_) and shipped by the four metrics endpoints; benchmarks subtract the excludes (cdrExcludeSet_); CDR_ALERT_THRESHOLD retired; cache keys bumped",
+   "added": [
+    "CDR_STANDARDS_CACHE_KEY_",
+    "CDR_STANDARDS_CACHE_TTL_",
+    "_cdrStandardsMemo",
+    "cdrAnswerPct_",
+    "cdrDashboardDept_",
+    "cdrExcludeSet_",
+    "cdrStandardShip_",
+    "getCdrDashboardStandard_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "dashboardTeamAggregate_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getDashboardMetrics",
+    "getMetricsAmbient",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "metricsBuildKpiSeries_",
+    "metricsTeamAvgSeries_",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: getMyMetricsRange + getTeamMetrics read the published dashboard standard (ship was referenced undeclared -- lint:server caught it)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyMetricsRange",
+    "getTeamMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: cdrAnswerPct_ rounds to a whole percent, matching the dashboard's Answer % cell",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "cdrAnswerPct_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -455,6 +506,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "c0fb04450cddb2d8"
+  },
+  "CDR_STANDARDS_CACHE_KEY_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "4aa9ad61931184f6"
+  },
+  "CDR_STANDARDS_CACHE_TTL_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "7cec94a50b2228c2"
   },
   "CLIENT_ERRORS_TAB": {
    "file": "00_config.js",
@@ -724,7 +785,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "594b01abc6bb7811"
+   "sha": "a3aae1b509044a59"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -2171,6 +2232,11 @@
    "kind": "var",
    "sha": "e620165957ee73fc"
   },
+  "_cdrStandardsMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "a11c2aa13fb58a23"
+  },
   "_clientBuildHashMemo": {
    "file": "00_config.js",
    "kind": "let",
@@ -2651,6 +2717,21 @@
    "kind": "function",
    "sha": "9135338f9b9ce41a"
   },
+  "cdrAnswerPct_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "666772239d5bac56"
+  },
+  "cdrDashboardDept_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "cb4c6f541e38c6e1"
+  },
+  "cdrExcludeSet_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e33ae391917ca964"
+  },
   "cdrFmtHms_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -2690,6 +2771,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "8c24fe4fdd46335a"
+  },
+  "cdrStandardShip_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "82f001cfb516c7f2"
   },
   "checkOopEligibility": {
    "file": "70_kb.js",
@@ -3029,7 +3115,7 @@
   "dashboardTeamAggregate_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "d9e9b23281ab3870"
+   "sha": "e4febed5f0748de2"
   },
   "dashboardTeamTransfer_": {
    "file": "40_metrics.js",
@@ -3559,7 +3645,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "08f88ddd5823428d"
+   "sha": "2cd07683f1de0e65"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -3569,7 +3655,12 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "71a7e9395c8c9cdb"
+   "sha": "10936a604937b4ec"
+  },
+  "getCdrDashboardStandard_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "bb41833c91e8b584"
   },
   "getCdrInboundVolume_": {
    "file": "40_metrics.js",
@@ -3624,7 +3715,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "ccaf87f1d0074808"
+   "sha": "2beedc0b0c90e917"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -3869,7 +3960,7 @@
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "21bc0526c14fc52e"
+   "sha": "eb2ea7788c3d6c62"
   },
   "getMonthRange_": {
    "file": "20_timeclock.js",
@@ -3904,12 +3995,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "343e93bb28a86ea7"
+   "sha": "b59f7a65c68c876e"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "1b9a5e677baee5e5"
+   "sha": "0747c6df95d674e5"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -4279,7 +4370,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "be832a51f9f26b6f"
+   "sha": "19e330193a92e6ce"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -5159,7 +5250,7 @@
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c5d5ed7618c38cbd"
+   "sha": "71402de002bf7cef"
   },
   "metricsParsePercent_": {
    "file": "40_metrics.js",
@@ -5169,7 +5260,7 @@
   "metricsTeamAvgSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "64c9cb5e59c9e46f"
+   "sha": "6165c124b3f40db0"
   },
   "metricsWorkdayIsos_": {
    "file": "40_metrics.js",
@@ -6434,7 +6525,7 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "70b622ecfef22790"
+   "sha": "13cdff15fc8e3ff8"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",

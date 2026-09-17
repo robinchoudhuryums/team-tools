@@ -2918,3 +2918,48 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   directly. Verify: the H1-1..H1-5 pins, `test_companyHolidays_tabWinsElseFederal`,
   `test_companyHolidays_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `util.test.js` / `setup.test.js`.
+
+<a id="g124-answer-is-the-dashboard-s-formula-and"></a>
+
+- **Answer % is the Department Dashboard's formula (`answered / (answered +
+  missed)`), and the target, amber band and team-average exclusions it is
+  judged against are READ from the dashboard's published `Dashboard
+  Standards` tab -- never a hand-carried number (H2, 2026-09-17).** The
+  cross-repo evaluation found a CSR rep's "% Answered" here divided by
+  `totalRung` while the manager's dashboard divides by `answered + missed`;
+  in the DQE build rung counts EVERY window leg and answered/missed are two
+  specific dispositions, so the two rates differ whenever a leg carries a
+  third. On top of that this app warned at a single CONFIG `85` where the
+  CSR dashboard tints against 92 with a 2-pt amber band, and its anonymized
+  team line included the manager's token call volume the dashboard's INV-26
+  subtracts. A rep at 88% was green here and amber to their manager. Now:
+  `cdrAnswerPct_` is the ONE formula and every rate site routes through it
+  (the H2-1 pin bans any surviving `/ rung` division) -- and it rounds to a
+  WHOLE percent, because the dashboard's Answer % cell does: a 91.7 here
+  beside a 92 there is the same row tinted amber and green; the dashboard repo
+  publishes its resolution into a `Dashboard Standards` tab in the CDR
+  Report workbook (its Operator State #37 -- one row per dashboard dept plus
+  a `*` global row), and `getCdrDashboardStandard_` (40_metrics.js) reads it
+  BY HEADER NAME for `CONFIG.CDR_DASHBOARD_DEPT` (Script Property override;
+  the dashboard's roster HEADER, not this app's dept labels), falling back
+  to the `*` row, with a `source` verdict (`sheet` / `global` / `no-row` /
+  `empty` / `no-tab` / `unavailable`) and a NULL target on every non-sheet
+  verdict. The four metrics endpoints ship `alertThreshold` / `alertBand` /
+  `standardSource` through the one `cdrStandardShip_` shape; a null target
+  renders NO target line, NO tone (`mPctClass_` and `dashPctTone_` both
+  refuse) and NO sidebar badge (`getMetricsAmbient` returns
+  `{ badge: null, unavailable: 'standard' }`) -- the old legacy 80/50 band
+  and the 85 cutoff were verdicts against numbers nobody set (g122). The
+  excludes leave the BENCHMARK only (`dashboardTeamAggregate_`,
+  `metricsTeamAvgSeries_`); `teamTotals` keeps everyone, matching the
+  dashboard's R18 ruling. The formula change bumped every cache key that
+  carries a rate (`cdr_metrics_v4`, `dash_metrics_v5`, `metrics_my_v3`,
+  `metrics_range_v3`, `team_metrics_v3`, `metrics_ambient_v2`) -- INV-85:
+  a rate under the old formula must never serve under the new shape for the
+  TTL. Fires when you compute or tone an answer rate, add a KPI band, or
+  read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins,
+  `test_cdrAnswerPct_isTheDashboardFormula`,
+  `test_teamBenchmark_subtractsPublishedExcludes`,
+  `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
+  call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
+  `system-health.test.js`.

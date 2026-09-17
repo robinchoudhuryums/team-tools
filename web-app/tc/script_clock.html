@@ -868,12 +868,15 @@ var DASH_TONE_SLACK_PP = 5;
  *  for a null value or a null target, because a colour is a verdict and the
  *  app must not render one on a number nobody set (the operator can null
  *  CONFIG.CDR_TRANSFER_TARGET_PCT to turn Transfer % banding off entirely). */
-function dashPctTone_(value, target, lowerIsBetter) {
+function dashPctTone_(value, target, lowerIsBetter, slack) {
   if (value == null || target == null || !isFinite(value) || !isFinite(target)) return '';
   var ok = lowerIsBetter ? (value <= target) : (value >= target);
   if (ok) return 'good';
   var miss = lowerIsBetter ? (value - target) : (target - value);
-  return miss <= DASH_TONE_SLACK_PP ? 'warn' : 'crit';
+  // H2: % Answered passes the PUBLISHED amber band so the warn tier matches
+  // the manager's dashboard; Transfer % keeps the local slack.
+  var s = (slack != null && isFinite(slack)) ? slack : DASH_TONE_SLACK_PP;
+  return miss <= s ? 'warn' : 'crit';
 }
 
 /** Pure (Node-pinned) — one KPI's change vs the comparison window. Returns null
@@ -960,7 +963,7 @@ function clkDashPrev_(res, which) {
 /** The banding thresholds ride the payload (never mirrored client-side); an
  *  older server that ships neither simply renders untoned. */
 function clkDashTone_(res, kind, value) {
-  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false);
+  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false, res && res.alertBand);   // H2
   return dashPctTone_(value, res && res.transferTarget, true);   // Transfer % — lower is better
 }
 
