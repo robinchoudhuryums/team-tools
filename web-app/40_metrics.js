@@ -406,11 +406,15 @@ function getCdrCompanyHolidayRanges_() {
 // Rounded to a WHOLE percent, because that is what the dashboard's Answer %
 // cell prints (script-5-dept.html: `Math.round(pa / pt * 100)`) -- a 91.7
 // here against a 92 there would tint amber vs green on the same row, which
-// is the disagreement H2 exists to remove. 0 when there is nothing to divide.
+// is the disagreement H2 exists to remove. NULL when there is nothing to
+// divide (F-32, 2026-09-17): a window with rung calls but no answered or
+// missed leg has no answer rate, and the 0 this returned read as "every call
+// missed" -- a red row, a crit card and a badge on a day nobody missed a call.
+// Every consumer already renders null as a dash and skips it in an average.
 function cdrAnswerPct_(answered, missed) {
   var a = Number(answered) || 0, m = Number(missed) || 0;
   var denom = a + m;
-  return denom > 0 ? Math.round((a / denom) * 100) : 0;
+  return denom > 0 ? Math.round((a / denom) * 100) : null;
 }
 
 // ── Dashboard Standards (H2) ─────────────────────────────────────────────
@@ -2074,19 +2078,18 @@ function getMetricsAmbient() {
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
-    // Compute "yesterday" in the manager's timezone (not the script's), so the
-    // badge date + weekend check don't drift near midnight / DST when the
-    // script tz differs from the manager tz. Derive the manager-tz calendar
-    // date string, step back one day via UTC math, and read the weekday off
-    // that tz-neutral date.
+    // The badge day is the PREVIOUS WORKDAY before the manager-tz "today"
+    // (F-35, 2026-09-17) -- the same prevWorkdayIso_ the rep's pending-tasks
+    // card and the shift-stats overlay use, stepping over weekends AND the
+    // company holidays (H1). Calendar-yesterday went silent every Sunday and
+    // Monday (a weekend yesterday) and judged the morning after a holiday on
+    // an empty CDR day. Manager tz, not the script's, so the date does not
+    // drift near midnight / DST when the two differ.
     var now = new Date();
     var mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     var todayMgr = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
-    var yDate = new Date(todayMgr + 'T00:00:00Z');
-    yDate.setUTCDate(yDate.getUTCDate() - 1);
-    var yIso = isoFromUtc_(yDate);
-    var dow = yDate.getUTCDay();
-    if (dow === 0 || dow === 6) return { badge: null };
+    var yIso = prevWorkdayIso_(todayMgr);
+    if (!yIso) return { badge: null };
 
     var roster = getEmployeeRosterRows_();
     var names = [];

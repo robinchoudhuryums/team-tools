@@ -1846,10 +1846,23 @@ function getStorageHealth(opts) {
 
     const cdrProp = props.getProperty('CDR_SS_ID');
     const cdrId = cdrProp || (isPlaceholder(CONFIG.CDR_SS_ID) ? '' : CONFIG.CDR_SS_ID);
-    stores.push(probe({ label: 'CDR Report', role: 'DQE + CSR Transfer + Agent Alias Overrides (read-only)',
+    const cdrStore = probe({ label: 'CDR Report', role: 'DQE + CSR Transfer + Agent Alias Overrides + Company Holidays + Dashboard Standards (read-only)',
       cls: 'External', retention: 'n/a — owned by call-data-reporting', prop: 'CDR_SS_ID', id: cdrId,
       source: cdrProp ? 'Script Property' : (cdrId ? 'CONFIG' : 'unset'),
-      note: cdrId ? '' : 'Optional — Metrics + the shift-stats CDR overlay degrade gracefully when unset.' }));
+      note: cdrId ? '' : 'Optional — Metrics + the shift-stats CDR overlay degrade gracefully when unset.' });
+    // F-08 / F-09 (2026-09-17): the two PUBLISHED tabs this app judges against
+    // ride the row, each with the SOURCE its reader resolved. Both readers
+    // fall back or go silent without a word to the operator — the answer
+    // standard to "no target, tone or badge" (H2), the holiday calendar to
+    // the computed federal list (H1, g123) — and neither state was visible
+    // anywhere. Reachable store only: an unreachable one is already the
+    // row's own fail finding. Each probe is best-effort and reports its own
+    // failure as source 'unavailable' rather than taking the inventory down.
+    if (cdrStore.reachable) {
+      cdrStore.standard = cdrStandardProbe_();
+      cdrStore.holidays = cdrHolidayProbe_();
+    }
+    stores.push(cdrStore);
 
     const intakeProp = props.getProperty('INTAKE_SS_ID');
     const intakeId = intakeProp || (isPlaceholder(CONFIG.INTAKE.SS_ID) ? '' : CONFIG.INTAKE.SS_ID);
@@ -1980,6 +1993,36 @@ function getStorageHealth(opts) {
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
              drive: drive, mailBcc: mailBcc, propStore: propStore };
   } catch (err) { return { error: err.message }; }
+}
+
+/** F-08 — the Dashboard Standards verdict as the Storage Health row carries
+ *  it: {dept, target, band, source, error}. Same reader as Metrics
+ *  (getCdrDashboardStandard_, so its 1h cache applies — the detail says so). */
+function cdrStandardProbe_() {
+  try {
+    const std = getCdrDashboardStandard_() || {};
+    return { dept: std.dept || '', target: (std.target == null ? null : std.target),
+             band: (std.band == null ? null : std.band), source: std.source || 'unavailable',
+             error: std.error || '' };
+  } catch (e) { return { dept: '', target: null, band: null, source: 'unavailable', error: String((e && e.message) || e) }; }
+}
+/** F-09 — the Company Holidays verdict: {source, ranges, thisYear, error}.
+ *  `source` is what getCompanyHolidays_ decides on: only 'sheet' with ≥1 range
+ *  uses the tab; everything else is the federal fallback, silently, and this
+ *  is the ONE place that says which calendar is live. `thisYear` counts the
+ *  tab's dates inside the current year (an unlisted year is a year with no
+ *  holidays, so a zero here on a 'sheet' source is the yearly-maintenance
+ *  reminder). */
+function cdrHolidayProbe_() {
+  try {
+    const hol = getCdrCompanyHolidayRanges_() || {};
+    const ranges = hol.ranges || [];
+    const source = (hol.source === 'sheet' && !ranges.length) ? 'empty' : (hol.source || 'unavailable');
+    const year = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy');
+    let thisYear = 0;
+    try { thisYear = (source === 'sheet') ? companyHolidayDatesInYear_(ranges, year).length : 0; } catch (e2) { thisYear = 0; }
+    return { source: source, ranges: ranges.length, thisYear: thisYear, year: year, error: hol.error || '' };
+  } catch (e) { return { source: 'unavailable', ranges: 0, thisYear: 0, year: '', error: String((e && e.message) || e) }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

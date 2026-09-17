@@ -249,7 +249,7 @@ function renderTimeOffView(area, data) {
     if (hasContent) {
       const parts = [MONTH_NAMES[data.month - 1] + ' ' + d];
       if (isToday) parts.push('today');
-      if (hol) parts.push('US holiday');
+      if (hol) parts.push('Company holiday');
       if (hasWork) parts.push('worked');
       if (own) parts.push(((own.type || 'time off') + ' ' + (own.status || '')).trim());
       if (tms && tms.length) parts.push(tms.length + ' teammate' + (tms.length > 1 ? 's' : '') + ' off');
@@ -286,7 +286,7 @@ function renderTimeOffView(area, data) {
     <div class="leg-item"><div class="leg-dot" style="background:var(--good);border-radius:1px"></div>Worked</div>
     <div class="leg-item"><div class="leg-dot" style="background:transparent;border:1.5px solid var(--warn);box-sizing:border-box"></div>Pending</div>
     <div class="leg-item"><div class="leg-dot" style="background:var(--accent)"></div>Approved</div>
-    <div class="leg-item"><span class="leg-star">${icon('star', 12)}</span>US Holiday</div>
+    <div class="leg-item"><span class="leg-star">${icon('star', 12)}</span>Company holiday</div>
     <div class="leg-item"><span style="font-family:var(--mono);font-weight:600;font-size:10px;color:var(--muted);letter-spacing:.04em">+N</span>Teammates off</div>
     <div class="leg-item" style="color:var(--muted);font-size:11px;width:100%">Tap any day for details</div>
   </div>`;
@@ -910,7 +910,7 @@ function openDayModal(dateStr) {
   const headsUpBanners = [];
   if (holiday) {
     headsUpBanners.push(
-      `<div class="conflict info">${icon('star', 14)}<span><strong>${esc(holiday.name)}</strong> — US holiday<span class="conflict-sub">Federal observance; offices may be closed.</span></span></div>`
+      `<div class="conflict info">${icon('star', 14)}<span><strong>${esc(holiday.name)}</strong> — Company holiday<span class="conflict-sub">From the Company Holidays calendar; offices may be closed.</span></span></div>`
     );
   }
   if (teammates.length > 0) {

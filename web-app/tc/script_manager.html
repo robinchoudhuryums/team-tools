@@ -799,7 +799,7 @@ function renderManagerView(area, data) {
         const dy = parseInt(parts[2],10);
         const yr = parts[0];
 
-        // Approval-queue signal chips (V1·E5): surface US holidays, teammates
+        // Approval-queue signal chips (V1·E5): surface company holidays, teammates
         // already off the same day, and the projected balance after deduction
         // as discrete chips. Holiday + team conflicts are also echoed (plain
         // text) into the Approve confirm dialog via the data-conflict-hint
@@ -826,7 +826,7 @@ function renderManagerView(area, data) {
         const signalsHtml = sigChips.length ? `<div class="signals">${sigChips.join('')}</div>` : '';
 
         const confirmBits = [];
-        if (holidayRaw) confirmBits.push(`${holidayRaw} (US holiday)`);
+        if (holidayRaw) confirmBits.push(`${holidayRaw} (Company holiday)`);
         const otherBits = [];
         if (conflictsApproved > 0) otherBits.push(`${conflictsApproved} approved off`);
         if (conflictsPending > 0)  otherBits.push(`${conflictsPending} pending`);
@@ -1467,7 +1467,7 @@ function tcalRender_() {
 
     var parts = [MONTH_NAMES[month - 1] + ' ' + d];
     if (dateIso === todayIso) parts.push('today');
-    if (hol) parts.push('US holiday');
+    if (hol) parts.push('Company holiday');
     parts.push(punched + ' punched');
     if (anyIncomplete) parts.push('incomplete day(s)');
     if (offN) parts.push(offN + ' off');
@@ -1599,7 +1599,7 @@ function tcalDayTableHtml_(data) {
   var editNote = !editable && dateIso <= todayIso
     ? '<div class="tcal-note">Older than the ' + adjWin + '-day adjust window — edits need the sheet directly.</div>' : '';
 
-  return '<div class="tcal-day-title">' + esc(title) + (hol ? ' · ' + esc(hol) + ' (US holiday)' : '') + '</div>' +
+  return '<div class="tcal-day-title">' + esc(title) + (hol ? ' · ' + esc(hol) + ' (Company holiday)' : '') + '</div>' +
     table + offHtml + editNote;
 }
 

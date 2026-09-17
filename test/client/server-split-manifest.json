@@ -434,6 +434,21 @@
     "kbUsageCounts_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "F-08/F-09: cdrStandardProbe_ + cdrHolidayProbe_ ride the CDR Storage Health row",
+   "added": [
+    "cdrHolidayProbe_",
+    "cdrStandardProbe_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrAnswerPct_",
+    "getMetricsAmbient",
+    "getStorageHealth"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2781,7 +2796,7 @@
   "cdrAnswerPct_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "666772239d5bac56"
+   "sha": "73be1c0b23555f9f"
   },
   "cdrDashboardDept_": {
    "file": "40_metrics.js",
@@ -2802,6 +2817,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "3018cc0cb4adcfca"
+  },
+  "cdrHolidayProbe_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "25028e243173114b"
   },
   "cdrLikelyNameMismatches_": {
    "file": "40_metrics.js",
@@ -2837,6 +2857,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "c6d9f05b3cfd5420"
+  },
+  "cdrStandardProbe_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "03eb8319b9f4e65a"
   },
   "cdrStandardShip_": {
    "file": "40_metrics.js",
@@ -4026,7 +4051,7 @@
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "eb2ea7788c3d6c62"
+   "sha": "f8a4cb935aef6ea9"
   },
   "getMonthRange_": {
    "file": "20_timeclock.js",
@@ -4426,7 +4451,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "20729a7de3026f07"
+   "sha": "581641ff9b1a55f6"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",

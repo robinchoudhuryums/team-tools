@@ -10064,6 +10064,20 @@ function cnRenderStoragePanel_(res) {
   var detailFor = function (s) {
     var parts = [];
     if (s.note) parts.push('<div>' + esc(s.note) + '</div>');
+    // F-08 / F-09 — the CDR row states which standard and which calendar are
+    // live (facts; the verdicts are the findings above).
+    if (s.standard) {
+      var st = s.standard;
+      parts.push('<div>Dashboard Standards: <strong>' + esc(st.source) + '</strong>' +
+        (st.target != null ? ' · target ' + esc(st.target) + '%' + (st.band != null ? ' · amber band ' + esc(st.band) + ' pt' : ' · no amber band') : ' · no target') +
+        (st.dept ? ' · dept ' + esc(st.dept) : '') + (st.error ? ' · ' + esc(st.error) : '') + '</div>');
+    }
+    if (s.holidays) {
+      var ho = s.holidays;
+      parts.push('<div>Company Holidays: <strong>' + esc(ho.source) + '</strong>' +
+        (ho.source === 'sheet' ? ' · ' + esc(ho.thisYear) + ' in ' + esc(ho.year) + ' (' + esc(ho.ranges) + ' on the tab)' : ' · federal fallback in use') +
+        (ho.error ? ' · ' + esc(ho.error) : '') + '</div>');
+    }
     // Cycle 7 (M-14 class) — locale drift: a locale that differs from the ADP
     // sheet's changes WHICH string shapes Sheets coerces to Dates on read.
     if (s.localeMatch === false) {
@@ -10328,6 +10342,48 @@ function cnLoadHealthPanel_() {
  *  (`ok`), not a warning — there is nothing to fall back to.
  *  Failed loads are FINDINGS (`fail`), not silence: a health check that
  *  could not run must not render as "All OK" (INV-187). */
+/** F-08 — the answer standard (Dashboard Standards tab) as ONE finding. A
+ *  published row is the ok fact; every other source is a warning that names
+ *  what Metrics does about it (no target line, no tone, no sidebar badge),
+ *  and an unreadable tab is distinct from a missing row (g128). */
+function cnStandardFindings_(add, st) {
+  var dept = st.dept ? ' for ' + st.dept : '';
+  var fix = 'Add a Department row (or a * row) to the CDR Report’s Dashboard Standards tab — Answer Target, Amber Band, Team Avg Excludes. Read again within the hour (the standard is cached 1h).';
+  if (st.source === 'sheet' || st.source === 'global') {
+    add('cdrStandard', 'cdr', 'ok', 'Answer standard published' + (st.source === 'global' ? ' (the * row)' : dept),
+      'target ' + st.target + '%' + (st.band != null ? ' · amber band ' + st.band + ' pt' : ' · no amber band — below target is red'));
+  } else if (st.source === 'unavailable') {
+    add('cdrStandard', 'cdr', 'warn', 'Answer standard could not be read',
+      (st.error || 'the Dashboard Standards tab did not read') + ' — Metrics shows no target, tone or badge until it does',
+      'Open the CDR Report and check the Dashboard Standards tab’s headers (Department · Answer Target · Amber Band · Team Avg Excludes).');
+  } else {
+    var why = st.source === 'no-tab' ? 'no Dashboard Standards tab in the CDR Report'
+      : st.source === 'empty' ? 'the Dashboard Standards tab is empty'
+      : 'no Dashboard Standards row' + dept + ' (and no * row)';
+    add('cdrStandard', 'cdr', 'warn', 'No answer standard' + dept, why + ' — Metrics shows no target line, no % Answered tone and no sidebar badge', fix);
+  }
+}
+/** F-09 — which holiday calendar is LIVE. getCompanyHolidays_ falls back to
+ *  the computed US-federal list whenever the CDR tab is absent, empty or
+ *  unreadable (g123) and says nothing; this finding says it. The fallback
+ *  itself is unchanged here (deferred to the operator). */
+function cnHolidayFindings_(add, hol) {
+  var fix = 'Add or fill the Company Holidays tab in the CDR Report (the calendar the Department Dashboard walks); it is read again within the hour.';
+  if (hol.source === 'sheet') {
+    add('cdrHolidays', 'cdr', hol.thisYear > 0 ? 'ok' : 'warn',
+      hol.thisYear > 0 ? 'Company holidays from the CDR Report' : 'No company holidays listed for ' + (hol.year || 'this year'),
+      hol.thisYear > 0 ? hol.thisYear + ' in ' + hol.year + ' (' + hol.ranges + ' range' + (hol.ranges === 1 ? '' : 's') + ' on the tab)'
+        : hol.ranges + ' range' + (hol.ranges === 1 ? '' : 's') + ' on the tab, none in ' + (hol.year || 'this year') + ' — an unlisted year is a year with no holidays (the tab is maintained yearly)',
+      hol.thisYear > 0 ? '' : fix);
+  } else if (hol.source === 'unavailable') {
+    add('cdrHolidays', 'cdr', 'warn', 'Company Holidays could not be read',
+      (hol.error || 'the tab did not read') + ' — the computed US-federal list is in use meanwhile (previous-workday, PTO and coverage math)',
+      'Open the CDR Report and check the Company Holidays tab (From · To · Name); until it reads, holidays the team actually observes are missing.');
+  } else {
+    add('cdrHolidays', 'cdr', 'warn', hol.source === 'no-tab' ? 'No Company Holidays tab' : 'Company Holidays tab is empty',
+      'the computed US-federal list is in use instead — Columbus and Veterans Day count as closures, and the closures the team actually observes do not', fix);
+  }
+}
 function cnHealthFindings_(health, storage) {
   var items = [];
   var degraded = { automation: null, cdr: null, storage: null };
@@ -10508,6 +10564,10 @@ function cnHealthFindings_(health, storage) {
       } else {
         add(id, 'storage', 'ok', s.label, 'reachable' + (s.tzMatch === true ? ' · tz matches' : ''));
       }
+      // F-08 / F-09 (2026-09-17) — the two published tabs the CDR row carries.
+      // Both are CDR-area findings: what the app judges call data against.
+      if (s.standard) cnStandardFindings_(add, s.standard);
+      if (s.holidays) cnHolidayFindings_(add, s.holidays);
     });
     // (F3, 2026-09-09) Where copies of every outgoing email go. MAIL_BCC_ALL
     // is merged into EVERY send — intake bodies carry full patient answers —

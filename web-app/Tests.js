@@ -1876,7 +1876,7 @@ function test_cdrAnswerPct_isTheDashboardFormula() {
   _assertEq(cdrAnswerPct_(8, 2), 80, '8/(8+2)');
   _assertEq(cdrAnswerPct_(8, 1), 89, 'rung is NOT the denominator: 10 rung / 8 ans / 1 missed reads 89, not 80');
   _assertEq(cdrAnswerPct_(11, 1), 92, 'whole percent, like the dashboard cell (91.67 -> 92, never 91.7)');
-  _assertEq(cdrAnswerPct_(0, 0), 0, 'nothing to divide -> 0');
+  _assertEq(cdrAnswerPct_(0, 0), null, 'nothing to divide -> null, never 0 (F-32: 0 reads as every call missed)');
   const saved = _cdrStandardsMemo;
   try {
     _cdrStandardsMemo = { dept: 'CSR', target: null, band: null, teamAvgExcludes: [], source: 'no-tab' };

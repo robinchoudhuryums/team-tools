@@ -968,7 +968,9 @@ function clkDashPrev_(res, which) {
 /** The banding thresholds ride the payload (never mirrored client-side); an
  *  older server that ships neither simply renders untoned. */
 function clkDashTone_(res, kind, value) {
-  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false, res && res.alertBand);   // H2
+  // H2 + F-07: the published band through the ONE null-band rule — no
+  // published band means no amber tier here, exactly as on the Metrics table.
+  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false, mtAnswerBand_(res && res.alertBand));
   return dashPctTone_(value, res && res.transferTarget, true);   // Transfer % — lower is better
 }
 

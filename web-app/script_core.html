@@ -1717,6 +1717,15 @@ function esc(s) {
 function mtPctTone_(p, hi, lo) {
   return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= lo ? 'm-pct-mid' : 'm-pct-low');
 }
+/** F-07 (2026-09-17) — the ONE null-band rule for % Answered. The amber width
+ *  is the PUBLISHED `Amber Band` (H2); a standard that publishes no band has
+ *  NO amber tier — below the target is red — and never a local slack. Shared
+ *  by the Metrics table (mPctClass_) and the Clock KPI card (clkDashTone_),
+ *  which read the same payload field and until this rule disagreed on it
+ *  (0 pt here, 5 pt there) for the same number on the same morning. */
+function mtAnswerBand_(band) {
+  return (band != null && isFinite(band)) ? Number(band) : 0;
+}
 
 // ── Shared date-range control (.mt-range) ─────────────────────────────────
 // The Metrics vocabulary — pressed-state preset chips + a "Custom…" disclosure

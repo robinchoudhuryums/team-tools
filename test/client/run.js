@@ -7624,7 +7624,8 @@ test('#4: the alert threshold is server-shipped (never client-mirrored) and driv
   assert.strictEqual(mPctClass_(84), '', 'absent threshold → NO tone (H2: a colour is a verdict against a number nobody set)');
   assert.strictEqual(mPctClass_(84, 85, 5), 'm-pct-mid', 'below the shipped threshold is NOT green (within the band → amber)');
   assert.strictEqual(mPctClass_(85, 85), 'm-pct-high', 'at threshold is green');
-  assert.strictEqual(mPctClass_(49, 85), 'm-pct-low', 'mid band floor stays 50');
+  assert.strictEqual(mPctClass_(49, 85), 'm-pct-low', 'far below the target is red');
+  assert.strictEqual(mPctClass_(84, 85), 'm-pct-low', 'F-07: NO published band → no amber tier — one point below the target is red, never the old 50-floor mid band');
   assert.strictEqual(mPctClass_(null, 85), '', 'null stays unclassed');
   // Behavioral: the spark target line renders only when passed, and the
   // y-domain EXTENDS to include a target above every data point (otherwise
@@ -19903,7 +19904,7 @@ test('H2-1: cdrAnswerPct_ is the dashboard formula, and every rate site routes t
   assert.strictEqual(f(90, 10), 90);
   assert.strictEqual(f(1, 2), 33, 'a WHOLE percent -- the dashboard cell rounds to the integer, and a 91.7 vs 92 would tint differently on the same row');
   assert.strictEqual(f(11, 1), 92, '91.67 -> 92, never 91.7');
-  assert.strictEqual(f(0, 0), 0, 'nothing to divide -> 0');
+  assert.strictEqual(f(0, 0), null, 'nothing to divide -> NULL, never 0 (F-32: 0 reads as every call missed)');
   assert.strictEqual(f('7', '3'), 70, 'coerces numeric strings');
   // The DIFFERENCE that mattered: rung counts every window leg. With 10 rung,
   // 8 answered, 1 missed (one leg carried a third disposition) the old
@@ -20008,7 +20009,7 @@ test('H2-4: the ambient badge and the Clock KPI tone judge against the published
   assert.strictEqual(dashPctTone_(89.9, 92, false, 2), 'crit');
   assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'no band passed → the local 5pp slack (Transfer % keeps it)');
   const clk = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
-  assert.ok(/dashPctTone_\(value, res && res\.alertThreshold, false, res && res\.alertBand\)/.test(clk), 'the Clock card passes the published band for % Answered');
+  assert.ok(/dashPctTone_\(value, res && res\.alertThreshold, false, mtAnswerBand_\(res && res\.alertBand\)\)/.test(clk), 'the Clock card passes the published band for % Answered through the ONE null-band rule (F-07)');
   const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
   assert.ok(/mPctClass_\(r\.pctAnswered, thr, band\)/.test(mp) && /var band = data\.alertBand;/.test(mp), 'the team table bands with the shipped band');
   assert.ok(!/alertThreshold \|\| \d|thr \|\| \d|alertBand \|\| \d/.test(mp + clk), 'no client mirror of any standard');
@@ -20124,6 +20125,183 @@ test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row
   const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
   assert.ok(/getRange\(2, CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1');
   assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
+});
+
+// ── Batch 3 (2026-09-17 /broad-scan): the H1/H2 follow-through ──────────────
+// F-07 one null-band rule · F-08 the standard's SOURCE rendered + the residual
+// 85 · F-09 the holiday SOURCE surfaced · F-35 the ambient badge's previous
+// workday · F-32 no rate is null, not 0 · F-38 "Company holiday" copy.
+test('F-07: mtAnswerBand_ is the ONE null-band rule — no published band means NO amber tier on the Metrics table AND the Clock card, and Transfer % keeps its local slack', () => {
+  const band = sb.mtAnswerBand_;
+  assert.strictEqual(typeof band, 'function', 'the rule lives in script_core, beside mtPctTone_');
+  assert.strictEqual(band(null), 0); assert.strictEqual(band(undefined), 0); assert.strictEqual(band('x'), 0);
+  assert.strictEqual(band(2), 2); assert.strictEqual(band('3'), 3, 'a numeric string is a band');
+  const mPctClass_ = loadFunction(sb, 'metrics/script_metrics.html', 'mPctClass_');
+  const dashPctTone_ = loadFunction(sb, 'tc/script_clock.html', 'dashPctTone_');
+  // The two surfaces vocabularies map 1:1; the same (value, target, band) must
+  // land on the same tier on both — this is the disagreement F-07 closes
+  // (84 vs 85 with no band read red on the table and amber on the card).
+  const TIER = { 'm-pct-high': 'good', 'm-pct-mid': 'warn', 'm-pct-low': 'crit' };
+  [[84, 85, null], [84, 85, undefined], [84, 85, 2], [82, 85, 2], [85, 85, null], [90.5, 92, 2], [89.9, 92, 2], [80, 85, 5], [79, 85, 5]].forEach(([v, t, b]) => {
+    assert.strictEqual(TIER[mPctClass_(v, t, b)], dashPctTone_(v, t, false, band(b)), 'the table and the card agree on ' + [v, t, b].join('/'));
+  });
+  assert.strictEqual(mPctClass_(84, 85, null), 'm-pct-low', 'no band → one point below is red (no amber tier)');
+  assert.strictEqual(dashPctTone_(84, 85, false, band(null)), 'crit', '…and the card says the same');
+  assert.strictEqual(dashPctTone_(84, 85, false, band(2)), 'warn', 'a published band is the amber width');
+  assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'Transfer % (no band argument at all) keeps DASH_TONE_SLACK_PP');
+  const mp = foNc(extractFunction('metrics/script_metrics.html', 'mPctClass_'));
+  assert.ok(/var b = mtAnswerBand_\(band\);/.test(mp) && !/band != null\) \? band : 0/.test(mp), 'mPctClass_ delegates the null-band decision');
+  const clk = foNc(extractFunction('tc/script_clock.html', 'clkDashTone_'));
+  assert.ok(/dashPctTone_\(value, res && res\.alertThreshold, false, mtAnswerBand_\(res && res\.alertBand\)\)/.test(clk), 'clkDashTone_ delegates too');
+  assert.ok(/return dashPctTone_\(value, res && res\.transferTarget, true\);/.test(clk), 'the Transfer % branch passes no band');
+});
+
+test('F-08: the standard\'s SOURCE is rendered on both heroes, is-warn only when the tab could not be READ, and the badge tooltip no longer carries an 85', () => {
+  const f = loadFunction(sb, 'metrics/script_metrics.html', 'mStandardSourceHtml_');
+  assert.strictEqual(f(85, undefined), '', 'an older payload without the field says nothing');
+  assert.ok(/from the Dashboard Standards tab/.test(f(85, 'sheet')) && !/is-warn|is-muted/.test(f(85, 'sheet')), 'a published target names its tab, untoned');
+  assert.ok(/\* row/.test(f(85, 'global')), 'the * row is named as such');
+  ['no-row', 'empty', 'no-tab'].forEach((s) => {
+    const h = f(null, s);
+    assert.ok(/no target, tone or badge/.test(h) && /is-muted/.test(h) && !/is-warn/.test(h), s + ' is a missing standard (muted), not a broken read');
+  });
+  const un = f(null, 'unavailable');
+  assert.ok(/could not be read/.test(un) && /is-warn/.test(un), 'an unreadable tab is the warn state — "could not look up" is not "not found" (g128)');
+  assert.ok(/standard source: weird/.test(f(null, 'weird')), 'an unknown source is still shown, never dropped');
+  const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.strictEqual((mp.match(/var stdBit = mStandardSourceHtml_\(thr, data\.standardSource\);/g) || []).length, 2, 'My Stats AND Team Metrics render the source');
+  assert.strictEqual((mp.match(/\[deltaCore, targetBit, stdBit\]\.filter\(Boolean\)\.join\(' · '\)/g) || []).length, 2, '…in the hero delta row, beside the target');
+  assert.ok(!/threshold \|\| \d/.test(mp), 'the badge tooltip\'s `res.threshold || 85` is gone — a badge exists only with a published target');
+  assert.ok(/below the ' \+ res\.threshold \+ '% Dashboard Standards target/.test(mp), 'the tooltip names the standard\'s tab');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok((mock.match(/standardSource: 'sheet'/g) || []).length >= 3, 'the three Metrics fixtures carry the field (INV-185)');
+});
+
+test('F-08/F-09 server: the CDR Storage Health row carries the standard and the holiday calendar with their SOURCES; each probe is best-effort and never takes the inventory down', () => {
+  const mk = (over) => {
+    const ctx = Object.assign({ CONFIG: { TIMEZONE: 'Asia/Kolkata' }, Utilities: { formatDate: () => '2026' }, String, Number, Date }, over);
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'cdrStandardProbe_') + '\n' + extractRawFunction('Code.js', 'cdrHolidayProbe_') + '\n' + extractRawFunction('Code.js', 'companyHolidayDatesInYear_'), ctx);
+    return ctx;
+  };
+  const ok = mk({ getCdrDashboardStandard_: () => ({ dept: 'CSR', target: 92, band: 2, teamAvgExcludes: ['Mgr'], source: 'sheet' }),
+                 getCdrCompanyHolidayRanges_: () => ({ source: 'sheet', ranges: [{ from: '2026-01-01', to: '2026-01-01', name: 'NY' }, { from: '2025-12-25', to: '2025-12-26', name: 'Xmas' }] }) });
+  const J = JSON.stringify;   // cross-context objects: compare by shape, not prototype
+  assert.strictEqual(J(ok.cdrStandardProbe_()), J({ dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' }), 'the standard, without the excludes list');
+  assert.strictEqual(J(ok.cdrHolidayProbe_()), J({ source: 'sheet', ranges: 2, thisYear: 1, year: '2026', error: '' }), 'thisYear counts the tab\'s dates inside the current year');
+  const noRow = mk({ getCdrDashboardStandard_: () => ({ dept: 'CSR', target: null, band: null, source: 'no-row' }), getCdrCompanyHolidayRanges_: () => ({ source: 'sheet', ranges: [] }) });
+  assert.strictEqual(noRow.cdrStandardProbe_().source, 'no-row');
+  assert.strictEqual(noRow.cdrHolidayProbe_().source, 'empty', 'a sheet source with no ranges is EMPTY — that is what getCompanyHolidays_ falls back on');
+  const un = mk({ getCdrDashboardStandard_: () => { throw new Error('timed out'); }, getCdrCompanyHolidayRanges_: () => ({ source: 'unavailable', ranges: [], error: 'boom' }) });
+  assert.strictEqual(J(un.cdrStandardProbe_()), J({ dept: '', target: null, band: null, source: 'unavailable', error: 'timed out' }), 'a throwing reader is unavailable, with its error');
+  assert.strictEqual(un.cdrHolidayProbe_().error, 'boom');
+  const thr = mk({ getCdrDashboardStandard_: () => ({}), getCdrCompanyHolidayRanges_: () => { throw new Error('nope'); } });
+  assert.strictEqual(thr.cdrHolidayProbe_().source, 'unavailable'); assert.strictEqual(thr.cdrHolidayProbe_().error, 'nope');
+  assert.strictEqual(thr.cdrStandardProbe_().source, 'unavailable', 'an empty reader result is unavailable, not a standard');
+  const sh = foNc(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/if \(cdrStore\.reachable\) \{\s*cdrStore\.standard = cdrStandardProbe_\(\);\s*cdrStore\.holidays = cdrHolidayProbe_\(\);\s*\}/.test(sh), 'both probes ride the CDR row, and only when the store is reachable');
+  assert.ok(/Company Holidays \+ Dashboard Standards/.test(sh), 'the row\'s role names the two tabs');
+});
+
+test('F-08/F-09 client: the CDR-area findings — a published standard and a listed calendar are the ok facts; every fallback source WARNS and names what the app does meanwhile; an older payload raises neither', () => {
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnStandardFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnHolidayFindings_');
+  const storage = (row) => ({ configTimezone: 'Asia/Kolkata', stores: [Object.assign({ label: 'CDR Report', cls: 'External', prop: 'CDR_SS_ID', configured: true, reachable: true, tzMatch: true }, row)] });
+  const find = (row, id) => fn(null, storage(row)).items.find((f) => f.id === id);
+  // Older server: no fields → no findings (the row's own ok item only).
+  assert.ok(!find({}, 'cdrStandard') && !find({}, 'cdrHolidays'), 'no fields → no verdict either way');
+  const std = (s, extra) => find({ standard: Object.assign({ dept: 'CSR', target: 92, band: 2, source: s, error: '' }, extra || {}) }, 'cdrStandard');
+  assert.strictEqual(std('sheet').severity, 'ok'); assert.ok(/92%/.test(std('sheet').detail) && /amber band 2 pt/.test(std('sheet').detail));
+  assert.ok(/no amber band — below target is red/.test(std('sheet', { band: null }).detail), 'a null band is stated as the rule it becomes (F-07)');
+  assert.strictEqual(std('global').severity, 'ok'); assert.ok(/\* row/.test(std('global').title));
+  ['no-row', 'empty', 'no-tab'].forEach((s) => {
+    const f = std(s, { target: null, band: null });
+    assert.strictEqual(f.severity, 'warn', s + ' warns'); assert.strictEqual(f.area, 'cdr');
+    assert.ok(/no target line, no % Answered tone and no sidebar badge/.test(f.detail), s + ' names the three silences');
+    assert.ok(/Dashboard Standards tab/.test(f.fix) && /cached 1h/.test(f.fix), s + ' says where and warns about the cache');
+  });
+  const unv = std('unavailable', { target: null, band: null, error: 'header drift: Department / Answer Target not found' });
+  assert.strictEqual(unv.severity, 'warn'); assert.ok(/could not be read/.test(unv.title) && /header drift/.test(unv.detail), 'unreadable is its own finding, with the reader\'s error');
+  const hol = (h) => find({ holidays: Object.assign({ source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' }, h) }, 'cdrHolidays');
+  assert.strictEqual(hol({}).severity, 'ok'); assert.ok(/9 in 2026/.test(hol({}).detail));
+  const none = hol({ thisYear: 0, ranges: 4 });
+  assert.strictEqual(none.severity, 'warn'); assert.ok(/No company holidays listed for 2026/.test(none.title) && /maintained yearly/.test(none.detail), 'a listed tab with no dates THIS year is the yearly-maintenance reminder');
+  ['empty', 'no-tab'].forEach((s) => {
+    const f = hol({ source: s, ranges: 0, thisYear: 0 });
+    assert.strictEqual(f.severity, 'warn'); assert.ok(/US-federal list is in use/.test(f.detail), s + ' says the fallback calendar is live');
+  });
+  const hun = hol({ source: 'unavailable', ranges: 0, thisYear: 0, error: 'timed out' });
+  assert.strictEqual(hun.severity, 'warn'); assert.ok(/could not be read/.test(hun.title) && /timed out/.test(hun.detail) && /federal list is in use meanwhile/.test(hun.detail));
+  // The inventory row states the same two facts (never a second verdict).
+  const panel = foNc(extractFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_'));
+  assert.ok(/Dashboard Standards: <strong>' \+ esc\(st\.source\)/.test(panel) && /Company Holidays: <strong>' \+ esc\(ho\.source\)/.test(panel), 'the detail row renders both sources, escaped');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/standard: \{ dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' \}/.test(mock) && /holidays: \{ source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' \}/.test(mock), 'the Storage Health fixture carries both shapes (INV-185)');
+});
+
+test('F-35: the ambient badge judges the PREVIOUS WORKDAY — Monday reads Friday, the morning after a holiday steps over it — never calendar-yesterday', () => {
+  const asked = [];
+  const mk = (today, holidays) => {
+    const ctx = {
+      CONFIG: { TIMEZONE: 'America/Chicago', CDR_CACHE_TTL: 300 }, EMP: { NAME: 1 }, JSON, Date, String, Number, Object, isFinite, console: { warn() {} },
+      getEmployeeInfo_: () => ({ isManager: true }),
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      getCdrDashboardStandard_: () => ({ target: 92, band: 2, source: 'sheet' }),
+      Utilities: { formatDate: () => today },
+      companyHolidayMap_: () => holidays || {},
+      getEmployeeRosterRows_: () => [['h'], ['e1', 'Avery Blake']], empRosterEmail_: () => 'a@x',
+      getCdrAgentMetrics_: (from, to) => { asked.push(from + '|' + to); return { agents: { 'Avery Blake': { totalAnswered: 8, totalMissed: 2, totalRung: 10 } } }; },
+    };
+    vm.createContext(ctx);
+    ['cdrAnswerPct_', 'prevWorkdayIso_', 'getMetricsAmbient'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    return ctx.getMetricsAmbient();
+  };
+  const mon = mk('2026-09-14');   // a Monday
+  assert.strictEqual(asked.pop(), '2026-09-11|2026-09-11', 'Monday asks for FRIDAY (calendar-yesterday was a silent Sunday)');
+  assert.strictEqual(mon.date, '2026-09-11'); assert.strictEqual(mon.badge.date, '2026-09-11', '80% < 92 → a badge, dated the workday it judges');
+  mk('2026-09-14', { '2026-09-11': true });
+  assert.strictEqual(asked.pop(), '2026-09-10|2026-09-10', 'a Friday holiday steps back to Thursday (H1)');
+  mk('2026-09-16');
+  assert.strictEqual(asked.pop(), '2026-09-15|2026-09-15', 'a midweek day still asks for yesterday');
+  const amb = foNc(extractRawFunction('Code.js', 'getMetricsAmbient'));
+  assert.ok(/var yIso = prevWorkdayIso_\(todayMgr\);/.test(amb), 'through the ONE previous-workday helper');
+  assert.ok(!/getUTCDay\(\)|dow === 0 \|\| dow === 6|setUTCDate\(/.test(amb), 'no hand-rolled yesterday or weekend check survives');
+});
+
+test('F-32: a window with nothing answered or missed has NO answer rate — null from the formula, a dash on every surface, skipped by every average', () => {
+  assert.strictEqual(sb.cdrAnswerPct_(0, 0), null);
+  assert.strictEqual(sb.cdrAnswerPct_(undefined, null), null);
+  assert.strictEqual(sb.cdrAnswerPct_(0, 3), 0, 'three missed and none answered IS 0% — a real rate');
+  const agg = dashboardTeamAggregate_({ A: { totalRung: 4, totalAnswered: 0, totalMissed: 0 }, B: { totalRung: 2, totalAnswered: 0, totalMissed: 0 } }, 2);
+  assert.strictEqual(agg.cohort, 2); assert.strictEqual(agg.team.pctAnswered, null, 'rung legs with a third disposition only: the team benchmark is null, not 0');
+  const val = loadFunction(sb, 'metrics/script_metrics.html', 'mPctValueHtml_');
+  assert.strictEqual(val(92), '92<span class="unit">%</span>');
+  assert.ok(/—/.test(val(null)) && !/null/.test(val(null)), 'the hero renders a dash, never "null%"');
+  const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.strictEqual((mp.match(/mPctValueHtml_\((c|t)\.pctAnswered\)/g) || []).length, 2, 'both heroes route through it');
+  assert.ok(/\(r\.pctAnswered == null\) \? '<span style="color:var\(--muted\)">—<\/span>' : '<span class="' \+ mPctClass_\(r\.pctAnswered, thr, band\)/.test(mp), 'the team table cell renders a dash for null');
+  assert.ok(!/esc\((c|t|r)\.pctAnswered\) \+ '%'|esc\((c|t)\.pctAnswered\) \+ '<span class="unit">%/.test(mp), 'no hero or cell concatenates the raw value with a % any more');
+  const mTrendAvg_ = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendAvg_');
+  assert.strictEqual(mTrendAvg_([{ pctAnswered: null }, { pctAnswered: 80 }, { pctAnswered: 90 }], 'pctAnswered'), 85, 'a null day is skipped, not averaged as 0');
+  const ser = sb.metricsTeamAvgSeries_({ d: { a: { v: null }, b: { v: 80 }, c: { v: 90 } } }, ['d'], 'v', 2, []);
+  assert.strictEqual(ser[0].avg, 85); assert.strictEqual(ser[0].cohort, 2, 'the series cohort excludes the rate-less rep');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_assertEq\(cdrAnswerPct_\(0, 0\), null/.test(tests), 'the editor smoke agrees');
+});
+
+test('F-38: the holiday chips, legend and conflict card say "Company holiday" — the calendar is the CDR Report\'s tab (H1), not a federal observance', () => {
+  ['tc/script_manager.html', 'tc/script_timeoff.html'].forEach((p) => {
+    const src = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/' + p), 'utf8'));
+    assert.ok(!/US [Hh]oliday|Federal observance/.test(src), p + ' carries no "US holiday" copy');
+  });
+  const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  assert.ok(/<\/span>Company holiday<\/div>/.test(to), 'the legend');
+  assert.ok(/— Company holiday<span class="conflict-sub">From the Company Holidays calendar; offices may be closed\.<\/span>/.test(to), 'the conflict card names the calendar');
+  const mg = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.strictEqual((mg.match(/\(Company holiday\)/g) || []).length, 2, 'both manager chip sites');
+  assert.strictEqual((mg.match(/parts\.push\('Company holiday'\)/g) || []).length, 1);
 });
 
 // ── Infrastructure adaptation (from the dashboard's app-email.test.js): a

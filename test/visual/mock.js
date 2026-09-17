@@ -442,7 +442,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
-        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
+        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
     // named string fields (the server String()+trim()s every cell), the
@@ -468,7 +468,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
-      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
+      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85, standardSource: 'sheet' },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
     // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
@@ -543,6 +543,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
+        standardSource: 'sheet',   // F-08 — where the standard came from (rendered beside the target)
         // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
         // hand, and had already drifted — it omitted the per-group queues.sort()
         // the server does, so the screenshot showed a group's queues in the
@@ -1659,7 +1660,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
         stores: [
           store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', 'ADP_SS_ID'),
-          store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID'),
+          store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides + Company Holidays + Dashboard Standards (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID',
+            // F-08 / F-09 — cdrStandardProbe_ / cdrHolidayProbe_'s shapes: the
+            // published, all-clear state (the System tab still reads clean).
+            { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
+              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
