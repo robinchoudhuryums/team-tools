@@ -7171,7 +7171,9 @@ function getMyPendingTasks() {
     // "couldn't check", never "0 missing" (F5 / INV-187).
     try {
       var m = prev ? getMyMetrics(prev) : null;
-      if (!m || m.error || m.noteCountUnavailable) throw new Error('unreadable');
+      // F-47: cdrUnavailable is the CALL side's noteCountUnavailable — a DQE
+      // read that failed is "couldn't check", never "0 answered, 0 missing".
+      if (!m || m.error || m.noteCountUnavailable || m.cdrUnavailable) throw new Error('unreadable');
       var answered = (m.cdr && m.cdr.totalAnswered) ? Number(m.cdr.totalAnswered) : 0;
       var logged = Number(m.noteCount) || 0;
       var missing = answered - logged;

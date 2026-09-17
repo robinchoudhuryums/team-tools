@@ -502,10 +502,11 @@ function kbRecordView(itemId, context) {
  *  and kbGetReviewDue (#4 prioritizes review-due items by usage). */
 function kbUsageCounts_(windowDays) {
   const out = {};
+  let unavailable = false;   // F-25: a failed read is NOT an empty map
   try {
     const ss = getKbSS_();
     const sheet = ss.getSheetByName(KB_VIEWS_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return out;
+    if (!sheet || sheet.getLastRow() < 2) return { map: out, unavailable: false };
     const ssTz = ss.getSpreadsheetTimeZone();
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
@@ -527,8 +528,8 @@ function kbUsageCounts_(windowDays) {
       out[id].count++;
       if (String(data[i][3] || '').indexOf('drawer') === 0) out[id].drawerCount++;
     }
-  } catch (e) { /* best-effort — empty map on any failure */ }
-  return out;
+  } catch (e) { unavailable = true; }   // F-25: carried, never rendered as "none"
+  return { map: out, unavailable: unavailable };
 }
 /** #7 PURE (Node-pinned) — "See also" from co-views. `events` is
  *  [{rep, day, id}] (KbViews rows). Two items are co-viewed when they appear in
@@ -1329,6 +1330,7 @@ function checkOopEligibility(address, query) {
     // The customer's address is geocoded, used and returned — deliberately
     // never cached, the kbMapDistances rule. Only the WAREHOUSES are cached.
     const qGeo = kbGeocodeOne_(addr);
+    if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };   // F-15: the service, not the address
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
 
     // Warehouses are geocoded only when some picked row actually needs one, so
@@ -1657,9 +1659,14 @@ function kbGetUsageStats() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
-    const counts = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const countsRes = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const counts = countsRes.map;
+    // F-25: which of the count reads FAILED — a failed read used to render as
+    // "No opens recorded" / no feedback / no comments, the g48 shape.
+    const unavailable = [];
+    if (countsRes.unavailable) unavailable.push('views');
     const ids = Object.keys(counts);
-    if (!ids.length) return { items: [] };
+    if (!ids.length) return { items: [], windowDays: KB_USAGE_WINDOW_DAYS, unavailable: unavailable };
     // Join titles from the KB sheet (small — one bounded read). Cycle-11 L-7:
     // read through the Status column and DROP drafts — this was the one usage
     // surface that missed the INV-140 pattern, leaking a draft's title (with
@@ -1680,8 +1687,11 @@ function kbGetUsageStats() {
         titles[String(r[0])] = String(r[2] || '(untitled)');
       });
     }
-    const fb = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
-    const cc = kbCommentCounts_();    // round-3 FO — surface discussion volume
+    const fbRes = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
+    const ccRes = kbCommentCounts_();    // round-3 FO — surface discussion volume
+    if (fbRes.unavailable) unavailable.push('feedback');
+    if (ccRes.unavailable) unavailable.push('comments');
+    const fb = fbRes.map, cc = ccRes.map;
     const items = ids
       .filter(function (id) { return !!titles[id]; })   // deleted items drop out
       .map(function (id) {
@@ -1693,7 +1703,7 @@ function kbGetUsageStats() {
       })
       .sort(function (a, b) { return b.count - a.count; })
       .slice(0, KB_USAGE_TOP_N);
-    return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
+    return { items: items, windowDays: KB_USAGE_WINDOW_DAYS, unavailable: unavailable };
   } catch (err) { return { error: err.message }; }
 }
 /** Recovers a KB timestamp cell to a yyyy-MM-dd string. Sheets coerces the
@@ -1755,7 +1765,10 @@ function kbGetReviewDue() {
     const last = sheet.getLastRow();
     if (last < 2) return { items: [], dueDays: dueDays };
     const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
-    const usage = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const usageRes = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const usage = usageRes.map;
+    const unavailable = [];   // F-25 — the count reads that failed, by name
+    if (usageRes.unavailable) unavailable.push('views');
     // #2 — a rep "flag as out of date" surfaces the item here regardless of age
     // and sorts it to the top. Build the full-ts last-review map first so
     // kbStaleFlags_ can clear a flag that a later review superseded (the same
@@ -1765,9 +1778,13 @@ function kbGetReviewDue() {
       const id = String(r[KB.ID] || '').trim();
       if (id) reviewedTsByItem[id] = kbCellTs_(r[KB.REVIEWED_AT], ssTz);
     });
-    const stale = kbStaleFlags_(reviewedTsByItem);
-    const fb = kbFeedbackCounts_();
-    const cc = kbCommentCounts_();    // round-3 FO — discussion volume chip
+    const staleRes = kbStaleFlags_(reviewedTsByItem);
+    const fbRes = kbFeedbackCounts_();
+    const ccRes = kbCommentCounts_();    // round-3 FO — discussion volume chip
+    if (staleRes.unavailable) unavailable.push('stale flags');
+    if (fbRes.unavailable) unavailable.push('feedback');
+    if (ccRes.unavailable) unavailable.push('comments');
+    const stale = staleRes.map, fb = fbRes.map, cc = ccRes.map;
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
     const items = [];
     rows.forEach(function (r) {
@@ -1807,7 +1824,7 @@ function kbGetReviewDue() {
     });
     // F18: report the pre-slice total so the manager panel can say "showing
     // N of M" — a 50-item cap with no signal reads as "only 50 are due".
-    return { items: items.slice(0, KB_REVIEW_DUE_CAP), dueDays: dueDays,
+    return { items: items.slice(0, KB_REVIEW_DUE_CAP), dueDays: dueDays, unavailable: unavailable,
              total: items.length, cap: KB_REVIEW_DUE_CAP };
   } catch (err) { return { error: err.message }; }
 }
@@ -1843,10 +1860,11 @@ function getOrCreateKbRequestsSheet_() {
  *  column to maintain. Bounded tail scan. Returns { id: {count, lastNote} }. */
 function kbStaleFlags_(reviewedTsByItem) {
   const out = {};
+  let unavailable = false;   // F-25: a failed read is NOT an empty map
   try {
     const ss = getKbSS_();
     const sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return out;
+    if (!sheet || sheet.getLastRow() < 2) return { map: out, unavailable: false };
     const ssTz = ss.getSpreadsheetTimeZone();
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - KB_FEEDBACK_MAX_SCAN + 1);
@@ -1863,8 +1881,8 @@ function kbStaleFlags_(reviewedTsByItem) {
       const note = String(data[i][KBF.NOTE] || '').trim();
       if (note) out[id].lastNote = note;   // chronological append order → latest note wins
     }
-  } catch (e) { /* best-effort — empty map on any failure */ }
-  return out;
+  } catch (e) { unavailable = true; }   // F-25: carried, never rendered as "none"
+  return { map: out, unavailable: unavailable };
 }
 /** #2 — cumulative helpful/notHelpful tallies per item id over the bounded
  *  feedback tail (KB_FEEDBACK_MAX_SCAN — KbFeedback is low-volume, so an
@@ -1873,10 +1891,11 @@ function kbStaleFlags_(reviewedTsByItem) {
  *  Folded into the manager Most-used + Review-due blocks. */
 function kbFeedbackCounts_() {
   const out = {};
+  let unavailable = false;   // F-25: a failed read is NOT an empty map
   try {
     const ss = getKbSS_();
     const sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return out;
+    if (!sheet || sheet.getLastRow() < 2) return { map: out, unavailable: false };
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - KB_FEEDBACK_MAX_SCAN + 1);
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_FEEDBACK_HEADERS.length).getValues();
@@ -1888,8 +1907,8 @@ function kbFeedbackCounts_() {
       if (!out[id]) out[id] = { helpful: 0, notHelpful: 0 };
       if (kind === 'helpful') out[id].helpful++; else out[id].notHelpful++;
     }
-  } catch (e) { /* best-effort — empty map on any failure */ }
-  return out;
+  } catch (e) { unavailable = true; }   // F-25: carried, never rendered as "none"
+  return { map: out, unavailable: unavailable };
 }
 /** Round-3 FO — ACTIVE comment count per item over the bounded KbComments
  *  tail (the kbFeedbackCounts_ shape: best-effort, empty map on any failure).
@@ -1898,9 +1917,10 @@ function kbFeedbackCounts_() {
  *  existing analytics surfaces, and kbFbCountHtml_ renders the chip. */
 function kbCommentCounts_() {
   const out = {};
+  let unavailable = false;   // F-25: a failed read is NOT an empty map
   try {
     const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return out;
+    if (!sheet || sheet.getLastRow() < 2) return { map: out, unavailable: false };
     const last = sheet.getLastRow();
     const start = Math.max(2, last - KB_COMMENTS_SCAN + 1);
     const rows = sheet.getRange(start, 1, last - start + 1, KB_COMMENTS_HEADERS.length).getValues();
@@ -1910,8 +1930,8 @@ function kbCommentCounts_() {
       if (!id) continue;
       out[id] = (out[id] || 0) + 1;
     }
-  } catch (e) { /* best-effort — empty map on any failure */ }
-  return out;
+  } catch (e) { unavailable = true; }   // F-25: carried, never rendered as "none"
+  return { map: out, unavailable: unavailable };
 }
 /** #3 — probe KB embeds for Drive reachability (deleted/moved file or lost
  *  deployer access — a silently-broken embed that renders a dead /preview iframe
@@ -2745,7 +2765,15 @@ function kbHaversineMiles_(lat1, lon1, lat2, lon2) {
 function kbGeocodeOne_(addr) {
   try {
     const res = Maps.newGeocoder().setRegion('us').geocode(addr);
-    if (!res || res.status !== 'OK' || !res.results || !res.results.length) return null;
+    // F-15 (2026-09-17): a non-OK status that is NOT "no such place" — the
+    // daily quota (OVER_QUERY_LIMIT), REQUEST_DENIED, a service error, or a
+    // throw ("Service invoked too many times") — used to collapse to null, and
+    // every caller told the rep the ADDRESS was wrong. It was not. Report the
+    // service failure as its own shape; callers treat `unavailable` as
+    // "could not check", never as "not found" (g02/g114).
+    const status = String((res && res.status) || 'NO_RESPONSE');
+    if (status !== 'OK' && status !== 'ZERO_RESULTS') return { unavailable: true, status: status };
+    if (status !== 'OK' || !res.results || !res.results.length) return null;
     const r = res.results[0];
     if (!r.geometry || !r.geometry.location) return null;
     let state = '', city = '';
@@ -2765,7 +2793,13 @@ function kbGeocodeOne_(addr) {
     }
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
       formatted: String(r.formatted_address || ''), state: state, city: city };
-  } catch (e) { return null; }
+  } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
+}
+/** F-15 — the ONE message for a geocoder service failure, shared by every
+ *  caller so "the service is down" never reads as "your address is wrong". */
+function kbGeocodeUnavailableMsg_(g) {
+  return 'The address service could not be reached (' + String((g && g.status) || 'unavailable') +
+    ') — this is not a problem with the address. Try again in a minute; if it persists, the daily lookup quota may be spent.';
 }
 
 /** Geocode a list of addresses through the permanent hashed-coordinate cache.
@@ -2792,6 +2826,7 @@ function kbGeocodeCached_(addrs) {
     const hit = cache[key];
     if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
     const geo = kbGeocodeOne_(a);
+    if (geo && geo.unavailable) return null;   // F-15: a service failure is "not placed", never cached, never a coordinate
     if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
     return geo;
   });
@@ -2832,6 +2867,7 @@ function kbMapDistances(query, addresses) {
     const whGeo = kbGeocodeCached_(addrs);
     // The QUERY geocode: computed, used, returned — deliberately never stored.
     const qGeo = kbGeocodeOne_(query);
+    if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };   // F-15: the service, not the address
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
     const results = whGeo.map(function (g, i) {
       if (!g) return { i: i, miles: null };

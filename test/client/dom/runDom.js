@@ -2893,6 +2893,76 @@ test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE
   });
 });
 
+test('F-06 DOM (2026-09-17): a failed department-config fetch is NOT cached as an empty config — the next open re-asks, and a structured {error} is a failure too', () => {
+  const h = boot();
+  let ran = 0;
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 1, 'first call fetches');
+  h.run.flushFailure(new Error('boom'), 'getCallNotesDepartments');
+  assert.strictEqual(ran, 1, 'the continuation still runs (the view paints with a null config)');
+  assert.strictEqual(h.read('CN_STATE.deptConfig'), null, 'NOTHING is cached on failure — no empty stub');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 1, 'the next call RE-FETCHES instead of honouring a stub');
+  h.run.flushSuccess({ error: 'Employee not found.' }, 'getCallNotesDepartments');
+  assert.strictEqual(h.read('CN_STATE.deptConfig'), null, 'a structured {error} is not a config either');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  h.run.flushSuccess({ departments: ['Billing'], suggestionsByDept: {}, defaultSuggestions: [] }, 'getCallNotesDepartments');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('CN_STATE.deptConfig').departments)), ['Billing'], 'a real config is stored');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 0, 'and then it is honoured without a refetch');
+  assert.strictEqual(ran, 4);
+});
+
+test('F-13 DOM (2026-09-17): the dashboard carousels render a FAILED read as the warn card, never "No call data for this period"', () => {
+  const h = boot();
+  const own = h.read('clkDashOwnCard_'), team = h.read('clkDashTeamCard_');
+  assert.match(own({ error: 'CDR unreachable' }), /CDR unreachable/, 'own: a server {error} is shown');
+  assert.doesNotMatch(own({ error: 'CDR unreachable' }), /No call data/, 'own: …and is not "no data"');
+  assert.match(own(null), /Could not load call data/, 'own: a transport failure with no last-good says so');
+  assert.match(own({ own: null, label: 'Sep 2026' }), /No call data for Sep 2026/, 'own: a real empty period is still the empty state');
+  assert.match(team({ error: 'boom' }), /boom/, 'team: a server {error} is shown');
+  assert.match(team(null), /Could not load call data/, 'team: a transport failure says so');
+  assert.match(team({ team: null, label: 'x' }), /No team call data/, 'team: a real empty period is still the empty state');
+  assert.match(own(undefined), /skel/i, 'own: pending is still the skeleton');
+});
+
+test('F-41 DOM (2026-09-17): the coverage strip renders a failed read as "coverage unavailable", never the blank that means "no call activity"', () => {
+  const h = boot();
+  const slot = h.document.createElement('div'); slot.id = 'clk-shift-cov'; h.document.body.appendChild(slot);
+  h.read('clkCoverageUnavailable_')(slot);
+  assert.match(slot.textContent, /coverage unavailable/, 'the strip names its own failure');
+  slot.innerHTML = '';
+  h.read('renderCoverageStrip_')(slot, { cdrUnavailable: true, cdr: null, noteCount: 0 });
+  assert.match(slot.textContent, /coverage unavailable/, 'a cdrUnavailable payload is unavailable, not "no activity"');
+  slot.innerHTML = '';
+  h.read('renderCoverageStrip_')(slot, { cdr: null, noteCount: 0 });
+  assert.strictEqual(slot.innerHTML, '', 'a genuine no-activity day still hides the strip');
+  slot.remove();
+});
+
+test('F-45 DOM (2026-09-17): "Was this helpful?" thanks the rep only AFTER the server records it — a failed write is visible and retryable', () => {
+  const h = boot();
+  const host = h.document.createElement('div');
+  host.innerHTML = h.read('kbFeedbackBarHtml_')({ id: 'kb-1' });
+  h.document.body.appendChild(host);
+  const bar = host.querySelector('.kb-feedback');
+  const yes = bar.querySelector('button');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', yes);
+  assert.strictEqual(h.run.pending('kbFlagItem').length, 1, 'the write is in flight');
+  assert.ok(Array.from(bar.querySelectorAll('button')).every((b) => b.disabled), 'buttons are disabled while it is in flight');
+  assert.doesNotMatch(bar.textContent, /Thanks/, 'no thanks before the server answers');
+  h.run.flushFailure(new Error('quota'), 'kbFlagItem');
+  assert.match(bar.textContent, /Could not record/, 'the failure is stated');
+  assert.ok(Array.from(bar.querySelectorAll('button')).every((b) => !b.disabled), 'and the buttons come back for a retry');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', bar.querySelector('button'));
+  h.run.flushSuccess({ success: false, error: 'Unknown feedback kind.' }, 'kbFlagItem');
+  assert.match(bar.textContent, /Could not record that — Unknown feedback kind/, 'a {success:false} is a failure too');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', bar.querySelector('button'));
+  h.run.flushSuccess({ success: true }, 'kbFlagItem');
+  assert.match(bar.textContent, /Thanks for the feedback/, 'thanked once the server says so');
+  host.remove();
+});
+
 test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and ships it for re-verification — and an item with no price cannot be inserted at all', () => {
   const h = bootExtComposer(OOP_MATCHES);
   assert.ok(h.$('#cnX-oop-q'), 'the picker row mounts in the composer');

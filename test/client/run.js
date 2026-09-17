@@ -9293,8 +9293,9 @@ test('dashboard cold start: one read pair per window; first arrival paints, late
   const team = extractFunction('tc/script_clock.html', 'clkDashTeamCard_');
   [own, team].forEach((f, i) => assert.ok(
     f.indexOf('res === undefined) return clkDashSkelKpis_()') > 0 &&
-    f.indexOf('res === undefined') < f.indexOf('clkDashEmpty_'),
-    ['own', 'team'][i] + ' card: undefined → skeleton, checked BEFORE the empty state'));
+    f.indexOf('res === undefined') < f.indexOf('errorStateHtml_') &&
+    f.indexOf('errorStateHtml_') < f.indexOf(i === 0 ? 'clkDashEmpty_' : 'No team call data'),
+    ['own', 'team'][i] + ' card: undefined → skeleton, then a FAILED read → the warn card, both BEFORE the empty state (F-13)'));
   assert.ok(/CLK_DASH\.data = \{\};/.test(clk), 'a new day resets the payload store');
 });
 
@@ -9676,6 +9677,112 @@ test('kbHaversineMiles_ — behavioral, and the server contract never stores the
   // Hygiene reset keeps THIS run's entries warm (the current article's
   // warehouses are exactly the ones worth keeping).
   assert.ok(/cache = fresh;/.test(cache), 'an oversized cache resets to the fresh entries, not to nothing');
+});
+
+console.log('\nBatch 2 (2026-09-17 broad-scan) — honest failure on the client');
+
+test('F-15: kbGeocodeOne_ tells a SERVICE failure from a place that does not exist — quota, denial and a throw are `unavailable`, ZERO_RESULTS is null, and no caller reports the service as a bad address', () => {
+  const ctx = vm.createContext({ String: String, Number: Number, Math: Math, JSON: JSON, Object: Object, Array: Array, isFinite: isFinite,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} }) },
+    Utilities: { base64Encode: (x) => String(x), computeDigest: (a, s) => s, DigestAlgorithm: { MD5: 1 } },
+    KB_MAP_GEOCODE_CACHE_PROP: 'x', KB_MAP_GEOCODE_CACHE_MAX: 200, propSetBounded_: () => {} });
+  ['kbGeocodeOne_', 'kbGeocodeUnavailableMsg_', 'kbGeocodeCached_', 'kbMapCacheKey_'].forEach((f) =>
+    vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: f }));
+  const withStatus = (status, results) => {
+    ctx.Maps = { newGeocoder: () => ({ setRegion: function () { return this; }, geocode: () => ({ status, results }) }) };
+  };
+  withStatus('OK', [{ geometry: { location: { lat: 1, lng: 2 } }, formatted_address: 'A', address_components: [] }]);
+  const ok = ctx.kbGeocodeOne_('a');
+  assert.strictEqual(ok.lat, 1, 'OK → coordinates');
+  withStatus('ZERO_RESULTS', []);
+  assert.strictEqual(ctx.kbGeocodeOne_('nowhere'), null, 'ZERO_RESULTS is a genuine miss → null (the bad-address message is right)');
+  withStatus('OVER_QUERY_LIMIT', []);
+  const q = ctx.kbGeocodeOne_('a');
+  assert.ok(q && q.unavailable === true && q.status === 'OVER_QUERY_LIMIT', 'the quota is a SERVICE failure, not a bad address');
+  withStatus('REQUEST_DENIED', []);
+  assert.strictEqual(ctx.kbGeocodeOne_('a').unavailable, true, 'a denial too');
+  ctx.Maps = { newGeocoder: () => ({ setRegion: function () { return this; }, geocode: () => { throw new Error('Service invoked too many times'); } }) };
+  const thrown = ctx.kbGeocodeOne_('a');
+  assert.ok(thrown && thrown.unavailable === true && /too many/.test(thrown.message), 'a throw is unavailable and keeps the message');
+  // The one message every caller uses names the status and says it is NOT the address.
+  const msg = ctx.kbGeocodeUnavailableMsg_(q);
+  assert.ok(/OVER_QUERY_LIMIT/.test(msg) && /not a problem with the address/.test(msg), 'the message blames the service, by status');
+  // The shared cache never stores a service failure as a coordinate, and reports it as "not placed".
+  let writes = 0; ctx.propSetBounded_ = () => { writes++; };
+  const placed = ctx.kbGeocodeCached_(['a']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(placed)), [null], 'an unavailable geocode is null (not placed), never an object with no lat');
+  assert.strictEqual(writes, 0, 'and nothing is cached from a failed service');
+  // Both query callers branch on `unavailable` BEFORE the not-found return.
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  [['checkOopEligibility', 'addr'], ['kbMapDistances', 'query']].forEach(([fn, arg]) => {
+    const f = nc(extractRawFunction('Code.js', fn));
+    const i = f.indexOf('qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) }');
+    const j = f.indexOf("Could not find that location");
+    assert.ok(i > 0 && j > i, fn + ' reports the service failure by name BEFORE it would blame the address');
+  });
+});
+
+test('F-25: the four KB count helpers carry their OUTCOME — a failed read is {map:{}, unavailable:true}, a missing tab is a genuine empty, and both manager endpoints name what could not be read', () => {
+  const mk = (getKbSS_) => {
+    const ctx = vm.createContext({ String: String, Number: Number, Date: Date, Object: Object, Math: Math,
+      getKbSS_: getKbSS_, KB_VIEWS_TAB: 'V', KB_FEEDBACK_TAB: 'F', KB_COMMENTS_TAB: 'C', KB_VIEWS_MAX_SCAN: 10, KB_FEEDBACK_MAX_SCAN: 10, KB_COMMENTS_SCAN: 10,
+      KB_VIEWS_HEADERS: [1, 2, 3, 4], KB_FEEDBACK_HEADERS: [1, 2, 3, 4, 5], KB_COMMENTS_HEADERS: [1, 2, 3, 4, 5, 6],
+      KBF: { KIND: 2, ITEM_ID: 1, TS: 0, NOTE: 3 }, KBC: { STATUS: 4, ITEM_ID: 1 },
+      fmtDateTz_: () => '2026-01-01', kbCellTs_: () => '' , Utilities: { formatDate: () => '2026-09-17' } });
+    ['kbUsageCounts_', 'kbStaleFlags_', 'kbFeedbackCounts_', 'kbCommentCounts_'].forEach((f) =>
+      vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: f }));
+    return ctx;
+  };
+  const dead = mk(() => { throw new Error('store unreachable'); });
+  ['kbUsageCounts_', 'kbStaleFlags_', 'kbFeedbackCounts_', 'kbCommentCounts_'].forEach((f) => {
+    const r = dead[f](30);
+    assert.strictEqual(r.unavailable, true, f + ': an unreachable store is UNAVAILABLE');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.map)), {}, f + ': …with an empty map, not a thrown call');
+  });
+  const empty = mk(() => ({ getSheetByName: () => null, getSpreadsheetTimeZone: () => 'UTC' }));
+  ['kbUsageCounts_', 'kbStaleFlags_', 'kbFeedbackCounts_', 'kbCommentCounts_'].forEach((f) => {
+    const r = empty[f](30);
+    assert.strictEqual(r.unavailable, false, f + ': a MISSING tab is a genuine empty, not a failure');
+  });
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const us = nc(extractRawFunction('Code.js', 'kbGetUsageStats'));
+  const rd = nc(extractRawFunction('Code.js', 'kbGetReviewDue'));
+  assert.ok(/unavailable\.push\('views'\)/.test(us) && /unavailable\.push\('feedback'\)/.test(us) && /unavailable\.push\('comments'\)/.test(us), 'usage names each failed read');
+  assert.ok(/unavailable: unavailable/.test(us), 'and ships the list');
+  assert.ok(/unavailable\.push\('views'\)/.test(rd) && /unavailable\.push\('stale flags'\)/.test(rd) && /unavailable\.push\('feedback'\)/.test(rd) && /unavailable\.push\('comments'\)/.test(rd), 'review-due names each failed read');
+  assert.ok(/unavailable: unavailable/.test(rd), 'and ships the list');
+  assert.ok(!/= kbUsageCounts_\(KB_USAGE_WINDOW_DAYS\);\s*\n\s*const ids = Object\.keys\(counts\)/.test(us), 'no consumer treats the result as a bare map any more');
+  // The client renders the failed reads, never "No opens recorded" / an empty queue.
+  const kb = nc(extractScript('kb/script_kb.html'));
+  assert.ok(/KB_STATE\.usage\.unavailable \|\| \[\]\)\.length\) \{/.test(kb) && /usage is unavailable, not zero/.test(kb), 'Most used says which reads failed');
+  assert.ok(/KB_STATE\.reviewDue\.unavailable \|\| \[\]\)\.length\) \{/.test(kb) && /the queue may be incomplete/.test(kb), 'Review due says the queue may be incomplete');
+  assert.ok(kb.indexOf('unavailable || []).length) {') < kb.indexOf('No opens recorded in the last 30 days yet'), 'the failed-read branch is checked BEFORE the empty claim');
+});
+
+test('F-18: the Intake Sent detail renders an UNTOUCHED Yes/No as blank (N/A), a deliberate FALSE as No, TRUE as Yes', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const f = nc(extractFunction('intake/script_intake.html', 'intakeRenderSentDetail_'));
+  assert.ok(/\(v2 === 'TRUE'\) \? 'Yes' : \(\(v2 === 'FALSE' \|\| v2 === false\) \? 'No' : ''\)/.test(f),
+    'the checkbox branch has THREE outcomes — blank is neither Yes nor No');
+  assert.ok(!/\? 'Yes' : 'No';/.test(f), 'the two-outcome form is gone');
+  // Behavioural on the expression itself (the branch is one line; the DOM shell
+  // around it is exercised by the two existing sent-detail pins).
+  const expr = (v2) => vm.runInContext("(v2 === 'TRUE') ? 'Yes' : ((v2 === 'FALSE' || v2 === false) ? 'No' : '')", vm.createContext({ v2 }));
+  assert.strictEqual(expr('TRUE'), 'Yes'); assert.strictEqual(expr('FALSE'), 'No'); assert.strictEqual(expr(false), 'No');
+  assert.strictEqual(expr(''), '', 'untouched → blank'); assert.strictEqual(expr(undefined), '', 'absent → blank');
+});
+
+test('F-13/F-41: the dashboard loader carries a FAILURE (never null) when no last-good payload exists, an error object is never treated as last-good, and the coverage strip has its own unavailable state', () => {
+  const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const load = nc(extractFunction('tc/script_clock.html', 'clkLoadDashboard_'));
+  assert.ok(/!CLK_DASH\.data\[pk\]\.error\) \? CLK_DASH\.data\[pk\] : null/.test(load), 'an error object is never last-good');
+  assert.ok(/got\[pk\] = ok \? res : \(lastGood \|\| \{ error: \(res && res\.error\) \|\| 'Could not load call data' \}\)/.test(load), 'a failure with no last-good carries the error, not null');
+  const cov = nc(extractFunction('tc/script_clock.html', 'loadCoverageStrip_'));
+  assert.ok(!/slot\.innerHTML = ''/.test(cov), 'the strip never renders a failure as the "no activity" blank');
+  assert.strictEqual((cov.match(/clkCoverageUnavailable_\(slot\)/g) || []).length, 2, 'both the {error} response and the transport failure render the unavailable state');
+  const render = nc(extractFunction('tc/script_clock.html', 'renderCoverageStrip_'));
+  assert.ok(render.indexOf('data.cdrUnavailable) { clkCoverageUnavailable_(slot); return; }') < render.indexOf('noteCount === 0 && answered === 0'),
+    'a failed CDR read is checked BEFORE the "no activity" hide');
 });
 
 console.log('\nshell — settings flyout + view-as + tz-mismatch (operator 2026-08-13)');
@@ -18827,7 +18934,11 @@ test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailabl
   // a task; a failed NOTES read is "couldn\'t check", never "0 missing".
   assert.ok(/it\.severity === 'praise'\) return;/.test(fn), 'praise excluded');
   assert.ok(/it\.status === 'done'\) return;/.test(fn), 'done training excluded');
-  assert.ok(/m\.noteCountUnavailable\) throw/.test(fn), 'noteCountUnavailable → unavailable, never a count');
+  assert.ok(/m\.noteCountUnavailable \|\| m\.cdrUnavailable\) throw/.test(fn),
+    'noteCountUnavailable OR cdrUnavailable → unavailable, never a count (F-47: a failed DQE read is not "0 answered")');
+  const mm = extractRawFunction('Code.js', 'getMyMetrics');
+  assert.ok(/cdrUnavailable = !!\(todayResult\.meta && todayResult\.meta\.error\)/.test(mm) && /cdrUnavailable: cdrUnavailable/.test(mm),
+    'getMyMetrics ships cdrUnavailable from the reader\'s meta.error');
   assert.ok(/prevWorkdayIso_\(todayIso\)/.test(fn), 'notes are a PREVIOUS-workday question (CDR is never same-day)');
   assert.ok(/hint: \{ date: prev, missingCount: missing \}/.test(fn), 'the notes route carries the CLK_NAV_HINT payload');
   assert.ok(/total: sorted\.length/.test(fn) && /slice\(0, PENDING_TASKS_CAP\)/.test(fn), 'capped with the pre-slice total (INV-169)');

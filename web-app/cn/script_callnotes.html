@@ -2651,11 +2651,22 @@ function enterCallNotesManageView(area) {
 
 function cnFetchDeptConfigIfNeeded_(then) {
   if (CN_STATE.deptConfig) { then(); return; }
+  // F-06 (2026-09-17): a FAILED fetch used to be cached as an EMPTY config
+  // (a truthy stub this guard then honoured for the whole session), so one
+  // transient failure left the composer with zero departments, Preview
+  // refusing, no templates and no auto-tags until a reload. Now nothing is
+  // stored on failure — every consumer already tolerates a null config — so
+  // the next open re-asks. A structured {error} is a failure too, not a config.
   google.script.run
-    .withSuccessHandler(function (cfg) { CN_STATE.deptConfig = cfg; then(); })
+    .withSuccessHandler(function (cfg) {
+      if (!cfg || cfg.error) {
+        showToast('Failed to load department config: ' + ((cfg && cfg.error) || 'no response'), 'toast-error');
+        then(); return;
+      }
+      CN_STATE.deptConfig = cfg; then();
+    })
     .withFailureHandler(function (err) {
       showToast('Failed to load department config: ' + err.message, 'toast-error');
-      CN_STATE.deptConfig = { departments: [], suggestionsByDept: {}, defaultSuggestions: [] };
       then();
     })
     .getCallNotesDepartments();

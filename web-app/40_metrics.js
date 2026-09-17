@@ -1516,6 +1516,11 @@ function getMyMetrics(date) {
 
     var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
     var todayCdr = todayResult.agents[emp.name] || null;
+    // F-47 (2026-09-17): a reader-returned meta.error (the DQE tab missing or
+    // renamed) came back as agents:{} and shipped cdr:null — indistinguishable
+    // from "no calls that day". Carry the failure so a consumer can refuse to
+    // treat it as zero (the pending-tasks "calls without a note" row did).
+    var cdrUnavailable = !!(todayResult.meta && todayResult.meta.error);
 
     // Date axis for the 30-day window — WORKDAYS only (weekends carry no CDR
     // rows and rendered as gaps).
@@ -1573,6 +1578,7 @@ function getMyMetrics(date) {
       noteCoverage: noteRes.unavailable
         ? null : cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
       noteCountUnavailable: !!noteRes.unavailable,   // F5
+      cdrUnavailable: cdrUnavailable,                // F-47 — cdr:null by IGNORANCE, not by fact
       trend: trend,
       series: series,
       kpiMinCohort: MIN_COHORT,

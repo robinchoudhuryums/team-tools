@@ -411,6 +411,29 @@
     "searchOopPricing"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "Batch 2 of the 2026-09-17 broad-scan: kbGeocodeUnavailableMsg_ (F-15, the ONE message for a geocoder service failure shared by every caller)",
+   "added": [
+    "kbGeocodeUnavailableMsg_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getMyMetrics",
+    "getMyPendingTasks",
+    "kbCommentCounts_",
+    "kbFeedbackCounts_",
+    "kbGeocodeCached_",
+    "kbGeocodeOne_",
+    "kbGetReviewDue",
+    "kbGetUsageStats",
+    "kbMapDistances",
+    "kbStaleFlags_",
+    "kbUsageCounts_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2823,7 +2846,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "38dbe4ecac588557"
+   "sha": "3282318b552615b1"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -4038,7 +4061,7 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b59f7a65c68c876e"
+   "sha": "9135799b69d2756d"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
@@ -4058,7 +4081,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "31ef2a2d0629784a"
+   "sha": "0537ccebb02f63c6"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -4853,7 +4876,7 @@
   "kbCommentCounts_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "80aafb312e3973e0"
+   "sha": "a6f16afacf0f6425"
   },
   "kbCommentTargetOk_": {
    "file": "70_kb.js",
@@ -4918,7 +4941,7 @@
   "kbFeedbackCounts_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4e12d900d37c7847"
+   "sha": "1d9f009887a15c40"
   },
   "kbFlagItem": {
    "file": "70_kb.js",
@@ -4928,12 +4951,17 @@
   "kbGeocodeCached_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2765d8c12d1e18b0"
+   "sha": "517d54a4b040f7db"
   },
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3e7980ff073fcf6d"
+   "sha": "ab94e31f05ba6f33"
+  },
+  "kbGeocodeUnavailableMsg_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a2a5f699c8766f90"
   },
   "kbGetComments": {
    "file": "70_kb.js",
@@ -4963,7 +4991,7 @@
   "kbGetReviewDue": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "790ff1a9121d92b5"
+   "sha": "2485a7890d4eb0cd"
   },
   "kbGetRevisions": {
    "file": "70_kb.js",
@@ -4978,7 +5006,7 @@
   "kbGetUsageStats": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1f9c3de3e3d19e40"
+   "sha": "a3195057a272f5ec"
   },
   "kbHaversineMiles_": {
    "file": "70_kb.js",
@@ -5008,7 +5036,7 @@
   "kbMapDistances": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1d61ae01484bd80c"
+   "sha": "ab82046c1571f55b"
   },
   "kbMarkReviewed": {
    "file": "70_kb.js",
@@ -5123,7 +5151,7 @@
   "kbStaleFlags_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "092e567a1f84f72a"
+   "sha": "fff640f948304ee2"
   },
   "kbTextToRuns_": {
    "file": "70_kb.js",
@@ -5138,7 +5166,7 @@
   "kbUsageCounts_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "476f61b78e47de8d"
+   "sha": "1125dce771b55d19"
   },
   "lastWeekday_": {
    "file": "10_core.js",
