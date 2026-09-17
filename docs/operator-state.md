@@ -214,6 +214,33 @@ entry says which it is.
   `call-data-reporting` repo now surfaces as "Column drift in CSR Transfer
   Historical Data" in Admin → Automation Health (`cdr.transferColumnWarning`)
   instead of silently feeding wrong cells into the Transfer KPI.
+<a id="operator-the-company-holidays-tab-cdr-report-workbook"></a>
+- **The `Company Holidays` tab (CDR Report workbook) — ONE holiday calendar
+  shared with the Department Dashboard (H1, 2026-09-17).** Nothing to set in
+  team-tools: the tab is created and maintained on the `call-data-reporting`
+  side (its `setup()` creates it; its Operator State #27 is the grammar — one
+  range per row in column `Dates`, `2026-12-25` or `2026-11-26..2026-11-27`,
+  a comma list in one cell also parses; `Label` free text; `Active` blank/TRUE
+  counts, FALSE parks a row). This app reads it read-only through `CDR_SS_ID`
+  via `getCdrCompanyHolidayRanges_` (header-name read, one-hour CacheService
+  tier `cdr_holidays_v1`, bypassed under the test override) and
+  `getCompanyHolidays_(year)` is the ONE accessor every business-day consumer
+  reads — Metrics "previous workday" + trend axes, the coverage planner,
+  punctuality, the PTO conflict labels, the business-minutes core, the pay
+  statement, and the client's `mPrevWorkdayIso_` via
+  `window.SERVER_COMPANY_HOLIDAYS`. **Precedence: the tab WINS the moment it
+  holds one range; the computed US-federal list (`getUsHolidays_`) serves ONLY
+  while the tab is absent, empty or unreadable — never merged.** So after the
+  dashboard operator populates the tab, Columbus Day and Veterans Day stop
+  being holidays here (they were never company closures), and an UNLISTED
+  YEAR is a year with no holidays in both apps — the tab is maintained yearly,
+  which is the dashboard's rule too. A tab the deployer account cannot read
+  (or a `CDR_SS_ID` that is unset) degrades to the federal list with a
+  `Logger` line, never a thrown error; there is no health row for it yet
+  (the dashboard's Health page has one, `company-holidays`, which also warns
+  when its old property is still set beside the tab). Before renaming the
+  tab or a header on the dashboard side, read its Operator State #68 — this
+  app is the external reader it names.
 <a id="operator-script-property-test-cdr-ss-id"></a>
 - **Script Property `TEST_CDR_SS_ID`** (test-only, auto-managed). The
   CDR fixture spreadsheet `setupTestEnvironment` / `_setupTestCdrFixture_`
@@ -393,17 +420,37 @@ entry says which it is.
   a warehouse address changes meaning (e.g. the geocoder had it wrong);
   over `KB_MAP_GEOCODE_CACHE_MAX` (200) entries it self-resets to the
   current article's warehouses. No manual setup.
-<a id="operator-cdr-alert-threshold"></a>
-- **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
-  % Answered cutoff for the Metrics sidebar alert badge. Below
-  this value, `getMetricsAmbient()` returns a warn badge showing
-  yesterday's team answer rate. **Since the 2026-08-06 operator #4 batch it
-  is ALSO shipped to the Metrics clients** (`alertThreshold` on
-  `getMyMetrics`/`getMyMetricsRange`/`getTeamMetrics`): it draws the dashed
-  target line on both hero sparklines and starts the team table's GREEN
-  band — so changing it moves the in-page target AND the banding, not just
-  the badge. CONFIG-only (no Script Property equivalent yet); changing it
-  requires a redeploy.
+<a id="operator-the-dashboard-standards-tab-cdr-report-workbook"></a>
+- **The `Dashboard Standards` tab (CDR Report workbook) + `CDR_DASHBOARD_DEPT`
+  — the answer target / amber band / team-avg excludes are the Department
+  Dashboard's, published (H2, 2026-09-17; replaced `CDR_ALERT_THRESHOLD`).**
+  The `call-data-reporting` repo's `setup()` creates the tab and republishes
+  it whenever an admin saves the dashboard's Display standards or Dept Config
+  (its Operator State #37): one row per dashboard dept plus a `*` global row
+  — `Department | Answer Target | Amber Band | Team Avg Excludes | Published
+  At | Published By`. This app reads it read-only via `CDR_SS_ID`
+  (`getCdrDashboardStandard_`, header-name read, one-hour CacheService tier
+  `cdr_standards_v1:<dept>`, bypassed under the test override) for the row
+  named by `CONFIG.CDR_DASHBOARD_DEPT` (seed `CSR` — the DASHBOARD's roster
+  header for this team, not this app's own department labels; the Script
+  Property `CDR_DASHBOARD_DEPT` overrides it without a redeploy), falling
+  back to the `*` row. The four metrics endpoints ship the result as
+  `alertThreshold` / `alertBand` / `standardSource`: the dashed target line
+  on both hero sparklines, the team table's three-tier band (green at/above
+  target, amber within the band, red below), the Clock dashboard's %
+  Answered tone, and the manager sidebar badge (`getMetricsAmbient`, which
+  fires below the target) all judge against it, and the anonymized team
+  benchmark subtracts the row's Team Avg Excludes. **Nothing to set here
+  once the dashboard has run `setup()`.** Until it has (or if the deployer
+  cannot read the workbook, or the dept has no row and there is no `*`
+  row), the standard is UNAVAILABLE: no target line, no tone, no badge, and
+  `getMetricsAmbient` answers `{ badge: null, unavailable: 'standard' }` —
+  never a fallback number. The dashboard's Health page has a
+  `dashboard-standards` row that warns when its published tab is stale
+  (a standard edited outside its Alerts modal); this app has no row for it
+  yet — an absent target line on My Stats is the visible symptom. The
+  formula behind every rate is the dashboard's, `answered / (answered +
+  missed)` (`cdrAnswerPct_`, g124).
 <a id="operator-set-script-property-manager-emails"></a>
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`

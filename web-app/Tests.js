@@ -247,6 +247,10 @@ function _resetCdrCaches_() {
     // execution, including computeAutomationHealth_'s probe.
     _csrTransferValidated = false;
     _csrTransferWarning = null;
+    // H1: the Company Holidays tab memo -- a fixture's (or prod's) list must
+    // not leak across the override boundary.
+    _cdrHolidaysMemo = null;
+    _cdrStandardsMemo = null;   // H2
   } catch (e) {}
 }
 
@@ -1222,6 +1226,10 @@ function _registerSmokeTests_() {
 
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
+  _smokeTest('companyHolidays_tabWinsElseFederal',   test_companyHolidays_tabWinsElseFederal);
+  _smokeTest('prevWorkdayIso_stepsOverHolidays',     test_prevWorkdayIso_stepsOverHolidays);
+  _smokeTest('cdrAnswerPct_isTheDashboardFormula',   test_cdrAnswerPct_isTheDashboardFormula);
+  _smokeTest('teamBenchmark_subtractsPublishedExcludes', test_teamBenchmark_subtractsPublishedExcludes);
 
   // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
   // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
@@ -1302,6 +1310,7 @@ function _registerSmokeTests_() {
   _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
   _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
   _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
+  _smokeTest('metrics_cdrRowDateIso_serial',            test_metrics_cdrRowDateIso_serial);
   _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
   _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
   _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
@@ -1477,6 +1486,8 @@ function _registerIntegrationB_() {
   _integrationTest('kb_comments_flow',                        test_kb_comments_flow);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
+  _integrationTest('companyHolidays_readsFixtureTab',           test_companyHolidays_readsFixtureTab);
+  _integrationTest('dashboardStandard_readsFixtureTab',         test_dashboardStandard_readsFixtureTab);
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
@@ -1817,6 +1828,126 @@ function test_holidays_2026_dates() {
   _assertEq(byName['Veterans Day'],              '2026-11-11');  // Wed
   _assertEq(byName['Thanksgiving Day'],          '2026-11-26');  // 4th Thu
   _assertEq(byName['Christmas Day'],             '2026-12-25');  // Fri
+}
+
+/** H1 (2026-09-17): the ONE company calendar. Drives getCompanyHolidays_
+ *  through the per-execution memo (no workbook read, so smoke-safe): the CDR
+ *  tab REPLACES the federal list when it holds a range; every other source
+ *  shape falls back to getUsHolidays_. */
+function test_companyHolidays_tabWinsElseFederal() {
+  const saved = _cdrHolidaysMemo;
+  try {
+    _cdrHolidaysMemo = { ranges: [], source: 'no-tab' };
+    _assertEq(getCompanyHolidays_(2026).map(h => h.date), getUsHolidays_(2026).map(h => h.date), 'no tab -> the federal list');
+    _cdrHolidaysMemo = { ranges: [], source: 'unavailable', error: 'x' };
+    _assertEq(getCompanyHolidays_(2026).length, getUsHolidays_(2026).length, 'unreadable workbook -> the federal list (fail-open)');
+    _cdrHolidaysMemo = { ranges: [{ from: '2026-11-26', to: '2026-11-27', name: 'Thanksgiving' }, { from: '2026-12-25', to: '2026-12-25', name: 'Christmas' }], source: 'sheet' };
+    _assertEq(getCompanyHolidays_(2026).map(h => h.date), ['2026-11-26', '2026-11-27', '2026-12-25'], 'the tab WINS -- Columbus / Veterans Day are not unioned in');
+    _assertEq(getCompanyHolidays_(2027).length, 0, 'an unlisted year has no holidays (the dashboard rule; the tab is maintained yearly)');
+  } finally { _cdrHolidaysMemo = saved; }
+}
+
+/** H1: the previous-workday walk steps over company holidays -- the
+ *  morning-after-a-holiday "Yesterday" bug. */
+function test_prevWorkdayIso_stepsOverHolidays() {
+  _assertEq(prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tue after Labor Day -> Fri');
+  _assertEq(prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'empty map -> weekends only');
+  _assertEq(metricsWorkdayIsos_('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a holiday drops out of the trend axis');
+}
+
+/** H2 (2026-09-17): Answer % is the Department Dashboard's formula. */
+function test_cdrAnswerPct_isTheDashboardFormula() {
+  _assertEq(cdrAnswerPct_(8, 2), 80, '8/(8+2)');
+  _assertEq(cdrAnswerPct_(8, 1), 89, 'rung is NOT the denominator: 10 rung / 8 ans / 1 missed reads 89, not 80');
+  _assertEq(cdrAnswerPct_(11, 1), 92, 'whole percent, like the dashboard cell (91.67 -> 92, never 91.7)');
+  _assertEq(cdrAnswerPct_(0, 0), 0, 'nothing to divide -> 0');
+  const saved = _cdrStandardsMemo;
+  try {
+    _cdrStandardsMemo = { dept: 'CSR', target: null, band: null, teamAvgExcludes: [], source: 'no-tab' };
+    const sh = cdrStandardShip_(getCdrDashboardStandard_());
+    _assertEq(sh.alertThreshold, null, 'no published standard -> null target (no line, no tone, no badge)');
+    _assertEq(sh.standardSource, 'no-tab');
+  } finally { _cdrStandardsMemo = saved; }
+}
+
+/** H2: the published Team Avg Excludes leave the BENCHMARK, never the totals. */
+function test_teamBenchmark_subtractsPublishedExcludes() {
+  const agents = {
+    A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
+    B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
+    Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },
+  };
+  _assertEq(dashboardTeamAggregate_(agents, 2, ['Mgr']).team.pctAnswered, 85, 'benchmark without the manager');
+  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 85.7, 'with the manager it drifts');
+  const ser = metricsTeamAvgSeries_({ '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } }, ['2026-05-15'], 'v', 3, ['Mgr']);
+  _assertEq(ser[0].avg, 90, 'the anonymized series excludes too');
+}
+
+/** H2 (integration): the standard against a REAL `Dashboard Standards` tab in
+ *  the TEST CDR fixture -- header-name read, own dept row, excludes parsed --
+ *  and the endpoints ship it. The tab is deleted after. */
+function test_dashboardStandard_readsFixtureTab() {
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_STANDARDS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_STANDARDS_TAB);
+    try {
+      tab.getRange(1, 1, 3, 6).setValues([
+        ['Department', 'Answer Target', 'Amber Band', 'Team Avg Excludes', 'Published At', 'Published By'],
+        [cdrDashboardDept_(), 92, 2, _TEST_PH_NAME, '2026-09-17T00:00:00', 'test'],
+        ['*', 80, 10, '', '2026-09-17T00:00:00', 'test'],
+      ]);
+      SpreadsheetApp.flush();
+      _cdrStandardsMemo = null;
+      const std = getCdrDashboardStandard_();
+      _assertEq(std.source, 'sheet');
+      _assertEq(std.target, 92); _assertEq(std.band, 2);
+      _assertEq(std.teamAvgExcludes, [_TEST_PH_NAME], 'the excludes list parses');
+      const my = _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
+      _assertEq(my.alertThreshold, 92, 'getMyMetrics ships the published target');
+      _assertEq(my.alertBand, 2, '...and its band');
+      _assertEq(my.standardSource, 'sheet');
+    } finally {
+      _cdrStandardsMemo = null;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
+}
+
+/** H1 (integration): the reader against a REAL `Company Holidays` tab in the
+ *  TEST CDR fixture -- header-name read, a coerced Date cell keyed in the
+ *  spreadsheet tz, and the consumers downstream. The tab is deleted after. */
+function test_companyHolidays_readsFixtureTab() {
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_HOLIDAYS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_HOLIDAYS_TAB);
+    try {
+      tab.getRange(1, 1, 1, 4).setValues([['Dates', 'Label', 'Active', 'Notes']]);
+      tab.getRange(2, 1, 3, 1).setNumberFormat('@');
+      tab.getRange(2, 1, 3, 4).setValues([
+        ['2026-11-26..2026-11-27', 'Thanksgiving', '', ''],
+        ['2026-01-01', 'parked', 'FALSE', ''],
+        ['2026-12-25', 'Christmas', 'TRUE', ''],
+      ]);
+      // A cell WITHOUT the text pin, as an operator typing a date would leave it:
+      // Sheets coerces it to a Date; the reader must key it in the sheet's tz.
+      tab.getRange(5, 1).setValue('2026-07-03');
+      tab.getRange(5, 2).setValue('Observed 4th');
+      SpreadsheetApp.flush();
+      _cdrHolidaysMemo = null;
+      const out = getCdrCompanyHolidayRanges_();
+      _assertEq(out.source, 'sheet');
+      _assertEq(out.ranges.map(r => r.from + '..' + r.to).sort(), ['2026-07-03..2026-07-03', '2026-11-26..2026-11-27', '2026-12-25..2026-12-25'], 'parked row skipped; range, plain and coerced cells all parse');
+      _assertEq(getCompanyHolidays_(2026).map(h => h.date), ['2026-07-03', '2026-11-26', '2026-11-27', '2026-12-25']);
+      _assertEq(prevWorkdayIso_('2026-11-30'), '2026-11-25', 'the Monday after Thanksgiving week looks back to Wednesday');
+    } finally {
+      _cdrHolidaysMemo = null;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
 }
 
 function test_holidays_independenceDay_weekendShift() {
@@ -5446,6 +5577,13 @@ function test_metrics_cdrRowDateIso_isoString() {
 function test_metrics_cdrRowDateIso_usFormat() {
   _assertEq(cdrRowDateIso_('5/28/26', CONFIG.TIMEZONE),   '2026-05-28', 'M/D/YY → ISO');
   _assertEq(cdrRowDateIso_('12/3/2026', CONFIG.TIMEZONE), '2026-12-03', 'M/D/YYYY → ISO, zero-padded');
+}
+// H3: a Sheets serial (a date cell under a NUMBER format) is a date, not a
+// dropped row -- and it is formatted in UTC, so the sheet tz cannot shift it.
+function test_metrics_cdrRowDateIso_serial() {
+  _assertEq(cdrRowDateIso_(46000, 'America/Mexico_City'), '2025-12-09', 'serial 46000 -> 2025-12-09 whatever tz the sheet is on');
+  _assertEq(cdrRowDateIso_(45726, 'America/Mexico_City'), '2025-03-10', 'serial 45726 -> 2025-03-10');
+  _assertEq(cdrRowDateIso_(12, CONFIG.TIMEZONE), '', 'a small integer is not a date');
 }
 
 // ── isCdrQueueSentinel_ (queue rows excluded from agent stats) ──

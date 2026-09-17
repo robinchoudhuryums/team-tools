@@ -2877,3 +2877,119 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the defect (a property, a `CONFIG.` fallback) — a bite-check showed none of
   them would have caught a warehouse hard-coded one layer down, so it now
   asserts the registry is BUILT EMPTY.
+
+<a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
+
+- **The holiday calendar is the CDR Report's `Company Holidays` tab, and it
+  REPLACES the federal list rather than adding to it (H1, 2026-09-17).** A
+  cross-repo evaluation against `call-data-reporting` found the two apps on
+  different calendars: the Department Dashboard walked its business days over
+  an operator-curated holiday list that lived in a Script Property nothing
+  outside that project could read, while this app's Metrics "previous workday"
+  (`prevWorkdayIso_`, `mPrevWorkdayIso_`, `metricsWorkdayIsos_`) walked
+  WEEKENDS ONLY -- so the morning after every company holiday, My Stats
+  "Yesterday" landed on the holiday, an empty CDR day, and every rate read
+  zero -- and every OTHER business-day walk here (coverage, punctuality, PTO
+  conflict labels, the business-minutes core) used a hard-coded US-FEDERAL
+  list (`getUsHolidays_`) the company does not close for (Columbus Day,
+  Veterans Day). Two calendars inside one app, a third in the other. The
+  dashboard now publishes its list as a `Company Holidays` tab in the CDR
+  Report workbook (its Operator State #27: one range per row, `2026-12-25` or
+  `2026-11-26..2026-11-27`, a comma list in one cell also parses, `Active`
+  FALSE parks a row). `getCdrCompanyHolidayRanges_` (40_metrics.js) reads it
+  BY HEADER NAME with a one-hour CacheService tier that the
+  `_TEST_OVERRIDE_CDR_SS_ID` seam bypasses, keys a coerced Date cell in the
+  SPREADSHEET's tz (the g00 twin for dates), and reports a `source` --
+  `sheet` / `empty` / `no-tab` / `unavailable` -- rather than a bare `[]`, and
+  an `unavailable` read is never cached so the next request retries.
+  `getCompanyHolidays_(year)` (10_core.js) is the ONE accessor every consumer
+  reads: the tab WINS the moment it holds one range, and the federal list is
+  only the fail-open for `empty` / `no-tab` / `unavailable`. **Never a union:**
+  merging would keep Columbus Day a holiday after the operator listed the real
+  closures, which is the bug being closed; and the dashboard has NO federal
+  fallback at all, so an unlisted year is a year with no holidays on both
+  sides and the tab is maintained yearly. The client gets the same list as
+  `window.SERVER_COMPANY_HOLIDAYS` (doGet → index.html, catch → `[]`), so
+  `mPrevWorkdayIso_` and the server agree; `test/visual/build.mjs` strips that
+  scriptlet BEFORE the straggler strip, the SERVER_BUILD_STAMP rule.
+  `getUsHolidays_` is referenced exactly twice in the server -- its own
+  definition and the fallback -- and the H1-3 pin counts them. Fires when you
+  compute a "previous workday", walk business days, or read `getUsHolidays_`
+  directly. Verify: the H1-1..H1-5 pins, `test_companyHolidays_tabWinsElseFederal`,
+  `test_companyHolidays_readsFixtureTab`; the dashboard side is pinned in
+  call-data-reporting's `util.test.js` / `setup.test.js`.
+
+<a id="g124-answer-is-the-dashboard-s-formula-and"></a>
+
+- **Answer % is the Department Dashboard's formula (`answered / (answered +
+  missed)`), and the target, amber band and team-average exclusions it is
+  judged against are READ from the dashboard's published `Dashboard
+  Standards` tab -- never a hand-carried number (H2, 2026-09-17).** The
+  cross-repo evaluation found a CSR rep's "% Answered" here divided by
+  `totalRung` while the manager's dashboard divides by `answered + missed`;
+  in the DQE build rung counts EVERY window leg and answered/missed are two
+  specific dispositions, so the two rates differ whenever a leg carries a
+  third. On top of that this app warned at a single CONFIG `85` where the
+  CSR dashboard tints against 92 with a 2-pt amber band, and its anonymized
+  team line included the manager's token call volume the dashboard's INV-26
+  subtracts. A rep at 88% was green here and amber to their manager. Now:
+  `cdrAnswerPct_` is the ONE formula and every rate site routes through it
+  (the H2-1 pin bans any surviving `/ rung` division) -- and it rounds to a
+  WHOLE percent, because the dashboard's Answer % cell does: a 91.7 here
+  beside a 92 there is the same row tinted amber and green; the dashboard repo
+  publishes its resolution into a `Dashboard Standards` tab in the CDR
+  Report workbook (its Operator State #37 -- one row per dashboard dept plus
+  a `*` global row), and `getCdrDashboardStandard_` (40_metrics.js) reads it
+  BY HEADER NAME for `CONFIG.CDR_DASHBOARD_DEPT` (Script Property override;
+  the dashboard's roster HEADER, not this app's dept labels), falling back
+  to the `*` row, with a `source` verdict (`sheet` / `global` / `no-row` /
+  `empty` / `no-tab` / `unavailable`) and a NULL target on every non-sheet
+  verdict. The four metrics endpoints ship `alertThreshold` / `alertBand` /
+  `standardSource` through the one `cdrStandardShip_` shape; a null target
+  renders NO target line, NO tone (`mPctClass_` and `dashPctTone_` both
+  refuse) and NO sidebar badge (`getMetricsAmbient` returns
+  `{ badge: null, unavailable: 'standard' }`) -- the old legacy 80/50 band
+  and the 85 cutoff were verdicts against numbers nobody set (g122). The
+  excludes leave the BENCHMARK only (`dashboardTeamAggregate_`,
+  `metricsTeamAvgSeries_`); `teamTotals` keeps everyone, matching the
+  dashboard's R18 ruling. The formula change bumped every cache key that
+  carries a rate (`cdr_metrics_v4`, `dash_metrics_v5`, `metrics_my_v3`,
+  `metrics_range_v3`, `team_metrics_v3`, `metrics_ambient_v2`) -- INV-85:
+  a rate under the old formula must never serve under the new shape for the
+  TTL. Fires when you compute or tone an answer rate, add a KPI band, or
+  read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins,
+  `test_cdrAnswerPct_isTheDashboardFormula`,
+  `test_teamBenchmark_subtractsPublishedExcludes`,
+  `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
+  call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
+  `system-health.test.js`.
+
+<a id="g125-a-dqe-read-is-bounded-by-a-span"></a>
+
+- **A DQE read is bounded by a date-column SPAN, never a tail scan -- and a
+  bare Sheets serial in the Date column is a date, not a dropped row (H3,
+  2026-09-17).** The cross-repo evaluation found both DQE readers reading the
+  WHOLE `DQE Historical Data` tab at full width TWICE per call (`getValues` +
+  `getDisplayValues`, ~31k rows and growing daily) where the dashboard reads a
+  span, shielded here only by the 5-min / 6-h caches -- a cold Dashboard open
+  paid four full scans -- and `cdrRowDateIso_` had no branch for a NUMBER, so
+  a date cell that had picked up a number format read as `'46000'`, matched
+  neither string shape, and the row vanished from My Stats with no error (the
+  dashboard's F-8 class; rare, since its nightly sort check refuses such
+  columns, but silent). Now `cdrDqeWindowSpan_` scans the DATE column alone,
+  finds the FIRST and LAST row inside the window, and each reader reads only
+  that span at full width. Two rules ride with it. (1) The per-row date
+  filter in every reader STAYS: a span is correct whatever the row order is
+  because an out-of-order backfill merely WIDENS it, so the span bounds the
+  read and the filter still decides what counts. (2) Never "optimize" it to a
+  tail scan: the tab is appended at `getLastRow()+1` and only re-sorted
+  afterwards, so a backfilled older date can sit below newer rows and a tail
+  scan stops early and silently drops it -- quietly wrong numbers, strictly
+  worse than slow. The serial branch formats in UTC on purpose: the derived
+  instant is UTC midnight of the calendar date, and the CDR workbook's
+  `America/Mexico_City` would render the previous evening and shift every such
+  row back a day. Fires when you read a dated CDR tab, add a DQE reader, or
+  touch `cdrRowDateIso_`. Verify: the H3-1..H3-4 pins (serial + UTC, the span
+  behavioural, the real reader over an out-of-order fixture equal to the old
+  full scan, both readers routed with the filter kept) and
+  `test_metrics_cdrRowDateIso_serial`.

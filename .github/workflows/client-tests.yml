@@ -20,6 +20,13 @@ on:
 jobs:
   client-tests:
     runs-on: ubuntu-latest
+    env:
+      # H3 (from the dashboard repo's ci.yml): pin the process timezone to the
+      # manifest's so harness Date construction (new Date(y, m, d)) renders the
+      # same calendar labels CI-side as production. The runner's UTC default
+      # happened to be green; pinning makes "green" mean the same thing on
+      # every machine, and a future TZ-sensitive pin cannot pass by accident.
+      TZ: America/Chicago
     steps:
       - uses: actions/checkout@v4
 

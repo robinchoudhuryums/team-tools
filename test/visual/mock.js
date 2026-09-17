@@ -286,7 +286,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     }, over || {});
   }
 
-  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89.1, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
+  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
   // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
   // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
   function isWeekendIso(iso) { var dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return dow === 0 || dow === 6; }
@@ -429,7 +429,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // mirror the real server contract; two prior violations produced convincing
     // FAKE defects, so this is a correctness issue for the harness itself.
     // Operator #4/#5 (2026-08-06): alertThreshold mirrors the server's
-    // CONFIG.CDR_ALERT_THRESHOLD ship; `transfer` is the own-day scalar
+    // published-standard ship (H2: read from the CDR Report's Dashboard
+    // Standards tab, alertBand riding with it); `transfer` is the own-day scalar
     // ({transferred, transferPct}, null = absent — INV-180 zero-vs-absence).
     // F14 (cycle 18) — a FUNCTION, because this endpoint's response ECHOES the
     // date it was asked for and the client's hero kicker branches on it
@@ -464,7 +465,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the
     // single-day volume: 254 answered, 218 notes -> round(218/254*100) = 86.
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
-      cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
+      cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
       transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
@@ -486,7 +487,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
-          totalMissed: missed, pctAnswered: Math.round((ans / rung) * 1000) / 10,
+          totalMissed: missed, pctAnswered: Math.round((ans / (ans + missed)) * 100),
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
           transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
@@ -540,7 +541,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
         queueRows: qRows,
-        alertThreshold: 85,   // #4 — mirrors CONFIG.CDR_ALERT_THRESHOLD
+        alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
+        alertBand: 5,         // H2 — the amber band that rides with it
         // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
         // hand, and had already drifted — it omitted the per-group queues.sort()
         // the server does, so the screenshot showed a group's queues in the
@@ -557,7 +559,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getDashboardMetrics: function (period) {
       var mtd = (period === 'mtd');
       return { period: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
-        own: { answered: 41, missed: 5, pctAnswered: 89.1, attSeconds: 281, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
+        own: { answered: 41, missed: 5, pctAnswered: 89, attSeconds: 281, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
         team: { answered: 388, missed: 41, pctAnswered: 78.4, attSeconds: 252, attFormatted: '4:12', transferPct: 24.1 },
         // MTD compares against the prior month's SAME elapsed days.
         prev: mtd ? { from: daysAgo(53), to: daysAgo(31), label: 'Jul 1–23',

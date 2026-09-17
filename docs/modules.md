@@ -96,11 +96,23 @@ not restate it. Server endpoints live in the fourteen server files
      WORKDAY (Monday shows Friday; operator 2026-08-17: CDR data is never
      populated same-day, so a Today preset always showed an empty day; the
      manager Team Metrics tab deliberately keeps Today for same-day note
-     counts) — (server-aggregated via
+     counts; since H1 (2026-09-17) the walk ALSO steps over company holidays,
+     read from the CDR Report's `Company Holidays` tab — the same calendar the
+     Department Dashboard uses, so the morning after a holiday "Yesterday" is
+     the last real workday, not an empty day; g123). Since H2 (2026-09-17) Answer % is the dashboard's formula
+     (`answered / (answered + missed)`) and the target line, table band,
+     Clock tone and sidebar badge judge against the dashboard's PUBLISHED
+     per-dept standard (the CDR Report's `Dashboard Standards` tab; no tab =
+     no verdict), with the team benchmark subtracting its Team Avg Excludes
+     (g124) — (server-aggregated via
      `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
      line/series), rail-row sparklines, and a sortable + sticky-header team
      table with tri-tone % cells (the table renders via the shared
-     `mtRenderTable_` component, see Key Design Decisions).
+     `mtRenderTable_` component, see Key Design Decisions). Since H3
+     (2026-09-17) both DQE readers are SPAN-bounded — `cdrDqeWindowSpan_`
+     scans the date column and each reader reads only the window's row span
+     at full width, keeping its per-row filter — and a bare Sheets serial in
+     the Date column is a date rather than a silently dropped row (g125).
      **Intake-call analytics (operator 2026-08-25):** long PPD /
      account-creation calls are EXPLAINABLE beside the KPIs as honest
      COUNTS — per-call CDR attribution does not exist (DQE is one row per

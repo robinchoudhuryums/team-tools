@@ -1765,7 +1765,7 @@ function getManagerDashboard() {
     pending.forEach(p => { pendingYears[p.date.substring(0, 4)] = true; });
     const holidayMap = {};
     Object.keys(pendingYears).forEach(y => {
-      getUsHolidays_(parseInt(y, 10)).forEach(h => { holidayMap[h.date] = h.name; });
+      getCompanyHolidays_(parseInt(y, 10)).forEach(h => { holidayMap[h.date] = h.name; });
     });
     pending.forEach(p => {
       const sameDate = requestsByDate[p.date] || [];
@@ -2105,8 +2105,8 @@ function getTeamCalendar(monthIso) {
     const calYear = parseInt(monthIso.substring(0, 4), 10);
     // December also consults year+1: a Jan 1 falling on a Saturday observes
     // on the PRIOR Dec 31 (fixedHoliday_'s shift), which lives in this month.
-    let holidayList = getUsHolidays_(calYear);
-    if (monthIso.substring(5) === '12') holidayList = holidayList.concat(getUsHolidays_(calYear + 1));
+    let holidayList = getCompanyHolidays_(calYear);
+    if (monthIso.substring(5) === '12') holidayList = holidayList.concat(getCompanyHolidays_(calYear + 1));
     holidayList.forEach(h => {
       if (h.date.substring(0, 7) === monthIso) holidays[h.date] = h.name;
     });
@@ -4906,7 +4906,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     });
   }
   allRequests.sort((a, b) => b.date.localeCompare(a.date));
-  const holidays = getUsHolidays_(year).filter(h => h.date >= startDate && h.date <= endDate);
+  const holidays = getCompanyHolidays_(year).filter(h => h.date >= startDate && h.date <= endDate);
   // MTD accrual preview — see the field comment on ptoAccrualMtd below.
   let ptoAccrualMtd = null;
   if (emp.ptoAccrualPerBasis && todayStr >= startDate && todayStr <= endDate) {
@@ -5489,7 +5489,7 @@ function getCoveragePlan(fromDate, toDate) {
     const holMap = {};
     const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
     Object.keys(yrs).forEach(function (y) {
-      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      try { getCompanyHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
       catch (e) { /* ignore */ }
     });
 
@@ -5699,7 +5699,7 @@ function getPunctualityReport(fromDate, toDate) {
     const holMap = {};
     const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
     Object.keys(yrs).forEach(function (y) {
-      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      try { getCompanyHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
       catch (e) { /* ignore */ }
     });
 

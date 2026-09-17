@@ -188,6 +188,7 @@ function buildSandbox(files, extraGlobals) {
     addEventListener() {}, removeEventListener() {}, open() { return null; },
     location: { search: '', href: 'https://example.test/' },
     SERVER_QUERY_PARAMS: {},
+    SERVER_COMPANY_HOLIDAYS: [],
     matchMedia() { return { matches: false, addEventListener() {} }; },
     setTimeClockMode() {}, syncThemeToggleState() {},
     localStorage: {

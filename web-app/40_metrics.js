@@ -130,6 +130,18 @@ function cdrFmtHms_(totalSec) {
 }
 function cdrRowDateIso_(val, tz) {
   if (val instanceof Date) return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+  // H3 (2026-09-17): a Sheets SERIAL -- a date cell under a NUMBER format
+  // reads as e.g. 46000 (days since 1899-12-30). Before this branch the
+  // String() below produced '46000', matched neither shape, and the row was
+  // DROPPED with no error (the dashboard's F-8 class). The derived instant
+  // is UTC MIDNIGHT of the calendar date, so it MUST be formatted in UTC: a
+  // west-of-UTC tz (the CDR workbook's America/Mexico_City) renders the
+  // previous evening and silently shifts the row back a day. The plausible
+  // range (~1982..~2100) keeps a small integer from reading as a date.
+  if (typeof val === 'number' && val > 30000 && val < 100000) {
+    var serial = new Date(Math.round((val - 25569) * 86400000));
+    return isNaN(serial.getTime()) ? '' : Utilities.formatDate(serial, 'UTC', 'yyyy-MM-dd');
+  }
   var s = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
   var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
@@ -210,6 +222,31 @@ function cdrLikelyNameMismatches_(rosterWithNoCdr, unmatchedAgents) {
   }
   return out;
 }
+/** H3 (2026-09-17): the SPAN-bounded DQE read, ported from the dashboard's
+ *  `dqeWindowRowSpan_` (its R41). Scan the DATE column alone, find the FIRST
+ *  and LAST row inside [fromIso, toIso], and let the caller read only that row
+ *  span at full width. Before this both DQE readers read the WHOLE sheet at
+ *  full width TWICE (getValues + getDisplayValues) on every call -- ~31k rows
+ *  and growing daily, shielded only by the 5-min / 6-h caches.
+ *  A span is correct whatever the row order is: an out-of-order row WIDENS it
+ *  and can never fall outside it, which is why the per-row date filter in
+ *  every caller STAYS -- the span bounds the read, it does not replace the
+ *  filter. A TAIL scan would be the trap: DQE Historical Data is appended at
+ *  getLastRow()+1 and only re-sorted after the fact, so a backfill of older
+ *  dates can sit below newer rows and a tail scan stops early and silently
+ *  drops them. Returns null when no row is in the window. */
+function cdrDqeWindowSpan_(sheet, lastRow, fromIso, toIso, tz) {
+  if (lastRow < 2) return null;
+  var dates = sheet.getRange(2, CDR.DATE, lastRow - 1, 1).getValues();
+  var first = -1, last = -1;
+  for (var i = 0; i < dates.length; i++) {
+    var iso = cdrRowDateIso_(dates[i][0], tz);
+    if (!iso || iso < fromIso || iso > toIso) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  return first < 0 ? null : { startRow: 2 + first, numRows: last - first + 1 };
+}
 function validateCdrColumns_(sheet) {
   if (_cdrColumnsValidated) return _cdrColumnWarning;
   _cdrColumnsValidated = true;
@@ -257,6 +294,226 @@ function getCdrNameMap_() {
   _cdrNameMapExpiry = now + (CONFIG.CDR_CACHE_TTL * 1000);
   return map;
 }
+// ── Company holidays (H1, 2026-09-17) ────────────────────────────────────
+// The dashboard repo publishes its holiday list as a `Company Holidays` tab in
+// the CDR Report workbook (its Operator State #27; the tab replaced a Script
+// Property nothing outside that project could read). This reader is the one
+// place team-tools consumes it. Read BY HEADER NAME (the Inbound / Transfer
+// tab discipline -- a column added on the owner's side cannot shift ours),
+// one range per row in the owner's Skip Dates grammar, Active FALSE parked.
+// A Dates cell Sheets coerced to a Date is keyed in the SPREADSHEET's tz
+// (the CDR sheet is America/Mexico_City; the g00/INV-64 twin for dates).
+// Fail-OPEN by shape: `source` says what happened -- 'sheet' (ranges came
+// from the tab), 'empty' (tab present, no active range), 'no-tab' (a pre-H1
+// workbook), 'unavailable' (the read threw; NOT cached, so the next request
+// retries) -- and getCompanyHolidays_ falls back to the federal list on
+// anything but 'sheet'. Cached one hour (a holiday edit is not urgent to
+// the minute; a page load must not open a second workbook every time), and
+// the CacheService tier is BYPASSED under _TEST_OVERRIDE_CDR_SS_ID like the
+// other CDR readers, so a fixture read never serves prod's list or vice versa.
+var CDR_HOLIDAYS_CACHE_KEY_ = 'cdr_holidays_v1';
+var CDR_HOLIDAYS_CACHE_TTL_ = 3600;
+var CDR_HOLIDAYS_MAX_RANGES_ = 400;   // a runaway tab must not become a runaway payload
+
+/** PURE (Node-pinned): the owner's Skip Dates grammar -- single ISO dates,
+ *  inclusive `a..b` ranges, comma lists, whitespace anywhere; malformed tokens
+ *  dropped, reversed ranges swapped. Mirrors call-data-reporting's
+ *  parseSkipDateRanges_ so the two apps read one cell the same way. */
+function cdrParseDateRanges_(raw) {
+  if (!raw) return [];
+  var iso = /^\d{4}-\d{2}-\d{2}$/;
+  var out = [];
+  String(raw).split(',').forEach(function (tok) {
+    tok = tok.trim();
+    if (!tok) return;
+    var parts = tok.split('..').map(function (x) { return x.trim(); });
+    var from = '', to = '';
+    if (parts.length === 1 && iso.test(parts[0])) { from = to = parts[0]; }
+    else if (parts.length === 2 && iso.test(parts[0]) && iso.test(parts[1])) {
+      from = parts[0]; to = parts[1];
+      if (from > to) { var t = from; from = to; to = t; }
+    } else return;
+    out.push({ from: from, to: to });
+  });
+  return out;
+}
+
+/** { ranges: [{from, to, name}], source } -- see the block comment above. */
+function getCdrCompanyHolidayRanges_() {
+  if (_cdrHolidaysMemo) return _cdrHolidaysMemo;
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  if (useCache) {
+    try {
+      var hit = CacheService.getScriptCache().get(CDR_HOLIDAYS_CACHE_KEY_);
+      if (hit) { _cdrHolidaysMemo = JSON.parse(hit); return _cdrHolidaysMemo; }
+    } catch (_) {}
+  }
+  var out = { ranges: [], source: 'no-tab' };
+  try {
+    var ss = getCdrSS_();
+    var sheet = ss.getSheetByName(CONFIG.CDR_HOLIDAYS_TAB);
+    if (sheet) {
+      var rows = sheet.getDataRange().getValues();
+      out.source = 'empty';
+      if (rows.length >= 2) {
+        var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var iDates = hdr.indexOf('dates');
+        if (iDates < 0) iDates = hdr.findIndex(function (h) { return /^date/.test(h); });
+        if (iDates < 0) iDates = 0;
+        var iLabel = hdr.indexOf('label');
+        var iActive = hdr.indexOf('active');
+        var tz = ss.getSpreadsheetTimeZone();
+        for (var i = 1; i < rows.length && out.ranges.length < CDR_HOLIDAYS_MAX_RANGES_; i++) {
+          var r = rows[i];
+          if (iActive >= 0) {
+            var a = r[iActive];
+            if (a === false || String(a == null ? '' : a).trim().toLowerCase() === 'false') continue;
+          }
+          var cell = r[iDates];
+          if (cell instanceof Date) {
+            if (isNaN(cell.getTime())) continue;
+            cell = Utilities.formatDate(cell, tz, 'yyyy-MM-dd');
+          }
+          var spec = String(cell == null ? '' : cell).trim();
+          if (!spec) continue;
+          var name = iLabel >= 0 ? String(r[iLabel] == null ? '' : r[iLabel]).trim() : '';
+          cdrParseDateRanges_(spec).forEach(function (rg) {
+            out.ranges.push({ from: rg.from, to: rg.to, name: name || 'Company holiday' });
+          });
+        }
+        if (out.ranges.length) out.source = 'sheet';
+      }
+    }
+  } catch (e) {
+    out = { ranges: [], source: 'unavailable', error: String(e && e.message || e) };
+    Logger.log('getCdrCompanyHolidayRanges_ unavailable (federal list serves): ' + out.error);
+  }
+  if (useCache && out.source !== 'unavailable') {
+    try { CacheService.getScriptCache().put(CDR_HOLIDAYS_CACHE_KEY_, JSON.stringify(out), CDR_HOLIDAYS_CACHE_TTL_); } catch (_) {}
+  }
+  _cdrHolidaysMemo = out;
+  return out;
+}
+
+// ── Answer % (H2, 2026-09-17) ─────────────────────────────────────────────
+// PURE (Node-pinned): the ONE Answer % formula, and it is the Department
+// Dashboard's -- answered / (answered + missed). `totalRung` counts EVERY
+// window leg in the DQE build (call-data-reporting's
+// buildDQEHistoricalData.js), while answered and missed are two specific
+// dispositions, so `answered / rung` -- what this app computed until H2 --
+// is a DIFFERENT number whenever a leg carries a third disposition, and a
+// rep saw one rate here and their manager another for the same DQE row.
+// Rounded to a WHOLE percent, because that is what the dashboard's Answer %
+// cell prints (script-5-dept.html: `Math.round(pa / pt * 100)`) -- a 91.7
+// here against a 92 there would tint amber vs green on the same row, which
+// is the disagreement H2 exists to remove. 0 when there is nothing to divide.
+function cdrAnswerPct_(answered, missed) {
+  var a = Number(answered) || 0, m = Number(missed) || 0;
+  var denom = a + m;
+  return denom > 0 ? Math.round((a / denom) * 100) : 0;
+}
+
+// ── Dashboard Standards (H2) ─────────────────────────────────────────────
+// The dashboard repo publishes its RESOLVED display standards as a
+// `Dashboard Standards` tab in the CDR Report workbook (its Operator State
+// #37): one row per dashboard dept plus a `*` global row -- the answer
+// target + amber band every dept-context tint resolves through there, and
+// the effective team-average exclusions (its INV-26). Read BY HEADER NAME;
+// THIS team's row is CONFIG.CDR_DASHBOARD_DEPT (Script Property override),
+// with the `*` row as the fallback when the dept has no row. Fail-OPEN by
+// shape: `source` says what happened ('sheet' | 'global' (the `*` row served)
+// | 'no-row' | 'empty' | 'no-tab' | 'unavailable'), and on anything but
+// 'sheet' / 'global' `target` is NULL -- the consumers then render NO target
+// line, NO tone and NO badge rather than a number nobody set (g122's rule; a
+// colour is a verdict). 'unavailable' is never cached. One-hour tier, bypassed
+// under _TEST_OVERRIDE_CDR_SS_ID like every other CDR reader.
+var CDR_STANDARDS_CACHE_KEY_ = 'cdr_standards_v1';
+var CDR_STANDARDS_CACHE_TTL_ = 3600;
+
+function cdrDashboardDept_() {
+  try {
+    var p = PropertiesService.getScriptProperties().getProperty('CDR_DASHBOARD_DEPT');
+    if (p && String(p).trim()) return String(p).trim();
+  } catch (_) {}
+  return String(CONFIG.CDR_DASHBOARD_DEPT || '').trim();
+}
+
+/** { dept, target, band, teamAvgExcludes: [], source } -- see the block comment. */
+function getCdrDashboardStandard_() {
+  if (_cdrStandardsMemo) return _cdrStandardsMemo;
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  var dept = cdrDashboardDept_();
+  var key = CDR_STANDARDS_CACHE_KEY_ + ':' + dept;
+  if (useCache) {
+    try {
+      var hit = CacheService.getScriptCache().get(key);
+      if (hit) { _cdrStandardsMemo = JSON.parse(hit); return _cdrStandardsMemo; }
+    } catch (_) {}
+  }
+  var out = { dept: dept, target: null, band: null, teamAvgExcludes: [], source: 'no-tab' };
+  try {
+    var ss = getCdrSS_();
+    var sheet = ss.getSheetByName(CONFIG.CDR_STANDARDS_TAB);
+    if (sheet) {
+      var rows = sheet.getDataRange().getValues();
+      out.source = 'empty';
+      if (rows.length >= 2) {
+        var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var iDept = hdr.indexOf('department'), iTarget = hdr.indexOf('answer target'),
+            iBand = hdr.indexOf('amber band'), iEx = hdr.indexOf('team avg excludes');
+        if (iDept < 0 || iTarget < 0) {
+          out.source = 'unavailable';
+          out.error = 'header drift: Department / Answer Target not found';
+        } else {
+          var own = null, star = null;
+          for (var i = 1; i < rows.length; i++) {
+            var d = String(rows[i][iDept] == null ? '' : rows[i][iDept]).trim();
+            if (!d) continue;
+            if (d === dept && !own) own = rows[i];
+            else if (d === '*' && !star) star = rows[i];
+          }
+          var row = own || star;
+          if (!row) out.source = 'no-row';
+          else {
+            var t = Number(row[iTarget]);
+            var b = iBand >= 0 ? Number(row[iBand]) : NaN;
+            if (isFinite(t) && t > 0 && t <= 100) {
+              out.target = Math.round(t * 10) / 10;
+              out.band = (isFinite(b) && b >= 0 && b <= 50) ? Math.round(b * 10) / 10 : null;
+              out.teamAvgExcludes = iEx >= 0
+                ? String(row[iEx] == null ? '' : row[iEx]).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+                : [];
+              out.source = own ? 'sheet' : 'global';
+            } else {
+              out.source = 'unavailable';
+              out.error = 'row for ' + (own ? dept : '*') + ' has no usable Answer Target';
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    out = { dept: dept, target: null, band: null, teamAvgExcludes: [], source: 'unavailable', error: String(e && e.message || e) };
+    Logger.log('getCdrDashboardStandard_ unavailable (no target served): ' + out.error);
+  }
+  if (useCache && out.source !== 'unavailable') {
+    try { CacheService.getScriptCache().put(key, JSON.stringify(out), CDR_STANDARDS_CACHE_TTL_); } catch (_) {}
+  }
+  _cdrStandardsMemo = out;
+  return out;
+}
+
+/** PURE (Node-pinned): the standard's fields as the endpoints ship them --
+ *  null target/band when the standard is not available, so a client renders
+ *  nothing rather than a number nobody set. */
+function cdrStandardShip_(std) {
+  return {
+    alertThreshold: (std && std.target != null) ? std.target : null,
+    alertBand: (std && std.target != null && std.band != null) ? std.band : null,
+    standardSource: (std && std.source) || 'unavailable',
+  };
+}
+
 function cdrRosterHash_(rosterNames) {
   if (!rosterNames || rosterNames.length === 0) return 'all';
   var digest = Utilities.computeDigest(
@@ -293,9 +550,12 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { agents: {}, meta: { rowsScanned: 0, columnWarning: colWarning } };
 
-  var range = sheet.getRange(2, 1, lastRow - 1, 34);
-  var values = range.getValues();
-  var displays = range.getDisplayValues();
+  // H3: span-bounded -- the date column decides which rows are read at full
+  // width; the per-row date filter below still decides which rows COUNT.
+  var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
+  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
+  var values = range ? range.getValues() : [];
+  var displays = range ? range.getDisplayValues() : [];
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -346,8 +606,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   Object.keys(agents).forEach(function (k) {
     var a = agents[k];
     a.attSeconds = a.attCount > 0 ? Math.round(a.attSum / a.attCount) : 0;
-    a.pctAnswered = a.totalRung > 0
-      ? Math.round((a.totalAnswered / a.totalRung) * 1000) / 10 : 0;
+    a.pctAnswered = cdrAnswerPct_(a.totalAnswered, a.totalMissed);   // H2: the dashboard's formula
     a.tttFormatted = cdrFmtHms_(a.tttSeconds);
     a.attFormatted = cdrFmtHms_(a.attSeconds);
     delete a._dates; delete a.attSum; delete a.attCount;
@@ -358,8 +617,8 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   try {
     var payload = JSON.stringify(result);
     // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
-    // put THROWS (caught below, but every subsequent read then re-scans the
-    // whole DQE tab twice per open). Skip the doomed put explicitly with a
+    // put THROWS (caught below, but every subsequent read then re-reads the
+    // DQE window twice per open). Skip the doomed put explicitly with a
     // headroom margin so the behavior is deliberate + logged, not an
     // exception path; a large-team YTD aggregate is the realistic trigger.
     if (payload.length > 95000) {
@@ -392,9 +651,11 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { daily: {}, agents: {} };
 
-  var range = sheet.getRange(2, 1, lastRow - 1, 34);
-  var values = range.getValues();
-  var displays = range.getDisplayValues();
+  // H3: span-bounded (see cdrDqeWindowSpan_); the per-row filter below stays.
+  var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
+  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
+  var values = range ? range.getValues() : [];
+  var displays = range ? range.getDisplayValues() : [];
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -450,14 +711,12 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   }
 
   Object.keys(daily).forEach(function (d) {
-    daily[d].pctAnswered = daily[d].rung > 0
-      ? Math.round((daily[d].answered / daily[d].rung) * 1000) / 10 : 0;
+    daily[d].pctAnswered = cdrAnswerPct_(daily[d].answered, daily[d].missed);   // H2
   });
   Object.keys(agents).forEach(function (k) {
     var a = agents[k];
     a.attSeconds = a.attCount > 0 ? Math.round(a.attSum / a.attCount) : 0;
-    a.pctAnswered = a.totalRung > 0
-      ? Math.round((a.totalAnswered / a.totalRung) * 1000) / 10 : 0;
+    a.pctAnswered = cdrAnswerPct_(a.totalAnswered, a.totalMissed);   // H2
     a.tttFormatted = cdrFmtHms_(a.tttSeconds);
     a.attFormatted = cdrFmtHms_(a.attSeconds);
     delete a._dates; delete a.attSum; delete a.attCount;
@@ -465,7 +724,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   Object.keys(perRepDaily).forEach(function (d) {
     Object.keys(perRepDaily[d]).forEach(function (ag) {
       var p = perRepDaily[d][ag];
-      p.pctAnswered = p.rung > 0 ? Math.round((p.answered / p.rung) * 1000) / 10 : 0;
+      p.pctAnswered = cdrAnswerPct_(p.answered, p.missed);   // H2
       // C17-4 (cycle 17) — a rep-day with zero answered calls has NO average
       // talk time, not an average of 0 (the INV-180 zero-is-absence rule).
       // The literal 0 here fed metricsTeamAvgSeries_ (`v != null` — 0 passes),
@@ -506,22 +765,41 @@ function metricsParsePercent_(s) {
  *  walk rendered two gaps per week on every sparkline. Weekends only — the
  *  manager trends (mgrWorkdaysEnding_) draw the same line. A reversed range
  *  yields []. */
-function metricsWorkdayIsos_(fromIso, toIso) {
+function metricsWorkdayIsos_(fromIso, toIso, holidays) {
   const out = [];
+  // H1: company holidays are not workdays either -- a holiday in the axis is
+  // an empty CDR day that reads as a zero. `holidays` is an {iso:true} map;
+  // omitted, the company calendar is consulted (federal fallback inside it).
+  // The typeof guard keeps the function PURE for the Node pin's bare vm.
+  let hol = holidays;
+  if (!hol) {
+    try { hol = (typeof companyHolidayMap_ === 'function') ? companyHolidayMap_(fromIso, toIso) : {}; }
+    catch (e) { hol = {}; }
+  }
   const endD = new Date(toIso + 'T12:00:00Z');
   for (let d = new Date(fromIso + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
     const dow = d.getUTCDay();
     if (dow === 0 || dow === 6) continue;
-    out.push(isoFromUtc_(d));
+    const iso = isoFromUtc_(d);
+    if (hol && hol[iso]) continue;
+    out.push(iso);
   }
   return out;
 }
-function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
+/** PURE: an {name: true} set from the dashboard's Team Avg Excludes list. */
+function cdrExcludeSet_(excludes) {
+  var ex = {};
+  (excludes || []).forEach(function (n) { var k = String(n == null ? '' : n).trim(); if (k) ex[k] = true; });
+  return ex;
+}
+function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort, excludes) {
   const min = minCohort || 3;
+  const ex = cdrExcludeSet_(excludes);   // H2: INV-26 exclusions leave the benchmark
   return (dates || []).map(function (d) {
     const byRep = (perRepDaily && perRepDaily[d]) || {};
     let sum = 0, count = 0;
     Object.keys(byRep).forEach(function (rep) {
+      if (ex[rep]) return;
       const v = byRep[rep] ? byRep[rep][valueKey] : null;
       if (v != null && isFinite(v)) { sum += Number(v); count++; }
     });
@@ -532,8 +810,8 @@ function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
  *  (metricsTeamAvgSeries_) for one KPI, aligned to `dates`. Returns
  *  [{ date, own, team, cohort }] (own/team null when absent / cohort-suppressed).
  *  Pinned by a Node test. */
-function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort) {
-  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort);
+function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort, excludes) {
+  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort, excludes);
   return (dates || []).map(function (d, i) {
     var byRep = (perRepDaily && perRepDaily[d]) || {};
     var raw = byRep[empName] ? byRep[empName][key] : null;
@@ -910,7 +1188,7 @@ function cdrQueueInventory_(from, to) {
     // and it does so through the REAL reader, so the production code path is
     // exercised on live data rather than only by fixtures. Costs one extra
     // read of the Transfer tab on an admin panel that already does a
-    // 34-column full-sheet DQE read; best-effort like everything else here.
+    // 34-column span-bounded DQE read; best-effort like everything else here.
     try {
       const tr = getCsrTransferPerRepDaily_(from, to, null, { withQueues: true });
       const totals = {}, reps = {};
@@ -986,11 +1264,16 @@ function dashboardPrevRange_(periodKey, todayIso) {
  *  map. Cohort = agents with totalRung > 0; team is null below minCohort
  *  (INV-124 — a small team can't be back-solved to an individual). ATT is
  *  answered-weighted across agents. */
-function dashboardTeamAggregate_(agentsMap, minCohort) {
+function dashboardTeamAggregate_(agentsMap, minCohort, excludes) {
   var rung = 0, answered = 0, missed = 0, attWeighted = 0, attDenom = 0, cohort = 0;
+  // H2: the dashboard's INV-26 exclusions (a manager on the roster who takes
+  // a token number of calls) leave the BENCHMARK, exactly as they leave the
+  // dashboard's team average; dept TOTALS (getTeamMetrics.teamTotals) keep
+  // everyone, matching its R18 ruling.
+  var ex = cdrExcludeSet_(excludes);
   Object.keys(agentsMap || {}).forEach(function (k) {
     var a = agentsMap[k];
-    if (!a || !(a.totalRung > 0)) return;
+    if (!a || !(a.totalRung > 0) || ex[k]) return;
     cohort++;
     rung += a.totalRung; answered += a.totalAnswered || 0; missed += a.totalMissed || 0;
     if (a.attSeconds > 0 && a.totalAnswered > 0) { attWeighted += a.attSeconds * a.totalAnswered; attDenom += a.totalAnswered; }
@@ -1000,7 +1283,7 @@ function dashboardTeamAggregate_(agentsMap, minCohort) {
     cohort: cohort,
     team: {
       rung: rung, answered: answered, missed: missed,
-      pctAnswered: rung > 0 ? Math.round((answered / rung) * 1000) / 10 : 0,
+      pctAnswered: cdrAnswerPct_(answered, missed),   // H2
       attSeconds: attDenom > 0 ? Math.round(attWeighted / attDenom) : 0,
     },
   };
@@ -1048,12 +1331,18 @@ function getDashboardMetrics(periodKey) {
     // tabs keep their 5-min caches); after the import lands, the data does
     // not change again that day — the operator's stated acceptance.
     var todayIso = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
-    var cacheKey = 'dash_metrics_v4:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v5 (H2, 2026-09-17): pctAnswered = answered/(answered+missed); the
+    // standard (alertThreshold/alertBand/standardSource) rides the payload
+    // from the published Dashboard Standards tab; the benchmark applies the
+    // dashboard's team-avg excludes.
+    var cacheKey = 'dash_metrics_v5:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
 
     var range = dashboardPeriodRange_(periodKey, todayIso);
+    var std = getCdrDashboardStandard_();   // H2 -- one read per execution (memo)
+    var ship = cdrStandardShip_(std);
     if (!range) return { error: 'Unknown period.' };
     var from = range.from, to = range.to;
 
@@ -1096,7 +1385,7 @@ function getDashboardMetrics(periodKey) {
       var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
-      var agg = dashboardTeamAggregate_(dqMap, MIN_COHORT);
+      var agg = dashboardTeamAggregate_(dqMap, MIN_COHORT, std.teamAvgExcludes);   // H2
       var trAgg = dashboardTeamTransfer_(trMap, MIN_COHORT);
       return {
         ownDq: dq,
@@ -1149,7 +1438,9 @@ function getDashboardMetrics(periodKey) {
       // client never mirrors a number the operator can change (INV-186 shape).
       // transferTarget is null when CONFIG leaves it unset → the client renders
       // Transfer % with no tone at all rather than one nobody chose.
-      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,
+      alertThreshold: ship.alertThreshold,   // H2: the published dashboard standard, null = none
+      alertBand: ship.alertBand,
+      standardSource: ship.standardSource,
       transferTarget: (CONFIG.CDR_TRANSFER_TARGET_PCT == null) ? null : CONFIG.CDR_TRANSFER_TARGET_PCT,
       prev: prev,
       prevUnavailable: prevUnavailable,
@@ -1184,7 +1475,7 @@ function getMyMetrics(date) {
     // coverage strip — a just-filed note surfaces within the TTL. Keyed by
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
-    var myCacheKey = 'metrics_my_v2:' + emp.id + ':' + date;   // v2: workday-only trend/series (INV-85)
+    var myCacheKey = 'metrics_my_v3:' + emp.id + ':' + date;   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
     // Bypass the endpoint cache whenever a test points the CDR reader at a
     // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
     // entry from a prior fixture read would mask a later test's CDR state
@@ -1246,12 +1537,14 @@ function getMyMetrics(date) {
     // 5-KPI own-vs-team series (#6); team values are anonymized via the N=3
     // cohort guard (#5). Transfers come from the separate Transfer sheet.
     var MIN_COHORT = 3;
+    var std = getCdrDashboardStandard_();   // H2: the published standard + its team-avg excludes
+    var ship = cdrStandardShip_(std);
     var series = {
-      pctAnswered: metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'pctAnswered', MIN_COHORT),
-      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT),
-      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT),
-      attSeconds:  metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'attSeconds', MIN_COHORT),
-      transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT),
+      pctAnswered: metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'pctAnswered', MIN_COHORT, std.teamAvgExcludes),
+      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT, std.teamAvgExcludes),
+      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT, std.teamAvgExcludes),
+      attSeconds:  metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'attSeconds', MIN_COHORT, std.teamAvgExcludes),
+      transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT, std.teamAvgExcludes),
     };
 
     // F5: distinguish "couldn't read the rep's Sheet" from "zero notes" — this
@@ -1291,11 +1584,13 @@ function getMyMetrics(date) {
         ? { transferred: trPRD[date][emp.name].transferred,
             transferPct: trPRD[date][emp.name].transferPct }
         : null,
-      // #4 — the sidebar-alert threshold, shipped so the client draws the
-      // target line + bands the table off the SAME number. No client mirror:
-      // the client degrades to its old behavior when the field is absent
-      // (a ≤5-min stale cached payload from before this deploy).
-      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,
+      // #4 / H2 — the answer standard, shipped so the client draws the target
+      // line + bands the table off the SAME number the manager's dashboard
+      // uses (the published Dashboard Standards tab). No client mirror: a null
+      // target renders no line, no tone.
+      alertThreshold: ship.alertThreshold,
+      alertBand: ship.alertBand,
+      standardSource: ship.standardSource,
     };
     // F5: a failed notes read must not be cached as fresh — the Clock coverage
     // strip reads this endpoint, so a 5-minute-pinned degraded result would
@@ -1326,13 +1621,13 @@ function getMyMetricsRange(from, to) {
     if (spanDays > 92) return { error: 'Range capped at 92 days.' };
 
     // Cycle-9 L-13 — the L-1 endpoint-cache pattern: getCdrDailyBreakdown_ is
-    // deliberately uncached (INV-67) and reads the full DQE tab with BOTH
-    // getValues + getDisplayValues, so every Today/7D/30D preset toggle
-    // re-scanned the whole sheet twice. Keyed by emp.id (no cross-rep reads);
+    // deliberately uncached (INV-67) and read the full DQE tab with BOTH
+    // getValues + getDisplayValues (span-bounded since H3, but still two
+    // reads of the window), so every Today/7D/30D preset toggle re-scanned. Keyed by emp.id (no cross-rep reads);
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v2:' + emp.id + ':' + from + ':' + to;   // v2: workday-only trend (INV-85)
+    var rangeKey = 'metrics_range_v3:' + emp.id + ':' + from + ':' + to;   // v3 (H2): rate formula + published standard (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -1341,6 +1636,8 @@ function getMyMetricsRange(from, to) {
       } catch (_) {}
     }
 
+    var std = getCdrDashboardStandard_();   // H2 -- the published standard (memoized per execution)
+    var ship = cdrStandardShip_(std);
     var agg = getCdrAgentMetrics_(from, to, [emp.name]);
     var c = (agg && agg.agents && agg.agents[emp.name]) || null;
 
@@ -1403,7 +1700,9 @@ function getMyMetricsRange(from, to) {
       noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
       transfer: trTotals,                                   // #5 — null = absent, never 0
-      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,     // #4 — see getMyMetrics
+      alertThreshold: ship.alertThreshold,     // #4 / H2 — see getMyMetrics
+      alertBand: ship.alertBand,
+      standardSource: ship.standardSource,
     };
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
     // F5: a failed note read is the same class of partial as a failed trend
@@ -1440,6 +1739,8 @@ function teamMetricsRepView_(full) {
     queueRows: full.queueRows,
     groupRows: full.groupRows,
     alertThreshold: full.alertThreshold,
+    alertBand: full.alertBand,             // H2: the amber band rides with the target
+    standardSource: full.standardSource,
   };
 }
 function getTeamMetrics(dateOrFrom, to) {
@@ -1484,7 +1785,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v2:' + from + ':' + toDate;   // v2: workday-only trend (INV-85)
+    var teamCacheKey = 'team_metrics_v3:' + from + ':' + toDate;   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -1498,6 +1799,8 @@ function getTeamMetrics(dateOrFrom, to) {
     }
 
     var isSingleDay = (from === toDate);
+    var std = getCdrDashboardStandard_();   // H2 -- the published standard (memoized per execution)
+    var ship = cdrStandardShip_(std);
 
     var roster = getEmployeeRosterRows_();
     var rosterNames = [];
@@ -1546,8 +1849,8 @@ function getTeamMetrics(dateOrFrom, to) {
       // the client renders the pre-#8 shape — a missing chart is not a
       // reassuring degradation (INV-187's test). Span-capped at 92 days like
       // getMyMetricsRange: getTeamMetrics has no overall span cap, and an
-      // unbounded manual range must not trigger this extra full-sheet per-day
-      // scan (the aggregate read above still serves it).
+      // unbounded manual range must not trigger this extra per-day span
+      // read (the aggregate read above still serves it).
       var rangeSpan = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
       if (rangeSpan >= 2 && rangeSpan <= 92) {
         try {
@@ -1679,8 +1982,7 @@ function getTeamMetrics(dateOrFrom, to) {
       if (!cdrResult.agents[name]) rosterWithNoCdr.push(name);
     });
 
-    teamTotals.pctAnswered = teamTotals.rung > 0
-      ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
+    teamTotals.pctAnswered = cdrAnswerPct_(teamTotals.answered, teamTotals.missed);   // H2
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
     // F5 (cycle 16): the PER-REP coverage is already nulled when that rep's
     // Sheet failed (see the rep block above), but the TEAM total was computed
@@ -1723,7 +2025,9 @@ function getTeamMetrics(dateOrFrom, to) {
       // failed" (INV-175).
       transferMeta: transferMeta,
       queueRows: qRows,
-      alertThreshold: CONFIG.CDR_ALERT_THRESHOLD || 85,   // #4 — see getMyMetrics
+      alertThreshold: ship.alertThreshold,   // #4 / H2 — see getMyMetrics
+      alertBand: ship.alertBand,
+      standardSource: ship.standardSource,
 
       // Phase 4 — the "By department" mode. Derived server-side from the same
       // qRows the by-queue mode uses, so the two views can never disagree.
@@ -1752,11 +2056,15 @@ function getMetricsAmbient() {
     if (!emp || !emp.isManager) return { badge: null };
 
     var cache = CacheService.getScriptCache();
-    // Threshold rides in the cache key (INV-85 versioned-key discipline) so a
-    // CDR_ALERT_THRESHOLD change takes effect on the next poll instead of
-    // serving a badge computed against the old cutoff for up to the TTL.
-    var ambientThreshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
-    var ck = 'metrics_ambient_v1:' + ambientThreshold;
+    // H2: the cutoff is the published dashboard standard. Threshold rides in
+    // the cache key (INV-85 versioned-key discipline) so a republished
+    // standard takes effect on the next poll instead of serving a badge
+    // computed against the old cutoff for up to the TTL. No standard → no
+    // badge, and the response SAYS so (never a hand-carried cutoff).
+    var ambientStd = getCdrDashboardStandard_();
+    var ambientThreshold = ambientStd.target;
+    if (ambientThreshold == null) return { badge: null, unavailable: 'standard', standardSource: ambientStd.source };
+    var ck = 'metrics_ambient_v2:' + ambientThreshold;
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
@@ -1788,12 +2096,13 @@ function getMetricsAmbient() {
     }
 
     var result = getCdrAgentMetrics_(yIso, yIso, names);
-    var totalRung = 0, totalAns = 0;
+    var totalAns = 0, totalMissed = 0, anyRung = false;
     Object.keys(result.agents).forEach(function (k) {
-      totalRung += result.agents[k].totalRung;
       totalAns += result.agents[k].totalAnswered;
+      totalMissed += result.agents[k].totalMissed;
+      if (result.agents[k].totalRung > 0) anyRung = true;
     });
-    var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
+    var pct = (anyRung && (totalAns + totalMissed) > 0) ? cdrAnswerPct_(totalAns, totalMissed) : null;   // H2
     var badge = (pct !== null && pct < ambientThreshold)
       ? { type: 'warn', label: pct + '%', date: yIso } : null;
     var out = { badge: badge, pctAnswered: pct, date: yIso, threshold: ambientThreshold };

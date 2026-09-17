@@ -292,6 +292,105 @@
     "oopVerifyQuotes_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H1: company holidays from the CDR Report's Company Holidays tab -- getCdrCompanyHolidayRanges_/cdrParseDateRanges_ (40_metrics), getCompanyHolidays_/companyHolidayDatesInYear_/companyHolidayMap_/companyHolidayIsoList_ (10_core); prevWorkdayIso_ + metricsWorkdayIsos_ holiday-aware; every getUsHolidays_ consumer moved to the company accessor; doGet ships SERVER_COMPANY_HOLIDAYS",
+   "added": [
+    "CDR_HOLIDAYS_CACHE_KEY_",
+    "CDR_HOLIDAYS_CACHE_TTL_",
+    "CDR_HOLIDAYS_MAX_RANGES_",
+    "_cdrHolidaysMemo",
+    "cdrParseDateRanges_",
+    "companyHolidayDatesInYear_",
+    "companyHolidayIsoList_",
+    "companyHolidayMap_",
+    "getCdrCompanyHolidayRanges_",
+    "getCompanyHolidays_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "buildCalendarForEmployee_",
+    "businessMinutesBetween_",
+    "doGet",
+    "getCoveragePlan",
+    "getManagerDashboard",
+    "getPunctualityReport",
+    "getTeamCalendar",
+    "metricsWorkdayIsos_",
+    "prevWorkdayIso_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: Answer % = answered/(answered+missed) via cdrAnswerPct_ at every rate site; the answer standard (target/band/team-avg excludes) is read from the CDR Report's Dashboard Standards tab (getCdrDashboardStandard_/cdrStandardShip_/cdrDashboardDept_) and shipped by the four metrics endpoints; benchmarks subtract the excludes (cdrExcludeSet_); CDR_ALERT_THRESHOLD retired; cache keys bumped",
+   "added": [
+    "CDR_STANDARDS_CACHE_KEY_",
+    "CDR_STANDARDS_CACHE_TTL_",
+    "_cdrStandardsMemo",
+    "cdrAnswerPct_",
+    "cdrDashboardDept_",
+    "cdrExcludeSet_",
+    "cdrStandardShip_",
+    "getCdrDashboardStandard_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "dashboardTeamAggregate_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getDashboardMetrics",
+    "getMetricsAmbient",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "metricsBuildKpiSeries_",
+    "metricsTeamAvgSeries_",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: getMyMetricsRange + getTeamMetrics read the published dashboard standard (ship was referenced undeclared -- lint:server caught it)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyMetricsRange",
+    "getTeamMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H2: cdrAnswerPct_ rounds to a whole percent, matching the dashboard's Answer % cell",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "cdrAnswerPct_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H3: cdrDqeWindowSpan_ (span-bounded DQE reads), the serial branch in cdrRowDateIso_, and the MAIL-SWEEP pin",
+   "added": [
+    "cdrDqeWindowSpan_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "cdrQueueInventory_",
+    "cdrRowDateIso_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getMyMetricsRange",
+    "getTeamMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -396,6 +495,21 @@
    "kind": "const",
    "sha": "5c33ae490e886aa7"
   },
+  "CDR_HOLIDAYS_CACHE_KEY_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "c283cf7278c229b5"
+  },
+  "CDR_HOLIDAYS_CACHE_TTL_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "1ce076d8de049a72"
+  },
+  "CDR_HOLIDAYS_MAX_RANGES_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "01e71763816e9865"
+  },
   "CDR_QUEUE_LIST_CAP": {
    "file": "00_config.js",
    "kind": "const",
@@ -410,6 +524,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "c0fb04450cddb2d8"
+  },
+  "CDR_STANDARDS_CACHE_KEY_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "4aa9ad61931184f6"
+  },
+  "CDR_STANDARDS_CACHE_TTL_": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "7cec94a50b2228c2"
   },
   "CLIENT_ERRORS_TAB": {
    "file": "00_config.js",
@@ -679,7 +803,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "715207876246a4c8"
+   "sha": "8f03e2ce93293b6c"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -2111,6 +2235,11 @@
    "kind": "var",
    "sha": "6b236581a4684097"
   },
+  "_cdrHolidaysMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "21f5c2c3770d18d6"
+  },
   "_cdrNameMapCache": {
    "file": "00_config.js",
    "kind": "var",
@@ -2120,6 +2249,11 @@
    "file": "00_config.js",
    "kind": "var",
    "sha": "e620165957ee73fc"
+  },
+  "_cdrStandardsMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "a11c2aa13fb58a23"
   },
   "_clientBuildHashMemo": {
    "file": "00_config.js",
@@ -2469,7 +2603,7 @@
   "buildCalendarForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "daa4b76cc08a92b5"
+   "sha": "a1af0940271704fd"
   },
   "buildCallNoteEmailHtml_": {
    "file": "30_callnotes.js",
@@ -2564,7 +2698,7 @@
   "businessMinutesBetween_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9af25cb9d32392e1"
+   "sha": "581131edbdfc8070"
   },
   "calcHours_": {
    "file": "20_timeclock.js",
@@ -2601,6 +2735,26 @@
    "kind": "function",
    "sha": "9135338f9b9ce41a"
   },
+  "cdrAnswerPct_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "666772239d5bac56"
+  },
+  "cdrDashboardDept_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "cb4c6f541e38c6e1"
+  },
+  "cdrDqeWindowSpan_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "2a9e28d294038ef3"
+  },
+  "cdrExcludeSet_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e33ae391917ca964"
+  },
   "cdrFmtHms_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -2616,6 +2770,11 @@
    "kind": "function",
    "sha": "600d2574fda9dafa"
   },
+  "cdrParseDateRanges_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4c0b5d632e0a3b51"
+  },
   "cdrParseHms_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -2624,7 +2783,7 @@
   "cdrQueueInventory_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "720919dd9d43225f"
+   "sha": "c1509e59dcdea8c9"
   },
   "cdrRosterHash_": {
    "file": "40_metrics.js",
@@ -2634,7 +2793,12 @@
   "cdrRowDateIso_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "8c24fe4fdd46335a"
+   "sha": "c6d9f05b3cfd5420"
+  },
+  "cdrStandardShip_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "82f001cfb516c7f2"
   },
   "checkOopEligibility": {
    "file": "70_kb.js",
@@ -2866,6 +3030,21 @@
    "kind": "function",
    "sha": "d2e691b711bbc2f1"
   },
+  "companyHolidayDatesInYear_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "50f75214eceaf8b1"
+  },
+  "companyHolidayIsoList_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b18dce0a50154f0d"
+  },
+  "companyHolidayMap_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "0d1a6aea01687d7b"
+  },
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
@@ -2959,7 +3138,7 @@
   "dashboardTeamAggregate_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "d9e9b23281ab3870"
+   "sha": "e4febed5f0748de2"
   },
   "dashboardTeamTransfer_": {
    "file": "40_metrics.js",
@@ -3024,7 +3203,7 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "419d2376ed9e3820"
+   "sha": "ab3c64006eba6c71"
   },
   "drBumpCacheGen_": {
    "file": "50_deptrequests.js",
@@ -3489,12 +3668,22 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "08f88ddd5823428d"
+   "sha": "dc5628c3ef341848"
+  },
+  "getCdrCompanyHolidayRanges_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "5b2cd36e7a6ceec6"
   },
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "71a7e9395c8c9cdb"
+   "sha": "557c7503078b87db"
+  },
+  "getCdrDashboardStandard_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "bb41833c91e8b584"
   },
   "getCdrInboundVolume_": {
    "file": "40_metrics.js",
@@ -3526,10 +3715,15 @@
    "kind": "function",
    "sha": "1d35be7f4c1edb29"
   },
+  "getCompanyHolidays_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "24d8662afe25307d"
+  },
   "getCoveragePlan": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e056e38545900ef2"
+   "sha": "12b091a4e70b0c4d"
   },
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
@@ -3544,7 +3738,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "ccaf87f1d0074808"
+   "sha": "2beedc0b0c90e917"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -3779,7 +3973,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4db1dafcbc2c018e"
+   "sha": "908f18c569938334"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -3789,7 +3983,7 @@
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "21bc0526c14fc52e"
+   "sha": "eb2ea7788c3d6c62"
   },
   "getMonthRange_": {
    "file": "20_timeclock.js",
@@ -3824,12 +4018,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "343e93bb28a86ea7"
+   "sha": "b59f7a65c68c876e"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "1b9a5e677baee5e5"
+   "sha": "b2f540016cdfb05c"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -4069,7 +4263,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "85f85ee1a672a236"
+   "sha": "d9466d2a0e1def75"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -4194,12 +4388,12 @@
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4d30414f88d9855e"
+   "sha": "f3e681c69d98ca24"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "be832a51f9f26b6f"
+   "sha": "585858c2026dd0d2"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -5079,7 +5273,7 @@
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c5d5ed7618c38cbd"
+   "sha": "71402de002bf7cef"
   },
   "metricsParsePercent_": {
    "file": "40_metrics.js",
@@ -5089,12 +5283,12 @@
   "metricsTeamAvgSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "64c9cb5e59c9e46f"
+   "sha": "6165c124b3f40db0"
   },
   "metricsWorkdayIsos_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "1df55595dc58ed73"
+   "sha": "f28f9df789379416"
   },
   "mgrWorkdaysEnding_": {
    "file": "20_timeclock.js",
@@ -5334,7 +5528,7 @@
   "prevWorkdayIso_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4b6189a852a82b08"
+   "sha": "7c8cf466de95f27d"
   },
   "previewCallNoteEmail": {
    "file": "30_callnotes.js",
@@ -6354,7 +6548,7 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "70b622ecfef22790"
+   "sha": "13cdff15fc8e3ff8"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",

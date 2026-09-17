@@ -806,7 +806,7 @@ test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {
 });
 
 console.log('\nCode.js — dashboard metrics pure helpers (period range + cohort-guarded team)');
-['dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
+['cdrAnswerPct_', 'cdrExcludeSet_', 'dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
 const dashboardPeriodRange_ = sb.dashboardPeriodRange_;
 const dashboardTeamAggregate_ = sb.dashboardTeamAggregate_;
@@ -3495,7 +3495,7 @@ test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; 
 
 // T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
 console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
-['metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
+['cdrExcludeSet_', 'metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
 });
 test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
@@ -7581,15 +7581,18 @@ test('#3: the two permanently-non-empty CDR reference lists fold behind a disclo
 test('#4: the alert threshold is server-shipped (never client-mirrored) and drives banding + the target line', () => {
   // Four ships since 2026-08-12: the three Metrics endpoints plus
   // getDashboardMetrics, whose KPI banding uses the same operator-set target.
-  const ships = (mopCode.match(/alertThreshold: CONFIG\.CDR_ALERT_THRESHOLD \|\| 85/g) || []).length;
-  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships CONFIG.CDR_ALERT_THRESHOLD');
+  // H2 (2026-09-17): the target is the PUBLISHED dashboard standard (the
+  // Dashboard Standards tab), shipped through the one cdrStandardShip_ shape.
+  const ships = (mopCode.match(/alertThreshold: ship\.alertThreshold/g) || []).length;
+  assert.strictEqual(ships, 4, 'every threshold-banding endpoint ships the published standard through cdrStandardShip_');
+  assert.ok(!/CDR_ALERT_THRESHOLD/.test(mopCode), 'the hand-carried CDR_ALERT_THRESHOLD is gone (H2)');
   // No client mirror: the partial must not hardcode 85 as a fallback — absent
   // field (a ≤5-min stale cached payload) degrades to the LEGACY behavior.
   assert.ok(!/alertThreshold \|\| 85|thr \|\| 85/.test(mopPartial), 'the client never invents its own 85');
   // Behavioral: banding follows the shipped threshold; legacy 80 when absent.
   const mPctClass_ = loadFunction(sb, 'metrics/script_metrics.html', 'mPctClass_');
-  assert.strictEqual(mPctClass_(84), 'm-pct-high', 'absent threshold → legacy 80 band (old cached payloads)');
-  assert.strictEqual(mPctClass_(84, 85), 'm-pct-mid', 'below the shipped threshold is NOT green');
+  assert.strictEqual(mPctClass_(84), '', 'absent threshold → NO tone (H2: a colour is a verdict against a number nobody set)');
+  assert.strictEqual(mPctClass_(84, 85, 5), 'm-pct-mid', 'below the shipped threshold is NOT green (within the band → amber)');
   assert.strictEqual(mPctClass_(85, 85), 'm-pct-high', 'at threshold is green');
   assert.strictEqual(mPctClass_(49, 85), 'm-pct-low', 'mid band floor stays 50');
   assert.strictEqual(mPctClass_(null, 85), '', 'null stays unclassed');
@@ -7713,9 +7716,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v4:/.test(dash) && !/dash_metrics_v[123]:/.test(dash),
+  assert.ok(/dash_metrics_v5:/.test(dash) && !/dash_metrics_v[1234]:/.test(dash),
     'the cache key bumped with the payload semantics');
-  assert.ok(/dash_metrics_v4:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v5:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -9825,7 +9828,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v2:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v2: workday-only trend, INV-85)');
+  assert.ok(/team_metrics_v3:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -9845,7 +9848,7 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   };
   const rep = ctx.teamMetricsRepView_(full);
   assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
-    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold'].sort().join('|'),
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),
     'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
   assert.strictEqual(rep.repView, true);
   // Registry: the tab is visible to everyone now (the server shape is the
@@ -16394,6 +16397,7 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     normalizeDate_: (v) => String(v || ''),
     normalizeTime_: (v) => String(v || ''),
     getUsHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],
+    getCompanyHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],   // H1: consumers read the company calendar
     getAdpSS_: () => ({ getSheetByName: (tab) => ({ getDataRange: () => ({ getValues:
       () => (tab === 'Timesheet' ? adpRows : toRows) }) }) }),
     CONFIG: { ADP_TAB: 'Timesheet', TIMEOFF_TAB: 'TimeOffRequests', ADJUST_WINDOW_DAYS: 30 },
@@ -16685,8 +16689,8 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
     'a missing/zero stamp yields null — the F8 "a gap beats a substitute" rule');
   assert.ok(/catch \(e\)/.test(wrap) && /return null;\s*\n\s*\}/.test(wrap),
     'any failure degrades to unknown rather than throwing into the caller');
-  assert.ok(/getUsHolidays_\(y\)/.test(wrap) && /\(y - y0\) <= 2/.test(wrap),
-    'holidays are built for the spanned years, bounded');
+  assert.ok(/getCompanyHolidays_\(y\)/.test(wrap) && /\(y - y0\) <= 2/.test(wrap),
+    'holidays are built for the spanned years, bounded -- from the COMPANY calendar (H1), not the federal list');
 
   // (a) Spanish stats — the surface the operator asked about.
   const sp = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxStats'),
@@ -17705,18 +17709,23 @@ test('PR1-1: no var(--token, fallback) on a token the tokens partial defines (de
 test('PR1-2: mtPctTone_(p, hi, lo) is the ONE band rule; mPctClass_ delegates byte-identically', () => {
   const mtPctTone_ = sb.mtPctTone_;
   assert.strictEqual(typeof mtPctTone_, 'function', 'shared helper lives in script_core');
-  const legacy = (p, thr) => { const hi = (thr != null) ? thr : 80; return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low'); };
+  // H2: the wrapper is the dashboard's THREE-tier rule -- green at/above the
+  // published target, amber within the band below it, red past it; no target
+  // = no class. Modelled here and compared over a grid.
+  const model = (p, thr, band) => { if (thr == null || p == null) return ''; const lo = thr - (band != null ? band : 0); return p >= thr ? 'm-pct-high' : p >= lo ? 'm-pct-mid' : 'm-pct-low'; };
   const mPctClass_ = sb.mPctClass_;
-  for (const p of [null, undefined, 0, 49, 49.9, 50, 79.9, 80, 84, 85, 100]) for (const thr of [undefined, null, 80, 85, 90]) {
-    assert.strictEqual(mPctClass_(p, thr), legacy(p, thr), 'mPctClass_(' + p + ', ' + thr + ')');
+  for (const p of [null, undefined, 0, 49, 79.9, 80, 84, 85, 89.9, 90, 100]) for (const thr of [undefined, null, 80, 85, 92]) for (const band of [undefined, null, 0, 2, 10]) {
+    assert.strictEqual(mPctClass_(p, thr, band), model(p, thr, band), 'mPctClass_(' + p + ', ' + thr + ', ' + band + ')');
   }
+  assert.strictEqual(mPctClass_(90.5, 92, 2), 'm-pct-mid', 'the CSR standard: 90.5 is amber');
+  assert.strictEqual(mPctClass_(89.9, 92, 2), 'm-pct-low', '...and 89.9 is red');
   // Punctuality's own numbers (90 / 75) — the mid band is no longer pinned at 50.
   assert.strictEqual(mtPctTone_(76, 90, 75), 'm-pct-mid', '76% with a 75 floor is mid, not low');
   assert.strictEqual(mtPctTone_(74, 90, 75), 'm-pct-low');
   assert.strictEqual(mtPctTone_(90, 90, 75), 'm-pct-high');
   assert.strictEqual(mtPctTone_(null, 90, 75), '', 'absence stays unclassed (INV-187)');
   const src = extractFunction('metrics/script_metrics.html', 'mPctClass_');
-  assert.ok(/mtPctTone_\(p, \(thr != null\) \? thr : 80, 50\)/.test(src), 'the Metrics wrapper delegates, keeping its legacy 80/50');
+  assert.ok(/mtPctTone_\(p, thr, thr - b\)/.test(src) && /if \(thr == null\) return '';/.test(src), 'the Metrics wrapper delegates to the ONE band rule against the published target/band, and refuses to tone without a target');
 });
 
 // PR1-3 — the shared range control, driven behaviourally: real <button>s
@@ -17978,7 +17987,7 @@ test('PR3-1: getPunctualityReport — dayDetail is ADDITIVE beside `days`, cappe
   assert.ok(/prevTo = addDaysIso_\(fromDate, -1\)/.test(src) && /prevFrom = addDaysIso_\(prevTo, -\(numDays - 1\)\)/.test(src), 'the previous EQUIVALENT range');
   assert.ok(/ptoUnavailable = true/.test(src) && /ptoUnavailable: ptoUnavailable/.test(src), 'a failed PTO read is reported (F4 rule)');
   assert.ok(/days: dates\.length,/.test(src) && /dayDetail: dayDetail,/.test(src), '`days` stays the count; the array is `dayDetail`');
-  assert.ok(/getUsHolidays_\(/.test(src), 'holidays from the Coverage source');
+  assert.ok(/getCompanyHolidays_\(/.test(src), 'holidays from the Coverage source (the company calendar, H1)');
   assert.ok(/if \(!empRosterEmail_\(roster\[i\]\)\) continue;/.test(src), 'F3 roster predicate kept');
   assert.ok(/if \(mins === null\) continue;/.test(src), 'A3 unparseable-time skip kept');
   const code = serverSource();
@@ -19536,13 +19545,419 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v2:/.test(my) && /metrics_range_v2:/.test(rng) && /team_metrics_v2:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85)');
-  assert.ok(!/metrics_my_v1|metrics_range_v1|team_metrics_v1/.test(my + rng + team), 'no v1 key survives');
+  assert.ok(/metrics_my_v3:/.test(my) && /metrics_range_v3:/.test(rng) && /team_metrics_v3:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2)');
+  assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
   assert.strictEqual((t30.match(/if \(isWeekendIso\(daysAgo\(i\)\)\) continue;/g) || []).length, 2, 'the fixture trend + KPI series skip weekends — the server shape, not a paraphrase (INV-185)');
   const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
   assert.ok(/30 days · workdays/.test(mp) && /workdays in the 30 days ending/.test(mp), 'the trend headings say workdays');
+});
+
+test('H1-1: prevWorkdayIso_ / metricsWorkdayIsos_ step over COMPANY HOLIDAYS -- behavioural, bounded, and the one-arg form stays pure', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'prevWorkdayIso_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'metricsWorkdayIsos_'), ctx);
+  // 2026-09-07 is a Monday (Labor Day). The Tuesday after it must land on
+  // Friday the 4th, not on the holiday -- the morning-after-a-holiday bug.
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tuesday after a Monday holiday -> the Friday before');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'an empty map is weekends-only (the pre-H1 walk)');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-08'), '2026-09-07', 'the one-arg form in a bare vm (no companyHolidayMap_) is still pure and weekends-only');
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-11-30', { '2026-11-26': true, '2026-11-27': true }), '2026-11-25', 'a two-day holiday plus the weekend is walked over');
+  // Bounded: a pathological everything-is-a-holiday map returns the 14th day
+  // back rather than looping (the dashboard's prevBusinessDayIso_ rule).
+  const all = {}; for (let i = 1; i <= 20; i++) all['2026-09-' + String(i).padStart(2, '0')] = true;
+  assert.strictEqual(ctx.prevWorkdayIso_('2026-09-20', all), '2026-09-06', 'bounded at 14 steps');
+  const W = ctx.metricsWorkdayIsos_;
+  assert.strictEqual(W('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a weekday holiday drops out of the trend axis');
+  assert.strictEqual(W('2026-08-31', '2026-09-06').join('|'), '2026-08-31|2026-09-01|2026-09-02|2026-09-03|2026-09-04', 'no map + no companyHolidayMap_ in scope = weekends-only (pure for the MW-1 pin)');
+  // In the real scope the map comes from companyHolidayMap_ (typeof-guarded).
+  const wired = foNc(extractRawFunction('Code.js', 'metricsWorkdayIsos_')) + foNc(extractRawFunction('Code.js', 'prevWorkdayIso_'));
+  assert.strictEqual((wired.match(/typeof companyHolidayMap_ === 'function'/g) || []).length, 2, 'both walks consult the company calendar through the typeof guard');
+});
+
+test('H1-2: companyHolidayDatesInYear_ (pure) clips ranges to the year, de-dupes, sorts, drops malformed, defaults the name', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_'), ctx);
+  const out = ctx.companyHolidayDatesInYear_([
+    { from: '2026-12-31', to: '2027-01-02', name: 'New Year' },   // straddles the year edge
+    { from: '2026-11-26', to: '2026-11-27', name: 'Thanksgiving' },
+    { from: '2026-07-03', to: '2026-07-03' },                       // no name
+    { from: '2026-07-03', to: '2026-07-03', name: 'dup' },          // duplicate day
+    { from: 'garbage', to: '2026-01-01' },                          // malformed
+    { from: '2025-12-25', to: '2025-12-25', name: 'last year' },    // outside
+  ], 2026);
+  assert.strictEqual(out.map((h) => h.date).join('|'), '2026-07-03|2026-11-26|2026-11-27|2026-12-31', 'in-year days only, sorted, de-duplicated');   // string compare: vm-realm arrays (g116)
+  assert.strictEqual(out[0].name, 'Company holiday', 'a nameless range gets the default label');
+  assert.strictEqual(out[3].name, 'New Year', 'a straddling range keeps its name');
+  assert.strictEqual(ctx.companyHolidayDatesInYear_([{ from: '2027-01-01', to: '2027-01-01' }], 2026).length, 0, 'a range wholly outside the year yields nothing');
+  assert.strictEqual(ctx.companyHolidayDatesInYear_(null, 2026).length, 0, 'null ranges -> []');
+});
+
+test('H1-3: getCompanyHolidays_ -- the CDR tab WINS (never a union); every other source shape falls back to the federal list', () => {
+  const federal = [{ date: '2026-10-12', name: 'Columbus Day' }];
+  const mk = (src) => {
+    const ctx = { getUsHolidays_: () => federal, getCdrCompanyHolidayRanges_: () => src };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_'), ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getCompanyHolidays_'), ctx);
+    return ctx.getCompanyHolidays_(2026).map((h) => h.date).join('|');
+  };
+  assert.strictEqual(mk({ source: 'sheet', ranges: [{ from: '2026-11-26', to: '2026-11-27', name: 'T' }] }), '2026-11-26|2026-11-27',
+    'the tab replaces the federal list -- Columbus Day is NOT unioned in');
+  assert.strictEqual(mk({ source: 'empty', ranges: [] }), '2026-10-12', 'an empty tab -> federal');
+  assert.strictEqual(mk({ source: 'no-tab', ranges: [] }), '2026-10-12', 'a pre-H1 workbook -> federal');
+  assert.strictEqual(mk({ source: 'unavailable', ranges: [] }), '2026-10-12', 'an unreadable workbook -> federal (fail-open)');
+  assert.strictEqual(mk(null), '2026-10-12', 'a null reader result -> federal');
+  const ctxT = { getUsHolidays_: () => federal, getCdrCompanyHolidayRanges_: () => { throw new Error('boom'); } };
+  vm.createContext(ctxT);
+  vm.runInContext(extractRawFunction('Code.js', 'companyHolidayDatesInYear_') + extractRawFunction('Code.js', 'getCompanyHolidays_'), ctxT);
+  assert.strictEqual(ctxT.getCompanyHolidays_(2026)[0].date, '2026-10-12', 'a throwing reader -> federal, never a throw into the consumer');
+  // Every former getUsHolidays_ consumer now reads the company calendar: the
+  // federal computer is referenced exactly twice in the server -- its own
+  // definition and the fallback inside getCompanyHolidays_.
+  const src = foNc(serverSource());
+  assert.strictEqual((src.match(/getUsHolidays_\(/g) || []).length, 2, 'no consumer reads the federal list directly (definition + the one fallback)');
+  assert.ok((src.match(/getCompanyHolidays_\(/g) || []).length >= 8, 'the company accessor feeds the timeclock / coverage / punctuality / business-minutes / metrics consumers');
+});
+
+test('H1-4: getCdrCompanyHolidayRanges_ -- header-name read, Active parked, coerced Date keyed in the SPREADSHEET tz, fail-open source shape, cache discipline', () => {
+  const grammar = extractRawFunction('Code.js', 'cdrParseDateRanges_');
+  const reader = extractRawFunction('Code.js', 'getCdrCompanyHolidayRanges_');
+  const mkCtx = (rows, opts) => {
+    opts = opts || {};
+    const puts = [];
+    const ctx = {
+      CONFIG: { CDR_HOLIDAYS_TAB: 'Company Holidays' },
+      CDR_HOLIDAYS_CACHE_KEY_: 'cdr_holidays_v1', CDR_HOLIDAYS_CACHE_TTL_: 3600, CDR_HOLIDAYS_MAX_RANGES_: 400,
+      _cdrHolidaysMemo: null,
+      _TEST_OVERRIDE_CDR_SS_ID: opts.override || null,
+      Logger: { log() {} },
+      JSON: JSON, Date: Date,
+      Utilities: { formatDate: (d, tz, fmt) => { ctx._fmtTz = tz; return '2026-07-05'; } },
+      CacheService: { getScriptCache: () => ({ get: () => opts.cached || null, put: (k, v, ttl) => puts.push({ k: k, v: v, ttl: ttl }) }) },
+      getCdrSS_: () => {
+        if (opts.throws) throw new Error('Service Spreadsheets timed out');
+        return {
+          getSpreadsheetTimeZone: () => 'America/Mexico_City',
+          getSheetByName: (n) => (n === 'Company Holidays' && rows) ? { getDataRange: () => ({ getValues: () => rows }) } : null,
+        };
+      },
+      _puts: puts,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(grammar + '\n' + reader, ctx);
+    return ctx;
+  };
+  // Headers in a DIFFERENT order than the owner's, plus an extra column: read by name.
+  const ctx = mkCtx([
+    ['Notes', 'Active', 'Label', 'Dates', 'Extra'],
+    ['', '', 'Thanksgiving', '2026-11-26..2026-11-27', 'x'],
+    ['', 'FALSE', 'parked', '2026-01-01', ''],
+    ['', false, 'parked bool', '2026-05-25', ''],
+    ['', 'TRUE', 'Christmas', '2026-12-24, 2026-12-25', ''],
+    ['', '', 'coerced', new Date('2026-07-06T05:30:00Z'), ''],   // 23:30 Mexico City on Jul 5
+    ['', '', 'blank', '', ''],
+    ['', '', 'junk', 'garbage', ''],
+  ]);
+  const out = ctx.getCdrCompanyHolidayRanges_();
+  assert.strictEqual(out.source, 'sheet');
+  assert.strictEqual(out.ranges.map((r) => r.from + '..' + r.to + ':' + r.name).join('|'),
+    '2026-11-26..2026-11-27:Thanksgiving|2026-12-24..2026-12-24:Christmas|2026-12-25..2026-12-25:Christmas|2026-07-05..2026-07-05:coerced',
+    'named columns, parked rows skipped, comma list and range parsed, blank/junk dropped, Date cell formatted');
+  assert.strictEqual(ctx._fmtTz, 'America/Mexico_City', 'a coerced Date cell is keyed in the CDR SPREADSHEET tz, not the script tz (g00 twin)');
+  assert.strictEqual(ctx._puts.length, 1, 'a clean read is cached');
+  assert.strictEqual(ctx._puts[0].k, 'cdr_holidays_v1');
+  assert.strictEqual(ctx.getCdrCompanyHolidayRanges_(), out, 'memoized per execution');
+  // Empty tab / no tab / unreadable: the SOURCE says which, ranges stay [].
+  assert.strictEqual(mkCtx([['Dates', 'Label', 'Active', 'Notes']]).getCdrCompanyHolidayRanges_().source, 'empty');
+  assert.strictEqual(mkCtx(null).getCdrCompanyHolidayRanges_().source, 'no-tab');
+  const bad = mkCtx(null, { throws: true });
+  assert.strictEqual(bad.getCdrCompanyHolidayRanges_().source, 'unavailable');
+  assert.strictEqual(bad._puts.length, 0, 'an unavailable read is NEVER cached -- the next request retries');
+  // Cache tiers: a hit short-circuits the read; the test override bypasses it.
+  const hit = mkCtx(null, { cached: JSON.stringify({ ranges: [{ from: '2026-01-01', to: '2026-01-01', name: 'c' }], source: 'sheet' }) });
+  assert.strictEqual(hit.getCdrCompanyHolidayRanges_().ranges[0].from, '2026-01-01', 'a CacheService hit serves without opening the workbook');
+  const ov = mkCtx([['Dates'], ['2026-03-03']], { cached: JSON.stringify({ ranges: [], source: 'empty' }), override: 'fixture-id' });
+  assert.strictEqual(ov.getCdrCompanyHolidayRanges_().ranges.length, 1, 'under _TEST_OVERRIDE_CDR_SS_ID the cache is bypassed -- a fixture read never serves prod\'s list');
+  assert.strictEqual(ov._puts.length, 0, '...and never writes it either');
+  // The grammar mirrors call-data-reporting's parseSkipDateRanges_ (reversed range swapped).
+  assert.strictEqual(JSON.stringify(ctx.cdrParseDateRanges_(' 2026-07-06..2026-07-03 , x, 2026-12-25 ')), JSON.stringify([{ from: '2026-07-03', to: '2026-07-06' }, { from: '2026-12-25', to: '2026-12-25' }]));
+  // CONFIG key is read (the F1 declared-but-unread rule) and the reset helper knows the memo.
+  assert.ok(/CONFIG\.CDR_HOLIDAYS_TAB/.test(reader));
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_cdrHolidaysMemo = null;/.test(tests.slice(tests.indexOf('function _resetCdrCaches_'), tests.indexOf('function _clearCdrCacheForDate_'))), '_resetCdrCaches_ clears the holiday memo across the override boundary');
+});
+
+test('H1-5: the client walk agrees with the server -- doGet ships SERVER_COMPANY_HOLIDAYS, mPrevWorkdayIso_ steps over it, the harness page strips it before the straggler strip', () => {
+  const ctx = { isoDateTz: () => '2026-09-08', empTz: () => 'America/Chicago', window: { SERVER_COMPANY_HOLIDAYS: ['2026-09-07'] } };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mPrevWorkdayIso_'), ctx);
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-09-08'), '2026-09-04', 'Tuesday after Labor Day -> the Friday before (the server\'s answer)');
+  assert.strictEqual(ctx.mPrevWorkdayIso_(), '2026-09-04', 'zero-arg default walks the same list');
+  ctx.window.SERVER_COMPANY_HOLIDAYS = undefined;
+  assert.strictEqual(ctx.mPrevWorkdayIso_('2026-09-08'), '2026-09-07', 'no list -> weekends-only (the pre-H1 walk, never a throw)');
+  const doGet = foNc(extractRawFunction('Code.js', 'doGet'));
+  assert.ok(/try \{ tpl\.companyHolidays = companyHolidayIsoList_\(\); \} catch \(_\) \{ tpl\.companyHolidays = \[\]; \}/.test(doGet),
+    'doGet injects the list with catch -> [] (a holiday read can never break boot)');
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(/window\.SERVER_COMPANY_HOLIDAYS = <\?!= JSON\.stringify\(companyHolidays \|\| \[\]\)\.replace\(\/<\/g, '\\\\u003c'\) \?>/.test(idx),
+    'the injection uses the unescaped <?!= form with the < guard (INV-78)');
+  const bld = fs.readFileSync(path.join(__dirname, '../visual/build.mjs'), 'utf8');
+  const at = bld.indexOf('companyHolidays');
+  const stragglerAt = bld.indexOf('Any straggler scriptlets');
+  assert.ok(at > -1 && stragglerAt > -1 && at < stragglerAt,
+    'build.mjs replaces the holidays scriptlet BEFORE the straggler strip -- the strip alone leaves `window.SERVER_COMPANY_HOLIDAYS = ;`, a head SyntaxError');
+  const listFn = foNc(extractRawFunction('Code.js', 'companyHolidayIsoList_'));
+  assert.ok(/getCompanyHolidays_\(yy\)/.test(listFn) && /y - 1/.test(listFn) && /y \+ 1/.test(listFn), 'the shipped list is last year, this year, next -- from the ONE accessor');
+});
+
+test('H2-1: cdrAnswerPct_ is the dashboard formula, and every rate site routes through it', () => {
+  const f = sb.cdrAnswerPct_;
+  assert.strictEqual(f(8, 2), 80, '8 answered / (8 + 2)');
+  assert.strictEqual(f(90, 10), 90);
+  assert.strictEqual(f(1, 2), 33, 'a WHOLE percent -- the dashboard cell rounds to the integer, and a 91.7 vs 92 would tint differently on the same row');
+  assert.strictEqual(f(11, 1), 92, '91.67 -> 92, never 91.7');
+  assert.strictEqual(f(0, 0), 0, 'nothing to divide -> 0');
+  assert.strictEqual(f('7', '3'), 70, 'coerces numeric strings');
+  // The DIFFERENCE that mattered: rung counts every window leg. With 10 rung,
+  // 8 answered, 1 missed (one leg carried a third disposition) the old
+  // answered/rung read 80; the manager's dashboard reads 89.
+  assert.strictEqual(f(8, 1), 89);
+  const src = foNc(serverSource());
+  assert.ok((src.match(/cdrAnswerPct_\(/g) || []).length >= 8, 'agent, daily, per-rep-day, team aggregate, team totals and the ambient badge all route through it');
+  assert.ok(!/\(\w+\.totalAnswered \/ \w+\.totalRung\)|\(\w+\.answered \/ \w+\.rung\)|\(totalAns \/ totalRung\)/.test(src), 'no answered/rung division survives (H2)');
+});
+
+test('H2-2: the team BENCHMARK subtracts the published Team Avg Excludes; dept TOTALS keep everyone', () => {
+  const agents = {
+    A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
+    B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
+    Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },   // the INV-26 case: a manager with token volume
+  };
+  const all = dashboardTeamAggregate_(agents, 2);
+  assert.strictEqual(all.cohort, 3);
+  const ex = dashboardTeamAggregate_(agents, 2, ['Mgr']);
+  assert.strictEqual(ex.cohort, 2, 'the excluded name leaves the cohort');
+  assert.strictEqual(ex.team.answered, 170);
+  assert.strictEqual(ex.team.pctAnswered, 85, '170/(170+30) without the manager');
+  assert.strictEqual(all.team.pctAnswered, 86, 'with the manager the benchmark drifts up (180/210 = 85.7 -> 86, a whole percent)');
+  assert.strictEqual(dashboardTeamAggregate_(agents, 2, [' Mgr ', '']).cohort, 2, 'names are trimmed, blanks ignored');
+  const perRepDaily = { '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } };
+  const ser = sb.metricsTeamAvgSeries_(perRepDaily, ['2026-05-15'], 'v', 3, ['Mgr']);
+  assert.strictEqual(ser[0].cohort, 3); assert.strictEqual(ser[0].avg, 90, 'the series benchmark excludes too');
+  const kpi = sb.metricsBuildKpiSeries_(perRepDaily, ['2026-05-15'], 'Mgr', 'v', 3, ['Mgr']);
+  assert.strictEqual(kpi[0].own, 100, 'an excluded rep still sees their OWN value');
+  assert.strictEqual(kpi[0].team, 90, '...against a benchmark that does not include them');
+  // Totals keep everyone: getTeamMetrics.teamTotals is built from every rep on the table.
+  const team = foNc(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/teamTotals\.pctAnswered = cdrAnswerPct_\(teamTotals\.answered, teamTotals\.missed\)/.test(team), 'dept totals use the formula over EVERY rep (no excludes)');
+  assert.ok(!/teamTotals[\s\S]{0,400}teamAvgExcludes/.test(team.slice(team.indexOf('teamTotals.pctAnswered'))), 'no exclusion touches the totals');
+});
+
+test('H2-3: getCdrDashboardStandard_ -- header-name read, own dept row else `*`, null target on every non-sheet verdict, unavailable never cached', () => {
+  const dept = extractRawFunction('Code.js', 'cdrDashboardDept_');
+  const reader = extractRawFunction('Code.js', 'getCdrDashboardStandard_');
+  const ship = extractRawFunction('Code.js', 'cdrStandardShip_');
+  const mk = (rows, opts) => {
+    opts = opts || {};
+    const puts = [];
+    const ctx = {
+      CONFIG: { CDR_STANDARDS_TAB: 'Dashboard Standards', CDR_DASHBOARD_DEPT: 'CSR' },
+      CDR_STANDARDS_CACHE_KEY_: 'cdr_standards_v1', CDR_STANDARDS_CACHE_TTL_: 3600,
+      _cdrStandardsMemo: null, _TEST_OVERRIDE_CDR_SS_ID: opts.override || null,
+      Logger: { log() {} }, JSON: JSON,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'CDR_DASHBOARD_DEPT' ? (opts.deptProp || null) : null) }) },
+      CacheService: { getScriptCache: () => ({ get: () => opts.cached || null, put: (k, v, ttl) => puts.push({ k, v, ttl }) }) },
+      getCdrSS_: () => { if (opts.throws) throw new Error('timed out'); return { getSheetByName: (n) => (n === 'Dashboard Standards' && rows) ? { getDataRange: () => ({ getValues: () => rows }) } : null }; },
+      _puts: puts,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(dept + '\n' + reader + '\n' + ship, ctx);
+    return ctx;
+  };
+  const H = ['Published By', 'Team Avg Excludes', 'Amber Band', 'Answer Target', 'Department', 'Published At'];   // owner's columns, scrambled
+  const rows = [H, ['a', 'Robin Choudhury, Pat Lead', 2, 92, 'CSR', 't'], ['a', '', 10, 80, '*', 't'], ['a', '', 4, 88, 'Sales', 't']];
+  let c = mk(rows);
+  let out = c.getCdrDashboardStandard_();
+  assert.strictEqual(out.source, 'sheet'); assert.strictEqual(out.target, 92); assert.strictEqual(out.band, 2);
+  assert.strictEqual(out.teamAvgExcludes.join('|'), 'Robin Choudhury|Pat Lead');
+  assert.strictEqual(c._puts.length, 1); assert.strictEqual(c._puts[0].k, 'cdr_standards_v1:CSR');
+  assert.strictEqual(c.getCdrDashboardStandard_(), out, 'memoized');
+  const sh = c.cdrStandardShip_(out);
+  assert.strictEqual(JSON.stringify(sh), JSON.stringify({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }));
+  // A dept with no row falls back to the `*` global row and SAYS so.
+  c = mk(rows, { deptProp: 'PAP' });
+  out = c.getCdrDashboardStandard_();
+  assert.strictEqual(out.source, 'global'); assert.strictEqual(out.target, 80); assert.strictEqual(out.band, 10); assert.strictEqual(out.dept, 'PAP', 'the Script Property names the dept');
+  // No `*` and no own row → no-row; empty tab; no tab; unreadable → null target everywhere.
+  assert.strictEqual(mk([H, ['a', '', 4, 88, 'Sales', 't']]).getCdrDashboardStandard_().source, 'no-row');
+  assert.strictEqual(mk([H]).getCdrDashboardStandard_().source, 'empty');
+  assert.strictEqual(mk(null).getCdrDashboardStandard_().source, 'no-tab');
+  const bad = mk(null, { throws: true });
+  const un = bad.getCdrDashboardStandard_();
+  assert.strictEqual(un.source, 'unavailable'); assert.strictEqual(un.target, null);
+  assert.strictEqual(bad._puts.length, 0, 'unavailable is never cached');
+  assert.strictEqual(JSON.stringify(bad.cdrStandardShip_(un)), JSON.stringify({ alertThreshold: null, alertBand: null, standardSource: 'unavailable' }), 'a null target ships as null, never a substitute');
+  assert.strictEqual(mk([['Department', 'Answer Target'], ['CSR', 'n/a']]).getCdrDashboardStandard_().source, 'unavailable', 'an unusable target is unavailable, not 0');
+  assert.strictEqual(mk([['Dept', 'Target'], ['CSR', 92]]).getCdrDashboardStandard_().source, 'unavailable', 'header drift is named, not guessed');
+  // Cache tiers: a hit short-circuits; the test override bypasses.
+  assert.strictEqual(mk(null, { cached: JSON.stringify({ target: 91, band: 3, teamAvgExcludes: [], source: 'sheet', dept: 'CSR' }) }).getCdrDashboardStandard_().target, 91);
+  const ov = mk(rows, { cached: JSON.stringify({ target: 1, source: 'sheet' }), override: 'fixture' });
+  assert.strictEqual(ov.getCdrDashboardStandard_().target, 92, 'under _TEST_OVERRIDE_CDR_SS_ID the cache is bypassed');
+  assert.strictEqual(ov._puts.length, 0);
+  // Reset seam + the memo global + the CONFIG keys are read (F1 rule).
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_cdrStandardsMemo = null;/.test(tests.slice(tests.indexOf('function _resetCdrCaches_'), tests.indexOf('function _clearCdrCacheForDate_'))), '_resetCdrCaches_ clears the standards memo');
+  assert.ok(/CONFIG\.CDR_STANDARDS_TAB/.test(reader) && /CONFIG\.CDR_DASHBOARD_DEPT/.test(dept));
+});
+
+test('H2-4: the ambient badge and the Clock KPI tone judge against the published standard, and go SILENT without one', () => {
+  const amb = foNc(extractRawFunction('Code.js', 'getMetricsAmbient'));
+  assert.ok(/var ambientStd = getCdrDashboardStandard_\(\);/.test(amb) && /if \(ambientThreshold == null\) return \{ badge: null, unavailable: 'standard'/.test(amb),
+    'no standard → no badge, and the response names why (never a hand-carried cutoff)');
+  assert.ok(/metrics_ambient_v2:' \+ ambientThreshold/.test(amb) && !/metrics_ambient_v1/.test(amb), 'the ambient key bumped and still carries the cutoff (INV-88)');
+  assert.ok(/cdrAnswerPct_\(totalAns, totalMissed\)/.test(amb), 'the badge rate is the dashboard formula');
+  const dashPctTone_ = loadFunction(sb, 'tc/script_clock.html', 'dashPctTone_');
+  assert.strictEqual(dashPctTone_(90.5, 92, false, 2), 'warn', 'CSR: 90.5 is within the 2-pt band');
+  assert.strictEqual(dashPctTone_(89.9, 92, false, 2), 'crit');
+  assert.strictEqual(dashPctTone_(81, 85, false), 'warn', 'no band passed → the local 5pp slack (Transfer % keeps it)');
+  const clk = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8'));
+  assert.ok(/dashPctTone_\(value, res && res\.alertThreshold, false, res && res\.alertBand\)/.test(clk), 'the Clock card passes the published band for % Answered');
+  const mp = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/mPctClass_\(r\.pctAnswered, thr, band\)/.test(mp) && /var band = data\.alertBand;/.test(mp), 'the team table bands with the shipped band');
+  assert.ok(!/alertThreshold \|\| \d|thr \|\| \d|alertBand \|\| \d/.test(mp + clk), 'no client mirror of any standard');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/alertBand: 5/.test(mock), 'the visual fixture mirrors the band field (INV-185)');
+});
+
+// ── H3 (2026-09-17): the three small bridge fixes ────────────────────────────
+// The cross-repo evaluation's leftovers on the read side of the CDR bridge:
+// a bare Sheets serial dropped a DQE row silently, and both DQE readers read
+// the WHOLE sheet at full width twice per call where the dashboard reads a
+// date-column SPAN. Both are ports of dashboard rules (F-8 / R41).
+test('H3-1: cdrRowDateIso_ reads a Sheets SERIAL as a date, formatted in UTC (never the sheet tz)', () => {
+  const calls = [];
+  const ctx = { Utilities: { formatDate: (d, tz, fmt) => { calls.push(tz); return tz === 'UTC' ? d.toISOString().slice(0, 10) : 'LOCAL'; } } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_'), ctx);
+  const f = ctx.cdrRowDateIso_;
+  assert.strictEqual(f(46000, 'America/Mexico_City'), '2025-12-09', '46000 days since 1899-12-30');
+  assert.strictEqual(f(45726, 'America/Mexico_City'), '2025-03-10', "the dashboard's F-8 example");
+  assert.strictEqual(calls.join('|'), 'UTC|UTC', 'the serial branch formats in UTC -- the sheet tz would render the previous evening');
+  assert.strictEqual(f(12, 'UTC'), '', 'a small integer is not a date');
+  assert.strictEqual(f(123456, 'UTC'), '', 'nor an implausibly large one');
+  assert.strictEqual(f('46000', 'UTC'), '', 'a STRING of digits is still not a date shape (only a numeric cell is a serial)');
+  assert.strictEqual(f('2026-05-28', 'UTC'), '2026-05-28', 'the string shapes are unchanged');
+  assert.strictEqual(f('5/28/26', 'UTC'), '2026-05-28');
+});
+
+test('H3-2: cdrDqeWindowSpan_ behavioural -- an out-of-order row WIDENS the span, no row in window is null, the date column alone is read', () => {
+  const mk = (rows) => {
+    const reads = [];
+    const sheet = { getRange: (r, c, n, w) => { reads.push([r, c, n, w]); return { getValues: () => rows.slice(r - 2, r - 2 + n).map((row) => row.slice(c - 1, c - 1 + w)) }; } };
+    return { sheet, reads };
+  };
+  const ctx = { CDR: { DATE: 2 }, Utilities: { formatDate: () => '' } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_') + '\n' + extractRawFunction('Code.js', 'cdrDqeWindowSpan_'), ctx);
+  const S = ctx.cdrDqeWindowSpan_;
+  // Data rows (sheet rows 2..): a backfilled OLDER date sits BELOW newer rows.
+  const rows = [
+    ['x', '2026-05-01', 'A'],   // row 2
+    ['x', '2026-05-04', 'A'],   // row 3  <- first in window
+    ['x', '2026-05-05', 'A'],   // row 4
+    ['x', '2026-05-09', 'A'],   // row 5  (outside)
+    ['x', '2026-05-04', 'B'],   // row 6  <- the out-of-order backfill: widens the span
+    ['x', '2026-05-12', 'A'],   // row 7
+  ];
+  const { sheet, reads } = mk(rows);
+  const span = S(sheet, 7, '2026-05-04', '2026-05-06', 'UTC');
+  assert.strictEqual(JSON.stringify(span), JSON.stringify({ startRow: 3, numRows: 4 }), 'rows 3..6 -- the span REACHES the backfilled row and carries the out-of-window row 5 (the per-row filter drops it)');
+  assert.strictEqual(JSON.stringify(reads), JSON.stringify([[2, 2, 6, 1]]), 'ONE read: the date column, all data rows, width 1');
+  assert.strictEqual(S(sheet, 7, '2026-06-01', '2026-06-30', 'UTC'), null, 'no row in the window -> null (the caller reads nothing)');
+  assert.strictEqual(S(sheet, 1, '2026-05-04', '2026-05-06', 'UTC'), null, 'a header-only sheet reads nothing');
+  assert.strictEqual(JSON.stringify(S(sheet, 7, '2026-05-01', '2026-05-12', 'UTC')), JSON.stringify({ startRow: 2, numRows: 6 }), 'a window covering everything is the whole sheet -- never narrower than a full scan');
+});
+
+test('H3-3: getCdrAgentMetrics_ over the span equals the old full scan -- out-of-order rows counted, out-of-window rows in the span dropped', () => {
+  const H = ['Queue', 'Date', 'Agent', 'Ext', 'Unique', 'Rung', 'Missed', 'Answered', 'TTT', 'ATT'];
+  const R = (date, agent, rung, missed, ans, ttt, att) => ['q', date, agent, '', 1, rung, missed, ans, ttt, att];
+  const data = [
+    R('2026-05-01', 'Ann', 10, 1, 9, '0:10:00', '0:01:00'),
+    R('2026-05-04', 'Ann', 10, 2, 8, '0:20:00', '0:02:00'),
+    R('2026-05-05', 'Bo', 5, 0, 5, '0:05:00', '0:01:00'),
+    R('2026-05-09', 'Ann', 99, 99, 0, '9:00:00', '9:00:00'),   // inside the span, OUTSIDE the window
+    R('2026-05-04', 'Bo', 6, 1, 5, '0:06:00', '0:01:00'),      // the backfill below newer rows
+    R('2026-05-12', 'Ann', 3, 3, 0, '0:00:00', '0:00:00'),
+  ];
+  const rows = [H].concat(data);
+  const run = (mode) => {
+    const reads = [];
+    const sheet = {
+      getLastRow: () => rows.length,
+      getRange: (r, c, n, w) => {
+        reads.push([r, c, n, w]);
+        const slice = rows.slice(r - 1, r - 1 + n).map((row) => row.slice(c - 1, c - 1 + w));
+        return { getValues: () => slice, getDisplayValues: () => slice.map((row) => row.map(String)) };
+      },
+    };
+    const ctx = {
+      CONFIG: { CDR_CACHE_KEY: 'k', CDR_CACHE_TTL: 1 },
+      CDR: { DATE: 2, AGENT: 3, QUEUE_EXT: 4, TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8, TTT: 9, ATT: 10 },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+      getCdrSS_: () => ({ getSheetByName: () => sheet, getSpreadsheetTimeZone: () => 'UTC' }),
+      validateCdrColumns_: () => null, getCdrNameMap_: () => ({}), cdrRosterHash_: () => 'h',
+      cdrParseHms_: (s) => { const p = String(s || '').split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : 0; },
+      cdrFmtHms_: (n) => String(n),
+      Utilities: { formatDate: () => '' }, console: { warn() {} }, JSON: JSON,
+      _reads: reads,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+    if (mode === 'full') ctx.cdrDqeWindowSpan_ = (sheet, lastRow) => ({ startRow: 2, numRows: lastRow - 1 });   // the pre-H3 read, for the equivalence
+    return { out: ctx.getCdrAgentMetrics_('2026-05-04', '2026-05-06', ['Ann', 'Bo']), reads };
+  };
+  const span = run('span'), full = run('full');
+  const strip = (o) => JSON.stringify(Object.assign({}, o, { meta: Object.assign({}, o.meta, { rowsScanned: 0 }) }));
+  assert.strictEqual(strip(span.out), strip(full.out), 'value-for-value the same result as the full scan (rowsScanned aside)');
+  assert.strictEqual(span.out.agents.Ann.totalAnswered, 8, 'the 05-09 row inside the span was DROPPED by the per-row filter');
+  assert.strictEqual(span.out.agents.Bo.totalAnswered, 10, 'the backfilled 05-04 row below newer rows was COUNTED (a tail scan would have missed it)');
+  assert.strictEqual(span.out.meta.rowsScanned, 4, 'rows 3..6 read, not 6');
+  assert.strictEqual(JSON.stringify(span.reads.slice(1)), JSON.stringify([[3, 1, 4, 34]]), 'after the date column, ONE full-width read of the span (rows 3..6)');
+  assert.strictEqual(JSON.stringify(full.reads), JSON.stringify([[2, 1, 6, 34]]), '(the old shape read every row, with no date-column pass)');
+});
+
+test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row date filter; no full-sheet DQE read survives', () => {
+  ['getCdrAgentMetrics_', 'getCdrDailyBreakdown_'].forEach((name) => {
+    const body = foNc(extractRawFunction('Code.js', name));
+    assert.ok(/cdrDqeWindowSpan_\(sheet, lastRow, from, to, tz\)/.test(body), name + ' spans the window');
+    assert.ok(/span \? sheet\.getRange\(span\.startRow, 1, span\.numRows, 34\) : null/.test(body), name + ' reads only the span at full width');
+    assert.ok(!/getRange\(2, 1, lastRow - 1, 34\)/.test(body), name + ': the full-sheet read is gone');
+    assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), name + ' keeps the per-row date filter -- the span bounds the read, it never replaces the filter');
+  });
+  const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
+  assert.ok(/getRange\(2, CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1');
+  assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
+});
+
+// ── Infrastructure adaptation (from the dashboard's app-email.test.js): a
+// third mail sender must not appear silently. The two sanctioned senders are
+// sendRepEmail_ (rep identity) and appSendMail_ (system identity); both ride
+// mailMergeBcc_ so MAIL_BCC_ALL is honoured on every send. A bare
+// MailApp.sendEmail / GmailApp.sendEmail anywhere else bypasses that.
+test('MAIL-SWEEP: every MailApp/GmailApp send in the server lives inside sendRepEmail_ or appSendMail_', () => {
+  const src = foNc(serverSource());
+  const total = (src.match(/(?:MailApp|GmailApp)\.sendEmail\(/g) || []).length;
+  const inside = ['sendRepEmail_', 'appSendMail_']
+    .map((f) => (foNc(extractRawFunction('Code.js', f)).match(/(?:MailApp|GmailApp)\.sendEmail\(/g) || []).length)
+    .reduce((a, b) => a + b, 0);
+  assert.ok(total >= 2, 'the two senders exist (' + total + ' sends found)');
+  assert.strictEqual(total, inside, (total - inside) + ' send(s) outside the two sanctioned senders -- route through appSendMail_ / sendRepEmail_ so MAIL_BCC_ALL rides along');
+  assert.ok(/mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'sendRepEmail_')) && /mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'appSendMail_')), 'both senders merge the BCC list');
 });
 
 test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {

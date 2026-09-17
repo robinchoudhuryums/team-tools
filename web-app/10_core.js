@@ -86,6 +86,10 @@ function doGet(e) {
   // Deploy-version beacon — '' on any failure: the client skips the check
   // entirely on an empty stamp, so a hash problem can never break boot.
   try { tpl.buildStamp = clientBuildHash_(); } catch (_) { tpl.buildStamp = ''; }
+  // H1: the company holiday list (flat ISO dates) so the client's
+  // previous-workday walk agrees with the server's -- [] on any failure, and
+  // the client then walks weekends only (its pre-H1 behaviour), never breaks.
+  try { tpl.companyHolidays = companyHolidayIsoList_(); } catch (_) { tpl.companyHolidays = []; }
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
@@ -3301,6 +3305,74 @@ function sendManagerDailyBrief() {
     Logger.log('sendManagerDailyBrief failed: ' + err.message);
   }
 }
+/** H1 (2026-09-17): the ONE company holiday calendar -- [{date, name}] for
+ *  `year`, the getUsHolidays_ shape every consumer already reads. Source: the
+ *  CDR Report workbook's `Company Holidays` tab (getCdrCompanyHolidayRanges_,
+ *  the list call-data-reporting's dashboard walks its own business days on),
+ *  falling back to the computed US-federal list ONLY when that tab is absent,
+ *  empty or unreadable. Precedence is "the tab wins", never a union: a merged
+ *  read would keep Columbus / Veterans Day as holidays after the operator
+ *  listed the real closures, which is the two-calendars bug this closes. An
+ *  unlisted year is therefore a year with no holidays -- the same rule the
+ *  dashboard has -- so the tab is maintained yearly (its Operator State #27). */
+function getCompanyHolidays_(year) {
+  var src = null;
+  try { src = (typeof getCdrCompanyHolidayRanges_ === 'function') ? getCdrCompanyHolidayRanges_() : null; }
+  catch (e) { src = null; }
+  if (!src || src.source !== 'sheet' || !src.ranges || !src.ranges.length) return getUsHolidays_(year);
+  return companyHolidayDatesInYear_(src.ranges, year);
+}
+/** PURE (Node-pinned): expand [{from, to, name}] ranges to the [{date, name}]
+ *  days that fall inside `year`, sorted, de-duplicated, each range bounded. */
+function companyHolidayDatesInYear_(ranges, year) {
+  var y = String(year);
+  var lo = y + '-01-01', hi = y + '-12-31';
+  var iso = /^\d{4}-\d{2}-\d{2}$/;
+  var seen = {}, out = [];
+  (ranges || []).forEach(function (r) {
+    if (!r || !iso.test(String(r.from || '')) || !iso.test(String(r.to || ''))) return;
+    var from = r.from > lo ? r.from : lo;
+    var to = r.to < hi ? r.to : hi;
+    if (from > to) return;
+    var d = new Date(from + 'T12:00:00Z'), end = new Date(to + 'T12:00:00Z');
+    for (var steps = 0; d <= end && steps < 366; steps++) {
+      var day = d.toISOString().slice(0, 10);
+      if (!seen[day]) { seen[day] = true; out.push({ date: day, name: r.name || 'Company holiday' }); }
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+  });
+  out.sort(function (a, b) { return a.date.localeCompare(b.date); });
+  return out;
+}
+/** {iso: true} for every company holiday in the years spanned by
+ *  [fromIso, toIso] (bounded to 3 years, the businessMinutesBetween_ rule).
+ *  Never throws -- the walks that read it degrade to weekends-only. */
+function companyHolidayMap_(fromIso, toIso) {
+  var map = {};
+  try {
+    var y0 = parseInt(String(fromIso || '').substring(0, 4), 10);
+    var y1 = parseInt(String(toIso || fromIso || '').substring(0, 4), 10);
+    if (!(y0 > 1970)) return map;
+    if (!(y1 >= y0)) y1 = y0;
+    for (var y = y0; y <= y1 && (y - y0) <= 2; y++) {
+      getCompanyHolidays_(y).forEach(function (h) { if (h && h.date) map[h.date] = true; });
+    }
+  } catch (e) { /* weekends-only is the honest degrade */ }
+  return map;
+}
+/** The flat ISO list the page ships to the client (index.html injects it as
+ *  window.SERVER_COMPANY_HOLIDAYS) so the CLIENT's previous-workday walk
+ *  (mPrevWorkdayIso_) agrees with the server's. Last year, this year, next. */
+function companyHolidayIsoList_() {
+  var out = [];
+  try {
+    var y = new Date().getFullYear();
+    for (var yy = y - 1; yy <= y + 1; yy++) {
+      getCompanyHolidays_(yy).forEach(function (h) { if (h && h.date) out.push(h.date); });
+    }
+  } catch (e) { return []; }
+  return out.slice(0, 1200);
+}
 function getUsHolidays_(year) {
   const list = [
     fixedHoliday_(year, 0,  1,  "New Year's Day"),
@@ -3676,7 +3748,7 @@ function businessMinutesBetween_(startMs, endMs, tz) {
     const hol = {};
     const y0 = parseInt(s.date.substring(0, 4), 10), y1 = parseInt(e.date.substring(0, 4), 10);
     for (let y = y0; y <= y1 && (y - y0) <= 2; y++) {
-      getUsHolidays_(y).forEach(function (h) { hol[h.date] = true; });
+      getCompanyHolidays_(y).forEach(function (h) { hol[h.date] = true; });
     }
     const win = businessHours_();
     return bizMinutesLocal_(s, e, { startMin: win.startMin, endMin: win.endMin,
@@ -3970,16 +4042,30 @@ function toDisplayTime_(t) {
 //  call-volume metrics for the CSR team inside team-tools. Option A (direct
 //  spreadsheet read); designed for a future swap to Neon Postgres (Option C).
 // ════════════════════════════════════════════════════════════════════════════
-/** Previous WORKDAY (Mon–Fri) before an ISO date — the server twin of the
- *  client's mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never
- *  populated same-day, so "calls without a note" is a previous-workday
- *  question). Pure; a bad input yields ''. */
-function prevWorkdayIso_(iso) {
+/** Previous WORKDAY before an ISO date — the server twin of the client's
+ *  mPrevWorkdayIso_ (operator 2026-08-17: CDR data is never populated
+ *  same-day, so "calls without a note" is a previous-workday question).
+ *  Steps back over weekends AND company holidays (H1: the morning after a
+ *  holiday, "yesterday" is an empty CDR day). `holidays` is an {iso:true}
+ *  map; omitted, the company calendar is consulted (typeof-guarded so the
+ *  one-arg form stays PURE for the Node pin). Bounded at 14 steps like the
+ *  dashboard's prevBusinessDayIso_. A bad input yields ''. */
+function prevWorkdayIso_(iso, holidays) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return '';
   var d = new Date(iso + 'T12:00:00Z');
   if (isNaN(d.getTime())) return '';
-  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
-  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  var hol = holidays;
+  if (!hol) {
+    try { hol = (typeof companyHolidayMap_ === 'function') ? companyHolidayMap_(String(Number(iso.slice(0, 4)) - 1) + '-01-01', iso) : {}; }
+    catch (e) { hol = {}; }
+  }
+  var fmt = function (x) { return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0'); };
+  for (var steps = 0; steps < 14; steps++) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    var dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6 && !(hol && hol[fmt(d)])) return fmt(d);
+  }
+  return fmt(d);
 }
 // ── "What's new" panel (#4, INV-152) ─────────────────────────────────────────
 // A dismissible in-app changelog: Script Property WHATSNEW_KB_ID points at a
