@@ -282,6 +282,16 @@
     "getOopPricingDiagnostics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "comment-only: the Pick-Up Cost column was dropped from the operator's sheet, so oopVerifyQuotes_'s worked example names the base price instead",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopVerifyQuotes_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5259,7 +5269,7 @@
   "oopVerifyQuotes_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "90ab3f4dcf7398ec"
+   "sha": "c58c4e1853bb02d5"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",

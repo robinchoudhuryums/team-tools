@@ -7277,13 +7277,13 @@ function _withTestOop_(fn) {
     // column-A name assumption survive — a fixture that agrees with the
     // assumption cannot test it.
     seed(OOP_PRICING_TAB, [
-      ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
-       'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
+      ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price – pick-up', 'Shipping',
+       'W/ Shipping Cost', 'W/ Tech Delivery Cost',
        'Area Eligibility', 'Comments', 'EffectiveDate'],
       ['TEST_K0800', 'POV/Scooter', 'TEST_OOP Widget', '', '$129.00', '$20.00',
-       '$129.00', '$149.00', '$179.00', 'AZ NV', 'sample row', '2026-09-01'],
+       '$149.00', '$179.00', 'AZ NV', 'sample row', '2026-09-01'],
       ['TEST_K0801', 'POV/Scooter', 'TEST_OOP Gadget', '', '$45.50', '',
-       '$45.50', '', '', 'US', '', '2026-09-01'],
+       '', '', 'US', '', '2026-09-01'],
     ]);
     seed(LOCATION_ACCEPTANCE_TAB, [
       ['Type', 'Name', 'Address', 'State', 'Accepts', 'Notes'],
@@ -7320,9 +7320,14 @@ function test_oop_search_findsSeededItemAtSheetPrice() {
     _assertEq(m.eligibility, 'AZ NV', 'the Area Eligibility column resolved by header');
     _assertEq(m.effective, '2026-09-01', 'the EffectiveDate column resolved by header');
     // FOUR price columns, labelled and in sheet order — the operator's shape.
-    _assertEq(m.prices.length, 4, 'every price-role column is kept');
-    _assertEq(m.prices[2].label, 'W/ Shipping Cost', 'labelled by header');
-    _assertEq(m.prices[2].value, '$149.00', 'and read as the sheet displays it');
+    // THREE price columns, labelled and in sheet order (the operator dropped a
+    // fourth, `Pick-Up Cost`, on 2026-09-17: it was always equal to OOP Price,
+    // and two columns that MUST stay equal is an invariant the spreadsheet
+    // cannot enforce — a divergence would offer the rep two different correct
+    // prices for one item, either of which becomes a commitment).
+    _assertEq(m.prices.length, 3, 'every price-role column is kept');
+    _assertEq(m.prices[1].label, 'W/ Shipping Cost', 'labelled by header');
+    _assertEq(m.prices[1].value, '$149.00', 'and read as the sheet displays it');
     // An unrecognised column rides along VERBATIM rather than being dropped.
     const notes = m.details.filter(function (d) { return d.label === 'Comments'; });
     _assertEq(notes.length, 1, 'the unrecognised Comments column rode along');
@@ -7442,7 +7447,10 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
     _assertEq(d.missing.length, 0, 'the seeded header has all three roles; missing: ' + d.missing.join(','));
     const roleOf = {};
     d.cols.forEach(function (c) { roleOf[c.header] = c.role; });
-    _assertEq(roleOf['OOP Price'], 'price', 'OOP Price resolved');
+    // The operator renamed this 2026-09-17 so the label self-documents in the
+    // quote line; the EN DASH is part of the header and must survive the stem
+    // match, the payload round trip and the by-label lookup.
+    _assertEq(roleOf['OOP Price – pick-up'], 'price', 'the renamed base-price column resolved');
     _assertEq(roleOf['HCPCS'], 'code', 'HCPCS resolved');
     _assertEq(roleOf['Item'], 'name (the searched column)', 'and the NAME column is NAMED');
     _assertEq(roleOf['Area Eligibility'], 'eligibility', 'Area Eligibility resolved');

@@ -13086,12 +13086,12 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   // THE OPERATOR'S ACTUAL SHEET (supplied 2026-09-16, after OOP-A had shipped).
   // This exact row is why the pin was rewritten: the reader ASSUMED column A was
   // the item name, and here column A is the billing code.
-  const H = ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price', 'Shipping',
-    'Pick-Up Cost', 'W/ Shipping Cost', 'W/ Tech Delivery Cost',
+  const H = ['HCPCS', 'Category', 'Item', 'Image', 'OOP Price – pick-up', 'Shipping',
+    'W/ Shipping Cost', 'W/ Tech Delivery Cost',
     'Area Eligibility', 'Comments', 'EffectiveDate'];
   const R = ['K0800 (C/C)', 'POV/Scooter', 'Drive Scout 3 Wheel',
     'https://drive.google.com/file/d/1AbC/view', '$920.00',
-    '$150.00', '$920.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
+    '$150.00', '$1,070.00', '$1,220.00', 'Open', 'Red, Blue', '09/16/2026'];
   const o = obj(H, R);
 
   assert.strictEqual(o.name, 'Drive Scout 3 Wheel',
@@ -13102,8 +13102,8 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   // Collapsing these to one number is not a simplification: $920 is correct only
   // for a customer collecting in person.
   assert.deepStrictEqual(o.prices.map((p) => p.label + '=' + p.value),
-    ['OOP Price=$920.00', 'Pick-Up Cost=$920.00', 'W/ Shipping Cost=$1,070.00', 'W/ Tech Delivery Cost=$1,220.00'],
-    'all four price-role columns are kept, labelled and in sheet order');
+    ['OOP Price – pick-up=$920.00', 'W/ Shipping Cost=$1,070.00', 'W/ Tech Delivery Cost=$1,220.00'],
+    'all three price-role columns are kept, labelled and in sheet order');
   assert.strictEqual(o.price, '$920.00', 'and `price` is the first of them (what a single-price sheet has)');
 
   assert.strictEqual(o.eligibility, 'Open');
@@ -13230,11 +13230,12 @@ test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — c
   const P = (prices, label) => JSON.parse(vm.runInContext(
     'JSON.stringify(oopPriceByLabel_(' + JSON.stringify(prices) + ',' + JSON.stringify(label) + ') || null)', _vmCtx));
   const PRICES = [
-    { label: 'OOP Price', value: '$920.00' },
+    { label: 'OOP Price – pick-up', value: '$920.00' },
     { label: 'W/ Shipping Cost', value: '$1,070.00' },
   ];
   assert.strictEqual(P(PRICES, 'W/ Shipping Cost').value, '$1,070.00', 'by label');
-  assert.strictEqual(P(PRICES, 'OOP Price').value, '$920.00');
+  assert.strictEqual(P(PRICES, 'OOP Price – pick-up').value, '$920.00',
+    'an en dash in the header is matched exactly, not normalised to a hyphen');
   assert.strictEqual(P(PRICES, '').value, '$920.00', 'no label (a single-price sheet) → the first entry');
   // A label the sheet no longer has is NOT silently swapped for another price.
   // Falling back to prices[0] here would verify a $920 line against a quote the
@@ -13671,7 +13672,11 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
     // parenthesis, which are the characters a "tidy this up" edit would touch.
     ['Drive Scout 3 Wheel', '$1,070.00', '09/16/2026', 'W/ Shipping Cost'],
     ['Drive Scout 3 Wheel', '$1,220.00', '09/16/2026', 'W/ Tech Delivery Cost'],
-    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'Pick-Up Cost'],
+    // The operator's real base-price header carries an EN DASH (2026-09-17).
+    // It is in the mirror table because a dash is exactly the character a
+    // "tidy this up" edit normalises on ONE side, and the two sides disagreeing
+    // about it would refuse every send quoting the base price.
+    ['Drive Scout 3 Wheel', '$920.00', '09/16/2026', 'OOP Price – pick-up'],
     ['Widget (boxed)', '$9', '', 'OOP Price'],
   ];
   table.forEach((row) => {
