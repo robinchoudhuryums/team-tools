@@ -19834,6 +19834,132 @@ test('H2-4: the ambient badge and the Clock KPI tone judge against the published
   assert.ok(/alertBand: 5/.test(mock), 'the visual fixture mirrors the band field (INV-185)');
 });
 
+// ── H3 (2026-09-17): the three small bridge fixes ────────────────────────────
+// The cross-repo evaluation's leftovers on the read side of the CDR bridge:
+// a bare Sheets serial dropped a DQE row silently, and both DQE readers read
+// the WHOLE sheet at full width twice per call where the dashboard reads a
+// date-column SPAN. Both are ports of dashboard rules (F-8 / R41).
+test('H3-1: cdrRowDateIso_ reads a Sheets SERIAL as a date, formatted in UTC (never the sheet tz)', () => {
+  const calls = [];
+  const ctx = { Utilities: { formatDate: (d, tz, fmt) => { calls.push(tz); return tz === 'UTC' ? d.toISOString().slice(0, 10) : 'LOCAL'; } } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_'), ctx);
+  const f = ctx.cdrRowDateIso_;
+  assert.strictEqual(f(46000, 'America/Mexico_City'), '2025-12-09', '46000 days since 1899-12-30');
+  assert.strictEqual(f(45726, 'America/Mexico_City'), '2025-03-10', "the dashboard's F-8 example");
+  assert.strictEqual(calls.join('|'), 'UTC|UTC', 'the serial branch formats in UTC -- the sheet tz would render the previous evening');
+  assert.strictEqual(f(12, 'UTC'), '', 'a small integer is not a date');
+  assert.strictEqual(f(123456, 'UTC'), '', 'nor an implausibly large one');
+  assert.strictEqual(f('46000', 'UTC'), '', 'a STRING of digits is still not a date shape (only a numeric cell is a serial)');
+  assert.strictEqual(f('2026-05-28', 'UTC'), '2026-05-28', 'the string shapes are unchanged');
+  assert.strictEqual(f('5/28/26', 'UTC'), '2026-05-28');
+});
+
+test('H3-2: cdrDqeWindowSpan_ behavioural -- an out-of-order row WIDENS the span, no row in window is null, the date column alone is read', () => {
+  const mk = (rows) => {
+    const reads = [];
+    const sheet = { getRange: (r, c, n, w) => { reads.push([r, c, n, w]); return { getValues: () => rows.slice(r - 2, r - 2 + n).map((row) => row.slice(c - 1, c - 1 + w)) }; } };
+    return { sheet, reads };
+  };
+  const ctx = { CDR: { DATE: 2 }, Utilities: { formatDate: () => '' } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_') + '\n' + extractRawFunction('Code.js', 'cdrDqeWindowSpan_'), ctx);
+  const S = ctx.cdrDqeWindowSpan_;
+  // Data rows (sheet rows 2..): a backfilled OLDER date sits BELOW newer rows.
+  const rows = [
+    ['x', '2026-05-01', 'A'],   // row 2
+    ['x', '2026-05-04', 'A'],   // row 3  <- first in window
+    ['x', '2026-05-05', 'A'],   // row 4
+    ['x', '2026-05-09', 'A'],   // row 5  (outside)
+    ['x', '2026-05-04', 'B'],   // row 6  <- the out-of-order backfill: widens the span
+    ['x', '2026-05-12', 'A'],   // row 7
+  ];
+  const { sheet, reads } = mk(rows);
+  const span = S(sheet, 7, '2026-05-04', '2026-05-06', 'UTC');
+  assert.strictEqual(JSON.stringify(span), JSON.stringify({ startRow: 3, numRows: 4 }), 'rows 3..6 -- the span REACHES the backfilled row and carries the out-of-window row 5 (the per-row filter drops it)');
+  assert.strictEqual(JSON.stringify(reads), JSON.stringify([[2, 2, 6, 1]]), 'ONE read: the date column, all data rows, width 1');
+  assert.strictEqual(S(sheet, 7, '2026-06-01', '2026-06-30', 'UTC'), null, 'no row in the window -> null (the caller reads nothing)');
+  assert.strictEqual(S(sheet, 1, '2026-05-04', '2026-05-06', 'UTC'), null, 'a header-only sheet reads nothing');
+  assert.strictEqual(JSON.stringify(S(sheet, 7, '2026-05-01', '2026-05-12', 'UTC')), JSON.stringify({ startRow: 2, numRows: 6 }), 'a window covering everything is the whole sheet -- never narrower than a full scan');
+});
+
+test('H3-3: getCdrAgentMetrics_ over the span equals the old full scan -- out-of-order rows counted, out-of-window rows in the span dropped', () => {
+  const H = ['Queue', 'Date', 'Agent', 'Ext', 'Unique', 'Rung', 'Missed', 'Answered', 'TTT', 'ATT'];
+  const R = (date, agent, rung, missed, ans, ttt, att) => ['q', date, agent, '', 1, rung, missed, ans, ttt, att];
+  const data = [
+    R('2026-05-01', 'Ann', 10, 1, 9, '0:10:00', '0:01:00'),
+    R('2026-05-04', 'Ann', 10, 2, 8, '0:20:00', '0:02:00'),
+    R('2026-05-05', 'Bo', 5, 0, 5, '0:05:00', '0:01:00'),
+    R('2026-05-09', 'Ann', 99, 99, 0, '9:00:00', '9:00:00'),   // inside the span, OUTSIDE the window
+    R('2026-05-04', 'Bo', 6, 1, 5, '0:06:00', '0:01:00'),      // the backfill below newer rows
+    R('2026-05-12', 'Ann', 3, 3, 0, '0:00:00', '0:00:00'),
+  ];
+  const rows = [H].concat(data);
+  const run = (mode) => {
+    const reads = [];
+    const sheet = {
+      getLastRow: () => rows.length,
+      getRange: (r, c, n, w) => {
+        reads.push([r, c, n, w]);
+        const slice = rows.slice(r - 1, r - 1 + n).map((row) => row.slice(c - 1, c - 1 + w));
+        return { getValues: () => slice, getDisplayValues: () => slice.map((row) => row.map(String)) };
+      },
+    };
+    const ctx = {
+      CONFIG: { CDR_CACHE_KEY: 'k', CDR_CACHE_TTL: 1 },
+      CDR: { DATE: 2, AGENT: 3, QUEUE_EXT: 4, TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8, TTT: 9, ATT: 10 },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+      getCdrSS_: () => ({ getSheetByName: () => sheet, getSpreadsheetTimeZone: () => 'UTC' }),
+      validateCdrColumns_: () => null, getCdrNameMap_: () => ({}), cdrRosterHash_: () => 'h',
+      cdrParseHms_: (s) => { const p = String(s || '').split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : 0; },
+      cdrFmtHms_: (n) => String(n),
+      Utilities: { formatDate: () => '' }, console: { warn() {} }, JSON: JSON,
+      _reads: reads,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+    if (mode === 'full') ctx.cdrDqeWindowSpan_ = (sheet, lastRow) => ({ startRow: 2, numRows: lastRow - 1 });   // the pre-H3 read, for the equivalence
+    return { out: ctx.getCdrAgentMetrics_('2026-05-04', '2026-05-06', ['Ann', 'Bo']), reads };
+  };
+  const span = run('span'), full = run('full');
+  const strip = (o) => JSON.stringify(Object.assign({}, o, { meta: Object.assign({}, o.meta, { rowsScanned: 0 }) }));
+  assert.strictEqual(strip(span.out), strip(full.out), 'value-for-value the same result as the full scan (rowsScanned aside)');
+  assert.strictEqual(span.out.agents.Ann.totalAnswered, 8, 'the 05-09 row inside the span was DROPPED by the per-row filter');
+  assert.strictEqual(span.out.agents.Bo.totalAnswered, 10, 'the backfilled 05-04 row below newer rows was COUNTED (a tail scan would have missed it)');
+  assert.strictEqual(span.out.meta.rowsScanned, 4, 'rows 3..6 read, not 6');
+  assert.strictEqual(JSON.stringify(span.reads.slice(1)), JSON.stringify([[3, 1, 4, 34]]), 'after the date column, ONE full-width read of the span (rows 3..6)');
+  assert.strictEqual(JSON.stringify(full.reads), JSON.stringify([[2, 1, 6, 34]]), '(the old shape read every row, with no date-column pass)');
+});
+
+test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row date filter; no full-sheet DQE read survives', () => {
+  ['getCdrAgentMetrics_', 'getCdrDailyBreakdown_'].forEach((name) => {
+    const body = foNc(extractRawFunction('Code.js', name));
+    assert.ok(/cdrDqeWindowSpan_\(sheet, lastRow, from, to, tz\)/.test(body), name + ' spans the window');
+    assert.ok(/span \? sheet\.getRange\(span\.startRow, 1, span\.numRows, 34\) : null/.test(body), name + ' reads only the span at full width');
+    assert.ok(!/getRange\(2, 1, lastRow - 1, 34\)/.test(body), name + ': the full-sheet read is gone');
+    assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), name + ' keeps the per-row date filter -- the span bounds the read, it never replaces the filter');
+  });
+  const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
+  assert.ok(/getRange\(2, CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1');
+  assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
+});
+
+// ── Infrastructure adaptation (from the dashboard's app-email.test.js): a
+// third mail sender must not appear silently. The two sanctioned senders are
+// sendRepEmail_ (rep identity) and appSendMail_ (system identity); both ride
+// mailMergeBcc_ so MAIL_BCC_ALL is honoured on every send. A bare
+// MailApp.sendEmail / GmailApp.sendEmail anywhere else bypasses that.
+test('MAIL-SWEEP: every MailApp/GmailApp send in the server lives inside sendRepEmail_ or appSendMail_', () => {
+  const src = foNc(serverSource());
+  const total = (src.match(/(?:MailApp|GmailApp)\.sendEmail\(/g) || []).length;
+  const inside = ['sendRepEmail_', 'appSendMail_']
+    .map((f) => (foNc(extractRawFunction('Code.js', f)).match(/(?:MailApp|GmailApp)\.sendEmail\(/g) || []).length)
+    .reduce((a, b) => a + b, 0);
+  assert.ok(total >= 2, 'the two senders exist (' + total + ' sends found)');
+  assert.strictEqual(total, inside, (total - inside) + ' send(s) outside the two sanctioned senders -- route through appSendMail_ / sendRepEmail_ so MAIL_BCC_ALL rides along');
+  assert.ok(/mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'sendRepEmail_')) && /mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'appSendMail_')), 'both senders merge the BCC list');
+});
+
 test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {
   const fnCtx = { JSON: JSON };
   vm.createContext(fnCtx);

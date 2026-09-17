@@ -1310,6 +1310,7 @@ function _registerSmokeTests_() {
   _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
   _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
   _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
+  _smokeTest('metrics_cdrRowDateIso_serial',            test_metrics_cdrRowDateIso_serial);
   _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
   _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
   _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
@@ -5576,6 +5577,13 @@ function test_metrics_cdrRowDateIso_isoString() {
 function test_metrics_cdrRowDateIso_usFormat() {
   _assertEq(cdrRowDateIso_('5/28/26', CONFIG.TIMEZONE),   '2026-05-28', 'M/D/YY → ISO');
   _assertEq(cdrRowDateIso_('12/3/2026', CONFIG.TIMEZONE), '2026-12-03', 'M/D/YYYY → ISO, zero-padded');
+}
+// H3: a Sheets serial (a date cell under a NUMBER format) is a date, not a
+// dropped row -- and it is formatted in UTC, so the sheet tz cannot shift it.
+function test_metrics_cdrRowDateIso_serial() {
+  _assertEq(cdrRowDateIso_(46000, 'America/Mexico_City'), '2025-12-09', 'serial 46000 -> 2025-12-09 whatever tz the sheet is on');
+  _assertEq(cdrRowDateIso_(45726, 'America/Mexico_City'), '2025-03-10', 'serial 45726 -> 2025-03-10');
+  _assertEq(cdrRowDateIso_(12, CONFIG.TIMEZONE), '', 'a small integer is not a date');
 }
 
 // ── isCdrQueueSentinel_ (queue rows excluded from agent stats) ──

@@ -4191,5 +4191,5 @@ pick them up without re-deriving the context.
   rep still sees their OWN numbers against a benchmark that does not include
   them.
 
-  Recorded in `.cycle/config.md` as INV-211 and scenario S107; the gotcha is
+  Recorded in `.cycle/config.md` as INV-211 and scenario S111; the gotcha is
   g124. The formula change bumped every rate-carrying cache key (INV-85).

@@ -2963,3 +2963,33 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
   `system-health.test.js`.
+
+<a id="g125-a-dqe-read-is-bounded-by-a-span"></a>
+
+- **A DQE read is bounded by a date-column SPAN, never a tail scan -- and a
+  bare Sheets serial in the Date column is a date, not a dropped row (H3,
+  2026-09-17).** The cross-repo evaluation found both DQE readers reading the
+  WHOLE `DQE Historical Data` tab at full width TWICE per call (`getValues` +
+  `getDisplayValues`, ~31k rows and growing daily) where the dashboard reads a
+  span, shielded here only by the 5-min / 6-h caches -- a cold Dashboard open
+  paid four full scans -- and `cdrRowDateIso_` had no branch for a NUMBER, so
+  a date cell that had picked up a number format read as `'46000'`, matched
+  neither string shape, and the row vanished from My Stats with no error (the
+  dashboard's F-8 class; rare, since its nightly sort check refuses such
+  columns, but silent). Now `cdrDqeWindowSpan_` scans the DATE column alone,
+  finds the FIRST and LAST row inside the window, and each reader reads only
+  that span at full width. Two rules ride with it. (1) The per-row date
+  filter in every reader STAYS: a span is correct whatever the row order is
+  because an out-of-order backfill merely WIDENS it, so the span bounds the
+  read and the filter still decides what counts. (2) Never "optimize" it to a
+  tail scan: the tab is appended at `getLastRow()+1` and only re-sorted
+  afterwards, so a backfilled older date can sit below newer rows and a tail
+  scan stops early and silently drops it -- quietly wrong numbers, strictly
+  worse than slow. The serial branch formats in UTC on purpose: the derived
+  instant is UTC midnight of the calendar date, and the CDR workbook's
+  `America/Mexico_City` would render the previous evening and shift every such
+  row back a day. Fires when you read a dated CDR tab, add a DQE reader, or
+  touch `cdrRowDateIso_`. Verify: the H3-1..H3-4 pins (serial + UTC, the span
+  behavioural, the real reader over an out-of-order fixture equal to the old
+  full scan, both readers routed with the filter kept) and
+  `test_metrics_cdrRowDateIso_serial`.

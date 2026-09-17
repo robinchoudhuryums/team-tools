@@ -373,6 +373,24 @@
     "cdrAnswerPct_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-17",
+   "why": "H3: cdrDqeWindowSpan_ (span-bounded DQE reads), the serial branch in cdrRowDateIso_, and the MAIL-SWEEP pin",
+   "added": [
+    "cdrDqeWindowSpan_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "cdrQueueInventory_",
+    "cdrRowDateIso_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getMyMetricsRange",
+    "getTeamMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -785,7 +803,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a3aae1b509044a59"
+   "sha": "8f03e2ce93293b6c"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -2727,6 +2745,11 @@
    "kind": "function",
    "sha": "cb4c6f541e38c6e1"
   },
+  "cdrDqeWindowSpan_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "2a9e28d294038ef3"
+  },
   "cdrExcludeSet_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -2760,7 +2783,7 @@
   "cdrQueueInventory_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "720919dd9d43225f"
+   "sha": "c1509e59dcdea8c9"
   },
   "cdrRosterHash_": {
    "file": "40_metrics.js",
@@ -2770,7 +2793,7 @@
   "cdrRowDateIso_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "8c24fe4fdd46335a"
+   "sha": "c6d9f05b3cfd5420"
   },
   "cdrStandardShip_": {
    "file": "40_metrics.js",
@@ -3645,7 +3668,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "2cd07683f1de0e65"
+   "sha": "dc5628c3ef341848"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -3655,7 +3678,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "10936a604937b4ec"
+   "sha": "557c7503078b87db"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -4000,7 +4023,7 @@
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "0747c6df95d674e5"
+   "sha": "b2f540016cdfb05c"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -4370,7 +4393,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "19e330193a92e6ce"
+   "sha": "585858c2026dd0d2"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",

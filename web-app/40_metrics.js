@@ -130,6 +130,18 @@ function cdrFmtHms_(totalSec) {
 }
 function cdrRowDateIso_(val, tz) {
   if (val instanceof Date) return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+  // H3 (2026-09-17): a Sheets SERIAL -- a date cell under a NUMBER format
+  // reads as e.g. 46000 (days since 1899-12-30). Before this branch the
+  // String() below produced '46000', matched neither shape, and the row was
+  // DROPPED with no error (the dashboard's F-8 class). The derived instant
+  // is UTC MIDNIGHT of the calendar date, so it MUST be formatted in UTC: a
+  // west-of-UTC tz (the CDR workbook's America/Mexico_City) renders the
+  // previous evening and silently shifts the row back a day. The plausible
+  // range (~1982..~2100) keeps a small integer from reading as a date.
+  if (typeof val === 'number' && val > 30000 && val < 100000) {
+    var serial = new Date(Math.round((val - 25569) * 86400000));
+    return isNaN(serial.getTime()) ? '' : Utilities.formatDate(serial, 'UTC', 'yyyy-MM-dd');
+  }
   var s = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
   var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
@@ -209,6 +221,31 @@ function cdrLikelyNameMismatches_(rosterWithNoCdr, unmatchedAgents) {
     }
   }
   return out;
+}
+/** H3 (2026-09-17): the SPAN-bounded DQE read, ported from the dashboard's
+ *  `dqeWindowRowSpan_` (its R41). Scan the DATE column alone, find the FIRST
+ *  and LAST row inside [fromIso, toIso], and let the caller read only that row
+ *  span at full width. Before this both DQE readers read the WHOLE sheet at
+ *  full width TWICE (getValues + getDisplayValues) on every call -- ~31k rows
+ *  and growing daily, shielded only by the 5-min / 6-h caches.
+ *  A span is correct whatever the row order is: an out-of-order row WIDENS it
+ *  and can never fall outside it, which is why the per-row date filter in
+ *  every caller STAYS -- the span bounds the read, it does not replace the
+ *  filter. A TAIL scan would be the trap: DQE Historical Data is appended at
+ *  getLastRow()+1 and only re-sorted after the fact, so a backfill of older
+ *  dates can sit below newer rows and a tail scan stops early and silently
+ *  drops them. Returns null when no row is in the window. */
+function cdrDqeWindowSpan_(sheet, lastRow, fromIso, toIso, tz) {
+  if (lastRow < 2) return null;
+  var dates = sheet.getRange(2, CDR.DATE, lastRow - 1, 1).getValues();
+  var first = -1, last = -1;
+  for (var i = 0; i < dates.length; i++) {
+    var iso = cdrRowDateIso_(dates[i][0], tz);
+    if (!iso || iso < fromIso || iso > toIso) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  return first < 0 ? null : { startRow: 2 + first, numRows: last - first + 1 };
 }
 function validateCdrColumns_(sheet) {
   if (_cdrColumnsValidated) return _cdrColumnWarning;
@@ -513,9 +550,12 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { agents: {}, meta: { rowsScanned: 0, columnWarning: colWarning } };
 
-  var range = sheet.getRange(2, 1, lastRow - 1, 34);
-  var values = range.getValues();
-  var displays = range.getDisplayValues();
+  // H3: span-bounded -- the date column decides which rows are read at full
+  // width; the per-row date filter below still decides which rows COUNT.
+  var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
+  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
+  var values = range ? range.getValues() : [];
+  var displays = range ? range.getDisplayValues() : [];
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -577,8 +617,8 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   try {
     var payload = JSON.stringify(result);
     // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
-    // put THROWS (caught below, but every subsequent read then re-scans the
-    // whole DQE tab twice per open). Skip the doomed put explicitly with a
+    // put THROWS (caught below, but every subsequent read then re-reads the
+    // DQE window twice per open). Skip the doomed put explicitly with a
     // headroom margin so the behavior is deliberate + logged, not an
     // exception path; a large-team YTD aggregate is the realistic trigger.
     if (payload.length > 95000) {
@@ -611,9 +651,11 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { daily: {}, agents: {} };
 
-  var range = sheet.getRange(2, 1, lastRow - 1, 34);
-  var values = range.getValues();
-  var displays = range.getDisplayValues();
+  // H3: span-bounded (see cdrDqeWindowSpan_); the per-row filter below stays.
+  var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
+  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
+  var values = range ? range.getValues() : [];
+  var displays = range ? range.getDisplayValues() : [];
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -1146,7 +1188,7 @@ function cdrQueueInventory_(from, to) {
     // and it does so through the REAL reader, so the production code path is
     // exercised on live data rather than only by fixtures. Costs one extra
     // read of the Transfer tab on an admin panel that already does a
-    // 34-column full-sheet DQE read; best-effort like everything else here.
+    // 34-column span-bounded DQE read; best-effort like everything else here.
     try {
       const tr = getCsrTransferPerRepDaily_(from, to, null, { withQueues: true });
       const totals = {}, reps = {};
@@ -1579,9 +1621,9 @@ function getMyMetricsRange(from, to) {
     if (spanDays > 92) return { error: 'Range capped at 92 days.' };
 
     // Cycle-9 L-13 — the L-1 endpoint-cache pattern: getCdrDailyBreakdown_ is
-    // deliberately uncached (INV-67) and reads the full DQE tab with BOTH
-    // getValues + getDisplayValues, so every Today/7D/30D preset toggle
-    // re-scanned the whole sheet twice. Keyed by emp.id (no cross-rep reads);
+    // deliberately uncached (INV-67) and read the full DQE tab with BOTH
+    // getValues + getDisplayValues (span-bounded since H3, but still two
+    // reads of the window), so every Today/7D/30D preset toggle re-scanned. Keyed by emp.id (no cross-rep reads);
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
@@ -1807,8 +1849,8 @@ function getTeamMetrics(dateOrFrom, to) {
       // the client renders the pre-#8 shape — a missing chart is not a
       // reassuring degradation (INV-187's test). Span-capped at 92 days like
       // getMyMetricsRange: getTeamMetrics has no overall span cap, and an
-      // unbounded manual range must not trigger this extra full-sheet per-day
-      // scan (the aggregate read above still serves it).
+      // unbounded manual range must not trigger this extra per-day span
+      // read (the aggregate read above still serves it).
       var rangeSpan = Math.round((Date.parse(toDate + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
       if (rangeSpan >= 2 && rangeSpan <= 92) {
         try {

@@ -108,7 +108,11 @@ not restate it. Server endpoints live in the fourteen server files
      `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
      line/series), rail-row sparklines, and a sortable + sticky-header team
      table with tri-tone % cells (the table renders via the shared
-     `mtRenderTable_` component, see Key Design Decisions).
+     `mtRenderTable_` component, see Key Design Decisions). Since H3
+     (2026-09-17) both DQE readers are SPAN-bounded — `cdrDqeWindowSpan_`
+     scans the date column and each reader reads only the window's row span
+     at full width, keeping its per-row filter — and a bare Sheets serial in
+     the Date column is a date rather than a silently dropped row (g125).
      **Intake-call analytics (operator 2026-08-25):** long PPD /
      account-creation calls are EXPLAINABLE beside the KPIs as honest
      COUNTS — per-call CDR attribution does not exist (DQE is one row per

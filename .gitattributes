@@ -1,0 +1,26 @@
+# Line-ending policy (H3, ported from the call-data-reporting repo, where a
+# Windows checkout with core.autocrlf=true once turned 7 tests red with no
+# real defect). This repo has two CRLF-sensitive artifacts of its own: the
+# split manifest's per-declaration SHA ledger (test/client/server-split-
+# manifest.json) hashes source TEXT, and scripts/counts.mjs compares the
+# generated block in CLAUDE.md byte-for-byte. A rewritten line ending fails
+# both while looking like drift. The tree was already LF-clean when this
+# landed (git ls-files --eol showed no CRLF), so normalization rewrites
+# nothing -- it pins the state rather than changing it.
+* text=auto eol=lf
+
+# Shell scripts MUST be LF regardless: a CRLF shebang makes the kernel look
+# for an interpreter named "bash\r" ("bad interpreter"). Covered by the rule
+# above; stated because it is the one case where CRLF breaks execution.
+*.sh text eol=lf
+
+# Binary assets, should any be committed (screenshots under docs/ already
+# exist as PNGs): never normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

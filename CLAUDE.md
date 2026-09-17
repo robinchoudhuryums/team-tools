@@ -269,6 +269,7 @@ A foreign spreadsheet owned by another repo. Its shape is a constraint, not a ch
 - **Metrics enters call `stopClock` to avoid an interval leak.** Fires when you add a view enter that leaves the Clock view. [Detail](docs/gotchas.md#g106-metrics-enters-call-stopclock-to-avoid-an)
 - **The holiday calendar is the CDR Report's `Company Holidays` tab, read through ONE accessor (`getCompanyHolidays_`) that REPLACES the federal list rather than adding to it (H1, 2026-09-17).** Fires when you compute a "previous workday", walk business days, or read `getUsHolidays_` directly. Verify: the H1-1..H1-5 pins + `test_companyHolidays_*`. [Detail](docs/gotchas.md#g123-the-holiday-calendar-is-the-cdr-report-s)
 - **Answer % is the Department Dashboard's formula (`answered / (answered + missed)`), and the target, amber band and team-average exclusions come from the dashboard's published `Dashboard Standards` tab -- a null standard renders NO tone, line or badge, never a hand-carried number (H2, 2026-09-17).** Fires when you compute or tone an answer rate, add a KPI band, or read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins + `test_cdrAnswerPct_isTheDashboardFormula` / `test_dashboardStandard_readsFixtureTab`. [Detail](docs/gotchas.md#g124-answer-is-the-dashboard-s-formula-and)
+- **A DQE read is bounded by a date-column SPAN, never a tail scan, and a bare Sheets serial in the Date column is a date, not a dropped row (H3, 2026-09-17).** Fires when you read a dated CDR tab, add a DQE reader, or touch `cdrRowDateIso_`. Verify: the H3-1..H3-4 pins + `test_metrics_cdrRowDateIso_serial`. [Detail](docs/gotchas.md#g125-a-dqe-read-is-bounded-by-a-span)
 
 ### Intake contracts
 
@@ -842,16 +843,16 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 860 | `node test/client/run.js` |
+| Pure harness tests | 865 | `node test/client/run.js` |
 | DOM harness tests | 121 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 102 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 335 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 336 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 61 | `'Manager access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 211 | `.cycle/config.md` |
+| Invariant library entries | 212 | `.cycle/config.md` |
 | Regression scenarios (S*) | 107 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

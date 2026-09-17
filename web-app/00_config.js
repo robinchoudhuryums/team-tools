@@ -188,7 +188,7 @@ const CONFIG = {
   // inside team-tools. The deployer account must have view access to
   // the CDR Report spreadsheet.
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
-  CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
+  CDR_CACHE_TTL:     300,  // 5 min — this app's OWN tier. (The dashboard's report cache is 6 h since its R24; nothing here tracks it, INV-85 keys carry the rate version.)
   // Break coverage planner (operator 2026-09-03, the Admin "Break schedules"
   // card). The demand layer reads the CDR Report's `Inbound Calls` export tab
   // (written by call-data-reporting's inboundCallsExport.js — Op State #49
