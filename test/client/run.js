@@ -13810,6 +13810,11 @@ test('R-2: ONE renderer draws a price row — the eligibility payload and the pr
   const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
   assert.ok(/m\.prices/.test(price), 'it reads the prices ARRAY, not the scalar');
   assert.ok(/prices\.length > 1/.test(price), 'and labels them once there is more than one');
+  // NOTE what these two assertions do NOT cover: that the map walks the WHOLE
+  // array. Truncating it to `[prices[0]]` leaves both regexes green — checked,
+  // and it is the R DOM eligibility pin that goes red on that mutation. The
+  // structural claim here is about the SHAPE (one emitter, one call site, both
+  // payloads through one renderer); the behaviour is held in the DOM harness.
   assert.ok(/no price on file/.test(price),
     'a row with no price SAYS so — a blank where a number belongs reads as free');
 

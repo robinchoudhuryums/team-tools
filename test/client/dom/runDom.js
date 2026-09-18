@@ -3324,6 +3324,36 @@ test('R DOM: an address that produces no verdict does NOT take the prices with i
   assert.ok(/daily quota reached/.test(h.$('#kb-oop-results').textContent), 'the failure is still surfaced');
   assert.strictEqual(h.$('#kb-oop-results .kb-oop-degraded'), null,
     'but not dressed as a degraded PRICE answer, because there are no prices to show');
+
+  // The OTHER failure channel: an RPC that THROWS rather than returning a
+  // structured {error} — a script timeout, a transport drop. It is separate
+  // code with a separate guard, and nothing drove it: a bite-check that removed
+  // the item guard from the failure handler came back NO BITE while the same
+  // removal on the success branch bit. Two guards need two pieces of evidence.
+  h.run.clearResponder('checkOopEligibility');
+  h.$('#kb-oop-item').value = 'widget';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  h.run.flushFailure(new Error('Script timed out.'), 'checkOopEligibility');
+  await tick(); await tick(); await tick(); await tick();
+  const thrown = h.$('#kb-oop-results');
+  assert.ok(thrown.querySelector('.kb-oop-degraded'), 'a thrown RPC degrades the same way');
+  assert.ok(/Script timed out/.test(thrown.textContent), 'naming what threw');
+  assert.ok(/\$129\.00/.test(thrown.textContent), 'and the price still answers');
+
+  // With no item, a throw stays an error rather than becoming a degraded price
+  // answer with no prices in it.
+  h.run.clearResponder('checkOopEligibility');
+  h.$('#kb-oop-item').value = '';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  h.run.flushFailure(new Error('Script timed out.'), 'checkOopEligibility');
+  await tick(); await tick(); await tick(); await tick();
+  assert.ok(/Script timed out/.test(h.$('#kb-oop-results').textContent), 'the throw is surfaced');
+  assert.strictEqual(h.$('#kb-oop-results .kb-oop-degraded'), null,
+    'and not dressed as a degraded price answer with nothing in it');
 });
 
 test('R DOM: an item alone still answers, and says what the address would add', async () => {
