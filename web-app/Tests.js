@@ -1894,7 +1894,7 @@ function test_teamBenchmark_subtractsPublishedExcludes() {
     Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },
   };
   _assertEq(dashboardTeamAggregate_(agents, 2, ['Mgr']).team.pctAnswered, 85, 'benchmark without the manager');
-  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 85.7, 'with the manager it drifts');
+  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 86, 'with the manager it drifts (180/210 = 85.7 -> 86, a WHOLE percent like the dashboard cell)');
   const ser = metricsTeamAvgSeries_({ '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } }, ['2026-05-15'], 'v', 3, ['Mgr']);
   _assertEq(ser[0].avg, 90, 'the anonymized series excludes too');
 }
