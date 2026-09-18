@@ -4,16 +4,17 @@
 Cycle: 20 — OPEN (the /broad-scan of 2026-09-17 opened it; cycle 19's whole
 block moved to `.cycle/HISTORY.md` at that point, per the close-out procedure —
 **with cycle 19's `/reflect` still OWED; it reads the archived block**).
-Phase: implement — Batches 1–4 of the scan's IMPLEMENTATION BATCH PLAN are
+Phase: implement — Batches 1–5 of the scan's IMPLEMENTATION BATCH PLAN are
 DONE (`.cycle/blocks/20-batch1-broad-implement.md`, net 5 − 0 = 5;
 `.cycle/blocks/20-batch2-broad-implement.md`, net 6 − 0 = 6;
 `.cycle/blocks/20-batch3-broad-implement.md`, net 4 − 0 = 4;
-`.cycle/blocks/20-batch4-broad-implement.md`, net 3 − 0 = 3); Batches 5–7 are
+`.cycle/blocks/20-batch4-broad-implement.md`, net 3 − 0 = 3;
+`.cycle/blocks/20-batch5-broad-implement.md`, net 3 − 0 = 3); Batches 6–7 are
 in `.cycle/blocks/20-scan-batch-plan.md`. NOT DEPLOYED: everything since Batch 1
 is live only after `clasp push -f` + a New version.
 Scope: broad
 Test Command: manual
-Estimates: **Batch 5 (F-16 QA My Reviews + audio scoped by roster ID · F-10 tag transforms report skipped reps · F-11 DeptRequests PHI comments/map/Storage Health row · F-17 QA exemption onclick apostrophe · F-24 hash-less doc refuses to sign, verify reports contentMatch null · F-23 eligibility states + radius · F-27 intake labels from the server bank) — M (~6 h), recorded 2026-09-18 BEFORE the first edit.** · **Batch 4 (F-20 automation liveness: two JOB_CHECKS rows, a digest heartbeat, computeAutomationHealth_ stamps its own failure · F-19 per-month accrual ledger keys · F-46 the accrual job's early returns rewrite/clear PTO_ACCRUAL_RECONCILE · F-21 cleanup strips MANAGER_EMAILS residue · F-22 TEST_ rows on DeptRequests/ClientErrors deleted by key + cleanup backstop · F-49 getTeamCalendar through the time-off provisioner) — M (~7 h), recorded 2026-09-18 BEFORE the first edit — ~2 h ACTUAL.** · **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
+Estimates: **Batch 5 (F-16 QA My Reviews + audio scoped by roster ID · F-10 tag transforms report skipped reps · F-11 DeptRequests PHI comments/map/Storage Health row · F-17 QA exemption onclick apostrophe · F-24 hash-less doc refuses to sign, verify reports contentMatch null · F-23 eligibility states + radius · F-27 intake labels from the server bank) — M (~6 h), recorded 2026-09-18 BEFORE the first edit — ~2.5 h ACTUAL.** · **Batch 4 (F-20 automation liveness: two JOB_CHECKS rows, a digest heartbeat, computeAutomationHealth_ stamps its own failure · F-19 per-month accrual ledger keys · F-46 the accrual job's early returns rewrite/clear PTO_ACCRUAL_RECONCILE · F-21 cleanup strips MANAGER_EMAILS residue · F-22 TEST_ rows on DeptRequests/ClientErrors deleted by key + cleanup backstop · F-49 getTeamCalendar through the time-off provisioner) — M (~7 h), recorded 2026-09-18 BEFORE the first edit — ~2 h ACTUAL.** · **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
 Subsystem cycles since last Seams audit: 5 — **the every-4 cadence was met at 19-d (19-e, the H1–H3 reflection of 2026-09-18, incremented it to 5);
 the next `/audit` should be a Seams & Invariants audit** (carried forward; the
 2026-09-17 /broad-scan was a broad scan, not the seams round).
@@ -62,9 +63,18 @@ Updated: 2026-09-18
 - F-21 / F-22 | web-app/Tests.js | cleanup strips MANAGER_EMAILS residue; DeptRequests + ClientErrors tidied and backstopped by KEY
 - F-49 | web-app/20_timeclock.js | getTeamCalendar through getOrCreateTimeOffSheet_
 - pins (Batch 4) | test/client/run.js, test/visual/mock.js, test/client/server-split-manifest.json | pure 878 → 883; twelve bite-checks bite; manifest 1289
+- F-16 | web-app/00_config.js, web-app/90_qa.js | QaRecordings AgentId column; qaRowIsMine_ scopes the agent-facing reads by roster id (legacy name match only when unique; an ambiguous name resolves to nobody)
+- F-10 | web-app/30_callnotes.js, web-app/cn/script_callnotes.html | tag rename/merge report skippedReps in the return, the audit row and a warn toast
+- F-11 | web-app/10_core.js, web-app/50_deptrequests.js, CLAUDE.md, docs/operator-state.md | the DeptRequests store is PHI-adjacent: probed by Storage Health (Forms fallback posture), named in the map (nine stores), comments corrected
+- F-17 | web-app/qa/script_qa.html | exemption buttons via data-qa-exempt + one delegated listener
+- F-24 | web-app/81_empdocs.js, web-app/train/script_empdocs.html | a hash-less doc is refused at signing; verify carries a warning when it cannot verify
+- F-23 | web-app/70_kb.js | a state beside a radius (not the warehouse's own address) is UNKNOWN
+- F-27 | web-app/00_config.js, web-app/60_intake.js | the server holds the English banks (pinned equal to the client's) and builds every intake email's rows from bank + answers
+- pins (Batch 5) | test/client/run.js, test/visual/mock.js, test/client/server-split-manifest.json | pure 883 → 890; twelve bite-checks bite; manifest 1300
 
 ## Pending / not yet done
-- Batches 5–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
+- Batches 6–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
+- `/sync-docs` after Batch 5 — its block lists the edits (g43 amended, INV-196/INV-209 amended, a skip-reporting invariant, the QA/S75/S59 scenario steps, the QA operator entry + a DEPT_REQUESTS_SS_ID inventory line, three decisions, modules/log entries).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -74,6 +84,9 @@ Updated: 2026-09-18
 ## Open follow-on items
 - Test Suite: the integration tier is the only place `test_oop_verifyQuotes_currentStaleAndDeleted` executes; it was RED for a day and unrun. Until the dev instance exists, every "integration pin touched by a round" should be run by hand from the editor after a push.
 - 20_timeclock.js: the LIVE punch path still accepts a Clock Out in the same minute as a Clock In (it now pays 0 h and the doctor reports it). A live-path refusal is a UX decision not taken in Batch 1.
+- `oopEligibilityParse_`'s STATES branch reads "TX or CA" as Texas + Oregon + California (uppercased "or") — the class F-23 closed for the radius branch, untouched.
+- The GATE-SHAPE pin follows the FIRST `return helper_(` in an endpoint as a delegate — a callback's return inside the endpoint is mis-read (F-27's first draft tripped it); a top-level-return regex would fix it.
+- Existing DeptRequests rows stay on the ADP sheet once `DEPT_REQUESTS_SS_ID` is set — no migration tool.
 - `scripts/bite.sh` cannot tell which function a mutation hit — an un-anchored F-49 mutation changed a DIFFERENT function and reported NO BITE (a `--fn <name>` span guard would close it).
 - A legacy multi-month accrual ledger key (none expected in prod) produces a daily `skipped` line until it ages out of the ledger read; no tooling splits it.
 - Tests.js:1897 `test_teamBenchmark_subtractsPublishedExcludes` expects 85.7; `cdrAnswerPct_` rounds whole since H2 (run.js H2-2 says 86) — that editor test is RED as written and has never run. One line for `/test-sync`.
@@ -88,6 +101,9 @@ Updated: 2026-09-18
 - Both OopPricing search surfaces score through ONE helper (`oopMatchScore_`) on the header-discovered row object; no OOP function reads a cell at position 0 (pinned). The OOP-B fixture carries the operator's shape (code in A, item in C) and a guard forbids putting the item in A.
 - A registered `onClose` hook OWNS the close: `closeOverlay` will not remove the class for it (INV-145 lets a hook refuse), so every hook must remove its overlay itself. The DOM sweep pin closes every registered hook's overlay while nothing is in flight.
 - Day Edit Save is dead for the prefill's duration (typically 1–3 s) — the pending window is the one that deleted punches.
+- The agent-facing QA reads scope by ROSTER ID (the AgentId cell written at attribution); a legacy row matches by name only when that name is unique, and an ambiguous name resolves to nobody — a PHI-adjacent release to the wrong agent is the failure being refused.
+- The intake email's labels come from a SERVER-held English bank that mirrors the client's byte-for-byte (pinned equal); the client's labels are never rendered. The mirror was accepted over shipping the bank to the client because a drift costs a wrong label, never a refused send (g120).
+- The DeptRequests store is PHI-ADJACENT (PatientTrx) and is probed with the Forms posture: unset warns and recommends the Intake spreadsheet.
 - The three daily jobs that write no audit row (missed-punch alerts, the export check, the failure digest) are LIVE by heartbeat, not by a JOB_CHECKS row — a JOB_CHECKS row needs an audit action, and a row per run would be two AuditLog rows a day for jobs whose signal is "I ran".
 - A catch-up accrual credit writes one ledger row per MONTH, and its total is the SUM of the per-month roundings (≤0.01 day per extra month from the once-rounded total) — the ledger must add up to the balance moved, and the preview shares the sum.
 - A published standard with NO Amber Band has NO amber tier — one point under the target is red on the Metrics table AND the Clock card (mtAnswerBand_); Transfer % keeps its local 5-pt slack because it has no published standard at all.
@@ -96,10 +112,11 @@ Updated: 2026-09-18
 - Cycle 19 was closed in substance by the 2026-09-17 deploy; the new /broad-scan opened cycle 20 and the block moved to HISTORY.md even though 19's /reflect is owed — the reflection reads the archive.
 
 ## Where I left off
-Batches 1–4 are implemented, pinned, bite-checked and committed on
+Batches 1–5 are implemented, pinned, bite-checked and committed on
 `claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
-are all green. Next: open the PR when the operator asks; after the merge + New version,
+are all green. Next: `/sync-docs` for Batch 5 (its block's DOCUMENTATION UPDATES
+list), then open the PR when the operator asks; after the merge + New version,
 walk S112 first (OOP), then S111 step 5 and S110 step 5 (the two new Admin →
 System findings), then S7's two new steps, then the sheet doctor. Then pick the
-next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 5, access boundary
-and data integrity). Cycle 19 is fully reflected (19-e).
+next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 6, shell,
+accessibility and copy). Cycle 19 is fully reflected (19-e).
