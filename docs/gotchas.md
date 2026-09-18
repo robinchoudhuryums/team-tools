@@ -1019,6 +1019,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a justification string. HCPCS / pdfLink / imageUrl (from the Robin-owned
   Offerings sheet) are still `esc_`'d in attributes defensively.
 
+  **Batch 5 (2026-09-18, F-27): the rule is now held SERVER-side.** Until
+  then the server rendered whatever LABEL text arrived in `payload.rows`, so
+  "the labels are always English" was a CLIENT convention — the one thing a
+  client cannot be trusted to keep, and exactly what failed live. The server
+  holds `INTAKE_PPD_Q_EN` / `INTAKE_PPD_NOTES_EN` / `INTAKE_PMD_Q_EN` /
+  `INTAKE_PAP_Q_EN` (00_config.js), builds every preview and send's rows from
+  the bank plus the client's ANSWERS map (`intakePpdRowsEn_` /
+  `intakeAcctRowsEn_`, reproducing the client collectors' walk — headers,
+  the indent-derived secondary flag, the notes pseudo-question), labels the
+  amend banner from it (`intakePpdLabelEn_`), and reads `payload.rows`
+  NOWHERE. The banks are a byte-for-byte client↔server MIRROR and the F-27
+  pin holds them equal by value; a drift costs a wrong LABEL in an email and
+  never a refused send, so the mirror is the cheap side of g120's question.
+  Edit the client bank, then copy it across.
+
 <a id="g45-intake-pmd-pap-layout-is-duplicated-client"></a>
 
 - **Intake PMD/PAP layout is duplicated client↔server — keep them equal.**
@@ -3224,3 +3239,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the F-21/F-22 pin — the strip form is the only cleanup write to
   MANAGER_EMAILS, both sweeps by key on the right store, no positional delete
   survives in `Tests.js`, every DeptRequests probe row is `TEST_DR_`-keyed.
+
+<a id="g133-an-onclick-literal-cannot-carry-a-name"></a>
+
+- **An `onclick` LITERAL cannot carry a name — `esc()` has already encoded the
+  apostrophe, so the `.replace()` beside it is a no-op and the button throws
+  on click (Batch 5 of the 2026-09-17 /broad-scan, F-17).** The QA coverage
+  table built its exemption buttons as
+  `onclick="qaSetExemption_('" + esc(r.name).replace(/'/g, "\\'") + "', true)"`.
+  It reads like a belt-and-braces escape and is neither: `esc()` turns `'`
+  into `&#39;` FIRST (script_core's `esc` escapes both quote kinds), so the
+  `.replace` finds no apostrophe to escape — and the browser decodes `&#39;`
+  back to `'` when it parses the attribute, closing the JavaScript string
+  early. Every agent whose name carries an apostrophe got a button that threw
+  a SyntaxError on click, silently, on a manager-only path nobody screenshots.
+  The two escaping layers are ordered against each other and cannot be fixed
+  by adding a third. RULE: a handler that needs a VALUE takes it from a
+  `data-*` attribute through a DELEGATED listener (the `data-cn-action`
+  pattern, g91) — the attribute value comes back DECODED (g49), which is
+  correct here because it goes to a function ARGUMENT and never back into
+  `innerHTML`. Fires when you build a handler call by string concatenation.
+  Verify: the F-17 pin — no `onclick="qaSetExemption_` survives, both button
+  forms carry `data-qa-exempt` + `data-qa-exempt-on`, ONE document listener
+  dispatches on `closest('[data-qa-exempt]')`, and the `esc()` round trip is
+  asserted on a name carrying both quote kinds.

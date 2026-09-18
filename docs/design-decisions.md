@@ -1548,6 +1548,20 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   rejected with "The form changed since you previewed it" (INV-111). That is
   the guard working; re-previewing clears it, and the window is one page load
   wide.
+
+  **Batch 5 (2026-09-18, F-27): the LABELS are the server's, not the
+  payload's.** The email builders rendered whatever `payload.rows[].label`
+  arrived, so "the email is always English" (g43, after a Spanish PPD reached
+  the Power dept live) was enforced in the client collector alone — a
+  convention held by the one party that cannot be trusted to hold it. The
+  server now carries the English banks and builds every preview and send's
+  rows from the bank plus the client's ANSWERS map. The alternative — ship the
+  bank to the client and keep rendering what comes back — was rejected for the
+  same reason the original bug existed. The cost is a client↔server MIRROR of
+  four literals, accepted because a drift shows up as a wrong LABEL rather
+  than a refused send (the cheap side of the OOP-B question) and because the
+  F-27 pin compares the banks by value, so a one-sided edit turns the harness
+  red instead of shipping.
 - <a id="department-emails-and-state-tax-rates-are-editable-via-the-a"></a>**Department emails and state tax rates are editable via the Admin
   tab.** Call Notes → Admin (manager-only) reads the current config
   from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
@@ -3785,6 +3799,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   names exist purely for audit-trail clarity ("merge" tells future
   investigators that the manager expected the target to already
   exist on some notes).
+
+  **Batch 5 (2026-09-18, F-10): the per-rep try/catch REPORTS.** Isolating a
+  failure per rep is right — one unreachable Sheet must not fail the other
+  N−1 — but the catch was empty, so a rename that missed a rep returned
+  success, wrote `reps=N−1` in the audit row with nothing marking the gap, and
+  left that rep's notes on the old tag for good. The walk returns
+  `skippedReps: [{id, error}]`; both callers append the ids to the audit row
+  (`cnTagSkippedNote_` — ids only, INV-32) and ship the list; the Admin toast
+  turns WARN and names the reps to re-share and re-run. INV-220 generalises
+  it: a cross-rep walk that skips a member owes all three.
 - <a id="uiconfirm-uiprompt-replace-native-window-confirm-window-prom"></a>**`uiConfirm` / `uiPrompt` replace native `window.confirm` /
   `window.prompt`.** Promise-returning helpers in `script_core.html`
   that consume the existing `.overlay` + `.modal` vocabulary so

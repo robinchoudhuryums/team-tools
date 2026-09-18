@@ -175,6 +175,15 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="intake"></a>
+     **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
+     written from the roster when a reviewer attributes a recording, and the
+     agent-facing My Reviews list + playback scope by that id rather than by
+     the free-text name — a legacy row matches by name only when the name is
+     unique on the roster, and a name two agents share releases to neither
+     (F-16). The coverage table's exemption buttons fire through a delegated
+     `data-qa-exempt` handler, so an apostrophe in an agent's name no longer
+     breaks the click (F-17, g133).
+
 ## Intake
 
    - **Intake** — patient-intake forms ported from the bound
@@ -260,6 +269,13 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="reference"></a>
+     **Batch 5 (2026-09-18):** the email's question LABELS come from
+     SERVER-held English banks (`INTAKE_PPD_Q_EN` / `INTAKE_PMD_Q_EN` /
+     `INTAKE_PAP_Q_EN`) and the client's ANSWERS map — `payload.rows` is read
+     nowhere, so the g43 English rule no longer depends on the client keeping
+     it (F-27). The banks mirror the client's byte-for-byte and are pinned
+     equal.
+
 ## Reference
 
    - **Reference** — in-app knowledge base (Phase 1). A per-department

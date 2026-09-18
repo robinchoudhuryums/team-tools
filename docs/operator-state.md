@@ -179,6 +179,16 @@ entry says which it is.
   counted; a >500-file scan says it was capped and a second Sync continues).
   Playback streams through the app in chunks; a recording over ~40 MB is
   refused with an "Open in Drive" link instead (Drive streams it natively).
+  **Since Batch 5 (2026-09-18) the `QaRecordings` tab carries a trailing
+  `AgentId` column** (the header self-heals on a tab provisioned earlier, no
+  action needed): attributing a recording resolves the agent's ROSTER ID and
+  stores it beside the name, and the agent-facing My Reviews / playback reads
+  scope by that id. Two consequences worth knowing: a recording attributed
+  BEFORE this deploy has a blank id and still matches by name, but only when
+  that name belongs to exactly ONE roster row; and if two roster rows share a
+  name, attribution stores no id and NEITHER agent sees the review — resolve
+  the duplicate name (or re-attribute after fixing it) rather than leaving it,
+  because a review released to the wrong agent is the failure this refuses.
   Timestamped comments anchor to the playback position — click a timestamp or
   a timeline marker to jump there; authors (and managers) can remove them.
   The two QA tabs auto-provision on first touch; no triggers, no migrations,

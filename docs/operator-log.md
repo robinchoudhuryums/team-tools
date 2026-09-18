@@ -10,6 +10,35 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (later still) — Batch 5 of the cycle-20 scan: access boundary and data integrity
+
+Adds NO Script Property you must set, but makes ONE worth setting visible.
+What an operator notices after the push + New version: (1) Manage → Admin →
+System's Storage inventory gains a **Dept Requests (PHI-adjacent)** row, and
+it WARNS while `DEPT_REQUESTS_SS_ID` is unset — the tracker's rows have named
+a patient since 2026-09-10 (the `PatientTrx` column) and by default they sit
+on the ADP/payroll sheet; set the property to the Intake spreadsheet's id to
+move new rows onto the PHI store (existing rows stay put, and nothing reads
+them afterwards, so move or leave them as you prefer); (2) QA: attributing a
+recording now stores the agent's roster ID beside the name, and My Reviews
+matches on that — if two roster rows share a name, attribution stores no id
+and neither agent sees the review, which is the point; re-attribute anything
+shared before this deploy whose agent's name is duplicated; (3) the QA
+coverage table's Grant/Revoke exemption buttons work for an agent whose name
+carries an apostrophe (they threw silently before); (4) a tag rename or merge
+that cannot open a rep's Notes Sheet now says so — a warning naming the rep,
+and `skipped=<n> (<ids>)` in the audit row — instead of reporting success
+while that rep's notes keep the old tag; (5) an Employee Doc with no integrity
+hash on record (a hand-entered row, never an app-issued one) is REFUSED at
+signing with the reason, and Verify says "Integrity NOT verified" instead of a
+reassuring "legacy row" note; (6) an OopPricing Area Eligibility cell that
+names a state beside a radius ("TX, 100 miles of Dallas") reads UNKNOWN in the
+diagnostics — split the cell, or accept unknown; a warehouse's own state
+("100 miles of the Dallas TX warehouse") is unaffected; (7) intake emails are
+unchanged for an English completion — the labels now come from the server, so
+a Spanish completion is English whatever the client sends. Registrations
+unchanged at 337.
+
 ## 2026-09-18 (later) — Batch 4 of the cycle-20 scan: automation liveness and accrual diagnostics
 
 Adds NO Script Property to set and no sheet change; three auto-managed

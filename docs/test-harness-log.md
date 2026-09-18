@@ -1460,3 +1460,48 @@ needs attention".
 `_cleanupRowsByPrefix`), none its assertions; `cleanupTestData` gained the
 MANAGER_EMAILS strip and the DeptRequests + ClientErrors sweeps. Registrations
 unchanged.
+
+## 2026-09-18 (later still) — Batch 5 of the cycle-20 scan, and two harness lessons
+
+**Pure harness — seven pins (see the running-totals block for the count):**
+`F-16` drives the pure `qaRowIsMine_` through six shapes (id wins, a
+non-matching id is refused even under my own name, a legacy row under a unique
+name, a legacy row under a SHARED name, unattributed, no caller name) and
+`qaRosterIdsForName_` over a roster carrying a duplicate and an offboarded row;
+`F-10` drives `applyTagTransformAcrossReps_` in a vm whose `getCallNotesSheet_`
+THROWS for one rep of three, so the skip list is measured rather than read;
+`F-11` checks the probe's fallback + recommendation, that no server comment
+still says "PHI-free", the storage map, both fixtures, and drives
+`cnHealthFindings_` to confirm the unset store is a WARNING (not the
+no-fallback ok); `F-17` bans the `onclick` literal, pins both `data-*` forms
+and the single delegated listener, and asserts the `esc()` round trip on a name
+carrying both quote kinds; `F-24` pins the refusal BEFORE the mismatch check
+(by index), that the conditional gate is gone, both `warning` returns and the
+client copy; `F-23` drives six eligibility values; `F-27` compares the three
+server banks and the notes pair against the client's BY VALUE, then drives the
+server's PPD and PMD/PAP walks (first header, an answered question, the
+indent-derived secondary 31a, an unanswered blank, the notes tail, 49
+non-header rows, numeric vs string keys, the 1-based secondary rows) and
+asserts no preview or send path reads `payload.rows`.
+
+**Two lessons, both about the harness rather than the code.** (1) Arrays
+evaluated in two vm realms are never `deepStrictEqual` — the prototypes differ
+— so the F-27 bank mirror compares `JSON.parse(JSON.stringify(...))` on both
+sides; the same rule the R-reconcile pin learned about `months.join(',')`
+(g116). (2) The GATE-SHAPE pin follows the FIRST `return helper_(` inside an
+endpoint as a DELEGATING wrapper; F-27's first draft put a `return` inside a
+`.map()` callback in `intakeSendPPD` and the pin resolved the callback's
+helper as the delegate and failed on it. Hoisting the callback's result into a
+local fixed it, and the pin's regex would be better anchored on a top-level
+return.
+
+**Bite-checks:** twelve mutations, twelve bites — including the three that
+matter most for a PHI-adjacent boundary (an id that is not mine falling
+through to the name; a legacy row ignoring name uniqueness; an ambiguous name
+resolving to the first roster row) and the server bank drifting by one word.
+
+**Fixtures (INV-185):** both Storage Health fixtures and the deploy-readiness
+fixture carry the Dept Requests row; the default Admin System shot gains a
+fourth "Needs attention" item (the unset store), which is the finding, and the
+all-clear fixture stays clear. `admin-system` and `qa` re-shot: 0 missing, 0
+overflow.

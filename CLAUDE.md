@@ -282,7 +282,7 @@ A clinical recommendation engine reads these values. Changing one changes what i
 
 - **Intake Offerings catalog is read `A2:F` in a FIXED column order.** Fires when you reorder an Offerings column, or retire a catalog row. [Detail](docs/gotchas.md#g40-intake-offerings-catalog-is-read-a2-f)
 - **Intake PPD controls are engine-safe via CANONICAL-ENGLISH VALUES, not free-text (redesign Phase 2).** Fires when you change a PPD control value, or renumber a question. [Detail](docs/gotchas.md#g42-intake-ppd-controls-are-engine-safe-via)
-- **The intake payload's LABELS are always the English bank — the email is English whatever language the form was completed in (operator 2026-09-04, FIRED LIVE: a testing agent sent a PPD to the Power dept with Spanish labels).** Fires when you touch either intake collector, or the ES bank. Verify: INTK-EN + INTK-EN-DOM. [Detail](docs/gotchas.md#g43-the-intake-payload-s-labels-are-always)
+- **The intake email's LABELS come from the SERVER's English bank, never the payload — the email is English whatever language the form was completed in, and whatever a client sends (operator 2026-09-04, FIRED LIVE: a testing agent sent a PPD to the Power dept with Spanish labels; enforcement moved server-side in Batch 5, 2026-09-18).** Fires when you touch either intake collector, the ES bank, or a question bank on either side. Verify: INTK-EN + INTK-EN-DOM + the F-27 mirror/walk pin. [Detail](docs/gotchas.md#g43-the-intake-payload-s-labels-are-always)
 - **Intake PMD/PAP layout is duplicated client↔server — keep them equal.** Fires when you add or remove a PMD/PAP question. [Detail](docs/gotchas.md#g45-intake-pmd-pap-layout-is-duplicated-client)
 - **Intake account Yes/No toggles read/write through `.intk-yn` groups (deferred #10).** Fires when you add an account Yes/No field. [Detail](docs/gotchas.md#g46-intake-account-yes-no-toggles-read-write)
 
@@ -301,6 +301,7 @@ The hot path: the form, the cards, the composer, the per-rep store.
 - **Form-completion timer is persisted to localStorage.** Fires when you add a form-clearing path. [Detail](docs/gotchas.md#g85-form-completion-timer-is-persisted-to-localstorage)
 - **Sticky form draft is auto-saved on every input.** Fires when you add a form-clearing path (the draft is separate from the timer). [Detail](docs/gotchas.md#g86-sticky-form-draft-is-auto-saved-on)
 - **CN card buttons use `data-cn-action` delegation, not inline onclick.** Fires when you add a card button or a keyboard handler to a CN view. [Detail](docs/gotchas.md#g91-cn-card-buttons-use-data-cn-action)
+- **An `onclick` LITERAL cannot carry a name: `esc()` has already encoded the apostrophe, so the `.replace(/'/g, "\\'")` beside it is a no-op and the button throws on click (Batch 5, 2026-09-18).** Fires when you build a handler call by string concatenation. Verify: the F-17 pin. [Detail](docs/gotchas.md#g133-an-onclick-literal-cannot-carry-a-name)
 - **`setCallNoteFlag` accepts an optional `trainingQuestion`.** Fires when you flag an existing note as training from a card. [Detail](docs/gotchas.md#g93-setcallnoteflag-accepts-an-optional-trainingquestion)
 - **`getMyCallNotesRange` caps at 90 days.** Fires when you widen a History range. [Detail](docs/gotchas.md#g94-getmycallnotesrange-caps-at-90-days)
 - **Call-note delete window.** Fires when a rep asks why they cannot delete an older note. [Detail](docs/gotchas.md#g95-call-note-delete-window)
@@ -863,7 +864,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 219 | `.cycle/config.md` |
+| Invariant library entries | 220 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
