@@ -24525,7 +24525,21 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   const lostCn = H();
   partials['cn/script_callnotes.html'] = keepCn;
   assert.notStrictEqual(lostCore, bothPresent, 'a build that LOSES a partial does not hash as the build before it lost it');
-  assert.notStrictEqual(lostCore, lostCn, 'and losing a DIFFERENT partial is a different build — the marker names the file');
+  // …and the marker NAMES the file. Only observable when the two partials are
+  // otherwise identical: with different contents the two broken builds differ
+  // for a reason that has nothing to do with the marker, and collapsing the
+  // marker to a constant passed (NO BITE, the second time on this pin).
+  partials['script_core.html'] = 'SAME';
+  partials['cn/script_callnotes.html'] = 'SAME';
+  delete partials['script_core.html'];
+  const twinLostA = H();
+  partials['script_core.html'] = 'SAME';
+  delete partials['cn/script_callnotes.html'];
+  const twinLostB = H();
+  partials['cn/script_callnotes.html'] = keepCn;
+  partials['script_core.html'] = keepCore;
+  assert.notStrictEqual(twinLostA, twinLostB,
+    'losing one of two IDENTICAL partials is still a distinguishable build — the marker names the file it lost');
 
   // The cache is a CACHE, not the answer: a hit is served, and a put happens
   // exactly once per cold compute (an eternal entry would never notice a
