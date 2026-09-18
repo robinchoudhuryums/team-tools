@@ -13,7 +13,7 @@ is live only after `clasp push -f` + a New version.
 Scope: broad
 Test Command: manual
 Estimates: **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
-Subsystem cycles since last Seams audit: 4 — **the every-4 cadence was met at 19-d;
+Subsystem cycles since last Seams audit: 5 — **the every-4 cadence was met at 19-d (19-e, the H1–H3 reflection of 2026-09-18, incremented it to 5);
 the next `/audit` should be a Seams & Invariants audit** (carried forward; the
 2026-09-17 /broad-scan was a broad scan, not the seams round).
 Updated: 2026-09-17
@@ -60,7 +60,7 @@ Updated: 2026-09-17
 - Batches 4–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
 - `/sync-docs` after Batch 3 — its block lists the edits (S110/S111 expected text, g123/g124, the two operator-state entries, modules.md, the log entries).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
-- **`/reflect` for cycle 19 is OWED** and reads the archived block: the estimates.csv rows for D1, D2, F1, F2, R, T, SP, SP2, PTO, OOP-A, OOP-B, ELIG, OOP-C and H1–H3 (the archived `Estimates:` line carries estimate AND actual for each).
+- ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
   (no cap, no honest exhausted-message — now also scan finding F-15) and the
   eligibility RULE not shown in the price lookup itself.
@@ -91,4 +91,4 @@ list), then open the PR when the operator asks; after the merge + New version,
 walk S112 first (OOP), then S111 step 5 and S110 step 5 (the two new Admin →
 System findings), then S7's two new steps, then the sheet doctor. Then pick the
 next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 4, automation
-liveness + accrual diagnostics) — and cycle 19's `/reflect` is still owed.
+liveness + accrual diagnostics). Cycle 19 is fully reflected (19-e).
