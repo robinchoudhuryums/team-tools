@@ -2738,6 +2738,22 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   use (Restore). Trends bucket by ISO week over the trailing 12 (INV-125,
   archived excluded). **Compliance** = the audit panel; **Config** = the
   dept-email / state-tax / suggestions controls (preserved unchanged).
+
+  **Batch 6 (2026-09-18, F-12): the strip reports TEAM scope, and each cell
+  states its own.** Two of the four cells took `getCallNotesAmbient` — the
+  CALLER'S OWN Sheet — and captioned the first of them "across team", so an
+  admin with a quiet week read the whole team as quiet. The convenient source
+  was the wrong one: the endpoint exists to feed that admin's own sidebar.
+  Notes is now `getCallNotesTagTaxonomy.totalNotes` (every enrolled rep's
+  notes, all-time — the same walk the table below it already pays for) and
+  Unresolved is `managerGetUnresolvedActionCount`, the 2-minute-cached
+  cross-rep walk behind the Team Notes badge, added as a fourth parallel
+  fetch. Scope moved OUT of the strip's implication and INTO each cell's
+  sub-line, because two of the four are genuinely not team-wide-all-time and
+  a single header would have to lie about one of them. The cross-rep walk
+  already reported `partial` when a rep Sheet could not be read and nothing
+  rendered it: `≥ N` with the reason now, a dash plus "could not be read" on
+  an error, and a plain number only for a complete walk (INV-187).
 - <a id="external-email-message-template-library-admin-tab"></a>**External-email message template library (Admin tab).** Manager-
   curated canned message bodies for the external (customer/provider)
   email composer — resolving the deferred "template library Admin
@@ -3836,6 +3852,21 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`,
   `handleBulkActionConfirmed_`) so the click-handler signatures stay
   synchronous from the dispatcher's perspective.
+
+  **Batch 6 (2026-09-18, F-40 + F-30): every overlay goes through the two
+  functions, static ones included.** `uiConfirm`/`uiPrompt` and the dynamic
+  overlays had the focus lifecycle from the day it was built; the six STATIC
+  modals in `modals.html` never did, because they predate `ensureOverlay` and
+  were opened with `classList.add('open')`. They kept their aria attributes
+  (which is why the a11y sweep never flagged them) and quietly lacked the
+  behaviour those attributes promise: focus stayed put on open and landed at
+  the top of the document on close, on five dialogs a manager opens daily.
+  Routing them through `ensureOverlay`/`closeOverlay` is additive — the helper
+  writes `role`/`aria-*` only when asked — and it is now INV-221. The one
+  wrinkle is worth the entry: `ensureOverlay` ASSIGNS `className`, so
+  `day-overlay`'s `hover-mode` (it doubles as the calendar's tethered popover)
+  had to be read off the node and handed back through `extraClass`, or a hover
+  preview would have become a focus-stealing modal (g134).
 - <a id="training-rides-on-the-reference-kb-layer-t1"></a>**Training rides ON the Reference/KB layer (T1).** Training content is
   just KB items — no second content store, editor, or renderer. The
   tracking overlay is two auto-provisioned tabs in the KB spreadsheet

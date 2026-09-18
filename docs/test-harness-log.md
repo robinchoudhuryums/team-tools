@@ -1505,3 +1505,48 @@ fixture carry the Dept Requests row; the default Admin System shot gains a
 fourth "Needs attention" item (the unset store), which is the finding, and the
 all-clear fixture stays clear. `admin-system` and `qa` re-shot: 0 missing, 0
 overflow.
+
+## 2026-09-18 (last) — Batch 6 of the cycle-20 scan, and the shot that caught what the pins could not
+
+**Pure harness — eight pins (see the running-totals block for the count):** the
+one worth describing is `F-14`'s, which is a BUDGET rather than a match: it
+counts `location.reload()` across `script_core` (exactly two, both inside
+`reloadApp_`'s documented fallbacks) and asserts ZERO across eight view
+partials, so a new call site is red the day it lands. `F-40/F-30` sweeps six
+overlays for four properties each (opens through `ensureOverlay`, closes
+through `closeOverlay`, no bare `classList` open, no bare `classList` close)
+plus the `hover-mode` carry. `F-12` is behavioural: it drives
+`cnRenderAdminAugmentHtml_` with the admin's OWN counts present and asserts
+they reach no cell, then walks the complete / partial / unreadable / null /
+real-zero states. `F-29` is a regex SWEEP for any `<input>` carrying two
+`aria-label` attributes rather than a check of the one that was wrong. `F-43`
+pins the ABSENCE of `aria-modal` — the drawer does not trap focus, and a pin
+that only demanded a role would have invited the lie. `F-36` pins ORDER (the
+link is in the DOM before the blockable call) and `F-42`/`F-28` are
+straightforward attribute and copy pins. One existing pin repointed: the D1
+modal-ordering pin followed `classList.remove('open')`, which no longer exists
+in that path, and `indexOf` returning −1 made the comparison silently false —
+it follows `closeOverlay` now.
+
+**The lesson of the batch is that the VISUAL matrix caught what eight pins
+could not.** Every pin passed and `admin-light-wide` photographed the new KPI
+strip's first cell as an em dash: the server has always returned
+`getCallNotesTagTaxonomy.totalNotes`, and the visual fixture had never carried
+it, so the cell rendered its honest "absent" branch. Nothing in the pure
+harness could see it — the pin drove the function with a fixture of its own —
+and nothing in the fixture was WRONG in a way a shape check would catch; it was
+simply less than the server returns. INV-185's rule ("a fixture mirrors the
+real contract") is now pinned for this field too. It is the third time a shoot
+has found a fixture gap that a pin could not, and the second where the gap
+rendered as a plausible-looking state rather than a crash.
+
+**Bite-checks:** thirteen mutations, thirteen bites, anchored per the g116
+fourth-direction rule (each names something only the pinned code contains).
+Two are worth keeping: reverting the `hover-mode` carry (the trap g134
+describes), and adding `aria-modal` to the drawer (the honesty assertion — a
+pin that only checked for a role would have gone green).
+
+**Companion harness:** `a11y-names.mjs` re-run over all twelve surfaces
+including the three public forms — `unnamed 0` everywhere, with the shortcuts
+close button and the five accordion toggles newly in scope. The `admin`,
+`clock` and `reference` scenario groups were re-shot: 0 missing, 0 overflow.

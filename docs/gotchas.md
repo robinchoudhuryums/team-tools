@@ -1684,6 +1684,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the blank frame, which is why the pin COUNTS the reloads rather than
   checking that one appears last (the first version of it did, and a
   reload-first mutation passed). Pinned by BCN-3.
+  **Batch 6 (2026-09-18, F-14): it is a TRIPWIRE now, not a convention.** The
+  rule had survived as a habit, and the one surface that still broke it was
+  the worst possible one — `renderError`'s Retry button, the BOOT failure
+  screen, where the app has nothing else to offer and the rep's only move is
+  to press it. Pressing it refetched the iframe and painted blank. The pin
+  budgets `location.reload()` at exactly TWO occurrences, both inside
+  `reloadApp_` (the not-framed/no-base fallback and the final escape hatch),
+  and ZERO anywhere else in `script_core` or the eight view partials — so a
+  new call site is red the day it lands rather than the day an operator
+  reports a white screen.
 
 <a id="g70-a-class-wide-attribute-write-assumes-every"></a>
 
@@ -2176,6 +2186,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   closed — a hook may legitimately refuse (the INV-145 mid-send guard),
   and yanking focus then would fight the module (DOM-pinned).
   `uiConfirm`/`uiPrompt` also restore the trigger on cleanup.
+  **Batch 6 (2026-09-18, F-40 + F-30): the STATIC modals joined too.** The
+  focus lifecycle above was built into `ensureOverlay`/`closeOverlay`, and the
+  six static modals never went through either — they were opened with
+  `classList.add('open')` and closed with `classList.remove('open')` in
+  thirteen places, so a keyboard user's focus stayed wherever it was when the
+  dialog appeared and landed at the top of the document when it closed, on
+  every open of the five modals a manager uses daily. Five of the six
+  (`adjust-overlay`, `export-overlay`, `mgr-timeoff-overlay`,
+  `day-edit-overlay`, `day-overlay`) plus the Call Notes shortcuts overlay now
+  open through `ensureOverlay(id)` and close through `closeOverlay(el)` on
+  EVERY path — cancel, backdrop, Escape and post-submit. They keep the
+  `role` / `aria-modal` / `aria-labelledby` they already carried in
+  `modals.html`, because `ensureOverlay` writes those only when told to.
+  `cn-export-overlay` is the one that was NOT in the finding's list and still
+  opens by hand — the known exception until it is fixed. RULE: no overlay,
+  static or dynamic, is opened or closed by `classList` any more.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -3263,3 +3289,45 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   forms carry `data-qa-exempt` + `data-qa-exempt-on`, ONE document listener
   dispatches on `closest('[data-qa-exempt]')`, and the `esc()` round trip is
   asserted on a name carrying both quote kinds.
+
+<a id="g134-ensureoverlay-rewrites-classname-so-a-second"></a>
+
+- **`ensureOverlay` REWRITES `className`, so any class an overlay carries
+  beyond `overlay` is lost unless it rides `extraClass` (Batch 6 of the
+  2026-09-17 /broad-scan, F-40).** The helper's second line is
+  `overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '')`
+  — an assignment, not a `classList.add`, because it must also re-assert the
+  open state on reuse. That is invisible for the modals that carry only
+  `overlay`, and it bites the one that does not: `day-overlay` doubles as the
+  calendar's HOVER POPOVER, and `openDayPopover_` sets `hover-mode` on it
+  BEFORE calling the open path. Routing that open through `ensureOverlay`
+  naively would have silently dropped the class, turning a tethered
+  transparent preview into a centred modal with a backdrop that steals focus —
+  and `ensureOverlay`'s own "skip the focus move for hover-mode popovers"
+  guard would have stopped working, because by the time it ran the class was
+  gone. The fix reads the class off the live node and hands it back:
+  `ensureOverlay('day-overlay', dayHover ? { extraClass: 'hover-mode' } : {})`.
+  Fires when you route an overlay that carries any class beyond `overlay`
+  through `ensureOverlay`. Verify: the F-40 pin's hover-mode assertions.
+
+<a id="g135-a-blocked-window-open-returns-null"></a>
+
+- **A blocked `window.open` returns NULL — it does not throw, so a `catch`
+  around it can never see the block (Batch 6 of the 2026-09-17 /broad-scan,
+  F-37 + F-36).** `popOutCurrentView` wrapped its `window.open` in a
+  `try/catch` whose handler showed "Pop-out blocked by browser". The handler
+  was unreachable: a pop-up blocker returns `null`, quietly, and the only
+  thing that throws there is a malformed feature string. A rep whose browser
+  blocked the window got NO feedback of any kind — the button simply did
+  nothing. Checking the RETURN is the whole fix, and it is worth stating as a
+  rule because the wrong shape reads as careful code. The sibling case is
+  worse: the ADP export called `window.open(result.url, '_blank')` inside an
+  RPC success handler, which is OUTSIDE the user gesture — exactly where
+  blockers fire — and the dialog had already closed, so the generated sheet's
+  URL existed nowhere on screen and the manager's only recourse was to
+  regenerate it. RULES: (1) capture the return and treat `null` as the
+  blocked case, with a message naming the remedy; (2) when the URL comes back
+  from an async call, RENDER it as a link FIRST and keep its surface open —
+  the `window.open` is then a convenience that can fail harmlessly.
+  Fires when you open a window or tab, especially after an async RPC.
+  Verify: the F-37 return check and the F-36 link-before-open ordering.

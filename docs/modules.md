@@ -60,6 +60,14 @@ not restate it. Server endpoints live in the fourteen server files
      renders it (F-49); the missed-punch alerts and the export check heartbeat
      (F-20, the Automation Health decision).
 
+     **Batch 6 (2026-09-18):** the five static modals (Adjust, Day Detail, Day
+     Edit, Export, Manager Time-Off) open through `ensureOverlay` and close
+     through `closeOverlay`, so focus moves into the dialog and returns to the
+     control that opened it (F-40); the day popover keeps its `hover-mode`
+     across that rewrite (g134). The ADP export renders the generated sheet's
+     LINK into the dialog and keeps it open, so a pop-up blocker can no longer
+     take the URL with it (F-36, g135).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -89,6 +97,16 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="metrics"></a>
+     **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
+     numbers — notes across every enrolled rep (all-time) and the cross-rep
+     unresolved-action walk — with each cell stating its own scope, and a
+     partial walk rendered as `≥ N` rather than a confident total (F-12). The
+     keyboard-shortcuts overlay joined the overlay lifecycle: a name, focus
+     stash and restore, and the shared Escape handler (F-30). The quick-chip
+     row's label reads "all time", matching counts that always spanned the
+     whole Sheet (F-28), and the Q&A thread says "Rep" rather than "You" when
+     a manager is the one reading it (F-29).
+
 ## Metrics
 
    - **Metrics** — CDR integration module that reads DQE Historical
@@ -406,6 +424,12 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="training-employee-docs"></a>
+     **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
+     heading and hands focus back to whatever opened it — open it with
+     Ctrl/⌘+K from inside a note field and Escape returns you there. It is
+     deliberately NOT `aria-modal`: it does not trap focus, and the shell's
+     trap exempts it (F-43).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module

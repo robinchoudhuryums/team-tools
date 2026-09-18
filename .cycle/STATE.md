@@ -83,7 +83,6 @@ Updated: 2026-09-18
 
 ## Pending / not yet done
 - Batch 7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
-- `/sync-docs` after Batch 6 — its block lists the edits (g69 amended + two new gotchas, an overlay-lifecycle invariant, five scenario steps, two decisions, modules/log entries).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -104,6 +103,7 @@ Updated: 2026-09-18
 - Tests.js:1897 `test_teamBenchmark_subtractsPublishedExcludes` expects 85.7; `cdrAnswerPct_` rounds whole since H2 (run.js H2-2 says 86) — that editor test is RED as written and has never run. One line for `/test-sync`.
 - 40_metrics.js:1927 hand-carries `pctAnswered: cdr ? cdr.pctAnswered : 0` for a rep with no CDR row (F-32's class one level up); the "weekends and US holidays excluded" strings (deptrequests/metrics/coaching + `00_config.js:1266`, pinned at run.js:16930) are F-38's class outside its six sites.
 - Visual: the no-standard / federal-fallback warn states of the two new CDR findings are pinned, not on camera (a `?fixture=` variant of admin-system).
+- docs: `/sync-docs` ran 2026-09-18 after Batch 6 — g134 (ensureOverlay rewrites className) + g135 (a blocked window.open returns null), g69 + g100 amended, INV-221 (every overlay through ensureOverlay/closeOverlay) + INV-187 amended, S8/S25/S47/S51/S64 expected text, the Admin-KPI and overlay-accessibility decisions, modules.md (Time Clock, Call Notes, Reference), operator-log and test-harness-log entries; counts block invariants 221. The Subsystems file lists and the operator-state inventory were both checked and need nothing (Batch 6 is client-only). Nothing outstanding from Batch 6.
 - docs: `/sync-docs` ran 2026-09-18 after Batch 5 — g133 (an onclick literal cannot carry a name) + g43 amended (the English rule is server-side now), INV-220 (a cross-rep walk reports its skips) + INV-196/INV-209 amended, S90/S100/S53/S59/S60 expected text, the QA operator entry (AgentId), the intake-email and tag-taxonomy decisions, modules.md QA + Intake, operator-log and test-harness-log entries; counts block invariants 220. Nothing outstanding from Batch 5.
 - docs: `/sync-docs` ran 2026-09-18 after Batch 4 — g132 + the g116 fourth direction, INV-219 (+ INV-205 amended), S9/S107 expected, the AUTOMATION_DIGEST_LAST_RUNS + daily-triggers operator entries, the two storage-map lines, the accrual and Automation Health decisions, modules.md Time Clock, operator-log and test-harness-log entries; counts block invariants 219. Nothing outstanding from Batch 4.
 - docs: `/sync-docs` ran 2026-09-18 after Batch 3 + the 19-e reflection — g131 + the g123/g124 amendments, INV-216..218 (+ INV-211 amended), S110/S111 gained a step and their expected text, the two CDR operator-state entries, modules.md Metrics, the H2 + Storage Health decisions, operator-log and test-harness-log entries; counts block invariants 218. Nothing outstanding from Batch 3.
@@ -130,8 +130,7 @@ Updated: 2026-09-18
 ## Where I left off
 Batches 1–6 are implemented, pinned, bite-checked and committed on
 `claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
-are all green. Next: `/sync-docs` for Batch 6 (its block's DOCUMENTATION UPDATES
-list), then open the PR when the operator asks; after the merge + New version,
+are all green. Next: open the PR when the operator asks; after the merge + New version,
 walk S112 first (OOP), then S111 step 5 and S110 step 5 (the two new Admin →
 System findings), then S7's two new steps, then the sheet doctor. Then pick the
 next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 7, the last).

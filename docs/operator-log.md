@@ -10,6 +10,31 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (last) — Batch 6 of the cycle-20 scan: shell, accessibility and copy
+
+Adds NO Script Property and no sheet change; every fix is client-side. What an
+operator notices after the push + New version: (1) when the app fails to load,
+the **Retry** button on the "Couldn't Load" screen actually reloads the app —
+it used to refetch the sandboxed inner frame and paint blank, so the only way
+out was the browser's own reload; (2) the five Time Clock dialogs (Adjust, Day
+Detail, Day Edit, Export, Manager Time-Off) and the Call Notes shortcuts
+dialog now move focus into themselves on open and hand it back to the button
+you pressed on close — keyboard users stop landing at the top of the page
+after every close; (3) **Manage → Admin → Overview's KPI strip now reports the
+TEAM**: the first cell is every enrolled rep's notes all-time (expect a much
+larger number than the week-of-your-own-notes it used to show) and Unresolved
+is the cross-rep count, with each cell captioned with its own scope; if a rep's
+Notes Sheet cannot be read it says `≥ N` rather than a confident total; (4) the
+**ADP export dialog stays open** on success and shows an "Open the export
+sheet" link — if your browser blocks the new tab the URL is still there, where
+before it was lost and you had to regenerate; (5) pressing **Pop out** with
+pop-ups blocked now tells you so and names the remedy (it was silent); (6) on
+the public form, the five collapsible sections announce whether they are open;
+(7) the Reference drawer announces itself and returns focus to the field you
+opened it from; (8) two labels stopped lying — the quick-chip row says "all
+time" (its counts always did) and a training thread you read as a manager says
+"Rep", not "You". Registrations unchanged at 337.
+
 ## 2026-09-18 (later still) — Batch 5 of the cycle-20 scan: access boundary and data integrity
 
 Adds NO Script Property you must set, but makes ONE worth setting visible.

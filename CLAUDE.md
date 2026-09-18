@@ -315,11 +315,13 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 
 - **An `outerHTML` patch replaces ONE element, so that element must contain everything its renderer emits (operator 2026-08-31).** Fires when a renderer grows a new sibling and something patches it by id. Verify: the BIZ-3 wrapper-shape assertion. [Detail](docs/gotchas.md#g66-an-outerhtml-patch-replaces-one-element-so)
 - **An ASYNC prefill must fill only the fields the user has not typed into, and a FAILED prefill must not leave a saveable blank form (operator 2026-09-03).** Fires when a modal prefills asynchronously. Verify: the Day Edit DOM test. [Detail](docs/gotchas.md#g68-an-async-prefill-must-fill-only-the)
-- **`location.reload()` reloads the IFRAME, not the app — and that URL is session-bound (operator 2026-09-01).** Fires when client code navigates or reloads the app. Verify: BCN-3. [Detail](docs/gotchas.md#g69-location-reload-reloads-the-iframe-not-the)
+- **`location.reload()` reloads the IFRAME, not the app — and that URL is session-bound (operator 2026-09-01; the rule is a TRIPWIRE since Batch 6, 2026-09-18 — `reloadApp_`'s two fallbacks are the only ones allowed, across script_core and eight partials).** Fires when client code navigates or reloads the app. Verify: BCN-3 + the F-14 budget pin. [Detail](docs/gotchas.md#g69-location-reload-reloads-the-iframe-not-the)
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.** Fires when a badge poller queries the sidebar. [Detail](docs/gotchas.md#g99-sidebar-badge-selectors-use-data-tool-not)
-- **Modals close on Escape THROUGH their close hook — dynamic overlays must be created via `ensureOverlay`.** Fires when you create an overlay dynamically. [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
+- **Modals close on Escape THROUGH their close hook — and EVERY overlay, static ones included, opens via `ensureOverlay` and closes via `closeOverlay` (Batch 6, 2026-09-18: five static modals plus the shortcuts overlay had been opening and closing by `classList`, so they never stashed or restored focus).** Fires when you create an overlay dynamically, or open/close one by hand. Verify: the F-40/F-30 pin. [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
+- **`ensureOverlay` REWRITES `className`, so a second class on an overlay is lost unless it rides `extraClass` — the day popover's `hover-mode` (Batch 6, 2026-09-18).** Fires when you route an overlay that carries any class beyond `overlay` through `ensureOverlay`. Verify: the F-40 hover-mode carry. [Detail](docs/gotchas.md#g134-ensureoverlay-rewrites-classname-so-a-second)
+- **A blocked `window.open` returns NULL — it does not throw, so a `catch` around it can never see the block (Batch 6, 2026-09-18).** Fires when you open a window or tab, especially after an async RPC (outside the user gesture, where blockers fire). Verify: the F-37 return check + the F-36 link-first order. [Detail](docs/gotchas.md#g135-a-blocked-window-open-returns-null)
 - **A registered `onClose` hook OWNS the close, removal included — `closeOverlay` delegates to it entirely (INV-145 lets a hook refuse), so a hook that clears state and returns leaves the modal open under Close, Escape and the backdrop (Batch 1, 2026-09-17).** Fires when you register an `onClose` hook, or add a dynamic overlay. Verify: the F-02 DOM close-path pin, which sweeps every registered hook. [Detail](docs/gotchas.md#g130-a-registered-onclose-hook-owns-the-close)
 - **Apps Script's HtmlService iframe sandboxes `window.location.search`.** Fires when client code reads the URL or the app’s own address. Verify: a Node tripwire. [Detail](docs/gotchas.md#g107-apps-script-s-htmlservice-iframe-sandboxes-window)
 - **`form_public.html`'s signature canvas must be resized when its section becomes visible.** Fires when a hidden section containing a canvas becomes visible. [Detail](docs/gotchas.md#g109-form-public-html-s-signature-canvas-must)
@@ -864,7 +866,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 220 | `.cycle/config.md` |
+| Invariant library entries | 221 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
