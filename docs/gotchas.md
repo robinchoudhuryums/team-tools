@@ -2717,6 +2717,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   function under test (its own `monthIso` filter) made both F-49 pins bite.
   RULE: a bite mutation names something only the pinned function contains,
   and a NO BITE is first checked against `git diff` to see WHAT changed.
+  **Both halves are now the TOOL's job rather than the reader's (2026-09-18),
+  after this direction fired a second time:** `scripts/bite.sh --fn <function>`
+  resolves that function's span and applies the mutation inside it, refusing a
+  name that is missing, ambiguous or malformed rather than guessing; and a NO
+  BITE prints the real diff before restoring the file, so the hunk header names
+  the function that was actually edited. On the case that fired, that header
+  read `test_getTodayPunches_sortsOutOfOrderBackfill` where the intended target
+  was `test_accrualReconcile_topsUpLateData`.
 
   **A fifth direction, 2026-09-18 (Batch 7, F-52) — see g138:** a mutation can
   land, and the pin can stay green, because the CLAIM is not observable rather
@@ -3476,3 +3484,47 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   answer — check `git diff` for what the mutation changed, then ask whether the
   claim is observable before weakening or deleting anything. Fires when you
   write a pin, and every time you read a bite-check's verdict.
+
+<a id="g139-a-test-that-asserts-on-an-aggregate"></a>
+
+- **A test that asserts on an aggregate computed from an APPEND-ONLY log
+  inherits every sibling test's rows (operator's first full editor run,
+  2026-09-18).** `accrualReconcile_topsUpLateData` failed its first ever
+  execution: it expected one rep topped up and got zero, against production code
+  that was entirely correct.
+
+  The reconcile compares the hours a month has NOW against the hours the ledger
+  says were already paid for, and that ledger is read back out of the
+  `PtoAccrualCredit` audit rows. `readAccrualLedger_` keeps the HIGHEST hours per
+  (employee, month) — deliberately, because the high-water mark is what makes the
+  credit idempotent on hours already paid for. Taking the most recent row instead
+  would let a stale or out-of-order row make a credited month read as
+  never-credited and then double-credit it, which is the exact failure mode
+  cycle 19's reflection recorded for Batch R.
+
+  `test_previewPtoAccrual_predictsTheCredit` runs earlier in the same execution,
+  credits the SAME test employee for the SAME month from an eight-hour day, and
+  clears only the Timesheet afterwards. The AuditLog is append-only and
+  `cleanupTestData` sweeps it at the END of the suite, not between tests. So the
+  reconcile test's own zero-hour row was written into a ledger that already held
+  the sibling's eight, the high-water mark stayed at eight, the delta came out
+  zero, and the run reported nothing topped up.
+
+  Note the asymmetry that hid it: the test's OTHER assertions read
+  `_findLatestAuditNote`, which takes the most recent row and therefore saw this
+  test's own work. Only the ledger reads the maximum. A test can be looking at
+  its own output in one assertion and a sibling's in the next.
+
+  RULE: if a test asserts on an aggregate over a log nothing clears between
+  tests, it owes itself a known baseline first. `_clearTestState(empId)` exists
+  for exactly this and its own comment says so. Fires when you assert on any
+  running total, high-water mark, count or "latest N" drawn from the AuditLog.
+  Verify: the reconcile-baseline pin, which requires any test asserting on the
+  reconcile outcome to clear its rep before crediting — bite-checked in both
+  directions, absence and wrong ordering.
+
+  The wider lesson is about WHEN this surfaced. The test was written on
+  2026-09-15, reasoned about carefully, and never once executed until the
+  operator ran the full suite three days later. The integration tier had never
+  run against the deployed project, which is the same gap that let F-01's red pin
+  count as green. A test that has not run is a hypothesis.

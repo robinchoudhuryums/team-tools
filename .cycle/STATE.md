@@ -105,7 +105,9 @@ Updated: 2026-09-18
 ## Pending / not yet done
 - ~~Batch 7 of `.cycle/blocks/20-scan-batch-plan.md`~~ DONE 2026-09-18. The plan is exhausted; the only scan item left is the DEFERRED one (F-09's holiday fallback — keep g123's federal fail-open, or match the dashboard's no-fallback; an operator decision, and Batch 3 surfaces the source either way).
 - ~~`/sync-docs` for Batch 7~~ DONE 2026-09-18 — g136/g137/g138, g02/g22/g116 amended, INV-222..224 (+ INV-169 amended), S10/S80 expected text, three decisions, both module narratives, the operator and harness logs; counts block invariants 224.
-- ~~`/reflect` for cycle 20~~ DONE 2026-09-18 (`.cycle/blocks/20-a-reflect.md`). INV-225..227 are PROPOSED there and not yet in the library — add them with the next round that can verify them, or let the Seams audit adopt them.
+- ~~`/reflect` for cycle 20~~ DONE 2026-09-18 (`.cycle/blocks/20-a-reflect.md`). INV-225..227 are PROPOSED there and not yet in the library — add them with the next round that can verify them, or let the Seams audit adopt them. **Those three numbers are now RESERVED by name in `.cycle/config.md`** so nothing else claims them; the accrual-ledger rule from the 2026-09-18 editor run took INV-228 rather than renumbering the reflection's record.
+- **OPERATOR — the full editor suite RAN on 2026-09-18, and that changes the deploy picture.** `runAllTestsPartA` + `runAllTestsPartB` executed against the deployed project, which means `clasp push -f` HAS happened at least once since Batch 1. **Whether a New version deployment was cut is UNCONFIRMED** — that is the separate step, and it is what the web app serves, so the 52 fixes may still not be reaching users. Confirm before assuming. Part A clean; Part B 121/122 with `accrualReconcile_topsUpLateData` failing, diagnosed as a TEST defect (see below) and fixed in PR #261. **Re-run `runAllTestsPartB` after the next push** — expect 122/122.
+- ~~`bite.sh` span guard~~ DONE 2026-09-18 (see Open follow-on items).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -121,7 +123,7 @@ Updated: 2026-09-18
 - `oopEligibilityParse_`'s STATES branch reads "TX or CA" as Texas + Oregon + California (uppercased "or") — the class F-23 closed for the radius branch, untouched.
 - The GATE-SHAPE pin follows the FIRST `return helper_(` in an endpoint as a delegate — a callback's return inside the endpoint is mis-read (F-27's first draft tripped it); a top-level-return regex would fix it.
 - Existing DeptRequests rows stay on the ADP sheet once `DEPT_REQUESTS_SS_ID` is set — no migration tool.
-- `scripts/bite.sh` cannot tell which function a mutation hit — an un-anchored F-49 mutation changed a DIFFERENT function and reported NO BITE (a `--fn <name>` span guard would close it).
+- ~~`scripts/bite.sh` cannot tell which function a mutation hit~~ FIXED 2026-09-18. The class fired a SECOND time (the accrual ledger fix: two NO BITEs running, both about `test_getTodayPunches_sortsOutOfOrderBackfill` rather than the intended test, because the mutation matched the first of 24 identical call sites). `bite.sh --fn <function>` now resolves that function's span and mutates inside it, refusing a missing/ambiguous/malformed name; a NO BITE prints the real diff before restoring, so the hunk header names what was actually edited. Six branches verified by direct execution — bite.sh cannot bite itself.
 - A legacy multi-month accrual ledger key (none expected in prod) produces a daily `skipped` line until it ages out of the ledger read; no tooling splits it.
 - Tests.js:1897 `test_teamBenchmark_subtractsPublishedExcludes` expects 85.7; `cdrAnswerPct_` rounds whole since H2 (run.js H2-2 says 86) — that editor test is RED as written and has never run. One line for `/test-sync`.
 - 40_metrics.js:1927 hand-carries `pctAnswered: cdr ? cdr.pctAnswered : 0` for a rep with no CDR row (F-32's class one level up); the "weekends and US holidays excluded" strings (deptrequests/metrics/coaching + `00_config.js:1266`, pinned at run.js:16930) are F-38's class outside its six sites.
@@ -176,9 +178,25 @@ own but changes two surfaces worth a look — the manager live-status sparkline
 (its Pending must now equal the list's count).
 
 Cycle 20 is CLOSED in substance: implemented, documented and reflected
-(`.cycle/blocks/20-a-reflect.md`, net 25). Nothing is deployed. When the deploy
-is confirmed, move this whole block into `.cycle/HISTORY.md` and reset STATE.md
-from the template, per the close-out procedure.
+(`.cycle/blocks/20-a-reflect.md`, net 25), and merged to `main` as PR #260.
+
+**Deploy status, 2026-09-18, stated precisely because it changed:** the full
+editor suite RAN against the deployed project, so `clasp push -f` has happened.
+Whether a **New version** deployment was cut is UNCONFIRMED, and that is the
+step the web app actually serves from — do not assume the 52 fixes are reaching
+users until someone checks Manage → Admin → Overview or the beacon prompt.
+When the New-version deploy IS confirmed, move this whole block into
+`.cycle/HISTORY.md` and reset STATE.md from the template, per the close-out
+procedure.
+
+**Post-merge work, 2026-09-18 (PR #261 merged, plus the bite.sh guard):** the
+editor run found one failure, `accrualReconcile_topsUpLateData`. It was a TEST
+defect, not a product one — an earlier test in the same execution credits the
+same rep for the same month, the AuditLog is append-only and swept only at the
+end of a run, and the accrual ledger reads the HIGHEST hours per (rep, month),
+so the reconcile test measured the sibling's credit. Fixed with
+`_clearTestState` and pinned (g139, INV-228). Bite-checking that fix hit g116's
+fourth direction twice, which is why `bite.sh` now has `--fn`.
 
 The seam counter is 6 and the every-4 cadence has been missed twice, so the
 NEXT `/audit` must be a Seams & Invariants audit rather than another broad scan.
