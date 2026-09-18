@@ -5224,6 +5224,19 @@ function test_accrualReconcile_topsUpLateData() {
     if (String(rows[i][EMP.ID]).trim() === _TEST_INDIA_ID) { rowIdx = i + 1; break; }
   }
   if (rowIdx < 0) { _skipTest('India test employee not on roster'); }
+  // THE LEDGER IS THIS TEST'S PRECONDITION, so it must start from a known one.
+  // `readAccrualLedger_` keeps the HIGHEST hours per (emp, month) — deliberately,
+  // because that high-water mark is what makes the credit idempotent on hours
+  // already paid for. `test_previewPtoAccrual_predictsTheCredit` runs earlier in
+  // this same execution, credits THIS rep for THIS month from an 8-hour day, and
+  // clears only the Timesheet afterwards: the AuditLog is append-only and
+  // `cleanupTestData` sweeps it at the END of the suite. So step 3's "the late
+  // punch revealed 8 hours where 0 was credited" compared 8 against the sibling's
+  // leaked 8, resolved to `ok`, and reported `toppedUp: 0`. The production rule is
+  // right; the baseline was not ours. `_clearTestState` exists for exactly this —
+  // read its comment — and it also resets the balance, so `balBefore` below is the
+  // suite default rather than whatever the previous test left.
+  _clearTestState(_TEST_INDIA_ID);
   const qCell = sheet.getRange(rowIdx, EMP.PTO_ACCRUAL + 1);
   const rCell = sheet.getRange(rowIdx, EMP.ACCRUED_THROUGH + 1);
   const balCell = sheet.getRange(rowIdx, EMP.ANNUAL_LEAVE + 1);
