@@ -125,6 +125,17 @@ not restate it. Server endpoints live in the fourteen server files
      scans the date column and each reader reads only the window's row span
      at full width, keeping its per-row filter — and a bare Sheets serial in
      the Date column is a date rather than a silently dropped row (g125).
+     **Batch 3 of the cycle-20 scan (2026-09-17)** closed H2's leftovers: both
+     heroes name the standard's SOURCE beside the target (and say "no target,
+     tone or badge" when there is none — muted for a missing row, warn for an
+     unreadable tab); a standard with no Amber Band has no amber tier on the
+     team table AND the Clock card (`mtAnswerBand_`, the one rule); a window
+     with nothing answered or missed shows a dash, not 0%; the manager sidebar
+     badge judges the previous WORKDAY (Monday reads Friday, the morning after
+     a holiday steps over it) and its tooltip names the Dashboard Standards
+     target instead of a literal 85 (g131). Admin → System's CDR Report row
+     states which calendar and which standard are live, with a finding for
+     every fallback state (F-08/F-09).
      **Intake-call analytics (operator 2026-08-25):** long PPD /
      account-creation calls are EXPLAINABLE beside the KPIs as honest
      COUNTS — per-call CDR attribution does not exist (DQE is one row per

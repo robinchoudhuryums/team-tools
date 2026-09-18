@@ -16,7 +16,7 @@ Estimates: **Batch 3 (F-07 one null-band tone rule · F-08 standardSource render
 Subsystem cycles since last Seams audit: 5 — **the every-4 cadence was met at 19-d (19-e, the H1–H3 reflection of 2026-09-18, incremented it to 5);
 the next `/audit` should be a Seams & Invariants audit** (carried forward; the
 2026-09-17 /broad-scan was a broad scan, not the seams round).
-Updated: 2026-09-17
+Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)
 - The 2026-09-17 /broad-scan ran with eight parallel readers + the mandatory
@@ -58,7 +58,6 @@ Updated: 2026-09-17
 
 ## Pending / not yet done
 - Batches 4–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
-- `/sync-docs` after Batch 3 — its block lists the edits (S110/S111 expected text, g123/g124, the two operator-state entries, modules.md, the log entries).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -71,6 +70,7 @@ Updated: 2026-09-17
 - Tests.js:1897 `test_teamBenchmark_subtractsPublishedExcludes` expects 85.7; `cdrAnswerPct_` rounds whole since H2 (run.js H2-2 says 86) — that editor test is RED as written and has never run. One line for `/test-sync`.
 - 40_metrics.js:1927 hand-carries `pctAnswered: cdr ? cdr.pctAnswered : 0` for a rep with no CDR row (F-32's class one level up); the "weekends and US holidays excluded" strings (deptrequests/metrics/coaching + `00_config.js:1266`, pinned at run.js:16930) are F-38's class outside its six sites.
 - Visual: the no-standard / federal-fallback warn states of the two new CDR findings are pinned, not on camera (a `?fixture=` variant of admin-system).
+- docs: `/sync-docs` ran 2026-09-18 after Batch 3 + the 19-e reflection — g131 + the g123/g124 amendments, INV-216..218 (+ INV-211 amended), S110/S111 gained a step and their expected text, the two CDR operator-state entries, modules.md Metrics, the H2 + Storage Health decisions, operator-log and test-harness-log entries; counts block invariants 218. Nothing outstanding from Batch 3.
 - docs: `/sync-docs` ran 2026-09-17 after Batch 2 — g126–g130, INV-213–215 (+ INV-159/209 amendments), S7/S19/S112/S113 (the OOP scenario was a duplicate `S110`, renumbered S112), the two decision entries, modules.md, operator-log.md and test-harness-log.md; the two Dashboard error scenarios are on camera. Nothing outstanding from Batches 1–2.
 
 ## Decisions made (so the next session doesn't re-litigate)
@@ -86,8 +86,7 @@ Updated: 2026-09-17
 ## Where I left off
 Batches 1, 2 and 3 are implemented, pinned, bite-checked and committed on
 `claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
-are all green. Next: `/sync-docs` for Batch 3 (the block's DOCUMENTATION UPDATES
-list), then open the PR when the operator asks; after the merge + New version,
+are all green. Next: open the PR when the operator asks; after the merge + New version,
 walk S112 first (OOP), then S111 step 5 and S110 step 5 (the two new Admin →
 System findings), then S7's two new steps, then the sheet doctor. Then pick the
 next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 4, automation

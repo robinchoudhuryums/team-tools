@@ -3563,7 +3563,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   · Retention · link, row-toned `sv-row-danger/warn`) with an expandable detail
   row per store (INV-182 `detailRow`/`rowId`; the disclosure is a real button
   driven by `cnToggleDetailRow_`, INV-174) carrying the note / per-rep problems
-  / the exact tz fix; the VERDICTS live in the findings list above it (see the
+  / the exact tz fix — and, on the CDR Report row since Batch 3 (2026-09-17),
+  which holiday calendar and which answer standard are LIVE (`cdrHolidayProbe_`
+  / `cdrStandardProbe_`, each with a CDR-area finding for every fallback
+  state, g123/g124); the VERDICTS live in the findings list above it (see the
   Admin KDD) and the Overview Storage card links here. The hand-rolled
   `.cn-storage-row/-main/-role/-meta` rows are retired (INV-184). For each of the
   eight stores (see the Operator State Checklist's storage map — the QA store joined 2026-08-28 #3, its retention field reflecting the LIVE `QA_REVIEW_RETENTION_DAYS` window so an enabled review-record purge is visible where every other store's policy is; its not-set pill is muted, the no-fallback-by-design tone) it reports which
@@ -4204,6 +4207,21 @@ pick them up without re-deriving the context.
   line and the cohort benchmark) vs `getTeamMetrics.teamTotals`. An excluded
   rep still sees their OWN numbers against a benchmark that does not include
   them.
+
+  **Batch 3 follow-through (cycle-20 scan, 2026-09-17).** H2 shipped the
+  band and the source and left two things undecided: what a NULL band means
+  (each consumer decided alone -- 0 pt on the table, the local 5 pt on the
+  Clock card) and who reads `standardSource` (nobody). `mtAnswerBand_` is now
+  the ONE null-band rule -- no published band means no amber tier, on every
+  surface, because a band the dashboard did not publish is a number nobody
+  set (the same reasoning as the null target); Transfer % keeps its local
+  slack because it has no published standard at all. The source is rendered
+  wherever the verdict is: beside the target on both heroes, and on the
+  Admin → System CDR row with a finding. The badge tooltip's residual `|| 85`
+  is gone (a badge exists only with a published target, so the caption needs
+  no fallback). And a window with nothing answered or missed has NO rate --
+  `cdrAnswerPct_` returns null, which every surface dashes -- because the 0
+  it returned read as "every call missed". Gotcha g131; INV-216..218.
 
   Recorded in `.cycle/config.md` as INV-211 and scenario S111; the gotcha is
   g124. The formula change bumped every rate-carrying cache key (INV-85).

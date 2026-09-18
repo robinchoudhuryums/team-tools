@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 — Batch 3 of the cycle-20 scan (H1/H2 follow-through), the editor-test fix, and cycle 19's last reflection
+
+Adds NO Script Property and no sheet change. What an operator notices after
+the push + New version: (1) both Metrics heroes say where the answer target
+comes from — "target 92% · from the Dashboard Standards tab" — and when there
+is none, WHY (a missing row in muted text; an unreadable tab as a warning);
+(2) Manage → Admin → System's CDR Report row gained a chevron whose detail
+states which holiday calendar and which answer standard are LIVE, with a
+finding for every fallback state — on a normal deployment two more ok facts,
+otherwise the first place a federal-list fallback or a missing standard has
+ever been visible; (3) a standard published WITHOUT an Amber Band tones one
+point under the target RED on the team table and the Dashboard card alike
+(the card used to say amber); (4) the manager sidebar badge now judges the
+previous WORKDAY — it can fire on a Monday (Friday's rate) and the morning
+after a holiday, two mornings it was silent — and its tooltip names the
+Dashboard Standards target instead of a literal 85; (5) a window with nothing
+answered or missed shows a dash, not 0%; (6) the time-off legend, conflict
+card and manager chips read "Company holiday". Registrations unchanged at 337;
+one editor test corrected (`test_teamBenchmark_subtractsPublishedExcludes`
+expected 85.7 where the formula has rounded whole since H2 — it had never
+run). Walk S111 step 5 and S110 step 5 (the two new findings) with the batch.
+Cycle 19 is fully reflected (`19-e`: the H1–H3 round, net 5 − 2 = 3 — the two
+new failure modes H2 shipped are exactly what this batch closed).
+
 ## 2026-09-17 (later still) — the cycle-20 /broad-scan, Batches 1 and 2
 
 Adds NO Script Property and no sheet change. Fourteen fixes from the scan, all

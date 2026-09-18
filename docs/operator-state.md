@@ -236,9 +236,17 @@ entry says which it is.
   YEAR is a year with no holidays in both apps — the tab is maintained yearly,
   which is the dashboard's rule too. A tab the deployer account cannot read
   (or a `CDR_SS_ID` that is unset) degrades to the federal list with a
-  `Logger` line, never a thrown error; there is no health row for it yet
-  (the dashboard's Health page has one, `company-holidays`, which also warns
-  when its old property is still set beside the tab). Before renaming the
+  `Logger` line, never a thrown error. **Which calendar is LIVE is visible
+  since Batch 3 (2026-09-17): Manage → Admin → System's CDR Report row
+  carries `Company Holidays: <source> · N in <year>` in its detail, and a
+  CDR-area finding says so** — ok when the tab lists dates this year; warn
+  "No company holidays listed for <year>" when the tab has ranges but none
+  this year (the yearly-maintenance reminder); warn "No Company Holidays tab"
+  / "tab is empty" naming that the computed US-federal list is in use; warn
+  "could not be read" with the reader's error. The probe reads through the
+  same one-hour cache, so a row added on the dashboard side shows within the
+  hour. (The dashboard's Health page has its own `company-holidays` row, which
+  also warns when its old property is still set beside the tab.) Before renaming the
   tab or a header on the dashboard side, read its Operator State #68 — this
   app is the external reader it names.
 <a id="operator-script-property-test-cdr-ss-id"></a>
@@ -445,12 +453,23 @@ entry says which it is.
   cannot read the workbook, or the dept has no row and there is no `*`
   row), the standard is UNAVAILABLE: no target line, no tone, no badge, and
   `getMetricsAmbient` answers `{ badge: null, unavailable: 'standard' }` —
-  never a fallback number. The dashboard's Health page has a
-  `dashboard-standards` row that warns when its published tab is stale
-  (a standard edited outside its Alerts modal); this app has no row for it
-  yet — an absent target line on My Stats is the visible symptom. The
+  never a fallback number. **Since Batch 3 (2026-09-17) the state is
+  VISIBLE:** both Metrics heroes render the source beside the target
+  ("target 92% · from the Dashboard Standards tab"; a missing standard reads
+  "no Dashboard Standards row for this department — no target, tone or
+  badge" in muted text; an UNREADABLE tab reads warn — g128's split), and
+  Manage → Admin → System's CDR Report row carries `Dashboard Standards:
+  <source> · target N% · amber band N pt · dept CSR` with a CDR-area finding
+  (ok on `sheet` / the `*` row; warn for no-row / empty / no-tab naming the
+  three silences and the one-hour cache; warn with the error for
+  unavailable). A standard published WITHOUT an Amber Band has no amber tier
+  — one point under the target is red on the team table AND the Clock card
+  (`mtAnswerBand_`, g131). (The dashboard's Health page has its own
+  `dashboard-standards` row that warns when its published tab is stale — a
+  standard edited outside its Alerts modal.) The
   formula behind every rate is the dashboard's, `answered / (answered +
-  missed)` (`cdrAnswerPct_`, g124).
+  missed)` (`cdrAnswerPct_`, g124); a window with nothing answered or missed
+  has NO rate (null, a dash), not 0%.
 <a id="operator-set-script-property-manager-emails"></a>
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`

@@ -2920,10 +2920,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `mPrevWorkdayIso_` and the server agree; `test/visual/build.mjs` strips that
   scriptlet BEFORE the straggler strip, the SERVER_BUILD_STAMP rule.
   `getUsHolidays_` is referenced exactly twice in the server -- its own
-  definition and the fallback -- and the H1-3 pin counts them. Fires when you
+  definition and the fallback -- and the H1-3 pin counts them. **The
+  fallback was SILENT until Batch 3 of the cycle-20 scan (F-09, 2026-09-17):**
+  an absent, empty or unreadable tab swapped in the federal list with a
+  Logger line nobody reads, so a deployment on the wrong calendar looked
+  identical to one on the right calendar. Now `cdrHolidayProbe_` rides the
+  CDR row of `getStorageHealth` (`holidays: {source, ranges, thisYear, year,
+  error}`; a `sheet` source with no range is reported as `empty`, the shape
+  the accessor actually falls back on) and `cnHolidayFindings_` raises ONE
+  CDR-area finding on Admin → System: ok when the tab lists dates this year,
+  warn when it has ranges but none this year (the yearly-maintenance
+  reminder), warn naming "the computed US-federal list is in use" for
+  `empty` / `no-tab`, warn with the reader's error for `unavailable`. The
+  fallback rule itself is unchanged (deferred to the operator: keep the
+  fail-open, or match the dashboard's no-fallback). The manager sidebar badge
+  also judges `prevWorkdayIso_` now (F-35) -- it read calendar-yesterday, so
+  it was silent every Sunday and Monday and judged the morning after a holiday
+  on an empty CDR day. Fires when you
   compute a "previous workday", walk business days, or read `getUsHolidays_`
   directly. Verify: the H1-1..H1-5 pins, `test_companyHolidays_tabWinsElseFederal`,
-  `test_companyHolidays_readsFixtureTab`; the dashboard side is pinned in
+  `test_companyHolidays_readsFixtureTab`, the F-08/F-09 server + client pins and
+  the F-35 vm-driven `getMetricsAmbient` pin; the dashboard side is pinned in
   call-data-reporting's `util.test.js` / `setup.test.js`.
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
@@ -2963,10 +2980,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   carries a rate (`cdr_metrics_v4`, `dash_metrics_v5`, `metrics_my_v3`,
   `metrics_range_v3`, `team_metrics_v3`, `metrics_ambient_v2`) -- INV-85:
   a rate under the old formula must never serve under the new shape for the
-  TTL. Fires when you compute or tone an answer rate, add a KPI band, or
-  read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins,
+  TTL. **Four leftovers of H2 closed by Batch 3 of the cycle-20 scan
+  (2026-09-17):** (F-07) H2 let the band be NULL and left each consumer to
+  decide what null meant -- `mPctClass_` said 0 pt, `dashPctTone_` fell back
+  to the local 5-pt slack -- so the same value toned red on the table and
+  amber on the Clock card the moment a standard published without a band;
+  `mtAnswerBand_` (script_core) is now the ONE rule (no band = no amber tier
+  on both; Transfer % keeps its local slack because it has no published
+  standard at all). (F-08) `standardSource` was shipped and never read;
+  `mStandardSourceHtml_` renders it beside the target on both heroes (muted
+  for a missing standard, warn for an unreadable tab), the badge tooltip
+  drops its residual `res.threshold || 85` (a badge captioned "below 85%"
+  while judging against 92), and `cdrStandardProbe_` + `cnStandardFindings_`
+  put the verdict on Admin → System's CDR row. (F-32) `cdrAnswerPct_`
+  returned 0 when answered + missed was zero, so a window of rung legs with a
+  third disposition read "every call missed"; it is NULL now and every
+  surface dashes it (`mPctValueHtml_`, the team cell) while every average
+  already skipped it -- `0 / 3` is still a real 0%. (F-35) the badge judges
+  the previous workday, see g123. Fires when you compute or tone an answer
+  rate, add a KPI band, or read `CONFIG` for a threshold. Verify: the
+  H2-1..H2-4 pins (H2-1 expects null for nothing-to-divide), the F-07 grid
+  pin, the F-08 client + server pins, the F-32 consumer pin,
   `test_cdrAnswerPct_isTheDashboardFormula`,
-  `test_teamBenchmark_subtractsPublishedExcludes`,
+  `test_teamBenchmark_subtractsPublishedExcludes` (86, a whole percent --
+  it said 85.7 and had never run),
   `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
   `system-health.test.js`.
@@ -3124,3 +3161,29 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `closeOverlay`, Escape and the Close button's wiring, the scratchpad's
   flush-on-close, and a SWEEP that closes every hook registered at that moment
   (a floor, not a claim that no hook may ever refuse).
+
+<a id="g131-a-null-a-payload-ships-is-a-rule"></a>
+
+- **A NULL a payload ships is a RULE one helper decides, never a per-consumer
+  default — and a caption that names a published number never carries a
+  literal of it (Batch 3 of the 2026-09-17 /broad-scan, F-07 + F-08).** H2
+  made the amber band a PUBLISHED value that can be null, and shipped it to
+  two consumers with no rule for null: the Metrics table read it as 0 (no
+  amber tier), the Clock card as "not passed" and fell back to the local
+  5-pt slack. Both were reasonable readings; together they toned the same
+  number two ways on the same morning, and no pin could see it because each
+  surface was pinned alone. The same round replaced the hand-carried 85
+  everywhere except one caption -- `'below ' + (res.threshold || 85) + '%'`
+  -- so the badge said 85 while judging against 92, and the H2-4 ban on
+  `alertThreshold || \d` did not cover the word `threshold`. RULES: (1) when a
+  shipped field can be null, ONE shared helper decides what null means
+  (`mtAnswerBand_`: null = 0 = no amber tier) and every consumer calls it --
+  a per-surface `x != null ? x : <default>` is a mirror of a rule, and g120
+  says what a mirror costs; (2) a client string that interpolates a server
+  number carries NO literal fallback -- if the number can be absent, the
+  string is absent (a caption that exists only because the number does needs
+  no fallback at all). Fires when two surfaces read the same shipped field,
+  or a client string interpolates a server number with a `|| N`. Verify: the
+  F-07 pin (the two vocabularies agree on nine (value, target, band) triples,
+  the null-band and Transfer % branches, both delegations) and the F-08 pin's
+  `threshold || \d` ban over the Metrics partial.

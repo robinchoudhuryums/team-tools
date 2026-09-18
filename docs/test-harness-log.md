@@ -1369,3 +1369,50 @@ Any DOM pin that clicks an inline-handler button is testing nothing.
 **Visual:** `clock-dash-error-light-wide` (`?failrpc=getDashboardMetrics`) and
 `clock-coverage-error-light-wide` (`?failrpc=getMyMetrics`) put Batch 2's two
 Dashboard warn states on camera; both rendered clean on the first shoot.
+
+## 2026-09-18 — Batch 3 of the cycle-20 scan, and one editor test that had never run
+
+**Pure harness — seven pins (see the running-totals block for the count):**
+`F-07` drives the two tone vocabularies (`mPctClass_` → `m-pct-*`,
+`dashPctTone_` → good/warn/crit) over nine (value, target, band) triples and
+asserts they AGREE, then the null-band and Transfer % branches and both
+delegations to `mtAnswerBand_`; `F-08` renders every `standardSource` string,
+the warn/muted split, both heroes' call sites, and bans `threshold || \d`
+over the Metrics partial (H2-4's ban named `alertThreshold` and missed the
+tooltip); `F-08/F-09 server` runs `cdrStandardProbe_` and `cdrHolidayProbe_`
+in a vm through sheet / no-row / empty / unavailable / throw and pins the
+reachable-only gate in `getStorageHealth` — cross-context objects are compared
+by `JSON.stringify`, not `deepStrictEqual` (a vm context's `Object` is not the
+harness's, so a shape-equal object fails the prototype check — the g116
+class); `F-08/F-09 client` drives `cnHealthFindings_` through every source for
+both findings and asserts an older payload raises neither; `F-35` executes
+`getMetricsAmbient` in a vm with stubbed roster / cache / standard / CDR
+reader and asserts the DATE it asks for — Monday asks Friday, a Friday holiday
+steps to Thursday — the first behavioural pin on that function (H2-4's was
+structural); `F-32` pins null from the formula, the team aggregate, both
+heroes, the cell, the two averages and the editor smoke; `F-38` bans "US
+holiday" / "Federal observance" in the two tc partials (comments stripped
+first). H2-1 now expects null for nothing-to-divide; H2-4's Clock-card regex
+follows the delegation; the stale "mid band floor stays 50" message in the #4
+pin is replaced by the rule it now asserts.
+
+**Bite-checks:** ten mutations, ten bites — incl. the two that matter most:
+`mtAnswerBand_` null → 5 (the old card behaviour) and the `unavailable`
+message rewritten to say "not set" (the g128 split).
+
+**Fixtures (INV-185):** the three Metrics fixtures carry `standardSource:
+'sheet'`; the Storage Health fixture's CDR row carries both probe shapes in the
+all-clear state, so the System tab still reaches "Nothing needs attention" and
+the passing-check count rises by two.
+
+**Editor suite:** `test_cdrAnswerPct_isTheDashboardFormula` expects null for
+`(0, 0)`; `/test-sync` found `test_teamBenchmark_subtractsPublishedExcludes`
+expecting 85.7 where `cdrAnswerPct_` has rounded to a whole percent since H2
+(run.js H2-2 expected 86 all along) — an editor test that was red as written
+and had never run, because the integration tier has never run against the
+deployed project (cycle 19 step 8). The pure harness now pins the editor
+assertion's text too.
+
+**Visual:** the `metrics` and `admin-system` scenarios were re-shot (0 missing,
+0 overflow); the two WARN states of the new CDR findings are pinned but not on
+camera — a `?fixture=` variant of `admin-system` is the follow-on.
